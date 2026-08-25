@@ -1,0 +1,81 @@
+# SPDX-FileCopyrightText: 2026 Dennis Otto
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: Register app in Nextcloud App Store
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Enter paperless_unified_search to confirm the one-time registration'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: register-paperless-unified-search
+  cancel-in-progress: false
+
+env:
+  APP_ID: paperless_unified_search
+
+jobs:
+  register:
+    name: Register app ID once
+    if: inputs.confirmation == 'paperless_unified_search'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: release
+
+    steps:
+      - name: Validate certificate and register app ID
+        shell: bash
+        env:
+          APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+          APPSTORE_TOKEN: ${{ secrets.APPSTORE_TOKEN }}
+        run: |
+          umask 077
+          KEY_FILE="${RUNNER_TEMP}/app-private.key"
+          CERT_FILE="${RUNNER_TEMP}/app-certificate.crt"
+          REQUEST_FILE="${RUNNER_TEMP}/appstore-registration.json"
+
+          test -n "${APP_PRIVATE_KEY}"
+          test -n "${APPSTORE_TOKEN}"
+          printf '%s' "${APP_PRIVATE_KEY}" > "${KEY_FILE}"
+          openssl pkey -in "${KEY_FILE}" -check -noout
+
+          curl --fail --location --silent --show-error \
+            "https://raw.githubusercontent.com/nextcloud/app-certificate-requests/master/${APP_ID}/${APP_ID}.crt" \
+            --output "${CERT_FILE}"
+          openssl x509 -in "${CERT_FILE}" -noout -checkend 0
+          openssl x509 -in "${CERT_FILE}" -noout -subject \
+            | grep --fixed-strings "CN = ${APP_ID}"
+
+          PRIVATE_KEY_FINGERPRINT="$(openssl pkey -in "${KEY_FILE}" -pubout -outform DER | sha256sum | cut --delimiter=' ' --fields=1)"
+          CERTIFICATE_FINGERPRINT="$(openssl x509 -in "${CERT_FILE}" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum | cut --delimiter=' ' --fields=1)"
+          test "${PRIVATE_KEY_FINGERPRINT}" = "${CERTIFICATE_FINGERPRINT}"
+
+          SIGNATURE="$(printf '%s' "${APP_ID}" | openssl dgst -sha512 -sign "${KEY_FILE}" | openssl base64 -A)"
+          jq --null-input \
+            --rawfile certificate "${CERT_FILE}" \
+            --arg signature "${SIGNATURE}" \
+            '{certificate: $certificate, signature: $signature}' \
+            > "${REQUEST_FILE}"
+
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Authorization: Token ${APPSTORE_TOKEN}" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@${REQUEST_FILE}" \
+            https://apps.nextcloud.com/api/v1/apps
+
+      - name: Remove temporary credentials
+        if: always()
+        shell: bash
+        run: |
+          rm --force \
+            "${RUNNER_TEMP}/app-private.key" \
+            "${RUNNER_TEMP}/app-certificate.crt" \
+            "${RUNNER_TEMP}/appstore-registration.json"

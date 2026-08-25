@@ -37,6 +37,8 @@ jobs:
       - name: Validate Nextcloud app metadata
         run: |
           curl --fail --silent --show-error https://apps.nextcloud.com/schema/apps/info.xsd --output /tmp/nextcloud-app-info.xsd
+          # This is PHP code, not a shell expression.
+          # shellcheck disable=SC2016
           php -r '$document = new DOMDocument(); $document->load("appinfo/info.xml"); exit($document->schemaValidate("/tmp/nextcloud-app-info.xsd") ? 0 : 1);'
 
       - name: Install dependencies

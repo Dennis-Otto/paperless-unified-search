@@ -43,6 +43,8 @@ jobs:
       - name: Verify tag matches app version
         shell: bash
         run: |
+          # This is PHP code, not a shell expression.
+          # shellcheck disable=SC2016
           APP_VERSION="$(php -r '$xml = simplexml_load_file("appinfo/info.xml"); echo (string) $xml->version;')"
           test "${GITHUB_REF_NAME}" = "v${APP_VERSION}"
 
