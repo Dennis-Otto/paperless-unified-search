@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## 0.1.0 - Unreleased
+## 0.1.0 - 2026-08-25
 
 - Add Paperless-ngx OCR and full-text results to Nextcloud unified search.
 - Open synchronized documents directly in Nextcloud's file viewer.
