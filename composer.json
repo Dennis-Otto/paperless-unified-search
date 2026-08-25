@@ -1,0 +1,41 @@
+{
+	"name": "dennis-otto/paperless-unified-search",
+	"description": "Nextcloud unified search provider for synchronized Paperless-ngx documents",
+	"type": "nextcloud-app",
+	"license": "AGPL-3.0-or-later",
+	"autoload": {
+		"psr-4": {
+			"OCA\\PaperlessUnifiedSearch\\": "lib/"
+		}
+	},
+	"autoload-dev": {
+		"psr-4": {
+			"OCA\\PaperlessUnifiedSearch\\Tests\\": "tests/"
+		}
+	},
+	"require": {
+		"php": "^8.2"
+	},
+	"require-dev": {
+		"nextcloud/coding-standard": "^1.2",
+		"nextcloud/ocp": "^33.0",
+		"phpunit/phpunit": "^10.5",
+		"vimeo/psalm": "^6.0"
+	},
+	"scripts": {
+		"lint": "find appinfo lib templates tests -name '*.php' -not -path './vendor/*' -print0 | xargs -0 -n1 php -l",
+		"cs:check": "php-cs-fixer fix --dry-run --diff",
+		"cs:fix": "php-cs-fixer fix",
+		"psalm": "psalm --threads=1 --no-cache",
+		"test": "phpunit"
+	},
+	"config": {
+		"allow-plugins": {
+			"composer/installers": true
+		},
+		"platform": {
+			"php": "8.2.27"
+		},
+		"sort-packages": true
+	}
+}

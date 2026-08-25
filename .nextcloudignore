@@ -1,0 +1,17 @@
+.git
+.github
+.gitignore
+.php-cs-fixer.cache
+.php-cs-fixer.dist.php
+.nextcloudignore
+/build
+/composer.json
+/composer.lock
+/krankerl.toml
+/phpunit.xml
+/psalm.xml
+/tests
+/vendor
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+SECURITY.md

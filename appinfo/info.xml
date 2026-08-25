@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<info xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	  xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
+	<id>paperless_unified_search</id>
+	<name>Paperless Unified Search</name>
+	<summary>Search Paperless-ngx OCR content and open matching files in Nextcloud</summary>
+	<description><![CDATA[
+Paperless Unified Search adds Paperless-ngx's native OCR and full-text search to Nextcloud's global search.
+
+Only documents that have a matching, readable Nextcloud file are shown. Matching uses the stable `[P123]` Paperless document marker in synchronized filenames. Selecting a result opens the synchronized file directly in Nextcloud's viewer.
+
+The Paperless API token is stored server-side using Nextcloud's credentials manager and is never sent back to the browser.
+]]></description>
+	<version>0.1.0</version>
+	<licence>AGPL-3.0-or-later</licence>
+	<author homepage="https://github.com/Dennis-Otto">Dennis Otto</author>
+	<namespace>PaperlessUnifiedSearch</namespace>
+	<documentation>
+		<user>https://github.com/Dennis-Otto/paperless-unified-search#usage</user>
+		<admin>https://github.com/Dennis-Otto/paperless-unified-search#configuration</admin>
+		<developer>https://github.com/Dennis-Otto/paperless-unified-search#development</developer>
+	</documentation>
+	<category>integration</category>
+	<category>files</category>
+	<website>https://github.com/Dennis-Otto/paperless-unified-search</website>
+	<bugs>https://github.com/Dennis-Otto/paperless-unified-search/issues</bugs>
+	<repository type="git">https://github.com/Dennis-Otto/paperless-unified-search.git</repository>
+	<dependencies>
+		<php min-version="8.2"/>
+		<nextcloud min-version="33" max-version="35"/>
+	</dependencies>
+	<settings>
+		<admin>OCA\PaperlessUnifiedSearch\Settings\AdminSettings</admin>
+	</settings>
+</info>

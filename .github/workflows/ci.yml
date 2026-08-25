@@ -1,0 +1,58 @@
+# SPDX-FileCopyrightText: 2026 Dennis Otto
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up PHP 8.2
+        uses: shivammathur/setup-php@cf4cade2721270509d5b1c766ab3549210a39a2a # v2.33.0
+        with:
+          php-version: '8.2'
+          extensions: dom, libxml, mbstring
+          coverage: none
+
+      - name: Validate Composer metadata
+        run: composer validate --strict
+
+      - name: Validate Nextcloud app metadata
+        run: |
+          curl --fail --silent --show-error https://apps.nextcloud.com/schema/apps/info.xsd --output /tmp/nextcloud-app-info.xsd
+          xmllint --noout --schema /tmp/nextcloud-app-info.xsd appinfo/info.xml
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Check dependencies for known vulnerabilities
+        run: composer audit
+
+      - name: Lint JavaScript
+        run: node --check js/settings.js && node --check l10n/de.js
+
+      - name: Run unit tests
+        run: composer test
+
+      - name: Check PHP style
+        run: composer cs:check
+
+      - name: Run static analysis
+        run: composer psalm

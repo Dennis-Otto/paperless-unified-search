@@ -1,0 +1,53 @@
+/**
+ * SPDX-FileCopyrightText: 2026 Dennis Otto
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+.paperless-unified-search-settings {
+	max-width: 720px;
+}
+
+.paperless-unified-search-settings label {
+	display: block;
+	font-weight: 600;
+	margin-bottom: 4px;
+}
+
+.paperless-unified-search-settings input[type='url'],
+.paperless-unified-search-settings input[type='password'] {
+	box-sizing: border-box;
+	max-width: 520px;
+	width: 100%;
+}
+
+.paperless-unified-search-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 16px;
+}
+
+.paperless-unified-search-status {
+	font-weight: 600;
+	min-height: 24px;
+	padding-top: 8px;
+}
+
+.paperless-unified-search-status--success {
+	color: var(--color-success-text, #1b5e20);
+}
+
+.paperless-unified-search-status--error {
+	color: var(--color-error-text, #b00020);
+}
+
+.paperless-unified-search-note {
+	background: var(--color-background-dark, #f5f5f5);
+	border-radius: var(--border-radius-large, 10px);
+	margin-top: 20px;
+	padding: 16px;
+}
+
+.paperless-unified-search-note p {
+	margin: 4px 0 0;
+}

@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<psalm
+	errorLevel="1"
+	resolveFromConfigFile="true"
+	findUnusedBaselineEntry="true"
+	findUnusedCode="true"
+	phpVersion="8.2"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns="https://getpsalm.org/schema/config"
+	xsi:schemaLocation="https://getpsalm.org/schema/config vendor/vimeo/psalm/config.xsd">
+	<projectFiles>
+		<directory name="lib"/>
+		<ignoreFiles>
+			<directory name="vendor"/>
+		</ignoreFiles>
+	</projectFiles>
+	<extraFiles>
+		<directory name="vendor"/>
+	</extraFiles>
+	<stubs>
+		<file name="tests/stubs/Emitter.php"/>
+	</stubs>
+	<issueHandlers>
+		<!-- Nextcloud discovers these classes through app metadata and routes. -->
+		<UnusedClass errorLevel="suppress"/>
+		<!-- #[Override] is native only in PHP 8.3; the app supports PHP 8.2. -->
+		<MissingOverrideAttribute errorLevel="suppress"/>
+	</issueHandlers>
+</psalm>
