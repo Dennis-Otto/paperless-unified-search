@@ -82,6 +82,19 @@ composer psalm
 
 The production archive intentionally excludes tests, Composer development dependencies, and repository metadata. Packaging uses [Krankerl](https://github.com/ChristophWurst/krankerl).
 
+### Releases
+
+Add user-visible changes to the `Unreleased` section in [CHANGELOG.md](CHANGELOG.md). To publish, run the **Release** workflow from the default branch and choose `patch`, `minor`, or `major`. The workflow then:
+
+1. Runs the complete quality and secret checks.
+2. Calculates and validates the next semantic version.
+3. Updates app metadata, versioned screenshot URLs, and the changelog.
+4. Builds and signs the production archive.
+5. Creates a signed-off release commit and an atomic Git tag.
+6. Publishes the GitHub release and updates the Nextcloud App Store release.
+
+An interrupted run resumes the incomplete version instead of incrementing it again. `composer version:check` verifies version consistency locally and in CI.
+
 ## License
 
 AGPL-3.0-or-later. See [LICENSE](LICENSE).

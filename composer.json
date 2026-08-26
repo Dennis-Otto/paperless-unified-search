@@ -23,11 +23,12 @@
 		"vimeo/psalm": "^6.0"
 	},
 	"scripts": {
-		"lint": "find appinfo lib templates tests -name '*.php' -not -path './vendor/*' -print0 | xargs -0 -n1 php -l",
+		"lint": "find appinfo lib scripts templates tests -name '*.php' -not -path './vendor/*' -print0 | xargs -0 -n1 php -l",
 		"cs:check": "php-cs-fixer fix --dry-run --diff",
 		"cs:fix": "php-cs-fixer fix",
 		"psalm": "psalm --threads=1 --no-cache",
-		"test": "phpunit"
+		"test": "phpunit",
+		"version:check": "php scripts/release-version.php check"
 	},
 	"config": {
 		"allow-plugins": {
