@@ -5,6 +5,7 @@ All notable changes to this project are documented in this file.
 ## Unreleased
 
 - Automate semantic version selection, consistency checks, signing, tagging, and publishing in a single release workflow.
+- Pin GitHub Actions to current immutable Node 24-compatible revisions.
 - Add reproducible Docker end-to-end coverage for the real Nextcloud search API, access filtering, trusted-service mode, and browser, iOS, and Android response contracts.
 - Verify translation catalogs and production-package boundaries automatically in CI and during releases.
 - Document mobile compatibility checks, contribution requirements, and the security support policy.
