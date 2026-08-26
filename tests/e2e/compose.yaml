@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: 2026 Dennis Otto
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+services:
+  paperless-mock:
+    image: python:3.13-alpine@sha256:540c7d91f98ff6880174c40e99067bf5941eb54d818a7a5e094d188b196a934d
+    command: ["python", "/mock/mock_server.py"]
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - ./:/mock:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  nextcloud:
+    image: nextcloud:33.0.8-apache@sha256:995c90968685e5584891060ec10b3d4645c6c8bb1d2d2e78590113884101e8e0
+    depends_on:
+      paperless-mock:
+        condition: service_healthy
+    environment:
+      NEXTCLOUD_ADMIN_USER: e2e-admin
+      NEXTCLOUD_ADMIN_PASSWORD: e2e-only-password
+      NEXTCLOUD_TRUSTED_DOMAINS: localhost 127.0.0.1
+    ports:
+      - "${E2E_PORT:-18082}:80"
+    volumes:
+      - nextcloud_html:/var/www/html
+      - ../../:/var/www/html/custom_apps/paperless_unified_search:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1/status.php >/dev/null || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+
+volumes:
+  nextcloud_html:

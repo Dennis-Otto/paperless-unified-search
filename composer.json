@@ -26,6 +26,8 @@
 		"lint": "find appinfo lib scripts templates tests -name '*.php' -not -path './vendor/*' -print0 | xargs -0 -n1 php -l",
 		"cs:check": "php-cs-fixer fix --dry-run --diff",
 		"cs:fix": "php-cs-fixer fix",
+		"l10n:check": "node scripts/check-l10n.mjs",
+		"package:check": "bash scripts/check-package.sh",
 		"psalm": "psalm --threads=1 --no-cache",
 		"test": "phpunit",
 		"version:check": "php scripts/release-version.php check"

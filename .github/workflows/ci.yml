@@ -15,6 +15,10 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  KRANKERL_VERSION: 0.14.0
+  KRANKERL_SHA256: 9bee5a756a83c5a6b1f040e9a2ade9e902e4a57211afc174cd8ac5c4f913958f
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -22,7 +26,15 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify pull request DCO sign-offs
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/check-dco.sh "${BASE_SHA}" "${HEAD_SHA}"
 
       - name: Lint GitHub Actions workflows
         uses: docker://rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9 # v1.7.7
@@ -56,6 +68,9 @@ jobs:
       - name: Lint JavaScript
         run: node --check js/settings.js && node --check l10n/de.js
 
+      - name: Verify translation catalogs
+        run: composer l10n:check
+
       - name: Run unit tests
         run: composer test
 
@@ -64,3 +79,18 @@ jobs:
 
       - name: Run static analysis
         run: composer psalm
+
+      - name: Install verified Krankerl package builder
+        shell: bash
+        run: |
+          PACKAGE="${RUNNER_TEMP}/krankerl.deb"
+          curl --fail --location --silent --show-error \
+            "https://github.com/ChristophWurst/krankerl/releases/download/v${KRANKERL_VERSION}/krankerl_${KRANKERL_VERSION}_amd64.deb" \
+            --output "${PACKAGE}"
+          echo "${KRANKERL_SHA256}  ${PACKAGE}" | sha256sum --check --strict
+          sudo dpkg --install "${PACKAGE}"
+
+      - name: Build and verify production package
+        run: |
+          krankerl package
+          composer package:check

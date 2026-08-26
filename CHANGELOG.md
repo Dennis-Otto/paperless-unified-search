@@ -5,6 +5,10 @@ All notable changes to this project are documented in this file.
 ## Unreleased
 
 - Automate semantic version selection, consistency checks, signing, tagging, and publishing in a single release workflow.
+- Add reproducible Docker end-to-end coverage for the real Nextcloud search API, access filtering, trusted-service mode, and browser, iOS, and Android response contracts.
+- Verify translation catalogs and production-package boundaries automatically in CI and during releases.
+- Document mobile compatibility checks, contribution requirements, and the security support policy.
+- Recommend the companion Paperless Sync app for native structured document synchronization.
 
 ## 0.1.3 - 2026-08-26
 

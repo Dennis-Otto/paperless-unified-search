@@ -73,6 +73,7 @@ jobs:
           composer lint
           node --check js/settings.js
           node --check l10n/de.js
+          composer l10n:check
           composer test
           composer cs:check
           composer psalm
@@ -150,6 +151,9 @@ jobs:
       - name: Build app archive
         run: krankerl package
 
+      - name: Verify unsigned production package
+        run: composer package:check
+
       - name: Prepare private key and verified signing tools
         shell: bash
         env:
@@ -192,6 +196,9 @@ jobs:
           test -s "${SIGNING_DIR}/${APP_ID}/appinfo/signature.json"
           tar --create --gzip --file "${ARCHIVE}" \
             --directory "${SIGNING_DIR}" "${APP_ID}"
+
+      - name: Verify signed production package
+        run: bash scripts/check-package.sh "build/artifacts/${APP_ID}.tar.gz" signed
 
       - name: Commit version and push atomic tag
         shell: bash

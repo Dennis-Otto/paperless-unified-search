@@ -34,6 +34,10 @@ A dedicated, read-only Paperless account is recommended.
 - Synchronized files whose names contain their Paperless document marker, for example `[P123]`
 
 This app provides search integration only. It does not synchronize documents between Paperless and Nextcloud.
+
+### Native synchronization companion
+
+For structured document synchronization, use the independent [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) Nextcloud app. Both apps use the same stable `[P123]` document marker and can be maintained and updated separately.
 ]]></description>
 	<description lang="de"><![CDATA[
 ### Paperless-Suche nahtlos in Nextcloud integriert
@@ -64,6 +68,10 @@ Empfohlen wird ein eigener Paperless-Dienstbenutzer mit ausschließlich lesendem
 - Synchronisierte Dateien mit einer Paperless-Dokumentkennung wie `[P123]` im Dateinamen
 
 Die App integriert ausschließlich die Suche. Sie synchronisiert selbst keine Dokumente zwischen Paperless und Nextcloud.
+
+### Native Synchronisierung als Ergänzung
+
+Für eine strukturierte Dokumentensynchronisierung steht die unabhängige Nextcloud-App [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) zur Verfügung. Beide Apps verwenden dieselbe stabile Dokumentkennung wie `[P123]` und lassen sich getrennt warten und aktualisieren.
 ]]></description>
 	<version>0.1.3</version>
 	<licence>AGPL-3.0-or-later</licence>

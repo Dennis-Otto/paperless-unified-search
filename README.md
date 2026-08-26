@@ -1,6 +1,7 @@
 # Paperless Unified Search
 
 [![CI](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/ci.yml/badge.svg)](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/ci.yml)
+[![Docker E2E](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/e2e.yml/badge.svg)](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/e2e.yml)
 [![Secret scan](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/secret-scan.yml/badge.svg)](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/secret-scan.yml)
 
 Paperless Unified Search brings Paperless-ngx OCR and full-text search into Nextcloud's global search. Search results open the matching synchronized file directly in Nextcloud's viewer.
@@ -29,7 +30,7 @@ Paperless Unified Search brings Paperless-ngx OCR and full-text search into Next
    `/f/{fileId}` viewer route. The official iOS app receives its native `nextcloud://open-file` deep link,
    while Android receives the file ID and user-relative path required by its in-app viewer.
 
-This app does not synchronize documents itself. Use it together with a synchronization process that preserves the Paperless document marker in the Nextcloud filename.
+This app does not synchronize documents itself. For a native, configurable synchronization solution, use the companion [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) app. Both apps use the same stable `[P<ID>]` marker and are designed to work together without coupling their release cycles.
 
 ## Requirements
 
@@ -75,12 +76,27 @@ Install dependencies and run all checks:
 
 ```bash
 composer install
+composer lint
+composer l10n:check
 composer test
 composer cs:check
 composer psalm
+composer version:check
 ```
 
-The production archive intentionally excludes tests, Composer development dependencies, and repository metadata. Packaging uses [Krankerl](https://github.com/ChristophWurst/krankerl).
+The production archive intentionally excludes tests, release tools, Composer development dependencies, screenshots, and repository metadata. Packaging uses [Krankerl](https://github.com/ChristophWurst/krankerl), and `composer package:check` validates the finished archive.
+
+### Docker end-to-end tests
+
+The Docker suite starts a clean Nextcloud instance with the app mounted as a Custom App and a deterministic Paperless API mock. It exercises the real OCS search endpoint, user-specific file access, trusted-service metadata, and browser/iOS/Android result contracts.
+
+```bash
+bash tests/e2e/run.sh
+```
+
+Set `KEEP_E2E=1` to leave the containers running for inspection. See [the mobile test matrix](tests/e2e/MANUAL_MOBILE_TESTS.md) for the final checks performed with official clients.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 ### Releases
 
