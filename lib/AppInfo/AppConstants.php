@@ -11,5 +11,5 @@ namespace OCA\PaperlessUnifiedSearch\AppInfo;
 
 final class AppConstants {
 	public const APP_ID = 'paperless_unified_search';
-	public const VERSION = '0.1.0';
+	public const VERSION = '0.1.2';
 }

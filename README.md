@@ -5,6 +5,20 @@
 
 Paperless Unified Search brings Paperless-ngx OCR and full-text search into Nextcloud's global search. Search results open the matching synchronized file directly in Nextcloud's viewer.
 
+## Screenshots
+
+### Paperless results in Nextcloud's global search
+
+![Paperless OCR results in Nextcloud unified search](screenshots/01-unified-search.png)
+
+### A search result opened in Nextcloud's PDF viewer
+
+![A synchronized Paperless document opened in Nextcloud's PDF viewer](screenshots/02-nextcloud-pdf-viewer.png)
+
+### Secure server-side administration
+
+![Paperless Unified Search administration settings in Nextcloud](screenshots/03-admin-settings.png)
+
 ## How it works
 
 1. Nextcloud forwards an enabled external-search query to Paperless-ngx.

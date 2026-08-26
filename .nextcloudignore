@@ -10,6 +10,7 @@
 /krankerl.toml
 /phpunit.xml
 /psalm.xml
+/screenshots
 /tests
 /vendor
 CODE_OF_CONDUCT.md

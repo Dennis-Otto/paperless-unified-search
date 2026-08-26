@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.1.2 - 2026-08-26
+
+- Add professional English and German App Store descriptions.
+- Add real Nextcloud screenshots for unified search, the PDF viewer, and administration settings.
+
 ## 0.1.1 - 2026-08-26
 
 - Add an explicit administrator opt-in to include the trusted Paperless server in every global search without requiring the connected-services switch.
