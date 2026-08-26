@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+- Automate semantic version selection, consistency checks, signing, tagging, and publishing in a single release workflow.
+
 ## 0.1.3 - 2026-08-26
 
 - Open search results inside the official Nextcloud iOS and Android apps.

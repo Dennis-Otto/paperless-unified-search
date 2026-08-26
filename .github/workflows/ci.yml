@@ -24,6 +24,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Lint GitHub Actions workflows
+        uses: docker://rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9 # v1.7.7
+
       - name: Set up PHP 8.2
         uses: shivammathur/setup-php@cf4cade2721270509d5b1c766ab3549210a39a2a # v2.33.0
         with:
@@ -33,6 +36,9 @@ jobs:
 
       - name: Validate Composer metadata
         run: composer validate --strict
+
+      - name: Verify release version consistency
+        run: composer version:check
 
       - name: Validate Nextcloud app metadata
         run: |
