@@ -155,7 +155,8 @@ jobs:
               --message "Release-run: ${GITHUB_RUN_ID}"
           fi
 
-          test -z "$(git status --porcelain)"
+          git diff --quiet
+          git diff --cached --quiet
           test "$(php scripts/release-version.php check)" = "${VERSION}"
 
       - name: Install verified Krankerl package builder
@@ -227,7 +228,8 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          test -z "$(git status --porcelain)"
+          git diff --quiet
+          git diff --cached --quiet
 
           if git show-ref --verify --quiet "refs/tags/v${VERSION}"; then
             test "$(git rev-parse "v${VERSION}^{commit}")" = "$(git rev-parse HEAD)"
