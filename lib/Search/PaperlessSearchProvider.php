@@ -15,6 +15,7 @@ use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCP\Files\File;
 use OCP\IL10N;
+use OCP\IRequest;
 use OCP\IURLGenerator;
 use OCP\IUser;
 use OCP\Search\IExternalProvider;
@@ -31,6 +32,7 @@ final class PaperlessSearchProvider implements IExternalProvider {
 		private NextcloudFileLocator $fileLocator,
 		private IL10N $l10n,
 		private IURLGenerator $urlGenerator,
+		private IRequest $request,
 		private LoggerInterface $logger,
 		private ConfigService $configService,
 	) {
@@ -123,14 +125,36 @@ final class PaperlessSearchProvider implements IExternalProvider {
 			$title = $file->getName();
 		}
 
-		return new SearchResultEntry(
+		$entry = new SearchResultEntry(
 			$this->urlGenerator->imagePath(AppConstants::APP_ID, 'app.svg'),
 			$title,
 			$this->getSubline($document, $file),
-			$this->urlGenerator->linkToRouteAbsolute('files.view.showFile', ['fileid' => $file->getId()]),
+			$this->getResourceUrl($user, $file),
 			'',
 			false,
 		);
+		$entry->addAttribute('fileId', (string)$file->getId());
+		$entry->addAttribute('path', $this->fileLocator->getPathForUser($user, $file));
+
+		return $entry;
+	}
+
+	private function getResourceUrl(IUser $user, File $file): string {
+		$webUrl = $this->urlGenerator->linkToRouteAbsolute(
+			'files.view.showFile',
+			['fileid' => $file->getId()],
+		);
+		$userAgent = $this->request->getHeader('User-Agent');
+
+		if (preg_match(IRequest::USER_AGENT_CLIENT_IOS, $userAgent) !== 1
+			|| !str_contains($userAgent, 'Nextcloud-iOS/')) {
+			return $webUrl;
+		}
+
+		return 'nextcloud://open-file?' . http_build_query([
+			'user' => $user->getUID(),
+			'link' => $webUrl,
+		], '', '&', PHP_QUERY_RFC3986);
 	}
 
 	/**

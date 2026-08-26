@@ -25,7 +25,9 @@ Paperless Unified Search brings Paperless-ngx OCR and full-text search into Next
 2. Paperless returns results from its native OCR/full-text index.
 3. The app maps each Paperless document ID to a synchronized Nextcloud filename containing the unique marker `[P<ID>]`, for example `[P123]`.
 4. A result is returned only if the current Nextcloud user can access the matching file.
-5. Selecting the result opens Nextcloud's `/f/{fileId}` viewer route, not Paperless.
+5. Selecting a result opens the synchronized file in Nextcloud, not Paperless. Browsers use Nextcloud's
+   `/f/{fileId}` viewer route. The official iOS app receives its native `nextcloud://open-file` deep link,
+   while Android receives the file ID and user-relative path required by its in-app viewer.
 
 This app does not synchronize documents itself. Use it together with a synchronization process that preserves the Paperless document marker in the Nextcloud filename.
 

@@ -22,15 +22,21 @@ use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
 use OCP\IAppConfig;
 use OCP\IL10N;
+use OCP\IRequest;
 use OCP\IURLGenerator;
 use OCP\IUser;
 use OCP\Search\ISearchQuery;
 use OCP\Security\ICredentialsManager;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 final class PaperlessSearchProviderTest extends TestCase {
-	public function testReturnsOnlyAccessibleFilesAndOpensNextcloudViewer(): void {
+	#[DataProvider('resourceUrlCases')]
+	public function testReturnsOnlyAccessibleFilesWithPlatformCompatibleResourceUrl(
+		string $userAgent,
+		string $expectedResourceUrl,
+	): void {
 		$config = $this->createMock(IAppConfig::class);
 		$config->method('getValueString')->willReturn('https://paperless.example.com');
 
@@ -81,6 +87,9 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$folder->method('search')->willReturnCallback(
 			static fn (string $marker): array => $marker === '[P123]' ? [$file] : [],
 		);
+		$folder->method('getRelativePath')
+			->with('/dennis/files/Paperless/Salary [P123].pdf')
+			->willReturn('/Paperless/Salary [P123].pdf');
 
 		$root = $this->createMock(IRootFolder::class);
 		$root->method('getUserFolder')->with('dennis')->willReturn($folder);
@@ -100,6 +109,12 @@ final class PaperlessSearchProviderTest extends TestCase {
 			->with('files.view.showFile', ['fileid' => 4711])
 			->willReturn('https://cloud.example.com/f/4711');
 
+		$request = $this->createMock(IRequest::class);
+		$request->expects(self::once())
+			->method('getHeader')
+			->with('User-Agent')
+			->willReturn($userAgent);
+
 		$query = $this->createMock(ISearchQuery::class);
 		$query->method('getTerm')->willReturn('gross salary');
 		$query->method('getLimit')->willReturn(10);
@@ -111,6 +126,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			new NextcloudFileLocator($root),
 			$l10n,
 			$urlGenerator,
+			$request,
 			$this->createMock(LoggerInterface::class),
 			$configService,
 		);
@@ -121,8 +137,32 @@ final class PaperlessSearchProviderTest extends TestCase {
 		self::assertFalse($result['isPaginated']);
 		self::assertCount(1, $result['entries']);
 		self::assertSame('Salary July 2026', $result['entries'][0]->jsonSerialize()['title']);
-		self::assertSame('https://cloud.example.com/f/4711', $result['entries'][0]->jsonSerialize()['resourceUrl']);
+		self::assertSame($expectedResourceUrl, $result['entries'][0]->jsonSerialize()['resourceUrl']);
+		self::assertSame([
+			'fileId' => '4711',
+			'path' => '/Paperless/Salary [P123].pdf',
+		], $result['entries'][0]->jsonSerialize()['attributes']);
 		self::assertSame('2026-07-31 · Gross 5,000 EUR', $result['entries'][0]->jsonSerialize()['subline']);
+	}
+
+	/**
+	 * @return array<string, array{string, string}>
+	 */
+	public static function resourceUrlCases(): array {
+		return [
+			'browser' => [
+				'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15',
+				'https://cloud.example.com/f/4711',
+			],
+			'nextcloud iOS' => [
+				'Mozilla/5.0 (iOS) Nextcloud-iOS/7.1.0',
+				'nextcloud://open-file?user=dennis&link=https%3A%2F%2Fcloud.example.com%2Ff%2F4711',
+			],
+			'nextcloud Android' => [
+				'Mozilla/5.0 (Android) Nextcloud-android/20260390',
+				'https://cloud.example.com/f/4711',
+			],
+		];
 	}
 
 	public function testTrustedPaperlessIsNotGatedByConnectedServicesSwitch(): void {
@@ -138,6 +178,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			new NextcloudFileLocator($this->createStub(IRootFolder::class)),
 			$this->createStub(IL10N::class),
 			$this->createStub(IURLGenerator::class),
+			$this->createStub(IRequest::class),
 			$this->createStub(LoggerInterface::class),
 			$configService,
 		);

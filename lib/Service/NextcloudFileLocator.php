@@ -43,4 +43,15 @@ final class NextcloudFileLocator {
 
 		return $matches[0];
 	}
+
+	public function getPathForUser(IUser $user, File $file): string {
+		$userFolder = $this->rootFolder->getUserFolder($user->getUID());
+		$relativePath = $userFolder->getRelativePath($file->getPath());
+
+		if ($relativePath === null || $relativePath === '') {
+			return '/' . ltrim($file->getName(), '/');
+		}
+
+		return '/' . ltrim($relativePath, '/');
+	}
 }

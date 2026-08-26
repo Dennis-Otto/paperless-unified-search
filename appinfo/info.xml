@@ -14,7 +14,7 @@ Paperless Unified Search brings Paperless-ngx's OCR-powered document search dire
 
 - Uses Paperless-ngx's native OCR and full-text search
 - Shows results directly in Nextcloud's global search
-- Opens the synchronized file in Nextcloud's built-in viewer
+- Opens the synchronized file in Nextcloud's built-in viewer on web, iOS, and Android
 - Matches documents through stable markers such as `[P123]`
 - Includes only files the current Nextcloud user is allowed to access
 - Automatically excludes documents that have not yet been synchronized
@@ -44,7 +44,7 @@ Paperless Unified Search bringt die OCR-gestützte Dokumentensuche von Paperless
 
 - Verwendet die native OCR- und Volltextsuche von Paperless-ngx
 - Zeigt Treffer direkt in der globalen Nextcloud-Suche
-- Öffnet die synchronisierte Datei im integrierten Nextcloud-Viewer
+- Öffnet die synchronisierte Datei im integrierten Nextcloud-Viewer in Web, iOS und Android
 - Ordnet Dokumente über stabile Kennzeichnungen wie `[P123]` zu
 - Zeigt nur Dateien an, auf die der aktuelle Nextcloud-Benutzer zugreifen darf
 - Blendet noch nicht synchronisierte Dokumente automatisch aus
@@ -65,7 +65,7 @@ Empfohlen wird ein eigener Paperless-Dienstbenutzer mit ausschließlich lesendem
 
 Die App integriert ausschließlich die Suche. Sie synchronisiert selbst keine Dokumente zwischen Paperless und Nextcloud.
 ]]></description>
-	<version>0.1.2</version>
+	<version>0.1.3</version>
 	<licence>AGPL-3.0-or-later</licence>
 	<author homepage="https://github.com/Dennis-Otto">Dennis Otto</author>
 	<namespace>PaperlessUnifiedSearch</namespace>
@@ -79,9 +79,9 @@ Die App integriert ausschließlich die Suche. Sie synchronisiert selbst keine Do
 	<website>https://github.com/Dennis-Otto/paperless-unified-search</website>
 	<bugs>https://github.com/Dennis-Otto/paperless-unified-search/issues</bugs>
 	<repository type="git">https://github.com/Dennis-Otto/paperless-unified-search.git</repository>
-	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.1.2/screenshots/01-unified-search.png</screenshot>
-	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.1.2/screenshots/02-nextcloud-pdf-viewer.png</screenshot>
-	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.1.2/screenshots/03-admin-settings.png</screenshot>
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.1.3/screenshots/01-unified-search.png</screenshot>
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.1.3/screenshots/02-nextcloud-pdf-viewer.png</screenshot>
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.1.3/screenshots/03-admin-settings.png</screenshot>
 	<dependencies>
 		<php min-version="8.2"/>
 		<nextcloud min-version="33" max-version="35"/>

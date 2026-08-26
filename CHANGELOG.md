@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.1.3 - 2026-08-26
+
+- Open search results inside the official Nextcloud iOS and Android apps.
+- Add native Nextcloud file metadata for Android and an iOS deep link while preserving the web viewer route for browsers.
+- Add regression coverage for browser, iOS, and Android result links.
+
 ## 0.1.2 - 2026-08-26
 
 - Add professional English and German App Store descriptions.
