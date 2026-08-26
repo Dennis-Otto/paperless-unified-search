@@ -79,7 +79,7 @@ jobs:
           composer psalm
 
       - name: Scan Git history and working tree for secrets
-        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -137,6 +137,26 @@ jobs:
           # This is PHP code, not a shell expression.
           # shellcheck disable=SC2016
           php -r '$document = new DOMDocument(); $document->load("appinfo/info.xml"); exit($document->schemaValidate(getenv("RUNNER_TEMP") . "/nextcloud-app-info.xsd") ? 0 : 1);'
+
+      - name: Create local release commit
+        shell: bash
+        env:
+          MODE: ${{ steps.version.outputs.mode }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if test "${MODE}" = "new"; then
+            git add appinfo/info.xml CHANGELOG.md
+            git commit --signoff \
+              --message "chore: release v${VERSION}" \
+              --message "Release-run: ${GITHUB_RUN_ID}"
+          fi
+
+          test -z "$(git status --porcelain)"
+          test "$(php scripts/release-version.php check)" = "${VERSION}"
 
       - name: Install verified Krankerl package builder
         shell: bash
@@ -200,23 +220,14 @@ jobs:
       - name: Verify signed production package
         run: bash scripts/check-package.sh "build/artifacts/${APP_ID}.tar.gz" signed
 
-      - name: Commit version and push atomic tag
+      - name: Tag and push release atomically
         shell: bash
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          MODE: ${{ steps.version.outputs.mode }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          if test "${MODE}" = "new"; then
-            git add appinfo/info.xml CHANGELOG.md
-            git commit --signoff \
-              --message "chore: release v${VERSION}" \
-              --message "Release-run: ${GITHUB_RUN_ID}"
-          fi
+          test -z "$(git status --porcelain)"
 
           if git show-ref --verify --quiet "refs/tags/v${VERSION}"; then
             test "$(git rev-parse "v${VERSION}^{commit}")" = "$(git rev-parse HEAD)"
