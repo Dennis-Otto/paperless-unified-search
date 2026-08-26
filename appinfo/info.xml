@@ -11,7 +11,7 @@ Only documents that have a matching, readable Nextcloud file are shown. Matching
 
 The Paperless API token is stored server-side using Nextcloud's credentials manager and is never sent back to the browser.
 ]]></description>
-	<version>0.1.0</version>
+	<version>0.1.1</version>
 	<licence>AGPL-3.0-or-later</licence>
 	<author homepage="https://github.com/Dennis-Otto">Dennis Otto</author>
 	<namespace>PaperlessUnifiedSearch</namespace>

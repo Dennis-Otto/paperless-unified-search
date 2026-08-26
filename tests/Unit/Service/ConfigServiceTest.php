@@ -22,6 +22,9 @@ final class ConfigServiceTest extends TestCase {
 		$config->method('getValueString')
 			->with(AppConstants::APP_ID, 'paperless_url', '')
 			->willReturn('https://paperless.example.com');
+		$config->method('getValueBool')
+			->with(AppConstants::APP_ID, 'always_search', false)
+			->willReturn(true);
 
 		$credentials = $this->createMock(ICredentialsManager::class);
 		$credentials->method('retrieve')->willReturn('TEST_VALUE');
@@ -32,6 +35,7 @@ final class ConfigServiceTest extends TestCase {
 		self::assertSame([
 			'url' => 'https://paperless.example.com',
 			'tokenConfigured' => true,
+			'alwaysSearch' => true,
 		], $serialized);
 		self::assertStringNotContainsString('TEST_VALUE', json_encode($serialized, JSON_THROW_ON_ERROR));
 	}
@@ -41,6 +45,9 @@ final class ConfigServiceTest extends TestCase {
 		$config->expects(self::once())
 			->method('setValueString')
 			->with(AppConstants::APP_ID, 'paperless_url', 'https://paperless.example.com');
+		$config->expects(self::once())
+			->method('setValueBool')
+			->with(AppConstants::APP_ID, 'always_search', true);
 
 		$credentials = $this->createMock(ICredentialsManager::class);
 		$credentials->expects(self::once())
@@ -48,10 +55,23 @@ final class ConfigServiceTest extends TestCase {
 			->with('', AppConstants::APP_ID . '.api-token', 'TEST_VALUE');
 
 		$service = new ConfigService($config, $credentials);
-		$result = $service->save(' https://paperless.example.com/// ', ' TEST_VALUE ');
+		$result = $service->save(' https://paperless.example.com/// ', ' TEST_VALUE ', true);
 
 		self::assertSame('https://paperless.example.com', $result->url);
 		self::assertTrue($result->tokenConfigured);
+		self::assertTrue($result->alwaysSearch);
+	}
+
+	public function testAlwaysSearchIsDisabledByDefault(): void {
+		$config = $this->createMock(IAppConfig::class);
+		$config->expects(self::once())
+			->method('getValueBool')
+			->with(AppConstants::APP_ID, 'always_search', false)
+			->willReturn(false);
+
+		$service = new ConfigService($config, $this->createStub(ICredentialsManager::class));
+
+		self::assertFalse($service->isAlwaysSearchEnabled());
 	}
 
 	public function testBlankCandidateKeepsExistingToken(): void {

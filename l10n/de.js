@@ -9,6 +9,8 @@ OC.L10N.register(
 		'Configured — leave blank to keep it': 'Konfiguriert — zum Beibehalten leer lassen',
 		'Required': 'Erforderlich',
 		'Use a dedicated, read-only Paperless account. The token is encrypted by Nextcloud and is never returned to the browser.': 'Verwende ein eigenes Paperless-Konto mit minimalen Leserechten. Der Token wird von Nextcloud verschlüsselt und niemals an den Browser zurückgegeben.',
+		'Always include Paperless in global search': 'Paperless immer in die globale Suche einbeziehen',
+		'Treat this Paperless server as a trusted service. When enabled, every global search term from every Nextcloud user is sent to Paperless automatically. The “Search connected services” switch no longer controls this provider. Reload Nextcloud after changing this setting.': 'Behandle diesen Paperless-Server als vertrauenswürdigen Dienst. Wenn aktiviert, wird jeder globale Suchbegriff aller Nextcloud-Benutzer automatisch an Paperless gesendet. Der Schalter „Verbundene Dienste durchsuchen“ steuert diesen Anbieter dann nicht mehr. Lade Nextcloud nach einer Änderung dieser Einstellung neu.',
 		'Test connection and save': 'Verbindung testen und speichern',
 		'Disconnect': 'Verbindung trennen',
 		'File matching': 'Dateizuordnung',

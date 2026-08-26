@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\Search;
 
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
+use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCP\Files\File;
@@ -31,6 +32,7 @@ final class PaperlessSearchProvider implements IExternalProvider {
 		private IL10N $l10n,
 		private IURLGenerator $urlGenerator,
 		private LoggerInterface $logger,
+		private ConfigService $configService,
 	) {
 	}
 
@@ -46,8 +48,13 @@ final class PaperlessSearchProvider implements IExternalProvider {
 		return 40;
 	}
 
+	/**
+	 * Trusted-service mode is an explicit administrator opt-in. Returning false
+	 * tells Nextcloud not to gate this provider behind its connected-services switch.
+	 * Search terms are still sent server-to-server to the configured Paperless instance.
+	 */
 	public function isExternalProvider(): bool {
-		return true;
+		return !$this->configService->isAlwaysSearchEnabled();
 	}
 
 	public function search(IUser $user, ISearchQuery $query): SearchResult {

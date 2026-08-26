@@ -53,6 +53,22 @@ $config = $_['config'];
 			<?php p($l->t('Use a dedicated, read-only Paperless account. The token is encrypted by Nextcloud and is never returned to the browser.')); ?>
 		</p>
 
+		<div class="paperless-unified-search-trusted-service">
+			<input
+				id="paperless-unified-search-always-search"
+				name="alwaysSearch"
+				type="checkbox"
+				<?php if ($config->alwaysSearch) {
+					print_unescaped('checked');
+				} ?>>
+			<label for="paperless-unified-search-always-search">
+				<?php p($l->t('Always include Paperless in global search')); ?>
+			</label>
+			<p class="settings-hint">
+				<?php p($l->t('Treat this Paperless server as a trusted service. When enabled, every global search term from every Nextcloud user is sent to Paperless automatically. The “Search connected services” switch no longer controls this provider. Reload Nextcloud after changing this setting.')); ?>
+			</p>
+		</div>
+
 		<div class="paperless-unified-search-actions">
 			<button id="paperless-unified-search-save" type="submit" class="primary">
 				<?php p($l->t('Test connection and save')); ?>

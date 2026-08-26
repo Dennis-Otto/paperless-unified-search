@@ -13,6 +13,19 @@
 	margin-bottom: 4px;
 }
 
+.paperless-unified-search-trusted-service {
+	margin-top: 20px;
+}
+
+.paperless-unified-search-trusted-service input[type='checkbox'],
+.paperless-unified-search-trusted-service label {
+	display: inline-block;
+}
+
+.paperless-unified-search-trusted-service label {
+	margin-inline-start: 4px;
+}
+
 .paperless-unified-search-settings input[type='url'],
 .paperless-unified-search-settings input[type='password'] {
 	box-sizing: border-box;

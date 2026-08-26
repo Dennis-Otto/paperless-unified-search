@@ -47,6 +47,7 @@
 		const form = document.getElementById('paperless-unified-search-form')
 		const urlInput = document.getElementById('paperless-unified-search-url')
 		const tokenInput = document.getElementById('paperless-unified-search-token')
+		const alwaysSearchInput = document.getElementById('paperless-unified-search-always-search')
 		const saveButton = document.getElementById('paperless-unified-search-save')
 		const resetButton = document.getElementById('paperless-unified-search-reset')
 		const status = document.getElementById('paperless-unified-search-status')
@@ -71,10 +72,12 @@
 				const config = await request(root.dataset.saveUrl, 'POST', {
 					url: urlInput.value,
 					token: tokenInput.value,
+					alwaysSearch: alwaysSearchInput.checked,
 				})
 				tokenInput.value = ''
 				tokenInput.placeholder = translate('Configured — leave blank to keep it')
 				root.dataset.tokenConfigured = config.tokenConfigured ? 'true' : 'false'
+				alwaysSearchInput.checked = Boolean(config.alwaysSearch)
 				resetButton.disabled = false
 				showStatus(translate('Connection successful. Settings saved.'), false)
 			} catch (error) {
@@ -96,6 +99,7 @@
 				tokenInput.value = ''
 				tokenInput.placeholder = translate('Required')
 				root.dataset.tokenConfigured = 'false'
+				alwaysSearchInput.checked = false
 				showStatus(translate('Paperless disconnected.'), false)
 			} catch (error) {
 				showStatus(error.message || translate('Could not disconnect Paperless.'), true)

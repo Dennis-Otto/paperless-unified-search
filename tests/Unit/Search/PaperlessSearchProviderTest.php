@@ -112,8 +112,10 @@ final class PaperlessSearchProviderTest extends TestCase {
 			$l10n,
 			$urlGenerator,
 			$this->createMock(LoggerInterface::class),
+			$configService,
 		);
 
+		self::assertTrue($provider->isExternalProvider());
 		$result = $provider->search($user, $query)->jsonSerialize();
 
 		self::assertFalse($result['isPaginated']);
@@ -121,5 +123,25 @@ final class PaperlessSearchProviderTest extends TestCase {
 		self::assertSame('Salary July 2026', $result['entries'][0]->jsonSerialize()['title']);
 		self::assertSame('https://cloud.example.com/f/4711', $result['entries'][0]->jsonSerialize()['resourceUrl']);
 		self::assertSame('2026-07-31 · Gross 5,000 EUR', $result['entries'][0]->jsonSerialize()['subline']);
+	}
+
+	public function testTrustedPaperlessIsNotGatedByConnectedServicesSwitch(): void {
+		$config = $this->createMock(IAppConfig::class);
+		$config->expects(self::once())
+			->method('getValueBool')
+			->with(AppConstants::APP_ID, 'always_search', false)
+			->willReturn(true);
+
+		$configService = new ConfigService($config, $this->createStub(ICredentialsManager::class));
+		$provider = new PaperlessSearchProvider(
+			new PaperlessApiService($configService, $this->createStub(IClientService::class)),
+			new NextcloudFileLocator($this->createStub(IRootFolder::class)),
+			$this->createStub(IL10N::class),
+			$this->createStub(IURLGenerator::class),
+			$this->createStub(LoggerInterface::class),
+			$configService,
+		);
+
+		self::assertFalse($provider->isExternalProvider());
 	}
 }

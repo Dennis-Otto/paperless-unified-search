@@ -15,16 +15,18 @@ final class PublicConfig implements JsonSerializable {
 	public function __construct(
 		public readonly string $url,
 		public readonly bool $tokenConfigured,
+		public readonly bool $alwaysSearch,
 	) {
 	}
 
 	/**
-	 * @return array{url: string, tokenConfigured: bool}
+	 * @return array{url: string, tokenConfigured: bool, alwaysSearch: bool}
 	 */
 	public function jsonSerialize(): array {
 		return [
 			'url' => $this->url,
 			'tokenConfigured' => $this->tokenConfigured,
+			'alwaysSearch' => $this->alwaysSearch,
 		];
 	}
 }

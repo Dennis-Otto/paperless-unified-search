@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.1.1 - 2026-08-26
+
+- Add an explicit administrator opt-in to include the trusted Paperless server in every global search without requiring the connected-services switch.
+- Keep trusted-service mode disabled by default and document that it applies to every Nextcloud user.
+
 ## 0.1.0 - 2026-08-25
 
 - Add Paperless-ngx OCR and full-text results to Nextcloud unified search.

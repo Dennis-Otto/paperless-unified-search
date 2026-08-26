@@ -17,6 +17,7 @@ use OCP\Security\ICredentialsManager;
 
 final class ConfigService {
 	private const URL_KEY = 'paperless_url';
+	private const ALWAYS_SEARCH_KEY = 'always_search';
 	private const TOKEN_IDENTIFIER = AppConstants::APP_ID . '.api-token';
 
 	/** @psalm-suppress PossiblyUnusedMethod */
@@ -27,7 +28,11 @@ final class ConfigService {
 	}
 
 	public function getPublicConfig(): PublicConfig {
-		return new PublicConfig($this->getUrl(), $this->getToken() !== '');
+		return new PublicConfig(
+			$this->getUrl(),
+			$this->getToken() !== '',
+			$this->isAlwaysSearchEnabled(),
+		);
 	}
 
 	public function isConfigured(): bool {
@@ -45,6 +50,10 @@ final class ConfigService {
 		return is_string($token) ? $token : '';
 	}
 
+	public function isAlwaysSearchEnabled(): bool {
+		return $this->config->getValueBool(AppConstants::APP_ID, self::ALWAYS_SEARCH_KEY, false);
+	}
+
 	public function resolveToken(string $candidate): string {
 		$token = trim($candidate);
 		if ($token === '') {
@@ -58,7 +67,7 @@ final class ConfigService {
 		return $token;
 	}
 
-	public function save(string $url, string $token): PublicConfig {
+	public function save(string $url, string $token, bool $alwaysSearch = false): PublicConfig {
 		$normalizedUrl = $this->normalizeUrl($url);
 		$normalizedToken = trim($token);
 		if ($normalizedToken === '') {
@@ -66,16 +75,18 @@ final class ConfigService {
 		}
 
 		$this->config->setValueString(AppConstants::APP_ID, self::URL_KEY, $normalizedUrl);
+		$this->config->setValueBool(AppConstants::APP_ID, self::ALWAYS_SEARCH_KEY, $alwaysSearch);
 		$this->credentialsManager->store('', self::TOKEN_IDENTIFIER, $normalizedToken);
 
-		return new PublicConfig($normalizedUrl, true);
+		return new PublicConfig($normalizedUrl, true, $alwaysSearch);
 	}
 
 	public function reset(): PublicConfig {
 		$this->config->deleteKey(AppConstants::APP_ID, self::URL_KEY);
+		$this->config->deleteKey(AppConstants::APP_ID, self::ALWAYS_SEARCH_KEY);
 		$this->credentialsManager->delete('', self::TOKEN_IDENTIFIER);
 
-		return new PublicConfig('', false);
+		return new PublicConfig('', false, false);
 	}
 
 	public function normalizeUrl(string $url): string {

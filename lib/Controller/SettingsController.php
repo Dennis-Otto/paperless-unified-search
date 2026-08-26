@@ -29,13 +29,13 @@ final class SettingsController extends Controller {
 		parent::__construct($appName, $request);
 	}
 
-	public function save(string $url, string $token = ''): JSONResponse {
+	public function save(string $url, string $token = '', bool $alwaysSearch = false): JSONResponse {
 		try {
 			$normalizedUrl = $this->configService->normalizeUrl($url);
 			$effectiveToken = $this->configService->resolveToken($token);
 			$this->paperlessApi->testConnection($normalizedUrl, $effectiveToken);
 
-			return new JSONResponse($this->configService->save($normalizedUrl, $effectiveToken));
+			return new JSONResponse($this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch));
 		} catch (InvalidArgumentException $exception) {
 			return new JSONResponse(
 				['message' => $exception->getMessage()],

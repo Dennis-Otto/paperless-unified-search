@@ -28,13 +28,16 @@ This app does not synchronize documents itself. Use it together with a synchroni
 2. Create an API token for that account.
 3. In Nextcloud, open **Administration settings → Additional settings → Paperless Unified Search**.
 4. Enter the Paperless base URL and API token.
-5. Select **Test connection and save**.
+5. Optionally enable **Always include Paperless in global search** to treat the configured Paperless server as trusted.
+6. Select **Test connection and save**.
 
 The configuration is global. Access control remains user-specific because the app discards every Paperless hit for which the searching Nextcloud user has no readable matching file.
 
+By default, Nextcloud searches Paperless only after the user enables **Search connected services**. When the trusted-service option is enabled, every global search term from every Nextcloud user is sent to Paperless automatically and the connected-services switch no longer controls this provider. Reload Nextcloud after changing this option.
+
 ## Usage
 
-Open Nextcloud's global search, enable external providers, and select **Paperless documents**. Nextcloud 32 and later disable external providers by default for each user, so this toggle must be enabled once before Paperless results appear.
+Open Nextcloud's global search, enable **Search connected services**, and select **Paperless documents**. Nextcloud 32 and later disable external providers after a page reload, so this switch must be enabled again unless an administrator has enabled trusted-service mode.
 
 Documents without a synchronized `[P<ID>]` file are intentionally omitted. This also keeps Inbox-only documents out of Nextcloud search when the synchronization process does not export them.
 
@@ -43,7 +46,8 @@ Documents without a synchronized `[P<ID>]` file are intentionally omitted. This 
 - The Paperless API token is stored only in Nextcloud's server-side credentials manager.
 - The token is never returned to browser JavaScript or rendered into HTML.
 - Search results are filtered through the current user's Nextcloud filesystem view.
-- Search terms are sent server-to-server to the configured Paperless instance only when external search is enabled.
+- Search terms are sent server-to-server only when connected-services search or trusted-service mode is enabled.
+- Administrators can explicitly trust the configured Paperless server to include it automatically in every user's global searches.
 - No deployment credentials, private hostnames, internal addresses, or instance configuration belong in this repository.
 - Gitleaks scans every push and pull request.
 
