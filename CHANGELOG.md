@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.1.4 - 2026-08-26
+
 - Automate semantic version selection, consistency checks, signing, tagging, and publishing in a single release workflow.
 - Build release archives from committed version metadata before atomically publishing the commit and tag.
 - Pin GitHub Actions to current immutable Node 24-compatible revisions.
