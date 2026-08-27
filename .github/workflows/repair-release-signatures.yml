@@ -30,6 +30,7 @@ jobs:
         env:
           APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           umask 077
@@ -48,9 +49,14 @@ jobs:
           openssl x509 -in "${CERT_FILE}" -pubkey -noout > "${CERT_PUBLIC}"
           cmp "${KEY_PUBLIC}" "${CERT_PUBLIC}"
 
-          mapfile -t RELEASES < <(gh release list --limit 20 \
-            --json tagName,isDraft,isPrerelease \
-            --jq '[.[] | select(.isDraft == false and .isPrerelease == false)] | .[:5][] | .tagName')
+          RELEASES_JSON="$(gh release list --limit 20 --json tagName,isDraft,isPrerelease)"
+          RELEASE_TAGS="$(jq --exit-status --raw-output \
+            '[.[] | select(.isDraft == false and .isPrerelease == false)] | .[:5] | map(.tagName) | join("\n")' \
+            <<< "${RELEASES_JSON}")"
+          RELEASES=()
+          if [[ -n "${RELEASE_TAGS}" ]]; then
+            mapfile -t RELEASES <<< "${RELEASE_TAGS}"
+          fi
           if [[ "${#RELEASES[@]}" -eq 0 ]]; then
             echo 'No published releases found.'
             exit 0
@@ -69,6 +75,8 @@ jobs:
             openssl dgst -sha512 -sign "${KEY_FILE}" -out "${signature}" "${archive}"
             openssl dgst -sha512 -verify "${CERT_PUBLIC}" -signature "${signature}" "${archive}"
             gh release upload "${tag}" "${signature}" --clobber
+            gh release view "${tag}" --json assets --jq '.assets[].name' \
+              | grep --fixed-strings --line-regexp "${APP_ID}.tar.gz.sig"
           done
 
       - name: Remove temporary signing material
