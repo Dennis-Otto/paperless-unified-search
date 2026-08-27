@@ -17,7 +17,9 @@ on:
           - major
 
 permissions:
+  actions: write
   contents: write
+  pull-requests: write
 
 concurrency:
   group: release
@@ -31,9 +33,10 @@ env:
   KRANKERL_SHA256: 9bee5a756a83c5a6b1f040e9a2ade9e902e4a57211afc174cd8ac5c4f913958f
 
 jobs:
-  prepare:
-    name: Validate, version, sign, and create release
+  release:
+    name: Prepare protected release, sign, and publish
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     environment: release
 
     steps:
@@ -83,7 +86,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Select or resume release version
+      - name: Select release version
         id: version
         shell: bash
         env:
@@ -93,43 +96,105 @@ jobs:
           set -euo pipefail
           CURRENT_VERSION="$(php scripts/release-version.php check)"
           ASSET_NAME="${APP_ID}.tar.gz"
-          LAST_RELEASE_RUN="$(git log -1 --format=%B | sed -n 's/^Release-run: //p' | tail -n 1)"
+          MERGED_CURRENT="$(gh pr list \
+            --state merged \
+            --base "${{ github.event.repository.default_branch }}" \
+            --head "release/v${CURRENT_VERSION}" \
+            --limit 1 \
+            --json number \
+            --jq '.[0].number // empty')"
 
           if gh release view "v${CURRENT_VERSION}" --json assets --jq '.assets[].name' 2>/dev/null \
-            | grep --fixed-strings --line-regexp "${ASSET_NAME}" >/dev/null \
-            && test "${LAST_RELEASE_RUN}" != "${GITHUB_RUN_ID}"; then
-            VERSION="$(php scripts/release-version.php bump "${INCREMENT}")"
-            MODE="new"
+            | grep --fixed-strings --line-regexp "${ASSET_NAME}" >/dev/null; then
+            VERSION="$(php scripts/release-version.php next "${INCREMENT}")"
+            MODE='new'
+          elif [[ -n "${MERGED_CURRENT}" ]]; then
+            VERSION="${CURRENT_VERSION}"
+            MODE='resume'
+          elif awk '
+            /^## Unreleased$/ { unreleased = 1; next }
+            /^## / { unreleased = 0 }
+            unreleased && /^- / { found = 1 }
+            END { exit found ? 0 : 1 }
+          ' CHANGELOG.md; then
+            VERSION="$(php scripts/release-version.php next "${INCREMENT}")"
+            MODE='new'
           else
             VERSION="${CURRENT_VERSION}"
-            MODE="resume"
+            MODE='resume'
           fi
 
-          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
-          echo "mode=${MODE}" >> "${GITHUB_OUTPUT}"
           {
-            echo "### Release plan"
+            echo "version=${VERSION}"
+            echo "mode=${MODE}"
+            echo "branch=release/v${VERSION}"
+          } >> "${GITHUB_OUTPUT}"
+          {
+            echo '### Release plan'
             echo
             echo "- Mode: ${MODE}"
             echo "- Version: v${VERSION}"
             echo "- Increment requested: ${INCREMENT}"
+            echo "- Protected branch: release/v${VERSION}"
           } >> "${GITHUB_STEP_SUMMARY}"
 
-      - name: Validate updated release metadata
+      - name: Prepare or resume release commit
+        id: commit
         shell: bash
         env:
+          BRANCH: ${{ steps.version.outputs.branch }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ github.token }}
           MODE: ${{ steps.version.outputs.mode }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          test "$(php scripts/release-version.php check)" = "${VERSION}"
-          git diff --check
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
-          CHANGED_FILES="$(git diff --name-only)"
-          if test "${MODE}" = "new"; then
-            test "${CHANGED_FILES}" = $'CHANGELOG.md\nappinfo/info.xml'
-          else
-            test -z "${CHANGED_FILES}"
+          MERGED_SHA="$(gh pr list \
+            --state merged \
+            --base "${DEFAULT_BRANCH}" \
+            --head "${BRANCH}" \
+            --limit 1 \
+            --json mergeCommit \
+            --jq '.[0].mergeCommit.oid // empty')"
+          if [[ -n "${MERGED_SHA}" ]] && git merge-base --is-ancestor "${MERGED_SHA}" HEAD; then
+            test "$(php scripts/release-version.php check)" = "${VERSION}"
+            echo 'needs_pr=false' >> "${GITHUB_OUTPUT}"
+            echo "target_sha=${MERGED_SHA}" >> "${GITHUB_OUTPUT}"
+            echo "Release PR was already merged at ${MERGED_SHA}."
+            exit 0
           fi
+
+          if [[ "${MODE}" == 'resume' ]]; then
+            test "$(php scripts/release-version.php check)" = "${VERSION}"
+            echo 'needs_pr=false' >> "${GITHUB_OUTPUT}"
+            echo "target_sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+            echo 'No release metadata change is required; publishing the already protected version.'
+            exit 0
+          fi
+
+          REMOTE_EXISTS='false'
+          if git ls-remote --exit-code --heads origin "refs/heads/${BRANCH}" >/dev/null 2>&1; then
+            REMOTE_EXISTS='true'
+            git fetch origin "refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}"
+            git checkout --detach "refs/remotes/origin/${BRANCH}"
+          else
+            git switch --create "${BRANCH}"
+            test "$(php scripts/release-version.php bump "${{ inputs.increment }}")" = "${VERSION}"
+            test "$(git diff --name-only)" = $'CHANGELOG.md\nappinfo/info.xml'
+            git add CHANGELOG.md appinfo/info.xml
+            git commit --signoff \
+              --message "chore: release v${VERSION}" \
+              --message "Release-version: ${VERSION}" \
+              --message "Release-run: ${GITHUB_RUN_ID}"
+          fi
+
+          test "$(php scripts/release-version.php check)" = "${VERSION}"
+          git diff --quiet
+          git diff --cached --quiet
+          git diff --check "origin/${DEFAULT_BRANCH}...HEAD"
 
           curl --fail --silent --show-error \
             https://apps.nextcloud.com/schema/apps/info.xsd \
@@ -138,26 +203,97 @@ jobs:
           # shellcheck disable=SC2016
           php -r '$document = new DOMDocument(); $document->load("appinfo/info.xml"); exit($document->schemaValidate(getenv("RUNNER_TEMP") . "/nextcloud-app-info.xsd") ? 0 : 1);'
 
-      - name: Create local release commit
+          BASE_SHA="$(git merge-base "origin/${DEFAULT_BRANCH}" HEAD)"
+          scripts/check-dco.sh "${BASE_SHA}" HEAD
+
+          if [[ "${REMOTE_EXISTS}" == 'false' ]]; then
+            git push origin "HEAD:refs/heads/${BRANCH}"
+          else
+            test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/remotes/origin/${BRANCH}")"
+          fi
+
+          echo 'needs_pr=true' >> "${GITHUB_OUTPUT}"
+          echo "target_sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+
+      - name: Open protected release PR and wait for merge
+        id: merge
+        if: steps.commit.outputs.needs_pr == 'true'
         shell: bash
         env:
-          MODE: ${{ steps.version.outputs.mode }}
+          BRANCH: ${{ steps.version.outputs.branch }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          if test "${MODE}" = "new"; then
-            git add appinfo/info.xml CHANGELOG.md
-            git commit --signoff \
-              --message "chore: release v${VERSION}" \
-              --message "Release-run: ${GITHUB_RUN_ID}"
+          PR_URL="$(gh pr list \
+            --state open \
+            --base "${DEFAULT_BRANCH}" \
+            --head "${BRANCH}" \
+            --limit 1 \
+            --json url \
+            --jq '.[0].url // empty')"
+          if [[ -z "${PR_URL}" ]]; then
+            PR_URL="$(gh pr create \
+              --base "${DEFAULT_BRANCH}" \
+              --head "${BRANCH}" \
+              --title "chore: release v${VERSION}" \
+              --body "Automated release PR created by the manually dispatched Release workflow. Publication starts only after every protected check succeeds and this PR is merged.")"
           fi
 
-          git diff --quiet
-          git diff --cached --quiet
+          gh workflow run ci.yml --ref "${BRANCH}"
+          gh workflow run e2e.yml --ref "${BRANCH}"
+          gh workflow run secret-scan.yml --ref "${BRANCH}"
+          gh pr merge --auto --squash "${PR_URL}"
+
+          for _ in $(seq 1 120); do
+            PR_JSON="$(gh pr view "${PR_URL}" --json state,mergeCommit,statusCheckRollup)"
+            STATE="$(jq --raw-output '.state' <<< "${PR_JSON}")"
+            if [[ "${STATE}" == 'MERGED' ]]; then
+              MERGE_SHA="$(jq --raw-output '.mergeCommit.oid' <<< "${PR_JSON}")"
+              [[ "${MERGE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+              echo "target_sha=${MERGE_SHA}" >> "${GITHUB_OUTPUT}"
+              echo "Release PR merged at ${MERGE_SHA}."
+              exit 0
+            fi
+            if [[ "${STATE}" == 'CLOSED' ]]; then
+              echo 'Release PR was closed without merging.' >&2
+              exit 1
+            fi
+
+            FAILED_CHECKS="$(jq '[.statusCheckRollup[]? | select(
+              .conclusion == "FAILURE" or
+              .conclusion == "CANCELLED" or
+              .conclusion == "TIMED_OUT" or
+              .conclusion == "ACTION_REQUIRED"
+            )] | length' <<< "${PR_JSON}")"
+            if [[ "${FAILED_CHECKS}" -gt 0 ]]; then
+              gh pr checks "${PR_URL}" || true
+              echo 'A required release check failed; the release PR remains open.' >&2
+              exit 1
+            fi
+
+            sleep 10
+          done
+
+          echo 'Timed out waiting for the protected release PR to merge.' >&2
+          exit 1
+
+      - name: Check out exact merged release commit
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          MERGED_SHA: ${{ steps.merge.outputs.target_sha || steps.commit.outputs.target_sha }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "${MERGED_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          git fetch origin \
+            "refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
+          git checkout --detach "${MERGED_SHA}"
+          test "$(git rev-parse HEAD)" = "${MERGED_SHA}"
           test "$(php scripts/release-version.php check)" = "${VERSION}"
+          composer install --no-interaction --prefer-dist --no-progress
 
       - name: Install verified Krankerl package builder
         shell: bash
@@ -221,25 +357,18 @@ jobs:
       - name: Verify signed production package
         run: bash scripts/check-package.sh "build/artifacts/${APP_ID}.tar.gz" signed
 
-      - name: Tag and push release atomically
+      - name: Tag merged release commit
         shell: bash
         env:
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          git diff --quiet
-          git diff --cached --quiet
-
           if git show-ref --verify --quiet "refs/tags/v${VERSION}"; then
             test "$(git rev-parse "v${VERSION}^{commit}")" = "$(git rev-parse HEAD)"
           else
             git tag --annotate "v${VERSION}" --message "Release v${VERSION}"
+            git push origin "refs/tags/v${VERSION}"
           fi
-
-          git push --atomic origin \
-            "HEAD:refs/heads/${DEFAULT_BRANCH}" \
-            "refs/tags/v${VERSION}"
 
       - name: Create or repair GitHub release
         shell: bash

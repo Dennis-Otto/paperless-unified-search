@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Protect `main` behind required CI, E2E, secret-scan, linear-history, and pull-request rules, including release version commits.
+- Add weekly grouped Dependabot updates with protected automatic squash merges for patch and minor changes while keeping major updates and releases manual.
+
 ## 0.1.4 - 2026-08-26
 
 - Automate semantic version selection, consistency checks, signing, tagging, and publishing in a single release workflow.

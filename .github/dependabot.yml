@@ -1,0 +1,77 @@
+# SPDX-FileCopyrightText: 2026 Dennis Otto
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+version: 2
+updates:
+  - package-ecosystem: composer
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 5
+    versioning-strategy: increase-if-necessary
+    groups:
+      composer-routine:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+      composer-major:
+        patterns:
+          - "*"
+        update-types:
+          - major
+    commit-message:
+      prefix: chore
+      include: scope
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:20"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 5
+    groups:
+      actions-routine:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+      actions-major:
+        patterns:
+          - "*"
+        update-types:
+          - major
+    commit-message:
+      prefix: chore
+      include: scope
+
+  - package-ecosystem: docker-compose
+    directory: /tests/e2e
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:40"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 5
+    groups:
+      containers-routine:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+      containers-major:
+        patterns:
+          - "*"
+        update-types:
+          - major
+    commit-message:
+      prefix: chore
+      include: scope

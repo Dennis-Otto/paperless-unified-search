@@ -9,6 +9,9 @@ Signed-off-by: Your Name <your-email@example.com>
 ```
 
 Use `git commit -s` to add it automatically. Pull requests verify the sign-off of every new commit.
+All changes, including release version commits, reach the protected `main` branch through pull requests.
+
+Authenticated Dependabot pull requests may contain commits from the exact GitHub-managed `dependabot[bot]` identity without a DCO trailer. This narrowly scoped automation exception does not apply to human commits, other bots, or commits added by maintainers.
 
 Before opening a pull request, run:
 

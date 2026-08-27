@@ -100,16 +100,19 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 ### Releases
 
-Add user-visible changes to the `Unreleased` section in [CHANGELOG.md](CHANGELOG.md). To publish, run the **Release** workflow from the default branch and choose `patch`, `minor`, or `major`. The workflow then:
+The protected `main` branch accepts changes only through pull requests after CI, Docker E2E, and secret scanning succeed. Dependabot checks Composer, GitHub Actions, and Docker Compose weekly. Grouped patch and minor updates are queued for automatic squash merge only after those protected checks pass; major updates remain manual. Dependency maintenance never starts a release.
+
+Add user-visible changes to the `Unreleased` section in [CHANGELOG.md](CHANGELOG.md). To publish, manually run the **Release** workflow from the default branch and choose `patch`, `minor`, or `major`. The workflow then:
 
 1. Runs the complete quality and secret checks.
 2. Calculates and validates the next semantic version.
 3. Updates app metadata, versioned screenshot URLs, and the changelog.
-4. Builds and signs the production archive.
-5. Creates a signed-off release commit and an atomic Git tag.
-6. Publishes the GitHub release and updates the Nextcloud App Store release.
+4. Creates a signed-off `release/vX.Y.Z` commit and opens a protected pull request.
+5. Dispatches CI, Docker E2E, and secret scanning for the release branch and waits for GitHub auto-merge.
+6. Builds, signs, and tags the exact merged release commit.
+7. Publishes the GitHub release and updates the Nextcloud App Store release.
 
-An interrupted run resumes the incomplete version instead of incrementing it again. `composer version:check` verifies version consistency locally and in CI.
+An interrupted run resumes the existing release branch, merged release PR, tag, or incomplete GitHub release instead of incrementing again. `composer version:check` verifies version consistency locally and in CI.
 
 ## License
 

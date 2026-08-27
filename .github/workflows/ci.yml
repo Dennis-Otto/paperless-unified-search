@@ -34,6 +34,7 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          DCO_TRUSTED_AUTOMATION: ${{ github.actor == 'dependabot[bot]' && 'dependabot[bot]' || '' }}
         run: scripts/check-dco.sh "${BASE_SHA}" "${HEAD_SHA}"
 
       - name: Lint GitHub Actions workflows
