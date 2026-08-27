@@ -1,6 +1,8 @@
 # Contributing
 
 Contributions are welcome through issues and pull requests.
+Participation follows [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), and project decision-making is described in [GOVERNANCE.md](GOVERNANCE.md).
+Use [SUPPORT.md](SUPPORT.md) to choose the correct public support channel and [SECURITY.md](SECURITY.md) for private vulnerability reports.
 
 Every commit must include a Developer Certificate of Origin sign-off:
 

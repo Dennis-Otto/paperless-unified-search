@@ -1,0 +1,82 @@
+# SPDX-FileCopyrightText: 2026 Dennis Otto
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: Repair release signatures
+
+on:
+  workflow_dispatch:
+
+permissions: read-all
+
+concurrency:
+  group: repair-release-signatures
+  cancel-in-progress: false
+
+env:
+  APP_ID: paperless_unified_search
+
+jobs:
+  repair:
+    name: Sign recent release assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: write
+
+    steps:
+      - name: Sign and verify recent release archives
+        shell: bash
+        env:
+          APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          KEY_FILE="${RUNNER_TEMP}/app-private.key"
+          CERT_FILE="${RUNNER_TEMP}/app-certificate.crt"
+          KEY_PUBLIC="${RUNNER_TEMP}/key-public.pem"
+          CERT_PUBLIC="${RUNNER_TEMP}/certificate-public.pem"
+
+          test -n "${APP_PRIVATE_KEY}"
+          printf '%s' "${APP_PRIVATE_KEY}" > "${KEY_FILE}"
+          openssl pkey -in "${KEY_FILE}" -check -noout
+          curl --fail --location --silent --show-error \
+            "https://raw.githubusercontent.com/nextcloud/app-certificate-requests/master/${APP_ID}/${APP_ID}.crt" \
+            --output "${CERT_FILE}"
+          openssl pkey -in "${KEY_FILE}" -pubout -out "${KEY_PUBLIC}"
+          openssl x509 -in "${CERT_FILE}" -pubkey -noout > "${CERT_PUBLIC}"
+          cmp "${KEY_PUBLIC}" "${CERT_PUBLIC}"
+
+          mapfile -t RELEASES < <(gh release list --limit 20 \
+            --json tagName,isDraft,isPrerelease \
+            --jq '[.[] | select(.isDraft == false and .isPrerelease == false)] | .[:5][] | .tagName')
+          if [[ "${#RELEASES[@]}" -eq 0 ]]; then
+            echo 'No published releases found.'
+            exit 0
+          fi
+
+          for tag in "${RELEASES[@]}"; do
+            release_dir="${RUNNER_TEMP}/releases/${tag}"
+            archive="${release_dir}/${APP_ID}.tar.gz"
+            signature="${archive}.sig"
+            mkdir --parents "${release_dir}"
+            gh release download "${tag}" \
+              --pattern "${APP_ID}.tar.gz" \
+              --dir "${release_dir}" \
+              --clobber
+            test -s "${archive}"
+            openssl dgst -sha512 -sign "${KEY_FILE}" -out "${signature}" "${archive}"
+            openssl dgst -sha512 -verify "${CERT_PUBLIC}" -signature "${signature}" "${archive}"
+            gh release upload "${tag}" "${signature}" --clobber
+          done
+
+      - name: Remove temporary signing material
+        if: always()
+        shell: bash
+        run: |
+          rm --force \
+            "${RUNNER_TEMP}/app-private.key" \
+            "${RUNNER_TEMP}/app-certificate.crt" \
+            "${RUNNER_TEMP}/key-public.pem" \
+            "${RUNNER_TEMP}/certificate-public.pem"
