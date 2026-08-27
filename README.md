@@ -115,13 +115,15 @@ Add user-visible changes to the `Unreleased` section in [CHANGELOG.md](CHANGELOG
 1. Runs the complete quality and secret checks.
 2. Calculates and validates the next semantic version.
 3. Updates app metadata, versioned screenshot URLs, and the changelog.
-4. Creates a signed-off `release/vX.Y.Z` commit and opens a protected pull request.
-5. Dispatches CI, dependency review, Docker E2E, and secret scanning for the release branch and waits for GitHub auto-merge.
+4. Creates a signed-off `release/vX.Y.Z` commit and opens a protected pull request through a repository-scoped GitHub App.
+5. Waits for every required pull-request check and GitHub auto-merge.
 6. Builds and signs the exact merged release commit and creates a detached archive signature and SPDX SBOM.
 7. Creates public Sigstore provenance covering the signed archive, detached signature, and SBOM.
 8. Tags the merged commit, publishes every verification asset in the GitHub release, and updates the Nextcloud App Store release.
 
 An interrupted run resumes the existing release branch, merged release PR, tag, or incomplete GitHub release instead of incrementing again. `composer version:check` verifies version consistency locally and in CI.
+
+Release pull requests use a short-lived GitHub App installation token limited to the current repository and to `Contents` and `Pull requests` write access. The token is revoked when the job finishes. The App client ID is stored as the `RELEASE_AUTOMATION_CLIENT_ID` repository variable; its private key is stored only as the protected `RELEASE_AUTOMATION_PRIVATE_KEY` environment secret.
 
 Project decisions and support expectations are documented in [GOVERNANCE.md](GOVERNANCE.md), [SUPPORT.md](SUPPORT.md), and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
