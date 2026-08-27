@@ -33,7 +33,6 @@ jobs:
   release:
     name: Prepare protected release, sign, and publish
     permissions:
-      actions: write
       attestations: write
       contents: write
       id-token: write
@@ -43,12 +42,22 @@ jobs:
     environment: release
 
     steps:
+      - name: Create short-lived release automation token
+        id: release-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Check out default branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: true
+          token: ${{ steps.release-token.outputs.token }}
 
       - name: Require dispatch from the default branch
         shell: bash
@@ -225,7 +234,7 @@ jobs:
         env:
           BRANCH: ${{ steps.version.outputs.branch }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
@@ -244,10 +253,6 @@ jobs:
               --body "Automated release PR created by the manually dispatched Release workflow. Publication starts only after every protected check succeeds and this PR is merged.")"
           fi
 
-          gh workflow run ci.yml --ref "${BRANCH}"
-          gh workflow run dependency-review.yml --ref "${BRANCH}"
-          gh workflow run e2e.yml --ref "${BRANCH}"
-          gh workflow run secret-scan.yml --ref "${BRANCH}"
           gh pr merge --auto --squash "${PR_URL}"
 
           for _ in $(seq 1 120); do
