@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.1.5 - 2026-08-27
+
 - Protect `main` behind required CI, E2E, secret-scan, linear-history, and pull-request rules, including release version commits.
 - Add weekly grouped Dependabot updates with protected automatic squash merges for patch and minor changes while keeping major updates and releases manual.
 - Add CodeQL analysis and continuous SPDX SBOM generation.
