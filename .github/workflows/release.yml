@@ -16,12 +16,7 @@ on:
           - minor
           - major
 
-permissions:
-  actions: write
-  attestations: write
-  contents: write
-  id-token: write
-  pull-requests: write
+permissions: read-all
 
 concurrency:
   group: release
@@ -37,6 +32,12 @@ env:
 jobs:
   release:
     name: Prepare protected release, sign, and publish
+    permissions:
+      actions: write
+      attestations: write
+      contents: write
+      id-token: write
+      pull-requests: write
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: release
