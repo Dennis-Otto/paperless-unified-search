@@ -11,14 +11,15 @@ on:
       - synchronize
       - ready_for_review
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: read-all
 
 jobs:
   auto-merge:
     name: Queue verified routine update
     if: github.actor == 'dependabot[bot]'
+    permissions:
+      contents: write
+      pull-requests: write
     runs-on: ubuntu-latest
     steps:
       - name: Read verified Dependabot metadata
