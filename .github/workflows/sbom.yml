@@ -1,0 +1,43 @@
+# SPDX-FileCopyrightText: 2026 Dennis Otto
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: SBOM
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: '27 4 * * 3'
+  workflow_dispatch:
+
+permissions: read-all
+
+concurrency:
+  group: sbom-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sbom:
+    name: sbom
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          path: .
+          format: spdx-json
+          artifact-name: paperless_unified_search.spdx.json
+          output-file: paperless_unified_search.spdx.json
+          upload-release-assets: false
+          syft-version: v1.51.0

@@ -3,6 +3,8 @@
 [![CI](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/ci.yml/badge.svg)](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/ci.yml)
 [![Docker E2E](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/e2e.yml/badge.svg)](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/e2e.yml)
 [![Secret scan](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/secret-scan.yml/badge.svg)](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/secret-scan.yml)
+[![CodeQL](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/codeql.yml/badge.svg)](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/codeql.yml)
+[![SBOM](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/sbom.yml/badge.svg)](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/sbom.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Dennis-Otto/paperless-unified-search/badge)](https://scorecard.dev/viewer/?uri=github.com/Dennis-Otto/paperless-unified-search)
 
 Paperless Unified Search brings Paperless-ngx OCR and full-text search into Nextcloud's global search. Search results open the matching synchronized file directly in Nextcloud's viewer.
@@ -69,6 +71,8 @@ Documents without a synchronized `[P<ID>]` file are intentionally omitted. This 
 - No deployment credentials, private hostnames, internal addresses, or instance configuration belong in this repository.
 - Gitleaks scans every push and pull request.
 - Dependency Review blocks newly introduced vulnerable or unapproved dependencies.
+- Psalm analyzes the PHP code and CodeQL scans the JavaScript on every pull request.
+- Every release includes an SPDX SBOM, a detached signature, and public Sigstore build provenance.
 - OpenSSF Scorecard audits the repository's supply-chain security every week.
 
 See [SECURITY.md](SECURITY.md) for reporting security issues.
@@ -103,7 +107,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 ### Releases
 
-The protected `main` branch accepts changes only through pull requests after CI, dependency review, Docker E2E, and secret scanning succeed. Dependabot checks Composer, GitHub Actions, and Docker Compose weekly. Grouped patch and minor updates are queued for automatic squash merge only after those protected checks pass; major updates remain manual. Dependency maintenance never starts a release.
+The protected `main` branch accepts changes only through pull requests after CI, dependency review, Docker E2E, CodeQL, SBOM generation, and secret scanning succeed. Dependabot checks Composer, GitHub Actions, and Docker Compose weekly. Grouped patch and minor updates are queued for automatic squash merge only after those protected checks pass; Nextcloud major compatibility changes and releases remain manual. Dependency maintenance never starts a release.
 
 Add user-visible changes to the `Unreleased` section in [CHANGELOG.md](CHANGELOG.md). To publish, manually run the **Release** workflow from the default branch and choose `patch`, `minor`, or `major`. The workflow then:
 
@@ -112,10 +116,13 @@ Add user-visible changes to the `Unreleased` section in [CHANGELOG.md](CHANGELOG
 3. Updates app metadata, versioned screenshot URLs, and the changelog.
 4. Creates a signed-off `release/vX.Y.Z` commit and opens a protected pull request.
 5. Dispatches CI, dependency review, Docker E2E, and secret scanning for the release branch and waits for GitHub auto-merge.
-6. Builds and signs the exact merged release commit and creates a GitHub build-provenance attestation for the finished archive.
-7. Tags the merged commit, publishes the GitHub release, and updates the Nextcloud App Store release.
+6. Builds and signs the exact merged release commit and creates a detached archive signature and SPDX SBOM.
+7. Creates public Sigstore provenance covering the signed archive, detached signature, and SBOM.
+8. Tags the merged commit, publishes every verification asset in the GitHub release, and updates the Nextcloud App Store release.
 
 An interrupted run resumes the existing release branch, merged release PR, tag, or incomplete GitHub release instead of incrementing again. `composer version:check` verifies version consistency locally and in CI.
+
+Project decisions and support expectations are documented in [GOVERNANCE.md](GOVERNANCE.md), [SUPPORT.md](SUPPORT.md), and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## License
 
