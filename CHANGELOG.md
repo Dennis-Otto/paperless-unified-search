@@ -4,10 +4,30 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.1.6 - 2026-09-19
+
 - Publish checked, signed Nextcloud maintenance releases automatically after merged Dependabot updates.
 - Generate categorized release notes, with an optional maintainer introduction for manual releases.
 - Require successful PR and main checks on the exact release commit, without cancelling other CI runs.
 - Resume interrupted GitHub and App Store publication without duplicate versions or replacing public assets.
+
+<!-- Release notes generated using configuration in .github/release.yml at 257c153dbcdd7d8b843010ff14a7375bf88a2367 -->
+
+### What's Changed
+### Dependencies
+* chore(deps): bump anchore/sbom-action from 0.24.0 to 0.24.2 in the actions-routine group by @dependabot[bot] in https://github.com/Dennis-Otto/paperless-unified-search/pull/12
+* chore(deps): bump nextcloud from 33.0.8-apache to 33.0.8-apache in /tests/e2e by @dependabot[bot] in https://github.com/Dennis-Otto/paperless-unified-search/pull/13
+* chore(deps): bump nextcloud from 33.0.8-apache to 33.0.8-apache in /tests/e2e by @dependabot[bot] in https://github.com/Dennis-Otto/paperless-unified-search/pull/15
+* chore(deps-dev): bump the composer-routine group with 2 updates by @dependabot[bot] in https://github.com/Dennis-Otto/paperless-unified-search/pull/16
+* chore(deps): bump the actions-routine group with 3 updates by @dependabot[bot] in https://github.com/Dennis-Otto/paperless-unified-search/pull/17
+* chore(deps): bump nextcloud from 33.0.8-apache to 33.0.9-apache in /tests/e2e in the containers-routine group by @dependabot[bot] in https://github.com/Dennis-Otto/paperless-unified-search/pull/18
+* chore(deps): bump python from 3.14-alpine to 3.14-alpine in /tests/e2e by @dependabot[bot] in https://github.com/Dennis-Otto/paperless-unified-search/pull/14
+### Other changes
+* fix: authenticate release PRs with GitHub App by @Dennis-Otto in https://github.com/Dennis-Otto/paperless-unified-search/pull/11
+* ci: automate protected dependency releases and recover publication by @Dennis-Otto in https://github.com/Dennis-Otto/paperless-unified-search/pull/19
+
+
+**Full Changelog**: https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.1.5...v0.1.6
 
 ## 0.1.5 - 2026-08-27
 
