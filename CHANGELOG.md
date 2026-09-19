@@ -4,10 +4,15 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Publish checked, signed Nextcloud maintenance releases automatically after merged Dependabot updates.
+- Generate categorized release notes, with an optional maintainer introduction for manual releases.
+- Require successful PR and main checks on the exact release commit, without cancelling other CI runs.
+- Resume interrupted GitHub and App Store publication without duplicate versions or replacing public assets.
+
 ## 0.1.5 - 2026-08-27
 
 - Protect `main` behind required CI, E2E, secret-scan, linear-history, and pull-request rules, including release version commits.
-- Add weekly grouped Dependabot updates with protected automatic squash merges for patch and minor changes while keeping major updates and releases manual.
+- Add weekly grouped Dependabot updates with protected automatic squash merges for patch and minor changes while keeping major updates subject to maintainer approval.
 - Add CodeQL analysis and continuous SPDX SBOM generation.
 - Publish detached signatures, SBOMs, and public Sigstore provenance with releases.
 - Test Nextcloud 33 and 34 in parallel and document project governance, conduct, and support.

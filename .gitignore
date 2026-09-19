@@ -18,3 +18,6 @@ credentials.json
 credentials.*.json
 config.local.*
 secrets/
+
+# Python release automation test cache.
+__pycache__/

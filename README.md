@@ -108,22 +108,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 ### Releases
 
-The protected `main` branch accepts changes only through pull requests after CI, dependency review, Docker E2E, CodeQL, SBOM generation, and secret scanning succeed. Dependabot checks Composer, GitHub Actions, and Docker Compose weekly. Grouped patch and minor updates are queued for automatic squash merge only after those protected checks pass; Nextcloud major compatibility changes and releases remain manual. Dependency maintenance never starts a release.
+The protected `main` branch requires CI, Docker E2E, Dependency Review, CodeQL, SBOM generation and secret scanning. Dependabot checks dependencies weekly; grouped patch and minor updates merge after successful checks. Major dependency updates require a maintainer merge.
 
-Add user-visible changes to the `Unreleased` section in [CHANGELOG.md](CHANGELOG.md). To publish, manually run the **Release** workflow from the default branch and choose `patch`, `minor`, or `major`. The workflow then:
+Merged Dependabot updates automatically produce a checked, signed **app patch release**, including GitHub assets and Nextcloud App Store publication. A scheduled reconciliation catches suppressed events and resumes interrupted releases without duplicate versions. Manual releases support `patch`, `minor`, `major`, and an optional introduction above the generated changelog.
 
-1. Runs the complete quality and secret checks.
-2. Calculates and validates the next semantic version.
-3. Updates app metadata, versioned screenshot URLs, and the changelog.
-4. Creates a signed-off `release/vX.Y.Z` commit and opens a protected pull request through a repository-scoped GitHub App.
-5. Waits for every required pull-request check and GitHub auto-merge.
-6. Builds and signs the exact merged release commit and creates a detached archive signature and SPDX SBOM.
-7. Creates public Sigstore provenance covering the signed archive, detached signature, and SBOM.
-8. Tags the merged commit, publishes every verification asset in the GitHub release, and updates the Nextcloud App Store release.
+Release version PRs use verified GitHub App commits and normal branch protection. All PR checks and all checks on the exact merged main commit must pass before publication. Signing, detached signatures, SPDX SBOMs and public Sigstore provenance are preserved. Release secrets are restricted to the `main`-only `release` environment.
 
-An interrupted run resumes the existing release branch, merged release PR, tag, or incomplete GitHub release instead of incrementing again. `composer version:check` verifies version consistency locally and in CI.
-
-Release pull requests use a short-lived GitHub App installation token limited to the current repository and to `Contents` and `Pull requests` write access. The token is revoked when the job finishes. The App client ID is stored as the `RELEASE_AUTOMATION_CLIENT_ID` repository variable; its private key is stored only as the protected `RELEASE_AUTOMATION_PRIVATE_KEY` environment secret.
+See [the release guide](docs/releases.md) for configuration, changelogs, safeguards and recovery. Run the release regression tests with `python3 -m unittest discover -s tests/release -v`.
 
 Project decisions and support expectations are documented in [GOVERNANCE.md](GOVERNANCE.md), [SUPPORT.md](SUPPORT.md), and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
