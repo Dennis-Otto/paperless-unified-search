@@ -11,12 +11,15 @@ on:
       - synchronize
       - ready_for_review
 
-permissions: read-all
+permissions:
+  contents: read
+  pull-requests: read
 
 jobs:
   auto-merge:
     name: Queue verified routine update
     if: >-
+      github.repository == 'Dennis-Otto/paperless-unified-search' &&
       github.actor == 'dependabot[bot]' &&
       github.event.pull_request.user.login == 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
@@ -26,6 +29,7 @@ jobs:
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
+      # Never check out or execute PR code in this privileged workflow.
       - name: Read verified Dependabot metadata
         id: metadata
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
@@ -39,4 +43,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr merge --auto --squash "${PR_URL}"
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: gh pr merge --auto --squash --match-head-commit "${PR_HEAD_SHA}" "${PR_URL}"

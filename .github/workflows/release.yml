@@ -5,6 +5,7 @@ name: Release
 
 on:
   pull_request_target:
+    branches: [main]
     types: [closed]
   schedule:
     # GITHUB_TOKEN merges may suppress PR events; recover missing events and interrupted releases.
@@ -95,6 +96,8 @@ jobs:
         with:
           client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
           permission-contents: write
           permission-pull-requests: write
 
@@ -143,6 +146,8 @@ jobs:
         with:
           client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
           permission-contents: write
 
       - name: Stage restartable GitHub release after successful checks
