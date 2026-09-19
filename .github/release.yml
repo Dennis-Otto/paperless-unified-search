@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 Dennis Otto
+# SPDX-License-Identifier: AGPL-3.0-or-later
+changelog:
+  exclude:
+    labels: [release, skip-changelog]
+  categories:
+    - title: Security
+      labels: [security]
+    - title: Dependencies
+      labels: [dependencies]
+    - title: Fixes
+      labels: [bug, fix]
+    - title: Improvements
+      labels: [enhancement]
+    - title: Other changes
+      labels: ['*']

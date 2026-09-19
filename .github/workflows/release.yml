@@ -4,20 +4,36 @@
 name: Release
 
 on:
+  pull_request_target:
+    types: [closed]
+  schedule:
+    # GITHUB_TOKEN merges may suppress PR events; recover missing events and interrupted releases.
+    - cron: '13,43 * * * *'
   workflow_dispatch:
     inputs:
+      mode:
+        description: Publish a manual release or process unpublished Dependabot updates
+        required: true
+        default: manual
+        type: choice
+        options: [manual, dependencies]
       increment:
-        description: Semantic version increment
+        description: Semantic version increment for a manual release
         required: true
         default: patch
         type: choice
-        options:
-          - patch
-          - minor
-          - major
+        options: [patch, minor, major]
+      introduction:
+        description: Optional release introduction above the generated changelog
+        required: false
+        type: string
 
-permissions: read-all
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
 
+# Serialize release and signature-repair mutations; never cancel CI or an active release.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -30,19 +46,50 @@ env:
   KRANKERL_SHA256: 9bee5a756a83c5a6b1f040e9a2ade9e902e4a57211afc174cd8ac5c4f913958f
 
 jobs:
+  plan:
+    name: Find unpublished updates or an interrupted release
+    if: >-
+      github.repository == 'Dennis-Otto/paperless-unified-search' && github.ref == 'refs/heads/main' &&
+      (github.event_name != 'pull_request_target' ||
+       (github.event.pull_request.merged == true &&
+        github.event.pull_request.user.login == 'dependabot[bot]' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.base.ref == 'main'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      enabled: ${{ steps.plan.outputs.enabled }}
+      plan: ${{ steps.plan.outputs.plan }}
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Plan release without accessing signing secrets
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_MODE: ${{ inputs.mode || 'dependencies' }}
+          INCREMENT: ${{ inputs.increment || 'patch' }}
+          INTRODUCTION: ${{ inputs.introduction }}
+        run: python3 .github/scripts/release_automation.py plan
+
   release:
     name: Prepare protected release, sign, and publish
+    needs: plan
+    if: needs.plan.outputs.enabled == 'true'
     permissions:
+      actions: read
       attestations: write
       contents: write
       id-token: write
-      pull-requests: write
+      pull-requests: read
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     environment: release
-
     steps:
-      - name: Create short-lived release automation token
+      - name: Create short-lived repository-scoped release token
         id: release-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
@@ -51,19 +98,28 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
 
-      - name: Check out default branch
+      - name: Check out trusted main without persisting credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: main
           fetch-depth: 0
-          ref: ${{ github.event.repository.default_branch }}
-          persist-credentials: true
-          token: ${{ steps.release-token.outputs.token }}
+          persist-credentials: false
 
-      - name: Require dispatch from the default branch
-        shell: bash
+      - name: Prepare release PR and require all PR and main checks
+        id: version
         env:
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        run: test "${GITHUB_REF_NAME}" = "${DEFAULT_BRANCH}"
+          GH_TOKEN: ${{ github.token }}
+          GH_RELEASE_TOKEN: ${{ steps.release-token.outputs.token }}
+          GH_RELEASE_APP_SLUG: ${{ steps.release-token.outputs.app-slug }}
+          RELEASE_PLAN: ${{ needs.plan.outputs.plan }}
+        run: python3 .github/scripts/release_automation.py prepare
+
+      - name: Check out the exact checked release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.version.outputs.target_sha }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up PHP 8.2
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
@@ -72,239 +128,34 @@ jobs:
           extensions: dom, libxml, mbstring
           coverage: none
 
-      - name: Validate Composer metadata
-        run: composer validate --strict
-
-      - name: Install dependencies
-        run: composer install --no-interaction --prefer-dist --no-progress
-
-      - name: Check dependencies for known vulnerabilities
-        run: composer audit
-
-      - name: Run pre-release quality checks
-        shell: bash
-        run: |
-          composer version:check
-          composer lint
-          node --check js/settings.js
-          node --check l10n/de.js
-          composer l10n:check
-          composer test
-          composer cs:check
-          composer psalm
-
-      - name: Scan Git history and working tree for secrets
-        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+      - name: Verify canonical release metadata and dependencies
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Select release version
-        id: version
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          INCREMENT: ${{ inputs.increment }}
-        run: |
-          set -euo pipefail
-          CURRENT_VERSION="$(php scripts/release-version.php check)"
-          ASSET_NAME="${APP_ID}.tar.gz"
-          MERGED_CURRENT="$(gh pr list \
-            --state merged \
-            --base "${{ github.event.repository.default_branch }}" \
-            --head "release/v${CURRENT_VERSION}" \
-            --limit 1 \
-            --json number \
-            --jq '.[0].number // empty')"
-
-          if gh release view "v${CURRENT_VERSION}" --json assets --jq '.assets[].name' 2>/dev/null \
-            | grep --fixed-strings --line-regexp "${ASSET_NAME}" >/dev/null; then
-            VERSION="$(php scripts/release-version.php next "${INCREMENT}")"
-            MODE='new'
-          elif [[ -n "${MERGED_CURRENT}" ]]; then
-            VERSION="${CURRENT_VERSION}"
-            MODE='resume'
-          elif awk '
-            /^## Unreleased$/ { unreleased = 1; next }
-            /^## / { unreleased = 0 }
-            unreleased && /^- / { found = 1 }
-            END { exit found ? 0 : 1 }
-          ' CHANGELOG.md; then
-            VERSION="$(php scripts/release-version.php next "${INCREMENT}")"
-            MODE='new'
-          else
-            VERSION="${CURRENT_VERSION}"
-            MODE='resume'
-          fi
-
-          {
-            echo "version=${VERSION}"
-            echo "mode=${MODE}"
-            echo "branch=release/v${VERSION}"
-          } >> "${GITHUB_OUTPUT}"
-          {
-            echo '### Release plan'
-            echo
-            echo "- Mode: ${MODE}"
-            echo "- Version: v${VERSION}"
-            echo "- Increment requested: ${INCREMENT}"
-            echo "- Protected branch: release/v${VERSION}"
-          } >> "${GITHUB_STEP_SUMMARY}"
-
-      - name: Prepare or resume release commit
-        id: commit
-        shell: bash
-        env:
-          BRANCH: ${{ steps.version.outputs.branch }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          GH_TOKEN: ${{ github.token }}
-          MODE: ${{ steps.version.outputs.mode }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-
-          MERGED_SHA="$(gh pr list \
-            --state merged \
-            --base "${DEFAULT_BRANCH}" \
-            --head "${BRANCH}" \
-            --limit 1 \
-            --json mergeCommit \
-            --jq '.[0].mergeCommit.oid // empty')"
-          if [[ -n "${MERGED_SHA}" ]] && git merge-base --is-ancestor "${MERGED_SHA}" HEAD; then
-            test "$(php scripts/release-version.php check)" = "${VERSION}"
-            echo 'needs_pr=false' >> "${GITHUB_OUTPUT}"
-            echo "target_sha=${MERGED_SHA}" >> "${GITHUB_OUTPUT}"
-            echo "Release PR was already merged at ${MERGED_SHA}."
-            exit 0
-          fi
-
-          if [[ "${MODE}" == 'resume' ]]; then
-            test "$(php scripts/release-version.php check)" = "${VERSION}"
-            echo 'needs_pr=false' >> "${GITHUB_OUTPUT}"
-            echo "target_sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
-            echo 'No release metadata change is required; publishing the already protected version.'
-            exit 0
-          fi
-
-          REMOTE_EXISTS='false'
-          if git ls-remote --exit-code --heads origin "refs/heads/${BRANCH}" >/dev/null 2>&1; then
-            REMOTE_EXISTS='true'
-            git fetch origin "refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}"
-            git checkout --detach "refs/remotes/origin/${BRANCH}"
-          else
-            git switch --create "${BRANCH}"
-            test "$(php scripts/release-version.php bump "${{ inputs.increment }}")" = "${VERSION}"
-            test "$(git diff --name-only)" = $'CHANGELOG.md\nappinfo/info.xml'
-            git add CHANGELOG.md appinfo/info.xml
-            git commit --signoff \
-              --message "chore: release v${VERSION}" \
-              --message "Release-version: ${VERSION}" \
-              --message "Release-run: ${GITHUB_RUN_ID}"
-          fi
-
           test "$(php scripts/release-version.php check)" = "${VERSION}"
-          git diff --quiet
-          git diff --cached --quiet
-          git diff --check "origin/${DEFAULT_BRANCH}...HEAD"
-
-          curl --fail --silent --show-error \
-            https://apps.nextcloud.com/schema/apps/info.xsd \
-            --output "${RUNNER_TEMP}/nextcloud-app-info.xsd"
-          # This is PHP code, not a shell expression.
-          # shellcheck disable=SC2016
-          php -r '$document = new DOMDocument(); $document->load("appinfo/info.xml"); exit($document->schemaValidate(getenv("RUNNER_TEMP") . "/nextcloud-app-info.xsd") ? 0 : 1);'
-
-          BASE_SHA="$(git merge-base "origin/${DEFAULT_BRANCH}" HEAD)"
-          scripts/check-dco.sh "${BASE_SHA}" HEAD
-
-          if [[ "${REMOTE_EXISTS}" == 'false' ]]; then
-            git push origin "HEAD:refs/heads/${BRANCH}"
-          else
-            test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/remotes/origin/${BRANCH}")"
-          fi
-
-          echo 'needs_pr=true' >> "${GITHUB_OUTPUT}"
-          echo "target_sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
-
-      - name: Open protected release PR and wait for merge
-        id: merge
-        if: steps.commit.outputs.needs_pr == 'true'
-        shell: bash
-        env:
-          BRANCH: ${{ steps.version.outputs.branch }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          GH_TOKEN: ${{ steps.release-token.outputs.token }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          PR_URL="$(gh pr list \
-            --state open \
-            --base "${DEFAULT_BRANCH}" \
-            --head "${BRANCH}" \
-            --limit 1 \
-            --json url \
-            --jq '.[0].url // empty')"
-          if [[ -z "${PR_URL}" ]]; then
-            PR_URL="$(gh pr create \
-              --base "${DEFAULT_BRANCH}" \
-              --head "${BRANCH}" \
-              --title "chore: release v${VERSION}" \
-              --body "Automated release PR created by the manually dispatched Release workflow. Publication starts only after every protected check succeeds and this PR is merged.")"
-          fi
-
-          gh pr merge --auto --squash "${PR_URL}"
-
-          for _ in $(seq 1 120); do
-            PR_JSON="$(gh pr view "${PR_URL}" --json state,mergeCommit,statusCheckRollup)"
-            STATE="$(jq --raw-output '.state' <<< "${PR_JSON}")"
-            if [[ "${STATE}" == 'MERGED' ]]; then
-              MERGE_SHA="$(jq --raw-output '.mergeCommit.oid' <<< "${PR_JSON}")"
-              [[ "${MERGE_SHA}" =~ ^[0-9a-f]{40}$ ]]
-              echo "target_sha=${MERGE_SHA}" >> "${GITHUB_OUTPUT}"
-              echo "Release PR merged at ${MERGE_SHA}."
-              exit 0
-            fi
-            if [[ "${STATE}" == 'CLOSED' ]]; then
-              echo 'Release PR was closed without merging.' >&2
-              exit 1
-            fi
-
-            FAILED_CHECKS="$(jq '[.statusCheckRollup[]? | select(
-              .conclusion == "FAILURE" or
-              .conclusion == "CANCELLED" or
-              .conclusion == "TIMED_OUT" or
-              .conclusion == "ACTION_REQUIRED"
-            )] | length' <<< "${PR_JSON}")"
-            if [[ "${FAILED_CHECKS}" -gt 0 ]]; then
-              gh pr checks "${PR_URL}" || true
-              echo 'A required release check failed; the release PR remains open.' >&2
-              exit 1
-            fi
-
-            sleep 10
-          done
-
-          echo 'Timed out waiting for the protected release PR to merge.' >&2
-          exit 1
-
-      - name: Check out exact merged release commit
-        shell: bash
-        env:
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          MERGED_SHA: ${{ steps.merge.outputs.target_sha || steps.commit.outputs.target_sha }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          [[ "${MERGED_SHA}" =~ ^[0-9a-f]{40}$ ]]
-          git fetch origin \
-            "refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
-          git checkout --detach "${MERGED_SHA}"
-          test "$(git rev-parse HEAD)" = "${MERGED_SHA}"
-          test "$(php scripts/release-version.php check)" = "${VERSION}"
+          composer validate --strict
           composer install --no-interaction --prefer-dist --no-progress
+          composer audit
+
+      - name: Refresh token for publication after potentially long checks
+        id: publish-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: Stage restartable GitHub release after successful checks
+        id: stage
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_RELEASE_TOKEN: ${{ steps.publish-token.outputs.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_SHA: ${{ steps.version.outputs.target_sha }}
+        run: python3 .github/scripts/release_automation.py stage
 
       - name: Install verified Krankerl package builder
+        if: steps.stage.outputs.draft == 'true'
         shell: bash
         run: |
           PACKAGE="${RUNNER_TEMP}/krankerl.deb"
@@ -315,12 +166,15 @@ jobs:
           sudo dpkg --install "${PACKAGE}"
 
       - name: Build app archive
+        if: steps.stage.outputs.draft == 'true'
         run: krankerl package
 
       - name: Verify unsigned production package
+        if: steps.stage.outputs.draft == 'true'
         run: composer package:check
 
       - name: Prepare private key and verified signing tools
+        if: steps.stage.outputs.draft == 'true'
         shell: bash
         env:
           APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
@@ -346,6 +200,7 @@ jobs:
           unzip -q "${NEXTCLOUD_ARCHIVE}" -d "${RUNNER_TEMP}/nextcloud-server"
 
       - name: Sign app and rebuild archive
+        if: steps.stage.outputs.draft == 'true'
         shell: bash
         run: |
           ARCHIVE="build/artifacts/${APP_ID}.tar.gz"
@@ -364,9 +219,11 @@ jobs:
             --directory "${SIGNING_DIR}" "${APP_ID}"
 
       - name: Verify signed production package
+        if: steps.stage.outputs.draft == 'true'
         run: bash scripts/check-package.sh "build/artifacts/${APP_ID}.tar.gz" signed
 
       - name: Create and verify detached release signature
+        if: steps.stage.outputs.draft == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -381,6 +238,7 @@ jobs:
           openssl dgst -sha512 -verify "${PUBLIC_KEY}" -signature "${SIGNATURE}" "${ARCHIVE}"
 
       - name: Generate signed-package SBOM
+        if: steps.stage.outputs.draft == 'true'
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           path: ${{ runner.temp }}/signing/${{ env.APP_ID }}
@@ -391,6 +249,7 @@ jobs:
           syft-version: v1.51.0
 
       - name: Attest signed production package and SBOM
+        if: steps.stage.outputs.draft == 'true'
         id: attest
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
@@ -400,6 +259,7 @@ jobs:
             build/artifacts/${{ env.APP_ID }}.spdx.json
 
       - name: Export verifiable attestation bundle
+        if: steps.stage.outputs.draft == 'true'
         shell: bash
         env:
           BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
@@ -409,97 +269,71 @@ jobs:
           jq --exit-status . "${BUNDLE_PATH}" >/dev/null
           cp -- "${BUNDLE_PATH}" "build/artifacts/${APP_ID}.sigstore.json"
 
-      - name: Tag merged release commit
-        shell: bash
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          if git show-ref --verify --quiet "refs/tags/v${VERSION}"; then
-            test "$(git rev-parse "v${VERSION}^{commit}")" = "$(git rev-parse HEAD)"
-          else
-            git tag --annotate "v${VERSION}" --message "Release v${VERSION}"
-            git push origin "refs/tags/v${VERSION}"
-          fi
-
-      - name: Create or repair GitHub release
-        shell: bash
+      - name: Publish complete draft assets
+        if: steps.stage.outputs.draft == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          set -euo pipefail
           ARCHIVE="build/artifacts/${APP_ID}.tar.gz"
-          SIGNATURE="${ARCHIVE}.sig"
-          SBOM="build/artifacts/${APP_ID}.spdx.json"
-          ATTESTATION="build/artifacts/${APP_ID}.sigstore.json"
-          NOTES_FILE="${RUNNER_TEMP}/release-notes.md"
-          php scripts/release-version.php notes "${VERSION}" > "${NOTES_FILE}"
           test -s "${ARCHIVE}"
-          test -s "${SIGNATURE}"
-          test -s "${SBOM}"
-          test -s "${ATTESTATION}"
+          test -s "${ARCHIVE}.sig"
+          test -s "build/artifacts/${APP_ID}.spdx.json"
+          test -s "build/artifacts/${APP_ID}.sigstore.json"
+          gh release upload "v${VERSION}" "${ARCHIVE}" "${ARCHIVE}.sig" \
+            "build/artifacts/${APP_ID}.spdx.json" "build/artifacts/${APP_ID}.sigstore.json" --clobber
+          gh release edit "v${VERSION}" --draft=false --prerelease=false --latest
 
-          if gh release view "v${VERSION}" >/dev/null 2>&1; then
-            gh release upload "v${VERSION}" \
-              "${ARCHIVE}#${APP_ID}.tar.gz" \
-              "${SIGNATURE}" \
-              "${SBOM}" \
-              "${ATTESTATION}" \
-              --clobber
-            gh release edit "v${VERSION}" \
-              --title "v${VERSION}" \
-              --notes-file "${NOTES_FILE}" \
-              --draft=false \
-              --prerelease=false
-          else
-            gh release create "v${VERSION}" \
-              "${ARCHIVE}#${APP_ID}.tar.gz" \
-              "${SIGNATURE}" \
-              "${SBOM}" \
-              "${ATTESTATION}" \
-              --verify-tag \
-              --title "v${VERSION}" \
-              --notes-file "${NOTES_FILE}"
-          fi
+      - name: Resume App Store delivery using immutable published assets
+        if: steps.stage.outputs.draft != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir --parents build/artifacts
+          gh release download "v${VERSION}" --dir build/artifacts \
+            --pattern "${APP_ID}.tar.gz" --pattern "${APP_ID}.tar.gz.sig" \
+            --pattern "${APP_ID}.spdx.json" --pattern "${APP_ID}.sigstore.json"
+          curl --fail --location --silent --show-error \
+            "https://raw.githubusercontent.com/nextcloud/app-certificate-requests/master/${APP_ID}/${APP_ID}.crt" \
+            --output "${RUNNER_TEMP}/app-certificate.crt"
+          openssl x509 -in "${RUNNER_TEMP}/app-certificate.crt" -pubkey -noout > "${RUNNER_TEMP}/app-public.pem"
+          ARCHIVE="build/artifacts/${APP_ID}.tar.gz"
+          openssl dgst -sha512 -verify "${RUNNER_TEMP}/app-public.pem" -signature "${ARCHIVE}.sig" "${ARCHIVE}"
+          bash scripts/check-package.sh "${ARCHIVE}" signed
+          for ASSET in "${ARCHIVE}" "${ARCHIVE}.sig" "build/artifacts/${APP_ID}.spdx.json"; do
+            gh attestation verify "${ASSET}" --repo "${GITHUB_REPOSITORY}" \
+              --bundle "build/artifacts/${APP_ID}.sigstore.json" \
+              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release.yml"
+          done
 
       - name: Publish release to Nextcloud App Store
-        shell: bash
         env:
           APPSTORE_TOKEN: ${{ secrets.APPSTORE_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          set -euo pipefail
           umask 077
-          KEY_FILE="${RUNNER_TEMP}/app-private.key"
-          ARCHIVE="build/artifacts/${APP_ID}.tar.gz"
           REQUEST_FILE="${RUNNER_TEMP}/appstore-release.json"
           DOWNLOAD_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${APP_ID}.tar.gz"
-
           test -n "${APPSTORE_TOKEN}"
-          test -s "${KEY_FILE}"
-          test -s "${ARCHIVE}"
+          SIGNATURE="$(openssl base64 -A -in "build/artifacts/${APP_ID}.tar.gz.sig")"
+          jq --null-input --arg download "${DOWNLOAD_URL}" --arg signature "${SIGNATURE}" \
+            '{download: $download, signature: $signature, nightly: false}' > "${REQUEST_FILE}"
+          # This API creates or updates the same version; retries do not create another release.
+          curl --fail-with-body --silent --show-error --retry 3 --retry-connrefused \
+            --connect-timeout 15 --max-time 180 --request POST \
+            --header "Authorization: Token ${APPSTORE_TOKEN}" --header 'Content-Type: application/json' \
+            --data-binary "@${REQUEST_FILE}" https://apps.nextcloud.com/api/v1/apps/releases
 
-          SIGNATURE="$(openssl dgst -sha512 -sign "${KEY_FILE}" "${ARCHIVE}" | openssl base64 -A)"
-          jq --null-input \
-            --arg download "${DOWNLOAD_URL}" \
-            --arg signature "${SIGNATURE}" \
-            '{download: $download, signature: $signature, nightly: false}' \
-            > "${REQUEST_FILE}"
-
-          curl --fail-with-body --silent --show-error \
-            --request POST \
-            --header "Authorization: Token ${APPSTORE_TOKEN}" \
-            --header 'Content-Type: application/json' \
-            --data-binary "@${REQUEST_FILE}" \
-            https://apps.nextcloud.com/api/v1/apps/releases
+      - name: Mark GitHub and App Store publication complete
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_RELEASE_TOKEN: ${{ steps.publish-token.outputs.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: python3 .github/scripts/release_automation.py complete
 
       - name: Remove temporary credentials
         if: always()
-        shell: bash
         run: |
-          rm --force \
-            "${RUNNER_TEMP}/app-private.key" \
-            "${RUNNER_TEMP}/app-certificate.crt" \
-            "${RUNNER_TEMP}/app-public.pem" \
-            "${RUNNER_TEMP}/appstore-release.json"
+          rm --force "${RUNNER_TEMP}/app-private.key" "${RUNNER_TEMP}/app-certificate.crt" \
+            "${RUNNER_TEMP}/app-public.pem" "${RUNNER_TEMP}/appstore-release.json"

@@ -25,6 +25,7 @@ composer test
 composer cs:check
 composer psalm
 composer version:check
+python3 -m unittest discover -s tests/release -v
 bash tests/e2e/run.sh
 ```
 

@@ -9,7 +9,7 @@ on:
 permissions: read-all
 
 concurrency:
-  group: repair-release-signatures
+  group: release
   cancel-in-progress: false
 
 env:
