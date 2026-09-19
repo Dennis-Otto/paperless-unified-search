@@ -7,6 +7,7 @@
 /build
 /composer.json
 /composer.lock
+/docs
 /krankerl.toml
 /phpunit.xml
 /psalm.xml
