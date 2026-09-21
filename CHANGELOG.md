@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.1.7 - 2026-09-21
+
+<!-- Release notes generated using configuration in .github/release.yml at 11ffe7679b6bd5fb6374c1b4ecbc3a72fe53a98b -->
+
+### What's Changed
+### Dependencies
+* chore(deps-dev): bump vimeo/psalm from 6.17.0 to 6.17.2 in the composer-routine group by @dependabot[bot] in https://github.com/Dennis-Otto/paperless-unified-search/pull/22
+* chore(deps): bump the actions-routine group with 3 updates by @dependabot[bot] in https://github.com/Dennis-Otto/paperless-unified-search/pull/23
+### Other changes
+* ci: pin Dependabot auto-merge to the inspected commit by @Dennis-Otto in https://github.com/Dennis-Otto/paperless-unified-search/pull/21
+
+
+**Full Changelog**: https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.1.6...v0.1.7
+
 ## 0.1.6 - 2026-09-19
 
 - Publish checked, signed Nextcloud maintenance releases automatically after merged Dependabot updates.
