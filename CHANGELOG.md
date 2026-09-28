@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.1.8 - 2026-09-28
+
+<!-- Release notes generated using configuration in .github/release.yml at 998e8c0adf05b310ff805ca4b7dcdbf2f1f28164 -->
+
+### What's Changed
+### Dependencies
+* chore(deps-dev): bump vimeo/psalm from 6.17.2 to 6.18.1 in the composer-routine group by @dependabot[bot] in https://github.com/Dennis-Otto/paperless-unified-search/pull/26
+* chore(deps): bump the actions-routine group with 3 updates by @dependabot[bot] in https://github.com/Dennis-Otto/paperless-unified-search/pull/27
+* chore(deps): bump nextcloud from 33.0.9-apache to 33.0.9-apache in /tests/e2e by @dependabot[bot] in https://github.com/Dennis-Otto/paperless-unified-search/pull/29
+
+
+**Full Changelog**: https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.1.7...v0.1.8
+
 ## 0.1.7 - 2026-09-21
 
 <!-- Release notes generated using configuration in .github/release.yml at 11ffe7679b6bd5fb6374c1b4ecbc3a72fe53a98b -->
