@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.1.10 - 2026-10-05
+
+<!-- Release notes generated using configuration in .github/release.yml at 7d763d80d0faaad37519aa317a76079479fa91d3 -->
+
+### What's Changed
+### Dependencies
+* chore(deps): bump nextcloud from 33.0.9-apache to 33.0.9-apache in /tests/e2e by @dependabot[bot] in https://github.com/Dennis-Otto/paperless-unified-search/pull/34
+
+
+**Full Changelog**: https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.1.9...v0.1.10
+
 ## 0.1.9 - 2026-10-05
 
 <!-- Release notes generated using configuration in .github/release.yml at d04c960ee917418d1b90d73a7d9a80409a410f57 -->
