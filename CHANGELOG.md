@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.1.9 - 2026-10-05
+
+<!-- Release notes generated using configuration in .github/release.yml at d04c960ee917418d1b90d73a7d9a80409a410f57 -->
+
+### What's Changed
+### Dependencies
+* chore(deps-dev): bump vimeo/psalm from 6.18.1 to 6.19.1 in the composer-routine group by @dependabot[bot] in https://github.com/Dennis-Otto/paperless-unified-search/pull/31
+
+
+**Full Changelog**: https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.1.8...v0.1.9
+
 ## 0.1.8 - 2026-09-28
 
 <!-- Release notes generated using configuration in .github/release.yml at 998e8c0adf05b310ff805ca4b7dcdbf2f1f28164 -->
