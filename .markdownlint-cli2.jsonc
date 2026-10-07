@@ -1,0 +1,10 @@
+// The files of the Markdown lint of the Lint workflow. The rules are in
+// .markdownlint.jsonc, which belongs to the project and extends those of the
+// blueprint in .github/markdownlint.jsonc.
+// https://github.com/Dennis-Otto/repo-blueprint
+{
+  "globs": ["**/*.md"],
+  "gitignore": true,
+  // The release bot writes the changelog, partly in its own format.
+  "ignores": ["CHANGELOG.md", "**/node_modules/**", "vendor/**"]
+}

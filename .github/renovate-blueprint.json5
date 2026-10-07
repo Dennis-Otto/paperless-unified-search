@@ -1,0 +1,134 @@
+// The rules of Renovate from the blueprint, which .github/renovate.json5 extends.
+// Renovate keeps the actions, the dependencies, the images and the pins of the
+// workflows current; the Renovate workflow of the blueprint runs it for every
+// repository with a .github/renovate.json5, as the release app. An update waits a
+// week after its release; one that fixes a vulnerability comes at once. Routine
+// updates merge on their own once every check passes; a major update waits for the
+// maintainer. Updates of what the users run are committed as fix(deps) and lead to
+// a patch release, updates of the tools as chore(deps).
+// https://github.com/Dennis-Otto/repo-blueprint
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["config:recommended", ":semanticCommits", ":disableDependencyDashboard"],
+  timezone: "Europe/Berlin",
+  // Once a week, so that the release bot sums the updates up in one release.
+  schedule: ["* 0-6 * * 1"],
+  minimumReleaseAge: "7 days",
+  internalChecksFilter: "strict",
+  // GitHub merges a routine update once every required check passes.
+  platformAutomerge: true,
+  automergeType: "pr",
+  automergeStrategy: "squash",
+  // Renovate keeps its own branches up to date with main.
+  rebaseWhen: "behind-base-branch",
+  // The title check sets the labels.
+  labels: [],
+  prConcurrentLimit: 10,
+  prHourlyLimit: 0,
+  // The tools of the tests are kept current as well.
+  ignorePaths: ["**/node_modules/**", "**/vendor/**"],
+  vulnerabilityAlerts: {
+    minimumReleaseAge: null,
+    schedule: ["at any time"],
+    automerge: true,
+  },
+  osvVulnerabilityAlerts: true,
+  // Python, Node and PHP follow the blueprint and what the project supports.
+  pyenv: { enabled: false },
+  nvm: { enabled: false },
+  // The Features of the dev container and their lock file are Dependabot's.
+  devcontainer: { enabled: false },
+  // The blueprint bot brings the updates of the blueprint.
+  copier: { enabled: false },
+  // The hash-pinned requirements are compiled from their .in files.
+  pip_requirements: { enabled: false },
+  "pip-compile": { managerFilePatterns: ["/(^|/)requirements[^/]*\\.txt$/"] },
+  customManagers: [
+    {
+      // Images that the scripts of workflows and checks start, by tag and digest.
+      customType: "regex",
+      managerFilePatterns: [
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/",
+        "/(^|/)[^/]+\\.sh$/",
+      ],
+      matchStrings: [
+        "(?:^|\\s)(?<depName>[a-z0-9][a-z0-9._-]*(?:/[a-z0-9._-]+)+):(?<currentValue>v?\\d[a-zA-Z0-9._-]*)@(?<currentDigest>sha256:[a-f0-9]{64})",
+      ],
+      datasourceTemplate: "docker",
+    },
+    {
+      // A version below a line "# renovate: datasource=… depName=…".
+      customType: "regex",
+      managerFilePatterns: [
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/",
+        "/(^|/)[^/]+\\.sh$/",
+      ],
+      matchStrings: [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s*[\\w-]+: \"?(?<currentValue>[^\"\\s@]+)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?\"?",
+      ],
+    },
+  ],
+  packageRules: [
+    {
+      // Routine updates merge on their own, a week after their release.
+      matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
+      automerge: true,
+    },
+    {
+      matchManagers: ["github-actions"],
+      matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
+      groupName: "the actions",
+    },
+    {
+      matchManagers: ["github-actions"],
+      matchUpdateTypes: ["major"],
+      groupName: "the actions to a new major version",
+    },
+    {
+      // The versions of Python, Node and PHP that the workflows set up, and the
+      // runners, follow the blueprint.
+      matchDepTypes: ["uses-with"],
+      enabled: false,
+    },
+    {
+      matchDatasources: ["github-runners"],
+      enabled: false,
+    },
+    {
+      matchDatasources: ["docker"],
+      matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
+      groupName: "the images",
+    },
+    {
+      // The dev container keeps the Python, PHP or Node of the project, as the CI
+      // does; only its digest moves.
+      matchDepNames: ["mcr.microsoft.com/devcontainers/**"],
+      matchUpdateTypes: ["major", "minor", "patch"],
+      enabled: false,
+    },
+    {
+      matchManagers: ["composer"],
+      matchDepTypes: ["require"],
+      matchUpdateTypes: ["minor", "patch"],
+      groupName: "the Composer packages",
+    },
+    {
+      matchManagers: ["composer"],
+      matchDepTypes: ["require-dev"],
+      matchUpdateTypes: ["minor", "patch"],
+      groupName: "the Composer tools",
+    },
+    {
+      // The PHP of composer.json is the oldest that the app supports.
+      matchManagers: ["composer"],
+      matchDepNames: ["php"],
+      enabled: false,
+    },
+    {
+      // The public API of Nextcloud follows the min-version of appinfo/info.xml.
+      matchDepNames: ["nextcloud/ocp"],
+      matchUpdateTypes: ["major"],
+      enabled: false,
+    },
+  ],
+}

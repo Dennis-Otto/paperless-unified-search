@@ -8,6 +8,8 @@
 .gitignore
 /.githooks
 /.lycheeignore
+/.markdownlint-cli2.jsonc
+/.markdownlint.jsonc
 .nextcloudignore
 .php-cs-fixer.cache
 .php-cs-fixer.dist.php
@@ -28,6 +30,7 @@
 /scripts
 /tests
 /vendor
+/.vale.ini
 /version.txt
 CODE_OF_CONDUCT.md
 CONTRIBUTING.md

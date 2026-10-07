@@ -34,7 +34,7 @@ jobs:
         with:
           php-version: "8.2"
           extensions: dom, libxml, mbstring, xml
-          coverage: none
+          coverage: pcov
           tools: composer:v2
       - name: Install the locked tools
         run: composer install --no-interaction --prefer-dist --no-progress
@@ -50,3 +50,10 @@ jobs:
           sudo dpkg --install "$RUNNER_TEMP/krankerl.deb"
       - name: Run the checks
         run: bash scripts/check.sh
+      - name: Keep the coverage report
+        if: always() && hashFiles('build/coverage.xml') != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage
+          path: build/coverage.xml
+          retention-days: 14
