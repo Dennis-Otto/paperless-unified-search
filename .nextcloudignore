@@ -19,6 +19,7 @@
 /krankerl.toml
 /LICENSES
 /lychee.toml
+/mkdocs.yml
 /phpunit.xml
 /psalm.xml
 /release-please-config.json
