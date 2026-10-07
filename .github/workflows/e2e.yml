@@ -6,15 +6,23 @@ name: Docker E2E
 # The end-to-end tests in Docker against the current release of every Nextcloud
 # version that appinfo/info.xml supports, from min-version to max-version, so that
 # raising max-version, as the upstream bot does, tests the new version at once.
+#
+# Every Monday, and when started by hand, they also run against the coming Nextcloud
+# (tests/e2e/canary.sh): the beta or release candidate of the next major version, or
+# the daily build of master. That job is no required check and blocks nothing. When
+# it fails, it opens the issue "The coming Nextcloud breaks the app", or adds the run
+# to it, and closes the issue once the tests pass again. It leaves max-version as it
+# is; the upstream bot raises it when Nextcloud releases the version.
 
 on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "17 5 * * 1"
   workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
@@ -23,8 +31,11 @@ concurrency:
 jobs:
   versions:
     name: supported Nextcloud versions
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
     outputs:
       majors: ${{ steps.versions.outputs.majors }}
     steps:
@@ -52,6 +63,8 @@ jobs:
     needs: versions
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -72,7 +85,7 @@ jobs:
 
   nextcloud:
     name: nextcloud
-    if: always()
+    if: always() && github.event_name != 'schedule'
     needs: [versions, nextcloud-version]
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -86,3 +99,78 @@ jobs:
           VERSIONS: ${{ needs.versions.result }}
           RESULT: ${{ needs.nextcloud-version.result }}
         run: test "$VERSIONS" = success && test "$RESULT" = success
+
+  coming:
+    name: coming Nextcloud
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.canary.outputs.version }}
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run the Paperless Unified Search end-to-end tests against the coming Nextcloud
+        id: canary
+        run: bash tests/e2e/canary.sh
+
+  # The only job that may write issues, and it runs no code of the repository. A run
+  # started by hand on another branch than main reports nothing.
+  coming-issue:
+    name: issue about the coming Nextcloud
+    needs: coming
+    if: >-
+      always() &&
+      (github.event_name == 'schedule' || github.ref_name == github.event.repository.default_branch) &&
+      (needs.coming.result == 'success' || needs.coming.result == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: Open, update or close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TITLE: The coming Nextcloud breaks the app
+          RESULT: ${{ needs.coming.result }}
+          VERSION: ${{ needs.coming.outputs.version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          number="$(gh issue list --state open --search "in:title \"$TITLE\"" --json number,title \
+            --jq '[.[] | select(.title == env.TITLE)][0].number // empty')"
+          coming="${VERSION:-the coming Nextcloud, which the job could not set up}"
+          if [[ "$RESULT" == success ]]; then
+            if [[ -n "$number" ]]; then
+              gh issue close "$number" --reason completed \
+                --comment "The end-to-end tests pass again against $coming: $RUN_URL"
+            fi
+            exit 0
+          fi
+          if [[ -n "$number" ]]; then
+            gh issue comment "$number" --body "The end-to-end tests still fail against $coming: $RUN_URL"
+            exit 0
+          fi
+          {
+            printf 'The weekly end-to-end tests fail against %s: %s\n\n' "$coming" "$RUN_URL"
+            cat <<'TEXT'
+          The canary of `.github/workflows/e2e.yml` runs `tests/e2e/canary.sh`: the end-to-end tests against the beta or release candidate of the next major version of Nextcloud, or against the daily build of its master branch while there is none. Nextcloud hasn't released that version yet, so the canary is no required check and blocks nothing; it gives notice before the release, while there is time to adapt the app. `max-version` of `appinfo/info.xml` stays as it is; the upstream bot raises it once Nextcloud releases the version.
+
+          The log of the run shows what failed; `bash tests/e2e/canary.sh` runs the same tests locally.
+
+          The canary adds every further failed run here and closes this issue once the tests pass again.
+          TEXT
+          } > "$RUNNER_TEMP/issue.md"
+          gh issue create --title "$TITLE" --body-file "$RUNNER_TEMP/issue.md"
