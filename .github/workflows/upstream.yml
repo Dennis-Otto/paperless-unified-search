@@ -1,0 +1,101 @@
+name: Upstream
+
+# The upstream bot of a Nextcloud app. Every week it compares the newest release of
+# Nextcloud with the max-version of appinfo/info.xml. When Nextcloud has a new major
+# version, it opens a pull request as the release app that raises max-version to it
+# and says so under Unreleased in CHANGELOG.md, so that every check, the end-to-end
+# tests of the newest version included, runs against it. It merges itself once they
+# pass, unless the repository variable UPSTREAM_AUTOMERGE is off.
+# https://github.com/Dennis-Otto/repo-blueprint
+
+on:
+  schedule:
+    - cron: "50 4 * * 3"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: upstream
+  cancel-in-progress: false
+
+jobs:
+  nextcloud:
+    name: newest Nextcloud
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The environment holds the private key of the release app; only main may use it.
+    environment:
+      name: release
+      deployment: false
+    permissions:
+      contents: read
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: Create a token of the release app
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY }}
+          # Only what the branch and the pull request of the update need.
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Raise max-version to the newest major version of Nextcloud
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          AUTOMERGE: ${{ vars.UPSTREAM_AUTOMERGE }}
+        run: |
+          set -euo pipefail
+          latest="$(gh api repos/nextcloud/server/releases/latest --jq .tag_name)"
+          newest="${latest#v}"
+          newest="${newest%%.*}"
+          current="$(python3 -c 'import xml.etree.ElementTree as t; print(t.parse("appinfo/info.xml").getroot().find("dependencies/nextcloud").get("max-version"))')"
+          echo "Nextcloud $latest is the newest release; the app supports up to $current."
+          if ((newest <= current)); then
+            exit 0
+          fi
+          branch="upstream/nextcloud-$newest"
+          if [[ -n "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]]; then
+            echo "The pull request for Nextcloud $newest is open already."
+            exit 0
+          fi
+
+          sed -i -E "s/(<nextcloud [^>]*max-version=\")[0-9]+(\")/\1$newest\2/" appinfo/info.xml
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" unreleased Changed "- Supports Nextcloud $newest."
+
+          # The commit goes through GitHub's API as the release app, so GitHub signs
+          # it, as main requires, and it starts the checks.
+          base="$(git rev-parse HEAD)"
+          if gh api "repos/$GH_REPO/git/ref/heads/$branch" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/$GH_REPO/git/refs/heads/$branch" -f sha="$base" -F force=true >/dev/null
+          else
+            gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/heads/$branch" -f sha="$base" >/dev/null
+          fi
+          jq --null-input --arg repo "$GH_REPO" --arg branch "$branch" --arg head "$base" \
+            --arg headline "feat: support Nextcloud $newest" \
+            --rawfile info <(base64 --wrap=0 appinfo/info.xml) \
+            --rawfile changelog <(base64 --wrap=0 CHANGELOG.md) \
+            '{query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
+              variables: {input: {
+                branch: {repositoryNameWithOwner: $repo, branchName: $branch},
+                expectedHeadOid: $head,
+                message: {headline: $headline},
+                fileChanges: {additions: [
+                  {path: "appinfo/info.xml", contents: $info},
+                  {path: "CHANGELOG.md", contents: $changelog}]}}}}' |
+            gh api graphql --input - --jq .data.createCommitOnBranch.commit.oid
+          gh pr create --base main --head "$branch" --title "feat: support Nextcloud $newest" \
+            --body "Nextcloud $latest is out. This raises \`max-version\` in \`appinfo/info.xml\` from $current to $newest, so that the checks and the end-to-end tests run against Nextcloud $newest, and the release notes say that the app supports it."
+          if [[ "$AUTOMERGE" != "off" ]]; then
+            gh pr merge "$branch" --auto --squash
+          fi

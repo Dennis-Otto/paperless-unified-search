@@ -3,6 +3,7 @@
 .vscode/
 .DS_Store
 Thumbs.db
+/.claude/settings.local.json
 
 # The context folder of the issue assistant
 /.issue-assistant/

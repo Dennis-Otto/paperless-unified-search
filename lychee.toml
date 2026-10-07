@@ -22,6 +22,8 @@ exclude = [
   '^https://www\.bestpractices\.dev/projects/\d+/badge',
   '^https://my\.home-assistant\.io/redirect/',
   '^https://img\.shields\.io/',
+  # The badge of a workflow, which a pull request that adds the workflow can't show yet.
+  '^https://github\.com/[^/]+/[^/]+/actions/workflows/[^/]+/badge\.svg',
 ]
 
 exclude_path = ["CHANGELOG.md", "LICENSES", "node_modules", "vendor", ".venv", "build", "dist", "template"]

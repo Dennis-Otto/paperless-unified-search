@@ -17,7 +17,7 @@
         { "type": "fix", "section": "Bug fixes" },
         { "type": "perf", "section": "Performance" },
         { "type": "revert", "section": "Reverts" },
-        { "type": "docs", "section": "Documentation" },
+        { "type": "docs", "section": "Documentation", "hidden": true },
         { "type": "deps", "section": "Dependencies" },
         { "type": "refactor", "section": "Code refactoring", "hidden": true },
         { "type": "test", "section": "Tests", "hidden": true },

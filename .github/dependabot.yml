@@ -52,6 +52,22 @@ updates:
       prefix: chore
       include: scope
 
+  # The Features of the dev container, locked in .devcontainer/devcontainer-lock.json.
+  - package-ecosystem: devcontainers
+    directory: /
+    schedule:
+      interval: monthly
+      timezone: Europe/Berlin
+    cooldown:
+      default-days: 7
+    groups:
+      dev-container-features:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: chore
+      include: scope
+
   - package-ecosystem: composer
     directory: /
     schedule:

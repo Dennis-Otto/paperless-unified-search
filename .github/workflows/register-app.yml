@@ -1,0 +1,82 @@
+name: Register the app
+
+# Registers a Nextcloud app in the App Store, once, and again only for a new
+# certificate: it checks the private key of the environment release against the
+# certificate that Nextcloud issued for the app id, and then sends the certificate
+# with the app id signed by that key. Run it by hand under Actions with the app id
+# of appinfo/info.xml as confirmation. https://github.com/Dennis-Otto/repo-blueprint
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: The id of the app in appinfo/info.xml, to confirm the registration
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: register-app
+  cancel-in-progress: false
+
+jobs:
+  register:
+    name: register the app
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # The environment holds the key of the app's certificate; only main may use it.
+    environment:
+      name: release
+      deployment: false
+    permissions:
+      contents: read
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the certificate and register the app id
+        env:
+          APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+          APPSTORE_TOKEN: ${{ secrets.APPSTORE_TOKEN }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          app_id="$(python3 -c 'import xml.etree.ElementTree as t; print(t.parse("appinfo/info.xml").getroot().findtext("id"))')"
+          if [[ "$CONFIRMATION" != "$app_id" ]]; then
+            echo "::error::Confirm with the id of the app, $app_id."
+            exit 1
+          fi
+          if [[ -z "$APP_PRIVATE_KEY" || -z "$APPSTORE_TOKEN" ]]; then
+            echo "::error::The environment release needs the secrets APP_PRIVATE_KEY and APPSTORE_TOKEN."
+            exit 1
+          fi
+          umask 077
+          key="$RUNNER_TEMP/app.key"
+          certificate="$RUNNER_TEMP/app.crt"
+          trap 'rm -f "$key" "$certificate" "$RUNNER_TEMP/request.json"' EXIT
+          printf '%s' "$APP_PRIVATE_KEY" > "$key"
+          openssl pkey -in "$key" -check -noout
+
+          curl --fail --location --silent --show-error --output "$certificate" \
+            "https://raw.githubusercontent.com/nextcloud/app-certificate-requests/master/$app_id/$app_id.crt"
+          openssl x509 -in "$certificate" -noout -checkend 0
+          openssl x509 -in "$certificate" -noout -subject | grep --fixed-strings "CN = $app_id"
+          key_fingerprint="$(openssl pkey -in "$key" -pubout -outform DER | sha256sum | cut -d' ' -f1)"
+          certificate_fingerprint="$(openssl x509 -in "$certificate" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum | cut -d' ' -f1)"
+          if [[ "$key_fingerprint" != "$certificate_fingerprint" ]]; then
+            echo "::error::APP_PRIVATE_KEY is not the key of the certificate of $app_id."
+            exit 1
+          fi
+
+          signature="$(printf '%s' "$app_id" | openssl dgst -sha512 -sign "$key" | openssl base64 -A)"
+          jq --null-input --rawfile certificate "$certificate" --arg signature "$signature" \
+            '{certificate: $certificate, signature: $signature}' > "$RUNNER_TEMP/request.json"
+          curl --fail-with-body --silent --show-error --request POST \
+            --header "Authorization: Token $APPSTORE_TOKEN" --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/request.json" https://apps.nextcloud.com/api/v1/apps
+          echo "Registered $app_id in the Nextcloud App Store." >> "$GITHUB_STEP_SUMMARY"

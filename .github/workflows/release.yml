@@ -72,17 +72,24 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          # release-please rebuilds its pull request only when its notes change, so a
-          # merge of a hidden type, such as docs or chore, would leave it behind main.
-          # Another description makes it rebuild the pull request on main.
+          # release-please rebuilds its pull request only when its description changes,
+          # so a merge of a hidden type, such as docs or chore, would leave it behind
+          # main. A marker after the footer of the description makes it rebuild the pull
+          # request on main; the notes above stay as they are, since release-please reads
+          # them from a merged release pull request to create the release.
           set -euo pipefail
           gh pr list --state open --label "autorelease: pending" --json number,headRefName \
             --jq '.[] | "\(.number) \(.headRefName)"' |
             while read -r number branch; do
+              # The list can lag behind a merge: only a pull request still open is rebuilt.
+              if [[ "$(gh pr view "$number" --json state --jq .state)" != OPEN ]]; then
+                continue
+              fi
               behind="$(gh api "repos/$GH_REPO/compare/main...$branch" --jq .behind_by)"
               if [[ "$behind" != 0 ]]; then
                 echo "#$number is $behind commit(s) behind main; release-please rebuilds it."
-                gh pr edit "$number" --body "The release bot rebuilds this pull request on the current main."
+                body="$(gh pr view "$number" --json body --jq .body)"
+                gh pr edit "$number" --body "$(printf '%s\n\n%s\n' "$body" "<!-- The release bot rebuilds this pull request on the current main. -->")"
               fi
             done
       - name: Update the release pull request, or create the release
@@ -294,6 +301,9 @@ jobs:
           BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
         run: |
           cp "$BUNDLE_PATH" "$ASSETS/provenance.sigstore.json"
+          # The signed statement also as in-toto JSON lines, the format of SLSA, which
+          # OpenSSF Scorecard and other tools look for.
+          jq -c .dsseEnvelope "$BUNDLE_PATH" > "$ASSETS/provenance.intoto.jsonl"
           gh release upload "$TAG" "$ASSETS"/* --clobber --repo "$GITHUB_REPOSITORY"
 
       - name: Write the notes, the section of the changelog with every pull request

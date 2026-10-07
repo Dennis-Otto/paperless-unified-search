@@ -87,6 +87,13 @@ jobs:
           else
             fail "The release has no provenance.sigstore.json."
           fi
+          if [[ -f provenance.intoto.jsonl ]]; then
+            if [[ "$(jq -c .dsseEnvelope provenance.sigstore.json)" == "$(cat provenance.intoto.jsonl)" ]]; then
+              pass "provenance.intoto.jsonl holds the signed statement of the bundle."
+            else
+              fail "provenance.intoto.jsonl differs from the signed statement of the bundle."
+            fi
+          fi
           if compgen -G "*.spdx.json" >/dev/null; then
             pass "The SBOM is attached."
           else
@@ -94,7 +101,7 @@ jobs:
           fi
           signer="$GH_REPO/.github/workflows/release.yml"
           for asset in *; do
-            [[ "$asset" == provenance.sigstore.json ]] && continue
+            [[ "$asset" == provenance.sigstore.json || "$asset" == *.intoto.jsonl ]] && continue
             if gh attestation verify "$asset" --repo "$GH_REPO" --signer-workflow "$signer" >/dev/null &&
               { [[ ! -f provenance.sigstore.json ]] ||
                 gh attestation verify "$asset" --repo "$GH_REPO" --signer-workflow "$signer" \

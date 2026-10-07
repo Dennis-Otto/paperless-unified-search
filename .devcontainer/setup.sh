@@ -6,5 +6,9 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 composer install
+# The frontend, if the project has one.
+if [[ -f package.json ]]; then
+  npm ci --ignore-scripts
+fi
 git config core.hooksPath .githooks
 echo "Ready: bash scripts/check.sh runs the checks of the CI."
