@@ -18,15 +18,15 @@ Paperless Unified Search brings Paperless-ngx OCR and full-text search into Next
 
 ### Paperless results in Nextcloud's global search
 
-![Paperless OCR results in Nextcloud unified search](screenshots/01-unified-search.png)
+![Paperless OCR results in Nextcloud unified search](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/01-unified-search.png)
 
 ### A search result opened in Nextcloud's PDF viewer
 
-![A synchronized Paperless document opened in Nextcloud's PDF viewer](screenshots/02-nextcloud-pdf-viewer.png)
+![A synchronized Paperless document opened in Nextcloud's PDF viewer](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/02-nextcloud-pdf-viewer.png)
 
 ### Secure server-side administration
 
-![Paperless Unified Search administration settings in Nextcloud](screenshots/03-admin-settings.png)
+![Paperless Unified Search administration settings in Nextcloud](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/03-admin-settings.png)
 
 ## How it works
 
@@ -80,7 +80,7 @@ Documents without a synchronized `[P<ID>]` file are intentionally omitted. This 
 - Every release includes an SPDX SBOM, a detached signature, and public Sigstore build provenance.
 - OpenSSF Scorecard audits the repository's supply-chain security every week.
 
-See [SECURITY.md](SECURITY.md) for reporting security issues.
+See [SECURITY.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/SECURITY.md) for reporting security issues.
 
 ## Development
 
@@ -103,18 +103,18 @@ The Docker suite starts a clean Nextcloud instance with the app mounted as a Cus
 bash tests/e2e/run.sh
 ```
 
-Set `KEEP_E2E=1` to leave the containers running for inspection. See [the mobile test matrix](tests/e2e/MANUAL_MOBILE_TESTS.md) for the final checks performed with official clients.
+Set `KEEP_E2E=1` to leave the containers running for inspection. See [the mobile test matrix](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/tests/e2e/MANUAL_MOBILE_TESTS.md) for the final checks performed with official clients.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+See [CONTRIBUTING.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CONTRIBUTING.md) before opening a pull request.
 
 ### Releases
 
 The protected `main` branch requires the checks of the CI, the Docker end-to-end tests against every supported Nextcloud version, the dependency review, CodeQL, the secret scan, the licenses of every file (REUSE), the sign-off of every commit and a Conventional Commit title. Dependabot keeps the dependencies current; routine updates merge on their own once every check passes.
 
-The release bot keeps a pull request for the next release. Its version follows from the titles of the merged pull requests, and what they wrote under *Unreleased* in `CHANGELOG.md` becomes its notes. Merging it publishes the release: the package, checked before and after signing with the app's certificate, its detached signature, an SPDX SBOM and signed build provenance, then the same package in the Nextcloud App Store, verified afterwards as users can verify it. See [the release guide](docs/releases.md).
+The release bot keeps a pull request for the next release. Its version follows from the titles of the merged pull requests, and what they wrote under *Unreleased* in `CHANGELOG.md` becomes its notes. Merging it publishes the release: the package, checked before and after signing with the app's certificate, its detached signature, an SPDX SBOM and signed build provenance, then the same package in the Nextcloud App Store, verified afterwards as users can verify it. See [the release guide](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/releases.md).
 
-Project decisions and support expectations are documented in [GOVERNANCE.md](GOVERNANCE.md), [SUPPORT.md](SUPPORT.md), and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+Project decisions and support expectations are documented in [GOVERNANCE.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/GOVERNANCE.md), [SUPPORT.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/SUPPORT.md), and [CODE_OF_CONDUCT.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CODE_OF_CONDUCT.md).
 
 ## License
 
-AGPL-3.0-or-later. See [LICENSE](LICENSE).
+AGPL-3.0-or-later. See [LICENSE](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/LICENSE).
