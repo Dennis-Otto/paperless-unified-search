@@ -30,7 +30,7 @@ on:
       mode:
         description: Task of the assistant
         type: choice
-        options: [triage, follow-up, maintainer-reply]
+        options: [triage, follow-up, maintainer-reply, release-reply]
         default: triage
       dry_run:
         description: Only show what the assistant would do
@@ -68,7 +68,7 @@ jobs:
           persist-credentials: false
       - name: Set labels and choose the next task
         id: event
-        uses: Dennis-Otto/issue-assistant@80508cea4e88564345d389baad677b1593e6e673 # v1.0.1
+        uses: Dennis-Otto/issue-assistant@a1858427cabe28cc8b742db09cab925e76556449 # v1.1.0
         with:
           command: event
           dry-run: ${{ inputs.dry_run || false }}
@@ -101,7 +101,7 @@ jobs:
           persist-credentials: false
       - name: Choose the engine and check its secret
         id: engine
-        uses: Dennis-Otto/issue-assistant@80508cea4e88564345d389baad677b1593e6e673 # v1.0.1
+        uses: Dennis-Otto/issue-assistant@a1858427cabe28cc8b742db09cab925e76556449 # v1.1.0
         with:
           command: engine
           # One entry per engine: its key when its secret exists.
@@ -109,7 +109,7 @@ jobs:
       - name: Collect the issue, earlier issues and discussions
         id: context
         if: steps.engine.outputs.ready == 'true'
-        uses: Dennis-Otto/issue-assistant@80508cea4e88564345d389baad677b1593e6e673 # v1.0.1
+        uses: Dennis-Otto/issue-assistant@a1858427cabe28cc8b742db09cab925e76556449 # v1.1.0
         with:
           command: context
           issue: ${{ needs.event.outputs.issue }}
@@ -160,7 +160,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Check the engine's answer and post it
-        uses: Dennis-Otto/issue-assistant@80508cea4e88564345d389baad677b1593e6e673 # v1.0.1
+        uses: Dennis-Otto/issue-assistant@a1858427cabe28cc8b742db09cab925e76556449 # v1.1.0
         with:
           command: apply
           issue: ${{ needs.event.outputs.issue }}

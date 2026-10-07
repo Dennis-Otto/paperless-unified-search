@@ -3,14 +3,21 @@
 
 name: Issue lifecycle
 
-# Once a day, without AI: reminds reporters who were asked for information after
-# 15 days, closes their issue after 30 days without an answer, and closes a possible
-# duplicate 3 days after the notice unless someone objected.
+# Without AI: reminds reporters who were asked for information after 15 days,
+# closes their issue after 30 days without an answer, closes a possible duplicate
+# 3 days after the notice unless someone objected, labels the issues that a merged
+# pull request fixes, and closes them with a link once a release ships the fix.
+# Merges and releases start it at once, and every morning catches what was missed.
 # https://github.com/Dennis-Otto/issue-assistant
 
 on:
   schedule:
     - cron: "41 6 * * *"
+  # The job reads which issues a merged pull request fixes, never its code.
+  pull_request_target:
+    types: [closed]
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -27,18 +34,24 @@ concurrency:
 jobs:
   sweep:
     name: Remind and close
-    if: ${{ !github.event.repository.fork }}
+    if: >-
+      !github.event.repository.fork &&
+      (github.event_name != 'pull_request_target' ||
+        (github.event.pull_request.merged &&
+         github.event.pull_request.user.login != 'dependabot[bot]'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
       issues: write
+      pull-requests: read
     steps:
+      # The default branch, also for a merged pull request.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Remind reporters and close unanswered issues and duplicates
-        uses: Dennis-Otto/issue-assistant@80508cea4e88564345d389baad677b1593e6e673 # v1.0.1
+      - name: Remind, close and mark fixed issues
+        uses: Dennis-Otto/issue-assistant@a1858427cabe28cc8b742db09cab925e76556449 # v1.1.0
         with:
           command: sweep
           dry-run: ${{ inputs.dry_run || false }}

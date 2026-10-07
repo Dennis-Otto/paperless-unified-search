@@ -135,6 +135,12 @@ color = "e4e669"
 description = "Spam, or not about this app"
 group = "lifecycle"
 
+[[label]]
+name = "fixed-in-next-release"
+color = "c2e0c6"
+description = "Fixed on main; closes with a link when a release ships the fix"
+group = "lifecycle"
+
 # Decisions
 
 [[label]]
