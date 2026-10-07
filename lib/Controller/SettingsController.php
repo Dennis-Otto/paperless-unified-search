@@ -14,6 +14,7 @@ use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http;
+use OCP\AppFramework\Http\Attribute\FrontpageRoute;
 use OCP\AppFramework\Http\JSONResponse;
 use OCP\IRequest;
 use Throwable;
@@ -29,6 +30,7 @@ final class SettingsController extends Controller {
 		parent::__construct($appName, $request);
 	}
 
+	#[FrontpageRoute(verb: 'POST', url: '/settings')]
 	public function save(string $url, string $token = '', bool $alwaysSearch = false): JSONResponse {
 		try {
 			$normalizedUrl = $this->configService->normalizeUrl($url);
@@ -49,6 +51,7 @@ final class SettingsController extends Controller {
 		}
 	}
 
+	#[FrontpageRoute(verb: 'DELETE', url: '/settings')]
 	public function reset(): JSONResponse {
 		return new JSONResponse($this->configService->reset());
 	}

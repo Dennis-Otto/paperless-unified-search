@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Saving and resetting the administration settings no longer fails with empty request URLs when Nextcloud renders the settings page before it has loaded the app ([#25](https://github.com/Dennis-Otto/paperless-unified-search/issues/25)). The app now declares its routes as attributes on the controller, which Nextcloud 29 and later register for every enabled app.
+
 ## 0.1.10 - 2026-10-05
 
 <!-- Release notes generated using configuration in .github/release.yml at 7d763d80d0faaad37519aa317a76079479fa91d3 -->
