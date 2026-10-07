@@ -46,4 +46,9 @@ allow-licenses:
   - AGPL-3.0-or-later
 # Tools of the checks that the app never ships: psalm's JSON mapper.
 allow-dependencies-licenses:
+  # The tools of the blueprint bot (.github/copier-requirements.txt), which no release
+  # ships: Copier's Jinja filters (GPL-3.0-only) and typing-extensions, whose
+  # license the review reads wrongly.
+  - pkg:pypi/jinja2-ansible-filters
+  - pkg:pypi/typing-extensions
   - pkg:composer/netresearch/jsonmapper
