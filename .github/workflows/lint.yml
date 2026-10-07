@@ -1,0 +1,110 @@
+name: Lint
+
+# The checks every repository of the blueprint shares: the workflows, the license
+# of every file (REUSE), the sign-off of every commit (DCO) and the set-up of the
+# issue assistant. https://github.com/Dennis-Otto/repo-blueprint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  workflow-lint:
+    name: workflow-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Lint the workflows
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # v1.7.12
+
+  reuse:
+    name: reuse
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check that every file names its license
+        uses: fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5 # v6.0.0
+
+  dco:
+    name: dco
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the sign-off of every commit
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # Bots can't sign the Developer Certificate of Origin. A pull request of a
+          # bot, such as Dependabot or the release app, may carry its unsigned commits.
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          count=0
+          while IFS= read -r commit; do
+            author="$(git show --no-patch --format='%an <%ae>' "$commit")"
+            name="$(git show --no-patch --format='%an' "$commit")"
+            if git show --no-patch --format='%B' "$commit" | git interpret-trailers --parse |
+              grep --fixed-strings --line-regexp --quiet "Signed-off-by: $author"; then
+              count=$((count + 1))
+              continue
+            fi
+            if [[ "$PR_AUTHOR" == *"[bot]" && "$name" == "$PR_AUTHOR" ]]; then
+              echo "Accepted commit $commit of $PR_AUTHOR without a sign-off."
+              count=$((count + 1))
+              continue
+            fi
+            echo "::error::Commit $commit lacks the sign-off 'Signed-off-by: $author'. Commit with git commit -s."
+            exit 1
+          # Merge commits only bring main into the branch, such as those of the branch bot.
+          done < <(git rev-list --reverse --no-merges "$BASE_SHA..$HEAD_SHA")
+          echo "Checked the sign-off of $count commit(s)."
+
+  issue-assistant:
+    name: issue-assistant
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The labels, issue forms, workflows and notice of the issue assistant fit the
+      # templates of its release: https://github.com/Dennis-Otto/issue-assistant
+      - name: Check the issue assistant's set-up
+        uses: Dennis-Otto/issue-assistant@a12fb7227ff7d966809cad4e043e159977fccfcd # v1.2.2
+        with:
+          command: check

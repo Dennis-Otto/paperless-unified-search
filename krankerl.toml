@@ -1,1 +1,3 @@
+# Packaging of the app for the App Store; .nextcloudignore lists what stays out.
 [package]
+before_cmds = []

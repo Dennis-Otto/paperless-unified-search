@@ -1,103 +1,52 @@
-# SPDX-FileCopyrightText: 2026 Dennis Otto
-# SPDX-License-Identifier: AGPL-3.0-or-later
+name: CI (php)
 
-name: CI
+# PHP: Composer's locked tools and the checks of scripts/check.sh, the same ones
+# that run locally. https://github.com/Dennis-Otto/repo-blueprint
 
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
-env:
-  KRANKERL_VERSION: 0.14.0
-  KRANKERL_SHA256: 9bee5a756a83c5a6b1f040e9a2ade9e902e4a57211afc174cd8ac5c4f913958f
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  test:
+  check:
+    name: check (php)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
-          fetch-depth: 0
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
           persist-credentials: false
-
-      - name: Verify pull request DCO sign-offs
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          DCO_TRUSTED_AUTOMATION: ${{ github.actor == 'dependabot[bot]' && 'dependabot[bot]' || '' }}
-        run: scripts/check-dco.sh "${BASE_SHA}" "${HEAD_SHA}"
-
-      - name: Lint GitHub Actions workflows
-        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # v1.7.12
-
-      # The labels, issue forms, workflows and notice of the issue assistant fit the
-      # templates of its release: https://github.com/Dennis-Otto/issue-assistant
-      - name: Check the issue assistant's set-up
-        uses: Dennis-Otto/issue-assistant@a12fb7227ff7d966809cad4e043e159977fccfcd # v1.2.2
-        with:
-          command: check
-
-      - name: Test protected release automation
-        run: python3 -m unittest discover -s tests/release -v
-
-      - name: Set up PHP 8.2
+      - name: Set up the PHP of composer.json
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
         with:
-          php-version: '8.2'
-          extensions: dom, libxml, mbstring
+          php-version: "8.2"
+          extensions: dom, libxml, mbstring, xml
           coverage: none
-
-      - name: Validate Composer metadata
-        run: composer validate --strict
-
-      - name: Verify release version consistency
-        run: composer version:check
-
-      - name: Validate Nextcloud app metadata
-        run: |
-          curl --fail --silent --show-error https://apps.nextcloud.com/schema/apps/info.xsd --output /tmp/nextcloud-app-info.xsd
-          # This is PHP code, not a shell expression.
-          # shellcheck disable=SC2016
-          php -r '$document = new DOMDocument(); $document->load("appinfo/info.xml"); exit($document->schemaValidate("/tmp/nextcloud-app-info.xsd") ? 0 : 1);'
-
-      - name: Install dependencies
+          tools: composer:v2
+      - name: Install the locked tools
         run: composer install --no-interaction --prefer-dist --no-progress
-
-      - name: Check dependencies for known vulnerabilities
-        run: composer audit
-
-      - name: Lint JavaScript
-        run: node --check js/settings.js && node --check l10n/de.js
-
-      - name: Verify translation catalogs
-        run: composer l10n:check
-
-      - name: Run unit tests
-        run: composer test
-
-      - name: Check PHP style
-        run: composer cs:check
-
-      - name: Run static analysis
-        run: composer psalm
-
-      - name: Install verified Krankerl package builder
-        shell: bash
+      - name: Install krankerl, which builds the package of the app
+        env:
+          # The same krankerl as the release workflow's.
+          KRANKERL_VERSION: 0.14.0
+          KRANKERL_SHA256: 9bee5a756a83c5a6b1f040e9a2ade9e902e4a57211afc174cd8ac5c4f913958f
         run: |
-          PACKAGE="${RUNNER_TEMP}/krankerl.deb"
-          curl --fail --location --silent --show-error \
-            "https://github.com/ChristophWurst/krankerl/releases/download/v${KRANKERL_VERSION}/krankerl_${KRANKERL_VERSION}_amd64.deb" \
-            --output "${PACKAGE}"
-          echo "${KRANKERL_SHA256}  ${PACKAGE}" | sha256sum --check --strict
-          sudo dpkg --install "${PACKAGE}"
-
-      - name: Build and verify production package
-        run: |
-          krankerl package
-          composer package:check
+          curl --fail --location --silent --show-error --output "$RUNNER_TEMP/krankerl.deb" \
+            "https://github.com/ChristophWurst/krankerl/releases/download/v$KRANKERL_VERSION/krankerl_${KRANKERL_VERSION}_amd64.deb"
+          echo "$KRANKERL_SHA256  $RUNNER_TEMP/krankerl.deb" | sha256sum --check --strict
+          sudo dpkg --install "$RUNNER_TEMP/krankerl.deb"
+      - name: Run the checks
+        run: bash scripts/check.sh

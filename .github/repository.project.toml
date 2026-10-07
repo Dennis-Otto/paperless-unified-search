@@ -1,0 +1,12 @@
+# The settings of this repository on top of .github/repository.toml, which the
+# blueprint keeps current. blueprint.py and the settings bot add them: tables merge,
+# lists gain their new items, and values replace those of repository.toml.
+# https://github.com/Dennis-Otto/repo-blueprint#settings-as-code
+
+# The end-to-end tests against every supported Nextcloud version (e2e.yml).
+[branch]
+required_checks = ["nextcloud"]
+
+# An environment of this project and the secrets it needs:
+# [environments.deploy]
+# secrets = ["DEPLOY_TOKEN"]

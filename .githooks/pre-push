@@ -1,0 +1,6 @@
+#!/bin/sh
+# Runs the checks of the CI before every push. Turn it on once with
+#   git config core.hooksPath .githooks
+# and skip it in an emergency with git push --no-verify.
+# The blueprint keeps this file current: https://github.com/Dennis-Otto/repo-blueprint
+exec bash scripts/check.sh

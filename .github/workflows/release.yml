@@ -1,344 +1,532 @@
-# SPDX-FileCopyrightText: 2026 Dennis Otto
-# SPDX-License-Identifier: AGPL-3.0-or-later
-
 name: Release
 
+# The release bot. release-please keeps a pull request for the next release, up to
+# date with main. Its version follows from the Conventional Commit titles merged
+# since the last release (fix: a patch, feat: a minor, ! or BREAKING CHANGE: a major
+# version) and is decided anew with every merge. What the pull requests wrote under
+# "## Unreleased" of CHANGELOG.md becomes the section of the release; without it,
+# the section lists the pull requests. Merging the pull request creates the release
+# as a draft, with its tag. The jobs below attach the package, its SBOM and its
+# signed provenance, write the notes, make the release public, and then deliver it
+# where the repository variable PUBLISH_TO says: pypi, npm, ghcr, hacs,
+# nextcloud-appstore, github-action or none. Last, verify-release.yml checks the
+# release as its users can. A release that only updates dependencies merges itself
+# once its checks pass.
+# https://github.com/Dennis-Otto/repo-blueprint
+
 on:
-  pull_request_target:
+  push:
     branches: [main]
-    types: [closed]
+  # Merges that auto-merge does with the token of a workflow, such as those of
+  # Dependabot's updates, start no workflow; so the release bot looks every hour too.
   schedule:
-    # GITHUB_TOKEN merges may suppress PR events; recover missing events and interrupted releases.
-    - cron: '13,43 * * * *'
+    - cron: "25 * * * *"
   workflow_dispatch:
-    inputs:
-      mode:
-        description: Publish a manual release or process unpublished Dependabot updates
-        required: true
-        default: manual
-        type: choice
-        options: [manual, dependencies]
-      increment:
-        description: Semantic version increment for a manual release
-        required: true
-        default: patch
-        type: choice
-        options: [patch, minor, major]
-      introduction:
-        description: Optional release introduction above the generated changelog
-        required: false
-        type: string
 
-permissions:
-  contents: read
-  actions: read
-  pull-requests: read
+permissions: {}
 
-# Serialize release and signature-repair mutations; never cancel CI or an active release.
 concurrency:
   group: release
   cancel-in-progress: false
 
-env:
-  APP_ID: paperless_unified_search
-  NEXTCLOUD_VERSION: 33.0.8
-  NEXTCLOUD_SHA256: d974bcbe446edaf87ae17113200b362495abbdb89d7900d65d930fe7a9dc9474
-  KRANKERL_VERSION: 0.14.0
-  KRANKERL_SHA256: 9bee5a756a83c5a6b1f040e9a2ade9e902e4a57211afc174cd8ac5c4f913958f
-
 jobs:
-  plan:
-    name: Find unpublished updates or an interrupted release
-    if: >-
-      github.repository == 'Dennis-Otto/paperless-unified-search' && github.ref == 'refs/heads/main' &&
-      (github.event_name != 'pull_request_target' ||
-       (github.event.pull_request.merged == true &&
-        github.event.pull_request.user.login == 'dependabot[bot]' &&
-        github.event.pull_request.head.repo.full_name == github.repository &&
-        github.event.pull_request.base.ref == 'main'))
+  release-please:
+    name: release pull request
+    if: ${{ !github.event.repository.fork }}
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      enabled: ${{ steps.plan.outputs.enabled }}
-      plan: ${{ steps.plan.outputs.plan }}
-    steps:
-      - name: Check out trusted main
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: main
-          persist-credentials: false
-      - name: Plan release without accessing signing secrets
-        id: plan
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_MODE: ${{ inputs.mode || 'dependencies' }}
-          INCREMENT: ${{ inputs.increment || 'patch' }}
-          INTRODUCTION: ${{ inputs.introduction }}
-        run: python3 .github/scripts/release_automation.py plan
-
-  release:
-    name: Prepare protected release, sign, and publish
-    needs: plan
-    if: needs.plan.outputs.enabled == 'true'
+    timeout-minutes: 10
+    # The environment holds the private key of the release app; only main may use it.
+    environment:
+      name: release
+      deployment: false
     permissions:
-      actions: read
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      created: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+      major: ${{ steps.release.outputs.major }}
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: Create a token of the release app
+        id: app
+        if: vars.RELEASE_AUTOMATION_CLIENT_ID != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY }}
+          # Only what the release pull request and its merge need.
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Have the release pull request rebuilt on the current main
+        if: steps.app.outputs.token != ''
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # release-please rebuilds its pull request only when its notes change, so a
+          # merge of a hidden type, such as docs or chore, would leave it behind main.
+          # Another description makes it rebuild the pull request on main.
+          set -euo pipefail
+          gh pr list --state open --label "autorelease: pending" --json number,headRefName \
+            --jq '.[] | "\(.number) \(.headRefName)"' |
+            while read -r number branch; do
+              behind="$(gh api "repos/$GH_REPO/compare/main...$branch" --jq .behind_by)"
+              if [[ "$behind" != 0 ]]; then
+                echo "#$number is $behind commit(s) behind main; release-please rebuilds it."
+                gh pr edit "$number" --body "The release bot rebuilds this pull request on the current main."
+              fi
+            done
+      - name: Update the release pull request, or create the release
+        id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          # A pull request of the release app starts the checks; one of the job's
+          # GITHUB_TOKEN would start none.
+          token: ${{ steps.app.outputs.token || secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+      - name: Write the text of Unreleased into the release pull request
+        if: steps.app.outputs.token != ''
+        env:
+          # The commit goes through GitHub's API as the release app: GitHub signs it,
+          # as main requires, and it starts the checks.
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ steps.release.outputs.pr }}
+        run: |
+          set -euo pipefail
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          raw=(-H "Accept: application/vnd.github.raw+json")
+          # The open release pull requests; one that release-please has just created may
+          # not carry its label yet, so its own output counts as well.
+          {
+            gh pr list --state open --label "autorelease: pending" --json headRefName --jq '.[].headRefName'
+            if [[ -n "$PR" ]]; then jq -r .headBranchName <<<"$PR"; fi
+          } | sort -u |
+            while read -r branch; do
+              head="$(gh api "repos/$GH_REPO/git/ref/heads/$branch" --jq .object.sha)"
+              version="$(gh api "${raw[@]}" "repos/$GH_REPO/contents/.release-please-manifest.json?ref=$head" | jq -r '.["."]')"
+              gh api "${raw[@]}" "repos/$GH_REPO/contents/CHANGELOG.md?ref=$head" > "$RUNNER_TEMP/branch.md"
+              python3 "$script" changelog release "$version" CHANGELOG.md "$RUNNER_TEMP/branch.md" > "$RUNNER_TEMP/release.md"
+              if cmp -s "$RUNNER_TEMP/release.md" "$RUNNER_TEMP/branch.md"; then
+                echo "The changelog of $version is up to date."
+                continue
+              fi
+              echo "Writing the changelog of $version into $branch."
+              jq --null-input --arg repo "$GH_REPO" --arg branch "$branch" --arg head "$head" \
+                --arg headline "chore: write the changelog of $version" \
+                --rawfile contents <(base64 --wrap=0 "$RUNNER_TEMP/release.md") \
+                '{query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
+                  variables: {input: {
+                    branch: {repositoryNameWithOwner: $repo, branchName: $branch},
+                    expectedHeadOid: $head,
+                    message: {headline: $headline},
+                    fileChanges: {additions: [{path: "CHANGELOG.md", contents: $contents}]}}}}' |
+                gh api graphql --input - --jq .data.createCommitOnBranch.commit.oid
+            done
+      - name: Merge a release of dependency updates once its checks pass
+        if: steps.release.outputs.pr != '' && steps.app.outputs.token != ''
+        env:
+          # Merged by the app, the release starts this workflow again and is created.
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PR: ${{ steps.release.outputs.pr }}
+        run: |
+          number="$(jq -r .number <<<"$PR")"
+          latest="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>/dev/null || true)"
+          if [[ -z "$latest" ]]; then
+            echo "The first release waits for the maintainer."
+            exit 0
+          fi
+          subjects="$(gh api "repos/$GITHUB_REPOSITORY/compare/$latest...$GITHUB_SHA" \
+            --jq '.commits[].commit.message | split("\n")[0]')"
+          others="$(grep -Ev '^(fix|chore|build)\(deps(-dev)?\): ' <<<"$subjects" || true)"
+          if [[ -n "$others" ]]; then
+            echo "The release holds more than dependency updates; the maintainer merges it:"
+            echo "$others"
+            exit 0
+          fi
+          gh pr merge --repo "$GITHUB_REPOSITORY" --auto --squash "$number"
+
+  assets:
+    name: release assets
+    needs: release-please
+    if: needs.release-please.outputs.created == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The signing key of a Nextcloud app belongs to this environment.
+    environment:
+      name: release
+      deployment: false
+    permissions:
       attestations: write
       contents: write
       id-token: write
-      pull-requests: read
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    environment: release
+    env:
+      TAG: ${{ needs.release-please.outputs.tag }}
+      PUBLISH_TO: ${{ vars.PUBLISH_TO }}
+      KRANKERL_VERSION: 0.14.0
+      KRANKERL_SHA256: 9bee5a756a83c5a6b1f040e9a2ade9e902e4a57211afc174cd8ac5c4f913958f
+      NEXTCLOUD_VERSION: 33.0.8
+      NEXTCLOUD_SHA256: d974bcbe446edaf87ae17113200b362495abbdb89d7900d65d930fe7a9dc9474
     steps:
-      - name: Create short-lived repository-scoped release token
-        id: release-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
-          client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
-          private-key: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: ${{ github.event.repository.name }}
-          permission-contents: write
-          permission-pull-requests: write
-
-      - name: Check out trusted main without persisting credentials
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
-          fetch-depth: 0
+          ref: ${{ needs.release-please.outputs.tag }}
           persist-credentials: false
+      - name: Collect the assets in one folder
+        run: |
+          echo "ASSETS=$RUNNER_TEMP/assets" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/assets"
 
-      - name: Prepare release PR and require all PR and main checks
-        id: version
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_RELEASE_TOKEN: ${{ steps.release-token.outputs.token }}
-          GH_RELEASE_APP_SLUG: ${{ steps.release-token.outputs.app-slug }}
-          RELEASE_PLAN: ${{ needs.plan.outputs.plan }}
-        run: python3 .github/scripts/release_automation.py prepare
+      - name: Package the integration for HACS
+        if: env.PUBLISH_TO == 'hacs'
+        run: |
+          # The archive holds the integration folder's content, as HACS zip releases do.
+          domain="$(basename custom_components/*/)"
+          filename="$(jq -r '.filename // empty' hacs.json)"
+          git archive --format=zip --output="$ASSETS/${filename:-$domain.zip}" "HEAD:custom_components/$domain"
 
-      - name: Check out the exact checked release commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: env.PUBLISH_TO == 'pypi'
         with:
-          ref: ${{ steps.version.outputs.target_sha }}
-          fetch-depth: 0
-          persist-credentials: false
+          python-version-file: .python-version
+      - name: Build the Python package
+        if: env.PUBLISH_TO == 'pypi'
+        run: |
+          # The build backend comes hash-pinned from requirements-dev.txt as well.
+          python -m pip install --require-hashes -r requirements-dev.txt
+          python -m build --no-isolation --outdir "$ASSETS"
 
-      - name: Set up PHP 8.2
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: env.PUBLISH_TO == 'npm'
+        with:
+          node-version-file: .nvmrc
+      - name: Pack the npm package
+        if: env.PUBLISH_TO == 'npm'
+        run: |
+          npm ci --ignore-scripts
+          npm run build --if-present
+          npm pack --pack-destination "$ASSETS"
+
+      - name: Set up PHP for the signing of the Nextcloud app
+        if: env.PUBLISH_TO == 'nextcloud-appstore'
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
         with:
-          php-version: '8.2'
-          extensions: dom, libxml, mbstring
+          php-version: "8.2"
+          extensions: dom, libxml, mbstring, xml, zip
           coverage: none
-
-      - name: Verify canonical release metadata and dependencies
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          test "$(php scripts/release-version.php check)" = "${VERSION}"
-          composer validate --strict
-          composer install --no-interaction --prefer-dist --no-progress
-          composer audit
-
-      - name: Refresh token for publication after potentially long checks
-        id: publish-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
-          private-key: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: ${{ github.event.repository.name }}
-          permission-contents: write
-
-      - name: Stage restartable GitHub release after successful checks
-        id: stage
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_RELEASE_TOKEN: ${{ steps.publish-token.outputs.token }}
-          VERSION: ${{ steps.version.outputs.version }}
-          RELEASE_SHA: ${{ steps.version.outputs.target_sha }}
-        run: python3 .github/scripts/release_automation.py stage
-
-      - name: Install verified Krankerl package builder
-        if: steps.stage.outputs.draft == 'true'
-        shell: bash
-        run: |
-          PACKAGE="${RUNNER_TEMP}/krankerl.deb"
-          curl --fail --location --silent --show-error \
-            "https://github.com/ChristophWurst/krankerl/releases/download/v${KRANKERL_VERSION}/krankerl_${KRANKERL_VERSION}_amd64.deb" \
-            --output "${PACKAGE}"
-          echo "${KRANKERL_SHA256}  ${PACKAGE}" | sha256sum --check --strict
-          sudo dpkg --install "${PACKAGE}"
-
-      - name: Build app archive
-        if: steps.stage.outputs.draft == 'true'
-        run: krankerl package
-
-      - name: Verify unsigned production package
-        if: steps.stage.outputs.draft == 'true'
-        run: composer package:check
-
-      - name: Prepare private key and verified signing tools
-        if: steps.stage.outputs.draft == 'true'
-        shell: bash
+      - name: Build and sign the Nextcloud app
+        if: env.PUBLISH_TO == 'nextcloud-appstore'
         env:
           APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
         run: |
-          umask 077
-          KEY_FILE="${RUNNER_TEMP}/app-private.key"
-          CERT_FILE="${RUNNER_TEMP}/app-certificate.crt"
-          NEXTCLOUD_ARCHIVE="${RUNNER_TEMP}/nextcloud.zip"
-
-          test -n "${APP_PRIVATE_KEY}"
-          printf '%s' "${APP_PRIVATE_KEY}" > "${KEY_FILE}"
-          openssl pkey -in "${KEY_FILE}" -check -noout
-
-          curl --fail --location --silent --show-error \
-            "https://raw.githubusercontent.com/nextcloud/app-certificate-requests/master/${APP_ID}/${APP_ID}.crt" \
-            --output "${CERT_FILE}"
-          openssl x509 -in "${CERT_FILE}" -noout -subject
-
-          curl --fail --location --silent --show-error \
-            "https://download.nextcloud.com/server/releases/nextcloud-${NEXTCLOUD_VERSION}.zip" \
-            --output "${NEXTCLOUD_ARCHIVE}"
-          echo "${NEXTCLOUD_SHA256}  ${NEXTCLOUD_ARCHIVE}" | sha256sum --check --strict
-          unzip -q "${NEXTCLOUD_ARCHIVE}" -d "${RUNNER_TEMP}/nextcloud-server"
-
-      - name: Sign app and rebuild archive
-        if: steps.stage.outputs.draft == 'true'
-        shell: bash
-        run: |
-          ARCHIVE="build/artifacts/${APP_ID}.tar.gz"
-          SIGNING_DIR="${RUNNER_TEMP}/signing"
-          mkdir --parents "${SIGNING_DIR}"
-          tar --extract --gzip --file "${ARCHIVE}" --directory "${SIGNING_DIR}"
-          test -d "${SIGNING_DIR}/${APP_ID}"
-
-          php "${RUNNER_TEMP}/nextcloud-server/nextcloud/occ" integrity:sign-app \
-            --privateKey="${RUNNER_TEMP}/app-private.key" \
-            --certificate="${RUNNER_TEMP}/app-certificate.crt" \
-            --path="${SIGNING_DIR}/${APP_ID}"
-
-          test -s "${SIGNING_DIR}/${APP_ID}/appinfo/signature.json"
-          tar --create --gzip --file "${ARCHIVE}" \
-            --directory "${SIGNING_DIR}" "${APP_ID}"
-
-      - name: Verify signed production package
-        if: steps.stage.outputs.draft == 'true'
-        run: bash scripts/check-package.sh "build/artifacts/${APP_ID}.tar.gz" signed
-
-      - name: Create and verify detached release signature
-        if: steps.stage.outputs.draft == 'true'
-        shell: bash
-        run: |
           set -euo pipefail
-          ARCHIVE="build/artifacts/${APP_ID}.tar.gz"
-          SIGNATURE="${ARCHIVE}.sig"
-          PUBLIC_KEY="${RUNNER_TEMP}/app-public.pem"
-          openssl dgst -sha512 \
-            -sign "${RUNNER_TEMP}/app-private.key" \
-            -out "${SIGNATURE}" \
-            "${ARCHIVE}"
-          openssl x509 -in "${RUNNER_TEMP}/app-certificate.crt" -pubkey -noout > "${PUBLIC_KEY}"
-          openssl dgst -sha512 -verify "${PUBLIC_KEY}" -signature "${SIGNATURE}" "${ARCHIVE}"
+          if [[ -z "$APP_PRIVATE_KEY" ]]; then
+            echo "::error::The secret APP_PRIVATE_KEY of the environment release is missing."
+            exit 1
+          fi
+          app_id="$(python3 -c 'import xml.etree.ElementTree as t; print(t.parse("appinfo/info.xml").getroot().findtext("id"))')"
+          curl --fail --location --silent --show-error --output "$RUNNER_TEMP/krankerl.deb" \
+            "https://github.com/ChristophWurst/krankerl/releases/download/v$KRANKERL_VERSION/krankerl_${KRANKERL_VERSION}_amd64.deb"
+          echo "$KRANKERL_SHA256  $RUNNER_TEMP/krankerl.deb" | sha256sum --check --strict
+          sudo dpkg --install "$RUNNER_TEMP/krankerl.deb"
+          krankerl package
+          # The project's own checks of what its package holds, before and after signing.
+          if [[ -f scripts/check-package.sh ]]; then
+            bash scripts/check-package.sh "build/artifacts/$app_id.tar.gz" unsigned
+          fi
+          umask 077
+          printf '%s' "$APP_PRIVATE_KEY" > "$RUNNER_TEMP/app.key"
+          curl --fail --location --silent --show-error --output "$RUNNER_TEMP/app.crt" \
+            "https://raw.githubusercontent.com/nextcloud/app-certificate-requests/master/$app_id/$app_id.crt"
+          curl --fail --location --silent --show-error --output "$RUNNER_TEMP/nextcloud.zip" \
+            "https://download.nextcloud.com/server/releases/nextcloud-$NEXTCLOUD_VERSION.zip"
+          echo "$NEXTCLOUD_SHA256  $RUNNER_TEMP/nextcloud.zip" | sha256sum --check --strict
+          unzip -q "$RUNNER_TEMP/nextcloud.zip" -d "$RUNNER_TEMP/server"
+          mkdir -p "$RUNNER_TEMP/signing"
+          tar --extract --gzip --file "build/artifacts/$app_id.tar.gz" --directory "$RUNNER_TEMP/signing"
+          php "$RUNNER_TEMP/server/nextcloud/occ" integrity:sign-app \
+            --privateKey="$RUNNER_TEMP/app.key" --certificate="$RUNNER_TEMP/app.crt" \
+            --path="$RUNNER_TEMP/signing/$app_id"
+          test -s "$RUNNER_TEMP/signing/$app_id/appinfo/signature.json"
+          tar --create --gzip --file "$ASSETS/$app_id.tar.gz" --directory "$RUNNER_TEMP/signing" "$app_id"
+          if [[ -f scripts/check-package.sh ]]; then
+            bash scripts/check-package.sh "$ASSETS/$app_id.tar.gz" signed
+          fi
+          openssl dgst -sha512 -sign "$RUNNER_TEMP/app.key" -out "$ASSETS/$app_id.tar.gz.sig" "$ASSETS/$app_id.tar.gz"
+          openssl x509 -in "$RUNNER_TEMP/app.crt" -pubkey -noout > "$RUNNER_TEMP/app.pub"
+          openssl dgst -sha512 -verify "$RUNNER_TEMP/app.pub" -signature "$ASSETS/$app_id.tar.gz.sig" "$ASSETS/$app_id.tar.gz"
+          rm -f "$RUNNER_TEMP/app.key"
 
-      - name: Generate signed-package SBOM
-        if: steps.stage.outputs.draft == 'true'
+      - name: Generate the SBOM
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
-          path: ${{ runner.temp }}/signing/${{ env.APP_ID }}
+          path: .
           format: spdx-json
-          output-file: build/artifacts/${{ env.APP_ID }}.spdx.json
+          output-file: ${{ runner.temp }}/assets/${{ github.event.repository.name }}.spdx.json
           upload-artifact: false
           upload-release-assets: false
-          syft-version: v1.51.0
+          syft-version: v1.52.0
 
-      - name: Attest signed production package and SBOM
-        if: steps.stage.outputs.draft == 'true'
+      - name: Attest the provenance of every asset
         id: attest
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: |
-            build/artifacts/${{ env.APP_ID }}.tar.gz
-            build/artifacts/${{ env.APP_ID }}.tar.gz.sig
-            build/artifacts/${{ env.APP_ID }}.spdx.json
+          subject-path: ${{ runner.temp }}/assets/*
 
-      - name: Export verifiable attestation bundle
-        if: steps.stage.outputs.draft == 'true'
-        shell: bash
+      - name: Attach the assets and their signed provenance to the draft
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
         run: |
-          set -euo pipefail
-          test -s "${BUNDLE_PATH}"
-          jq --exit-status . "${BUNDLE_PATH}" >/dev/null
-          cp -- "${BUNDLE_PATH}" "build/artifacts/${APP_ID}.sigstore.json"
+          cp "$BUNDLE_PATH" "$ASSETS/provenance.sigstore.json"
+          gh release upload "$TAG" "$ASSETS"/* --clobber --repo "$GITHUB_REPOSITORY"
 
-      - name: Publish complete draft assets
-        if: steps.stage.outputs.draft == 'true'
+      - name: Write the notes, the section of the changelog with every pull request
         env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.release-please.outputs.version }}
         run: |
-          ARCHIVE="build/artifacts/${APP_ID}.tar.gz"
-          test -s "${ARCHIVE}"
-          test -s "${ARCHIVE}.sig"
-          test -s "build/artifacts/${APP_ID}.spdx.json"
-          test -s "build/artifacts/${APP_ID}.sigstore.json"
-          gh release upload "v${VERSION}" "${ARCHIVE}" "${ARCHIVE}.sig" \
-            "build/artifacts/${APP_ID}.spdx.json" "build/artifacts/${APP_ID}.sigstore.json" --clobber
-          gh release edit "v${VERSION}" --draft=false --prerelease=false --latest
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$RUNNER_TEMP/pull-requests.md"
+          python3 "$script" changelog notes "$VERSION" CHANGELOG.md "$RUNNER_TEMP/pull-requests.md" > "$RUNNER_TEMP/notes.md"
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/notes.md"
 
-      - name: Resume App Store delivery using immutable published assets
-        if: steps.stage.outputs.draft != 'true'
+  publish:
+    name: publish the release
+    needs: [release-please, assets]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: Make the complete release public
         env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release-please.outputs.tag }}
         run: |
-          mkdir --parents build/artifacts
-          gh release download "v${VERSION}" --dir build/artifacts \
-            --pattern "${APP_ID}.tar.gz" --pattern "${APP_ID}.tar.gz.sig" \
-            --pattern "${APP_ID}.spdx.json" --pattern "${APP_ID}.sigstore.json"
-          curl --fail --location --silent --show-error \
-            "https://raw.githubusercontent.com/nextcloud/app-certificate-requests/master/${APP_ID}/${APP_ID}.crt" \
-            --output "${RUNNER_TEMP}/app-certificate.crt"
-          openssl x509 -in "${RUNNER_TEMP}/app-certificate.crt" -pubkey -noout > "${RUNNER_TEMP}/app-public.pem"
-          ARCHIVE="build/artifacts/${APP_ID}.tar.gz"
-          openssl dgst -sha512 -verify "${RUNNER_TEMP}/app-public.pem" -signature "${ARCHIVE}.sig" "${ARCHIVE}"
-          bash scripts/check-package.sh "${ARCHIVE}" signed
-          for ASSET in "${ARCHIVE}" "${ARCHIVE}.sig" "build/artifacts/${APP_ID}.spdx.json"; do
-            gh attestation verify "${ASSET}" --repo "${GITHUB_REPOSITORY}" \
-              --bundle "build/artifacts/${APP_ID}.sigstore.json" \
-              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release.yml"
-          done
+          # A version such as 2.0.0-beta.1 is a prerelease, which HACS, npm and the
+          # like only offer to those who ask for one.
+          if [[ "$TAG" == *-* ]]; then
+            gh release edit "$TAG" --draft=false --prerelease --latest=false --repo "$GITHUB_REPOSITORY"
+          else
+            gh release edit "$TAG" --draft=false --latest --repo "$GITHUB_REPOSITORY"
+          fi
 
-      - name: Publish release to Nextcloud App Store
+  pypi:
+    name: deliver to PyPI
+    needs: [release-please, publish]
+    if: vars.PUBLISH_TO == 'pypi'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Trusted publishing: PyPI accepts this workflow and environment, no token.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/${{ github.event.repository.name }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: Download the packages of the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release-please.outputs.tag }}
+        run: gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dist --pattern '*.whl' --pattern '*.tar.gz'
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+
+  npm:
+    name: deliver to npm
+    needs: [release-please, publish]
+    if: vars.PUBLISH_TO == 'npm'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Trusted publishing with provenance: npm accepts this workflow, no token.
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/${{ github.event.repository.name }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Publish the package of the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release-please.outputs.tag }}
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.tgz'
+          # A prerelease goes to the tag next, so that npm install keeps the release.
+          channel=latest
+          [[ "$TAG" == *-* ]] && channel=next
+          npm publish ./*.tgz --provenance --access public --tag "$channel"
+
+  ghcr:
+    name: deliver to GHCR
+    needs: [release-please, publish]
+    if: vars.PUBLISH_TO == 'ghcr'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+      packages: write
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.tag }}
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Name the image in the lowercase that registries require
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+      - name: Name the image and its tags
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.release-please.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.version }}
+            type=semver,pattern={{major}},value=${{ needs.release-please.outputs.version }}
+      - name: Build and push the image with SBOM and provenance
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+      - name: Attest the provenance of the image
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  nextcloud-appstore:
+    name: deliver to the Nextcloud App Store
+    needs: [release-please, publish]
+    if: vars.PUBLISH_TO == 'nextcloud-appstore'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: release
+      deployment: false
+    permissions:
+      contents: read
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.tag }}
+          persist-credentials: false
+      - name: Submit the signed package of the public release
         env:
           APPSTORE_TOKEN: ${{ secrets.APPSTORE_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release-please.outputs.tag }}
         run: |
+          set -euo pipefail
+          if [[ -z "$APPSTORE_TOKEN" ]]; then
+            echo "::error::The secret APPSTORE_TOKEN of the environment release is missing."
+            exit 1
+          fi
+          app_id="$(python3 -c 'import xml.etree.ElementTree as t; print(t.parse("appinfo/info.xml").getroot().findtext("id"))')"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$app_id.tar.gz.sig"
           umask 077
-          REQUEST_FILE="${RUNNER_TEMP}/appstore-release.json"
-          DOWNLOAD_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${APP_ID}.tar.gz"
-          test -n "${APPSTORE_TOKEN}"
-          SIGNATURE="$(openssl base64 -A -in "build/artifacts/${APP_ID}.tar.gz.sig")"
-          jq --null-input --arg download "${DOWNLOAD_URL}" --arg signature "${SIGNATURE}" \
-            '{download: $download, signature: $signature, nightly: false}' > "${REQUEST_FILE}"
-          # This API creates or updates the same version; retries do not create another release.
+          jq --null-input \
+            --arg download "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$app_id.tar.gz" \
+            --arg signature "$(openssl base64 -A -in "$app_id.tar.gz.sig")" \
+            '{download: $download, signature: $signature, nightly: false}' > "$RUNNER_TEMP/request.json"
+          # The API creates or updates the same version; a retry creates no second release.
           curl --fail-with-body --silent --show-error --retry 3 --retry-connrefused \
             --connect-timeout 15 --max-time 180 --request POST \
-            --header "Authorization: Token ${APPSTORE_TOKEN}" --header 'Content-Type: application/json' \
-            --data-binary "@${REQUEST_FILE}" https://apps.nextcloud.com/api/v1/apps/releases
+            --header "Authorization: Token $APPSTORE_TOKEN" --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/request.json" https://apps.nextcloud.com/api/v1/apps/releases
 
-      - name: Mark GitHub and App Store publication complete
+  github-action:
+    name: move the major tag
+    needs: [release-please, publish]
+    # A prerelease leaves the major tag at the last release.
+    if: vars.PUBLISH_TO == 'github-action' && !contains(needs.release-please.outputs.tag, '-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.tag }}
+          persist-credentials: false
+      - name: Point the major tag at the release, as users of v1 and the like expect
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_RELEASE_TOKEN: ${{ steps.publish-token.outputs.token }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: python3 .github/scripts/release_automation.py complete
-
-      - name: Remove temporary credentials
-        if: always()
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release-please.outputs.tag }}
+          MAJOR: v${{ needs.release-please.outputs.major }}
         run: |
-          rm --force "${RUNNER_TEMP}/app-private.key" "${RUNNER_TEMP}/app-certificate.crt" \
-            "${RUNNER_TEMP}/app-public.pem" "${RUNNER_TEMP}/appstore-release.json"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -fa "$MAJOR" -m "$TAG" "$TAG^{commit}"
+          git push --force "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" "refs/tags/$MAJOR"
+
+  verify:
+    name: verify
+    needs: [release-please, publish, pypi, npm, ghcr, nextcloud-appstore, github-action]
+    # After the delivery, whichever of them ran: the release as its users check it.
+    if: always() && needs.publish.result == 'success'
+    permissions:
+      attestations: read
+      contents: read
+    uses: ./.github/workflows/verify-release.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag }}

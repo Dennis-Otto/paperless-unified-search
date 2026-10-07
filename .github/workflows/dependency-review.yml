@@ -1,28 +1,43 @@
-# SPDX-FileCopyrightText: 2026 Dennis Otto
-# SPDX-License-Identifier: AGPL-3.0-or-later
-
 name: Dependency review
 
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      base_ref:
+        description: "Base commit for the dependency comparison"
+        required: true
+        type: string
+      head_ref:
+        description: "Candidate commit for the dependency comparison"
+        required: true
+        type: string
 
 permissions:
   contents: read
+
+concurrency:
+  group: dependency-review-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   dependency-review:
     name: dependency-review
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Review dependency changes
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      # The rules of the pull request itself: accepting an advisory shows in its diff.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check dependency changes for known vulnerabilities
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
-          base-ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.repository.default_branch }}
-          head-ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          fail-on-severity: moderate
-          fail-on-scopes: runtime, development, unknown
-          allow-licenses: AGPL-3.0-or-later, Apache-2.0, BSD-3-Clause, ISC, MIT, OSL-3.0
-          show-openssf-scorecard: true
-          show-patched-versions: true
-          retry-on-snapshot-warnings: true
+          base-ref: ${{ inputs.base_ref || github.event.pull_request.base.sha }}
+          head-ref: ${{ inputs.head_ref || github.event.pull_request.head.sha }}
+          # The rules and the accepted advisories of this repository.
+          config-file: ./.github/dependency-review.yml

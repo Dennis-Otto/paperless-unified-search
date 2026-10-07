@@ -30,7 +30,7 @@
 		"package:check": "bash scripts/check-package.sh",
 		"psalm": "psalm --threads=1 --no-cache",
 		"test": "phpunit",
-		"version:check": "php scripts/release-version.php check"
+		"check": "bash scripts/check.sh"
 	},
 	"config": {
 		"allow-plugins": {

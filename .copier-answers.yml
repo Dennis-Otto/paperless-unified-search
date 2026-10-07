@@ -1,0 +1,22 @@
+# The answers of the blueprint (https://github.com/Dennis-Otto/repo-blueprint);
+# `copier update` reads them to bring the repository up to the latest release.
+# Change them only with `copier update --data name=value`.
+_commit: v0.2.0-12-gac706a7
+_src_path: https://github.com/Dennis-Otto/repo-blueprint.git
+author: Dennis Otto
+copyright: 2026 Dennis Otto
+description: OCR-powered Paperless-ngx search, seamlessly integrated into Nextcloud
+discussions: false
+homepage: https://apps.nextcloud.com/apps/paperless_unified_search
+languages:
+- javascript-typescript
+license: AGPL-3.0-or-later
+nextcloud_app_id: paperless_unified_search
+nextcloud_namespace: PaperlessUnifiedSearch
+owner: Dennis-Otto
+project_name: Paperless Unified Search
+project_slug: paperless-unified-search
+project_type: nextcloud-app
+sponsor: Dennis-Otto
+topics: document-management, full-text-search, nextcloud, ocr, paperless-ngx, php,
+    search

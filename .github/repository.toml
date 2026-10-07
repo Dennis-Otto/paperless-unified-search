@@ -1,0 +1,64 @@
+# The settings of the repository as code. `blueprint.py settings check` compares them
+# with GitHub, and `blueprint.py settings apply` sets them:
+# https://github.com/Dennis-Otto/repo-blueprint#settings
+
+[repository]
+description = "OCR-powered Paperless-ngx search, seamlessly integrated into Nextcloud"
+homepage = "https://apps.nextcloud.com/apps/paperless_unified_search"
+topics = ["document-management", "full-text-search", "nextcloud", "ocr", "paperless-ngx", "php", "search"]
+has_issues = true
+has_discussions = false
+has_projects = false
+has_wiki = false
+allow_squash_merge = true
+allow_merge_commit = false
+allow_rebase_merge = false
+allow_auto_merge = true
+allow_update_branch = true
+delete_branch_on_merge = true
+squash_merge_commit_title = "PR_TITLE"
+squash_merge_commit_message = "PR_BODY"
+# The DCO sign-off also for commits made on github.com.
+web_commit_signoff_required = true
+
+[security]
+# A published release keeps its tag and assets; title and notes stay editable.
+immutable_releases = true
+private_vulnerability_reporting = true
+dependabot_alerts = true
+dependabot_security_updates = true
+secret_scanning = true
+secret_scanning_push_protection = true
+
+[actions]
+default_workflow_permissions = "read"
+can_approve_pull_request_reviews = false
+sha_pinning_required = true
+# Workflows of pull requests from forks wait for the maintainer's approval.
+fork_pr_approval = "all_external_contributors"
+
+# The checks every pull request into main must pass.
+[branch]
+required_checks = [
+  "check (php)",
+  "workflow-lint",
+  "reuse",
+  "dco",
+  "issue-assistant",
+  "conventional title",
+  "codeql",
+  "dependency-review",
+  "gitleaks",
+]
+
+[variables]
+PUBLISH_TO = "nextcloud-appstore"
+# The GitHub App that opens the release pull requests, so that their checks run.
+RELEASE_AUTOMATION_CLIENT_ID = "Iv23liP9PIEHOV74AiIA"
+
+# Environments and the secrets they need; only main may use them.
+[environments.release]
+secrets = ["RELEASE_AUTOMATION_PRIVATE_KEY", "APP_PRIVATE_KEY", "APPSTORE_TOKEN"]
+
+[environments.issue-assistant]
+secrets = ["CLAUDE_CODE_OAUTH_TOKEN"]

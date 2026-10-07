@@ -1,8 +1,5 @@
-# SPDX-FileCopyrightText: 2026 Dennis Otto
-# SPDX-License-Identifier: AGPL-3.0-or-later
-
 self-hosted-runner:
   labels:
-    # GitHub's runner with the egress firewall (technical preview), on which the
-    # issue assistant runs the AI; this version of actionlint does not know it yet.
+    # GitHub's runner with the egress firewall (technical preview), which this
+    # version of actionlint does not know yet; see .github/egress-firewall.yaml.
     - ubuntu-24.04-firewall

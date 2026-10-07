@@ -1,6 +1,3 @@
-# SPDX-FileCopyrightText: 2026 Dennis Otto
-# SPDX-License-Identifier: AGPL-3.0-or-later
-
 name: Issue assistant
 
 # A first analysis of new issues, the labels of the issue forms and the answers that

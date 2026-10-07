@@ -1,0 +1,35 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "package-name": "paperless-unified-search",
+      "include-component-in-tag": false,
+      "initial-version": "0.1.0",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": false,
+      "draft": true,
+      "force-tag-creation": true,
+      "pull-request-title-pattern": "chore: release ${version}",
+      "pull-request-header": "The next release. Its version follows from the titles of the pull requests merged since the last release: fix makes a patch, feat a minor and ! or BREAKING CHANGE a major version, decided anew with every merge. What CHANGELOG.md says under Unreleased becomes the section of the release. Merging this pull request publishes it.",
+      "changelog-sections": [
+        { "type": "feat", "section": "Features" },
+        { "type": "fix", "section": "Bug fixes" },
+        { "type": "perf", "section": "Performance" },
+        { "type": "revert", "section": "Reverts" },
+        { "type": "docs", "section": "Documentation" },
+        { "type": "deps", "section": "Dependencies" },
+        { "type": "refactor", "section": "Code refactoring", "hidden": true },
+        { "type": "test", "section": "Tests", "hidden": true },
+        { "type": "build", "section": "Build system", "hidden": true },
+        { "type": "ci", "section": "Continuous integration", "hidden": true },
+        { "type": "chore", "section": "Miscellaneous", "hidden": true },
+        { "type": "style", "section": "Style", "hidden": true }
+      ],
+      "extra-files": [
+        { "type": "xml", "path": "appinfo/info.xml", "xpath": "//info/version" },
+        { "type": "generic", "path": "appinfo/info.xml" }
+      ]
+    }
+  }
+}

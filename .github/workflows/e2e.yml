@@ -3,45 +3,86 @@
 
 name: Docker E2E
 
+# The end-to-end tests in Docker against the current release of every Nextcloud
+# version that appinfo/info.xml supports, from min-version to max-version, so that
+# raising max-version, as the upstream bot does, tests the new version at once.
+
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  versions:
+    name: supported Nextcloud versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      majors: ${{ steps.versions.outputs.majors }}
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read min-version and max-version of appinfo/info.xml
+        id: versions
+        run: |
+          python3 - >> "$GITHUB_OUTPUT" <<'PYTHON'
+          import json
+          import xml.etree.ElementTree as tree
+
+          nextcloud = tree.parse("appinfo/info.xml").getroot().find("dependencies/nextcloud")
+          low, high = int(nextcloud.get("min-version")), int(nextcloud.get("max-version"))
+          print("majors=" + json.dumps(list(range(low, high + 1))))
+          PYTHON
+
   nextcloud-version:
     name: Nextcloud ${{ matrix.nextcloud }}
+    needs: versions
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - nextcloud: 33.0.8
-            image: nextcloud:33.0.8-apache@sha256:995c90968685e5584891060ec10b3d4645c6c8bb1d2d2e78590113884101e8e0
-          - nextcloud: 34.0.3
-            image: nextcloud:34.0.3-apache@sha256:8e5f49801db0cf4659b3089ce1917728023bb8cba7f93731f2abbdfe3a18df0a
+        nextcloud: ${{ fromJSON(needs.versions.outputs.majors) }}
     env:
-      NEXTCLOUD_IMAGE: ${{ matrix.image }}
+      # The current release of the major version.
+      NEXTCLOUD_IMAGE: nextcloud:${{ matrix.nextcloud }}-apache
     steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Run Nextcloud Custom App end-to-end tests
+      - name: Run the Paperless Unified Search end-to-end tests
         run: bash tests/e2e/run.sh
 
   nextcloud:
     name: nextcloud
     if: always()
-    needs:
-      - nextcloud-version
+    needs: [versions, nextcloud-version]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
       - name: Require every supported Nextcloud version to pass
-        run: test "${{ needs.nextcloud-version.result }}" = success
+        env:
+          VERSIONS: ${{ needs.versions.result }}
+          RESULT: ${{ needs.nextcloud-version.result }}
+        run: test "$VERSIONS" = success && test "$RESULT" = success

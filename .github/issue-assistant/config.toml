@@ -1,6 +1,3 @@
-# SPDX-FileCopyrightText: 2026 Dennis Otto
-# SPDX-License-Identifier: AGPL-3.0-or-later
-#
 # Settings of the issue assistant: https://github.com/Dennis-Otto/issue-assistant
 
 [engine]
@@ -10,11 +7,7 @@ name = "claude"
 
 [links]
 # Hosts that links in the assistant's comments may lead to, besides this repository.
-hosts = [
-  "docs.nextcloud.com",
-  "apps.nextcloud.com",
-  "docs.paperless-ngx.com",
-]
+hosts = ["docs.nextcloud.com", "apps.nextcloud.com", "docs.paperless-ngx.com"]
 
 [forms]
 # The dropdown of the issue forms whose answer chooses an area label, and the
@@ -25,3 +18,8 @@ unmapped_options = ["Other"]
 [transparency]
 # Files that tell reporters which AI reads their issue.
 files = ["SUPPORT.md"]
+
+[releases]
+# A merged pull request that fixes an issue labels it fixed-in-next-release; the
+# issue closes with a link to the first release that ships the fix.
+close_with_release = true

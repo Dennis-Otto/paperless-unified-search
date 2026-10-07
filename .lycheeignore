@@ -1,0 +1,2 @@
+# Links that the link check of this repository skips, one regular expression per
+# line, each with its reason above it. The rules of every repository are in lychee.toml.

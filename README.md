@@ -7,6 +7,7 @@
 [![SBOM](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/sbom.yml/badge.svg)](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/sbom.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Dennis-Otto/paperless-unified-search/badge)](https://scorecard.dev/viewer/?uri=github.com/Dennis-Otto/paperless-unified-search)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14256/badge)](https://www.bestpractices.dev/projects/14256)
+[![REUSE](https://api.reuse.software/badge/github.com/Dennis-Otto/paperless-unified-search)](https://api.reuse.software/info/github.com/Dennis-Otto/paperless-unified-search)
 [![Sponsor](https://img.shields.io/badge/sponsor-%E2%99%A5-db61a2?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/Dennis-Otto)
 
 Paperless Unified Search brings Paperless-ngx OCR and full-text search into Nextcloud's global search. Search results open the matching synchronized file directly in Nextcloud's viewer.
@@ -83,19 +84,16 @@ See [SECURITY.md](SECURITY.md) for reporting security issues.
 
 ## Development
 
-Install dependencies and run all checks:
+Install the dependencies and run every check of the CI; the dev container in `.devcontainer/` has the tools ready:
 
 ```bash
 composer install
-composer lint
-composer l10n:check
-composer test
-composer cs:check
-composer psalm
-composer version:check
+bash scripts/check.sh
 ```
 
-The production archive intentionally excludes tests, release tools, Composer development dependencies, screenshots, and repository metadata. Packaging uses [Krankerl](https://github.com/ChristophWurst/krankerl), and `composer package:check` validates the finished archive.
+`scripts/check.sh` checks Composer, `appinfo/info.xml` against the schema of the App Store, PHP syntax, the coding standard, Psalm, PHPUnit, the package that krankerl builds with `scripts/check-package.sh`, and the JavaScript and the translations (`scripts/check-project.sh`).
+
+The production archive intentionally excludes tests, release tools, Composer development dependencies, screenshots, and repository metadata. Packaging uses [Krankerl](https://github.com/ChristophWurst/krankerl), and `scripts/check-package.sh` validates the finished archive.
 
 ### Docker end-to-end tests
 
@@ -111,13 +109,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 ### Releases
 
-The protected `main` branch requires CI, Docker E2E, Dependency Review, CodeQL, SBOM generation and secret scanning. Dependabot checks dependencies weekly; grouped patch and minor updates merge after successful checks. Major dependency updates require a maintainer merge.
+The protected `main` branch requires the checks of the CI, the Docker end-to-end tests against every supported Nextcloud version, the dependency review, CodeQL, the secret scan, the licenses of every file (REUSE), the sign-off of every commit and a Conventional Commit title. Dependabot keeps the dependencies current; routine updates merge on their own once every check passes.
 
-Merged Dependabot updates automatically produce a checked, signed **app patch release**, including GitHub assets and Nextcloud App Store publication. A scheduled reconciliation catches suppressed events and resumes interrupted releases without duplicate versions. Manual releases support `patch`, `minor`, `major`, and an optional introduction above the generated changelog.
-
-Release version PRs use verified GitHub App commits and normal branch protection. All PR checks and all checks on the exact merged main commit must pass before publication. Signing, detached signatures, SPDX SBOMs and public Sigstore provenance are preserved. Release secrets are restricted to the `main`-only `release` environment.
-
-See [the release guide](docs/releases.md) for configuration, changelogs, safeguards and recovery. Run the release regression tests with `python3 -m unittest discover -s tests/release -v`.
+The release bot keeps a pull request for the next release. Its version follows from the titles of the merged pull requests, and what they wrote under *Unreleased* in `CHANGELOG.md` becomes its notes. Merging it publishes the release: the package, checked before and after signing with the app's certificate, its detached signature, an SPDX SBOM and signed build provenance, then the same package in the Nextcloud App Store, verified afterwards as users can verify it. See [the release guide](docs/releases.md).
 
 Project decisions and support expectations are documented in [GOVERNANCE.md](GOVERNANCE.md), [SUPPORT.md](SUPPORT.md), and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 

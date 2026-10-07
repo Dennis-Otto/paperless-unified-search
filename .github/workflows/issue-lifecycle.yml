@@ -1,6 +1,3 @@
-# SPDX-FileCopyrightText: 2026 Dennis Otto
-# SPDX-License-Identifier: AGPL-3.0-or-later
-
 name: Issue lifecycle
 
 # Without AI: reminds reporters who were asked for information after 15 days,

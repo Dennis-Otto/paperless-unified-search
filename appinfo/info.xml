@@ -87,9 +87,9 @@ Für eine strukturierte Dokumentensynchronisierung steht die unabhängige Nextcl
 	<website>https://github.com/Dennis-Otto/paperless-unified-search</website>
 	<bugs>https://github.com/Dennis-Otto/paperless-unified-search/issues</bugs>
 	<repository type="git">https://github.com/Dennis-Otto/paperless-unified-search.git</repository>
-	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.1.11/screenshots/01-unified-search.png</screenshot>
-	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.1.11/screenshots/02-nextcloud-pdf-viewer.png</screenshot>
-	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.1.11/screenshots/03-admin-settings.png</screenshot>
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.1.11/screenshots/01-unified-search.png</screenshot><!-- x-release-please-version -->
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.1.11/screenshots/02-nextcloud-pdf-viewer.png</screenshot><!-- x-release-please-version -->
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.1.11/screenshots/03-admin-settings.png</screenshot><!-- x-release-please-version -->
 	<dependencies>
 		<php min-version="8.2"/>
 		<nextcloud min-version="33" max-version="35"/>

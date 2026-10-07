@@ -1,0 +1,73 @@
+name: Settings
+
+# The settings bot. Every week, and after each change of the settings as code, it
+# compares the settings of the repository on GitHub with .github/repository.toml and
+# .github/labels.toml, as the release app with read access. A difference fails the
+# run and shows in its summary; python3 blueprint.py settings apply sets it right.
+# https://github.com/Dennis-Otto/repo-blueprint
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/repository.toml
+      - .github/labels.toml
+      - .github/workflows/settings.yml
+  schedule:
+    - cron: "5 6 * * 4"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: settings
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: settings
+    if: ${{ !github.event.repository.fork }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The environment holds the private key of the release app; only main may use it.
+    environment:
+      name: release
+      deployment: false
+    permissions:
+      contents: read
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The token action can't ask for the Variables permission alone, so this token
+      # has all permissions of the installation; the job only reads with it.
+      - name: Create a token of the release app
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY }}
+      - name: Compare the settings with the settings as code
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          # Repositories have the copy that the blueprint keeps current; the blueprint
+          # has the original.
+          script=.github/blueprint.py
+          if [[ ! -f "$script" ]]; then
+            script=blueprint.py
+          fi
+          status=0
+          python3 "$script" --repo "$GITHUB_REPOSITORY" settings check > "$RUNNER_TEMP/settings.txt" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/settings.txt"
+          {
+            echo '### Settings'
+            echo '```'
+            cat "$RUNNER_TEMP/settings.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

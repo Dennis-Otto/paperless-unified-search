@@ -1,0 +1,49 @@
+# Rules of the dependency review of pull requests (.github/workflows/dependency-review.yml).
+# An advisory that this repository accepts, for example in a dependency that only
+# the tests install and that a pinned upstream can't move yet, goes into
+# allow-ghsas with its reason.
+fail-on-severity: moderate
+fail-on-scopes:
+  - runtime
+  - development
+  - unknown
+show-patched-versions: true
+retry-on-snapshot-warnings: true
+allow-ghsas: []
+
+# The licenses a new dependency may have: free licenses that the AGPL-3.0-or-later
+# license of this project can carry.
+allow-licenses:
+  - 0BSD
+  - Apache-2.0
+  - BlueOak-1.0.0
+  - BSD-2-Clause
+  - BSD-3-Clause
+  - BSL-1.0
+  - CC-BY-3.0
+  - CC-BY-4.0
+  - CC0-1.0
+  - ISC
+  - LGPL-2.1-only
+  - LGPL-2.1-or-later
+  - LGPL-3.0-only
+  - LGPL-3.0-or-later
+  - MIT
+  - MIT-0
+  - MPL-2.0
+  - OFL-1.1
+  - PSF-2.0
+  - Python-2.0
+  - Unicode-3.0
+  - Unicode-DFS-2016
+  - Unlicense
+  - Zlib
+  # The copyleft licenses that a AGPL-3.0-or-later project can carry.
+  - GPL-2.0-or-later
+  - GPL-3.0-only
+  - GPL-3.0-or-later
+  - AGPL-3.0-only
+  - AGPL-3.0-or-later
+# Tools of the checks that the app never ships: psalm's JSON mapper.
+allow-dependencies-licenses:
+  - pkg:composer/netresearch/jsonmapper
