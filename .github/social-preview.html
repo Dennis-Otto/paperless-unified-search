@@ -1,0 +1,57 @@
+<!doctype html>
+<!--
+  SPDX-FileCopyrightText: 2026 Dennis Otto
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Paperless Unified Search: social preview</title>
+<!-- scripts/social-preview.sh renders this page into the 1280×640 image that GitHub
+     shows for links to the repository. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=block">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1280px; height: 640px; overflow: hidden; }
+body {
+  --accent: #4ade80;
+  position: relative;
+  font-family: "Inter", "Liberation Sans", "FreeSans", sans-serif;
+  color: #f8fafc;
+  background:
+    radial-gradient(760px 560px at 78% 52%, color-mix(in srgb, var(--accent) 15%, transparent), transparent 72%),
+    linear-gradient(135deg, #0a0f1d 0%, #0c1424 55%, #0b1a24 100%);
+}
+.left { position: absolute; left: 72px; top: 0; bottom: 0; width: 540px; display: flex; flex-direction: column; justify-content: center; }
+.logo { width: 96px; height: 96px; margin-bottom: 36px; }
+.logo svg, .logo img { width: 100%; height: 100%; display: block; }
+h1 { font-size: 62px; font-weight: 800; line-height: 1.04; letter-spacing: -0.025em; }
+.subtitle { margin-top: 12px; font-size: 38px; font-weight: 700; color: var(--accent); letter-spacing: -0.015em; }
+.text { margin-top: 36px; font-size: 25px; line-height: 1.45; color: #cbd5e1; }
+ul { margin-top: 40px; list-style: none; display: grid; gap: 16px; }
+li { font-size: 24px; color: #cbd5e1; display: flex; align-items: center; gap: 18px; }
+li::before { content: ""; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 14px var(--accent); flex: none; }
+.panel { position: absolute; right: 64px; top: 50%; transform: translateY(-50%); width: 548px; }
+.card { background: #141a26; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 20px; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45), 0 0 70px color-mix(in srgb, var(--accent) 16%, transparent); }
+.muted { color: #8b95a7; }
+.mono { font-family: "JetBrains Mono", "Liberation Mono", monospace; }
+.logo { background: #eef6f2; border-radius: 24px; padding: 12px; } .shot { width: 450px; height: 540px; border-radius: 16px; overflow: hidden; margin-left: 50px; background: url('../screenshots/01-unified-search.png') -375px -68px / 1200px 675px no-repeat; }
+</style>
+</head>
+<body>
+<div class="left">
+  <div class="logo"><img src="../img/app.svg" alt=""></div>
+  <h1>Paperless<br>Unified Search</h1>
+  <div class="subtitle">for Nextcloud</div>
+  <ul>
+    <li>OCR full-text search of Paperless-ngx</li>
+    <li>Right in Nextcloud's unified search</li>
+    <li>Opens the synced file in the viewer</li>
+  </ul>
+</div>
+<div class="panel">
+  <div class="card shot"></div>
+</div>
+</body>
+</html>
