@@ -1,0 +1,41 @@
+name: OSV-Scanner
+
+# Every lock file of the repository against the OSV database of known vulnerabilities:
+# on every pull request the vulnerabilities that it brings in, and on main and every
+# week all of them. Findings go to code scanning, where the Findings workflow keeps
+# them fixed or accepted; osv-scanner.toml lists those that the project accepts, each
+# with its reason, such as an advisory in a test base that pins its dependencies.
+# https://github.com/Dennis-Otto/repo-blueprint
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "33 5 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  pull-request:
+    name: osv-scanner (pull request)
+    if: github.event_name == 'pull_request'
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+
+  repository:
+    name: osv-scanner
+    if: github.event_name != 'pull_request'
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0

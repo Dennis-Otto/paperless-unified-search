@@ -2,7 +2,9 @@ name: Pull request title
 
 # Pull requests are squashed into one commit named after their title, and the release
 # bot builds the version and the changelog from these names. So the title must be a
-# Conventional Commit; its type also sets the label of the pull request.
+# Conventional Commit; its type also sets the label of the pull request. A pull request
+# that changes something for users, a feat, fix or perf, also says so under Unreleased
+# in CHANGELOG.md, which becomes the notes of the release.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -74,3 +76,42 @@ jobs:
             if [[ "$want" == false && "$has" == true ]]; then gh pr edit "$NUMBER" --remove-label "$label"; fi
           done
           echo "Labels: ${wanted[*]}" >> "$GITHUB_STEP_SUMMARY"
+
+  changelog:
+    name: changelog
+    if: ${{ !github.event.repository.fork }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      # No checkout: the files of the pull request come from the API.
+      - name: Require an entry under Unreleased for a change for users
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+          AUTHOR: ${{ github.event.pull_request.user.type }}
+        run: |
+          pattern='^(feat|fix|perf)(\(([a-z0-9._/-]+)\))?(!)?: '
+          if [[ ! "$TITLE" =~ $pattern ]]; then
+            echo "A pull request of this type changes nothing for users; no entry needed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # Bots, such as Dependabot, the release bot and the blueprint bot, and updates
+          # of dependencies write no notes of their own.
+          if [[ "$AUTHOR" == Bot || "${BASH_REMATCH[3]}" == deps || "${BASH_REMATCH[3]}" == deps-dev ]]; then
+            echo "Updates and bots write no entry." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if gh api "repos/$GH_REPO/pulls/$NUMBER/files" --paginate --jq '.[].filename' | grep -qx CHANGELOG.md; then
+            echo "CHANGELOG.md has the entry of this change." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "::error::Describe what changes for users under '## Unreleased' in CHANGELOG.md; it becomes the notes of the next release."
+          exit 1

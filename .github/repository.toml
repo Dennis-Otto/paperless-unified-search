@@ -46,6 +46,7 @@ required_checks = [
   "dco",
   "issue-assistant",
   "conventional title",
+  "changelog",
   "codeql",
   "dependency-review",
   "gitleaks",

@@ -6,12 +6,12 @@ name: Release
 # version) and is decided anew with every merge. What the pull requests wrote under
 # "## Unreleased" of CHANGELOG.md becomes the section of the release; without it,
 # the section lists the pull requests. Merging the pull request creates the release
-# as a draft, with its tag. The jobs below attach the package, its SBOM and its
-# signed provenance, write the notes, make the release public, and then deliver it
-# where the repository variable PUBLISH_TO says: pypi, npm, ghcr, hacs,
-# nextcloud-appstore, github-action or none. Last, verify-release.yml checks the
-# release as its users can. A release that only updates dependencies merges itself
-# once its checks pass.
+# as a draft, with its tag. The jobs below attach the package, its SBOM, the licenses
+# of its third-party components and its signed provenance, write the notes, make the
+# release public, and then deliver it where the repository variable PUBLISH_TO says:
+# pypi, npm, ghcr, hacs, nextcloud-appstore, github-action or none. Last,
+# verify-release.yml checks the release as its users can. A release that only updates
+# dependencies merges itself once its checks pass.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -288,6 +288,15 @@ jobs:
           upload-artifact: false
           upload-release-assets: false
           syft-version: v1.52.0
+
+      - name: Write the licenses of the third-party components
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          gh api "repos/$GITHUB_REPOSITORY/dependency-graph/sbom" > "$RUNNER_TEMP/dependency-graph.json"
+          python3 "$script" notices "$TAG" "$RUNNER_TEMP/dependency-graph.json" > "$ASSETS/THIRD_PARTY_NOTICES.md"
 
       - name: Attest the provenance of every asset
         id: attest

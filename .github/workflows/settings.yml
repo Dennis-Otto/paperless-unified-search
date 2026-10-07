@@ -1,9 +1,10 @@
 name: Settings
 
 # The settings bot. Every week, and after each change of the settings as code, it
-# compares the settings of the repository on GitHub with .github/repository.toml and
-# .github/labels.toml, as the release app with read access. A difference fails the
-# run and shows in its summary; python3 blueprint.py settings apply sets it right.
+# brings the settings of the repository on GitHub in line with .github/repository.toml,
+# .github/repository.project.toml and .github/labels.toml, as the release app, which may
+# write the administration of the repository. What the API can't set, such as the value
+# of a secret, fails the run and shows in its summary with the command that sets it.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -11,6 +12,7 @@ on:
     branches: [main]
     paths:
       - .github/repository.toml
+      - .github/repository.project.toml
       - .github/labels.toml
       - .github/workflows/settings.yml
   schedule:
@@ -44,14 +46,14 @@ jobs:
         with:
           persist-credentials: false
       # The token action can't ask for the Variables permission alone, so this token
-      # has all permissions of the installation; the job only reads with it.
+      # has all permissions of the installation; the job only changes the settings.
       - name: Create a token of the release app
         id: app
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY }}
-      - name: Compare the settings with the settings as code
+      - name: Apply the settings as code
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
@@ -62,7 +64,7 @@ jobs:
             script=blueprint.py
           fi
           status=0
-          python3 "$script" --repo "$GITHUB_REPOSITORY" settings check > "$RUNNER_TEMP/settings.txt" 2>&1 || status=$?
+          python3 "$script" --repo "$GITHUB_REPOSITORY" settings apply > "$RUNNER_TEMP/settings.txt" 2>&1 || status=$?
           cat "$RUNNER_TEMP/settings.txt"
           {
             echo '### Settings'
