@@ -2,7 +2,7 @@ Paperless Unified Search is a Nextcloud app: it sends Nextcloud global search te
 
 Where things are:
 
-- The app is in `lib/` (`Search/PaperlessSearchProvider.php`, `Service/PaperlessApiService.php`, `Service/NextcloudFileLocator.php`, `Service/ConfigService.php`, `Controller/SettingsController.php`, `Settings/AdminSettings.php`), its metadata, version and supported Nextcloud versions in `appinfo/info.xml`, its routes in `appinfo/routes.php`, the settings page in `templates/settings.php`, `js/settings.js` and `css/settings.css`, the German texts in `l10n/`.
+- The app is in `lib/` (`Search/PaperlessSearchProvider.php`, `Service/PaperlessApiService.php`, `Service/NextcloudFileLocator.php`, `Service/ConfigService.php`, `Controller/SettingsController.php`, `Settings/AdminSettings.php`; the routes are `#[FrontpageRoute]` attributes on the controller methods), its metadata, version and supported Nextcloud versions in `appinfo/info.xml`, the settings page in `templates/settings.php`, `js/settings.js` and `css/settings.css`, the German texts in `l10n/`.
 - `README.md` documents requirements, configuration, usage and security; `CHANGELOG.md` lists the changes of every release; `docs/releases.md` the release process.
 - The PHPUnit tests are in `tests/Unit/`, the Docker end-to-end tests against real Nextcloud versions in `tests/e2e/`.
 

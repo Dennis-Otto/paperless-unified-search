@@ -85,6 +85,31 @@ done
 "${COMPOSE[@]}" restart nextcloud >/dev/null
 "${COMPOSE[@]}" up --detach --wait --wait-timeout 120 >/dev/null
 
+# The administration settings render the form with its save and reset routes (#25).
+curl --fail-with-body --silent --show-error \
+	--user "e2e-admin:${PASSWORD}" \
+	--output "${TMP_DIR}/admin-settings.html" \
+	"${BASE_URL}/index.php/settings/admin/additional"
+for attribute in data-save-url data-reset-url; do
+	if ! grep --fixed-strings "${attribute}=\"/apps/paperless_unified_search/settings\"" \
+		"${TMP_DIR}/admin-settings.html" >/dev/null; then
+		echo "The administration settings render no ${attribute}." >&2
+		exit 1
+	fi
+done
+
+# Nextcloud loads the routes of appinfo/routes.php only for apps that are already
+# loaded. The app's attribute routes exist without that, as in a PHP script (#25).
+# shellcheck disable=SC2016
+ROUTE="$("${COMPOSE[@]}" exec -T --user www-data nextcloud php -r '
+	require "/var/www/html/lib/base.php";
+	echo "route=", \OCP\Server::get(\OCP\IURLGenerator::class)->linkToRoute("paperless_unified_search.settings.save"), "\n";
+' 2>/dev/null | grep '^route=')"
+if [[ "${ROUTE}" != *"/apps/paperless_unified_search/settings" ]]; then
+	echo "The settings route is missing before the app is loaded: ${ROUTE}" >&2
+	exit 1
+fi
+
 curl --fail-with-body --silent --show-error \
 	--user "e2e-admin:${PASSWORD}" \
 	--header 'Accept: application/json' \
