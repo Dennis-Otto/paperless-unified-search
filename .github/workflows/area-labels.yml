@@ -1,0 +1,37 @@
+name: Area labels
+
+# The labeler bot. It gives a pull request the labels of the areas whose files it
+# changes, by the paths in .github/labeler.yml, and takes them away when it no longer
+# changes them. The type label comes from the title check.
+# https://github.com/Dennis-Otto/repo-blueprint
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  labels:
+    name: area labels
+    if: ${{ !github.event.repository.fork }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      # No checkout: the labeler reads its rules from the base branch and the changed
+      # files from the API, so the code of a pull request never runs here.
+      - name: Label the areas that the pull request changes
+        uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+        with:
+          sync-labels: true

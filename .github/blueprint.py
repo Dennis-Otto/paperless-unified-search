@@ -7,6 +7,7 @@ and the changelog of its releases.
     python3 blueprint.py checklist          the steps outside the API, and which are done
     python3 blueprint.py changelog ...      the changelog of a release (the release bot)
     python3 blueprint.py unreleased ...     an entry under Unreleased (the other bots)
+    python3 blueprint.py notices ...        the licenses of the third-party components
 
 Run it in the root of a repository made from the blueprint, with the GitHub CLI `gh`
 signed in as an administrator. It needs Python 3.12 and nothing else. It never reads,
@@ -902,12 +903,71 @@ def changelog_command(arguments: argparse.Namespace) -> int:
             add_unreleased(text, arguments.heading, arguments.entry), encoding="utf-8"
         )
         return 0
+    if arguments.command == "notices":
+        sbom = json.loads(Path(arguments.sbom).read_text(encoding="utf-8"))
+        sys.stdout.write(third_party_notices(arguments.version, sbom))
+        return 0
     read = [Path(name).read_text(encoding="utf-8") for name in arguments.files]
     if arguments.action == "release":
         sys.stdout.write(release_changelog(arguments.version, *read))
     else:
         sys.stdout.write(release_notes(arguments.version, *read))
     return 0
+
+
+# --------------------------------------------------------------------------- notices
+
+UNNAMED = "Without a license in the dependency graph"
+
+
+def third_party_notices(version: str, sbom: Json) -> str:
+    """The third-party components of a release and their licenses, from the SPDX SBOM
+    of GitHub's dependency graph, grouped by license."""
+    document = sbom.get("sbom", sbom)
+    root = {
+        relation["relatedSpdxElement"]
+        for relation in document.get("relationships", [])
+        if relation.get("relationshipType") == "DESCRIBES"
+    }
+    groups: dict[str, list[tuple[str, str, str]]] = {}
+    for package in document.get("packages", []):
+        if package.get("SPDXID") in root:
+            continue
+        purl = next(
+            (
+                ref["referenceLocator"]
+                for ref in package.get("externalRefs", [])
+                if ref.get("referenceType") == "purl"
+            ),
+            "",
+        )
+        ecosystem = purl.removeprefix("pkg:").split("/", 1)[0] if purl else ""
+        license_name = package.get("licenseConcluded") or UNNAMED
+        if license_name == "NOASSERTION":
+            license_name = UNNAMED
+        groups.setdefault(license_name, []).append(
+            (package.get("name", ""), package.get("versionInfo") or "", ecosystem)
+        )
+    lines = [
+        "# Third-party components",
+        "",
+        f"The components that the repository uses at {version}, as GitHub's dependency"
+        " graph lists them, each with the license that the graph names: what the code"
+        " needs to run and the tools of its checks, tests and workflows. The package of"
+        " the release contains only what its own build puts into it.",
+    ]
+    for license_name in sorted(
+        groups, key=lambda name: (name == UNNAMED, name.lower())
+    ):
+        lines += ["", f"## {license_name}", "", "| Component | Version | Ecosystem |"]
+        lines.append("| --- | --- | --- |")
+        lines += [
+            f"| {name} | {release} | {ecosystem} |"
+            for name, release, ecosystem in sorted(set(groups[license_name]))
+        ]
+    if not groups:
+        lines += ["", "The repository uses no third-party components."]
+    return "\n".join(lines) + "\n"
 
 
 # --------------------------------------------------------------------------- command line
@@ -925,9 +985,18 @@ def current_repo(api: Api) -> str:
     return result.stdout.strip()
 
 
+def utf8_output() -> None:
+    """Windows consoles default to a code page without the marks of the checklist."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8")
+
+
 def main(
     argv: Sequence[str] | None = None, api: Api | None = None, root: Path = Path()
 ) -> int:
+    utf8_output()
     parser = argparse.ArgumentParser(
         prog="blueprint.py", description=__doc__.split("\n\n")[0]
     )
@@ -971,9 +1040,14 @@ def main(
     unreleased_parser.add_argument("heading", help="such as Changed, without ###")
     unreleased_parser.add_argument("entry", help="the line, such as '- Supports ...'")
     unreleased_parser.add_argument("--file", default="CHANGELOG.md")
+    notices_parser = commands.add_parser(
+        "notices", help="the third-party components and their licenses, for releases"
+    )
+    notices_parser.add_argument("version", help="the tag of the release")
+    notices_parser.add_argument("sbom", help="the SBOM of GitHub's dependency graph")
     arguments = parser.parse_args(argv)
 
-    if arguments.command in ("changelog", "unreleased"):
+    if arguments.command in ("changelog", "unreleased", "notices"):
         try:
             return changelog_command(arguments)
         except OSError as error:
