@@ -12,3 +12,4 @@ Within a few minutes, the repository's issue assistant labels a new issue and po
 
 - **Questions** mark the issue as waiting for you. Answer in a comment or by editing the issue. Without an answer, a reminder follows after 15 days and the issue closes after 30 days; answering reopens it.
 - **A likely duplicate** of an open issue gets a notice and closes 3 days later, so the conversation stays in one place. If it's something different, write a comment or react to the notice with 👎, and it stays open.
+- **A fix** on `main` marks the issue `fixed-in-next-release`. It stays open until a release ships the fix to the Nextcloud App Store, and then closes with a link to the release. If the problem persists after the update, write a comment within 30 days and the issue reopens.

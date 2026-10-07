@@ -39,7 +39,7 @@ jobs:
       # The labels, issue forms, workflows and notice of the issue assistant fit the
       # templates of its release: https://github.com/Dennis-Otto/issue-assistant
       - name: Check the issue assistant's set-up
-        uses: Dennis-Otto/issue-assistant@80508cea4e88564345d389baad677b1593e6e673 # v1.0.1
+        uses: Dennis-Otto/issue-assistant@a1858427cabe28cc8b742db09cab925e76556449 # v1.1.0
         with:
           command: check
 
