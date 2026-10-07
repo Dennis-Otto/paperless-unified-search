@@ -1,0 +1,8 @@
+// Renovate for this repository: the rules of the blueprint in
+// .github/renovate-blueprint.json5, then those of the project alone below, which
+// override them, such as a package that must wait or two that move together:
+// https://docs.renovatebot.com/configuration-options/
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["local>Dennis-Otto/paperless-unified-search//.github/renovate-blueprint.json5"],
+}

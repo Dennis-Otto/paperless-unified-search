@@ -5,8 +5,8 @@ name: Update branches
 # workflow brings each pull request that waits for auto-merge up to date, as the
 # release app, so that its checks run again and it merges once they pass. A pull
 # request that conflicts with main gets the label merge-conflict and one comment;
-# both go once it no longer conflicts. The release bot keeps its own pull request
-# current. https://github.com/Dennis-Otto/repo-blueprint
+# both go once it no longer conflicts. The release bot and Renovate keep their own
+# pull requests current. https://github.com/Dennis-Otto/repo-blueprint
 
 on:
   push:
@@ -60,7 +60,8 @@ jobs:
           gh pr list --state open --limit 100 \
             --json number,headRefName,autoMergeRequest,isCrossRepository,mergeable,labels \
             --jq '.[] | select(.autoMergeRequest != null and (.isCrossRepository | not)
-              and (.headRefName | startswith("release-please--") | not))
+              and (.headRefName | startswith("release-please--") | not)
+              and (.headRefName | startswith("renovate/") | not))
               | "\(.number) \(.headRefName) \(.mergeable) \([.labels[].name] | index("merge-conflict") != null)"' |
             while read -r number branch mergeable labelled; do
               if [[ "$mergeable" != CONFLICTING ]]; then

@@ -1,0 +1,18 @@
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share an idea for Paperless Unified Search. A worked-out proposal can also become a [feature request](https://github.com/Dennis-Otto/paperless-unified-search/issues/new?template=feature_request.yml).
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: What would you like to do, and what is missing today?
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: Example
+      description: A situation, a sketch or a configuration that shows the idea.
