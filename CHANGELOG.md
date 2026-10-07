@@ -4,9 +4,24 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.1.11 - 2026-10-07
+
 ### Fixed
 
 - Saving and resetting the administration settings no longer fails with empty request URLs when Nextcloud renders the settings page before it has loaded the app ([#25](https://github.com/Dennis-Otto/paperless-unified-search/issues/25)). The app now declares its routes as attributes on the controller, which Nextcloud 29 and later register for every enabled app.
+
+<!-- Release notes generated using configuration in .github/release.yml at 0d469eb2c8805b7ebdae19c80f23397ba17dfec7 -->
+
+### What's Changed
+### Dependencies
+* chore(deps): bump anchore/sbom-action from 0.24.2 to 0.24.3 in the actions-routine group across 1 directory by @dependabot[bot] in https://github.com/Dennis-Otto/paperless-unified-search/pull/33
+### Fixes
+* fix: register the settings routes as attributes by @Dennis-Otto in https://github.com/Dennis-Otto/paperless-unified-search/pull/37
+### Other changes
+* ci: look after issues with the issue assistant by @Dennis-Otto in https://github.com/Dennis-Otto/paperless-unified-search/pull/36
+
+
+**Full Changelog**: https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.1.10...v0.1.11
 
 ## 0.1.10 - 2026-10-05
 
