@@ -9,7 +9,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 DOCKER_BIN="${DOCKER_BIN:-docker}"
 E2E_PORT="${E2E_PORT:-18082}"
-PROJECT_NAME="paperless_unified_search_e2e"
+PROJECT_NAME="${E2E_PROJECT_NAME:-paperless_unified_search_e2e}"
 PASSWORD="e2e-only-password"
 BASE_URL="http://127.0.0.1:${E2E_PORT}"
 TMP_DIR="$(mktemp -d)"
@@ -73,7 +73,13 @@ if ! occ status --output=json 2>/dev/null | grep --fixed-strings '"installed":tr
 fi
 occ config:system:set trusted_domains 1 --value=127.0.0.1 >/dev/null
 occ config:system:set allow_local_remote_servers --type=boolean --value=true >/dev/null
-occ app:enable paperless_unified_search >/dev/null
+# The coming Nextcloud of canary.sh is newer than max-version of appinfo/info.xml:
+# --force enables the app there anyway, without making it compatible.
+enable_options=()
+if [[ "${E2E_IGNORE_MAX_VERSION:-0}" == "1" ]]; then
+	enable_options+=(--force)
+fi
+occ app:enable "${enable_options[@]}" paperless_unified_search >/dev/null
 occ router:list \
 	| grep --fixed-strings 'paperless_unified_search.settings.save' \
 	| grep --fixed-strings '/apps/paperless_unified_search/settings' >/dev/null
