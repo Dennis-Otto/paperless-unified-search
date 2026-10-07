@@ -14,9 +14,6 @@ PASSWORD="e2e-only-password"
 BASE_URL="http://127.0.0.1:${E2E_PORT}"
 TMP_DIR="$(mktemp -d)"
 COMPOSE=("${DOCKER_BIN}" compose --project-name "${PROJECT_NAME}" --file "${SCRIPT_DIR}/compose.yaml")
-# The browser of the accessibility check. Keep its version equal to playwright-core in
-# package.json; scripts/check-project.sh compares them.
-PLAYWRIGHT_IMAGE="mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27"
 
 export E2E_PORT
 
@@ -49,7 +46,9 @@ assert_response() {
 
 # axe-core checks the pages of the app in Chromium (accessibility.mjs), inside the
 # network of the Compose project. The files of the check reach the browser through
-# standard input, so that npm leaves nothing in the checkout.
+# standard input, so that npm leaves nothing in the checkout. Keep the version of the
+# image of Playwright equal to playwright-core in package.json; Renovate updates both
+# together, and scripts/check-project.sh compares them.
 accessibility() {
 	tar -C "${SCRIPT_DIR}" -cf - package.json package-lock.json accessibility.mjs \
 		| "${DOCKER_BIN}" run --rm --interactive \
@@ -57,7 +56,7 @@ accessibility() {
 			--env NPM_CONFIG_UPDATE_NOTIFIER=false \
 			--env E2E_USER=e2e-admin \
 			--env "E2E_PASSWORD=${PASSWORD}" \
-			"${PLAYWRIGHT_IMAGE}" \
+			mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27 \
 			sh -c 'mkdir /tmp/browser && cd /tmp/browser && tar -xf - && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error && node accessibility.mjs'
 }
 
