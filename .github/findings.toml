@@ -1,0 +1,31 @@
+# SPDX-FileCopyrightText: 2026 Dennis Otto
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Findings of code scanning that this repository accepts, each with its reason.
+# The Findings workflow of the issue assistant dismisses matching alerts with this
+# reason and fails while any other alert is open:
+# https://github.com/Dennis-Otto/issue-assistant#findings
+
+[[accept]]
+tool = "Scorecard"
+rule = "CodeReviewID"
+reason = "won't fix"
+comment = "One maintainer: nobody else can approve a pull request. Every change still goes through a pull request with all required checks."
+
+[[accept]]
+tool = "Scorecard"
+rule = "BranchProtectionID"
+reason = "won't fix"
+comment = "Required approvals would block the only maintainer. main requires pull requests, all checks, linear history and no force pushes."
+
+[[accept]]
+tool = "Scorecard"
+rule = "MaintainedID"
+reason = "won't fix"
+comment = "Scorecard counts a repository younger than 90 days as unmaintained; this one gets commits every week."
+
+[[accept]]
+tool = "Scorecard"
+rule = "FuzzingID"
+reason = "won't fix"
+comment = "Scorecard detects no fuzzing for PHP. PHPUnit and Docker end-to-end tests against real Nextcloud versions run on every change."

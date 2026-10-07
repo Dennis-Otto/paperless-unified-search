@@ -98,6 +98,21 @@ for attribute in data-save-url data-reset-url; do
 	fi
 done
 
+# The navigation of the administration settings lists the section with the app's
+# settings, here Additional settings, on every page (#25): Nextcloud 33 as links,
+# Nextcloud 34 in the initial state settings-sections.
+curl --fail-with-body --silent --show-error \
+	--user "e2e-admin:${PASSWORD}" \
+	--output "${TMP_DIR}/admin-overview.html" \
+	"${BASE_URL}/index.php/settings/admin/overview"
+SECTIONS="$(grep --only-matching 'id="initial-state-settings-sections" value="[^"]*"' \
+	"${TMP_DIR}/admin-overview.html" | sed 's/.*value="//; s/"$//' | base64 --decode || true)"
+if ! grep --fixed-strings '/settings/admin/additional"' "${TMP_DIR}/admin-overview.html" >/dev/null &&
+	! grep --fixed-strings '"id":"additional"' <<<"${SECTIONS}" >/dev/null; then
+	echo "The navigation of the administration settings lists no Additional settings." >&2
+	exit 1
+fi
+
 # Nextcloud loads the routes of appinfo/routes.php only for apps that are already
 # loaded. The app's attribute routes exist without that, as in a PHP script (#25).
 # shellcheck disable=SC2016

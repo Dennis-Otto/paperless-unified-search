@@ -8,6 +8,7 @@ name: Issue lifecycle
 # 3 days after the notice unless someone objected, labels the issues that a merged
 # pull request fixes, and closes them with a link once a release ships the fix.
 # Merges and releases start it at once, and every morning catches what was missed.
+# A fixed issue that a release closes is filed under the release's milestone.
 # https://github.com/Dennis-Otto/issue-assistant
 
 on:
@@ -18,6 +19,12 @@ on:
     types: [closed]
   release:
     types: [published]
+  # A release published with the job's GITHUB_TOKEN starts no workflow, so the end
+  # of the repository's release workflow starts this one too: Release or, as in
+  # ha-autodarts, Release integration.
+  workflow_run:
+    workflows: [Release, Release integration]
+    types: [completed]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -38,7 +45,9 @@ jobs:
       !github.event.repository.fork &&
       (github.event_name != 'pull_request_target' ||
         (github.event.pull_request.merged &&
-         github.event.pull_request.user.login != 'dependabot[bot]'))
+         github.event.pull_request.user.login != 'dependabot[bot]')) &&
+      (github.event_name != 'workflow_run' ||
+        github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -51,7 +60,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Remind, close and mark fixed issues
-        uses: Dennis-Otto/issue-assistant@a1858427cabe28cc8b742db09cab925e76556449 # v1.1.0
+        uses: Dennis-Otto/issue-assistant@b718a906576a9ec51034fd30828e9148f83d61ae # v1.2.1
         with:
           command: sweep
           dry-run: ${{ inputs.dry_run || false }}

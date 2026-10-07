@@ -12,6 +12,10 @@ Please do not open a public issue for a suspected vulnerability. Use GitHub's pr
 
 Include the affected version, configuration, reproduction steps, and potential impact. Reports will be acknowledged as soon as practical.
 
+## Findings of code scanning
+
+CodeQL and OpenSSF Scorecard report their findings in the repository's Security tab. The Findings workflow of the [issue assistant](https://github.com/Dennis-Otto/issue-assistant#findings) dismisses the findings that `.github/findings.toml` accepts, each with its reason, and fails while any other finding is open. It names an open finding only by the number and link of its alert, which only maintainers can open; nothing about a possible vulnerability becomes a public issue.
+
 ## Secrets
 
 Paperless API tokens, Nextcloud credentials, private signing keys, production URLs, document metadata, personal files, and logs containing those values must never be committed to this repository.

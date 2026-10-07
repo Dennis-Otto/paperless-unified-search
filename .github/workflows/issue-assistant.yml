@@ -68,7 +68,7 @@ jobs:
           persist-credentials: false
       - name: Set labels and choose the next task
         id: event
-        uses: Dennis-Otto/issue-assistant@a1858427cabe28cc8b742db09cab925e76556449 # v1.1.0
+        uses: Dennis-Otto/issue-assistant@b718a906576a9ec51034fd30828e9148f83d61ae # v1.2.1
         with:
           command: event
           dry-run: ${{ inputs.dry_run || false }}
@@ -101,7 +101,7 @@ jobs:
           persist-credentials: false
       - name: Choose the engine and check its secret
         id: engine
-        uses: Dennis-Otto/issue-assistant@a1858427cabe28cc8b742db09cab925e76556449 # v1.1.0
+        uses: Dennis-Otto/issue-assistant@b718a906576a9ec51034fd30828e9148f83d61ae # v1.2.1
         with:
           command: engine
           # One entry per engine: its key when its secret exists.
@@ -109,7 +109,7 @@ jobs:
       - name: Collect the issue, earlier issues and discussions
         id: context
         if: steps.engine.outputs.ready == 'true'
-        uses: Dennis-Otto/issue-assistant@a1858427cabe28cc8b742db09cab925e76556449 # v1.1.0
+        uses: Dennis-Otto/issue-assistant@b718a906576a9ec51034fd30828e9148f83d61ae # v1.2.1
         with:
           command: context
           issue: ${{ needs.event.outputs.issue }}
@@ -160,7 +160,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Check the engine's answer and post it
-        uses: Dennis-Otto/issue-assistant@a1858427cabe28cc8b742db09cab925e76556449 # v1.1.0
+        uses: Dennis-Otto/issue-assistant@b718a906576a9ec51034fd30828e9148f83d61ae # v1.2.1
         with:
           command: apply
           issue: ${{ needs.event.outputs.issue }}
