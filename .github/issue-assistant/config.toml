@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: 2026 Dennis Otto
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Settings of the issue assistant: https://github.com/Dennis-Otto/issue-assistant
+
+[engine]
+# The AI engine that writes the analysis; its secret belongs to the environment
+# issue-assistant. Leave out model for the engine's default.
+name = "claude"
+
+[links]
+# Hosts that links in the assistant's comments may lead to, besides this repository.
+hosts = [
+  "docs.nextcloud.com",
+  "apps.nextcloud.com",
+  "docs.paperless-ngx.com",
+]
+
+[forms]
+# The dropdown of the issue forms whose answer chooses an area label, and the
+# answers that choose none.
+area_field = "Area"
+unmapped_options = ["Other"]
+
+[transparency]
+# Files that tell reporters which AI reads their issue.
+files = ["SUPPORT.md"]

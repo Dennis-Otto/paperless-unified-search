@@ -1,0 +1,44 @@
+# SPDX-FileCopyrightText: 2026 Dennis Otto
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: Issue lifecycle
+
+# Once a day, without AI: reminds reporters who were asked for information after
+# 15 days, closes their issue after 30 days without an answer, and closes a possible
+# duplicate 3 days after the notice unless someone objected.
+# https://github.com/Dennis-Otto/issue-assistant
+
+on:
+  schedule:
+    - cron: "41 6 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only show what would happen
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: issue-lifecycle
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    name: Remind and close
+    if: ${{ !github.event.repository.fork }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Remind reporters and close unanswered issues and duplicates
+        uses: Dennis-Otto/issue-assistant@80508cea4e88564345d389baad677b1593e6e673 # v1.0.1
+        with:
+          command: sweep
+          dry-run: ${{ inputs.dry_run || false }}

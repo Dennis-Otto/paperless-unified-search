@@ -1,0 +1,45 @@
+# SPDX-FileCopyrightText: 2026 Dennis Otto
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: Labels
+
+# Creates and updates the repository's labels from .github/labels.toml. It never
+# deletes a label; one that is missing from the file is reported in the summary.
+# https://github.com/Dennis-Otto/issue-assistant
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/labels.toml
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only show what would change
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: labels
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Synchronize labels
+    if: ${{ !github.event.repository.fork }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Create and update the labels
+        uses: Dennis-Otto/issue-assistant@80508cea4e88564345d389baad677b1593e6e673 # v1.0.1
+        with:
+          command: sync-labels
+          dry-run: ${{ inputs.dry_run || false }}

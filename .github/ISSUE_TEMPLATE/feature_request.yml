@@ -1,0 +1,42 @@
+# SPDX-FileCopyrightText: 2026 Dennis Otto
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: Feature request
+description: Suggest an idea for Paperless Unified Search.
+labels:
+  - enhancement
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Within a few minutes, an AI issue assistant posts a first analysis; the maintainer reads every issue as well ([what happens with your issue](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/SUPPORT.md#what-happens-with-your-issue)).
+  - type: textarea
+    id: need
+    attributes:
+      label: What would you like to do?
+      description: Describe the situation and what is missing today, not only the solution.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Administration settings or connection test
+        - Search results
+        - Matching synchronized files
+        - Opening a result in the browser or the mobile apps
+        - Documentation
+        - Other
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched the existing issues and the README.
+          required: true

@@ -21,3 +21,4 @@ secrets/
 
 # Python release automation test cache.
 __pycache__/
+/.issue-assistant/

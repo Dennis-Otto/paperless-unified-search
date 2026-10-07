@@ -1,0 +1,170 @@
+# SPDX-FileCopyrightText: 2026 Dennis Otto
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: Issue assistant
+
+# A first analysis of new issues, the labels of the issue forms and the answers that
+# the assistant or the maintainer waits for: https://github.com/Dennis-Otto/issue-assistant
+#
+# event    no AI: labels and the next task
+# analyze  the AI engine of .github/issue-assistant/config.toml reads the checkout and
+#          a context folder and answers with JSON; read-only token, read-only tools,
+#          egress-firewall runner (.github/egress-firewall.yaml)
+# apply    no AI: checks the engine's answer and is the only job that writes
+#
+# Without the engine's secret in the environment issue-assistant, or with the
+# repository variable ISSUE_ASSISTANT_AI set to "off", only labels and the lifecycle
+# work. The issue assistant's check command keeps this file equal to its template.
+
+on:
+  issues:
+    types: [opened, edited]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Number of the issue
+        required: true
+        type: number
+      mode:
+        description: Task of the assistant
+        type: choice
+        options: [triage, follow-up, maintainer-reply]
+        default: triage
+      dry_run:
+        description: Only show what the assistant would do
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: issue-assistant-${{ github.event.issue.number || inputs.issue }}
+  cancel-in-progress: false
+
+jobs:
+  event:
+    name: Handle the event
+    if: >-
+      !github.event.repository.fork &&
+      (github.event_name == 'workflow_dispatch' ||
+        (!github.event.issue.pull_request &&
+         github.event.sender.type != 'Bot' &&
+         (github.event.action != 'edited' ||
+          github.event.sender.login == github.event.issue.user.login)))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    outputs:
+      issue: ${{ steps.event.outputs.issue }}
+      mode: ${{ steps.event.outputs.mode }}
+    steps:
+      # Issue events always run the workflow and the settings of the default branch.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set labels and choose the next task
+        id: event
+        uses: Dennis-Otto/issue-assistant@80508cea4e88564345d389baad677b1593e6e673 # v1.0.1
+        with:
+          command: event
+          dry-run: ${{ inputs.dry_run || false }}
+
+  analyze:
+    name: Analyze with the AI engine
+    needs: event
+    if: >-
+      needs.event.outputs.mode != '' &&
+      needs.event.outputs.mode != 'none' &&
+      vars.ISSUE_ASSISTANT_AI != 'off'
+    runs-on: ubuntu-24.04-firewall
+    timeout-minutes: 20
+    # The engine's secret belongs to this environment, limited to the default
+    # branch; no deployment is recorded for a run.
+    environment:
+      name: issue-assistant
+      deployment: false
+    permissions:
+      contents: read
+      issues: read
+      discussions: read
+    outputs:
+      engine: ${{ steps.engine.outputs.engine }}
+      # One answer per engine step; only the chosen engine runs.
+      answer: ${{ steps.claude.outputs.structured_output }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Choose the engine and check its secret
+        id: engine
+        uses: Dennis-Otto/issue-assistant@80508cea4e88564345d389baad677b1593e6e673 # v1.0.1
+        with:
+          command: engine
+          # One entry per engine: its key when its secret exists.
+          ready-engines: ${{ (secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '') && 'claude' || '' }}
+      - name: Collect the issue, earlier issues and discussions
+        id: context
+        if: steps.engine.outputs.ready == 'true'
+        uses: Dennis-Otto/issue-assistant@80508cea4e88564345d389baad677b1593e6e673 # v1.0.1
+        with:
+          command: context
+          issue: ${{ needs.event.outputs.issue }}
+          mode: ${{ needs.event.outputs.mode }}
+
+      # The engines. Each one gets the prompt and the JSON schema, may only read
+      # files of the checkout and returns the JSON answer.
+
+      - name: Analyze with Claude
+        id: claude
+        if: steps.engine.outputs.ready == 'true' && steps.engine.outputs.engine == 'claude'
+        uses: anthropics/claude-code-action@58985842b834ed26087302ba27d07bc24ca8697a # v1.0.244
+        env:
+          DISABLE_TELEMETRY: "1"
+          DISABLE_ERROR_REPORTING: "1"
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Issues come from people without write access. The token is the job's
+          # read-only GITHUB_TOKEN, and Claude can only read files of the checkout.
+          github_token: ${{ github.token }}
+          allowed_non_write_users: "*"
+          prompt: ${{ steps.context.outputs.prompt }}
+          # --restricted removes every tool that runs code or reaches the network,
+          # ignores settings files and confines the file tools to the checkout;
+          # --tools leaves only the reading tools, and nothing ever prompts.
+          claude_args: |
+            --restricted
+            --tools "Read,Grep,Glob"
+            --permission-prompts none
+            --model ${{ steps.engine.outputs.model }}
+            --max-turns 40
+            --json-schema '${{ steps.context.outputs.schema }}'
+
+  apply:
+    name: Check and post the analysis
+    needs: [event, analyze]
+    if: needs.analyze.outputs.answer != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      discussions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the engine's answer and post it
+        uses: Dennis-Otto/issue-assistant@80508cea4e88564345d389baad677b1593e6e673 # v1.0.1
+        with:
+          command: apply
+          issue: ${{ needs.event.outputs.issue }}
+          mode: ${{ needs.event.outputs.mode }}
+          engine: ${{ needs.analyze.outputs.engine }}
+          answer: ${{ needs.analyze.outputs.answer }}
+          dry-run: ${{ inputs.dry_run || false }}

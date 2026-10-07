@@ -5,3 +5,10 @@ Use GitHub issues for reproducible bugs, compatibility reports, and focused feat
 This community project does not provide guaranteed response times or private operational support. Never post API tokens, credentials, private documents, production URLs, or personal data.
 
 Suspected vulnerabilities must not be reported in a public issue. Follow `SECURITY.md` instead.
+
+## What happens with your issue
+
+Within a few minutes, the repository's issue assistant labels a new issue and posts a first analysis: a summary, the likely cause or the documentation that helps, related issues and, if needed, questions. The assistant currently uses Claude, an AI by Anthropic; it reads the text of the issue and the public repository and can be wrong. The maintainer reads every issue and decides. The assistant is [its own open-source project](https://github.com/Dennis-Otto/issue-assistant).
+
+- **Questions** mark the issue as waiting for you. Answer in a comment or by editing the issue. Without an answer, a reminder follows after 15 days and the issue closes after 30 days; answering reopens it.
+- **A likely duplicate** of an open issue gets a notice and closes 3 days later, so the conversation stays in one place. If it's something different, write a comment or react to the notice with 👎, and it stays open.
