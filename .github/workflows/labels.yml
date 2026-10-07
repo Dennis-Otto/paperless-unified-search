@@ -39,7 +39,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Create and update the labels
-        uses: Dennis-Otto/issue-assistant@b718a906576a9ec51034fd30828e9148f83d61ae # v1.2.1
+        uses: Dennis-Otto/issue-assistant@a12fb7227ff7d966809cad4e043e159977fccfcd # v1.2.2
         with:
           command: sync-labels
           dry-run: ${{ inputs.dry_run || false }}
