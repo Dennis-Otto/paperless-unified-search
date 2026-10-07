@@ -21,7 +21,7 @@
 		<file name="tests/stubs/Emitter.php"/>
 	</stubs>
 	<issueHandlers>
-		<!-- Nextcloud discovers these classes through app metadata and routes. -->
+		<!-- Nextcloud discovers these classes through the app's metadata and routes. -->
 		<UnusedClass errorLevel="suppress"/>
 		<!-- #[Override] is native only in PHP 8.3; the app supports PHP 8.2. -->
 		<MissingOverrideAttribute errorLevel="suppress"/>

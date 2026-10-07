@@ -1,0 +1,16 @@
+# Text with LF line endings everywhere, also in checkouts on Windows.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.mp4 binary
+*.zip binary
+*.tar.gz binary
+
+# Lock files, which tools write: GitHub folds them in diffs.
+requirements*.txt linguist-generated=true
+package-lock.json linguist-generated=true
+composer.lock linguist-generated=true

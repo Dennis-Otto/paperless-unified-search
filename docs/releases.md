@@ -1,40 +1,32 @@
-# Releases and dependency maintenance
+# Releases
 
-## Automatic maintenance releases
+Releases follow the [repository blueprint](https://github.com/Dennis-Otto/repo-blueprint): nobody chooses a version or writes release notes by hand.
 
-Dependabot checks Composer, GitHub Actions and Docker Compose weekly. Grouped patch and minor updates merge only after protected PR checks pass. Major dependency updates require a maintainer merge; Nextcloud major compatibility updates remain explicitly maintained. Once a Dependabot PR is merged, either type can trigger an **app patch release**. A dependency's version increment does not determine the app's semantic version increment.
+## The release pull request
 
-The Release workflow runs on merged Dependabot PRs and at minutes 13 and 43 each hour. The scheduled reconciliation recovers events suppressed by `GITHUB_TOKEN` and interrupted publication. It compares every commit since the latest stable tag, paginates API results, and batches unpublished dependency PRs. It does nothing when no dependency changes remain. The first release always requires a manual dispatch and uses the version already in `appinfo/info.xml`.
+Every pull request that changes something for users describes it under `## Unreleased` in `CHANGELOG.md`. The release bot (`.github/workflows/release.yml`) keeps a pull request titled `chore: release x.y.z` up to date with `main`:
 
-Changes already on `main` are included in the next release, including maintenance of development dependencies and build workflows. Automatic releases do not imply new app functionality. Significant application or compatibility changes should still receive the appropriate maintainer-selected version increment.
+- **The version** follows from the titles of the pull requests merged since the last release: `fix` makes a patch, `feat` a minor and `!` or `BREAKING CHANGE` a major version. Every merge decides it anew. A line `Release-As: x.y.z` in the description of a pull request sets it explicitly.
+- **The changelog:** the text of *Unreleased* becomes the section of the release; without one, the section lists the pull requests.
+- **The files of the version:** `appinfo/info.xml` (`<version>` and the screenshot URLs marked `x-release-please-version`), `version.txt` and `.release-please-manifest.json`.
 
-## Manual releases and changelogs
+The pull request needs the same required checks as every other one, the Docker end-to-end tests against every supported Nextcloud version included. A release of dependency updates alone merges itself; every other release waits for the maintainer to merge it.
 
-Add user-facing notes to `CHANGELOG.md` under `Unreleased`. Run **Actions → Release → Run workflow** from `main`, choose `mode: manual` and `patch`, `minor`, or `major`. The optional `introduction` appears first. The workflow preserves handwritten notes and appends GitHub-generated categories for security, dependencies, fixes, improvements and other changes. Version PRs carrying the `release` label are excluded; `skip-changelog` can exclude administrative PRs.
+## Publication
 
-Empty handwritten notes do not block dependency releases: generated PR entries and comparison links explain what changed. The resulting notes are committed to the version's changelog section, included in the signed app archive, and displayed on the GitHub release.
+Merging the release pull request creates the release as a draft, with its tag, and then:
 
-To process outstanding Dependabot changes immediately, dispatch the same workflow with `mode: dependencies`. Its increment is always patch.
+1. krankerl builds the package of the tagged commit; `scripts/check-package.sh` checks what it holds.
+2. The package is signed with the app's certificate (`occ integrity:sign-app`) and checked again, and a detached SHA-512 signature is made and verified with the public key of the certificate.
+3. The release gets the package `paperless_unified_search.tar.gz`, its signature `paperless_unified_search.tar.gz.sig`, an SPDX SBOM, and the signed build provenance of every asset (`provenance.sigstore.json` and `provenance.intoto.jsonl`).
+4. The complete release is published; GitHub keeps it immutable from then on.
+5. The same package is submitted to the Nextcloud App Store.
+6. The release verification (`.github/workflows/verify-release.yml`) checks the release as its users can: every attestation, the SBOM, the immutability, the signed commit, and the version in the App Store. It checks the latest release every week as well.
 
-## Protection and publication
+## Secrets and recovery
 
-1. A short-lived GitHub App token creates a GitHub-verified, DCO-signed-off version commit and PR on `release/vX.Y.Z`. Only the version, screenshot URLs and changelog may change. PR identity, repository, base and contents are checked before merging.
-2. Real `pull_request` workflows must pass on the current candidate: PHP and JavaScript checks, DCO, Composer validation and audit, Nextcloud metadata, translations, PHPUnit, PHP style, Psalm, unsigned package checks, both Nextcloud Docker E2E jobs, Dependency Review, CodeQL, Gitleaks and SBOM generation. Manually dispatched checks cannot substitute for PR checks.
-3. The workflow also waits for GitHub's aggregate branch protection result, including parallel push checks. If main advances, it brings main into the owned release branch with a DCO-signed-off merge and checks the resulting candidate again. Conflicts require resolution; closing the PR pauses publication.
-4. After a SHA-guarded protected squash merge, every expected main push workflow must pass on that exact commit, including OpenSSF Scorecard. Missing, failed, skipped, cancelled or approval-gated checks block publication. The latest run and run attempt are used; older successes cannot mask a newer failure. CI workflows do not cancel one another.
-5. The checked commit is packaged with the checksum-verified Krankerl builder and signed with the official Nextcloud app certificate. Archive boundaries, the Nextcloud signature and detached SHA-512 signature are checked. Each release includes the archive, detached signature, SPDX SBOM and public Sigstore provenance.
-6. Assets are assembled in a draft before public exposure. Only after the complete asset set is published is the same archive submitted to the Nextcloud App Store. The workflow records completion only after the App Store accepts the version.
+The `release` environment allows only `main`. It holds `APP_PRIVATE_KEY` (the key of the app's certificate), `APPSTORE_TOKEN` and `RELEASE_AUTOMATION_PRIVATE_KEY` (the release app, whose client ID is the repository variable `RELEASE_AUTOMATION_CLIENT_ID`). Every token is short-lived and scoped to what its job needs.
 
-The `release` environment must allow only the `main` branch, not tags or arbitrary branches. It holds `APP_PRIVATE_KEY`, `APPSTORE_TOKEN` and `RELEASE_AUTOMATION_PRIVATE_KEY`. `RELEASE_AUTOMATION_CLIENT_ID` is a repository variable. The App is installed only on selected repositories; each token is scoped to the current repository, uses Contents and Pull requests write permissions, and is revoked when the job ends. Checkout never persists credentials. No branch-protection bypass is used.
+If a job fails, re-run the failed jobs of the Release workflow: a draft is completed, and the App Store accepts the same version again without a second release. A published release is never replaced.
 
-## Recovery
-
-Rerun a failed workflow, dispatch `mode: dependencies`, or let the next scheduled reconciliation resume it. The workflow reuses an existing owned version PR, merged release commit or incomplete release instead of incrementing again. A PR closed without merging must be reopened explicitly. Fix or rerun genuinely failing checks before retrying publication; they are never ignored.
-
-Unfinished draft assets can be rebuilt. After a release becomes public, retries download and verify the original archive, detached signature, SBOM and attestations; they never replace those public assets. Retrying the Nextcloud release API updates the same app version and is safe if a previous response was lost. An invisible release-body marker distinguishes an unfinished App Store delivery from a completed release. Legacy releases without that marker are treated as completed and are never overwritten.
-
-Release and signature-repair workflows share one serialization group. Registration of the app and replacement of its certificate remain separate, manual administrative operations.
-
-## Regression tests
-
-Run `python3 -m unittest discover -s tests/release -v`. These standard-library tests cover eligibility, pagination, version ordering, metadata tampering, PR ownership, exact-commit checks, cancelled/missing jobs, aggregate merge readiness, interrupted publication and immutable public assets. They run in CI alongside the existing Nextcloud test suite.
+Registering the app in the App Store, needed once and again only for a new certificate, is the manual workflow *Register app in Nextcloud App Store*.

@@ -1,0 +1,81 @@
+name: Links
+
+# The link bot. lychee checks every link of the documentation on every change of a
+# Markdown file, and every week, since sites move without a change here. A broken
+# link fails the check of a pull request; the weekly run keeps one issue with the
+# broken links open until they are fixed, and closes it then. lychee.toml holds the
+# rules, .lycheeignore the exceptions of this repository.
+# https://github.com/Dennis-Otto/repo-blueprint
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**/*.md"
+      - lychee.toml
+      - .lycheeignore
+      - .github/workflows/links.yml
+  pull_request:
+    paths:
+      - "**/*.md"
+      - lychee.toml
+      - .lycheeignore
+      - .github/workflows/links.yml
+  schedule:
+    - cron: "50 5 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  links:
+    name: links
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the links of the documentation
+        id: lychee
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: --config lychee.toml --no-progress "./**/*.md"
+          output: ${{ runner.temp }}/links.md
+          fail: ${{ github.event_name != 'schedule' }}
+      - name: Keep the issue of broken links current
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          EXIT_CODE: ${{ steps.lychee.outputs.exit_code }}
+          REPORT: ${{ runner.temp }}/links.md
+        run: |
+          title="Broken links in the documentation"
+          number="$(gh issue list --state open --search "\"$title\" in:title" --json number,title \
+            --jq "map(select(.title == \"$title\"))[0].number // empty")"
+          if [[ "$EXIT_CODE" == 0 ]]; then
+            if [[ -n "$number" ]]; then
+              gh issue close "$number" --comment "The weekly check finds no broken link any more."
+            fi
+            exit 0
+          fi
+          body="$(printf '%s\n\n%s\n' \
+            "The weekly link check found broken links. Fix them, or list them in .lycheeignore with the reason." \
+            "$(cat "$REPORT")")"
+          if [[ -n "$number" ]]; then
+            gh issue edit "$number" --body "$body"
+          else
+            gh issue create --title "$title" --label documentation --body "$body"
+          fi

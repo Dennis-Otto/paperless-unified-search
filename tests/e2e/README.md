@@ -1,6 +1,6 @@
 # Docker end-to-end tests
 
-The suite starts Nextcloud 33 with this checkout mounted read-only as a Custom App. A deterministic local HTTP service emulates the small Paperless API surface used by the app.
+The suite starts Nextcloud with this checkout mounted read-only as a Custom App; locally the image of `compose.yaml`, in the CI the current release of every version from `min-version` to `max-version` in `appinfo/info.xml` (set `NEXTCLOUD_IMAGE` to choose one, such as `nextcloud:35-apache`). A deterministic local HTTP service emulates the small Paperless API surface used by the app.
 
 Run:
 

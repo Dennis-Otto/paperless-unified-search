@@ -1,0 +1,16 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{json,toml,yml,yaml,ts,js,mjs}]
+indent_size = 2
+
+# Nextcloud's style: tabs in PHP, in the app's XML and in composer.json.
+[{*.php,*.xml,composer.json}]
+indent_style = tab

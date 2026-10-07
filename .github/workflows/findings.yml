@@ -1,6 +1,3 @@
-# SPDX-FileCopyrightText: 2026 Dennis Otto
-# SPDX-License-Identifier: AGPL-3.0-or-later
-
 name: Findings
 
 # Without AI, every morning, after code scanning on main and when the accepted

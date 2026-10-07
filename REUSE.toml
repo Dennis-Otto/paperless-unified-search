@@ -1,0 +1,9 @@
+# The license of every file, in the machine-readable form of REUSE
+# (https://reuse.software); the Lint workflow checks it.
+version = 1
+
+[[annotations]]
+path = "**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = ["2026 Dennis Otto", "Contributors to Paperless Unified Search"]
+SPDX-License-Identifier = "AGPL-3.0-or-later"

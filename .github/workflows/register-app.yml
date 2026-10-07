@@ -1,81 +1,82 @@
-# SPDX-FileCopyrightText: 2026 Dennis Otto
-# SPDX-License-Identifier: AGPL-3.0-or-later
+name: Register the app
 
-name: Register app in Nextcloud App Store
+# Registers a Nextcloud app in the App Store, once, and again only for a new
+# certificate: it checks the private key of the environment release against the
+# certificate that Nextcloud issued for the app id, and then sends the certificate
+# with the app id signed by that key. Run it by hand under Actions with the app id
+# of appinfo/info.xml as confirmation. https://github.com/Dennis-Otto/repo-blueprint
 
 on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: 'Enter paperless_unified_search to confirm the one-time registration'
+        description: The id of the app in appinfo/info.xml, to confirm the registration
         required: true
         type: string
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
-  group: register-paperless-unified-search
+  group: register-app
   cancel-in-progress: false
-
-env:
-  APP_ID: paperless_unified_search
 
 jobs:
   register:
-    name: Register app ID once
-    if: inputs.confirmation == 'paperless_unified_search'
+    name: register the app
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    environment: release
-
+    # The environment holds the key of the app's certificate; only main may use it.
+    environment:
+      name: release
+      deployment: false
+    permissions:
+      contents: read
     steps:
-      - name: Validate certificate and register app ID
-        shell: bash
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the certificate and register the app id
         env:
           APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
           APPSTORE_TOKEN: ${{ secrets.APPSTORE_TOKEN }}
+          CONFIRMATION: ${{ inputs.confirmation }}
         run: |
+          set -euo pipefail
+          app_id="$(python3 -c 'import xml.etree.ElementTree as t; print(t.parse("appinfo/info.xml").getroot().findtext("id"))')"
+          if [[ "$CONFIRMATION" != "$app_id" ]]; then
+            echo "::error::Confirm with the id of the app, $app_id."
+            exit 1
+          fi
+          if [[ -z "$APP_PRIVATE_KEY" || -z "$APPSTORE_TOKEN" ]]; then
+            echo "::error::The environment release needs the secrets APP_PRIVATE_KEY and APPSTORE_TOKEN."
+            exit 1
+          fi
           umask 077
-          KEY_FILE="${RUNNER_TEMP}/app-private.key"
-          CERT_FILE="${RUNNER_TEMP}/app-certificate.crt"
-          REQUEST_FILE="${RUNNER_TEMP}/appstore-registration.json"
+          key="$RUNNER_TEMP/app.key"
+          certificate="$RUNNER_TEMP/app.crt"
+          trap 'rm -f "$key" "$certificate" "$RUNNER_TEMP/request.json"' EXIT
+          printf '%s' "$APP_PRIVATE_KEY" > "$key"
+          openssl pkey -in "$key" -check -noout
 
-          test -n "${APP_PRIVATE_KEY}"
-          test -n "${APPSTORE_TOKEN}"
-          printf '%s' "${APP_PRIVATE_KEY}" > "${KEY_FILE}"
-          openssl pkey -in "${KEY_FILE}" -check -noout
+          curl --fail --location --silent --show-error --output "$certificate" \
+            "https://raw.githubusercontent.com/nextcloud/app-certificate-requests/master/$app_id/$app_id.crt"
+          openssl x509 -in "$certificate" -noout -checkend 0
+          openssl x509 -in "$certificate" -noout -subject | grep --fixed-strings "CN = $app_id"
+          key_fingerprint="$(openssl pkey -in "$key" -pubout -outform DER | sha256sum | cut -d' ' -f1)"
+          certificate_fingerprint="$(openssl x509 -in "$certificate" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum | cut -d' ' -f1)"
+          if [[ "$key_fingerprint" != "$certificate_fingerprint" ]]; then
+            echo "::error::APP_PRIVATE_KEY is not the key of the certificate of $app_id."
+            exit 1
+          fi
 
-          curl --fail --location --silent --show-error \
-            "https://raw.githubusercontent.com/nextcloud/app-certificate-requests/master/${APP_ID}/${APP_ID}.crt" \
-            --output "${CERT_FILE}"
-          openssl x509 -in "${CERT_FILE}" -noout -checkend 0
-          openssl x509 -in "${CERT_FILE}" -noout -subject \
-            | grep --fixed-strings "CN = ${APP_ID}"
-
-          PRIVATE_KEY_FINGERPRINT="$(openssl pkey -in "${KEY_FILE}" -pubout -outform DER | sha256sum | cut --delimiter=' ' --fields=1)"
-          CERTIFICATE_FINGERPRINT="$(openssl x509 -in "${CERT_FILE}" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum | cut --delimiter=' ' --fields=1)"
-          test "${PRIVATE_KEY_FINGERPRINT}" = "${CERTIFICATE_FINGERPRINT}"
-
-          SIGNATURE="$(printf '%s' "${APP_ID}" | openssl dgst -sha512 -sign "${KEY_FILE}" | openssl base64 -A)"
-          jq --null-input \
-            --rawfile certificate "${CERT_FILE}" \
-            --arg signature "${SIGNATURE}" \
-            '{certificate: $certificate, signature: $signature}' \
-            > "${REQUEST_FILE}"
-
-          curl --fail-with-body --silent --show-error \
-            --request POST \
-            --header "Authorization: Token ${APPSTORE_TOKEN}" \
-            --header 'Content-Type: application/json' \
-            --data-binary "@${REQUEST_FILE}" \
-            https://apps.nextcloud.com/api/v1/apps
-
-      - name: Remove temporary credentials
-        if: always()
-        shell: bash
-        run: |
-          rm --force \
-            "${RUNNER_TEMP}/app-private.key" \
-            "${RUNNER_TEMP}/app-certificate.crt" \
-            "${RUNNER_TEMP}/appstore-registration.json"
+          signature="$(printf '%s' "$app_id" | openssl dgst -sha512 -sign "$key" | openssl base64 -A)"
+          jq --null-input --rawfile certificate "$certificate" --arg signature "$signature" \
+            '{certificate: $certificate, signature: $signature}' > "$RUNNER_TEMP/request.json"
+          curl --fail-with-body --silent --show-error --request POST \
+            --header "Authorization: Token $APPSTORE_TOKEN" --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/request.json" https://apps.nextcloud.com/api/v1/apps
+          echo "Registered $app_id in the Nextcloud App Store." >> "$GITHUB_STEP_SUMMARY"

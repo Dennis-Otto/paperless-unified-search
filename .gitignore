@@ -1,24 +1,32 @@
-/build/artifacts/*
-/build/phpunit-cache/
-/vendor/
-/.phpunit.cache/
-/.phpunit.result.cache
-/.php-cs-fixer.cache
+# Editors and systems
+.idea/
+.vscode/
 .DS_Store
+Thumbs.db
+/.claude/settings.local.json
 
-# Never commit local configuration or credentials.
+# The context folder of the issue assistant
+/.issue-assistant/
+
+# Secrets, which never belong in the repository; the secret scan checks every push too.
 .env
 .env.*
+!.env.example
 *.key
 *.pem
 *.p12
 *.pfx
 auth.json
-credentials.json
-credentials.*.json
-config.local.*
-secrets/
+credentials*.json
+/secrets/
 
-# Python release automation test cache.
+# PHP
+/vendor/
+/build/
+/.php-cs-fixer.cache
+/.phpunit.cache/
+/.phpunit.result.cache
+
+# Local configuration and the caches of the mock of the end-to-end tests
+config.local.*
 __pycache__/
-/.issue-assistant/

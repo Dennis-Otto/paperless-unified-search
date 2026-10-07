@@ -1,0 +1,29 @@
+# Findings of zizmor (the Workflow security workflow) that the blueprint accepts on
+# purpose, each with its reason. Everything else is reported to code scanning, where
+# the Findings workflow keeps it fixed or accepted.
+# https://github.com/Dennis-Otto/repo-blueprint
+rules:
+  dangerous-triggers:
+    ignore:
+      # These workflows start on pull_request_target or workflow_run so that they
+      # may write, and never check out or run the code of a pull request: they read
+      # its title, labels or metadata only.
+      - pull-request-title.yml
+      - welcome.yml
+      - dependabot-automerge.yml
+      # The issue assistant's templates, which its check keeps equal to the action's.
+      - findings.yml
+      - issue-lifecycle.yml
+  self-repository:
+    ignore:
+      # The test run of the action uses it the way its documentation shows, ./
+      - action-test.yml
+      # The release workflow calls the release verification with ./, because
+      # actionlint doesn't know the self-repository syntax $/ yet.
+      - release.yml
+  github-app:
+    ignore:
+      # The token action has no input for the Variables permission that the settings
+      # check reads, so its token has all permissions of the installation; the job
+      # runs only the read-only check of blueprint.py.
+      - settings.yml

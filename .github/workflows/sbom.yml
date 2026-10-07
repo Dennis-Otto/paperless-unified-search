@@ -1,39 +1,43 @@
-# SPDX-FileCopyrightText: 2026 Dennis Otto
-# SPDX-License-Identifier: AGPL-3.0-or-later
-
 name: SBOM
+
+# A software bill of materials of the repository in SPDX, for every change and every
+# week; the release workflow attaches one to each release.
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
   schedule:
-    - cron: '27 4 * * 3'
+    - cron: "47 4 * * 3"
   workflow_dispatch:
 
-permissions: read-all
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   sbom:
     name: sbom
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
     steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Generate SPDX SBOM
+      - name: Generate the SPDX SBOM
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           path: .
           format: spdx-json
-          artifact-name: paperless_unified_search.spdx.json
-          output-file: paperless_unified_search.spdx.json
+          artifact-name: ${{ github.event.repository.name }}.spdx.json
+          output-file: ${{ github.event.repository.name }}.spdx.json
           upload-release-assets: false
-          syft-version: v1.51.0
+          syft-version: v1.52.0

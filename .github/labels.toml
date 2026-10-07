@@ -212,3 +212,39 @@ name = "docker_compose"
 color = "e5f2fc"
 description = "Pull requests that update docker_compose code"
 group = "dependabot"
+
+[[label]]
+name = "maintenance"
+color = "6f42c1"
+description = "CI, repository maintenance and release tooling"
+group = "type"
+
+[[label]]
+name = "breaking-change"
+color = "b60205"
+description = "Changes requiring migration or user action"
+group = "release"
+
+[[label]]
+name = "merge-conflict"
+color = "b60205"
+description = "Conflicts with main; the branch bot can't bring it up to date"
+group = "release"
+
+[[label]]
+name = "autorelease: pending"
+color = "ededed"
+description = "Release bot: the pull request of the next release, until it is released"
+group = "release"
+
+[[label]]
+name = "autorelease: tagged"
+color = "ededed"
+description = "Release bot: the release is created"
+group = "release"
+
+[[label]]
+name = "docker"
+color = "21ceff"
+description = "Pull requests that update docker code"
+group = "dependabot"

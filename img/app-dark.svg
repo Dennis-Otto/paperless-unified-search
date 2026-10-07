@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SPDX-FileCopyrightText: 2026 Dennis Otto
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72" role="img" aria-label="Paperless Unified Search">
+  <rect x="12" y="6" width="39" height="52" rx="5" fill="#1f6f5f"/>
+  <path d="M41 6v13h10" fill="#75c8b7"/>
+  <path d="M20 29h23M20 37h17M20 45h12" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="4"/>
+  <circle cx="47" cy="48" r="13" fill="#fff" stroke="#0f172a" stroke-width="5"/>
+  <path d="m57 58 9 9" fill="none" stroke="#0f172a" stroke-linecap="round" stroke-width="6"/>
+</svg>

@@ -1,0 +1,89 @@
+name: Update branches
+
+# The branch bot. main only takes pull requests that are up to date with it, and
+# auto-merge doesn't update a branch by itself. So after every change of main, this
+# workflow brings each pull request that waits for auto-merge up to date, as the
+# release app, so that its checks run again and it merges once they pass. A pull
+# request that conflicts with main gets the label merge-conflict and one comment;
+# both go once it no longer conflicts. The release bot keeps its own pull request
+# current. https://github.com/Dennis-Otto/repo-blueprint
+
+on:
+  push:
+    branches: [main]
+  # Merges that auto-merge does with the token of a workflow, such as those of
+  # Dependabot's updates, start no workflow; so the bot looks every half hour too.
+  schedule:
+    - cron: "10,40 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: update-branches
+  cancel-in-progress: true
+
+jobs:
+  update:
+    name: update branches
+    if: ${{ !github.event.repository.fork }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The environment holds the private key of the release app; only main may use it.
+    environment:
+      name: release
+      deployment: false
+    permissions:
+      contents: read
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: Create a token of the release app
+        id: app
+        if: vars.RELEASE_AUTOMATION_CLIENT_ID != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY }}
+          # Only what the update of a branch, its label and its comment need.
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Bring the pull requests that wait for auto-merge up to date
+        if: steps.app.outputs.token != ''
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          marker="<!-- branch-bot: merge-conflict -->"
+          gh pr list --state open --limit 100 \
+            --json number,headRefName,autoMergeRequest,isCrossRepository,mergeable,labels \
+            --jq '.[] | select(.autoMergeRequest != null and (.isCrossRepository | not)
+              and (.headRefName | startswith("release-please--") | not))
+              | "\(.number) \(.headRefName) \(.mergeable) \([.labels[].name] | index("merge-conflict") != null)"' |
+            while read -r number branch mergeable labelled; do
+              if [[ "$mergeable" != CONFLICTING ]]; then
+                if [[ "$labelled" == true ]]; then
+                  gh pr edit "$number" --remove-label merge-conflict
+                fi
+                behind="$(gh api "repos/$GH_REPO/compare/main...$branch" --jq .behind_by)"
+                if [[ "$behind" != 0 ]]; then
+                  echo "#$number is $behind commit(s) behind main."
+                  if gh pr update-branch "$number"; then
+                    continue
+                  fi
+                else
+                  continue
+                fi
+              fi
+              echo "::warning::#$number conflicts with main."
+              if [[ "$labelled" != true ]]; then
+                gh pr edit "$number" --add-label merge-conflict
+                if ! gh api "repos/$GH_REPO/issues/$number/comments" --paginate \
+                  --jq '.[].body' | grep -qF "$marker"; then
+                  gh pr comment "$number" --body "$(printf '%s\n' "$marker" \
+                    "This pull request conflicts with \`main\`, so the branch bot can't bring it up to date. Merge \`main\` into the branch and resolve the conflict; the bot takes over again afterwards.")"
+                fi
+              fi
+            done

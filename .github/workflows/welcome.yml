@@ -1,0 +1,43 @@
+name: Welcome
+
+# The welcome bot: a person's first pull request in this repository gets a comment
+# with what helps it along. New issues get the issue assistant's analysis instead.
+# https://github.com/Dennis-Otto/repo-blueprint
+
+on:
+  pull_request_target:
+    types: [opened]
+
+permissions: {}
+
+jobs:
+  welcome:
+    name: welcome
+    if: >-
+      contains(fromJSON('["FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER"]'),
+      github.event.pull_request.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      # No checkout: the comment needs nothing of the pull request.
+      - name: Welcome the first pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          gh pr comment "$NUMBER" --body "$(printf '%s\n' \
+            "Thank you for your first pull request, @$AUTHOR! Three things help it along:" \
+            "" \
+            "- The title is a [Conventional Commit](https://www.conventionalcommits.org/), such as \`fix: keep the token secret\`; the release notes are made from it." \
+            "- Every commit carries a sign-off (\`git commit -s\`), the [Developer Certificate of Origin](https://developercertificate.org/)." \
+            "- \`bash scripts/check.sh\` runs the checks of the CI on your computer." \
+            "" \
+            "[CONTRIBUTING.md](../blob/main/CONTRIBUTING.md) explains the rest. The checks start once the maintainer approves them for this first pull request.")"

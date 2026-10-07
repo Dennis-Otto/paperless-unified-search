@@ -1,37 +1,9 @@
-# SPDX-FileCopyrightText: 2026 Dennis Otto
-# SPDX-License-Identifier: AGPL-3.0-or-later
-
+# Dependabot keeps the actions and the dependencies current. Routine updates merge on
+# their own once every check passes (dependabot-automerge.yml). Updates of what the
+# users run are committed as fix(deps) and lead to a patch release; updates of the
+# tools are chore(deps) and wait for the next release.
 version: 2
 updates:
-  - package-ecosystem: composer
-    directory: /
-    schedule:
-      interval: weekly
-      day: monday
-      time: "04:00"
-      timezone: Europe/Berlin
-    open-pull-requests-limit: 5
-    versioning-strategy: increase-if-necessary
-    groups:
-      composer-routine:
-        patterns:
-          - "*"
-        update-types:
-          - minor
-          - patch
-      composer-major:
-        patterns:
-          - "*"
-        update-types:
-          - major
-    commit-message:
-      prefix: chore
-      include: scope
-    ignore:
-      - dependency-name: nextcloud/ocp
-        update-types:
-          - version-update:semver-major
-
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -40,6 +12,9 @@ updates:
       time: "04:20"
       timezone: Europe/Berlin
     open-pull-requests-limit: 5
+    # Let a fresh release settle for a week; security updates skip the wait.
+    cooldown:
+      default-days: 7
     groups:
       actions-routine:
         patterns:
@@ -56,6 +31,78 @@ updates:
       prefix: chore
       include: scope
 
+  # The browser of scripts/social-preview.sh and the image of the dev container.
+  - package-ecosystem: docker
+    directories:
+      - /.github/social-preview
+      - /.devcontainer
+    schedule:
+      interval: monthly
+      timezone: Europe/Berlin
+    cooldown:
+      default-days: 7
+    # The dev container keeps the Python, PHP or Node of the project, as the CI does;
+    # only its digest moves.
+    ignore:
+      - dependency-name: "devcontainers/*"
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
+    commit-message:
+      prefix: chore
+      include: scope
+
+  # The Features of the dev container, locked in .devcontainer/devcontainer-lock.json.
+  - package-ecosystem: devcontainers
+    directory: /
+    schedule:
+      interval: monthly
+      timezone: Europe/Berlin
+    cooldown:
+      default-days: 7
+    groups:
+      dev-container-features:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: chore
+      include: scope
+
+  - package-ecosystem: composer
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    groups:
+      composer-routine:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+      composer-major:
+        patterns:
+          - "*"
+        update-types:
+          - major
+    commit-message:
+      prefix: fix
+      prefix-development: chore
+      include: scope
+    ignore:
+      # The public API of Nextcloud follows the min-version of appinfo/info.xml.
+      - dependency-name: nextcloud/ocp
+        update-types:
+          - version-update:semver-major
+
+  # The containers of the end-to-end tests: the Nextcloud versions they run against
+  # follow min-version and max-version of appinfo/info.xml, so their major versions
+  # wait for the maintainer.
   - package-ecosystem: docker-compose
     directory: /tests/e2e
     schedule:
@@ -64,6 +111,8 @@ updates:
       time: "04:40"
       timezone: Europe/Berlin
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
     groups:
       containers-routine:
         patterns:
@@ -71,11 +120,6 @@ updates:
         update-types:
           - minor
           - patch
-      containers-major:
-        patterns:
-          - "*"
-        update-types:
-          - major
     commit-message:
       prefix: chore
       include: scope

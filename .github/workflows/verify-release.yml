@@ -1,0 +1,177 @@
+name: Release verification
+
+# The release verification bot. It checks a release the way its users can: every
+# asset carries the signed provenance of this repository's release workflow, both in
+# GitHub and in the attached bundle; the SBOM is attached; the release is immutable
+# and its commit signed; and where the repository variable PUBLISH_TO delivers it,
+# the same release is there. The release workflow runs it after every release, and
+# it checks the latest release every week. A failed check fails the run, which GitHub
+# reports to the maintainer. https://github.com/Dennis-Otto/repo-blueprint
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: The tag of the release; empty for the latest
+        type: string
+        required: false
+  schedule:
+    - cron: "17 5 * * 3"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The tag of the release; empty for the latest
+        required: false
+
+permissions: {}
+
+jobs:
+  verify:
+    name: verify the release
+    if: ${{ !github.event.repository.fork }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      attestations: read
+      contents: read
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: Verify the release as its users can
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          PUBLISH_TO: ${{ vars.PUBLISH_TO }}
+        run: |
+          set -uo pipefail
+          problems=0
+          pass() { echo "$1"; echo "- ✔ $1" >> "$GITHUB_STEP_SUMMARY"; }
+          fail() { echo "::error::$1"; echo "- ✘ $1" >> "$GITHUB_STEP_SUMMARY"; problems=$((problems + 1)); }
+
+          if [[ -z "$TAG" ]]; then
+            TAG="$(gh release view --json tagName --jq .tagName 2>/dev/null || true)"
+            if [[ -z "$TAG" ]]; then
+              echo "The repository has no release yet." | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          fi
+          echo "### The release $TAG" >> "$GITHUB_STEP_SUMMARY"
+          release="$(gh api "repos/$GH_REPO/releases/tags/$TAG")"
+          # A release from before the release workflow of the blueprint has none of
+          # what it attaches; the weekly run waits for the next release instead.
+          if [[ "$GITHUB_EVENT_NAME" == schedule ]] &&
+            ! jq -e 'any(.assets[]; .name == "provenance.sigstore.json")' <<<"$release" >/dev/null; then
+            echo "The release $TAG was made before the release workflow of the blueprint; the next one is verified in full." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [[ "$(jq -r .immutable <<<"$release")" == true ]]; then
+            pass "The release is immutable."
+          else
+            fail "The release is not immutable."
+          fi
+          sha="$(gh api "repos/$GH_REPO/commits/$TAG" --jq .sha)"
+          if [[ "$(gh api "repos/$GH_REPO/commits/$sha" --jq .commit.verification.verified)" == true ]]; then
+            pass "Its commit $sha is signed."
+          else
+            fail "Its commit $sha is not signed."
+          fi
+
+          mkdir -p "$RUNNER_TEMP/assets"
+          cd "$RUNNER_TEMP/assets" || exit 1
+          gh release download "$TAG"
+          if [[ -f provenance.sigstore.json ]]; then
+            pass "The bundle of the provenance is attached."
+          else
+            fail "The release has no provenance.sigstore.json."
+          fi
+          if [[ -f provenance.intoto.jsonl ]]; then
+            if [[ "$(jq -c .dsseEnvelope provenance.sigstore.json)" == "$(cat provenance.intoto.jsonl)" ]]; then
+              pass "provenance.intoto.jsonl holds the signed statement of the bundle."
+            else
+              fail "provenance.intoto.jsonl differs from the signed statement of the bundle."
+            fi
+          fi
+          if compgen -G "*.spdx.json" >/dev/null; then
+            pass "The SBOM is attached."
+          else
+            fail "The release has no SBOM."
+          fi
+          signer="$GH_REPO/.github/workflows/release.yml"
+          for asset in *; do
+            [[ "$asset" == provenance.sigstore.json || "$asset" == *.intoto.jsonl ]] && continue
+            if gh attestation verify "$asset" --repo "$GH_REPO" --signer-workflow "$signer" >/dev/null &&
+              { [[ ! -f provenance.sigstore.json ]] ||
+                gh attestation verify "$asset" --repo "$GH_REPO" --signer-workflow "$signer" \
+                  --bundle provenance.sigstore.json >/dev/null; }; then
+              pass "$asset carries the signed provenance of the release workflow."
+            else
+              fail "$asset has no valid provenance of the release workflow."
+            fi
+          done
+
+          version="${TAG#v}"
+          case "$PUBLISH_TO" in
+            pypi)
+              name="${GH_REPO#*/}"
+              published="$(curl --fail --silent --show-error "https://pypi.org/pypi/$name/$version/json" |
+                jq -r '.urls[].digests.sha256' | sort)"
+              attached="$(sha256sum ./*.whl ./*.tar.gz 2>/dev/null | cut -d' ' -f1 | sort)"
+              if [[ -n "$published" && "$published" == "$attached" ]]; then
+                pass "PyPI has the same files of $version."
+              else
+                fail "PyPI doesn't have the files of the release $version."
+              fi
+              ;;
+            npm)
+              package="$(tar -xOzf ./*.tgz package/package.json | jq -r .name)"
+              published="$(npm view "$package@$version" dist.integrity 2>/dev/null || true)"
+              attached="sha512-$(openssl dgst -sha512 -binary ./*.tgz | openssl base64 -A)"
+              if [[ "$published" == "$attached" ]]; then
+                pass "npm has the same package $package@$version."
+              else
+                fail "npm doesn't have the package of the release $version."
+              fi
+              ;;
+            ghcr)
+              image="ghcr.io/${GH_REPO,,}:$version"
+              if gh attestation verify "oci://$image" --repo "$GH_REPO" >/dev/null; then
+                pass "$image carries the signed provenance of the release workflow."
+              else
+                fail "$image has no valid provenance."
+              fi
+              ;;
+            nextcloud-appstore)
+              app_id="$(gh api -H "Accept: application/vnd.github.raw+json" \
+                "repos/$GH_REPO/contents/appinfo/info.xml?ref=$TAG" |
+                python3 -c 'import sys, xml.etree.ElementTree as t; print(t.parse(sys.stdin).getroot().findtext("id"))')"
+              if curl --fail --silent --show-error https://apps.nextcloud.com/api/v1/apps.json |
+                jq -e --arg id "$app_id" --arg version "$version" \
+                  'any(.[]; .id == $id and any(.releases[]; .version == $version))' >/dev/null; then
+                pass "The Nextcloud App Store has $app_id $version."
+              else
+                fail "The Nextcloud App Store doesn't have $app_id $version."
+              fi
+              ;;
+            github-action)
+              if [[ "$version" == *-* ]]; then
+                pass "A prerelease leaves the major tag where it is."
+              else
+                major="v${version%%.*}"
+                target="$(gh api "repos/$GH_REPO/commits/$major" --jq .sha 2>/dev/null || true)"
+                if [[ "$target" == "$sha" ]]; then
+                  pass "The major tag $major points at the release."
+                else
+                  fail "The major tag $major points at ${target:-nothing}, not at the release."
+                fi
+              fi
+              ;;
+          esac
+
+          if ((problems > 0)); then
+            echo "The release $TAG has $problems problem(s)." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "The release $TAG verifies." >> "$GITHUB_STEP_SUMMARY"

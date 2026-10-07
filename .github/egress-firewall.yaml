@@ -1,6 +1,3 @@
-# SPDX-FileCopyrightText: 2026 Dennis Otto
-# SPDX-License-Identifier: AGPL-3.0-or-later
-
 # Hosts that jobs on GitHub's egress-firewall runner (runs-on: ubuntu-24.04-firewall)
 # may reach; GitHub blocks all others, apart from its own defaults (github.com,
 # codeload.github.com and the Actions endpoints). The analyze job of the issue

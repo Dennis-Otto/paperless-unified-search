@@ -1,0 +1,29 @@
+# The link check of the documentation (the Links workflow). Links that a person must
+# be signed in for, or that only exist once the repository is set up, stay out;
+# .lycheeignore of the repository lists its own exceptions.
+# https://github.com/Dennis-Otto/repo-blueprint
+
+# GitHub, Shields and the badges limit anonymous requests; a few retries get through.
+max_retries = 3
+retry_wait_time = 5
+timeout = 30
+accept = ["200..=299", "403", "429"]
+include_mail = false
+exclude_all_private = true
+
+exclude = [
+  # Pages for people who are signed in, or that a new repository only gets later.
+  '^https://github\.com/[^/]+/[^/]+/(issues|discussions|security/advisories)/new',
+  '^https://github\.com/[^/]+/[^/]+/(settings|compare|edit)',
+  '^https://github\.com/sponsors/',
+  '^https://api\.reuse\.software/',
+  '^https://api\.scorecard\.dev/',
+  '^https://scorecard\.dev/viewer/',
+  '^https://www\.bestpractices\.dev/projects/\d+/badge',
+  '^https://my\.home-assistant\.io/redirect/',
+  '^https://img\.shields\.io/',
+  # The badge of a workflow, which a pull request that adds the workflow can't show yet.
+  '^https://github\.com/[^/]+/[^/]+/actions/workflows/[^/]+/badge\.svg',
+]
+
+exclude_path = ["CHANGELOG.md", "LICENSES", "node_modules", "vendor", ".venv", "build", "dist", "template"]
