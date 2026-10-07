@@ -1,0 +1,17 @@
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ask anything about setting up or using Paperless Unified Search. Please read the [README](https://github.com/Dennis-Otto/paperless-unified-search#readme) first. English and German are both welcome. A bug belongs in a [bug report](https://github.com/Dennis-Otto/paperless-unified-search/issues/new?template=bug_report.yml), a vulnerability [privately](https://github.com/Dennis-Otto/paperless-unified-search/security/policy).
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The release you use, and of what it runs on, if relevant.

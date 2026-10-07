@@ -1,0 +1,15 @@
+// The rules of the Markdown lint of every repository of the blueprint; a project
+// changes them in .markdownlint.jsonc.
+// https://github.com/Dennis-Otto/repo-blueprint
+{
+  "default": true,
+  // A paragraph is one line, so that a change of a sentence is one line of the diff.
+  "MD013": false,
+  // Pictures with a dark variant, sizes and small print need HTML.
+  "MD033": false,
+  // A changelog and a guide repeat headings such as "Features" in their sections.
+  "MD024": { "siblings_only": true },
+  // Fragments, such as the pull request template, the prompts and the description
+  // of the project for the issue assistant, start without a title.
+  "MD041": false
+}

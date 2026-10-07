@@ -1,0 +1,92 @@
+name: Coverage
+
+# The coverage bot. After the checks of a pull request, it compares the coverage of
+# its tests with that of main, file by file, and keeps one comment on the pull
+# request up to date. It reads the coverage reports that the checks keep as the
+# artifact "coverage" and never checks out or runs the code of a pull request.
+# https://github.com/Dennis-Otto/repo-blueprint
+
+on:
+  workflow_run:
+    workflows:
+      - CI (python)
+      - CI (github-action)
+      - CI (home-assistant)
+      - CI (php)
+      - CI (node)
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: true
+
+jobs:
+  comment:
+    name: coverage comment
+    if: >-
+      !github.event.repository.fork &&
+      github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      # The default branch, for blueprint.py; the pull request only gives its report.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Fetch the reports of the pull request and of main
+        id: reports
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.event.workflow_run.id }}
+          WORKFLOW: ${{ github.event.workflow_run.workflow_id }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/head" "$RUNNER_TEMP/base"
+          if ! gh run download "$RUN" --name coverage --dir "$RUNNER_TEMP/head"; then
+            echo "The checks kept no coverage report; nothing to compare." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          base="$(gh run list --workflow "$WORKFLOW" --branch main --event push --status success \
+            --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+          if [[ -n "$base" ]]; then
+            gh run download "$base" --name coverage --dir "$RUNNER_TEMP/base" || true
+          fi
+          echo "found=true" >> "$GITHUB_OUTPUT"
+      - name: Keep one comment on the pull request up to date
+        if: steps.reports.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" coverage "$RUNNER_TEMP/head/coverage.xml" "$RUNNER_TEMP/base/coverage.xml" \
+            > "$RUNNER_TEMP/comment.md"
+          cat "$RUNNER_TEMP/comment.md" >> "$GITHUB_STEP_SUMMARY"
+          # A pull request from a fork isn't named in the run; its commit finds it.
+          number="${NUMBER:-$(gh pr list --state open --search "$SHA" --json number --jq '.[0].number // empty')}"
+          if [[ -z "$number" ]]; then
+            echo "No open pull request has the commit $SHA." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          marker="$(head -n 1 "$RUNNER_TEMP/comment.md")"
+          comment="$(gh api "repos/$GH_REPO/issues/$number/comments" --paginate \
+            --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n 1)"
+          if [[ -n "$comment" ]]; then
+            gh api --method PATCH "repos/$GH_REPO/issues/comments/$comment" \
+              -F "body=@$RUNNER_TEMP/comment.md" --silent
+          else
+            gh pr comment "$number" --body-file "$RUNNER_TEMP/comment.md"
+          fi

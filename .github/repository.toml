@@ -7,7 +7,7 @@ description = "OCR-powered Paperless-ngx search, seamlessly integrated into Next
 homepage = "https://apps.nextcloud.com/apps/paperless_unified_search"
 topics = ["document-management", "full-text-search", "nextcloud", "ocr", "paperless-ngx", "php", "search"]
 has_issues = true
-has_discussions = false
+has_discussions = true
 has_projects = false
 has_wiki = false
 allow_squash_merge = true
@@ -26,7 +26,8 @@ web_commit_signoff_required = true
 immutable_releases = true
 private_vulnerability_reporting = true
 dependabot_alerts = true
-dependabot_security_updates = true
+# Renovate opens the updates that fix a vulnerability.
+dependabot_security_updates = false
 secret_scanning = true
 secret_scanning_push_protection = true
 
@@ -43,6 +44,7 @@ required_checks = [
   "check (php)",
   "workflow-lint",
   "reuse",
+  "markdown",
   "dco",
   "issue-assistant",
   "conventional title",
