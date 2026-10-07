@@ -14,6 +14,17 @@ Paperless Unified Search brings Paperless-ngx OCR and full-text search into Next
 
 <sub>💛 If Paperless Unified Search is useful to you, you can [support its development](https://github.com/sponsors/Dennis-Otto).</sub>
 
+[Quick start](#quick-start) · [Architecture](docs/architecture.md) · [Security design](docs/security.md) · [Roadmap](docs/roadmap.md) · [Releases](docs/releases.md) · [Changelog](CHANGELOG.md)
+
+## Quick start
+
+1. Install **Paperless Unified Search** from the [Nextcloud App Store](https://apps.nextcloud.com/apps/paperless_unified_search) under *Apps*, or with `occ app:install paperless_unified_search`.
+2. In Paperless-ngx, create an account that may read the documents to search, and an API token for it.
+3. In Nextcloud, open **Administration settings → Additional settings → Paperless Unified Search**, enter the Paperless URL and the token, and select **Test connection and save**.
+4. Search in Nextcloud, switch on **Search connected services** and look under **Paperless documents**. A result appears for every document whose synchronized file, with `[P<ID>]` in its name, you can read; [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) creates such files.
+
+[Configuration](#configuration) and [Usage](#usage) have the details.
+
 ## Screenshots
 
 ### Paperless results in Nextcloud's global search
