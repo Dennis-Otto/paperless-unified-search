@@ -1,0 +1,4 @@
+// The rules of the Markdown lint of this project.
+{
+  "extends": ".github/markdownlint.jsonc"
+}

@@ -97,8 +97,21 @@ vendor/bin/php-cs-fixer fix --dry-run --diff
 step "Psalm"
 vendor/bin/psalm --threads=1 --no-cache
 
-step "Tests"
-vendor/bin/phpunit
+step "Tests, with every line covered"
+# pcov measures the coverage in the CI, Xdebug in the dev container.
+if ! php -r 'exit(extension_loaded("pcov") || extension_loaded("xdebug") ? 0 : 1);'; then
+  echo "The tests need pcov or Xdebug to measure their coverage: pecl install pcov" >&2
+  exit 1
+fi
+XDEBUG_MODE=coverage vendor/bin/phpunit --coverage-text --coverage-cobertura build/coverage.xml
+# This is PHP code, not a shell expression.
+# shellcheck disable=SC2016
+php -r '$rate = (float) simplexml_load_file($argv[1])["line-rate"];
+if ($rate < 1) {
+    fwrite(STDERR, sprintf("%.2f %% of the lines are covered; every line needs a test.\n", 100 * $rate));
+    exit(1);
+}' build/coverage.xml
+echo "Every line of lib/ is covered."
 
 step "Package"
 if command -v krankerl >/dev/null 2>&1; then

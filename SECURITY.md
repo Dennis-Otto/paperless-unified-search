@@ -32,10 +32,10 @@ The application stores the Paperless API token through Nextcloud's server-side c
 ## How the project keeps itself secure
 
 - Every pull request and every push to `main` runs CodeQL, a Gitleaks secret scan and, for changed dependencies, a review against known vulnerabilities. OpenSSF Scorecard checks the practices of the repository every week.
-- Actions are pinned to commit hashes, tokens get the least permissions they need, and Dependabot keeps actions and dependencies current.
+- Actions are pinned to commit hashes, tokens get the least permissions they need, and Renovate keeps actions, dependencies and images current, with the updates that fix a vulnerability at once.
 - OSV-Scanner checks every lock file against the OSV database of known vulnerabilities, on every pull request and every week.
 - Harden-Runner records the network traffic of every job of the workflows, so that a connection that doesn't belong there shows.
-- Releases carry an SBOM, the licenses of their third-party components (`THIRD_PARTY_NOTICES.md`) and signed build provenance, are immutable once published, and are verified as their users can after every release and every week.
+- Releases carry an SBOM as SPDX and as CycloneDX, the licenses of their third-party components (`THIRD_PARTY_NOTICES.md`), an OpenVEX document of the advisories that the project accepts with their reasons, and signed build provenance, are immutable once published, and are verified as their users can after every release and every week.
 
 ## Findings of code scanning
 

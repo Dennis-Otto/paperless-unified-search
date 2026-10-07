@@ -4,6 +4,8 @@
 | --- | --- |
 | Report a reproducible bug | a [bug report](https://github.com/Dennis-Otto/paperless-unified-search/issues/new?template=bug_report.yml) |
 | Suggest a feature | a [feature request](https://github.com/Dennis-Otto/paperless-unified-search/issues/new?template=feature_request.yml) |
+| Ask a question or share an idea | the [discussions](https://github.com/Dennis-Otto/paperless-unified-search/discussions) |
+| Hear of every new release | the [announcements](https://github.com/Dennis-Otto/paperless-unified-search/discussions/categories/announcements), or *Watch* → *Custom* → *Releases* |
 | Report a vulnerability | privately, as described in [SECURITY.md](SECURITY.md) |
 
 Please read the [README](README.md) first. For bugs, include the app version, the Nextcloud version, relevant sanitized logs, the expected behavior and the steps to reproduce.
