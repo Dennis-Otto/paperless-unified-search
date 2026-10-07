@@ -30,6 +30,7 @@ use OCP\Security\ICredentialsManager;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
+use RuntimeException;
 
 final class PaperlessSearchProviderTest extends TestCase {
 	#[DataProvider('resourceUrlCases')]
@@ -184,5 +185,301 @@ final class PaperlessSearchProviderTest extends TestCase {
 		);
 
 		self::assertFalse($provider->isExternalProvider());
+	}
+
+	public function testDescribesItselfToTheUnifiedSearch(): void {
+		$provider = $this->provider($this->createStub(IClient::class));
+
+		self::assertSame(AppConstants::APP_ID . '_documents', $provider->getId());
+		self::assertSame('Paperless documents', $provider->getName());
+		self::assertSame(40, $provider->getOrder('files.view.index', []));
+	}
+
+	/**
+	 * @return array<string, array{string, string}>
+	 */
+	public static function searchesWithoutPaperless(): array {
+		return [
+			'blank term' => [" \t ", 'TEST_VALUE'],
+			'no token' => ['invoice', ''],
+		];
+	}
+
+	#[DataProvider('searchesWithoutPaperless')]
+	public function testAsksPaperlessOnlyForATermWithCompleteSettings(string $term, string $token): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::never())->method('get');
+
+		$result = $this->provider($client, token: $token)->search($this->user(), $this->query($term))->jsonSerialize();
+
+		self::assertSame('Paperless documents', $result['name']);
+		self::assertFalse($result['isPaginated']);
+		self::assertSame([], $result['entries']);
+	}
+
+	/**
+	 * @return array<string, array{int|string|null, int, int, int}>
+	 */
+	public static function pages(): array {
+		return [
+			'first search' => [null, 10, 1, 10],
+			'cursor of the next page' => [3, 10, 3, 10],
+			'cursor below one' => [0, 10, 1, 10],
+			'negative cursor' => [-2, 10, 1, 10],
+			'cursor as text' => ['4', 10, 4, 10],
+			'cursor zero as text' => ['0', 10, 1, 10],
+			'negative cursor as text' => ['-3', 10, 1, 10],
+			'cursor that is no number' => ['next', 10, 1, 10],
+			'limit above fifty' => [null, 100, 1, 50],
+			'limit below one' => [null, 0, 1, 1],
+		];
+	}
+
+	#[DataProvider('pages')]
+	public function testTheCursorAndTheLimitChooseThePageOfPaperless(int|string|null $cursor, int $limit, int $page, int $pageSize): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with(
+				'https://paperless.example.com/api/documents/',
+				self::callback(static fn (array $options): bool => $options['query'] === [
+					'query' => 'invoice',
+					'page' => $page,
+					'page_size' => $pageSize,
+				]),
+			)
+			->willReturn($this->response(['count' => 0, 'next' => null, 'results' => []]));
+
+		$this->provider($client)->search($this->user(), $this->query(' invoice ', $cursor, $limit));
+	}
+
+	/**
+	 * @return array<string, array{int|string|null, int}>
+	 */
+	public static function nextPages(): array {
+		return [
+			'after the first page' => [null, 2],
+			'after a later page' => [5, 6],
+			'after a later page as text' => ['2', 3],
+			'after a cursor below one' => [0, 2],
+			'after a cursor zero as text' => ['0', 2],
+		];
+	}
+
+	#[DataProvider('nextPages')]
+	public function testMoreDocumentsAtPaperlessContinueOnTheNextPage(int|string|null $cursor, int $nextCursor): void {
+		$client = $this->paperless([
+			'count' => 61,
+			'next' => 'https://paperless.example.com/api/documents/?page=3&query=invoice',
+			'results' => [['id' => 7, 'title' => 'Invoice']],
+		]);
+
+		$result = $this->provider($client, [7 => $this->file(7, 'Invoice [P7].pdf')])
+			->search($this->user(), $this->query('invoice', $cursor))
+			->jsonSerialize();
+
+		self::assertTrue($result['isPaginated']);
+		self::assertSame($nextCursor, $result['cursor']);
+		self::assertCount(1, $result['entries']);
+	}
+
+	public function testAFailedSearchIsLoggedWithoutItsDetails(): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willThrowException(new RuntimeException('cURL error 7 for TEST_VALUE and invoice'));
+
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())
+			->method('warning')
+			->with('Paperless unified search failed ({errorType})', [
+				'app' => AppConstants::APP_ID,
+				'errorType' => RuntimeException::class,
+			]);
+
+		$result = $this->provider($client, logger: $logger)->search($this->user(), $this->query('invoice'))->jsonSerialize();
+
+		self::assertFalse($result['isPaginated']);
+		self::assertSame([], $result['entries']);
+	}
+
+	public function testDocumentsWithoutAUsableIdAreLeftOut(): void {
+		$client = $this->paperless([
+			'count' => 5,
+			'next' => null,
+			'results' => [
+				['title' => 'No id'],
+				['id' => null, 'title' => 'Empty id'],
+				['id' => 'P7', 'title' => 'Id that is no number'],
+				['id' => 0, 'title' => 'Id zero'],
+				['id' => '7', 'title' => 'Id as text'],
+			],
+		]);
+
+		$result = $this->provider($client, [7 => $this->file(7, 'Invoice [P7].pdf')])
+			->search($this->user(), $this->query('invoice'))
+			->jsonSerialize();
+
+		self::assertCount(1, $result['entries']);
+		self::assertSame('Id as text', $result['entries'][0]->jsonSerialize()['title']);
+	}
+
+	/**
+	 * @return array<string, array{array<string, mixed>, string, string}>
+	 */
+	public static function documents(): array {
+		$file = 'Scan [P7].pdf';
+
+		return [
+			'title and date' => [['title' => ' Invoice ', 'created' => '2026-05-01'], 'Invoice', '2026-05-01 · ' . $file],
+			'blank title' => [['title' => '  '], $file, $file],
+			'title that is no text' => [['title' => 42], $file, $file],
+			'empty date' => [['title' => 'Invoice', 'created' => ''], 'Invoice', $file],
+			'date that is no text' => [['title' => 'Invoice', 'created' => 20260501], 'Invoice', $file],
+			'search hit that is no object' => [['title' => 'Invoice', '__search_hit__' => 'invoice'], 'Invoice', $file],
+			'search hit without highlights' => [['title' => 'Invoice', '__search_hit__' => ['score' => 1.5]], 'Invoice', $file],
+			'highlights that are no text' => [['title' => 'Invoice', '__search_hit__' => ['highlights' => 42]], 'Invoice', $file],
+			'highlights of markup only' => [['title' => 'Invoice', '__search_hit__' => ['highlights' => '<span></span>']], 'Invoice', $file],
+			'list of highlights' => [
+				['title' => 'Invoice', '__search_hit__' => ['highlights' => ['<b>Invoice</b> 42', 7, 'paid']]],
+				'Invoice',
+				'Invoice 42 paid',
+			],
+			'entities and whitespace' => [
+				['title' => 'Invoice', '__search_hit__' => ['highlights' => "Müller &amp; Co\n\t KG"]],
+				'Invoice',
+				'Müller & Co KG',
+			],
+			'long highlight' => [
+				['title' => 'Invoice', '__search_hit__' => ['highlights' => str_repeat('a', 200)]],
+				'Invoice',
+				str_repeat('a', 179) . '…',
+			],
+		];
+	}
+
+	/**
+	 * @param array<string, mixed> $document
+	 */
+	#[DataProvider('documents')]
+	public function testTitleAndSublineComeFromTheDocument(array $document, string $title, string $subline): void {
+		$client = $this->paperless(['count' => 1, 'next' => null, 'results' => [['id' => 7] + $document]]);
+
+		$result = $this->provider($client, [7 => $this->file(7, 'Scan [P7].pdf')])
+			->search($this->user(), $this->query('invoice'))
+			->jsonSerialize();
+
+		self::assertCount(1, $result['entries']);
+		$entry = $result['entries'][0]->jsonSerialize();
+		self::assertSame($title, $entry['title']);
+		self::assertSame($subline, $entry['subline']);
+		self::assertSame('https://cloud.example.com/f/1007', $entry['resourceUrl']);
+		self::assertSame(['fileId' => '1007', 'path' => '/Paperless/Scan [P7].pdf'], $entry['attributes']);
+	}
+
+	/**
+	 * Builds the provider on a Paperless behind the given client and a user who can see the given files.
+	 *
+	 * @param array<int, File> $files by Paperless document id
+	 */
+	private function provider(
+		IClient $client,
+		array $files = [],
+		string $token = 'TEST_VALUE',
+		?LoggerInterface $logger = null,
+	): PaperlessSearchProvider {
+		$config = $this->createStub(IAppConfig::class);
+		$config->method('getValueString')->willReturn('https://paperless.example.com');
+
+		$credentials = $this->createStub(ICredentialsManager::class);
+		$credentials->method('retrieve')->willReturn($token);
+
+		$clientService = $this->createStub(IClientService::class);
+		$clientService->method('newClient')->willReturn($client);
+
+		$folder = $this->createStub(Folder::class);
+		$folder->method('search')->willReturnCallback(static function (string $marker) use ($files): array {
+			foreach ($files as $documentId => $file) {
+				if ($marker === '[P' . $documentId . ']') {
+					return [$file];
+				}
+			}
+
+			return [];
+		});
+		$folder->method('getRelativePath')->willReturnCallback(
+			static fn (string $path): string => substr($path, strlen('/dennis/files')),
+		);
+
+		$root = $this->createStub(IRootFolder::class);
+		$root->method('getUserFolder')->willReturn($folder);
+
+		$l10n = $this->createStub(IL10N::class);
+		$l10n->method('t')->willReturnCallback(static fn (string $text): string => $text);
+
+		$urlGenerator = $this->createStub(IURLGenerator::class);
+		$urlGenerator->method('imagePath')->willReturn('/apps/paperless_unified_search/img/app.svg');
+		$urlGenerator->method('linkToRouteAbsolute')->willReturnCallback(
+			static fn (string $route, array $parameters): string => 'https://cloud.example.com/f/' . $parameters['fileid'],
+		);
+
+		$request = $this->createStub(IRequest::class);
+		$request->method('getHeader')->willReturn('Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0');
+
+		$configService = new ConfigService($config, $credentials);
+
+		return new PaperlessSearchProvider(
+			new PaperlessApiService($configService, $clientService),
+			new NextcloudFileLocator($root),
+			$l10n,
+			$urlGenerator,
+			$request,
+			$logger ?? $this->createStub(LoggerInterface::class),
+			$configService,
+		);
+	}
+
+	/**
+	 * @param array<string, mixed> $answer
+	 */
+	private function paperless(array $answer): IClient {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response($answer));
+
+		return $client;
+	}
+
+	/**
+	 * @param array<string, mixed> $answer
+	 */
+	private function response(array $answer): IResponse {
+		$response = $this->createStub(IResponse::class);
+		$response->method('getStatusCode')->willReturn(200);
+		$response->method('getBody')->willReturn(json_encode($answer, JSON_THROW_ON_ERROR));
+
+		return $response;
+	}
+
+	private function file(int $documentId, string $name): File {
+		$file = $this->createStub(File::class);
+		$file->method('getName')->willReturn($name);
+		$file->method('getPath')->willReturn('/dennis/files/Paperless/' . $name);
+		$file->method('getId')->willReturn(1000 + $documentId);
+
+		return $file;
+	}
+
+	private function user(): IUser {
+		$user = $this->createStub(IUser::class);
+		$user->method('getUID')->willReturn('dennis');
+
+		return $user;
+	}
+
+	private function query(string $term, int|string|null $cursor = null, int $limit = 10): ISearchQuery {
+		$query = $this->createStub(ISearchQuery::class);
+		$query->method('getTerm')->willReturn($term);
+		$query->method('getCursor')->willReturn($cursor);
+		$query->method('getLimit')->willReturn($limit);
+
+		return $query;
 	}
 }
