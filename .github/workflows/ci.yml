@@ -34,7 +34,14 @@ jobs:
         run: scripts/check-dco.sh "${BASE_SHA}" "${HEAD_SHA}"
 
       - name: Lint GitHub Actions workflows
-        uses: docker://rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9 # v1.7.7
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # v1.7.12
+
+      # The labels, issue forms, workflows and notice of the issue assistant fit the
+      # templates of its release: https://github.com/Dennis-Otto/issue-assistant
+      - name: Check the issue assistant's set-up
+        uses: Dennis-Otto/issue-assistant@80508cea4e88564345d389baad677b1593e6e673 # v1.0.1
+        with:
+          command: check
 
       - name: Test protected release automation
         run: python3 -m unittest discover -s tests/release -v

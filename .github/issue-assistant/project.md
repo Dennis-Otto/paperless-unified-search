@@ -1,0 +1,9 @@
+Paperless Unified Search is a Nextcloud app: it sends Nextcloud global search terms to Paperless-ngx, uses its OCR and full-text index, and returns the matching synchronized Nextcloud files, whose names contain the marker `[P<ID>]`; a result opens the file in Nextcloud's viewer or the official mobile apps. It doesn't synchronize documents itself; the companion app Paperless Sync (Dennis-Otto/paperless-sync) does. Its users are Nextcloud administrators and the users of their instances.
+
+Where things are:
+
+- The app is in `lib/` (`Search/PaperlessSearchProvider.php`, `Service/PaperlessApiService.php`, `Service/NextcloudFileLocator.php`, `Service/ConfigService.php`, `Controller/SettingsController.php`, `Settings/AdminSettings.php`), its metadata, version and supported Nextcloud versions in `appinfo/info.xml`, its routes in `appinfo/routes.php`, the settings page in `templates/settings.php`, `js/settings.js` and `css/settings.css`, the German texts in `l10n/`.
+- `README.md` documents requirements, configuration, usage and security; `CHANGELOG.md` lists the changes of every release; `docs/releases.md` the release process.
+- The PHPUnit tests are in `tests/Unit/`, the Docker end-to-end tests against real Nextcloud versions in `tests/e2e/`.
+
+What matters in a bug report: the version of the app, the Nextcloud version (Administration settings → Overview), the PHP version, the Paperless-ngx version, whether search runs through *Search connected services* or the trusted-service option, and the relevant lines of the Nextcloud log (Administration settings → Logging), without the Paperless API token, private URLs or document contents.

@@ -1,0 +1,208 @@
+# SPDX-FileCopyrightText: 2026 Dennis Otto
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Every label of the repository. The Labels workflow of the issue assistant
+# (https://github.com/Dennis-Otto/issue-assistant) creates missing labels and updates
+# color and description from this file when it changes on main; it never deletes a
+# label. Rename a label on GitHub first, then here.
+#
+# group decides who sets a label:
+#   type       the kind of an issue; the issue forms set one, the assistant may correct it
+#   area       the part of the app; set from the Area field of the bug report and by the assistant
+#   topic      cross-cutting topics the assistant may add
+#   lifecycle  set and removed by the issue assistant's rules
+#   decision   set by the maintainer only
+#   release    sorts pull requests into the release notes (.github/release.yml)
+#   dependabot set by Dependabot on its pull requests
+#
+# ask = false keeps the assistant from asking reporters of that kind for information.
+
+# Types
+
+[[label]]
+name = "bug"
+color = "d73a4a"
+description = "Something isn't working"
+group = "type"
+
+[[label]]
+name = "enhancement"
+color = "a2eeef"
+description = "New feature or request"
+group = "type"
+ask = false
+
+[[label]]
+name = "question"
+color = "d876e3"
+description = "A question about setup or use"
+group = "type"
+
+[[label]]
+name = "documentation"
+color = "0075ca"
+description = "Improvements or additions to documentation"
+group = "type"
+form_options = ["Documentation"]
+
+[[label]]
+name = "compatibility"
+color = "1d76db"
+description = "Versions of Nextcloud, PHP or Paperless-ngx"
+group = "type"
+
+# Areas
+
+[[label]]
+name = "area: settings"
+color = "bfdadc"
+description = "Administration settings, the connection test and the trusted-service option"
+group = "area"
+form_options = ["Administration settings or connection test"]
+
+[[label]]
+name = "area: search"
+color = "bfdadc"
+description = "Search results in Nextcloud's global search and the Paperless API"
+group = "area"
+form_options = ["Search results"]
+
+[[label]]
+name = "area: files"
+color = "bfdadc"
+description = "Matching synchronized files and opening them in the viewer or the apps"
+group = "area"
+form_options = [
+  "Matching synchronized files",
+  "Opening a result in the browser or the mobile apps",
+]
+
+# Topics
+
+[[label]]
+name = "accessibility"
+color = "f143ab"
+description = "Barrier affecting people with disabilities"
+group = "topic"
+
+[[label]]
+name = "translations"
+color = "c5def5"
+description = "Texts of the app in other languages"
+group = "topic"
+
+[[label]]
+name = "security"
+color = "ee0701"
+description = "Fixes a vulnerability or hardens security"
+group = "topic"
+
+# Lifecycle
+
+[[label]]
+name = "needs-triage"
+color = "fbca04"
+description = "Not yet reviewed by a maintainer"
+group = "lifecycle"
+
+[[label]]
+name = "needs-info"
+color = "fef2c0"
+description = "Waiting for the reporter: reminder after 15 days, closed after 30 days"
+group = "lifecycle"
+
+[[label]]
+name = "stale"
+color = "f9d0c4"
+description = "Reminder sent; closes 15 days later without an answer"
+group = "lifecycle"
+
+[[label]]
+name = "possible-duplicate"
+color = "e4e4e4"
+description = "Closes as a duplicate 3 days after the notice unless someone objects"
+group = "lifecycle"
+
+[[label]]
+name = "duplicate"
+color = "cfd3d7"
+description = "This issue or pull request already exists"
+group = "lifecycle"
+
+[[label]]
+name = "invalid"
+color = "e4e669"
+description = "Spam, or not about this app"
+group = "lifecycle"
+
+# Decisions
+
+[[label]]
+name = "confirmed"
+color = "0e8a16"
+description = "Reproduced and accepted"
+group = "decision"
+
+[[label]]
+name = "upstream"
+color = "d4c5f9"
+description = "Caused by Nextcloud or Paperless-ngx"
+group = "decision"
+
+[[label]]
+name = "wontfix"
+color = "ffffff"
+description = "This will not be worked on"
+group = "decision"
+
+[[label]]
+name = "help wanted"
+color = "008672"
+description = "Extra attention is needed"
+group = "decision"
+
+[[label]]
+name = "good first issue"
+color = "7057ff"
+description = "Good for newcomers"
+group = "decision"
+
+# Release notes
+
+[[label]]
+name = "release"
+color = "0e8a16"
+description = "Protected release preparation"
+group = "release"
+
+[[label]]
+name = "skip-changelog"
+color = "ededed"
+description = "Leave out of the release notes"
+group = "release"
+
+# Dependabot
+
+[[label]]
+name = "dependencies"
+color = "0366d6"
+description = "Pull requests that update a dependency file"
+group = "dependabot"
+
+[[label]]
+name = "php"
+color = "45229e"
+description = "Pull requests that update php code"
+group = "dependabot"
+
+[[label]]
+name = "github_actions"
+color = "000000"
+description = "Pull requests that update GitHub Actions code"
+group = "dependabot"
+
+[[label]]
+name = "docker_compose"
+color = "e5f2fc"
+description = "Pull requests that update docker_compose code"
+group = "dependabot"

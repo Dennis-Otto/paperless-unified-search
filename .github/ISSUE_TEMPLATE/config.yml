@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: 2026 Dennis Otto
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/Dennis-Otto/paperless-unified-search/security/advisories/new
+    about: Report vulnerabilities privately, never in a public issue.
+  - name: Synchronizing documents into Nextcloud
+    url: https://github.com/Dennis-Otto/paperless-sync/issues/new/choose
+    about: Problems of the companion app Paperless Sync belong to its own repository.
+  - name: Problems of Paperless-ngx itself
+    url: https://github.com/paperless-ngx/paperless-ngx/discussions
+    about: OCR, indexing and the Paperless API belong to the Paperless-ngx project.
