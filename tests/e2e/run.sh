@@ -159,6 +159,7 @@ curl --fail-with-body --silent --show-error \
 	--data-urlencode 'url=http://paperless-mock:8080' \
 	--data-urlencode 'token=e2e-only-token' \
 	--data-urlencode 'alwaysSearch=0' \
+	--data-urlencode 'archiveOwner=e2e-user' \
 	--output "${TMP_DIR}/settings.json" \
 	"${BASE_URL}/apps/paperless_unified_search/settings"
 
@@ -202,6 +203,31 @@ assert_response android "${TMP_DIR}/android.json"
 search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/inaccessible.json"
 assert_response no-results "${TMP_DIR}/inaccessible.json"
 
+# A file whose name only carries the marker, here in the folder of e2e-other, stands for
+# no document: only the files of the archive account e2e-user count.
+printf '%s\n' 'Not the archived document.' \
+	| curl --fail-with-body --silent --show-error \
+		--user "e2e-other:${PASSWORD}" \
+		--upload-file - \
+		"${BASE_URL}/remote.php/dav/files/e2e-other/Copy%20%5BP123%5D.txt" >/dev/null
+search e2e-other 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/forged.json"
+assert_response no-results "${TMP_DIR}/forged.json"
+
+# Shared by the archive account, its file shows the document to e2e-other as well.
+curl --fail-with-body --silent --show-error \
+	--user "e2e-user:${PASSWORD}" \
+	--header 'Accept: application/json' \
+	--header 'OCS-APIRequest: true' \
+	--request POST \
+	--data-urlencode 'path=/Documents/Mobile viewer test [P123].pdf' \
+	--data-urlencode 'shareType=0' \
+	--data-urlencode 'shareWith=e2e-other' \
+	--data-urlencode 'permissions=1' \
+	--output "${TMP_DIR}/share.json" \
+	"${BASE_URL}/ocs/v2.php/apps/files_sharing/api/v1/shares"
+search e2e-other 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/shared.json"
+assert_response shared "${TMP_DIR}/shared.json"
+
 curl --fail-with-body --silent --show-error \
 	--user "e2e-admin:${PASSWORD}" \
 	--header 'Accept: application/json' \
@@ -210,6 +236,7 @@ curl --fail-with-body --silent --show-error \
 	--data-urlencode 'url=http://paperless-mock:8080' \
 	--data-urlencode 'token=' \
 	--data-urlencode 'alwaysSearch=1' \
+	--data-urlencode 'archiveOwner=e2e-user' \
 	--output "${TMP_DIR}/settings-trusted.json" \
 	"${BASE_URL}/apps/paperless_unified_search/settings"
 
@@ -227,4 +254,4 @@ accessibility
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed: access filtering, trusted mode, browser, iOS, and Android contracts, and accessibility."
+echo "Docker E2E passed: access filtering by the archive account and its shares, trusted mode, browser, iOS, and Android contracts, and accessibility."

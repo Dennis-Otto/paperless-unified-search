@@ -38,8 +38,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		string $userAgent,
 		string $expectedResourceUrl,
 	): void {
-		$config = $this->createMock(IAppConfig::class);
-		$config->method('getValueString')->willReturn('https://paperless.example.com');
+		$config = $this->settings('archive');
 
 		$credentials = $this->createMock(ICredentialsManager::class);
 		$credentials->method('retrieve')->willReturn('TEST_VALUE');
@@ -83,6 +82,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$file->method('getName')->willReturn('2026-07-31 - Salary [P123].pdf');
 		$file->method('getPath')->willReturn('/dennis/files/Paperless/Salary [P123].pdf');
 		$file->method('getId')->willReturn(4711);
+		$file->method('getOwner')->willReturn($this->account('archive'));
 
 		$folder = $this->createMock(Folder::class);
 		$folder->method('search')->willReturnCallback(
@@ -375,6 +375,41 @@ final class PaperlessSearchProviderTest extends TestCase {
 		self::assertSame(['fileId' => '1007', 'path' => '/Paperless/Scan [P7].pdf'], $entry['attributes']);
 	}
 
+	public function testWithoutAnArchiveAccountPaperlessIsNotAsked(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::never())->method('get');
+
+		$result = $this->provider($client, [7 => $this->file(7, 'Invoice [P7].pdf')], archiveOwner: '')
+			->search($this->user(), $this->query('invoice'))
+			->jsonSerialize();
+
+		self::assertSame([], $result['entries']);
+	}
+
+	/**
+	 * A file that only carries the marker in its name, such as one the searching user named
+	 * so, stands for no document.
+	 */
+	public function testAFileOfAnotherAccountShowsNoDocument(): void {
+		$client = $this->paperless(['count' => 1, 'next' => null, 'results' => [['id' => 7, 'title' => 'Payslip']]]);
+
+		$result = $this->provider($client, [7 => $this->file(7, 'x [P7].txt', 'dennis')])
+			->search($this->user(), $this->query('payslip'))
+			->jsonSerialize();
+
+		self::assertSame([], $result['entries']);
+	}
+
+	public function testTheAccountOfPaperlessSyncIsTheArchiveAccountByDefault(): void {
+		$client = $this->paperless(['count' => 1, 'next' => null, 'results' => [['id' => 7, 'title' => 'Invoice']]]);
+
+		$result = $this->provider($client, [7 => $this->file(7, 'Invoice [P7].pdf', 'sync')], archiveOwner: '', syncAccount: 'sync')
+			->search($this->user(), $this->query('invoice'))
+			->jsonSerialize();
+
+		self::assertCount(1, $result['entries']);
+	}
+
 	/**
 	 * Builds the provider on a Paperless behind the given client and a user who can see the given files.
 	 *
@@ -385,9 +420,10 @@ final class PaperlessSearchProviderTest extends TestCase {
 		array $files = [],
 		string $token = 'TEST_VALUE',
 		?LoggerInterface $logger = null,
+		string $archiveOwner = 'archive',
+		string $syncAccount = '',
 	): PaperlessSearchProvider {
-		$config = $this->createStub(IAppConfig::class);
-		$config->method('getValueString')->willReturn('https://paperless.example.com');
+		$config = $this->settings($archiveOwner, $syncAccount);
 
 		$credentials = $this->createStub(ICredentialsManager::class);
 		$credentials->method('retrieve')->willReturn($token);
@@ -458,13 +494,38 @@ final class PaperlessSearchProviderTest extends TestCase {
 		return $response;
 	}
 
-	private function file(int $documentId, string $name): File {
+	private function file(int $documentId, string $name, string $owner = 'archive'): File {
 		$file = $this->createStub(File::class);
 		$file->method('getName')->willReturn($name);
 		$file->method('getPath')->willReturn('/dennis/files/Paperless/' . $name);
 		$file->method('getId')->willReturn(1000 + $documentId);
+		$file->method('getOwner')->willReturn($this->account($owner));
 
 		return $file;
+	}
+
+	private function account(string $uid): IUser {
+		$account = $this->createStub(IUser::class);
+		$account->method('getUID')->willReturn($uid);
+
+		return $account;
+	}
+
+	/**
+	 * The settings of a Paperless with a token, by app and key.
+	 */
+	private function settings(string $archiveOwner, string $syncAccount = ''): IAppConfig {
+		$values = [
+			AppConstants::APP_ID . '.paperless_url' => 'https://paperless.example.com',
+			AppConstants::APP_ID . '.archive_owner' => $archiveOwner,
+			'paperless_sync.target_user' => $syncAccount,
+		];
+		$config = $this->createStub(IAppConfig::class);
+		$config->method('getValueString')->willReturnCallback(
+			static fn (string $app, string $key): string => $values[$app . '.' . $key] ?? '',
+		);
+
+		return $config;
 	}
 
 	private function user(): IUser {

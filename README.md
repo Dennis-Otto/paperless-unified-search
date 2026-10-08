@@ -20,8 +20,8 @@ Paperless Unified Search brings Paperless-ngx OCR and full-text search into Next
 
 1. Install **Paperless Unified Search** from the [Nextcloud App Store](https://apps.nextcloud.com/apps/paperless_unified_search) under *Apps*, or with `occ app:install paperless_unified_search`.
 2. In Paperless-ngx, create an account that may read the documents to search, and an API token for it.
-3. In Nextcloud, open **Administration settings → Additional settings → Paperless Unified Search**, enter the Paperless URL and the token, and select **Test connection and save**.
-4. Search in Nextcloud, switch on **Search connected services** and look under **Paperless documents**. A result appears for every document whose synchronized file, with `[P<ID>]` in its name, you can read; [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) creates such files.
+3. In Nextcloud, open **Administration settings → Additional settings → Paperless Unified Search**, enter the Paperless URL and the token, and select **Test connection and save**. With [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) installed, the account it writes the archive with is the **Archive account**; otherwise enter the account that owns the synchronized files.
+4. Search in Nextcloud, switch on **Search connected services** and look under **Paperless documents**. A result appears for every document whose synchronized file you can open: a file of the archive account with `[P<ID>]` in its name, your own if you are that account, or one it shared with you. [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) creates such files.
 
 [Configuration](#configuration) and [Usage](#usage) have the details.
 
@@ -43,8 +43,8 @@ Paperless Unified Search brings Paperless-ngx OCR and full-text search into Next
 
 1. Nextcloud forwards an enabled external-search query to Paperless-ngx.
 2. Paperless returns results from its native OCR/full-text index.
-3. The app maps each Paperless document ID to a synchronized Nextcloud filename containing the unique marker `[P<ID>]`, for example `[P123]`.
-4. A result is returned only if the current Nextcloud user can access the matching file.
+3. The app maps each Paperless document ID to a synchronized file of the archive account whose name contains the unique marker `[P<ID>]`, for example `[P123]`. The archive account is the one that owns the synchronized files: the account of Paperless Sync, or the one of the settings.
+4. A result is returned only if the current Nextcloud user can access that file: the archive account itself, or a user it shared the file with. A file with the marker in its name that belongs to another account stands for no document.
 5. Selecting a result opens the synchronized file in Nextcloud, not Paperless. Browsers use Nextcloud's
    `/f/{fileId}` viewer route. The official iOS app receives its native `nextcloud://open-file` deep link,
    while Android receives the file ID and user-relative path required by its in-app viewer.
@@ -56,7 +56,7 @@ This app does not synchronize documents itself. For a native, configurable synch
 - Nextcloud 33 through 35
 - PHP 8.2 or newer as supported by the corresponding Nextcloud release
 - A reachable Paperless-ngx instance with API access
-- Synchronized files whose names contain `[P<ID>]`
+- Synchronized files whose names contain `[P<ID>]`, owned by one Nextcloud account, for example those of Paperless Sync
 
 ## Configuration
 
@@ -64,10 +64,11 @@ This app does not synchronize documents itself. For a native, configurable synch
 2. Create an API token for that account.
 3. In Nextcloud, open **Administration settings → Additional settings → Paperless Unified Search**.
 4. Enter the Paperless base URL and API token.
-5. Optionally enable **Always include Paperless in global search** to treat the configured Paperless server as trusted.
-6. Select **Test connection and save**.
+5. Under **Archive account**, enter the Nextcloud account that owns the synchronized files, or leave it blank to use the account that Paperless Sync writes the archive with.
+6. Optionally enable **Always include Paperless in global search** to treat the configured Paperless server as trusted.
+7. Select **Test connection and save**.
 
-The configuration is global. Access control remains user-specific because the app discards every Paperless hit for which the searching Nextcloud user has no readable matching file.
+The configuration is global. Access control remains user-specific because the app discards every Paperless hit for which the searching Nextcloud user can't open a matching file of the archive account. Share the archive read-only with the users who may see its documents. Without an archive account, the search shows no Paperless documents.
 
 By default, Nextcloud searches Paperless only after the user enables **Search connected services**. When the trusted-service option is enabled, every global search term from every Nextcloud user is sent to Paperless automatically and the connected-services switch no longer controls this provider. Reload Nextcloud after changing this option.
 
@@ -75,7 +76,7 @@ By default, Nextcloud searches Paperless only after the user enables **Search co
 
 Open Nextcloud's global search, enable **Search connected services**, and select **Paperless documents**. Nextcloud 32 and later disable external providers after a page reload, so this switch must be enabled again unless an administrator has enabled trusted-service mode.
 
-Documents without a synchronized `[P<ID>]` file are intentionally omitted. This also keeps Inbox-only documents out of Nextcloud search when the synchronization process does not export them.
+Documents without a synchronized `[P<ID>]` file of the archive account are intentionally omitted. This also keeps Inbox-only documents out of Nextcloud search when the synchronization process does not export them.
 
 ## Security and privacy
 

@@ -61,7 +61,10 @@ final class PaperlessSearchProvider implements IExternalProvider {
 
 	public function search(IUser $user, ISearchQuery $query): SearchResult {
 		$term = trim($query->getTerm());
-		if ($term === '' || !$this->paperlessApi->isConfigured()) {
+		// Without an archive account no file can stand for a document, so Paperless
+		// isn't even asked.
+		$archiveOwner = $this->configService->getArchiveOwner();
+		if ($term === '' || $archiveOwner === '' || !$this->paperlessApi->isConfigured()) {
 			return SearchResult::complete($this->getName(), []);
 		}
 
@@ -73,7 +76,7 @@ final class PaperlessSearchProvider implements IExternalProvider {
 			$entries = [];
 
 			foreach ($response['results'] as $document) {
-				$entry = $this->createEntry($user, $document);
+				$entry = $this->createEntry($user, $document, $archiveOwner);
 				if ($entry !== null) {
 					$entries[] = $entry;
 				}
@@ -109,13 +112,13 @@ final class PaperlessSearchProvider implements IExternalProvider {
 	/**
 	 * @param array<array-key, mixed> $document
 	 */
-	private function createEntry(IUser $user, array $document): ?SearchResultEntry {
+	private function createEntry(IUser $user, array $document, string $archiveOwner): ?SearchResultEntry {
 		if (!isset($document['id']) || !is_numeric($document['id'])) {
 			return null;
 		}
 
 		$documentId = (int)$document['id'];
-		$file = $this->fileLocator->findForUser($user, $documentId);
+		$file = $this->fileLocator->findForUser($user, $documentId, $archiveOwner);
 		if ($file === null) {
 			return null;
 		}

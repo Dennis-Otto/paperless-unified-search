@@ -16,17 +16,21 @@ final class PublicConfig implements JsonSerializable {
 		public readonly string $url,
 		public readonly bool $tokenConfigured,
 		public readonly bool $alwaysSearch,
+		public readonly string $archiveOwner = '',
+		public readonly string $syncAccount = '',
 	) {
 	}
 
 	/**
-	 * @return array{url: string, tokenConfigured: bool, alwaysSearch: bool}
+	 * @return array{url: string, tokenConfigured: bool, alwaysSearch: bool, archiveOwner: string, syncAccount: string}
 	 */
 	public function jsonSerialize(): array {
 		return [
 			'url' => $this->url,
 			'tokenConfigured' => $this->tokenConfigured,
 			'alwaysSearch' => $this->alwaysSearch,
+			'archiveOwner' => $this->archiveOwner,
+			'syncAccount' => $this->syncAccount,
 		];
 	}
 }
