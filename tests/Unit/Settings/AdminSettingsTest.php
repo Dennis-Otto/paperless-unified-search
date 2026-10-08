@@ -12,9 +12,11 @@ namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Settings;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Model\PublicConfig;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
+use OCA\PaperlessUnifiedSearch\Settings\AdminSection;
 use OCA\PaperlessUnifiedSearch\Settings\AdminSettings;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\IAppConfig;
+use OCP\IL10N;
 use OCP\IURLGenerator;
 use OCP\Security\ICredentialsManager;
 use PHPUnit\Framework\TestCase;
@@ -60,13 +62,24 @@ final class AdminSettingsTest extends TestCase {
 		self::assertStringNotContainsString('TEST_VALUE', json_encode($params, JSON_THROW_ON_ERROR));
 	}
 
-	public function testTheFormIsAmongTheAdditionalSettings(): void {
+	public function testTheFormHasASectionOfItsOwn(): void {
+		$urlGenerator = $this->createStub(IURLGenerator::class);
+		$urlGenerator->method('imagePath')
+			->willReturnCallback(static fn (string $app, string $image): string => "/apps/{$app}/img/{$image}");
+		$l10n = $this->createStub(IL10N::class);
+		$l10n->method('t')
+			->willReturnCallback(static fn (string $text): string => $text === 'Paperless Unified Search' ? 'Paperless-Suche' : $text);
 		$settings = new AdminSettings(
 			new ConfigService($this->createStub(IAppConfig::class), $this->createStub(ICredentialsManager::class)),
-			$this->createStub(IURLGenerator::class),
+			$urlGenerator,
 		);
+		$section = new AdminSection($l10n, $urlGenerator);
 
-		self::assertSame('additional', $settings->getSection());
+		self::assertSame(AppConstants::APP_ID, $section->getID());
+		self::assertSame($section->getID(), $settings->getSection());
+		self::assertSame('Paperless-Suche', $section->getName());
+		self::assertSame('/apps/paperless_unified_search/img/app.svg', $section->getIcon());
+		self::assertSame(56, $section->getPriority());
 		self::assertSame(50, $settings->getPriority());
 	}
 }

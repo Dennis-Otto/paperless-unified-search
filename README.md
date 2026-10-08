@@ -20,7 +20,7 @@ Paperless Unified Search brings Paperless-ngx OCR and full-text search into Next
 
 1. Install **Paperless Unified Search** from the [Nextcloud App Store](https://apps.nextcloud.com/apps/paperless_unified_search) under *Apps*, or with `occ app:install paperless_unified_search`.
 2. In Paperless-ngx, create an account that may read the documents to search, and an API token for it.
-3. In Nextcloud, open **Administration settings → Additional settings → Paperless Unified Search**, enter the Paperless URL and the token, and select **Test connection and save**. With [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) installed, the account it writes the archive with is the **Archive account**; otherwise enter the account that owns the synchronized files.
+3. In Nextcloud, open **Administration settings → Paperless Unified Search**, enter the Paperless URL and the token, and select **Test connection and save**. With [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) installed, the account it writes the archive with is the **Archive account**; otherwise enter the account that owns the synchronized files.
 4. Search in Nextcloud, switch on **Search connected services** and look under **Paperless documents**. A result appears for every document whose synchronized file you can open: a file of the archive account with `[P<ID>]` in its name, your own if you are that account, or one it shared with you. [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) creates such files.
 
 [Configuration](#configuration) and [Usage](#usage) have the details.
@@ -62,7 +62,7 @@ This app does not synchronize documents itself. For a native, configurable synch
 
 1. Create a dedicated Paperless account with the minimum read permissions required for document search.
 2. Create an API token for that account.
-3. In Nextcloud, open **Administration settings → Additional settings → Paperless Unified Search**.
+3. In Nextcloud, open **Administration settings → Paperless Unified Search**.
 4. Enter the Paperless base URL and API token.
 5. Under **Archive account**, enter the Nextcloud account that owns the synchronized files, or leave it blank to use the account that Paperless Sync writes the archive with.
 6. Optionally enable **Always include Paperless in global search** to treat the configured Paperless server as trusted.

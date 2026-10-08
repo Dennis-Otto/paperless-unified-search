@@ -13,7 +13,7 @@ Paperless Unified Search is a Nextcloud app in PHP. It adds a provider to Nextcl
 | Paperless client | `lib/Service/PaperlessApiService.php` | Sends the search term to the full-text search of Paperless through Nextcloud's HTTP client and checks the shape of the answer |
 | File locator | `lib/Service/NextcloudFileLocator.php` | Finds the file of the archive account whose name carries the marker `[P<ID>]` of a document in the folders that the searching user can read |
 | Configuration | `lib/Service/ConfigService.php`, `lib/Model/PublicConfig.php` | Checks and stores the URL of Paperless, the archive account and the switch *Always include Paperless in global search*; the API token goes to Nextcloud's credentials manager; without an archive account of its own it takes the account of Paperless Sync |
-| Settings page | `lib/Settings/AdminSettings.php`, `lib/Controller/SettingsController.php`, `templates/settings.php`, `js/settings.js` | The page under *Administration settings → Additional settings*: save after a test of the connection, and reset; Nextcloud lets only administrators call its routes and checks the CSRF token of every request |
+| Settings page | `lib/Settings/`, `lib/Controller/SettingsController.php`, `templates/settings.php`, `js/settings.js` | The page under *Administration settings → Paperless Unified Search*, a section of its own: save after a test of the connection, and reset; Nextcloud lets only administrators call its routes and checks the CSRF token of every request |
 
 ## Data flow
 

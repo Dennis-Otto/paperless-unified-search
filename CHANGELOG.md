@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- **The settings have a section of their own.** The administration settings now list *Paperless Unified Search* as a section of its own with the app's icon, as Paperless Sync does, instead of placing the form under *Additional settings*.
+
 ## [0.1.12](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.1.11...v0.1.12) (2026-10-08)
 
 ### Fixed
