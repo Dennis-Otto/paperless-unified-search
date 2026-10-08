@@ -2,6 +2,20 @@
 
 The suite starts Nextcloud with this checkout mounted read-only as a Custom App; locally the image of `compose.yaml`, in the CI the current release of every version from `min-version` to `max-version` in `appinfo/info.xml` (set `NEXTCLOUD_IMAGE` to choose one, such as `nextcloud:35-apache`), and every week [the coming Nextcloud](#the-coming-nextcloud). A deterministic local HTTP service emulates the small Paperless API surface used by the app.
 
+```mermaid
+flowchart LR
+    run["run.sh"]
+    subgraph compose["Compose project"]
+        nextcloud["Nextcloud<br/>the checkout as Custom App, read-only"]
+        mock["Paperless mock<br/>mock_server.py"]
+        browser["Chromium of Playwright<br/>accessibility.mjs with axe-core"]
+    end
+    run -- "occ, OCS and WebDAV" --> nextcloud
+    run -- "starts" --> browser
+    nextcloud -- "searches" --> mock
+    browser -- "opens the settings" --> nextcloud
+```
+
 Run:
 
 ```bash
@@ -25,6 +39,10 @@ At the end of the suite, `accessibility.mjs` checks the administration settings 
 The results in the global search of Nextcloud are left out: Nextcloud draws them, and the app only gives the title, the line below it and the icon. axe-core does find a serious violation there, *nested-interactive*, but every search provider has it, because Nextcloud puts the link of each result into an option of a list box; only Nextcloud can fix it.
 
 The browser runs in the image of Playwright that `run.sh` names, inside the network of the Compose project, and reaches Nextcloud as `http://nextcloud`; the suite turns off the first-run wizard of Nextcloud, which would cover the pages. `package.json` and `package-lock.json` pin axe-core and playwright-core. Keep playwright-core at the version of the image: Renovate updates both together (`.github/renovate.json5`), and `scripts/check-project.sh` compares them.
+
+## Screenshots
+
+`scripts/screenshots.sh` takes the screenshots and the animation in `screenshots/` with the containers of this suite: Nextcloud and the mock under the Compose project `paperless_unified_search_screenshots`, on port `18083`, and `screenshots.mjs` in the image of Playwright. It writes the synthetic documents of the demo as PDF files into the archive account `paperless`, in folders as Paperless Sync names them, and shares them read-only with `jamie`. For the term `invoice`, the mock returns three of them, with the IDs of their files. `pngjs` and `gifenc` in `package.json` read the screenshots and write the animation.
 
 ## The coming Nextcloud
 

@@ -6,6 +6,37 @@ Paperless Unified Search is a Nextcloud app in PHP. It adds a provider to Nextcl
 
 ## Components
 
+```mermaid
+flowchart LR
+    paperless[("Paperless-ngx<br/>/api/documents/")]
+    subgraph nextcloud["Nextcloud"]
+        search["Unified search"]
+        page["Administration settings"]
+        subgraph app["Paperless Unified Search"]
+            provider["Search provider"]
+            client["Paperless client"]
+            locator["File locator"]
+            config["Configuration"]
+            controller["Settings page"]
+        end
+        http["HTTP client"]
+        folders[("Folders of the users")]
+        appconfig[("App configuration")]
+        credentials[("Credentials manager")]
+    end
+    search --> provider
+    provider --> client
+    provider --> locator
+    provider --> config
+    client --> http --> paperless
+    locator --> folders
+    page --> controller
+    controller --> client
+    controller --> config
+    config --> appconfig
+    config --> credentials
+```
+
 | Component | Files | What it does |
 | --- | --- | --- |
 | App | `lib/AppInfo/Application.php` | Registers the search provider with Nextcloud |
@@ -17,16 +48,71 @@ Paperless Unified Search is a Nextcloud app in PHP. It adds a provider to Nextcl
 
 ## Data flow
 
-```text
-user's search ──► Nextcloud unified search ──► search provider ──► Paperless client ──REST API, token──► Paperless-ngx
-                                                     │
-                                                     └──► file locator ──► the user's folders in Nextcloud
+```mermaid
+sequenceDiagram
+    actor User
+    participant Search as Unified search
+    participant Provider as Search provider
+    participant Client as Paperless client
+    participant Paperless as Paperless-ngx
+    participant Locator as File locator
+    User->>Search: invoice
+    Search->>Provider: term, page and user
+    alt no term, no archive account or no connection
+        Provider-->>Search: no results, without asking Paperless
+    else
+        Provider->>Client: term, page, at most 50 results
+        Client->>Paperless: GET /api/documents/?query=invoice, with the token
+        Paperless-->>Client: documents 412, 389, 371 and whether a next page exists
+        loop every document
+            Provider->>Locator: document 412, user, archive account
+            Locator-->>Provider: a file of the archive account with [P412], or none
+        end
+        Provider-->>Search: an entry for every document with a file, and the next page
+    end
 ```
 
 1. A user searches in Nextcloud. Nextcloud asks the provider when the user has switched on *Search connected services*, or always when an administrator has marked Paperless as trusted.
 2. The provider sends the term to the full-text search of Paperless, at most 50 results per page.
 3. For every document of the answer, the file locator looks for a file of the archive account with the marker `[P<ID>]` in the folders of the searching user. A document without such a file is left out, and without an archive account Paperless isn't asked at all.
 4. Each remaining document becomes an entry: its title, the date and an excerpt of the text that Paperless found, and the link that opens the file in Nextcloud. Further pages of Paperless become further pages of the search.
+
+## Opening a result
+
+The link of an entry depends on who searches, which the provider tells from the user agent of the request:
+
+```mermaid
+flowchart LR
+    entry["Entry of a document"] --> client{"Who searches?"}
+    client -- "a browser" --> web["/f/412<br/>Nextcloud's viewer"]
+    client -- "the iOS app" --> ios["nextcloud://open-file<br/>with the user and that link"]
+    client -- "the Android app" --> android["file ID and path of the user<br/>the viewer of the app"]
+```
+
+Every entry carries the ID of the file and its path in the folders of the user as well; the Android app opens the file with them.
+
+## Saving the settings
+
+```mermaid
+sequenceDiagram
+    actor Admin as Administrator
+    participant Page as Settings page
+    participant Controller as Settings controller
+    participant Client as Paperless client
+    participant Config as Configuration
+    participant Paperless as Paperless-ngx
+    Admin->>Page: URL, token, archive account
+    Page->>Controller: POST /apps/paperless_unified_search/settings, with the CSRF token
+    Controller->>Controller: checks the URL and that the archive account exists
+    Controller->>Client: test the connection
+    Client->>Paperless: GET /api/documents/?page_size=1
+    Paperless-->>Client: 200
+    Controller->>Config: save
+    Config->>Config: URL, switch and archive account to the app configuration, the token to the credentials manager
+    Controller-->>Page: the settings, without the token
+```
+
+A token left blank keeps the stored one. *Disconnect* deletes every setting, the token included.
 
 ## Design decisions
 

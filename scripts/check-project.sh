@@ -19,6 +19,19 @@ if [[ -z "$image" || "$image" != "$package" ]]; then
 fi
 echo "The image of Playwright and playwright-core are both at version $package."
 
+printf '\n== %s\n' "Pictures of the README"
+# The README shows its pictures from main, so that the website shows them as well, and
+# the link check skips them (.lycheeignore): each of them must be in the checkout.
+mapfile -t pictures < <(grep -oE 'https://github\.com/Dennis-Otto/paperless-unified-search/raw/main/[^")[:space:]]+' README.md |
+  sed 's#^https://github\.com/Dennis-Otto/paperless-unified-search/raw/main/##' | sort -u)
+for picture in "${pictures[@]}"; do
+  if [[ ! -f "$picture" ]]; then
+    echo "README.md shows $picture, which isn't in the repository."
+    exit 1
+  fi
+done
+echo "The ${#pictures[@]} picture(s) of the README are in the repository."
+
 printf '\n== %s\n' "JavaScript and translations"
 if ! command -v node >/dev/null 2>&1; then
   echo "Node.js is not installed here; the CI checks the JavaScript and the translations."

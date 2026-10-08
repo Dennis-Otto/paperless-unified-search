@@ -1,2 +1,7 @@
 # Links that the link check of this repository skips, one regular expression per
 # line, each with its reason above it. The rules of every repository are in lychee.toml.
+
+# The pictures of the README, which point at main so that the website shows them as
+# well: a pull request that adds one links it before main has it. scripts/check-project.sh
+# checks that every one of them is in the repository.
+^https://github\.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/
