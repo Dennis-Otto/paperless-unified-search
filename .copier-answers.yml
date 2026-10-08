@@ -1,7 +1,7 @@
 # The answers of the blueprint (https://github.com/Dennis-Otto/repo-blueprint);
 # `copier update` reads them to bring the repository up to the latest release.
 # Change them only with `copier update --data name=value`.
-_commit: v0.6.1
+_commit: v0.6.2
 _src_path: https://github.com/Dennis-Otto/repo-blueprint.git
 author: Dennis Otto
 copyright: 2026 Dennis Otto
