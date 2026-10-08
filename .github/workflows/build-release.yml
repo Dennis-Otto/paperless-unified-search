@@ -1,0 +1,208 @@
+name: Build the release
+
+# The build of a release, called by the release workflow only: it packages the
+# release, writes its SBOMs, the licenses of its third-party components and the
+# advisories that don't affect it, attests the signed provenance of every asset and
+# attaches all of it to the draft. As a reusable workflow of its own, it is isolated
+# from the rest of the release workflow, and the provenance names it as the build,
+# as SLSA Build Level 3 asks; verify-release.yml checks that.
+# https://github.com/Dennis-Otto/repo-blueprint
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: The tag of the release or beta
+        required: true
+        type: string
+      version:
+        description: Its version
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  assets:
+    name: release assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The signing key of a Nextcloud app belongs to this environment.
+    environment:
+      name: release
+      deployment: false
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    env:
+      TAG: ${{ inputs.tag }}
+      PUBLISH_TO: ${{ vars.PUBLISH_TO }}
+      KRANKERL_VERSION: 0.14.0
+      KRANKERL_SHA256: 9bee5a756a83c5a6b1f040e9a2ade9e902e4a57211afc174cd8ac5c4f913958f
+      NEXTCLOUD_VERSION: 33.0.8
+      NEXTCLOUD_SHA256: d974bcbe446edaf87ae17113200b362495abbdb89d7900d65d930fe7a9dc9474
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - name: Collect the assets in one folder
+        run: |
+          echo "ASSETS=$RUNNER_TEMP/assets" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/assets"
+
+      - name: Package the integration for HACS
+        if: env.PUBLISH_TO == 'hacs'
+        run: |
+          # The archive holds the integration folder's content, as HACS zip releases do.
+          domain="$(basename custom_components/*/)"
+          filename="$(jq -r '.filename // empty' hacs.json)"
+          git archive --format=zip --output="$ASSETS/${filename:-$domain.zip}" "HEAD:custom_components/$domain"
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: env.PUBLISH_TO == 'pypi'
+        with:
+          python-version-file: .python-version
+      - name: Build the Python package
+        if: env.PUBLISH_TO == 'pypi'
+        run: |
+          # The build backend comes hash-pinned from requirements-dev.txt as well.
+          python -m pip install --require-hashes -r requirements-dev.txt
+          python -m build --no-isolation --outdir "$ASSETS"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: env.PUBLISH_TO == 'npm'
+        with:
+          node-version-file: .nvmrc
+      - name: Pack the npm package
+        if: env.PUBLISH_TO == 'npm'
+        run: |
+          npm ci --ignore-scripts
+          npm run build --if-present
+          npm pack --pack-destination "$ASSETS"
+
+      - name: Set up PHP for the signing of the Nextcloud app
+        if: env.PUBLISH_TO == 'nextcloud-appstore'
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.2"
+          extensions: dom, libxml, mbstring, xml, zip
+          coverage: none
+      - name: Build and sign the Nextcloud app
+        if: env.PUBLISH_TO == 'nextcloud-appstore'
+        env:
+          APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$APP_PRIVATE_KEY" ]]; then
+            echo "::error::The secret APP_PRIVATE_KEY of the environment release is missing."
+            exit 1
+          fi
+          app_id="$(python3 -c 'import xml.etree.ElementTree as t; print(t.parse("appinfo/info.xml").getroot().findtext("id"))')"
+          curl --fail --location --silent --show-error --output "$RUNNER_TEMP/krankerl.deb" \
+            "https://github.com/ChristophWurst/krankerl/releases/download/v$KRANKERL_VERSION/krankerl_${KRANKERL_VERSION}_amd64.deb"
+          echo "$KRANKERL_SHA256  $RUNNER_TEMP/krankerl.deb" | sha256sum --check --strict
+          sudo dpkg --install "$RUNNER_TEMP/krankerl.deb"
+          krankerl package
+          # The project's own checks of what its package holds, before and after signing.
+          if [[ -f scripts/check-package.sh ]]; then
+            bash scripts/check-package.sh "build/artifacts/$app_id.tar.gz" unsigned
+          fi
+          umask 077
+          printf '%s' "$APP_PRIVATE_KEY" > "$RUNNER_TEMP/app.key"
+          curl --fail --location --silent --show-error --output "$RUNNER_TEMP/app.crt" \
+            "https://raw.githubusercontent.com/nextcloud/app-certificate-requests/master/$app_id/$app_id.crt"
+          curl --fail --location --silent --show-error --output "$RUNNER_TEMP/nextcloud.zip" \
+            "https://download.nextcloud.com/server/releases/nextcloud-$NEXTCLOUD_VERSION.zip"
+          echo "$NEXTCLOUD_SHA256  $RUNNER_TEMP/nextcloud.zip" | sha256sum --check --strict
+          unzip -q "$RUNNER_TEMP/nextcloud.zip" -d "$RUNNER_TEMP/server"
+          mkdir -p "$RUNNER_TEMP/signing"
+          tar --extract --gzip --file "build/artifacts/$app_id.tar.gz" --directory "$RUNNER_TEMP/signing"
+          php "$RUNNER_TEMP/server/nextcloud/occ" integrity:sign-app \
+            --privateKey="$RUNNER_TEMP/app.key" --certificate="$RUNNER_TEMP/app.crt" \
+            --path="$RUNNER_TEMP/signing/$app_id"
+          test -s "$RUNNER_TEMP/signing/$app_id/appinfo/signature.json"
+          tar --create --gzip --file "$ASSETS/$app_id.tar.gz" --directory "$RUNNER_TEMP/signing" "$app_id"
+          if [[ -f scripts/check-package.sh ]]; then
+            bash scripts/check-package.sh "$ASSETS/$app_id.tar.gz" signed
+          fi
+          openssl dgst -sha512 -sign "$RUNNER_TEMP/app.key" -out "$ASSETS/$app_id.tar.gz.sig" "$ASSETS/$app_id.tar.gz"
+          openssl x509 -in "$RUNNER_TEMP/app.crt" -pubkey -noout > "$RUNNER_TEMP/app.pub"
+          openssl dgst -sha512 -verify "$RUNNER_TEMP/app.pub" -signature "$ASSETS/$app_id.tar.gz.sig" "$ASSETS/$app_id.tar.gz"
+          rm -f "$RUNNER_TEMP/app.key"
+
+      - name: Generate the SBOM
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          path: .
+          format: spdx-json
+          output-file: ${{ runner.temp }}/assets/${{ github.event.repository.name }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+          syft-version: v1.52.0
+
+      # The same components as CycloneDX, the format that many tools of companies read.
+      - name: Generate the SBOM as CycloneDX
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: ${{ runner.temp }}/assets/${{ github.event.repository.name }}.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+          syft-version: v1.52.0
+
+      # Every advisory that osv-scanner.toml accepts, with its reason, as an OpenVEX
+      # statement that it does not affect the release, for the scanners of the users.
+      - name: Write the advisories that don't affect the release
+        env:
+          NAME: ${{ github.event.repository.name }}
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" vex "$GITHUB_REPOSITORY" "$TAG" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$RUNNER_TEMP/vex.json"
+          if [[ -s "$RUNNER_TEMP/vex.json" ]]; then
+            mv "$RUNNER_TEMP/vex.json" "$ASSETS/$NAME.openvex.json"
+          fi
+
+      - name: Write the licenses of the third-party components
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          gh api "repos/$GITHUB_REPOSITORY/dependency-graph/sbom" > "$RUNNER_TEMP/dependency-graph.json"
+          python3 "$script" notices "$TAG" "$RUNNER_TEMP/dependency-graph.json" > "$ASSETS/THIRD_PARTY_NOTICES.md"
+
+      - name: Attest the provenance of every asset
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/assets/*
+
+      - name: Attach the assets and their signed provenance to the draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          cp "$BUNDLE_PATH" "$ASSETS/provenance.sigstore.json"
+          # The signed statement also as in-toto JSON lines, the format of SLSA, which
+          # OpenSSF Scorecard and other tools look for.
+          jq -c .dsseEnvelope "$BUNDLE_PATH" > "$ASSETS/provenance.intoto.jsonl"
+          gh release upload "$TAG" "$ASSETS"/* --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Write the notes, the section of the changelog with every pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$RUNNER_TEMP/pull-requests.md"
+          python3 "$script" changelog notes "$VERSION" CHANGELOG.md "$RUNNER_TEMP/pull-requests.md" > "$RUNNER_TEMP/notes.md"
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/notes.md"

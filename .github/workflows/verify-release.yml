@@ -45,6 +45,9 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ inputs.tag }}
           PUBLISH_TO: ${{ vars.PUBLISH_TO }}
+          # The gitsign of .github/sign-tag.sh.
+          GITSIGN_VERSION: 0.17.1
+          GITSIGN_SHA256: 69213a8a0813a151e5a47d0060862952ff833a845d57309dff76f7ba6600abae
         run: |
           set -uo pipefail
           problems=0
@@ -77,6 +80,29 @@ jobs:
             pass "Its commit $sha is signed."
           else
             fail "Its commit $sha is not signed."
+          fi
+          # The tag, signed without a key by the release workflow (gitsign, as in
+          # .github/sign-tag.sh); releases made before have a tag without a signature,
+          # which the weekly run only notes.
+          gitsign="$RUNNER_TEMP/gitsign"
+          curl --fail --location --silent --show-error --output "$gitsign" \
+            "https://github.com/sigstore/gitsign/releases/download/v$GITSIGN_VERSION/gitsign_${GITSIGN_VERSION}_linux_amd64"
+          echo "$GITSIGN_SHA256  $gitsign" | sha256sum --check --strict >/dev/null
+          chmod +x "$gitsign"
+          git init --quiet "$RUNNER_TEMP/tag"
+          git -C "$RUNNER_TEMP/tag" fetch --quiet --depth=1 "https://github.com/$GH_REPO.git" "refs/tags/$TAG:refs/tags/$TAG"
+          if [[ "$(git -C "$RUNNER_TEMP/tag" cat-file -t "$TAG")" != tag ]]; then
+            if [[ "$GITHUB_EVENT_NAME" == schedule ]]; then
+              echo "::notice::The tag $TAG is older than the signed tags."
+            else
+              fail "The tag $TAG is not a signed tag."
+            fi
+          elif (cd "$RUNNER_TEMP/tag" && "$gitsign" verify-tag "$TAG" \
+            --certificate-identity "https://github.com/$GH_REPO/.github/workflows/release.yml@refs/heads/main" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null 2>&1); then
+            pass "The tag $TAG is signed by the release workflow."
+          else
+            fail "The signature of the tag $TAG isn't one of the release workflow."
           fi
 
           mkdir -p "$RUNNER_TEMP/assets"
@@ -116,16 +142,25 @@ jobs:
               fail "$vex is no OpenVEX document with statements."
             fi
           done
-          signer="$GH_REPO/.github/workflows/release.yml"
+          # The provenance names the isolated build, build-release.yml (SLSA Build
+          # Level 3); a release made before it names the release workflow, which only
+          # the weekly run accepts.
+          provenance() {
+            gh attestation verify "$1" --repo "$GH_REPO" --signer-workflow "$2" >/dev/null &&
+              { [[ ! -f provenance.sigstore.json ]] ||
+                gh attestation verify "$1" --repo "$GH_REPO" --signer-workflow "$2" \
+                  --bundle provenance.sigstore.json >/dev/null; }
+          }
+          build="$GH_REPO/.github/workflows/build-release.yml"
+          older="$GH_REPO/.github/workflows/release.yml"
           for asset in *; do
             [[ "$asset" == provenance.sigstore.json || "$asset" == *.intoto.jsonl ]] && continue
-            if gh attestation verify "$asset" --repo "$GH_REPO" --signer-workflow "$signer" >/dev/null &&
-              { [[ ! -f provenance.sigstore.json ]] ||
-                gh attestation verify "$asset" --repo "$GH_REPO" --signer-workflow "$signer" \
-                  --bundle provenance.sigstore.json >/dev/null; }; then
-              pass "$asset carries the signed provenance of the release workflow."
+            if provenance "$asset" "$build"; then
+              pass "$asset carries the signed provenance of the isolated build."
+            elif [[ "$GITHUB_EVENT_NAME" == schedule ]] && provenance "$asset" "$older"; then
+              pass "$asset carries the signed provenance of the release workflow, from before the isolated build."
             else
-              fail "$asset has no valid provenance of the release workflow."
+              fail "$asset has no valid provenance of the isolated build."
             fi
           done
 

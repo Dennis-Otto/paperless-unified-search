@@ -509,6 +509,31 @@ def check_community(api: Api, repo: str) -> list[Drift]:
     ]
 
 
+# --------------------------------------------------------------------------- pages
+
+
+def check_pages(api: Api, repo: str, want: dict[str, Json]) -> list[Drift]:
+    """The GitHub Pages site, to which the Docs workflow publishes the website."""
+    if not want:
+        return []
+    have = api.get(f"repos/{repo}/pages")
+    if have is None:
+        return [Drift("pages", "on", "off")]
+    return [
+        Drift(f"pages.{key}", value, have.get(key))
+        for key, value in want.items()
+        if have.get(key) != value
+    ]
+
+
+def apply_pages(api: Api, repo: str, want: dict[str, Json], drift: list[Drift]) -> None:
+    # A site that is off is created with the settings; one that is on is changed.
+    if any(item.setting == "pages" for item in drift):
+        api.post(f"repos/{repo}/pages", want)
+    elif drift:
+        api.put(f"repos/{repo}/pages", want)
+
+
 # --------------------------------------------------------------------------- labels
 
 
@@ -596,6 +621,7 @@ class Settings:
     rulesets: list[dict[str, Json]]
     variables: dict[str, str]
     environments: dict[str, dict[str, Json]]
+    pages: dict[str, Json]
     labels: dict[str, dict[str, str]]
 
     @classmethod
@@ -614,6 +640,7 @@ class Settings:
             rulesets=[main_ruleset(checks), tag_ruleset()],
             variables=config.get("variables", {}),
             environments=config.get("environments", {}),
+            pages=config.get("pages", {}),
             # The labels of the issue assistant, next to the settings.
             labels=load_labels(path.parent / "labels.toml"),
         )
@@ -627,6 +654,7 @@ def check(api: Api, repo: str, settings: Settings) -> list[Drift]:
         + check_rulesets(api, repo, settings.rulesets)
         + check_variables(api, repo, settings.variables)
         + check_environments(api, repo, settings.environments)
+        + check_pages(api, repo, settings.pages)
         + check_labels(api, repo, settings.labels)
         + check_community(api, repo)
     )
@@ -642,6 +670,7 @@ def apply(api: Api, repo: str, settings: Settings, drift: list[Drift]) -> None:
     apply_rulesets(api, repo, settings.rulesets, part("ruleset "))
     apply_variables(api, repo, part("variable "))
     apply_environments(api, repo, part("environment "))
+    apply_pages(api, repo, settings.pages, part("pages"))
     apply_labels(api, repo, settings.labels, part("label "))
 
 

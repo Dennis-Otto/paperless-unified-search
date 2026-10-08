@@ -1,8 +1,8 @@
 name: Lint
 
 # The checks every repository of the blueprint shares: the workflows, the license
-# of every file (REUSE), the Markdown of every document, the sign-off of every
-# commit (DCO) and the set-up of the issue assistant.
+# of every file (REUSE), the Markdown of every document with hints at its spelling
+# and style, the sign-off of every commit (DCO) and the set-up of the issue assistant.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -67,6 +67,51 @@ jobs:
         uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
         with:
           globs: "**/*.md"
+
+  # Hints at the spelling (cspell, English and German) and the style of the English
+  # (Vale) of the documents that a pull request changes. A hint, never a failure.
+  prose:
+    name: prose
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Hint at the spelling and the style of the changed documents
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          VALE: jdkato/vale:v3.24.0@sha256:f5a09410093936d4919d868120786da9789e2652ac321c66a895403eca020ae4
+        run: |
+          mapfile -t files < <(git diff --name-only --diff-filter=AMR "$BASE_SHA" HEAD -- '*.md' ':!CHANGELOG.md')
+          if ((${#files[@]} == 0)); then
+            echo "No document changes." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          npm ci --prefix .github/prose --ignore-scripts --no-audit --no-fund
+          .github/prose/node_modules/.bin/cspell lint --config .github/prose/cspell.json --no-progress \
+            --no-summary --no-color --no-must-find-files "${files[@]}" > "$RUNNER_TEMP/spelling.txt" || true
+          docker run --rm --volume "$PWD:/docs" --workdir /docs --entrypoint sh "$VALE" \
+            -c 'vale sync >/dev/null && vale --output=line --no-exit "$@"' sh "${files[@]}" \
+            > "$RUNNER_TEMP/style.txt" || true
+          sed -nE 's#^(.+):([0-9]+):([0-9]+) - (.*)$#::warning file=\1,line=\2,col=\3,title=Spelling::\4#p' \
+            "$RUNNER_TEMP/spelling.txt"
+          sed -nE 's#^([^:]+):([0-9]+):([0-9]+):([^:]+):(.*)$#::warning file=\1,line=\2,col=\3,title=\4::\5#p' \
+            "$RUNNER_TEMP/style.txt"
+          {
+            echo "### Prose"
+            echo "$(grep -c ' - ' "$RUNNER_TEMP/spelling.txt" || true) hints at the spelling and $(grep -c . "$RUNNER_TEMP/style.txt" || true) at the style, in ${#files[@]} changed document(s)."
+            echo "A word of the project goes into \`.github/cspell-words.txt\`."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   dco:
     name: dco

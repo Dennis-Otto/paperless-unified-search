@@ -1,0 +1,168 @@
+name: Mutation
+
+# The mutation tests. Every week they change the code in thousands of small ways
+# (mutants) and run the tests against each: a mutant that no test notices shows a
+# line that the tests run but don't check. mutmut does it for Python, Infection for
+# the PHP of a Nextcloud app. The run reports the score and the surviving mutants in
+# its summary and keeps the details as an artifact; a low score fails nothing.
+# https://github.com/Dennis-Otto/repo-blueprint
+
+on:
+  schedule:
+    - cron: "15 1 * * 6"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  mutation:
+    name: mutation
+    if: ${{ !github.event.repository.fork }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    permissions:
+      contents: read
+    env:
+      INFECTION_VERSION: 0.35.6
+      INFECTION_SHA256: 3fd4216875260b8e47c48ec1a92473f500d88bd36d8ffec21cc0d24e18d7f0ea
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Find the code that the mutants change
+        id: kind
+        run: |
+          if [[ -f appinfo/info.xml ]]; then
+            echo "kind=php" >> "$GITHUB_OUTPUT"
+          elif [[ -f .python-version ]] && [[ -f .github/mutation-requirements.txt || -f stacks/mutation/requirements.txt ]]; then
+            echo "kind=python" >> "$GITHUB_OUTPUT"
+          else
+            echo "No mutation tool for this kind of project yet." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: steps.kind.outputs.kind == 'python'
+        with:
+          python-version-file: .python-version
+      - name: Install the tools of the tests and mutmut
+        if: steps.kind.outputs.kind == 'python'
+        run: |
+          requirements="requirements-dev.txt"
+          if [[ -f requirements-test.txt ]]; then
+            requirements="requirements-test.txt"
+          fi
+          pip install --require-hashes -r "$requirements"
+          # mutmut uses the pytest and coverage of the project.
+          mutation=.github/mutation-requirements.txt
+          [[ -f "$mutation" ]] || mutation=stacks/mutation/requirements.txt
+          pip install --require-hashes --no-deps -r "$mutation"
+      - name: Run the mutants against the tests
+        if: steps.kind.outputs.kind == 'python'
+        run: |
+          if ! grep -qs '^\[mutmut\]' setup.cfg && ! grep -qs '^\[tool\.mutmut\]' pyproject.toml; then
+            if [[ -d custom_components ]]; then
+              paths=custom_components
+            elif [[ -d src ]]; then
+              paths=src
+            else
+              paths="$(find . -maxdepth 1 -name '*.py' ! -name 'conftest.py' -printf '%f\n' | sort | paste -sd, -)"
+            fi
+            # The tests may read any file of the repository, so mutmut copies them all.
+            {
+              echo "[mutmut]"
+              echo "paths_to_mutate=$paths"
+              echo "also_copy="
+              find . -mindepth 1 -maxdepth 1 ! -name .git ! -name mutants ! -name setup.cfg -printf '    %f\n' | sort
+            } > "$RUNNER_TEMP/mutmut.cfg"
+            cat "$RUNNER_TEMP/mutmut.cfg" >> setup.cfg
+          fi
+          status=0
+          timeout 320m mutmut run --max-children "$(nproc)" > "$RUNNER_TEMP/run.txt" 2>&1 || status=$?
+          echo "status=$status" >> "$GITHUB_ENV"
+          tail -n 5 "$RUNNER_TEMP/run.txt"
+      - name: Report the score and the surviving mutants
+        if: always() && steps.kind.outputs.kind == 'python'
+        run: |
+          mutmut results --all true > "$RUNNER_TEMP/results.txt" 2>/dev/null || true
+          killed="$(grep -c ': killed$' "$RUNNER_TEMP/results.txt" || true)"
+          survived="$(grep -c ': survived$' "$RUNNER_TEMP/results.txt" || true)"
+          other="$(grep -v -c -E ': (killed|survived)$' "$RUNNER_TEMP/results.txt" || true)"
+          total=$((killed + survived))
+          {
+            echo "### Mutation tests (mutmut)"
+            if ((total)); then
+              echo "**$((100 * killed / total)) %** of the mutants were noticed by a test: $killed killed, $survived survived, $other other."
+            else
+              echo "No mutant ran."
+            fi
+            if [[ "${status:-0}" == 124 ]]; then
+              echo "The run stopped at its time limit; these are the mutants it reached."
+            fi
+            if ((survived)); then
+              echo
+              echo "The first surviving mutants; \`mutmut show <name>\` shows one:"
+              echo
+              grep ': survived$' "$RUNNER_TEMP/results.txt" | head -n 30 | sed 's/: survived$//; s/^/- /'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          # An error of the tool itself, not a low score, fails the run.
+          if [[ "${status:-0}" != 0 && "${status:-0}" != 124 ]] && ((total == 0)); then
+            tail -n 40 "$RUNNER_TEMP/run.txt"
+            exit 1
+          fi
+      - name: Keep the results
+        if: always() && steps.kind.outputs.kind == 'python'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutation
+          path: ${{ runner.temp }}/results.txt
+          retention-days: 30
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        if: steps.kind.outputs.kind == 'php'
+        with:
+          php-version: "8.2"
+          extensions: dom, libxml, mbstring, xml
+          coverage: pcov
+          tools: composer:v2
+      - name: Install the locked tools and Infection
+        if: steps.kind.outputs.kind == 'php'
+        run: |
+          composer install --no-interaction --prefer-dist --no-progress
+          curl --fail --location --silent --show-error --output "$RUNNER_TEMP/infection.phar" \
+            "https://github.com/infection/infection/releases/download/$INFECTION_VERSION/infection.phar"
+          echo "$INFECTION_SHA256  $RUNNER_TEMP/infection.phar" | sha256sum --check --strict
+      - name: Run the mutants against the tests
+        if: steps.kind.outputs.kind == 'php'
+        run: |
+          if ! compgen -G "infection.json*" >/dev/null; then
+            echo '{"source": {"directories": ["lib"]}, "timeout": 30, "logs": {"text": "build/infection.log", "summary": "build/infection-summary.log"}}' > infection.json5
+          fi
+          php "$RUNNER_TEMP/infection.phar" --threads=max --min-msi=0 --no-progress --no-interaction \
+            --logger-github=false | tail -n 20
+      - name: Report the score
+        if: always() && steps.kind.outputs.kind == 'php'
+        run: |
+          {
+            echo "### Mutation tests (Infection)"
+            if [[ -f build/infection-summary.log ]]; then
+              cat build/infection-summary.log
+            else
+              echo "Infection wrote no summary."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the results
+        if: always() && steps.kind.outputs.kind == 'php'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutation
+          path: build/infection*.log
+          retention-days: 30
+          if-no-files-found: ignore

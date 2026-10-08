@@ -97,6 +97,10 @@ vendor/bin/php-cs-fixer fix --dry-run --diff
 step "Psalm"
 vendor/bin/psalm --threads=1 --no-cache
 
+step "Psalm taint analysis"
+# Untrusted input that reaches HTML, SQL, a shell, a file or a header unescaped.
+vendor/bin/psalm --taint-analysis --threads=1 --no-cache
+
 step "Tests, with every line covered"
 # pcov measures the coverage in the CI, Xdebug in the dev container.
 if ! php -r 'exit(extension_loaded("pcov") || extension_loaded("xdebug") ? 0 : 1);'; then

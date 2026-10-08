@@ -1,0 +1,83 @@
+{
+  "$schema": "https://raw.githubusercontent.com/streetsidesoftware/cspell/main/cspell.schema.json",
+  "version": "0.2",
+  "description": "The spelling check of the Lint workflow, a hint in pull requests: English and German, and the words of the project in .github/cspell-words.txt.",
+  "language": "en,de",
+  "import": [
+    "@cspell/dict-de-de/cspell-ext.json"
+  ],
+  "dictionaryDefinitions": [
+    {
+      "name": "project",
+      "path": "../cspell-words.txt",
+      "addWords": true
+    }
+  ],
+  "dictionaries": [
+    "project",
+    "softwareTerms",
+    "companies",
+    "filetypes"
+  ],
+  "ignorePaths": [
+    "CHANGELOG.md",
+    "**/node_modules/**",
+    "vendor/**",
+    "LICENSES/**",
+    ".github/prose/**"
+  ],
+  "ignoreRegExpList": [
+    "Urls",
+    "Email",
+    "/`[^`\\n]+`/g",
+    "/^\\s*```[\\s\\S]*?^\\s*```/gm",
+    "/<[^>\\n]+>/g",
+    "/\\]\\([^)\\n]+\\)/g"
+  ],
+  "allowCompoundWords": true,
+  "words": [
+    "actionlint",
+    "anchore",
+    "Atheris",
+    "Codespaces",
+    "Copier",
+    "CycloneDX",
+    "Dependabot",
+    "devcontainer",
+    "doxxing",
+    "gemergt",
+    "gemergten",
+    "Gitleaks",
+    "HACS",
+    "Harden-Runner",
+    "hassfest",
+    "homeassistant",
+    "krankerl",
+    "linted",
+    "markdownlint",
+    "mergen",
+    "mypy",
+    "Nextcloud",
+    "OpenSSF",
+    "OpenVEX",
+    "pcov",
+    "prerelease",
+    "Prerelease",
+    "Prereleases",
+    "prereleases",
+    "Psalm",
+    "pytest",
+    "Renovate",
+    "Repositorys",
+    "SBOM",
+    "sbom",
+    "SBOMs",
+    "Scorecard",
+    "shellcheck",
+    "Sigstore",
+    "subfolders",
+    "vimeo",
+    "Xdebug",
+    "zizmor"
+  ]
+}

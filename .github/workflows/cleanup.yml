@@ -1,0 +1,86 @@
+name: Clean-up
+
+# The clean-up bot. Every week it deletes what nobody needs any more: the branches
+# that main holds completely and that no open pull request uses, and the caches of
+# the Actions that belong to closed pull requests. A branch with commits that main
+# doesn't have stays; the bot lists it once it is a month old, so that its owner
+# decides. It never touches main, release, Renovate or Dependabot branches.
+# https://github.com/Dennis-Otto/repo-blueprint
+
+on:
+  schedule:
+    - cron: "40 5 * * 0"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: clean up
+    if: ${{ !github.event.repository.fork }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: read
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: Delete the branches that main holds
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          DEFAULT: ${{ github.event.repository.default_branch }}
+        run: |
+          used="$(gh pr list --state open --limit 500 --json headRefName --jq '.[].headRefName')"
+          month_ago="$(date -u -d '30 days ago' +%Y-%m-%dT%H:%M:%SZ)"
+          deleted=() kept=()
+          while read -r branch; do
+            case "$branch" in
+              "$DEFAULT" | gh-pages | release-please--* | renovate/* | dependabot/*) continue ;;
+            esac
+            if grep -qxF "$branch" <<<"$used"; then
+              continue
+            fi
+            ahead="$(gh api "repos/$GH_REPO/compare/$DEFAULT...$branch" --jq .ahead_by)"
+            if [[ "$ahead" == 0 ]]; then
+              gh api --method DELETE "repos/$GH_REPO/git/refs/heads/$branch" --silent
+              deleted+=("$branch")
+            else
+              date="$(gh api "repos/$GH_REPO/commits/$branch" --jq .commit.committer.date)"
+              if [[ "$date" < "$month_ago" ]]; then
+                kept+=("$branch, $ahead commit(s) that $DEFAULT doesn't have, last on ${date%%T*}")
+              fi
+            fi
+          done < <(gh api "repos/$GH_REPO/branches" --paginate --jq '.[] | select(.protected | not) | .name')
+          # The backticks are Markdown of the summary, not the shell's.
+          # shellcheck disable=SC2016
+          {
+            echo "### Branches"
+            if ((${#deleted[@]})); then printf -- '- deleted `%s`, which main holds\n' "${deleted[@]}"; fi
+            if ((${#kept[@]})); then printf -- '- kept `%s`: without a pull request for a month\n' "${kept[@]}"; fi
+            if ! ((${#deleted[@]} + ${#kept[@]})); then echo "Nothing to clean up."; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Delete the caches of closed pull requests
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          open="$(gh pr list --state open --limit 500 --json number --jq '.[].number')"
+          count=0
+          while read -r id ref; do
+            number="$(sed -n 's#^refs/pull/\([0-9]*\)/merge$#\1#p' <<<"$ref")"
+            if [[ -n "$number" ]] && ! grep -qx "$number" <<<"$open"; then
+              gh cache delete "$id"
+              count=$((count + 1))
+            fi
+          done < <(gh cache list --limit 1000 --json id,ref --jq '.[] | "\(.id) \(.ref)"')
+          echo "### Caches" >> "$GITHUB_STEP_SUMMARY"
+          echo "Deleted $count cache(s) of closed pull requests." >> "$GITHUB_STEP_SUMMARY"

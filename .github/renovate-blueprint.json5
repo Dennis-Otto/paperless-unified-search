@@ -45,14 +45,15 @@
   "pip-compile": { managerFilePatterns: ["/(^|/)requirements[^/]*\\.txt$/"] },
   customManagers: [
     {
-      // Images that the scripts of workflows and checks start, by tag and digest.
+      // Images that the scripts of workflows and checks start, by tag and digest,
+      // also in a variable such as IMAGE="name:tag@sha256:…".
       customType: "regex",
       managerFilePatterns: [
         "/^\\.github/workflows/[^/]+\\.ya?ml$/",
         "/(^|/)[^/]+\\.sh$/",
       ],
       matchStrings: [
-        "(?:^|\\s)(?<depName>[a-z0-9][a-z0-9._-]*(?:/[a-z0-9._-]+)+):(?<currentValue>v?\\d[a-zA-Z0-9._-]*)@(?<currentDigest>sha256:[a-f0-9]{64})",
+        "(?:^|[\\s\"'=])(?<depName>[a-z0-9][a-z0-9._-]*(?:/[a-z0-9._-]+)+):(?<currentValue>v?\\d[a-zA-Z0-9._-]*)@(?<currentDigest>sha256:[a-f0-9]{64})",
       ],
       datasourceTemplate: "docker",
     },
@@ -92,6 +93,11 @@
     },
     {
       matchDatasources: ["github-runners"],
+      enabled: false,
+    },
+    {
+      // The tools of the prose check belong to the blueprint, which keeps them current.
+      matchFileNames: [".github/prose/**"],
       enabled: false,
     },
     {
