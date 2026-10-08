@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [0.3.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.2.1...v0.3.0) (2026-10-08)
+
 ### Added
 
 - **The settings show the last failed search.** A failed search shows the users no Paperless documents and no error, and some hosters of managed Nextcloud don't let administrators read the log of Nextcloud. The administration settings now show when the last search failed, whether it failed asking Paperless or looking for the files in Nextcloud, with the kind of error, its message and how long it took, and since when searches work again. The message leaves out the API token, the search term and the query of every URL. Saving the settings and *Disconnect* forget it.
@@ -11,13 +13,6 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - **A request to Paperless without an answer gets a second try.** When a request to Paperless gets no answer at all, because the name of its host doesn't resolve or the connection fails or times out, the app sends it once more before the search gives up. Such failures often pass within a moment. An answer of Paperless, whatever its status, gets no second try.
-
-## [0.3.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.2.1...v0.3.0) (2026-10-08)
-
-
-### Features
-
-* **settings:** show the last failed search and retry a request without answer ([#76](https://github.com/Dennis-Otto/paperless-unified-search/issues/76)) ([bc7daab](https://github.com/Dennis-Otto/paperless-unified-search/commit/bc7daab988f3f9a633f8aa9bc8d924ec8a5a3797))
 
 ## [0.2.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.2.0...v0.2.1) (2026-10-08)
 
