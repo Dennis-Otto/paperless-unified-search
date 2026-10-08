@@ -1,99 +1,20 @@
 # The documentation website: MkDocs with the Material theme builds it from the pages
 # in docs/, and the Docs workflow publishes it on GitHub Pages with every change of
 # main. This file belongs to the project: the blueprint writes it once, and its
-# updates leave it as it is. Preview the website while you write with
+# updates leave it as it is. The settings that every website shares come from
+# .github/mkdocs-blueprint.yml, which the blueprint keeps current; a setting here
+# wins over the same one there. Preview the website while you write with
 #   pip install --require-hashes -r .github/docs-requirements.txt && mkdocs serve
 # https://squidfunk.github.io/mkdocs-material/
+INHERIT: .github/mkdocs-blueprint.yml
 site_name: "Paperless Unified Search"
 site_description: "OCR-powered Paperless-ngx search, seamlessly integrated into Nextcloud"
 site_url: https://dennis-otto.github.io/paperless-unified-search/
 repo_url: https://github.com/Dennis-Otto/paperless-unified-search
 repo_name: Dennis-Otto/paperless-unified-search
-# The pencil on every page opens it for editing on GitHub.
-edit_uri: edit/main/docs/
 copyright: "© 2026 Dennis Otto"
-# Every page is a file next to the others, as on GitHub, so that a relative path in
-# HTML, such as <img src="images/card.png">, leads to the same file in both places.
-use_directory_urls: false
 
-theme:
-  name: material
-  language: en
-  icon:
-    repo: fontawesome/brands/github
-  # Light or dark, as the reader's system prefers, with a switch in the header.
-  palette:
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      toggle:
-        icon: material/weather-night
-        name: Switch to dark mode
-    - media: "(prefers-color-scheme: dark)"
-      scheme: slate
-      toggle:
-        icon: material/weather-sunny
-        name: Switch to light mode
-  features:
-    - navigation.instant
-    - navigation.tracking
-    - navigation.sections
-    - navigation.indexes
-    - navigation.top
-    - navigation.footer
-    - search.suggest
-    - search.highlight
-    - content.action.edit
-    - content.code.copy
-
-plugins:
-  # With German pages: lang: [en, de]
-  - search
-
-# Markdown as GitHub shows it, so that every page reads the same on github.com.
-markdown_extensions:
-  - admonition
-  - attr_list
-  - footnotes
-  - md_in_html
-  - tables
-  - toc:
-      permalink: true
-      # Anchors as GitHub makes them, so that links to a heading work in both places.
-      slugify: !!python/object/apply:pymdownx.slugs.slugify
-        kwds:
-          case: lower
-  - pymdownx.details
-  - pymdownx.emoji:
-      emoji_index: !!python/name:material.extensions.emoji.twemoji
-      emoji_generator: !!python/name:material.extensions.emoji.to_svg
-  - pymdownx.highlight
-  - pymdownx.inlinehilite
-  - pymdownx.magiclink
-  # A page may include a file of the repository, such as the line
-  # --8<-- "CHANGELOG.md", so that nothing is written twice.
-  - pymdownx.snippets:
-      check_paths: true
-  - pymdownx.superfences:
-      custom_fences:
-        - name: mermaid
-          class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
-  - pymdownx.tasklist:
-      custom_checkbox: true
-  - pymdownx.tilde
-
-# A link or an anchor that leads nowhere fails the build. A page outside the menu
-# is still on the website, so that a page that the blueprint brings, such as a
-# decision record, fails nothing.
-validation:
-  absolute_links: warn
-  unrecognized_links: warn
-  anchors: warn
-
-# The menu. German pages live under docs/de/ and form the section "Deutsch", which
-# the language switch of extra.alternate below leads to:
-#   - Deutsch:
-#       - de/index.md
+# The menu. A tab in the header for each section.
 nav:
   - Home: index.md
   - Architecture: architecture.md
@@ -102,12 +23,3 @@ nav:
   - Decisions: decisions/README.md
   - Releases: releases.md
   - Changelog: changelog.md
-
-# extra:
-#   alternate:
-#     - name: English
-#       link: /paperless-unified-search/
-#       lang: en
-#     - name: Deutsch
-#       link: /paperless-unified-search/de/
-#       lang: de
