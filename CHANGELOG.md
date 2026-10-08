@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [0.1.12](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.1.11...v0.1.12) (2026-10-08)
+
 ### Fixed
 
 - **Only the files of the archive account count.** A search result now comes only from a file that belongs to the archive account, the Nextcloud account that owns the synchronized files: the user sees a document when that account shares its file with them. A file that only carries a marker such as `[P123]` in its name no longer counts. With Paperless Sync installed, its account is the archive account; otherwise enter it under *Archive account* in the settings. Without an archive account, the search shows no Paperless documents.
