@@ -17,6 +17,7 @@ copyright: "© 2026 Dennis Otto"
 # The menu. A tab in the header for each section.
 nav:
   - Home: index.md
+  - Guide: guide.md
   - Architecture: architecture.md
   - Security design: security.md
   - Roadmap: roadmap.md

@@ -77,13 +77,13 @@ Für eine strukturierte Dokumentensynchronisierung steht die unabhängige Nextcl
 	<author homepage="https://github.com/Dennis-Otto">Dennis Otto</author>
 	<namespace>PaperlessUnifiedSearch</namespace>
 	<documentation>
-		<user>https://github.com/Dennis-Otto/paperless-unified-search#usage</user>
-		<admin>https://github.com/Dennis-Otto/paperless-unified-search#configuration</admin>
+		<user>https://dennis-otto.github.io/paperless-unified-search/guide.html#usage</user>
+		<admin>https://dennis-otto.github.io/paperless-unified-search/guide.html#configuration</admin>
 		<developer>https://github.com/Dennis-Otto/paperless-unified-search#development</developer>
 	</documentation>
 	<category>integration</category>
 	<category>files</category>
-	<website>https://github.com/Dennis-Otto/paperless-unified-search</website>
+	<website>https://dennis-otto.github.io/paperless-unified-search/</website>
 	<bugs>https://github.com/Dennis-Otto/paperless-unified-search/issues</bugs>
 	<repository type="git">https://github.com/Dennis-Otto/paperless-unified-search.git</repository>
 	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.2.0/screenshots/01-unified-search.png</screenshot><!-- x-release-please-version -->
