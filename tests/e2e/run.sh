@@ -115,7 +115,7 @@ occ app:disable firstrunwizard >/dev/null 2>&1 || true
 curl --fail-with-body --silent --show-error \
 	--user "e2e-admin:${PASSWORD}" \
 	--output "${TMP_DIR}/admin-settings.html" \
-	"${BASE_URL}/index.php/settings/admin/additional"
+	"${BASE_URL}/index.php/settings/admin/paperless_unified_search"
 for attribute in data-save-url data-reset-url; do
 	if ! grep --fixed-strings "${attribute}=\"/apps/paperless_unified_search/settings\"" \
 		"${TMP_DIR}/admin-settings.html" >/dev/null; then
@@ -124,18 +124,18 @@ for attribute in data-save-url data-reset-url; do
 	fi
 done
 
-# The navigation of the administration settings lists the section with the app's
-# settings, here Additional settings, on every page (#25): Nextcloud 33 as links,
-# Nextcloud 34 in the initial state settings-sections.
+# The navigation of the administration settings lists the app's own section on
+# every page (#25): Nextcloud 33 as links, Nextcloud 34 in the initial state
+# settings-sections.
 curl --fail-with-body --silent --show-error \
 	--user "e2e-admin:${PASSWORD}" \
 	--output "${TMP_DIR}/admin-overview.html" \
 	"${BASE_URL}/index.php/settings/admin/overview"
 SECTIONS="$(grep --only-matching 'id="initial-state-settings-sections" value="[^"]*"' \
 	"${TMP_DIR}/admin-overview.html" | sed 's/.*value="//; s/"$//' | base64 --decode || true)"
-if ! grep --fixed-strings '/settings/admin/additional"' "${TMP_DIR}/admin-overview.html" >/dev/null &&
-	! grep --fixed-strings '"id":"additional"' <<<"${SECTIONS}" >/dev/null; then
-	echo "The navigation of the administration settings lists no Additional settings." >&2
+if ! grep --fixed-strings '/settings/admin/paperless_unified_search"' "${TMP_DIR}/admin-overview.html" >/dev/null &&
+	! grep --fixed-strings '"id":"paperless_unified_search"' <<<"${SECTIONS}" >/dev/null; then
+	echo "The navigation of the administration settings lists no Paperless Unified Search section." >&2
 	exit 1
 fi
 

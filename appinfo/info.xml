@@ -95,5 +95,6 @@ Für eine strukturierte Dokumentensynchronisierung steht die unabhängige Nextcl
 	</dependencies>
 	<settings>
 		<admin>OCA\PaperlessUnifiedSearch\Settings\AdminSettings</admin>
+		<admin-section>OCA\PaperlessUnifiedSearch\Settings\AdminSection</admin-section>
 	</settings>
 </info>

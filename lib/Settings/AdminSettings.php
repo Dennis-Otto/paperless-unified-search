@@ -32,7 +32,7 @@ final class AdminSettings implements ISettings {
 	}
 
 	public function getSection(): string {
-		return 'additional';
+		return AppConstants::APP_ID;
 	}
 
 	public function getPriority(): int {

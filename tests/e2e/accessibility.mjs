@@ -27,13 +27,13 @@ const THEMES = ['light', 'dark']
 const PAGES = [
 	{
 		name: 'administration settings',
-		path: '/index.php/settings/admin/additional',
+		path: '/index.php/settings/admin/paperless_unified_search',
 		scope: '#paperless-unified-search-settings',
 		async prepare() {},
 	},
 	{
 		name: 'administration settings after saving',
-		path: '/index.php/settings/admin/additional',
+		path: '/index.php/settings/admin/paperless_unified_search',
 		scope: '#paperless-unified-search-settings',
 		async prepare(page) {
 			await page.locator('#paperless-unified-search-save').click()
