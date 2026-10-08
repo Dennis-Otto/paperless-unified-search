@@ -91,8 +91,8 @@ tar -C tests/e2e -cf - package.json package-lock.json screenshots.mjs \
 		"${IMAGE}" \
 		sh -c 'mkdir /tmp/browser && cd /tmp/browser && tar -xf - &&
 			npm ci --ignore-scripts --no-audit --no-fund --loglevel=error >&2 &&
-			SCREENSHOTS_OUT=/tmp/screenshots node screenshots.mjs >&2 &&
-			tar -C /tmp/screenshots -cf - .' \
+			out="$(mktemp -d)" && SCREENSHOTS_OUT="${out}" node screenshots.mjs >&2 &&
+			tar -C "${out}" -cf - .' \
 	| tar -C "${TMP_DIR}" -xf -
 
 cp "${TMP_DIR}"/*.png "${TMP_DIR}"/*.gif screenshots/

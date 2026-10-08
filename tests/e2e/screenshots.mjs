@@ -10,7 +10,7 @@
 // opened file and the settings, light and dark, on a phone, and as an animation. The
 // images go to the folder of SCREENSHOTS_OUT.
 
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import gifenc from 'gifenc'
 import pngjs from 'pngjs'
@@ -21,7 +21,11 @@ const { PNG } = pngjs
 
 const BASE_URL = process.env.E2E_BASE_URL ?? 'http://nextcloud'
 const PASSWORD = process.env.E2E_PASSWORD ?? 'e2e-only-password'
-const OUT = process.env.SCREENSHOTS_OUT ?? '/tmp/screenshots'
+// The folder for the pictures, which scripts/screenshots.sh makes with mktemp.
+const OUT = process.env.SCREENSHOTS_OUT
+if (!OUT) {
+	throw new Error('SCREENSHOTS_OUT names no folder for the pictures.')
+}
 const ADMIN = 'e2e-admin'
 const ARCHIVE = 'paperless'
 const READER = 'jamie'
@@ -522,7 +526,6 @@ function writeGif(frames, path) {
 	writeFileSync(path, gif.bytes())
 }
 
-mkdirSync(OUT, { recursive: true })
 const browser = await chromium.launch()
 try {
 	await createArchive(browser)
