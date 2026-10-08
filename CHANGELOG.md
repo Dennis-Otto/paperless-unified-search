@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [0.3.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.2.1...v0.3.0) (2026-10-08)
+
 ### Added
 
 - **The settings show the last failed search.** A failed search shows the users no Paperless documents and no error, and some hosters of managed Nextcloud don't let administrators read the log of Nextcloud. The administration settings now show when the last search failed, whether it failed asking Paperless or looking for the files in Nextcloud, with the kind of error, its message and how long it took, and since when searches work again. The message leaves out the API token, the search term and the query of every URL. Saving the settings and *Disconnect* forget it.
