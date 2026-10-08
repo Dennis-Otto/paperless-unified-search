@@ -24,6 +24,23 @@ What Paperless Unified Search protects, what it trusts and which risks remain. [
 
 ## Trust boundaries
 
+```mermaid
+flowchart LR
+    browser["Browser of an administrator"]
+    paperless[("Paperless-ngx")]
+    subgraph server["Nextcloud server"]
+        search["Unified search<br/>of a user"]
+        app["Paperless Unified Search"]
+        files[("Files of Nextcloud")]
+        credentials[("Credentials manager<br/>the token")]
+    end
+    browser -- "1 · settings" --> app
+    search -- "2 · term and page" --> app
+    app -- "3 · term and token,<br/>an untrusted answer" --> paperless
+    app -- "4 · folders of the user,<br/>files of the archive account" --> files
+    app --- credentials
+```
+
 1. **Browser → app.** The routes of the settings page pass Nextcloud's login, its CSRF check and the check of the administrator. The URL must use `http` or `https` and carry no credentials, query or fragment.
 2. **Nextcloud's search → app.** The term and the cursor of a page come from the user: the cursor must be a number, and a page holds at most 50 results.
 3. **App → Paperless.** Every answer is untrusted input. It must be JSON with a list of results; a document without a numeric ID is left out; titles and dates are used only when they are text; the excerpt loses every HTML tag and is cut to 180 characters.

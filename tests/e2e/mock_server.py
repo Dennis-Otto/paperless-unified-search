@@ -9,6 +9,36 @@ from urllib.parse import parse_qs, urlparse
 
 TOKEN = "e2e-only-token"
 
+# The documents of the demo that scripts/screenshots.sh searches for with the term
+# "invoice", for the screenshots and the animation of the README. The OCR text of the
+# insurance renewal says "invoice", its title doesn't.
+DEMO_DOCUMENTS = [
+    {
+        "id": 412,
+        "title": "Electricity invoice - August 2026",
+        "created": "2026-08-12",
+        "__search_hit__": {
+            "highlights": "<span class=\"highlight\">Invoice</span> E-2026-0812. Total due 84.30 EUR by September 2."
+        },
+    },
+    {
+        "id": 389,
+        "title": "Home insurance renewal",
+        "created": "2026-07-21",
+        "__search_hit__": {
+            "highlights": "Your annual insurance <span class=\"highlight\">invoice</span> covers August 2026 through July 2027."
+        },
+    },
+    {
+        "id": 371,
+        "title": "Internet invoice - July 2026",
+        "created": "2026-07-03",
+        "__search_hit__": {
+            "highlights": "Monthly fiber internet <span class=\"highlight\">invoice</span>. Customer reference EX-2048."
+        },
+    },
+]
+
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -43,6 +73,8 @@ class Handler(BaseHTTPRequestHandler):
                     "created": "2026-08-25",
                 },
             ]
+        elif query == "invoice":
+            results = DEMO_DOCUMENTS
 
         self._json(
             200,

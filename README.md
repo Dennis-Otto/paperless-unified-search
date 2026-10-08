@@ -12,6 +12,10 @@
 
 Paperless Unified Search brings Paperless-ngx OCR and full-text search into Nextcloud's global search. Search results open the matching synchronized file directly in Nextcloud's viewer.
 
+![A search for "invoice" in Nextcloud: the files whose names match, then, with Search connected services switched on, the Paperless documents whose text matches. The home insurance renewal opens in Nextcloud's viewer.](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/search-and-open.gif)
+
+<sub>The search of files finds the two invoices by their names. Paperless also finds the home insurance renewal: its text says "invoice", its name doesn't.</sub>
+
 <sub>💛 If Paperless Unified Search is useful to you, you can [support its development](https://github.com/sponsors/Dennis-Otto).</sub>
 
 [Quick start](#quick-start) · [Architecture](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/architecture.md) · [Security design](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/security.md) · [Roadmap](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/roadmap.md) · [Releases](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/releases.md) · [Changelog](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CHANGELOG.md)
@@ -27,19 +31,48 @@ Paperless Unified Search brings Paperless-ngx OCR and full-text search into Next
 
 ## Screenshots
 
+Every picture but those of the phone has a dark version, which a dark theme shows.
+
 ### Paperless results in Nextcloud's global search
 
-![Paperless OCR results in Nextcloud unified search](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/01-unified-search.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/01-unified-search-dark.png">
+  <img alt="Paperless OCR results in Nextcloud unified search" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/01-unified-search.png">
+</picture>
 
 ### A search result opened in Nextcloud's PDF viewer
 
-![A synchronized Paperless document opened in Nextcloud's PDF viewer](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/02-nextcloud-pdf-viewer.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/02-nextcloud-pdf-viewer-dark.png">
+  <img alt="A synchronized Paperless document opened in Nextcloud's PDF viewer" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/02-nextcloud-pdf-viewer.png">
+</picture>
+
+### On a phone
+
+<p>
+  <img alt="Paperless results in the global search of Nextcloud on a phone" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/04-mobile-search.png" width="320">
+  <img alt="The electricity invoice opened in Nextcloud's viewer on a phone" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/05-mobile-viewer.png" width="320">
+</p>
+
+Nextcloud in the browser of a phone. The Nextcloud apps for iOS and Android open a result in their own viewer.
 
 ### Secure server-side administration
 
-![Paperless Unified Search administration settings in Nextcloud](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/03-admin-settings.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/03-admin-settings-dark.png">
+  <img alt="Paperless Unified Search administration settings in Nextcloud" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/03-admin-settings.png">
+</picture>
 
 ## How it works
+
+```mermaid
+flowchart TB
+    search(["Nextcloud's search"]) -- "invoice" --> app["Paperless Unified Search"]
+    app -- "searches the OCR text" --> paperless[("Paperless-ngx")]
+    app -- "finds the file of each hit<br/>by its marker" --> archive[("Archive in Nextcloud<br/>… invoice [P412].pdf")]
+    paperless -. "every document" .-> sync["Paperless Sync"]
+    sync -. "writes it as a file<br/>with its marker" .-> archive
+```
 
 1. Nextcloud forwards an enabled external-search query to Paperless-ngx.
 2. Paperless returns results from its native OCR/full-text index.
@@ -48,6 +81,29 @@ Paperless Unified Search brings Paperless-ngx OCR and full-text search into Next
 5. Selecting a result opens the synchronized file in Nextcloud, not Paperless. Browsers use Nextcloud's
    `/f/{fileId}` viewer route. The official iOS app receives its native `nextcloud://open-file` deep link,
    while Android receives the file ID and user-relative path required by its in-app viewer.
+
+Who sees document 412, when `paperless` is the archive account and has shared its archive with `jamie`:
+
+```mermaid
+flowchart LR
+    subgraph owner["paperless, the archive account"]
+        own["… invoice [P412].pdf"]
+    end
+    subgraph reader["jamie"]
+        shared["… invoice [P412].pdf<br/>shared read-only"]
+    end
+    subgraph other["sam"]
+        copy["Copy [P412].pdf<br/>a file of sam's own"]
+    end
+    own -- "share" --> shared
+    own --> seen1(["✓ document 412"])
+    shared --> seen2(["✓ document 412"])
+    copy --> unseen(["✗ no document"])
+    classDef yes fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef no fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+    class seen1,seen2 yes
+    class unseen no
+```
 
 This app does not synchronize documents itself. For a native, configurable synchronization solution, use the companion [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) app. Both apps use the same stable `[P<ID>]` marker and are designed to work together without coupling their release cycles.
 
@@ -116,6 +172,16 @@ bash tests/e2e/run.sh
 ```
 
 Set `KEEP_E2E=1` to leave the containers running for inspection. See [the mobile test matrix](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/tests/e2e/MANUAL_MOBILE_TESTS.md) for the final checks performed with official clients.
+
+### Screenshots
+
+The screenshots and the animation in `screenshots/` come from a script, so that they show what users see. After a change of the interface, take them again:
+
+```bash
+bash scripts/screenshots.sh
+```
+
+It starts the Docker suite under a project of its own with a demo: the archive account `paperless`, whose synthetic documents are shared read-only with `jamie`, and a Paperless mock that finds three of them for "invoice". Chromium then searches, opens a result and saves the settings, light and dark, on a phone and as an animation. Set `KEEP_SCREENSHOTS=1` to look around in the demo afterwards.
 
 See [CONTRIBUTING.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CONTRIBUTING.md) before opening a pull request.
 
