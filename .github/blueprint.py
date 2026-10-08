@@ -660,18 +660,58 @@ def check(api: Api, repo: str, settings: Settings) -> list[Drift]:
     )
 
 
-def apply(api: Api, repo: str, settings: Settings, drift: list[Drift]) -> None:
+# The permission of the release app that each part of the settings needs.
+PERMISSIONS = {
+    "repository": "Administration",
+    "security": "Administration",
+    "actions": "Administration",
+    "rulesets": "Administration",
+    "variables": "Variables",
+    "environments": "Environments",
+    "pages": "Pages",
+    "labels": "Issues",
+}
+
+
+def apply(api: Api, repo: str, settings: Settings, drift: list[Drift]) -> list[str]:
+    """Apply every part of the drift and return the parts that GitHub refused.
+
+    A part that GitHub refuses, such as one whose permission the release app lacks,
+    doesn't keep the parts after it from being applied.
+    """
+
     def part(prefix: str) -> list[Drift]:
         return [item for item in drift if item.setting.startswith(prefix)]
 
-    apply_repository(api, repo, part("repository."))
-    apply_security(api, repo, part("security."))
-    apply_actions(api, repo, settings.actions, part("actions."))
-    apply_rulesets(api, repo, settings.rulesets, part("ruleset "))
-    apply_variables(api, repo, part("variable "))
-    apply_environments(api, repo, part("environment "))
-    apply_pages(api, repo, settings.pages, part("pages"))
-    apply_labels(api, repo, settings.labels, part("label "))
+    steps: list[tuple[str, Callable[[], None]]] = [
+        ("repository", lambda: apply_repository(api, repo, part("repository."))),
+        ("security", lambda: apply_security(api, repo, part("security."))),
+        (
+            "actions",
+            lambda: apply_actions(api, repo, settings.actions, part("actions.")),
+        ),
+        (
+            "rulesets",
+            lambda: apply_rulesets(api, repo, settings.rulesets, part("ruleset ")),
+        ),
+        ("variables", lambda: apply_variables(api, repo, part("variable "))),
+        ("environments", lambda: apply_environments(api, repo, part("environment "))),
+        ("pages", lambda: apply_pages(api, repo, settings.pages, part("pages"))),
+        ("labels", lambda: apply_labels(api, repo, settings.labels, part("label "))),
+    ]
+    refused = []
+    for name, step in steps:
+        try:
+            step()
+        except GitHubError as error:
+            hint = ""
+            if error.status == 403:
+                hint = (
+                    f"; the token may lack the permission {PERMISSIONS[name]}"
+                    " (read and write)"
+                )
+            refused.append(f"the {name} could not be applied: {error}{hint}")
+    return refused
 
 
 def describe(drift: list[Drift]) -> str:
@@ -1291,9 +1331,12 @@ def main(
             print(describe_steps(steps))
             return 0 if all(step.done is not False for step in steps) else 1
         drift = check(api, repo, settings)
+        refused: list[str] = []
         if arguments.action == "apply" and drift:
-            apply(api, repo, settings, drift)
+            refused = apply(api, repo, settings, drift)
             drift = check(api, repo, settings)
+        for reason in refused:
+            print(f"blueprint.py: {reason}", file=sys.stderr)
         if not drift:
             print(f"The settings of {repo} match {arguments.config}.")
             return 0
@@ -1301,7 +1344,7 @@ def main(
         print(describe(drift))
         if arguments.action == "check":
             print("python3 blueprint.py settings apply sets what the API can set.")
-        return 1
+        return 2 if refused else 1
     except (GitHubError, OSError, tomllib.TOMLDecodeError) as error:
         print(f"blueprint.py: {error}", file=sys.stderr)
         return 2
