@@ -1,0 +1,128 @@
+name: Docs
+
+# The documentation website. MkDocs with the Material theme builds it from mkdocs.yml
+# and the pages in docs/, strictly, so that a link or an anchor that leads nowhere
+# fails: in every pull request as the check docs, and on main for GitHub Pages. A
+# repository without mkdocs.yml or a home page in docs/ has no website, and the
+# check passes, so that it can be required everywhere. The tools are the hash-pinned
+# ones of .github/docs-requirements.txt, which the blueprint keeps current.
+# https://github.com/Dennis-Otto/repo-blueprint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+# Pull requests cancel their older runs; runs on main wait for each other, so that
+# the website of the latest commit is published last.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The Material theme warns about MkDocs 2.0 in every run; it keeps MkDocs below 2.0
+  # itself, so the warning says nothing about this website.
+  NO_MKDOCS_2_WARNING: "true"
+
+jobs:
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: read # whether GitHub Pages publishes from this workflow
+    outputs:
+      publish: ${{ steps.site.outputs.publish }}
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # A run on main publishes the website, and the next job builds it for that;
+      # every other run builds it here, as the check.
+      - name: Look for the website
+        id: site
+        env:
+          EVENT: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ ! -f mkdocs.yml ]] || [[ ! -f docs/index.md && ! -f docs/README.md ]]; then
+            echo "::notice::No website here: it needs mkdocs.yml and a home page, docs/index.md."
+            exit 0
+          fi
+          if [[ "$EVENT" != pull_request && "$GITHUB_REF" == refs/heads/main ]]; then
+            # The settings bot sets GitHub Pages up from the [pages] table of
+            # .github/repository.toml; until then, and in forks, nothing is published.
+            build_type="$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq .build_type 2>/dev/null || true)"
+            if [[ "$build_type" == workflow ]]; then
+              echo "publish=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::notice::GitHub Pages doesn't publish from GitHub Actions here yet; the website waits for a run on main after it does."
+          fi
+          echo "build=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: steps.site.outputs.build == 'true'
+        with:
+          # The Python that the tools of the website are compiled for.
+          python-version: "3.12"
+      - name: Install the hash-pinned tools of the website
+        if: steps.site.outputs.build == 'true'
+        run: pip install --require-hashes -r .github/docs-requirements.txt
+      - name: Build the website
+        if: steps.site.outputs.build == 'true'
+        run: mkdocs build --strict
+
+  pages:
+    name: build the website
+    needs: docs
+    if: needs.docs.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install the hash-pinned tools of the website
+        run: pip install --require-hashes -r .github/docs-requirements.txt
+      - name: Build the website
+        run: mkdocs build --strict
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+
+  deploy:
+    name: publish the website
+    needs: pages
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      id-token: write # proves to GitHub Pages which workflow publishes
+      pages: write # publishes the website
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: Publish the website on GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

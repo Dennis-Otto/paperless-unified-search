@@ -51,4 +51,9 @@ allow-dependencies-licenses:
   # license the review reads wrongly.
   - pkg:pypi/jinja2-ansible-filters
   - pkg:pypi/typing-extensions
+  # The dictionaries of cspell, the spell check of the prose in .github/prose/, which
+  # only the checks run: Django's words (WTFPL) and the common misspellings
+  # (CC-BY-SA-4.0).
+  - pkg:npm/%40cspell/dict-django
+  - pkg:npm/%40cspell/dict-en-common-misspellings
   - pkg:composer/netresearch/jsonmapper

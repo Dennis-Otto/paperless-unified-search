@@ -45,6 +45,7 @@ required_checks = [
   "workflow-lint",
   "reuse",
   "markdown",
+  "docs",
   "dco",
   "issue-assistant",
   "conventional title",
@@ -58,6 +59,11 @@ required_checks = [
 PUBLISH_TO = "nextcloud-appstore"
 # The GitHub App that opens the release pull requests, so that their checks run.
 RELEASE_AUTOMATION_CLIENT_ID = "Iv23liP9PIEHOV74AiIA"
+
+# GitHub Pages, which publishes the website that the Docs workflow builds from
+# mkdocs.yml and docs/.
+[pages]
+build_type = "workflow"
 
 # Environments and the secrets they need; only main may use them.
 [environments.release]

@@ -1,0 +1,9 @@
+{
+  "name": "prose-lint",
+  "private": true,
+  "description": "The spelling check of the Lint workflow, in English and German; Renovate keeps it current.",
+  "devDependencies": {
+    "@cspell/dict-de-de": "4.1.3",
+    "cspell": "10.3.6"
+  }
+}
