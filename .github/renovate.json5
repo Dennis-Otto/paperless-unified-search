@@ -5,4 +5,13 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["local>Dennis-Otto/paperless-unified-search//.github/renovate-blueprint.json5"],
+  packageRules: [
+    {
+      // The image of Playwright in tests/e2e/run.sh drives only the browsers of the
+      // same version of playwright-core in tests/e2e/package.json, so both move in
+      // one update; scripts/check-project.sh compares them.
+      matchPackageNames: ["mcr.microsoft.com/playwright", "playwright-core"],
+      groupName: "Playwright",
+    },
+  ],
 }
