@@ -3,6 +3,12 @@
 # the Findings workflow keeps it fixed or accepted.
 # https://github.com/Dennis-Otto/repo-blueprint
 rules:
+  secrets-inherit:
+    ignore:
+      # The isolated build of a release signs a Nextcloud app with the key of the
+      # environment release, which a called workflow sees only with the secrets of
+      # its caller; the build is a workflow of this repository.
+      - release.yml
   dangerous-triggers:
     ignore:
       # These workflows start on pull_request_target or workflow_run so that they
