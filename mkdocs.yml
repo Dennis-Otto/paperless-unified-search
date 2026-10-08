@@ -96,11 +96,12 @@ validation:
 #       - de/index.md
 nav:
   - Home: index.md
+  - Architecture: architecture.md
+  - Security design: security.md
+  - Roadmap: roadmap.md
+  - Decisions: decisions/README.md
   - Releases: releases.md
   - Changelog: changelog.md
-  # Once the blueprint has brought them:
-  # - Security design: security.md
-  # - Decisions: decisions/README.md
 
 # extra:
 #   alternate:

@@ -1,8 +1,8 @@
 # Security design
 
-[← README](../README.md) · [Architecture](architecture.md) · [Roadmap](roadmap.md) · [Releases](releases.md)
+[← README](https://github.com/Dennis-Otto/paperless-unified-search) · [Architecture](architecture.md) · [Roadmap](roadmap.md) · [Releases](releases.md)
 
-What Paperless Unified Search protects, what it trusts and which risks remain. [SECURITY.md](../SECURITY.md) says how to report a vulnerability and how to verify a release, and argues why the repository and its releases are safe.
+What Paperless Unified Search protects, what it trusts and which risks remain. [SECURITY.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/SECURITY.md) says how to report a vulnerability and how to verify a release, and argues why the repository and its releases are safe.
 
 ## What you can expect
 
@@ -39,11 +39,11 @@ What Paperless Unified Search protects, what it trusts and which risks remain. [
 | Text of a document runs as script in the search | The excerpt loses every HTML tag; Nextcloud's search shows titles and excerpts as text | `testTitleAndSublineComeFromTheDocument` in `tests/Unit/Search/PaperlessSearchProviderTest.php` |
 | A slow Paperless blocks the search | A connection timeout of 3 seconds and a timeout of 10 seconds for every request | `lib/Service/PaperlessApiService.php` |
 
-The Docker end-to-end tests run the real search endpoint of every supported Nextcloud version against a mock of the Paperless API, with users who may and may not read a file ([tests/e2e/README.md](../tests/e2e/README.md)).
+The Docker end-to-end tests run the real search endpoint of every supported Nextcloud version against a mock of the Paperless API, with users who may and may not read a file ([tests/e2e/README.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/tests/e2e/README.md)).
 
 ## Residual risks
 
 - The results rely on the names of the files: the marker `[P<ID>]` is what ties a file to a document.
-- The permissions of the Paperless account decide which documents the search can find. Use a dedicated account with only the read permissions that the search needs, as the [README](../README.md#configuration) describes.
+- The permissions of the Paperless account decide which documents the search can find. Use a dedicated account with only the read permissions that the search needs, as the [README](https://github.com/Dennis-Otto/paperless-unified-search#configuration) describes.
 - With *Always include Paperless in global search* on, every search term of every user reaches Paperless. Turn it on only for a Paperless server that you trust as much as Nextcloud.
 - An `http` URL is allowed, for a Paperless in a trusted local network; then the token and the search terms travel unencrypted. Use `https` whenever the connection leaves such a network.

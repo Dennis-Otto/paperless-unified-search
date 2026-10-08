@@ -1,6 +1,6 @@
 # Roadmap
 
-[← README](../README.md) · [Architecture](architecture.md) · [Security design](security.md) · [Releases](releases.md)
+[← README](https://github.com/Dennis-Otto/paperless-unified-search) · [Architecture](architecture.md) · [Security design](security.md) · [Releases](releases.md)
 
 What Paperless Unified Search intends to do in the next twelve months, until October 2027, and what it will not do. It is a direction, not a promise. Ideas are welcome as [feature requests](https://github.com/Dennis-Otto/paperless-unified-search/issues/new?template=feature_request.yml).
 
@@ -10,7 +10,7 @@ The app does what it was built for: the full-text search of Paperless-ngx in the
 
 - **Every new major version of Nextcloud.** The upstream bot raises `max-version` in `appinfo/info.xml` once the end-to-end tests pass against the new version, and the app follows the changes of Nextcloud's search and of its mobile apps.
 - **Changes of the Paperless-ngx API.** A change that breaks the search is fixed first, with a test that keeps it fixed.
-- **Fixes and security.** Reported bugs and vulnerabilities come before anything new; [SECURITY.md](../SECURITY.md) has the times.
+- **Fixes and security.** Reported bugs and vulnerabilities come before anything new; [SECURITY.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/SECURITY.md) has the times.
 - **Current dependencies and tooling,** through the update bots and the [repository blueprint](https://github.com/Dennis-Otto/repo-blueprint).
 
 Feature requests with the most reactions are considered next, in that order: anything that breaks for users first, then what makes the search safer, then the rest.
