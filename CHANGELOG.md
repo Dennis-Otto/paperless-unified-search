@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- **The icon of the app shows its magnifier in the dark theme too.** Next to every Paperless result and in the menu of the administration settings, the dark magnifier of the icon disappeared on a dark background, so that only a white dot remained. A white edge now keeps it visible in either theme.
+
 ## [0.2.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.1.12...v0.2.0) (2026-10-08)
 
 ### Changed

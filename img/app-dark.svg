@@ -7,6 +7,9 @@
   <rect x="12" y="6" width="39" height="52" rx="5" fill="#1f6f5f"/>
   <path d="M41 6v13h10" fill="#75c8b7"/>
   <path d="M20 29h23M20 37h17M20 45h12" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="4"/>
+  <!-- A white edge keeps the dark magnifier visible on a dark background. -->
+  <circle cx="47" cy="48" r="13" fill="none" stroke="#fff" stroke-width="9"/>
+  <path d="m57 58 9 9" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="10"/>
   <circle cx="47" cy="48" r="13" fill="#fff" stroke="#0f172a" stroke-width="5"/>
   <path d="m57 58 9 9" fill="none" stroke="#0f172a" stroke-linecap="round" stroke-width="6"/>
 </svg>
