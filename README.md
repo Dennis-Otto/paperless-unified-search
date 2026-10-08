@@ -1,5 +1,6 @@
 # Paperless Unified Search
 
+[![Documentation](https://img.shields.io/badge/docs-website-blue)](https://dennis-otto.github.io/paperless-unified-search/)
 [![CI](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/ci.yml/badge.svg)](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/ci.yml)
 [![Docker E2E](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/e2e.yml/badge.svg)](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/e2e.yml)
 [![Secret scan](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/secret-scan.yml/badge.svg)](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/secret-scan.yml)
@@ -16,18 +17,28 @@ Paperless Unified Search brings Paperless-ngx OCR and full-text search into Next
 
 <sub>The search of files finds the two invoices by their names. Paperless also finds the home insurance renewal: its text says "invoice", its name doesn't.</sub>
 
+The [documentation website](https://dennis-otto.github.io/paperless-unified-search/) has this documentation as a guide, together with the architecture, the security design and the roadmap.
+
 <sub>💛 If Paperless Unified Search is useful to you, you can [support its development](https://github.com/sponsors/Dennis-Otto).</sub>
 
 [Quick start](#quick-start) · [Architecture](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/architecture.md) · [Security design](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/security.md) · [Roadmap](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/roadmap.md) · [Releases](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/releases.md) · [Changelog](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CHANGELOG.md)
 
+<!-- --8<-- [start:quick-start-section] -->
+
 ## Quick start
+
+<!-- --8<-- [start:quick-start] -->
 
 1. Install **Paperless Unified Search** from the [Nextcloud App Store](https://apps.nextcloud.com/apps/paperless_unified_search) under *Apps*, or with `occ app:install paperless_unified_search`.
 2. In Paperless-ngx, create an account that may read the documents to search, and an API token for it.
 3. In Nextcloud, open **Administration settings → Paperless Unified Search**, enter the Paperless URL and the token, and select **Test connection and save**. With [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) installed, the account it writes the archive with is the **Archive account**; otherwise enter the account that owns the synchronized files.
 4. Search in Nextcloud, switch on **Search connected services** and look under **Paperless documents**. A result appears for every document whose synchronized file you can open: a file of the archive account with `[P<ID>]` in its name, your own if you are that account, or one it shared with you. [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) creates such files.
 
+<!-- --8<-- [end:quick-start] -->
+
 [Configuration](#configuration) and [Usage](#usage) have the details.
+
+<!-- --8<-- [end:quick-start-section] -->
 
 ## Screenshots
 
@@ -62,6 +73,8 @@ Nextcloud in the browser of a phone. The Nextcloud apps for iOS and Android open
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/03-admin-settings-dark.png">
   <img alt="Paperless Unified Search administration settings in Nextcloud" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/03-admin-settings.png">
 </picture>
+
+<!-- --8<-- [start:how-it-works] -->
 
 ## How it works
 
@@ -107,12 +120,18 @@ flowchart LR
 
 This app does not synchronize documents itself. For a native, configurable synchronization solution, use the companion [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) app. Both apps use the same stable `[P<ID>]` marker and are designed to work together without coupling their release cycles.
 
+<!-- --8<-- [end:how-it-works] -->
+<!-- --8<-- [start:requirements] -->
+
 ## Requirements
 
 - Nextcloud 33 through 35
 - PHP 8.2 or newer as supported by the corresponding Nextcloud release
 - A reachable Paperless-ngx instance with API access
 - Synchronized files whose names contain `[P<ID>]`, owned by one Nextcloud account, for example those of Paperless Sync
+
+<!-- --8<-- [end:requirements] -->
+<!-- --8<-- [start:configuration] -->
 
 ## Configuration
 
@@ -128,11 +147,17 @@ The configuration is global. Access control remains user-specific because the ap
 
 By default, Nextcloud searches Paperless only after the user enables **Search connected services**. When the trusted-service option is enabled, every global search term from every Nextcloud user is sent to Paperless automatically and the connected-services switch no longer controls this provider. Reload Nextcloud after changing this option.
 
+<!-- --8<-- [end:configuration] -->
+<!-- --8<-- [start:usage] -->
+
 ## Usage
 
 Open Nextcloud's global search, enable **Search connected services**, and select **Paperless documents**. Nextcloud 32 and later disable external providers after a page reload, so this switch must be enabled again unless an administrator has enabled trusted-service mode.
 
 Documents without a synchronized `[P<ID>]` file of the archive account are intentionally omitted. This also keeps Inbox-only documents out of Nextcloud search when the synchronization process does not export them.
+
+<!-- --8<-- [end:usage] -->
+<!-- --8<-- [start:security-and-privacy] -->
 
 ## Security and privacy
 
@@ -149,6 +174,8 @@ Documents without a synchronized `[P<ID>]` file of the archive account are inten
 - OpenSSF Scorecard audits the repository's supply-chain security every week.
 
 See [SECURITY.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/SECURITY.md) for reporting security issues.
+
+<!-- --8<-- [end:security-and-privacy] -->
 
 ## Development
 

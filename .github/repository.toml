@@ -4,7 +4,7 @@
 
 [repository]
 description = "OCR-powered Paperless-ngx search, seamlessly integrated into Nextcloud"
-homepage = "https://apps.nextcloud.com/apps/paperless_unified_search"
+homepage = "https://dennis-otto.github.io/paperless-unified-search/"
 topics = ["document-management", "full-text-search", "nextcloud", "ocr", "paperless-ngx", "php", "search"]
 has_issues = true
 has_discussions = true
