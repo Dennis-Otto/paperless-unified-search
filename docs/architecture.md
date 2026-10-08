@@ -1,6 +1,6 @@
 # Architecture
 
-[← README](../README.md) · [Security design](security.md) · [Roadmap](roadmap.md) · [Releases](releases.md)
+[← README](https://github.com/Dennis-Otto/paperless-unified-search) · [Security design](security.md) · [Roadmap](roadmap.md) · [Releases](releases.md)
 
 Paperless Unified Search is a Nextcloud app in PHP. It adds a provider to Nextcloud's unified search that asks Paperless-ngx and shows the documents whose synchronized files the searching user can read. It stores no documents and no index of its own, and has no server, daemon or port of its own.
 
