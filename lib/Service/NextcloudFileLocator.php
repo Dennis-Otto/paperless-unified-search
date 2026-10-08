@@ -20,8 +20,14 @@ final class NextcloudFileLocator {
 	) {
 	}
 
-	public function findForUser(IUser $user, int $paperlessDocumentId): ?File {
-		if ($paperlessDocumentId < 1) {
+	/**
+	 * The file of a Paperless document that the user can open: a file of the archive
+	 * account whose name carries the marker of the document. The marker alone proves
+	 * nothing, since anyone can give a file such a name; the files of the archive
+	 * account reach other users only through its shares.
+	 */
+	public function findForUser(IUser $user, int $paperlessDocumentId, string $archiveOwner): ?File {
+		if ($paperlessDocumentId < 1 || $archiveOwner === '') {
 			return null;
 		}
 
@@ -30,7 +36,9 @@ final class NextcloudFileLocator {
 		$matches = [];
 
 		foreach ($userFolder->search($marker) as $node) {
-			if ($node instanceof File && str_contains($node->getName(), $marker)) {
+			if ($node instanceof File
+				&& str_contains($node->getName(), $marker)
+				&& $node->getOwner()?->getUID() === $archiveOwner) {
 				$matches[] = $node;
 			}
 		}

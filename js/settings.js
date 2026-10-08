@@ -48,6 +48,7 @@
 		const urlInput = document.getElementById('paperless-unified-search-url')
 		const tokenInput = document.getElementById('paperless-unified-search-token')
 		const alwaysSearchInput = document.getElementById('paperless-unified-search-always-search')
+		const archiveOwnerInput = document.getElementById('paperless-unified-search-archive-owner')
 		const saveButton = document.getElementById('paperless-unified-search-save')
 		const resetButton = document.getElementById('paperless-unified-search-reset')
 		const status = document.getElementById('paperless-unified-search-status')
@@ -73,11 +74,13 @@
 					url: urlInput.value,
 					token: tokenInput.value,
 					alwaysSearch: alwaysSearchInput.checked,
+					archiveOwner: archiveOwnerInput.value,
 				})
 				tokenInput.value = ''
 				tokenInput.placeholder = translate('Configured — leave blank to keep it')
 				root.dataset.tokenConfigured = config.tokenConfigured ? 'true' : 'false'
 				alwaysSearchInput.checked = Boolean(config.alwaysSearch)
+				archiveOwnerInput.value = config.archiveOwner || ''
 				resetButton.disabled = false
 				showStatus(translate('Connection successful. Settings saved.'), false)
 			} catch (error) {
@@ -100,6 +103,7 @@
 				tokenInput.placeholder = translate('Required')
 				root.dataset.tokenConfigured = 'false'
 				alwaysSearchInput.checked = false
+				archiveOwnerInput.value = ''
 				showStatus(translate('Paperless disconnected.'), false)
 			} catch (error) {
 				showStatus(error.message || translate('Could not disconnect Paperless.'), true)

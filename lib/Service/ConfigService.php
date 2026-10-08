@@ -18,7 +18,11 @@ use OCP\Security\ICredentialsManager;
 final class ConfigService {
 	private const URL_KEY = 'paperless_url';
 	private const ALWAYS_SEARCH_KEY = 'always_search';
+	private const ARCHIVE_OWNER_KEY = 'archive_owner';
 	private const TOKEN_IDENTIFIER = AppConstants::APP_ID . '.api-token';
+	// Paperless Sync writes the archive into the files of this account.
+	private const SYNC_APP_ID = 'paperless_sync';
+	private const SYNC_ACCOUNT_KEY = 'target_user';
 
 	/** @psalm-suppress PossiblyUnusedMethod */
 	public function __construct(
@@ -32,7 +36,28 @@ final class ConfigService {
 			$this->getUrl(),
 			$this->getToken() !== '',
 			$this->isAlwaysSearchEnabled(),
+			$this->getArchiveOwnerSetting(),
+			$this->getSyncAccount(),
 		);
+	}
+
+	/**
+	 * The account whose files stand for the Paperless documents: the one of the
+	 * settings, or else the account that Paperless Sync writes the archive with.
+	 * Empty when neither is known, and then the search shows no document.
+	 */
+	public function getArchiveOwner(): string {
+		$owner = $this->getArchiveOwnerSetting();
+
+		return $owner !== '' ? $owner : $this->getSyncAccount();
+	}
+
+	public function getArchiveOwnerSetting(): string {
+		return trim($this->config->getValueString(AppConstants::APP_ID, self::ARCHIVE_OWNER_KEY, ''));
+	}
+
+	public function getSyncAccount(): string {
+		return trim($this->config->getValueString(self::SYNC_APP_ID, self::SYNC_ACCOUNT_KEY, ''));
 	}
 
 	public function isConfigured(): bool {
@@ -67,26 +92,33 @@ final class ConfigService {
 		return $token;
 	}
 
-	public function save(string $url, string $token, bool $alwaysSearch = false): PublicConfig {
+	public function save(string $url, string $token, bool $alwaysSearch = false, string $archiveOwner = ''): PublicConfig {
 		$normalizedUrl = $this->normalizeUrl($url);
 		$normalizedToken = trim($token);
 		if ($normalizedToken === '') {
 			throw new InvalidArgumentException('A Paperless API token is required.');
 		}
 
+		$normalizedOwner = trim($archiveOwner);
 		$this->config->setValueString(AppConstants::APP_ID, self::URL_KEY, $normalizedUrl);
 		$this->config->setValueBool(AppConstants::APP_ID, self::ALWAYS_SEARCH_KEY, $alwaysSearch);
+		if ($normalizedOwner === '') {
+			$this->config->deleteKey(AppConstants::APP_ID, self::ARCHIVE_OWNER_KEY);
+		} else {
+			$this->config->setValueString(AppConstants::APP_ID, self::ARCHIVE_OWNER_KEY, $normalizedOwner);
+		}
 		$this->credentialsManager->store('', self::TOKEN_IDENTIFIER, $normalizedToken);
 
-		return new PublicConfig($normalizedUrl, true, $alwaysSearch);
+		return new PublicConfig($normalizedUrl, true, $alwaysSearch, $normalizedOwner, $this->getSyncAccount());
 	}
 
 	public function reset(): PublicConfig {
 		$this->config->deleteKey(AppConstants::APP_ID, self::URL_KEY);
 		$this->config->deleteKey(AppConstants::APP_ID, self::ALWAYS_SEARCH_KEY);
+		$this->config->deleteKey(AppConstants::APP_ID, self::ARCHIVE_OWNER_KEY);
 		$this->credentialsManager->delete('', self::TOKEN_IDENTIFIER);
 
-		return new PublicConfig('', false, false);
+		return new PublicConfig('', false, false, '', $this->getSyncAccount());
 	}
 
 	public function normalizeUrl(string $url): string {

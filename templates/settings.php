@@ -53,6 +53,22 @@ $config = $_['config'];
 			<?php p($l->t('Use a dedicated, read-only Paperless account. The token is encrypted by Nextcloud and is never returned to the browser.')); ?>
 		</p>
 
+		<p>
+			<label for="paperless-unified-search-archive-owner"><?php p($l->t('Archive account')); ?></label>
+			<input
+				id="paperless-unified-search-archive-owner"
+				name="archiveOwner"
+				type="text"
+				autocomplete="off"
+				value="<?php p($config->archiveOwner); ?>"
+				aria-describedby="paperless-unified-search-archive-owner-hint"
+				placeholder="<?php p($config->syncAccount !== '' ? $l->t('Paperless Sync: %s — leave blank to use it', [$config->syncAccount]) : $l->t('User ID of the account that owns the synchronized files')); ?>">
+		</p>
+
+		<p id="paperless-unified-search-archive-owner-hint" class="settings-hint">
+			<?php p($l->t('Only the files of this account stand for Paperless documents: a user sees a document when this account shares its file with them. Share the archive read-only. Without an archive account, the search shows no Paperless documents.')); ?>
+		</p>
+
 		<div class="paperless-unified-search-trusted-service">
 			<input
 				id="paperless-unified-search-always-search"
@@ -85,6 +101,6 @@ $config = $_['config'];
 
 	<div class="paperless-unified-search-note">
 		<strong><?php p($l->t('File matching')); ?></strong>
-		<p><?php p($l->t('A Paperless document is shown only when an accessible Nextcloud filename contains its unique marker, for example [P123].')); ?></p>
+		<p><?php p($l->t('A Paperless document is shown only when the user can open a file of the archive account whose name contains its unique marker, for example [P123].')); ?></p>
 	</div>
 </div>

@@ -22,7 +22,11 @@ use PHPUnit\Framework\TestCase;
 final class AdminSettingsTest extends TestCase {
 	public function testTheFormShowsThePublicConfigAndTheRoutesOfTheSettings(): void {
 		$config = $this->createStub(IAppConfig::class);
-		$config->method('getValueString')->willReturn('https://paperless.example.com');
+		$config->method('getValueString')->willReturnCallback(static fn (string $app, string $key): string => match ($app . '.' . $key) {
+			AppConstants::APP_ID . '.paperless_url' => 'https://paperless.example.com',
+			'paperless_sync.target_user' => 'sync',
+			default => '',
+		});
 		$config->method('getValueBool')->willReturn(true);
 
 		$credentials = $this->createStub(ICredentialsManager::class);
@@ -50,6 +54,8 @@ final class AdminSettingsTest extends TestCase {
 			'url' => 'https://paperless.example.com',
 			'tokenConfigured' => true,
 			'alwaysSearch' => true,
+			'archiveOwner' => '',
+			'syncAccount' => 'sync',
 		], $params['config']->jsonSerialize());
 		self::assertStringNotContainsString('TEST_VALUE', json_encode($params, JSON_THROW_ON_ERROR));
 	}

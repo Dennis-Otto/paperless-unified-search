@@ -17,6 +17,7 @@ use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\Attribute\FrontpageRoute;
 use OCP\AppFramework\Http\JSONResponse;
 use OCP\IRequest;
+use OCP\IUserManager;
 use Throwable;
 
 final class SettingsController extends Controller {
@@ -26,18 +27,23 @@ final class SettingsController extends Controller {
 		IRequest $request,
 		private ConfigService $configService,
 		private PaperlessApiService $paperlessApi,
+		private IUserManager $userManager,
 	) {
 		parent::__construct($appName, $request);
 	}
 
 	#[FrontpageRoute(verb: 'POST', url: '/settings')]
-	public function save(string $url, string $token = '', bool $alwaysSearch = false): JSONResponse {
+	public function save(string $url, string $token = '', bool $alwaysSearch = false, string $archiveOwner = ''): JSONResponse {
 		try {
 			$normalizedUrl = $this->configService->normalizeUrl($url);
 			$effectiveToken = $this->configService->resolveToken($token);
+			$owner = trim($archiveOwner);
+			if ($owner !== '' && !$this->userManager->userExists($owner)) {
+				throw new InvalidArgumentException('The archive account does not exist.');
+			}
 			$this->paperlessApi->testConnection($normalizedUrl, $effectiveToken);
 
-			return new JSONResponse($this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch));
+			return new JSONResponse($this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner));
 		} catch (InvalidArgumentException $exception) {
 			return new JSONResponse(
 				['message' => $exception->getMessage()],

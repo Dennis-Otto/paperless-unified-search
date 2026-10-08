@@ -19,6 +19,7 @@ use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
 use OCP\IAppConfig;
 use OCP\IRequest;
+use OCP\IUserManager;
 use OCP\Security\ICredentialsManager;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -59,8 +60,49 @@ final class SettingsControllerTest extends TestCase {
 			'url' => 'https://paperless.example.com',
 			'tokenConfigured' => true,
 			'alwaysSearch' => true,
+			'archiveOwner' => '',
+			'syncAccount' => '',
 		], json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR));
 		self::assertStringNotContainsString('TEST_VALUE', $response->render());
+	}
+
+	public function testSaveStoresAnArchiveAccountThatExists(): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response(200, self::NO_DOCUMENTS));
+
+		$stored = [];
+		$config = $this->createStub(IAppConfig::class);
+		$config->method('setValueString')->willReturnCallback(
+			static function (string $app, string $key, string $value) use (&$stored): bool {
+				$stored[$app . '.' . $key] = $value;
+
+				return true;
+			},
+		);
+
+		$users = $this->createMock(IUserManager::class);
+		$users->expects(self::once())->method('userExists')->with('archive')->willReturn(true);
+
+		$response = $this->controller($config, $this->createStub(ICredentialsManager::class), $client, $users)
+			->save('https://paperless.example.com', 'TEST_VALUE', false, ' archive ');
+
+		self::assertSame(Http::STATUS_OK, $response->getStatus());
+		self::assertSame('archive', $stored[AppConstants::APP_ID . '.archive_owner']);
+		self::assertSame('archive', json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR)['archiveOwner']);
+	}
+
+	public function testSaveRejectsAnArchiveAccountThatDoesNotExist(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::never())->method('get');
+
+		$users = $this->createStub(IUserManager::class);
+		$users->method('userExists')->willReturn(false);
+
+		$response = $this->controller($this->unchangedConfig(), $this->unchangedCredentials(), $client, $users)
+			->save('https://paperless.example.com', 'TEST_VALUE', false, 'nobody');
+
+		self::assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
+		self::assertSame(['message' => 'The archive account does not exist.'], $response->getData());
 	}
 
 	public function testSaveWithoutATokenKeepsTheStoredOne(): void {
@@ -149,10 +191,17 @@ final class SettingsControllerTest extends TestCase {
 			'url' => '',
 			'tokenConfigured' => false,
 			'alwaysSearch' => false,
+			'archiveOwner' => '',
+			'syncAccount' => '',
 		], json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR));
 	}
 
-	private function controller(IAppConfig $config, ICredentialsManager $credentials, IClient $client): SettingsController {
+	private function controller(
+		IAppConfig $config,
+		ICredentialsManager $credentials,
+		IClient $client,
+		?IUserManager $users = null,
+	): SettingsController {
 		$clientService = $this->createStub(IClientService::class);
 		$clientService->method('newClient')->willReturn($client);
 		$configService = new ConfigService($config, $credentials);
@@ -162,6 +211,7 @@ final class SettingsControllerTest extends TestCase {
 			$this->createStub(IRequest::class),
 			$configService,
 			new PaperlessApiService($configService, $clientService),
+			$users ?? $this->createStub(IUserManager::class),
 		);
 	}
 

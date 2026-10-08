@@ -51,7 +51,13 @@ if "Synthetic OCR mobiletest result" not in entry.get("subline", ""):
 attributes = entry.get("attributes", {})
 if not str(attributes.get("fileId", "")).isdigit():
     fail(f"Missing numeric fileId: {entry!r}")
-if attributes.get("path") != "/Documents/Mobile viewer test [P123].pdf":
+# A share of the archive account appears in the root folder of its recipient.
+expected_path = (
+    "/Mobile viewer test [P123].pdf"
+    if mode == "shared"
+    else "/Documents/Mobile viewer test [P123].pdf"
+)
+if attributes.get("path") != expected_path:
     fail(f"Unexpected user-relative path: {entry!r}")
 
 resource_url = entry.get("resourceUrl", "")
@@ -64,7 +70,7 @@ if mode == "ios":
         fail(f"iOS deep link has the wrong user: {resource_url}")
     if not params.get("link", [""])[0].endswith(f"/f/{attributes['fileId']}"):
         fail(f"iOS deep link has the wrong web fallback: {resource_url}")
-elif mode in ("browser", "android"):
+elif mode in ("browser", "android", "shared"):
     if not resource_url.endswith(f"/f/{attributes['fileId']}"):
         fail(f"Unexpected web/native viewer link: {resource_url}")
 else:

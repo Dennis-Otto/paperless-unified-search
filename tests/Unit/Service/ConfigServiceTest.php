@@ -15,14 +15,16 @@ use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCP\IAppConfig;
 use OCP\Security\ICredentialsManager;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 
 final class ConfigServiceTest extends TestCase {
 	public function testPublicConfigNeverContainsToken(): void {
-		$config = $this->createMock(IAppConfig::class);
-		$config->method('getValueString')
-			->with(AppConstants::APP_ID, 'paperless_url', '')
-			->willReturn('https://paperless.example.com');
+		$config = $this->settings([
+			AppConstants::APP_ID . '.paperless_url' => 'https://paperless.example.com',
+			AppConstants::APP_ID . '.archive_owner' => 'archive',
+			'paperless_sync.target_user' => 'sync',
+		]);
 		$config->method('getValueBool')
 			->with(AppConstants::APP_ID, 'always_search', false)
 			->willReturn(true);
@@ -37,8 +39,70 @@ final class ConfigServiceTest extends TestCase {
 			'url' => 'https://paperless.example.com',
 			'tokenConfigured' => true,
 			'alwaysSearch' => true,
+			'archiveOwner' => 'archive',
+			'syncAccount' => 'sync',
 		], $serialized);
 		self::assertStringNotContainsString('TEST_VALUE', json_encode($serialized, JSON_THROW_ON_ERROR));
+	}
+
+	/**
+	 * @return array<string, array{string, string, string}>
+	 */
+	public static function archiveAccounts(): array {
+		return [
+			'own setting wins' => [' archive ', 'sync', 'archive'],
+			'account of Paperless Sync' => ['', ' sync ', 'sync'],
+			'neither' => ['  ', '', ''],
+		];
+	}
+
+	#[DataProvider('archiveAccounts')]
+	public function testTheArchiveAccountFallsBackToThatOfPaperlessSync(string $setting, string $syncAccount, string $owner): void {
+		$config = $this->settings([
+			AppConstants::APP_ID . '.archive_owner' => $setting,
+			'paperless_sync.target_user' => $syncAccount,
+		]);
+
+		$service = new ConfigService($config, $this->createStub(ICredentialsManager::class));
+
+		self::assertSame($owner, $service->getArchiveOwner());
+	}
+
+	/**
+	 * @return array<string, array{string, ?string}>
+	 */
+	public static function savedArchiveAccounts(): array {
+		return [
+			'an account' => [' archive ', 'archive'],
+			'blank' => ['  ', null],
+		];
+	}
+
+	#[DataProvider('savedArchiveAccounts')]
+	public function testSaveStoresOrForgetsTheArchiveAccount(string $archiveOwner, ?string $stored): void {
+		$values = [];
+		$deleted = [];
+		$config = $this->settings(['paperless_sync.target_user' => 'sync']);
+		$config->method('setValueString')->willReturnCallback(
+			static function (string $app, string $key, string $value) use (&$values): bool {
+				$values[$app . '.' . $key] = $value;
+
+				return true;
+			},
+		);
+		$config->method('deleteKey')->willReturnCallback(
+			static function (string $app, string $key) use (&$deleted): void {
+				$deleted[] = $app . '.' . $key;
+			},
+		);
+
+		$result = (new ConfigService($config, $this->createStub(ICredentialsManager::class)))
+			->save('https://paperless.example.com', 'TEST_VALUE', false, $archiveOwner);
+
+		self::assertSame($stored, $values[AppConstants::APP_ID . '.archive_owner'] ?? null);
+		self::assertSame($stored === null, in_array(AppConstants::APP_ID . '.archive_owner', $deleted, true));
+		self::assertSame($stored ?? '', $result->archiveOwner);
+		self::assertSame('sync', $result->syncAccount);
 	}
 
 	public function testSaveNormalizesUrlAndStoresTokenInCredentialsManager(): void {
@@ -149,10 +213,10 @@ final class ConfigServiceTest extends TestCase {
 		$service->save('https://paperless.example.com', '   ');
 	}
 
-	public function testResetDeletesTheUrlTheSwitchAndTheToken(): void {
+	public function testResetDeletesTheUrlTheSwitchTheArchiveAccountAndTheToken(): void {
 		$deletedKeys = [];
 		$config = $this->createMock(IAppConfig::class);
-		$config->expects(self::exactly(2))
+		$config->expects(self::exactly(3))
 			->method('deleteKey')
 			->willReturnCallback(static function (string $app, string $key) use (&$deletedKeys): void {
 				$deletedKeys[] = $app . '.' . $key;
@@ -168,12 +232,29 @@ final class ConfigServiceTest extends TestCase {
 		self::assertSame([
 			AppConstants::APP_ID . '.paperless_url',
 			AppConstants::APP_ID . '.always_search',
+			AppConstants::APP_ID . '.archive_owner',
 		], $deletedKeys);
 		self::assertSame([
 			'url' => '',
 			'tokenConfigured' => false,
 			'alwaysSearch' => false,
+			'archiveOwner' => '',
+			'syncAccount' => '',
 		], $result->jsonSerialize());
+	}
+
+	/**
+	 * A configuration that answers getValueString by app and key, with '' for any other.
+	 *
+	 * @param array<string, string> $values by "app.key"
+	 */
+	private function settings(array $values): IAppConfig&MockObject {
+		$config = $this->createMock(IAppConfig::class);
+		$config->method('getValueString')->willReturnCallback(
+			static fn (string $app, string $key): string => $values[$app . '.' . $key] ?? '',
+		);
+
+		return $config;
 	}
 
 	/**
