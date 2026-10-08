@@ -27,6 +27,7 @@ credentials*.json
 # The website that MkDocs builds, and the tools of its preview
 /site/
 /.venv-docs/
+/.cache/
 
 # PHP
 /vendor/

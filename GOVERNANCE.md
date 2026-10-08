@@ -39,12 +39,10 @@ Bots do the routine work, each with the least permissions it needs:
 
 If the maintainer can no longer maintain the project, the preferred outcome is a transparent handover to a trusted active contributor, announced in the repository. Until then, the repository should be archived rather than presented as actively maintained.
 
-Today, the maintainer is the only person with access to the repository and to the app in the Nextcloud App Store with its certificate, so the bus factor of the project is 1. Until a second person has that access, these keep the project able to continue:
+The owner has designated a successor through [GitHub's account successor setting](https://docs.github.com/en/account-and-profile/setting-up-and-managing-your-personal-account-on-github/managing-access-to-your-personal-repositories/maintaining-ownership-continuity-of-your-personal-accounts-repositories). Should the owner die, the successor can, once GitHub has confirmed it, transfer the repository to their own account or to an organization and carry it on there with administrator access, or archive it. With the maintainer and the successor, the bus factor of the project is 2. The app in the Nextcloud App Store and its certificate don't pass with the repository: for them the successor needs the maintainer or the App Store. These keep the project able to continue as well:
 
 - Everything that builds, tests, releases and protects the project is in this repository: the code and its tests, the workflows, the settings as code and the documentation. Anyone can fork it under its license and carry on.
 - The bots keep the dependencies current and publish releases of dependency updates, as long as every check passes.
-
-A successor is planned: a second person with administrator access to the repository and to the app in the Nextcloud App Store, who can close issues, accept pull requests and publish releases within a week once the maintainer can no longer do so. They are named in the table of maintainers once they have agreed.
 
 ## Security
 
