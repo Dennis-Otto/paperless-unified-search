@@ -48,10 +48,10 @@ jobs:
       pull-requests: write
     # A release, or a beta of the next one; the jobs below handle both alike.
     outputs:
-      created: ${{ steps.release.outputs.release_created == 'true' || steps.beta.outputs.tag != '' }}
-      tag: ${{ steps.release.outputs.tag_name || steps.beta.outputs.tag }}
-      version: ${{ steps.release.outputs.version || steps.beta.outputs.version }}
-      major: ${{ steps.release.outputs.major }}
+      created: ${{ steps.release.outputs.release_created == 'true' || steps.beta.outputs.tag != '' || steps.resume.outputs.tag != '' }}
+      tag: ${{ steps.release.outputs.tag_name || steps.beta.outputs.tag || steps.resume.outputs.tag }}
+      version: ${{ steps.release.outputs.version || steps.beta.outputs.version || steps.resume.outputs.version }}
+      major: ${{ steps.release.outputs.major || steps.resume.outputs.major }}
     steps:
       - name: Record the network traffic of the job
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -125,6 +125,27 @@ jobs:
           token: ${{ steps.app.outputs.token || secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+      - name: Take up a release that an earlier run left as a draft
+        id: resume
+        # A run that failed after the release was created leaves it as a draft, with
+        # its signed tag. Started by hand, the workflow builds and publishes it.
+        if: github.event_name == 'workflow_dispatch' && steps.release.outputs.release_created != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="$(jq -r '.["."]' .release-please-manifest.json)"
+          draft="$(gh release view "v$version" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || true)"
+          if [[ "$draft" != true ]]; then
+            echo "No draft of v$version to finish."
+            exit 0
+          fi
+          {
+            echo "tag=v$version"
+            echo "version=$version"
+            echo "major=${version%%.*}"
+          } >> "$GITHUB_OUTPUT"
+          echo "The draft of v$version is built and published now." >> "$GITHUB_STEP_SUMMARY"
       - name: Write the text of Unreleased into the release pull request
         if: steps.app.outputs.token != ''
         env:
@@ -242,6 +263,10 @@ jobs:
       contents: write
       id-token: write
     uses: ./.github/workflows/build-release.yml
+    # A called workflow sees the secrets of its environment only when the caller
+    # passes its secrets on: the build signs a Nextcloud app with the key of the
+    # environment release.
+    secrets: inherit
     with:
       tag: ${{ needs.release-please.outputs.tag }}
       version: ${{ needs.release-please.outputs.version }}
