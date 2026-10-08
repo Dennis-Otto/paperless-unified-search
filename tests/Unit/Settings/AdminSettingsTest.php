@@ -11,14 +11,19 @@ namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Settings;
 
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Model\PublicConfig;
+use OCA\PaperlessUnifiedSearch\Model\SearchFailure;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
+use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCA\PaperlessUnifiedSearch\Settings\AdminSection;
 use OCA\PaperlessUnifiedSearch\Settings\AdminSettings;
 use OCP\AppFramework\Http\TemplateResponse;
+use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IAppConfig;
+use OCP\IDateTimeFormatter;
 use OCP\IL10N;
 use OCP\IURLGenerator;
 use OCP\Security\ICredentialsManager;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class AdminSettingsTest extends TestCase {
@@ -42,7 +47,7 @@ final class AdminSettingsTest extends TestCase {
 				AppConstants::APP_ID . '.settings.reset' => '/apps/paperless_unified_search/settings#reset',
 			});
 
-		$form = (new AdminSettings(new ConfigService($config, $credentials), $urlGenerator))->getForm();
+		$form = $this->settings($config, $credentials, $urlGenerator)->getForm();
 
 		self::assertSame(AppConstants::APP_ID, $form->getApp());
 		self::assertSame('settings', $form->getTemplateName());
@@ -60,6 +65,35 @@ final class AdminSettingsTest extends TestCase {
 			'syncAccount' => 'sync',
 		], $params['config']->jsonSerialize());
 		self::assertStringNotContainsString('TEST_VALUE', json_encode($params, JSON_THROW_ON_ERROR));
+		self::assertNull($params['failure']);
+		self::assertSame('', $params['failureTime']);
+		self::assertSame('', $params['recoveryTime']);
+	}
+
+	/**
+	 * @return array<string, array{int, string}>
+	 */
+	public static function recoveries(): array {
+		return [
+			'searches work again' => [1791500060, 'at 1791500060'],
+			'no search has worked since' => [0, ''],
+		];
+	}
+
+	#[DataProvider('recoveries')]
+	public function testTheFormShowsTheLastFailedSearch(int $recoveredAt, string $recoveryTime): void {
+		$failure = new SearchFailure(1791500000, SearchFailure::STEP_PAPERLESS, 'ConnectException', 'cURL error 28', 3012);
+		$config = $this->createStub(IAppConfig::class);
+		$config->method('getValueArray')->willReturn($failure->jsonSerialize());
+		$config->method('getValueInt')->willReturn($recoveredAt);
+
+		$params = $this->settings($config, $this->createStub(ICredentialsManager::class), $this->createStub(IURLGenerator::class))
+			->getForm()
+			->getParams();
+
+		self::assertEquals($failure, $params['failure']);
+		self::assertSame('at 1791500000', $params['failureTime']);
+		self::assertSame($recoveryTime, $params['recoveryTime']);
 	}
 
 	public function testTheFormHasASectionOfItsOwn(): void {
@@ -69,10 +103,7 @@ final class AdminSettingsTest extends TestCase {
 		$l10n = $this->createStub(IL10N::class);
 		$l10n->method('t')
 			->willReturnCallback(static fn (string $text): string => $text === 'Paperless Unified Search' ? 'Paperless-Suche' : $text);
-		$settings = new AdminSettings(
-			new ConfigService($this->createStub(IAppConfig::class), $this->createStub(ICredentialsManager::class)),
-			$urlGenerator,
-		);
+		$settings = $this->settings($this->createStub(IAppConfig::class), $this->createStub(ICredentialsManager::class), $urlGenerator);
 		$section = new AdminSection($l10n, $urlGenerator);
 
 		self::assertSame(AppConstants::APP_ID, $section->getID());
@@ -81,5 +112,19 @@ final class AdminSettingsTest extends TestCase {
 		self::assertSame('/apps/paperless_unified_search/img/app.svg', $section->getIcon());
 		self::assertSame(56, $section->getPriority());
 		self::assertSame(50, $settings->getPriority());
+	}
+
+	private function settings(IAppConfig $config, ICredentialsManager $credentials, IURLGenerator $urlGenerator): AdminSettings {
+		$formatter = $this->createMock(IDateTimeFormatter::class);
+		$formatter->method('formatDateTime')
+			->with(self::isType('int'), 'short', 'medium')
+			->willReturnCallback(static fn (int $timestamp): string => 'at ' . $timestamp);
+
+		return new AdminSettings(
+			new ConfigService($config, $credentials),
+			$urlGenerator,
+			new SearchDiagnostics($config, $this->createStub(ITimeFactory::class)),
+			$formatter,
+		);
 	}
 }

@@ -19,6 +19,7 @@ use OCP\IAppConfig;
 use OCP\Security\ICredentialsManager;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 use Throwable;
 use UnexpectedValueException;
 
@@ -53,6 +54,7 @@ final class PaperlessApiServiceTest extends TestCase {
 				],
 				'connect_timeout' => 3,
 				'timeout' => 10,
+				'http_errors' => false,
 				'query' => ['page' => 1, 'page_size' => 1],
 			])
 			->willReturn($this->response(200, self::NO_DOCUMENTS));
@@ -177,6 +179,53 @@ final class PaperlessApiServiceTest extends TestCase {
 		$this->expectExceptionMessage($message);
 
 		$this->service($client)->testConnection('https://paperless.example.com', 'TEST_VALUE');
+	}
+
+	public function testARequestWithoutAnswerGetsASecondTry(): void {
+		$answer = $this->response(200, '{"count":1,"next":null,"results":[{"id":7}]}');
+		$calls = 0;
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::exactly(2))
+			->method('get')
+			->willReturnCallback(static function () use (&$calls, $answer): IResponse {
+				if (++$calls === 1) {
+					throw new RuntimeException('cURL error 28: Connection timed out after 3001 milliseconds');
+				}
+
+				return $answer;
+			});
+
+		self::assertSame(
+			['count' => 1, 'next' => null, 'results' => [['id' => 7]]],
+			$this->service($client)->searchDocuments('invoice', 1, 10),
+		);
+	}
+
+	public function testASecondRequestWithoutAnswerFails(): void {
+		$calls = 0;
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::exactly(2))
+			->method('get')
+			->willReturnCallback(static function () use (&$calls): never {
+				throw new RuntimeException(++$calls === 1 ? 'cURL error 6: Could not resolve host' : 'cURL error 7: Failed to connect');
+			});
+
+		$this->expectException(RuntimeException::class);
+		$this->expectExceptionMessage('cURL error 7: Failed to connect');
+
+		$this->service($client)->searchDocuments('invoice', 1, 10);
+	}
+
+	public function testAnAnswerOfPaperlessGetsNoSecondTry(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->willReturn($this->response(502, '<html>Bad gateway</html>'));
+
+		$this->expectException(UnexpectedValueException::class);
+		$this->expectExceptionMessage('Paperless returned HTTP 502.');
+
+		$this->service($client)->searchDocuments('invoice', 1, 10);
 	}
 
 	private function service(IClient $client, string $url = 'https://paperless.example.com', ?string $token = 'TEST_VALUE'): PaperlessApiService {

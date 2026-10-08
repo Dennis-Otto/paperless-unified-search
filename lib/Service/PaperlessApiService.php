@@ -11,6 +11,8 @@ namespace OCA\PaperlessUnifiedSearch\Service;
 
 use OCP\Http\Client\IClient;
 use OCP\Http\Client\IClientService;
+use OCP\Http\Client\IResponse;
+use Throwable;
 use UnexpectedValueException;
 
 final class PaperlessApiService {
@@ -61,7 +63,7 @@ final class PaperlessApiService {
 			throw new UnexpectedValueException('Paperless is not configured.');
 		}
 
-		$response = $this->client->get(
+		$response = $this->send(
 			rtrim($url, '/') . '/api/documents/',
 			[
 				'headers' => [
@@ -71,6 +73,8 @@ final class PaperlessApiService {
 				],
 				'connect_timeout' => 3,
 				'timeout' => 10,
+				// Every answer of Paperless reaches the check of its status below.
+				'http_errors' => false,
 				'query' => $query,
 			],
 		);
@@ -103,5 +107,20 @@ final class PaperlessApiService {
 			'next' => isset($data['next']) && is_string($data['next']) ? $data['next'] : null,
 			'results' => $results,
 		];
+	}
+
+	/**
+	 * A request that gets no answer at all, because the name of the host doesn't resolve
+	 * or the connection fails or times out, gets one more try: such failures often pass
+	 * within a moment. An answer of Paperless, whatever its status, gets none.
+	 *
+	 * @param array<string, mixed> $options
+	 */
+	private function send(string $url, array $options): IResponse {
+		try {
+			return $this->client->get($url, $options);
+		} catch (Throwable) {
+			return $this->client->get($url, $options);
+		}
 	}
 }

@@ -11,14 +11,14 @@ What Paperless Unified Search protects, what it trusts and which risks remain. [
 - A Paperless document appears in the results of a user only when that user can open a file of the archive account whose name carries its marker `[P<ID>]`: their own if they are that account, or one it shared with them. A file that only carries the marker in its name stands for no document. Selecting the result opens that file in Nextcloud.
 - Search terms reach Paperless only when the user switches on *Search connected services*, or when an administrator has marked Paperless as trusted. They travel from server to server, never from the browser to Paperless.
 - Requests to Paperless go through Nextcloud's HTTP client, which checks TLS certificates.
-- A failed search is logged with the kind of error only, without the term, the URL or the token.
+- A failed search is logged with the kind of error only, without the term, the URL or the token. The administration settings show the last one with its message as well, which loses the token, the term and the query of every URL first.
 
 ## What is protected
 
 | Asset | Where it lives | Protection |
 | --- | --- | --- |
 | The Paperless API token | Nextcloud's credentials manager | Stored only there; the settings carry only whether a token is configured; saving without a new token keeps the stored one |
-| The search terms of the users | Sent to Paperless | Only when the user asks for it or an administrator trusts Paperless; never logged by the app |
+| The search terms of the users | Sent to Paperless | Only when the user asks for it or an administrator trusts Paperless; never logged by the app; removed from the message of the last failed search, as is the query of every URL |
 | Documents in Paperless | Paperless | Read through a dedicated account with read access only; shown only through a file of the archive account that the user can read |
 | The configuration | Nextcloud's app configuration | Changed only by administrators, after a test of the connection |
 
@@ -55,7 +55,8 @@ flowchart LR
 | A malformed or hostile answer of Paperless | The answer is checked for its shape; documents without a usable ID are left out; a failing search returns no results instead of an error | `testAWrongAnswerOfPaperlessFails`, `testDocumentsWithoutAUsableIdAreLeftOut`, `testAFailedSearchIsLoggedWithoutItsDetails` |
 | Text of a document runs as script in the search | The excerpt loses every HTML tag; Nextcloud's search shows titles and excerpts as text | `testTitleAndSublineComeFromTheDocument` in `tests/Unit/Search/PaperlessSearchProviderTest.php` |
 | A user names a file with the marker of a document that they may not see | Only files that the archive account owns stand for documents, and users receive them only through its shares; without an archive account the search shows no documents and doesn't ask Paperless | `testIgnoresFilesThatTheArchiveAccountDoesNotOwn`, `testAFileOfAnotherAccountShowsNoDocument`, `testWithoutAnArchiveAccountPaperlessIsNotAsked`, and the forged file of the end-to-end tests |
-| A slow Paperless blocks the search | A connection timeout of 3 seconds and a timeout of 10 seconds for every request | `lib/Service/PaperlessApiService.php` |
+| A slow Paperless blocks the search | A connection timeout of 3 seconds and a timeout of 10 seconds for every request, and a second try only for a request that got no answer at all | `lib/Service/PaperlessApiService.php`, `testARequestWithoutAnswerGetsASecondTry`, `testAnAnswerOfPaperlessGetsNoSecondTry` |
+| An administrator learns the search terms of the users or the token from the last failed search | The stored message loses the token, the term and the query and fragment of every URL, and only administrators can open the settings | `testAFailureIsRememberedWithoutTheTokenTheTermAndTheQuery` in `tests/Unit/Service/SearchDiagnosticsTest.php`, `testAFailedSearchLeavesOutTheTokenAndTheTerm` |
 
 The Docker end-to-end tests run the real search endpoint of every supported Nextcloud version against a mock of the Paperless API, with users who may and may not read a file, a file that only carries the marker and a share of the archive account ([tests/e2e/README.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/tests/e2e/README.md)).
 

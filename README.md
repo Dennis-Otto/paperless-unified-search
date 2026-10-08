@@ -145,6 +145,8 @@ This app does not synchronize documents itself. For a native, configurable synch
 
 The configuration is global. Access control remains user-specific because the app discards every Paperless hit for which the searching Nextcloud user can't open a matching file of the archive account. Share the archive read-only with the users who may see its documents. Without an archive account, the search shows no Paperless documents.
 
+When Paperless documents are missing from the search, look at **Last failed search** at the end of the settings. A failed search shows the users no Paperless documents and no error, so the settings show when the last one failed, whether asking Paperless or looking for the files in Nextcloud, with the kind of error, its message and how long it took, and since when searches work again. This helps where the hoster keeps the log of Nextcloud from administrators. A request to Paperless that gets no answer at all, as when the connection fails, is sent a second time before the search gives up.
+
 By default, Nextcloud searches Paperless only after the user enables **Search connected services**. When the trusted-service option is enabled, every global search term from every Nextcloud user is sent to Paperless automatically and the connected-services switch no longer controls this provider. Reload Nextcloud after changing this option.
 
 <!-- --8<-- [end:configuration] -->
@@ -164,6 +166,7 @@ Documents without a synchronized `[P<ID>]` file of the archive account are inten
 - The Paperless API token is stored only in Nextcloud's server-side credentials manager.
 - The token is never returned to browser JavaScript or rendered into HTML.
 - Search results are filtered through the current user's Nextcloud filesystem view.
+- The settings show administrators the last failed search without the API token, the search term or the query of any URL.
 - Search terms are sent server-to-server only when connected-services search or trusted-service mode is enabled.
 - Administrators can explicitly trust the configured Paperless server to include it automatically in every user's global searches.
 - No deployment credentials, private hostnames, internal addresses, or instance configuration belong in this repository.

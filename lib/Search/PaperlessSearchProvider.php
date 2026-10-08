@@ -10,9 +10,11 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\Search;
 
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
+use OCA\PaperlessUnifiedSearch\Model\SearchFailure;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
+use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCP\Files\File;
 use OCP\IL10N;
 use OCP\IRequest;
@@ -35,6 +37,7 @@ final class PaperlessSearchProvider implements IExternalProvider {
 		private IRequest $request,
 		private LoggerInterface $logger,
 		private ConfigService $configService,
+		private SearchDiagnostics $diagnostics,
 	) {
 	}
 
@@ -70,9 +73,12 @@ final class PaperlessSearchProvider implements IExternalProvider {
 
 		$page = $this->getPage($query->getCursor());
 		$limit = max(1, min(50, $query->getLimit()));
+		$started = microtime(true);
+		$step = SearchFailure::STEP_PAPERLESS;
 
 		try {
 			$response = $this->paperlessApi->searchDocuments($term, $page, $limit);
+			$step = SearchFailure::STEP_FILES;
 			$entries = [];
 
 			foreach ($response['results'] as $document) {
@@ -81,20 +87,27 @@ final class PaperlessSearchProvider implements IExternalProvider {
 					$entries[] = $entry;
 				}
 			}
-
-			if ($response['next'] !== null) {
-				return SearchResult::paginated($this->getName(), $entries, $page + 1);
-			}
-
-			return SearchResult::complete($this->getName(), $entries);
 		} catch (Throwable $exception) {
 			$this->logger->warning('Paperless unified search failed ({errorType})', [
 				'app' => AppConstants::APP_ID,
 				'errorType' => $exception::class,
 			]);
+			$this->diagnostics->recordFailure(
+				$step,
+				$exception,
+				(int)round((microtime(true) - $started) * 1000.0),
+				[$this->configService->getToken(), $term],
+			);
 
 			return SearchResult::complete($this->getName(), []);
 		}
+
+		$this->diagnostics->recordSuccess();
+		if ($response['next'] !== null) {
+			return SearchResult::paginated($this->getName(), $entries, $page + 1);
+		}
+
+		return SearchResult::complete($this->getName(), $entries);
 	}
 
 	private function getPage(mixed $cursor): int {

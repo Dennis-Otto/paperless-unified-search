@@ -52,10 +52,18 @@
 		const saveButton = document.getElementById('paperless-unified-search-save')
 		const resetButton = document.getElementById('paperless-unified-search-reset')
 		const status = document.getElementById('paperless-unified-search-status')
+		const diagnostics = document.getElementById('paperless-unified-search-diagnostics')
 
 		function setBusy(busy) {
 			saveButton.disabled = busy
 			resetButton.disabled = busy
+		}
+
+		// Saving and disconnecting forget the last failed search.
+		function clearDiagnostics() {
+			const message = document.createElement('p')
+			message.textContent = translate('No failed search recorded.')
+			diagnostics.replaceChildren(message)
 		}
 
 		function showStatus(message, error) {
@@ -82,6 +90,7 @@
 				alwaysSearchInput.checked = Boolean(config.alwaysSearch)
 				archiveOwnerInput.value = config.archiveOwner || ''
 				resetButton.disabled = false
+				clearDiagnostics()
 				showStatus(translate('Connection successful. Settings saved.'), false)
 			} catch (error) {
 				showStatus(error.message || translate('Could not connect to Paperless.'), true)
@@ -104,6 +113,7 @@
 				root.dataset.tokenConfigured = 'false'
 				alwaysSearchInput.checked = false
 				archiveOwnerInput.value = ''
+				clearDiagnostics()
 				showStatus(translate('Paperless disconnected.'), false)
 			} catch (error) {
 				showStatus(error.message || translate('Could not disconnect Paperless.'), true)
