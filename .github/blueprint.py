@@ -873,6 +873,34 @@ def block(text: str) -> str:
     return f"\n\n{text}\n\n" if text.strip() else "\n\n"
 
 
+SUBHEADING = re.compile(r"^### .*$", re.MULTILINE)
+LIST_LINE = re.compile(r"^(?:\s*(?:[-*+]|\d+\.)\s|\s{2,}\S)")
+
+
+def merge_headings(text: str) -> str:
+    """The text with each kind of change under one heading: when two pull requests
+    each start a "### Features", the entries of the second join those of the first."""
+    headings = list(SUBHEADING.finditer(text))
+    if len(headings) == len({match.group().strip() for match in headings}):
+        return text
+    ends = [match.start() for match in headings[1:]] + [len(text)]
+    bodies: dict[str, list[str]] = {}
+    for match, end in zip(headings, ends, strict=True):
+        body = text[match.end() : end].strip("\n")
+        chunks = bodies.setdefault(match.group().strip(), [])
+        if body.strip():
+            chunks.append(body)
+    parts = [text[: headings[0].start()].strip("\n")]
+    for heading, chunks in bodies.items():
+        # Entries of a list stay one list; other text keeps its paragraphs.
+        lines = [
+            line for chunk in chunks for line in chunk.splitlines() if line.strip()
+        ]
+        joint = "\n" if all(LIST_LINE.match(line) for line in lines) else "\n\n"
+        parts.append(f"{heading}\n\n{joint.join(chunks)}" if chunks else heading)
+    return "\n\n".join(part for part in parts if part) + "\n"
+
+
 @dataclass
 class Changelog:
     """A changelog as its preamble and its sections, each a heading and its body."""
@@ -924,7 +952,9 @@ def release_changelog(version: str, main: str, branch: str) -> str:
     heading, generated = written.sections[found]
     changelog = Changelog.parse(main)
     unreleased = changelog.find(UNRELEASED)
-    text = "" if unreleased is None else changelog.sections[unreleased][1]
+    text = (
+        "" if unreleased is None else merge_headings(changelog.sections[unreleased][1])
+    )
     keep = "-" in version or not text.strip()
     others = [
         section
@@ -973,7 +1003,7 @@ def beta_notes(version: str, changelog: str) -> str:
     release = version.split("-", 1)[0]
     log = Changelog.parse(changelog)
     found = log.find(UNRELEASED)
-    text = "" if found is None else log.sections[found][1].strip("\n")
+    text = "" if found is None else merge_headings(log.sections[found][1]).strip("\n")
     lines = [
         f"A beta of the next release, {release}, with what `main` holds now, for the "
         "testers who take prereleases. The release itself follows when it is ready.",

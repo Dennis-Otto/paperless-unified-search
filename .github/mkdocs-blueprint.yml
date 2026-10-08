@@ -27,10 +27,9 @@ theme:
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
+  # No instant loading of pages: with it, the language switch would keep leading to
+  # the page that was loaded first.
   features:
-    # Pages load without a full reload, with a bar while they do.
-    - navigation.instant
-    - navigation.instant.progress
     - navigation.tracking
     # The sections of the menu as tabs in the header, and the path above a page.
     - navigation.tabs
@@ -57,6 +56,12 @@ plugins:
   social: {}
   # A picture opens enlarged with a click.
   glightbox: {}
+  # The pages of other languages, such as index.de.md beside index.md. A website in
+  # more than one language turns it on with its languages in mkdocs.yml; it comes
+  # before the dates, which take the language of a page from it.
+  i18n:
+    enabled: false
+    docs_structure: suffix
   # The date of the last change of a page, from the history of git.
   git-revision-date-localized:
     type: date
