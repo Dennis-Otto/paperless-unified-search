@@ -12,6 +12,13 @@ All notable changes to this project are documented in this file.
 
 - **A request to Paperless without an answer gets a second try.** When a request to Paperless gets no answer at all, because the name of its host doesn't resolve or the connection fails or times out, the app sends it once more before the search gives up. Such failures often pass within a moment. An answer of Paperless, whatever its status, gets no second try.
 
+## [0.3.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.2.1...v0.3.0) (2026-10-08)
+
+
+### Features
+
+* **settings:** show the last failed search and retry a request without answer ([#76](https://github.com/Dennis-Otto/paperless-unified-search/issues/76)) ([bc7daab](https://github.com/Dennis-Otto/paperless-unified-search/commit/bc7daab988f3f9a633f8aa9bc8d924ec8a5a3797))
+
 ## [0.2.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.2.0...v0.2.1) (2026-10-08)
 
 ### Fixed
