@@ -13,7 +13,9 @@ use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Controller\SettingsController;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
+use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCP\AppFramework\Http;
+use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Http\Client\IClient;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
@@ -46,6 +48,10 @@ final class SettingsControllerTest extends TestCase {
 		$config->expects(self::once())
 			->method('setValueBool')
 			->with(AppConstants::APP_ID, 'always_search', true);
+		$deleted = [];
+		$config->method('deleteKey')->willReturnCallback(static function (string $app, string $key) use (&$deleted): void {
+			$deleted[] = $app . '.' . $key;
+		});
 
 		$credentials = $this->createMock(ICredentialsManager::class);
 		$credentials->expects(self::once())
@@ -64,6 +70,8 @@ final class SettingsControllerTest extends TestCase {
 			'syncAccount' => '',
 		], json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR));
 		self::assertStringNotContainsString('TEST_VALUE', $response->render());
+		self::assertContains(AppConstants::APP_ID . '.last_failure', $deleted);
+		self::assertContains(AppConstants::APP_ID . '.last_recovery', $deleted);
 	}
 
 	public function testSaveStoresAnArchiveAccountThatExists(): void {
@@ -183,7 +191,13 @@ final class SettingsControllerTest extends TestCase {
 			->method('delete')
 			->with('', AppConstants::APP_ID . '.api-token');
 
-		$response = $this->controller($this->createStub(IAppConfig::class), $credentials, $this->createStub(IClient::class))
+		$deleted = [];
+		$config = $this->createStub(IAppConfig::class);
+		$config->method('deleteKey')->willReturnCallback(static function (string $app, string $key) use (&$deleted): void {
+			$deleted[] = $app . '.' . $key;
+		});
+
+		$response = $this->controller($config, $credentials, $this->createStub(IClient::class))
 			->reset();
 
 		self::assertSame(Http::STATUS_OK, $response->getStatus());
@@ -194,6 +208,8 @@ final class SettingsControllerTest extends TestCase {
 			'archiveOwner' => '',
 			'syncAccount' => '',
 		], json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR));
+		self::assertContains(AppConstants::APP_ID . '.last_failure', $deleted);
+		self::assertContains(AppConstants::APP_ID . '.last_recovery', $deleted);
 	}
 
 	private function controller(
@@ -212,6 +228,7 @@ final class SettingsControllerTest extends TestCase {
 			$configService,
 			new PaperlessApiService($configService, $clientService),
 			$users ?? $this->createStub(IUserManager::class),
+			new SearchDiagnostics($config, $this->createStub(ITimeFactory::class)),
 		);
 	}
 

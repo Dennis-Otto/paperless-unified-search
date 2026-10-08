@@ -11,7 +11,9 @@ namespace OCA\PaperlessUnifiedSearch\Settings;
 
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
+use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCP\AppFramework\Http\TemplateResponse;
+use OCP\IDateTimeFormatter;
 use OCP\IURLGenerator;
 use OCP\Settings\ISettings;
 
@@ -20,14 +22,22 @@ final class AdminSettings implements ISettings {
 	public function __construct(
 		private ConfigService $configService,
 		private IURLGenerator $urlGenerator,
+		private SearchDiagnostics $diagnostics,
+		private IDateTimeFormatter $dateTimeFormatter,
 	) {
 	}
 
 	public function getForm(): TemplateResponse {
+		$failure = $this->diagnostics->getLastFailure();
+		$recoveredAt = $failure === null ? null : $this->diagnostics->getRecoveredAt();
+
 		return new TemplateResponse(AppConstants::APP_ID, 'settings', [
 			'config' => $this->configService->getPublicConfig(),
 			'saveUrl' => $this->urlGenerator->linkToRoute(AppConstants::APP_ID . '.settings.save'),
 			'resetUrl' => $this->urlGenerator->linkToRoute(AppConstants::APP_ID . '.settings.reset'),
+			'failure' => $failure,
+			'failureTime' => $failure === null ? '' : $this->formatTime($failure->time),
+			'recoveryTime' => $recoveredAt === null ? '' : $this->formatTime($recoveredAt),
 		]);
 	}
 
@@ -37,5 +47,9 @@ final class AdminSettings implements ISettings {
 
 	public function getPriority(): int {
 		return 50;
+	}
+
+	private function formatTime(int $timestamp): string {
+		return $this->dateTimeFormatter->formatDateTime($timestamp, 'short', 'medium');
 	}
 }

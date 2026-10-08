@@ -76,6 +76,23 @@ sequenceDiagram
 2. The provider sends the term to the full-text search of Paperless, at most 50 results per page.
 3. For every document of the answer, the file locator looks for a file of the archive account with the marker `[P<ID>]` in the folders of the searching user. A document without such a file is left out, and without an archive account Paperless isn't asked at all.
 4. Each remaining document becomes an entry: its title, the date and an excerpt of the text that Paperless found, and the link that opens the file in Nextcloud. Further pages of Paperless become further pages of the search.
+5. A request to Paperless that gets no answer at all, because the name of the host doesn't resolve or the connection fails or times out, is sent a second time. An answer of Paperless, whatever its status, is not.
+6. A search that still fails returns no results, as an empty search does. The provider logs the kind of error and remembers the failure for the administration settings: the time, the step, asking Paperless or looking for the files, the kind and the message of the error, and how long it took. The first search that works afterwards notes when searches work again.
+
+## Diagnostics
+
+Users see no difference between a failed search and one without documents, and some hosters keep the log of Nextcloud from administrators. So the settings page shows the last failed search under *Last failed search*.
+
+```mermaid
+flowchart LR
+    search["A search fails"] --> failure[("last_failure<br/>time, step, error,<br/>message, duration")]
+    success["The next search works"] --> recovery[("last_recovery<br/>time")]
+    failure --> page["Settings page<br/>Last failed search"]
+    recovery --> page
+    save["Saving or Disconnect"] -. forgets both .-> failure
+```
+
+Both values live in the app configuration of Nextcloud and are loaded only when they are needed. The message loses the API token, the search term when it has at least three characters, cURL's pointer to the page of its error codes, and the query and the fragment of every URL, and is cut to 300 characters. A search that works writes only once after a failure, so searches that keep working write nothing.
 
 ## Opening a result
 
@@ -112,7 +129,7 @@ sequenceDiagram
     Controller-->>Page: the settings, without the token
 ```
 
-A token left blank keeps the stored one. *Disconnect* deletes every setting, the token included.
+A token left blank keeps the stored one. *Disconnect* deletes every setting, the token included. Both forget the last failed search, which says nothing about the settings that follow.
 
 ## Design decisions
 

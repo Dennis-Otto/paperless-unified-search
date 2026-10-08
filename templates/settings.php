@@ -6,13 +6,14 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2026 Dennis Otto
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * @var array{config: \OCA\PaperlessUnifiedSearch\Model\PublicConfig, saveUrl: string, resetUrl: string} $_
+ * @var array{config: \OCA\PaperlessUnifiedSearch\Model\PublicConfig, saveUrl: string, resetUrl: string, failure: ?\OCA\PaperlessUnifiedSearch\Model\SearchFailure, failureTime: string, recoveryTime: string} $_
  */
 
 script('paperless_unified_search', 'settings');
 style('paperless_unified_search', 'settings');
 
 $config = $_['config'];
+$failure = $_['failure'];
 ?>
 
 <div
@@ -102,5 +103,35 @@ $config = $_['config'];
 	<div class="paperless-unified-search-note">
 		<strong><?php p($l->t('File matching')); ?></strong>
 		<p><?php p($l->t('A Paperless document is shown only when the user can open a file of the archive account whose name contains its unique marker, for example [P123].')); ?></p>
+	</div>
+
+	<div class="paperless-unified-search-diagnostics">
+		<h3><?php p($l->t('Last failed search')); ?></h3>
+		<div id="paperless-unified-search-diagnostics">
+			<?php if ($failure === null) { ?>
+				<p><?php p($l->t('No failed search recorded.')); ?></p>
+			<?php } else { ?>
+				<dl class="paperless-unified-search-failure">
+					<dt><?php p($l->t('Time')); ?></dt>
+					<dd><?php p($_['failureTime']); ?></dd>
+					<dt><?php p($l->t('Step')); ?></dt>
+					<dd><?php p($failure->step === \OCA\PaperlessUnifiedSearch\Model\SearchFailure::STEP_FILES ? $l->t('Looking for the files in Nextcloud') : $l->t('Asking Paperless')); ?></dd>
+					<dt><?php p($l->t('Error')); ?></dt>
+					<dd><?php p($failure->message === '' ? $failure->error : $failure->error . ': ' . $failure->message); ?></dd>
+					<dt><?php p($l->t('Duration')); ?></dt>
+					<dd><?php p($l->t('%s ms', [(string)$failure->durationMs])); ?></dd>
+				</dl>
+				<p>
+					<?php if ($_['recoveryTime'] === '') {
+						p($l->t('No search has worked since.'));
+					} else {
+						p($l->t('Searches work again since %s.', [$_['recoveryTime']]));
+					} ?>
+				</p>
+			<?php } ?>
+		</div>
+		<p class="settings-hint">
+			<?php p($l->t('A failed search shows the users no Paperless documents and no error. When Paperless is out of reach, the app tries a second time before it gives up. The message leaves out the API token and the search term.')); ?>
+		</p>
 	</div>
 </div>

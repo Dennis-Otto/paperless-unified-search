@@ -12,6 +12,7 @@ namespace OCA\PaperlessUnifiedSearch\Controller;
 use InvalidArgumentException;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
+use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\Attribute\FrontpageRoute;
@@ -28,6 +29,7 @@ final class SettingsController extends Controller {
 		private ConfigService $configService,
 		private PaperlessApiService $paperlessApi,
 		private IUserManager $userManager,
+		private SearchDiagnostics $diagnostics,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -42,8 +44,11 @@ final class SettingsController extends Controller {
 				throw new InvalidArgumentException('The archive account does not exist.');
 			}
 			$this->paperlessApi->testConnection($normalizedUrl, $effectiveToken);
+			$config = $this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner);
+			// The failures of the former settings say nothing about the new ones.
+			$this->diagnostics->clear();
 
-			return new JSONResponse($this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner));
+			return new JSONResponse($config);
 		} catch (InvalidArgumentException $exception) {
 			return new JSONResponse(
 				['message' => $exception->getMessage()],
@@ -59,6 +64,9 @@ final class SettingsController extends Controller {
 
 	#[FrontpageRoute(verb: 'DELETE', url: '/settings')]
 	public function reset(): JSONResponse {
-		return new JSONResponse($this->configService->reset());
+		$config = $this->configService->reset();
+		$this->diagnostics->clear();
+
+		return new JSONResponse($config);
 	}
 }

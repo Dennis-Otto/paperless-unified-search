@@ -64,3 +64,28 @@
 .paperless-unified-search-note p {
 	margin: 4px 0 0;
 }
+
+.paperless-unified-search-diagnostics {
+	margin-top: 20px;
+}
+
+.paperless-unified-search-diagnostics h3 {
+	font-weight: 600;
+	margin: 0 0 8px;
+}
+
+.paperless-unified-search-failure {
+	display: grid;
+	gap: 4px 16px;
+	grid-template-columns: max-content minmax(0, 1fr);
+	margin: 0 0 8px;
+}
+
+.paperless-unified-search-failure dt {
+	font-weight: 600;
+}
+
+.paperless-unified-search-failure dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
