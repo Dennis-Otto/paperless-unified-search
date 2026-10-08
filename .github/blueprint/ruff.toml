@@ -1,0 +1,10 @@
+# The Ruff settings of the tool, the same as those of pyproject.toml. Ruff uses the
+# closest configuration of each file and no other, so in a repository made from the
+# blueprint, .github/blueprint/ keeps these and not the settings of the project.
+target-version = "py312"
+# The folder of the package, so that blueprint is first-party here and in .github/.
+src = [".."]
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "PT", "RUF"]
+ignore = ["E501"]

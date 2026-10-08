@@ -1,6 +1,5 @@
-#!/usr/bin/env python3
-"""The settings as code, the checklist and the changelog of a repository; the code of
-each task is a module of the package blueprint/ next to this file.
+"""The settings of a repository as code, the checklist of what only a person can do,
+and the changelog of its releases.
 
     python3 blueprint.py settings check     compare .github/repository.toml with GitHub
     python3 blueprint.py settings apply     make GitHub match .github/repository.toml
@@ -8,15 +7,9 @@ each task is a module of the package blueprint/ next to this file.
     python3 blueprint.py changelog ...      the changelog of a release (the release bot)
     python3 blueprint.py unreleased ...     an entry under Unreleased (the other bots)
     python3 blueprint.py notices ...        the licenses of the third-party components
+
+Run it in the root of a repository made from the blueprint, with the GitHub CLI `gh`
+signed in as an administrator. It needs Python 3.12 and nothing else. It never reads,
+prints or sets the value of a secret: it only says which secrets are missing and how
+to set them. https://github.com/Dennis-Otto/repo-blueprint
 """
-
-import sys
-
-if __name__ == "__main__":
-    # Before the import: like the single file it was, the tool leaves no __pycache__
-    # in the repository.
-    sys.dont_write_bytecode = True
-    # import blueprint finds the package next to this file: a package wins over a module.
-    from blueprint.cli import main
-
-    sys.exit(main())

@@ -18,10 +18,9 @@ rules:
       - area-labels.yml
       - welcome.yml
       - dependabot-automerge.yml
-      # The flaky-test bot only runs failed jobs again and writes an issue.
-      - flaky.yml
-      # The coverage bot reads the coverage reports and writes one comment.
-      - coverage.yml
+      # After the checks, the flaky-test bot only runs failed jobs again and writes an
+      # issue, and the coverage bot reads the coverage reports and writes one comment.
+      - after-checks.yml
       # The issue assistant's templates, which its check keeps equal to the action's.
       - findings.yml
       - issue-lifecycle.yml
