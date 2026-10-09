@@ -74,6 +74,15 @@ Nextcloud in the browser of a phone. The Nextcloud apps for iOS and Android open
   <img alt="Paperless Unified Search administration settings in Nextcloud" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/03-admin-settings.png">
 </picture>
 
+### Problems of the search
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/06-search-problems-dark.png">
+  <img alt="The history of the problems of the search in the settings: one failed search, two requests that only their second try answered, and the latest of them with their errors" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/06-search-problems.png">
+</picture>
+
+The end of the settings counts the failed searches and the requests that only their second try answered, and lists the latest of them with their errors, also where the hoster keeps the log of Nextcloud from administrators.
+
 <!-- --8<-- [start:how-it-works] -->
 
 ## How it works
@@ -145,7 +154,7 @@ This app does not synchronize documents itself. For a native, configurable synch
 
 The configuration is global. Access control remains user-specific because the app discards every Paperless hit for which the searching Nextcloud user can't open a matching file of the archive account. Share the archive read-only with the users who may see its documents. Without an archive account, the search shows no Paperless documents.
 
-When Paperless documents are missing from the search, look at **Last failed search** at the end of the settings. A failed search shows the users no Paperless documents and no error, so the settings show when the last one failed, whether asking Paperless or looking for the files in Nextcloud, with the kind of error, its message and how long it took, and since when searches work again. This helps where the hoster keeps the log of Nextcloud from administrators. A request to Paperless that gets no answer at all, as when the connection fails, is sent a second time before the search gives up.
+When Paperless documents are missing from the search, look at **Search problems** at the end of the settings. A failed search shows the users no Paperless documents and no error, and a request to Paperless that gets no answer at all, as when the connection fails, is sent a second time before the search gives up. The settings count both, the failed searches and the requests that only their second try answered, and list the latest 20 with the time, the step, asking Paperless or looking for the files in Nextcloud, the kind and the message of the error and how long it took, along with since when searches work again after the last failure. This helps where the hoster keeps the log of Nextcloud from administrators. **Clear history** and **Disconnect** forget the history; saving the settings keeps it.
 
 By default, Nextcloud searches Paperless only after the user enables **Search connected services**. When the trusted-service option is enabled, every global search term from every Nextcloud user is sent to Paperless automatically and the connected-services switch no longer controls this provider. Reload Nextcloud after changing this option.
 
@@ -166,7 +175,7 @@ Documents without a synchronized `[P<ID>]` file of the archive account are inten
 - The Paperless API token is stored only in Nextcloud's server-side credentials manager.
 - The token is never returned to browser JavaScript or rendered into HTML.
 - Search results are filtered through the current user's Nextcloud filesystem view.
-- The settings show administrators the last failed search without the API token, the search term or the query of any URL.
+- The settings show administrators the history of the problems of the search without the API token, the search term or the query of any URL.
 - Search terms are sent server-to-server only when connected-services search or trusted-service mode is enabled.
 - Administrators can explicitly trust the configured Paperless server to include it automatically in every user's global searches.
 - No deployment credentials, private hostnames, internal addresses, or instance configuration belong in this repository.

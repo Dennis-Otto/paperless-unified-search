@@ -354,6 +354,14 @@ async function settings(browser, session, theme) {
 	await page.locator('#paperless-unified-search-url').blur()
 	await page.locator('#app-navigation a[href$="/settings/admin/paperless_unified_search"]').scrollIntoViewIfNeeded()
 	await save(page, `03-admin-settings${suffix}.png`)
+	// The history of the problems of the search, which scripts/screenshots.sh sets up.
+	const problems = page.locator('.paperless-unified-search-diagnostics')
+	await problems.scrollIntoViewIfNeeded()
+	// Away from the table, whose rows light up under the pointer.
+	await page.mouse.move(0, 0)
+	await settle(page)
+	await problems.screenshot({ path: join(OUT, `06-search-problems${suffix}.png`), animations: 'disabled' })
+	console.log(`Took 06-search-problems${suffix}.png.`)
 	await page.context().close()
 }
 

@@ -10,7 +10,7 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\Search;
 
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
-use OCA\PaperlessUnifiedSearch\Model\SearchFailure;
+use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
@@ -74,11 +74,11 @@ final class PaperlessSearchProvider implements IExternalProvider {
 		$page = $this->getPage($query->getCursor());
 		$limit = max(1, min(50, $query->getLimit()));
 		$started = microtime(true);
-		$step = SearchFailure::STEP_PAPERLESS;
+		$step = SearchEvent::STEP_PAPERLESS;
 
 		try {
 			$response = $this->paperlessApi->searchDocuments($term, $page, $limit);
-			$step = SearchFailure::STEP_FILES;
+			$step = SearchEvent::STEP_FILES;
 			$entries = [];
 
 			foreach ($response['results'] as $document) {

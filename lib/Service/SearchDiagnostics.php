@@ -10,19 +10,22 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\Service;
 
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
-use OCA\PaperlessUnifiedSearch\Model\SearchFailure;
+use OCA\PaperlessUnifiedSearch\Model\DiagnosticsHistory;
+use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IAppConfig;
 use Throwable;
 
 /**
- * Remembers the last failed search and when searches worked again, for the
- * administration settings: some hosters, such as managed Nextcloud offers, don't let
- * administrators read the log of Nextcloud.
+ * Keeps the history of the problems of the search for the administration settings:
+ * some hosters, such as managed Nextcloud offers, don't let administrators read the
+ * log of Nextcloud. Only problems and the first search that works after a failure
+ * write; searches that keep working write nothing.
  */
 final class SearchDiagnostics {
-	private const FAILURE_KEY = 'last_failure';
-	private const RECOVERY_KEY = 'last_recovery';
+	private const HISTORY_KEY = 'diagnostics';
+	/** The keys of the last failure of version 0.3.0, which the history replaces. */
+	private const LEGACY_KEYS = ['last_failure', 'last_recovery'];
 	private const MESSAGE_LENGTH = 300;
 	// Shorter terms would blank out the letters of the message instead of the term.
 	private const SHORTEST_SECRET = 3;
@@ -35,48 +38,64 @@ final class SearchDiagnostics {
 	}
 
 	/**
+	 * A search that failed and showed the user no documents.
+	 *
 	 * @param list<string> $secrets the token and the term, which the message must not show
 	 */
 	public function recordFailure(string $step, Throwable $error, int $durationMs, array $secrets): void {
-		$failure = new SearchFailure(
-			$this->timeFactory->getTime(),
-			$step,
-			self::shortClassName($error),
-			self::describe($error->getMessage(), $secrets),
-			max(0, $durationMs),
-		);
+		$this->record(SearchEvent::KIND_FAILED, $step, $error, $durationMs, $secrets);
+	}
 
-		$this->config->setValueArray(AppConstants::APP_ID, self::FAILURE_KEY, $failure->jsonSerialize(), true);
-		$this->config->deleteKey(AppConstants::APP_ID, self::RECOVERY_KEY);
+	/**
+	 * A request to Paperless that got no answer, while its second try got one.
+	 *
+	 * @param list<string> $secrets the token and the term, which the message must not show
+	 */
+	public function recordRetry(Throwable $error, int $durationMs, array $secrets): void {
+		$this->record(SearchEvent::KIND_RETRIED, SearchEvent::STEP_PAPERLESS, $error, $durationMs, $secrets);
 	}
 
 	/**
 	 * Notes the first search that works after a failure; every later one changes nothing.
 	 */
 	public function recordSuccess(): void {
-		if ($this->getLastFailure() === null || $this->getRecoveredAt() !== null) {
+		$history = $this->getHistory();
+		if ($history === null || !$history->awaitsRecovery()) {
 			return;
 		}
 
-		$this->config->setValueInt(AppConstants::APP_ID, self::RECOVERY_KEY, $this->timeFactory->getTime(), true);
+		$this->save($history->recovered($this->timeFactory->getTime()));
 	}
 
-	public function getLastFailure(): ?SearchFailure {
-		return SearchFailure::fromArray($this->config->getValueArray(AppConstants::APP_ID, self::FAILURE_KEY, [], true));
-	}
-
-	/**
-	 * When the first search after the last failure worked, or null while none has.
-	 */
-	public function getRecoveredAt(): ?int {
-		$time = $this->config->getValueInt(AppConstants::APP_ID, self::RECOVERY_KEY, 0, true);
-
-		return $time > 0 ? $time : null;
+	public function getHistory(): ?DiagnosticsHistory {
+		return DiagnosticsHistory::fromArray($this->config->getValueArray(AppConstants::APP_ID, self::HISTORY_KEY, [], true));
 	}
 
 	public function clear(): void {
-		$this->config->deleteKey(AppConstants::APP_ID, self::FAILURE_KEY);
-		$this->config->deleteKey(AppConstants::APP_ID, self::RECOVERY_KEY);
+		foreach ([self::HISTORY_KEY, ...self::LEGACY_KEYS] as $key) {
+			$this->config->deleteKey(AppConstants::APP_ID, $key);
+		}
+	}
+
+	/**
+	 * @param list<string> $secrets
+	 */
+	private function record(string $kind, string $step, Throwable $error, int $durationMs, array $secrets): void {
+		$time = $this->timeFactory->getTime();
+		$event = new SearchEvent(
+			$time,
+			$kind,
+			$step,
+			self::shortClassName($error),
+			self::describe($error->getMessage(), $secrets),
+			max(0, $durationMs),
+		);
+
+		$this->save(($this->getHistory() ?? DiagnosticsHistory::start($time))->with($event));
+	}
+
+	private function save(DiagnosticsHistory $history): void {
+		$this->config->setValueArray(AppConstants::APP_ID, self::HISTORY_KEY, $history->jsonSerialize(), true);
 	}
 
 	private static function shortClassName(Throwable $error): string {

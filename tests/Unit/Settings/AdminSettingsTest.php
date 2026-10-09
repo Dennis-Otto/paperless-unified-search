@@ -10,8 +10,9 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Settings;
 
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
+use OCA\PaperlessUnifiedSearch\Model\DiagnosticsHistory;
 use OCA\PaperlessUnifiedSearch\Model\PublicConfig;
-use OCA\PaperlessUnifiedSearch\Model\SearchFailure;
+use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCA\PaperlessUnifiedSearch\Settings\AdminSection;
@@ -23,7 +24,6 @@ use OCP\IDateTimeFormatter;
 use OCP\IL10N;
 use OCP\IURLGenerator;
 use OCP\Security\ICredentialsManager;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class AdminSettingsTest extends TestCase {
@@ -40,11 +40,12 @@ final class AdminSettingsTest extends TestCase {
 		$credentials->method('retrieve')->willReturn('TEST_VALUE');
 
 		$urlGenerator = $this->createMock(IURLGenerator::class);
-		$urlGenerator->expects(self::exactly(2))
+		$urlGenerator->expects(self::exactly(3))
 			->method('linkToRoute')
 			->willReturnCallback(static fn (string $routeName): string => match ($routeName) {
 				AppConstants::APP_ID . '.settings.save' => '/apps/paperless_unified_search/settings#save',
 				AppConstants::APP_ID . '.settings.reset' => '/apps/paperless_unified_search/settings#reset',
+				AppConstants::APP_ID . '.settings.clearDiagnostics' => '/apps/paperless_unified_search/settings/diagnostics',
 			});
 
 		$form = $this->settings($config, $credentials, $urlGenerator)->getForm();
@@ -56,6 +57,7 @@ final class AdminSettingsTest extends TestCase {
 		$params = $form->getParams();
 		self::assertSame('/apps/paperless_unified_search/settings#save', $params['saveUrl']);
 		self::assertSame('/apps/paperless_unified_search/settings#reset', $params['resetUrl']);
+		self::assertSame('/apps/paperless_unified_search/settings/diagnostics', $params['clearDiagnosticsUrl']);
 		self::assertInstanceOf(PublicConfig::class, $params['config']);
 		self::assertSame([
 			'url' => 'https://paperless.example.com',
@@ -65,35 +67,58 @@ final class AdminSettingsTest extends TestCase {
 			'syncAccount' => 'sync',
 		], $params['config']->jsonSerialize());
 		self::assertStringNotContainsString('TEST_VALUE', json_encode($params, JSON_THROW_ON_ERROR));
-		self::assertNull($params['failure']);
-		self::assertSame('', $params['failureTime']);
-		self::assertSame('', $params['recoveryTime']);
+		self::assertNull($params['history']);
 	}
 
-	/**
-	 * @return array<string, array{int, string}>
-	 */
-	public static function recoveries(): array {
-		return [
-			'searches work again' => [1791500060, 'at 1791500060'],
-			'no search has worked since' => [0, ''],
-		];
-	}
-
-	#[DataProvider('recoveries')]
-	public function testTheFormShowsTheLastFailedSearch(int $recoveredAt, string $recoveryTime): void {
-		$failure = new SearchFailure(1791500000, SearchFailure::STEP_PAPERLESS, 'ConnectException', 'cURL error 28', 3012);
+	public function testTheFormShowsTheHistoryOfTheProblemsWithFormattedTimes(): void {
+		$history = DiagnosticsHistory::start(1791400000)
+			->with(new SearchEvent(1791500000, SearchEvent::KIND_FAILED, SearchEvent::STEP_FILES, 'RuntimeException', 'Storage unavailable', 12))
+			->recovered(1791500060)
+			->with(new SearchEvent(1791500100, SearchEvent::KIND_RETRIED, SearchEvent::STEP_PAPERLESS, 'ConnectException', '', 3001));
 		$config = $this->createStub(IAppConfig::class);
-		$config->method('getValueArray')->willReturn($failure->jsonSerialize());
-		$config->method('getValueInt')->willReturn($recoveredAt);
+		$config->method('getValueArray')->willReturn($history->jsonSerialize());
 
 		$params = $this->settings($config, $this->createStub(ICredentialsManager::class), $this->createStub(IURLGenerator::class))
 			->getForm()
 			->getParams();
 
-		self::assertEquals($failure, $params['failure']);
-		self::assertSame('at 1791500000', $params['failureTime']);
-		self::assertSame($recoveryTime, $params['recoveryTime']);
+		self::assertSame([
+			'since' => 'at 1791400000',
+			'failed' => 1,
+			'retried' => 1,
+			'lastFailure' => 'at 1791500000',
+			'recovery' => 'at 1791500060',
+			'events' => [
+				['time' => 'at 1791500100', 'kind' => SearchEvent::KIND_RETRIED, 'step' => SearchEvent::STEP_PAPERLESS, 'error' => 'ConnectException', 'durationMs' => 3001],
+				['time' => 'at 1791500000', 'kind' => SearchEvent::KIND_FAILED, 'step' => SearchEvent::STEP_FILES, 'error' => 'RuntimeException: Storage unavailable', 'durationMs' => 12],
+			],
+		], $params['history']);
+	}
+
+	public function testAHistoryOfRetriesOnlyHasNoLastFailureAndNoRecovery(): void {
+		$history = DiagnosticsHistory::start(1791400000)
+			->with(new SearchEvent(1791500100, SearchEvent::KIND_RETRIED, SearchEvent::STEP_PAPERLESS, 'ConnectException', 'cURL error 7', 3001));
+		$config = $this->createStub(IAppConfig::class);
+		$config->method('getValueArray')->willReturn($history->jsonSerialize());
+
+		$params = $this->settings($config, $this->createStub(ICredentialsManager::class), $this->createStub(IURLGenerator::class))
+			->getForm()
+			->getParams();
+
+		self::assertIsArray($params['history']);
+		self::assertSame('', $params['history']['lastFailure']);
+		self::assertSame('', $params['history']['recovery']);
+	}
+
+	public function testAHistoryWithoutEventsShowsNoProblem(): void {
+		$config = $this->createStub(IAppConfig::class);
+		$config->method('getValueArray')->willReturn(DiagnosticsHistory::start(1791400000)->jsonSerialize());
+
+		$params = $this->settings($config, $this->createStub(ICredentialsManager::class), $this->createStub(IURLGenerator::class))
+			->getForm()
+			->getParams();
+
+		self::assertNull($params['history']);
 	}
 
 	public function testTheFormHasASectionOfItsOwn(): void {

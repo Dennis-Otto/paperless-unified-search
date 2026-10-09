@@ -22,6 +22,7 @@ final class PaperlessApiService {
 	public function __construct(
 		private ConfigService $configService,
 		IClientService $clientService,
+		private SearchDiagnostics $diagnostics,
 	) {
 		$this->client = $clientService->newClient();
 	}
@@ -77,6 +78,7 @@ final class PaperlessApiService {
 				'http_errors' => false,
 				'query' => $query,
 			],
+			[$token, (string)($query['query'] ?? '')],
 		);
 
 		$statusCode = $response->getStatusCode();
@@ -112,15 +114,23 @@ final class PaperlessApiService {
 	/**
 	 * A request that gets no answer at all, because the name of the host doesn't resolve
 	 * or the connection fails or times out, gets one more try: such failures often pass
-	 * within a moment. An answer of Paperless, whatever its status, gets none.
+	 * within a moment. An answer of Paperless, whatever its status, gets none. A second
+	 * try that gets an answer goes into the history of the diagnostics; one that fails
+	 * as well fails the request.
 	 *
 	 * @param array<string, mixed> $options
+	 * @param list<string> $secrets the token and the term, which the history must not show
 	 */
-	private function send(string $url, array $options): IResponse {
+	private function send(string $url, array $options, array $secrets): IResponse {
+		$started = microtime(true);
 		try {
 			return $this->client->get($url, $options);
-		} catch (Throwable) {
-			return $this->client->get($url, $options);
+		} catch (Throwable $error) {
+			$durationMs = (int)round((microtime(true) - $started) * 1000.0);
+			$response = $this->client->get($url, $options);
+			$this->diagnostics->recordRetry($error, $durationMs, $secrets);
+
+			return $response;
 		}
 	}
 }

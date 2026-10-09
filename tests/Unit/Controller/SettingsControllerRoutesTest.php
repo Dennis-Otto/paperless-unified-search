@@ -28,6 +28,7 @@ final class SettingsControllerRoutesTest extends TestCase {
 		return [
 			'save' => ['save', 'POST', '/settings'],
 			'reset' => ['reset', 'DELETE', '/settings'],
+			'clear the diagnostics' => ['clearDiagnostics', 'DELETE', '/settings/diagnostics'],
 		];
 	}
 

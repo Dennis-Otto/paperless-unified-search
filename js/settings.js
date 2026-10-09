@@ -59,10 +59,10 @@
 			resetButton.disabled = busy
 		}
 
-		// Saving and disconnecting forget the last failed search.
+		// Disconnecting and the button of the history forget the problems of the search.
 		function clearDiagnostics() {
 			const message = document.createElement('p')
-			message.textContent = translate('No failed search recorded.')
+			message.textContent = translate('No problem recorded.')
 			diagnostics.replaceChildren(message)
 		}
 
@@ -90,7 +90,6 @@
 				alwaysSearchInput.checked = Boolean(config.alwaysSearch)
 				archiveOwnerInput.value = config.archiveOwner || ''
 				resetButton.disabled = false
-				clearDiagnostics()
 				showStatus(translate('Connection successful. Settings saved.'), false)
 			} catch (error) {
 				showStatus(error.message || translate('Could not connect to Paperless.'), true)
@@ -122,5 +121,21 @@
 				resetButton.disabled = root.dataset.tokenConfigured !== 'true' && urlInput.value === ''
 			}
 		})
+
+		// The page shows the button only while the history holds problems.
+		const clearDiagnosticsButton = document.getElementById('paperless-unified-search-clear-diagnostics')
+		if (clearDiagnosticsButton) {
+			clearDiagnosticsButton.addEventListener('click', async function() {
+				clearDiagnosticsButton.disabled = true
+				try {
+					await request(root.dataset.clearDiagnosticsUrl, 'DELETE')
+					clearDiagnostics()
+					showStatus(translate('History cleared.'), false)
+				} catch (error) {
+					clearDiagnosticsButton.disabled = false
+					showStatus(error.message || translate('Could not clear the history.'), true)
+				}
+			})
+		}
 	})
 })()
