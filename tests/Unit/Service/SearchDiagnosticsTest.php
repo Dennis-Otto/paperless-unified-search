@@ -10,7 +10,8 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Service;
 
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
-use OCA\PaperlessUnifiedSearch\Model\SearchFailure;
+use OCA\PaperlessUnifiedSearch\Model\DiagnosticsHistory;
+use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Http\Client\LocalServerException;
@@ -25,6 +26,7 @@ final class SearchDiagnosticsTest extends TestCase {
 
 	/** @var array<string, mixed> the stored values of the app, by key */
 	private array $stored = [];
+	private int $now = self::NOW;
 
 	/**
 	 * @return array<string, array{Throwable, list<string>, string, string}>
@@ -70,111 +72,214 @@ final class SearchDiagnosticsTest extends TestCase {
 	 * @param list<string> $secrets
 	 */
 	#[DataProvider('failures')]
-	public function testAFailureIsRememberedWithoutTheTokenTheTermAndTheQuery(Throwable $error, array $secrets, string $type, string $message): void {
+	public function testAFailureIsRecordedWithoutTheTokenTheTermAndTheQuery(Throwable $error, array $secrets, string $type, string $message): void {
 		$diagnostics = $this->diagnostics();
 
-		$diagnostics->recordFailure(SearchFailure::STEP_PAPERLESS, $error, 4711, $secrets);
+		$diagnostics->recordFailure(SearchEvent::STEP_PAPERLESS, $error, 4711, $secrets);
 
-		$failure = $diagnostics->getLastFailure();
-		self::assertNotNull($failure);
 		self::assertSame([
-			'time' => self::NOW,
-			'step' => SearchFailure::STEP_PAPERLESS,
-			'error' => $type,
-			'message' => $message,
-			'durationMs' => 4711,
-		], $failure->jsonSerialize());
+			'since' => self::NOW,
+			'failed' => 1,
+			'retried' => 0,
+			'lastFailureAt' => self::NOW,
+			'recoveredAt' => null,
+			'events' => [[
+				'time' => self::NOW,
+				'kind' => SearchEvent::KIND_FAILED,
+				'step' => SearchEvent::STEP_PAPERLESS,
+				'error' => $type,
+				'message' => $message,
+				'durationMs' => 4711,
+			]],
+		], $diagnostics->getHistory()?->jsonSerialize());
 	}
 
-	public function testTheFailureIsStoredLazilyAsTheOnlyOneAndForgetsTheRecovery(): void {
+	public function testARetryIsRecordedAsAProblemOfTheRequestToPaperless(): void {
+		$diagnostics = $this->diagnostics();
+
+		$diagnostics->recordRetry(new RuntimeException('cURL error 6: Could not resolve host: paperless.example.com'), 3002, ['TEST_VALUE', 'salary']);
+
+		$history = $diagnostics->getHistory();
+		self::assertNotNull($history);
+		self::assertSame(0, $history->failed);
+		self::assertSame(1, $history->retried);
+		self::assertNull($history->lastFailureAt);
+		self::assertFalse($history->awaitsRecovery());
+		self::assertSame([
+			'time' => self::NOW,
+			'kind' => SearchEvent::KIND_RETRIED,
+			'step' => SearchEvent::STEP_PAPERLESS,
+			'error' => 'RuntimeException',
+			'message' => 'cURL error 6: Could not resolve host: paperless.example.com',
+			'durationMs' => 3002,
+		], $history->events[0]->jsonSerialize());
+	}
+
+	public function testTheHistoryCountsEveryProblemAndKeepsTheLatestNewestFirst(): void {
+		$diagnostics = $this->diagnostics();
+
+		for ($problem = 1; $problem <= DiagnosticsHistory::SIZE + 5; $problem++) {
+			$this->now = self::NOW + $problem;
+			if ($problem % 5 === 0) {
+				$diagnostics->recordFailure(SearchEvent::STEP_FILES, new RuntimeException('Problem ' . $problem), $problem, []);
+			} else {
+				$diagnostics->recordRetry(new RuntimeException('Problem ' . $problem), $problem, []);
+			}
+		}
+
+		$history = $diagnostics->getHistory();
+		self::assertNotNull($history);
+		self::assertSame(self::NOW + 1, $history->since);
+		self::assertSame(5, $history->failed);
+		self::assertSame(20, $history->retried);
+		self::assertSame(self::NOW + 25, $history->lastFailureAt);
+		self::assertCount(DiagnosticsHistory::SIZE, $history->events);
+		self::assertSame('Problem 25', $history->events[0]->message);
+		self::assertSame('Problem 6', $history->events[DiagnosticsHistory::SIZE - 1]->message);
+	}
+
+	public function testTheHistoryIsStoredLazilyUnderOneKey(): void {
 		$config = $this->createMock(IAppConfig::class);
+		$config->method('getValueArray')->willReturn([]);
 		$config->expects(self::once())
 			->method('setValueArray')
-			->with(AppConstants::APP_ID, 'last_failure', self::callback(static fn (array $value): bool => $value['step'] === SearchFailure::STEP_FILES), true);
-		$config->expects(self::once())
-			->method('deleteKey')
-			->with(AppConstants::APP_ID, 'last_recovery');
+			->with(AppConstants::APP_ID, 'diagnostics', self::callback(static fn (array $value): bool => $value['failed'] === 1), true);
 
 		(new SearchDiagnostics($config, $this->clock()))
-			->recordFailure(SearchFailure::STEP_FILES, new RuntimeException('Storage unavailable'), 20, []);
+			->recordFailure(SearchEvent::STEP_FILES, new RuntimeException('Storage unavailable'), 20, []);
 	}
 
 	public function testANegativeDurationCountsAsNone(): void {
 		$diagnostics = $this->diagnostics();
 
-		$diagnostics->recordFailure(SearchFailure::STEP_FILES, new RuntimeException('Clock went back'), -5, []);
+		$diagnostics->recordFailure(SearchEvent::STEP_FILES, new RuntimeException('Clock went back'), -5, []);
 
-		self::assertSame(0, $diagnostics->getLastFailure()?->durationMs);
+		self::assertSame(0, $diagnostics->getHistory()?->events[0]->durationMs);
 	}
 
 	public function testTheFirstSearchThatWorksAfterAFailureIsTheRecovery(): void {
 		$diagnostics = $this->diagnostics();
-		$diagnostics->recordFailure(SearchFailure::STEP_PAPERLESS, new RuntimeException('Timeout'), 3000, []);
-		self::assertNull($diagnostics->getRecoveredAt());
+		$diagnostics->recordFailure(SearchEvent::STEP_PAPERLESS, new RuntimeException('Timeout'), 3000, []);
+		self::assertTrue($diagnostics->getHistory()?->awaitsRecovery());
 
+		$this->now = self::NOW + 60;
 		$diagnostics->recordSuccess();
-		self::assertSame(self::NOW, $diagnostics->getRecoveredAt());
+		self::assertSame(self::NOW + 60, $diagnostics->getHistory()?->recoveredAt);
 
-		$later = new SearchDiagnostics($this->config(), $this->clock(self::NOW + 60));
-		$later->recordSuccess();
-		self::assertSame(self::NOW, $later->getRecoveredAt());
+		$this->now = self::NOW + 120;
+		$diagnostics->recordSuccess();
+		$diagnostics->recordRetry(new RuntimeException('Timeout'), 3000, []);
+		self::assertSame(self::NOW + 60, $diagnostics->getHistory()?->recoveredAt);
 
-		$later->recordFailure(SearchFailure::STEP_PAPERLESS, new RuntimeException('Timeout'), 3000, []);
-		self::assertNull($later->getRecoveredAt());
+		$diagnostics->recordFailure(SearchEvent::STEP_PAPERLESS, new RuntimeException('Timeout'), 3000, []);
+		self::assertNull($diagnostics->getHistory()?->recoveredAt);
 	}
 
-	public function testASearchThatWorksWithoutAFailureStoresNothing(): void {
+	/**
+	 * @return array<string, array{array<string, mixed>}>
+	 */
+	public static function historiesThatAwaitNoRecovery(): array {
+		return [
+			'nothing stored' => [[]],
+			'retries only' => [['since' => self::NOW, 'failed' => 0, 'retried' => 2, 'lastFailureAt' => null, 'recoveredAt' => null, 'events' => []]],
+		];
+	}
+
+	/**
+	 * @param array<string, mixed> $stored
+	 */
+	#[DataProvider('historiesThatAwaitNoRecovery')]
+	public function testASearchThatWorksWithoutAFailureStoresNothing(array $stored): void {
 		$config = $this->createMock(IAppConfig::class);
-		$config->method('getValueArray')->willReturn([]);
-		$config->expects(self::never())->method('setValueInt');
+		$config->method('getValueArray')->willReturn($stored);
+		$config->expects(self::never())->method('setValueArray');
 
 		(new SearchDiagnostics($config, $this->clock()))->recordSuccess();
 	}
 
-	public function testClearForgetsTheFailureAndTheRecovery(): void {
-		$diagnostics = $this->diagnostics();
-		$diagnostics->recordFailure(SearchFailure::STEP_PAPERLESS, new RuntimeException('Timeout'), 3000, []);
-		$diagnostics->recordSuccess();
+	public function testClearForgetsTheHistoryAndTheLastFailureOfVersion030(): void {
+		$deleted = [];
+		$config = $this->createStub(IAppConfig::class);
+		$config->method('deleteKey')->willReturnCallback(static function (string $app, string $key) use (&$deleted): void {
+			$deleted[] = $app . '.' . $key;
+		});
 
-		$diagnostics->clear();
+		(new SearchDiagnostics($config, $this->clock()))->clear();
 
-		self::assertNull($diagnostics->getLastFailure());
-		self::assertNull($diagnostics->getRecoveredAt());
+		self::assertSame([
+			AppConstants::APP_ID . '.diagnostics',
+			AppConstants::APP_ID . '.last_failure',
+			AppConstants::APP_ID . '.last_recovery',
+		], $deleted);
 	}
 
 	/**
 	 * @return array<string, array{array<array-key, mixed>}>
 	 */
-	public static function storedValuesOfNoFailure(): array {
-		$failure = ['time' => self::NOW, 'step' => 'paperless', 'error' => 'RuntimeException', 'message' => '', 'durationMs' => 1];
+	public static function storedValuesOfNoHistory(): array {
+		$history = ['since' => self::NOW, 'failed' => 1, 'retried' => 0, 'lastFailureAt' => self::NOW, 'recoveredAt' => null, 'events' => []];
 
 		return [
 			'nothing' => [[]],
-			'time as text' => [['time' => '1791500000'] + $failure],
-			'unknown step' => [['step' => 'mail'] + $failure],
-			'error that is no text' => [['error' => 42] + $failure],
-			'message that is no text' => [['message' => null] + $failure],
-			'duration as decimal' => [['durationMs' => 1.5] + $failure],
+			'since as text' => [['since' => '1791500000'] + $history],
+			'count of failures that is no number' => [['failed' => null] + $history],
+			'count of retries as decimal' => [['retried' => 1.5] + $history],
+			'last failure as text' => [['lastFailureAt' => 'yesterday'] + $history],
+			'recovery as decimal' => [['recoveredAt' => 1.5] + $history],
+			'events that are no list' => [['events' => 'none'] + $history],
 		];
 	}
 
 	/**
 	 * @param array<array-key, mixed> $values
 	 */
-	#[DataProvider('storedValuesOfNoFailure')]
-	public function testStoredValuesOfTheWrongShapeAreNoFailure(array $values): void {
-		$this->stored['last_failure'] = $values;
+	#[DataProvider('storedValuesOfNoHistory')]
+	public function testStoredValuesOfTheWrongShapeAreNoHistory(array $values): void {
+		$this->stored['diagnostics'] = $values;
 
-		self::assertNull($this->diagnostics()->getLastFailure());
+		self::assertNull($this->diagnostics()->getHistory());
+	}
+
+	public function testStoredEventsOfTheWrongShapeAreLeftOut(): void {
+		$event = ['time' => self::NOW, 'kind' => 'failed', 'step' => 'paperless', 'error' => 'RuntimeException', 'message' => '', 'durationMs' => 1];
+		$this->stored['diagnostics'] = [
+			'since' => self::NOW,
+			'failed' => 1,
+			'retried' => 0,
+			'lastFailureAt' => self::NOW,
+			'recoveredAt' => self::NOW + 5,
+			'events' => [
+				'not an event',
+				['time' => '1791500000'] + $event,
+				['kind' => 'warning'] + $event,
+				['step' => 'mail'] + $event,
+				['error' => 42] + $event,
+				['message' => null] + $event,
+				['durationMs' => 1.5] + $event,
+				$event,
+				...array_fill(0, DiagnosticsHistory::SIZE + 3, ['kind' => 'retried'] + $event),
+			],
+		];
+
+		$history = $this->diagnostics()->getHistory();
+
+		self::assertNotNull($history);
+		self::assertSame(self::NOW + 5, $history->recoveredAt);
+		self::assertCount(DiagnosticsHistory::SIZE, $history->events);
+		self::assertSame(SearchEvent::KIND_FAILED, $history->events[0]->kind);
+		self::assertSame(SearchEvent::KIND_RETRIED, $history->events[1]->kind);
 	}
 
 	private function diagnostics(): SearchDiagnostics {
 		return new SearchDiagnostics($this->config(), $this->clock());
 	}
 
-	private function clock(int $time = self::NOW): ITimeFactory {
+	/**
+	 * A clock at $this->now.
+	 */
+	private function clock(): ITimeFactory {
 		$clock = $this->createStub(ITimeFactory::class);
-		$clock->method('getTime')->willReturn($time);
+		$clock->method('getTime')->willReturnCallback(fn (): int => $this->now);
 
 		return $clock;
 	}
@@ -189,23 +294,10 @@ final class SearchDiagnosticsTest extends TestCase {
 
 			return true;
 		});
-		$config->method('setValueInt')->willReturnCallback(function (string $app, string $key, int $value): bool {
-			$this->stored[$key] = $value;
-
-			return true;
-		});
 		$config->method('getValueArray')->willReturnCallback(function (string $app, string $key, array $default): array {
 			$value = $this->stored[$key] ?? $default;
 
 			return is_array($value) ? $value : $default;
-		});
-		$config->method('getValueInt')->willReturnCallback(function (string $app, string $key, int $default): int {
-			$value = $this->stored[$key] ?? $default;
-
-			return is_int($value) ? $value : $default;
-		});
-		$config->method('deleteKey')->willReturnCallback(function (string $app, string $key): void {
-			unset($this->stored[$key]);
 		});
 
 		return $config;

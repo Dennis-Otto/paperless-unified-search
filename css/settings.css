@@ -74,18 +74,59 @@
 	margin: 0 0 8px;
 }
 
-.paperless-unified-search-failure {
-	display: grid;
-	gap: 4px 16px;
-	grid-template-columns: max-content minmax(0, 1fr);
-	margin: 0 0 8px;
+.paperless-unified-search-summary {
+	border-collapse: collapse;
+	margin-bottom: 16px;
 }
 
-.paperless-unified-search-failure dt {
+.paperless-unified-search-summary th,
+.paperless-unified-search-summary td {
+	padding: 2px 16px 2px 0;
+	text-align: start;
+	vertical-align: top;
+	white-space: normal;
+}
+
+.paperless-unified-search-summary th {
 	font-weight: 600;
 }
 
-.paperless-unified-search-failure dd {
-	margin: 0;
+/* A fixed layout keeps the table within the section; the error takes the rest and wraps. */
+.paperless-unified-search-events {
+	border-collapse: collapse;
+	margin-bottom: 12px;
+	table-layout: fixed;
+	width: 100%;
+}
+
+.paperless-unified-search-events th:nth-child(1) {
+	width: 22%;
+}
+
+.paperless-unified-search-events th:nth-child(2),
+.paperless-unified-search-events th:nth-child(3) {
+	width: 17%;
+}
+
+.paperless-unified-search-events th:nth-child(5) {
+	width: 11%;
+}
+
+.paperless-unified-search-events caption {
+	font-weight: 600;
+	padding-bottom: 4px;
+	text-align: start;
+}
+
+.paperless-unified-search-events th,
+.paperless-unified-search-events td {
+	border-bottom: 1px solid var(--color-border, #ededed);
+	padding: 4px 8px 4px 0;
+	text-align: start;
+	vertical-align: top;
+	white-space: normal;
+}
+
+.paperless-unified-search-events td:nth-child(4) {
 	overflow-wrap: anywhere;
 }

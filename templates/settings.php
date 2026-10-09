@@ -6,14 +6,14 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2026 Dennis Otto
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * @var array{config: \OCA\PaperlessUnifiedSearch\Model\PublicConfig, saveUrl: string, resetUrl: string, failure: ?\OCA\PaperlessUnifiedSearch\Model\SearchFailure, failureTime: string, recoveryTime: string} $_
+ * @var array{config: \OCA\PaperlessUnifiedSearch\Model\PublicConfig, saveUrl: string, resetUrl: string, clearDiagnosticsUrl: string, history: ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, durationMs: int}>}} $_
  */
 
 script('paperless_unified_search', 'settings');
 style('paperless_unified_search', 'settings');
 
 $config = $_['config'];
-$failure = $_['failure'];
+$history = $_['history'];
 ?>
 
 <div
@@ -21,6 +21,7 @@ $failure = $_['failure'];
 	class="section paperless-unified-search-settings"
 	data-save-url="<?php p($_['saveUrl']); ?>"
 	data-reset-url="<?php p($_['resetUrl']); ?>"
+	data-clear-diagnostics-url="<?php p($_['clearDiagnosticsUrl']); ?>"
 	data-token-configured="<?php p($config->tokenConfigured ? 'true' : 'false'); ?>">
 	<h2><?php p($l->t('Paperless Unified Search')); ?></h2>
 
@@ -106,32 +107,67 @@ $failure = $_['failure'];
 	</div>
 
 	<div class="paperless-unified-search-diagnostics">
-		<h3><?php p($l->t('Last failed search')); ?></h3>
+		<h3><?php p($l->t('Search problems')); ?></h3>
 		<div id="paperless-unified-search-diagnostics">
-			<?php if ($failure === null) { ?>
-				<p><?php p($l->t('No failed search recorded.')); ?></p>
+			<?php if ($history === null) { ?>
+				<p><?php p($l->t('No problem recorded.')); ?></p>
 			<?php } else { ?>
-				<dl class="paperless-unified-search-failure">
-					<dt><?php p($l->t('Time')); ?></dt>
-					<dd><?php p($_['failureTime']); ?></dd>
-					<dt><?php p($l->t('Step')); ?></dt>
-					<dd><?php p($failure->step === \OCA\PaperlessUnifiedSearch\Model\SearchFailure::STEP_FILES ? $l->t('Looking for the files in Nextcloud') : $l->t('Asking Paperless')); ?></dd>
-					<dt><?php p($l->t('Error')); ?></dt>
-					<dd><?php p($failure->message === '' ? $failure->error : $failure->error . ': ' . $failure->message); ?></dd>
-					<dt><?php p($l->t('Duration')); ?></dt>
-					<dd><?php p($l->t('%s ms', [(string)$failure->durationMs])); ?></dd>
-				</dl>
-				<p>
-					<?php if ($_['recoveryTime'] === '') {
-						p($l->t('No search has worked since.'));
-					} else {
-						p($l->t('Searches work again since %s.', [$_['recoveryTime']]));
-					} ?>
-				</p>
+				<table class="paperless-unified-search-summary">
+					<tbody>
+						<tr>
+							<th scope="row"><?php p($l->t('Recorded since')); ?></th>
+							<td><?php p($history['since']); ?></td>
+						</tr>
+						<tr>
+							<th scope="row"><?php p($l->t('Failed searches')); ?></th>
+							<td><?php p((string)$history['failed']); ?></td>
+						</tr>
+						<tr>
+							<th scope="row"><?php p($l->t('Answered on the second try')); ?></th>
+							<td><?php p((string)$history['retried']); ?></td>
+						</tr>
+						<?php if ($history['lastFailure'] !== '') { ?>
+							<tr>
+								<th scope="row"><?php p($l->t('Last failed search')); ?></th>
+								<td><?php p($history['lastFailure']); ?></td>
+							</tr>
+							<tr>
+								<th scope="row"><?php p($l->t('Searches work again since')); ?></th>
+								<td><?php p($history['recovery'] !== '' ? $history['recovery'] : $l->t('No search has worked since.')); ?></td>
+							</tr>
+						<?php } ?>
+					</tbody>
+				</table>
+				<table class="paperless-unified-search-events">
+					<caption><?php p($l->t('The latest problems, newest first')); ?></caption>
+					<thead>
+						<tr>
+							<th scope="col"><?php p($l->t('Time')); ?></th>
+							<th scope="col"><?php p($l->t('Event')); ?></th>
+							<th scope="col"><?php p($l->t('Step')); ?></th>
+							<th scope="col"><?php p($l->t('Error')); ?></th>
+							<th scope="col"><?php p($l->t('Duration')); ?></th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php foreach ($history['events'] as $event) { ?>
+							<tr>
+								<td><?php p($event['time']); ?></td>
+								<td><?php p($event['kind'] === \OCA\PaperlessUnifiedSearch\Model\SearchEvent::KIND_FAILED ? $l->t('Search failed') : $l->t('Second try answered')); ?></td>
+								<td><?php p($event['step'] === \OCA\PaperlessUnifiedSearch\Model\SearchEvent::STEP_FILES ? $l->t('Looking for the files in Nextcloud') : $l->t('Asking Paperless')); ?></td>
+								<td><?php p($event['error']); ?></td>
+								<td><?php p($l->t('%s ms', [(string)$event['durationMs']])); ?></td>
+							</tr>
+						<?php } ?>
+					</tbody>
+				</table>
+				<button id="paperless-unified-search-clear-diagnostics" type="button">
+					<?php p($l->t('Clear history')); ?>
+				</button>
 			<?php } ?>
 		</div>
 		<p class="settings-hint">
-			<?php p($l->t('A failed search shows the users no Paperless documents and no error. When Paperless is out of reach, the app tries a second time before it gives up. The message leaves out the API token and the search term.')); ?>
+			<?php p($l->t('A failed search shows the users no Paperless documents and no error. When a request to Paperless gets no answer, the app sends it a second time. The history keeps the latest %s problems without the API token and the search term; Disconnect and Clear history forget it.', [(string)\OCA\PaperlessUnifiedSearch\Model\DiagnosticsHistory::SIZE])); ?>
 		</p>
 	</div>
 </div>

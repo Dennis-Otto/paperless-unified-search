@@ -48,6 +48,7 @@ final class SettingsControllerTest extends TestCase {
 		$config->expects(self::once())
 			->method('setValueBool')
 			->with(AppConstants::APP_ID, 'always_search', true);
+		$config->expects(self::never())->method('setValueArray');
 		$deleted = [];
 		$config->method('deleteKey')->willReturnCallback(static function (string $app, string $key) use (&$deleted): void {
 			$deleted[] = $app . '.' . $key;
@@ -70,8 +71,7 @@ final class SettingsControllerTest extends TestCase {
 			'syncAccount' => '',
 		], json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR));
 		self::assertStringNotContainsString('TEST_VALUE', $response->render());
-		self::assertContains(AppConstants::APP_ID . '.last_failure', $deleted);
-		self::assertContains(AppConstants::APP_ID . '.last_recovery', $deleted);
+		self::assertNotContains(AppConstants::APP_ID . '.diagnostics', $deleted);
 	}
 
 	public function testSaveStoresAnArchiveAccountThatExists(): void {
@@ -208,8 +208,27 @@ final class SettingsControllerTest extends TestCase {
 			'archiveOwner' => '',
 			'syncAccount' => '',
 		], json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR));
-		self::assertContains(AppConstants::APP_ID . '.last_failure', $deleted);
-		self::assertContains(AppConstants::APP_ID . '.last_recovery', $deleted);
+		self::assertContains(AppConstants::APP_ID . '.diagnostics', $deleted);
+	}
+
+	public function testClearDiagnosticsForgetsTheHistoryOnly(): void {
+		$deleted = [];
+		$config = $this->createMock(IAppConfig::class);
+		$config->method('deleteKey')->willReturnCallback(static function (string $app, string $key) use (&$deleted): void {
+			$deleted[] = $app . '.' . $key;
+		});
+		$credentials = $this->createMock(ICredentialsManager::class);
+		$credentials->expects(self::never())->method('delete');
+
+		$response = $this->controller($config, $credentials, $this->createStub(IClient::class))->clearDiagnostics();
+
+		self::assertSame(Http::STATUS_OK, $response->getStatus());
+		self::assertSame([], $response->getData());
+		self::assertSame([
+			AppConstants::APP_ID . '.diagnostics',
+			AppConstants::APP_ID . '.last_failure',
+			AppConstants::APP_ID . '.last_recovery',
+		], $deleted);
 	}
 
 	private function controller(
@@ -221,14 +240,15 @@ final class SettingsControllerTest extends TestCase {
 		$clientService = $this->createStub(IClientService::class);
 		$clientService->method('newClient')->willReturn($client);
 		$configService = new ConfigService($config, $credentials);
+		$diagnostics = new SearchDiagnostics($config, $this->createStub(ITimeFactory::class));
 
 		return new SettingsController(
 			AppConstants::APP_ID,
 			$this->createStub(IRequest::class),
 			$configService,
-			new PaperlessApiService($configService, $clientService),
+			new PaperlessApiService($configService, $clientService, $diagnostics),
 			$users ?? $this->createStub(IUserManager::class),
-			new SearchDiagnostics($config, $this->createStub(ITimeFactory::class)),
+			$diagnostics,
 		);
 	}
 

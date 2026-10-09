@@ -81,6 +81,11 @@ curl --fail-with-body --silent --show-error \
 	--data-urlencode 'archiveOwner=paperless' \
 	"${BASE_URL}/apps/paperless_unified_search/settings" >/dev/null
 
+# A history of the problems of the search, of a connection that failed for a while,
+# for the picture of Search problems.
+occ config:app:set paperless_unified_search diagnostics --type=array --lazy \
+	--value='{"since":1791475200,"failed":1,"retried":2,"lastFailureAt":1791496720,"recoveredAt":1791496750,"events":[{"time":1791496872,"kind":"retried","step":"paperless","error":"ConnectException","message":"cURL error 28: Connection timed out after 3001 milliseconds for https://paperless.example.com/api/documents/","durationMs":3002},{"time":1791496720,"kind":"failed","step":"paperless","error":"ConnectException","message":"cURL error 7: Failed to connect to paperless.example.com port 443 after 3001 ms: Timeout was reached for https://paperless.example.com/api/documents/","durationMs":6108},{"time":1791496205,"kind":"retried","step":"paperless","error":"ConnectException","message":"cURL error 6: Could not resolve host: paperless.example.com for https://paperless.example.com/api/documents/","durationMs":1004}]}' >/dev/null
+
 # The files of the browser reach the container through standard input, and the
 # pictures leave it the same way, so that they belong to whoever runs this.
 tar -C tests/e2e -cf - package.json package-lock.json screenshots.mjs \

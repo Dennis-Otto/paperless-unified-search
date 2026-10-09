@@ -10,7 +10,8 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Search;
 
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
-use OCA\PaperlessUnifiedSearch\Model\SearchFailure;
+use OCA\PaperlessUnifiedSearch\Model\DiagnosticsHistory;
+use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCA\PaperlessUnifiedSearch\Search\PaperlessSearchProvider;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
@@ -131,7 +132,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 
 		$configService = new ConfigService($config, $credentials);
 		$provider = new PaperlessSearchProvider(
-			new PaperlessApiService($configService, $clientService),
+			new PaperlessApiService($configService, $clientService, new SearchDiagnostics($config, $this->clock())),
 			new NextcloudFileLocator($root),
 			$l10n,
 			$urlGenerator,
@@ -184,7 +185,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 
 		$configService = new ConfigService($config, $this->createStub(ICredentialsManager::class));
 		$provider = new PaperlessSearchProvider(
-			new PaperlessApiService($configService, $this->createStub(IClientService::class)),
+			new PaperlessApiService($configService, $this->createStub(IClientService::class), new SearchDiagnostics($config, $this->clock())),
 			new NextcloudFileLocator($this->createStub(IRootFolder::class)),
 			$this->createStub(IL10N::class),
 			$this->createStub(IURLGenerator::class),
@@ -311,7 +312,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		self::assertSame([], $result['entries']);
 	}
 
-	public function testAFailedRequestToPaperlessIsRememberedForTheAdministrators(): void {
+	public function testAFailedRequestToPaperlessGoesIntoTheHistory(): void {
 		$client = $this->createStub(IClient::class);
 		$client->method('get')->willThrowException(new RuntimeException(
 			'cURL error 28: Connection timed out after 3001 milliseconds for https://paperless.example.com/api/documents/?query=invoice&page=1',
@@ -320,12 +321,18 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$result = $this->provider($client)->search($this->user(), $this->query('invoice'))->jsonSerialize();
 
 		self::assertSame([], $result['entries']);
-		$failure = $this->failure();
-		self::assertSame(self::NOW, $failure->time);
-		self::assertSame(SearchFailure::STEP_PAPERLESS, $failure->step);
-		self::assertSame('RuntimeException', $failure->error);
-		self::assertSame('cURL error 28: Connection timed out after 3001 milliseconds for https://paperless.example.com/api/documents/', $failure->message);
-		self::assertGreaterThanOrEqual(0, $failure->durationMs);
+		$history = $this->history();
+		self::assertSame(1, $history->failed);
+		self::assertSame(0, $history->retried);
+		self::assertSame(self::NOW, $history->lastFailureAt);
+		self::assertCount(1, $history->events);
+		$event = $history->events[0];
+		self::assertSame(self::NOW, $event->time);
+		self::assertSame(SearchEvent::KIND_FAILED, $event->kind);
+		self::assertSame(SearchEvent::STEP_PAPERLESS, $event->step);
+		self::assertSame('RuntimeException', $event->error);
+		self::assertSame('cURL error 28: Connection timed out after 3001 milliseconds for https://paperless.example.com/api/documents/', $event->message);
+		self::assertGreaterThanOrEqual(0, $event->durationMs);
 	}
 
 	public function testAFailedSearchLeavesOutTheTokenAndTheTerm(): void {
@@ -334,10 +341,35 @@ final class PaperlessSearchProviderTest extends TestCase {
 
 		$this->provider($client)->search($this->user(), $this->query(' invoice '));
 
-		self::assertSame('Token … refused for …', $this->failure()->message);
+		self::assertSame('Token … refused for …', $this->history()->events[0]->message);
 	}
 
-	public function testAFailedLookupOfTheFilesIsRememberedAsSuch(): void {
+	public function testARequestThatOnlyItsSecondTryAnswersGoesIntoTheHistory(): void {
+		$answer = $this->response(['count' => 1, 'next' => null, 'results' => [['id' => 7, 'title' => 'Invoice']]]);
+		$calls = 0;
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(static function () use (&$calls, $answer): IResponse {
+			if (++$calls === 1) {
+				throw new RuntimeException('cURL error 6: Could not resolve host: paperless.example.com for https://paperless.example.com/api/documents/?query=invoice');
+			}
+
+			return $answer;
+		});
+
+		$result = $this->provider($client, [7 => $this->file(7, 'Invoice [P7].pdf')])
+			->search($this->user(), $this->query('invoice'))
+			->jsonSerialize();
+
+		self::assertCount(1, $result['entries']);
+		$history = $this->history();
+		self::assertSame(0, $history->failed);
+		self::assertSame(1, $history->retried);
+		self::assertSame(SearchEvent::KIND_RETRIED, $history->events[0]->kind);
+		self::assertSame(SearchEvent::STEP_PAPERLESS, $history->events[0]->step);
+		self::assertSame('cURL error 6: Could not resolve host: paperless.example.com for https://paperless.example.com/api/documents/', $history->events[0]->message);
+	}
+
+	public function testAFailedLookupOfTheFilesGoesIntoTheHistoryAsSuch(): void {
 		$client = $this->paperless(['count' => 1, 'next' => null, 'results' => [['id' => 7, 'title' => 'Invoice']]]);
 		$file = $this->createStub(File::class);
 		$file->method('getName')->willThrowException(new RuntimeException('Storage unavailable'));
@@ -345,11 +377,11 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$result = $this->provider($client, [7 => $file])->search($this->user(), $this->query('invoice'))->jsonSerialize();
 
 		self::assertSame([], $result['entries']);
-		self::assertSame(SearchFailure::STEP_FILES, $this->failure()->step);
-		self::assertSame('Storage unavailable', $this->failure()->message);
+		self::assertSame(SearchEvent::STEP_FILES, $this->history()->events[0]->step);
+		self::assertSame('Storage unavailable', $this->history()->events[0]->message);
 	}
 
-	public function testTheFirstSearchThatWorksAgainIsRemembered(): void {
+	public function testTheFirstSearchThatWorksAgainIsTheRecovery(): void {
 		$answer = $this->response(['count' => 0, 'next' => null, 'results' => []]);
 		$calls = 0;
 		$client = $this->createStub(IClient::class);
@@ -364,11 +396,11 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$provider = $this->provider($client);
 
 		$provider->search($this->user(), $this->query('invoice'));
-		self::assertArrayNotHasKey('last_recovery', $this->stored);
+		self::assertTrue($this->history()->awaitsRecovery());
 
 		$provider->search($this->user(), $this->query('invoice'));
-		self::assertSame(self::NOW, $this->stored['last_recovery']);
-		self::assertSame(SearchFailure::STEP_PAPERLESS, $this->failure()->step);
+		self::assertSame(self::NOW, $this->history()->recoveredAt);
+		self::assertSame(SearchEvent::KIND_FAILED, $this->history()->events[0]->kind);
 	}
 
 	public function testASearchThatWorksStoresNothing(): void {
@@ -541,7 +573,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$configService = new ConfigService($config, $credentials);
 
 		return new PaperlessSearchProvider(
-			new PaperlessApiService($configService, $clientService),
+			new PaperlessApiService($configService, $clientService, new SearchDiagnostics($config, $this->clock())),
 			new NextcloudFileLocator($root),
 			$l10n,
 			$urlGenerator,
@@ -590,11 +622,11 @@ final class PaperlessSearchProviderTest extends TestCase {
 		return $account;
 	}
 
-	private function failure(): SearchFailure {
-		$failure = SearchFailure::fromArray(is_array($this->stored['last_failure'] ?? null) ? $this->stored['last_failure'] : []);
-		self::assertNotNull($failure, 'No failed search was remembered.');
+	private function history(): DiagnosticsHistory {
+		$history = DiagnosticsHistory::fromArray(is_array($this->stored['diagnostics'] ?? null) ? $this->stored['diagnostics'] : []);
+		self::assertNotNull($history, 'The diagnostics recorded no problem.');
 
-		return $failure;
+		return $history;
 	}
 
 	private function clock(): ITimeFactory {
@@ -623,23 +655,10 @@ final class PaperlessSearchProviderTest extends TestCase {
 
 			return true;
 		});
-		$config->method('setValueInt')->willReturnCallback(function (string $app, string $key, int $value): bool {
-			$this->stored[$key] = $value;
-
-			return true;
-		});
 		$config->method('getValueArray')->willReturnCallback(function (string $app, string $key, array $default): array {
 			$value = $this->stored[$key] ?? $default;
 
 			return is_array($value) ? $value : $default;
-		});
-		$config->method('getValueInt')->willReturnCallback(function (string $app, string $key, int $default): int {
-			$value = $this->stored[$key] ?? $default;
-
-			return is_int($value) ? $value : $default;
-		});
-		$config->method('deleteKey')->willReturnCallback(function (string $app, string $key): void {
-			unset($this->stored[$key]);
 		});
 
 		return $config;

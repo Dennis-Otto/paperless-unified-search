@@ -12,6 +12,8 @@ namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Service;
 use JsonException;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
+use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
+use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Http\Client\IClient;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
@@ -25,6 +27,9 @@ use UnexpectedValueException;
 
 final class PaperlessApiServiceTest extends TestCase {
 	private const NO_DOCUMENTS = '{"count":0,"next":null,"results":[]}';
+
+	/** @var array<string, mixed> the values that the diagnostics stored, by key */
+	private array $stored = [];
 
 	/**
 	 * @return array<string, array{string, ?string, bool}>
@@ -189,7 +194,7 @@ final class PaperlessApiServiceTest extends TestCase {
 			->method('get')
 			->willReturnCallback(static function () use (&$calls, $answer): IResponse {
 				if (++$calls === 1) {
-					throw new RuntimeException('cURL error 28: Connection timed out after 3001 milliseconds');
+					throw new RuntimeException('cURL error 28: Connection timed out after 3001 milliseconds for https://paperless.example.com/api/documents/?query=invoice');
 				}
 
 				return $answer;
@@ -198,6 +203,11 @@ final class PaperlessApiServiceTest extends TestCase {
 		self::assertSame(
 			['count' => 1, 'next' => null, 'results' => [['id' => 7]]],
 			$this->service($client)->searchDocuments('invoice', 1, 10),
+		);
+		self::assertSame(1, $this->stored['diagnostics']['retried'] ?? null);
+		self::assertSame(
+			'cURL error 28: Connection timed out after 3001 milliseconds for https://paperless.example.com/api/documents/',
+			$this->stored['diagnostics']['events'][0]['message'] ?? null,
 		);
 	}
 
@@ -210,10 +220,14 @@ final class PaperlessApiServiceTest extends TestCase {
 				throw new RuntimeException(++$calls === 1 ? 'cURL error 6: Could not resolve host' : 'cURL error 7: Failed to connect');
 			});
 
-		$this->expectException(RuntimeException::class);
-		$this->expectExceptionMessage('cURL error 7: Failed to connect');
-
-		$this->service($client)->searchDocuments('invoice', 1, 10);
+		try {
+			$this->service($client)->searchDocuments('invoice', 1, 10);
+			self::fail('The second request without answer did not fail.');
+		} catch (RuntimeException $exception) {
+			self::assertSame('cURL error 7: Failed to connect', $exception->getMessage());
+		}
+		// The search that fails records the failure, not the request.
+		self::assertSame([], $this->stored);
 	}
 
 	public function testAnAnswerOfPaperlessGetsNoSecondTry(): void {
@@ -231,6 +245,16 @@ final class PaperlessApiServiceTest extends TestCase {
 	private function service(IClient $client, string $url = 'https://paperless.example.com', ?string $token = 'TEST_VALUE'): PaperlessApiService {
 		$config = $this->createStub(IAppConfig::class);
 		$config->method('getValueString')->willReturn($url);
+		$config->method('setValueArray')->willReturnCallback(function (string $app, string $key, array $value): bool {
+			$this->stored[$key] = $value;
+
+			return true;
+		});
+		$config->method('getValueArray')->willReturnCallback(function (string $app, string $key, array $default): array {
+			$value = $this->stored[$key] ?? $default;
+
+			return is_array($value) ? $value : $default;
+		});
 
 		$credentials = $this->createStub(ICredentialsManager::class);
 		$credentials->method('retrieve')->willReturn($token);
@@ -238,7 +262,11 @@ final class PaperlessApiServiceTest extends TestCase {
 		$clientService = $this->createStub(IClientService::class);
 		$clientService->method('newClient')->willReturn($client);
 
-		return new PaperlessApiService(new ConfigService($config, $credentials), $clientService);
+		return new PaperlessApiService(
+			new ConfigService($config, $credentials),
+			$clientService,
+			new SearchDiagnostics($config, $this->createStub(ITimeFactory::class)),
+		);
 	}
 
 	private function response(int $status, ?string $body): IResponse {

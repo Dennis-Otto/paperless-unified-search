@@ -44,11 +44,8 @@ final class SettingsController extends Controller {
 				throw new InvalidArgumentException('The archive account does not exist.');
 			}
 			$this->paperlessApi->testConnection($normalizedUrl, $effectiveToken);
-			$config = $this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner);
-			// The failures of the former settings say nothing about the new ones.
-			$this->diagnostics->clear();
 
-			return new JSONResponse($config);
+			return new JSONResponse($this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner));
 		} catch (InvalidArgumentException $exception) {
 			return new JSONResponse(
 				['message' => $exception->getMessage()],
@@ -68,5 +65,12 @@ final class SettingsController extends Controller {
 		$this->diagnostics->clear();
 
 		return new JSONResponse($config);
+	}
+
+	#[FrontpageRoute(verb: 'DELETE', url: '/settings/diagnostics')]
+	public function clearDiagnostics(): JSONResponse {
+		$this->diagnostics->clear();
+
+		return new JSONResponse([]);
 	}
 }
