@@ -12,6 +12,13 @@ All notable changes to this project are documented in this file.
 
 - **Saving the settings keeps the history.** Only *Disconnect* and the new button *Clear history* forget it. The history replaces the last failed search of version 0.3.0.
 
+## [0.4.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.3.0...v0.4.0) (2026-10-09)
+
+
+### Features
+
+* **settings:** keep a history of the problems of the search ([#80](https://github.com/Dennis-Otto/paperless-unified-search/issues/80)) ([59b3b44](https://github.com/Dennis-Otto/paperless-unified-search/commit/59b3b44f6822505d9055a3f9197c6b5503895d10))
+
 ## [0.3.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.2.1...v0.3.0) (2026-10-08)
 
 ### Added
