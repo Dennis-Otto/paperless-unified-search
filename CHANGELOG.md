@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [0.4.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.3.0...v0.4.0) (2026-10-09)
+
 ### Added
 
 - **The settings keep a history of the problems of the search.** Under *Search problems*, the administration settings now count the failed searches and the requests to Paperless that only their second try answered, and list the latest 20 of them, newest first, with the time, the step, the error and how long it took, along with the last failed search and since when searches work again. A request that its second try saves no longer goes unnoticed, so problems of the connection show before searches fail. The history leaves out the API token, the search term and the query of every URL.
@@ -11,13 +13,6 @@ All notable changes to this project are documented in this file.
 ### Changed
 
 - **Saving the settings keeps the history.** Only *Disconnect* and the new button *Clear history* forget it. The history replaces the last failed search of version 0.3.0.
-
-## [0.4.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.3.0...v0.4.0) (2026-10-09)
-
-
-### Features
-
-* **settings:** keep a history of the problems of the search ([#80](https://github.com/Dennis-Otto/paperless-unified-search/issues/80)) ([59b3b44](https://github.com/Dennis-Otto/paperless-unified-search/commit/59b3b44f6822505d9055a3f9197c6b5503895d10))
 
 ## [0.3.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.2.1...v0.3.0) (2026-10-08)
 
