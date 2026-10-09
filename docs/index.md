@@ -82,12 +82,6 @@ Each picture follows the light or dark theme of this website. Select one to enla
 </figure>
 
 <figure markdown="span">
-  ![The history of the problems of the search in the settings](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/06-search-problems.png#only-light)
-  ![The history of the problems of the search in the settings](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/06-search-problems-dark.png#only-dark)
-  <figcaption>The problems of the search, without the log of Nextcloud</figcaption>
-</figure>
-
-<figure markdown="span">
   ![Paperless results in the global search of Nextcloud on a phone](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/04-mobile-search.png){ width="180" }
   ![The electricity invoice opened in Nextcloud's viewer on a phone](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/05-mobile-viewer.png){ width="180" }
   <figcaption>On a phone, in the browser</figcaption>
