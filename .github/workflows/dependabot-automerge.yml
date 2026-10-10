@@ -1,5 +1,7 @@
 name: Dependabot maintenance
 
+# Dependabot keeps only the Features of the dev container (dependabot.yml); Renovate
+# merges its own updates, those of actions pinned to a commit of a branch included.
 # Routine updates merge on their own once every required check passes; a major
 # update waits for the maintainer. Updates of runtime dependencies are committed as
 # fix(deps) and so lead to a patch release (see release.yml).
@@ -28,12 +30,6 @@ jobs:
       pull-requests: write
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    env:
-      # Actions pinned to a commit of their default branch instead of a release.
-      # Dependabot moves such a pin from commit to commit, reports the update as
-      # major and skips the cooldown. Both only start the current image of HACS and
-      # hassfest, so their commit updates merge like patch updates.
-      COMMIT_PINNED_ACTIONS: '["hacs/action", "home-assistant/actions/hassfest"]'
     steps:
       - name: Record the network traffic of the job
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -55,23 +51,3 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: gh pr merge --auto --squash --match-head-commit "$PR_HEAD_SHA" "$PR_URL"
-
-      - name: Enable automatic squash merge for commit updates of listed actions
-        # One listed action per pull request; a group or a real release still needs
-        # the maintainer.
-        if: >-
-          steps.metadata.outputs.package-ecosystem == 'github_actions' &&
-          contains(fromJSON(env.COMMIT_PINNED_ACTIONS), steps.metadata.outputs.dependency-names)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PREVIOUS_VERSION: ${{ steps.metadata.outputs.previous-version }}
-          NEW_VERSION: ${{ steps.metadata.outputs.new-version }}
-        run: |
-          commit='^[0-9a-f]{40}$'
-          if [[ ! $PREVIOUS_VERSION =~ $commit || ! $NEW_VERSION =~ $commit ]]; then
-            echo "Not a commit-to-commit update; the maintainer merges it."
-            exit 0
-          fi
-          gh pr merge --auto --squash --match-head-commit "$PR_HEAD_SHA" "$PR_URL"
