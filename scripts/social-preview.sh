@@ -8,7 +8,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-# The image comes from a Dockerfile, so that Dependabot keeps it current.
+# The image comes from a Dockerfile, so that Renovate keeps it current.
 image="$(sed -n 's/^FROM //p' .github/social-preview/Dockerfile)"
 # Git Bash on Windows: keep the container's paths and mount the Windows path.
 export MSYS_NO_PATHCONV=1
