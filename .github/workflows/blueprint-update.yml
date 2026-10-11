@@ -57,6 +57,12 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           AUTOMERGE: ${{ vars.BLUEPRINT_AUTOMERGE }}
+          # Git starts its maintenance in the background after a commit, and Copier
+          # deletes the repositories it commits to for the update right away: the two
+          # collided now and then, and the update failed with "Directory not empty".
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: maintenance.auto
+          GIT_CONFIG_VALUE_0: "false"
         run: |
           set -euo pipefail
           before="$(sed -n 's/^_commit: //p' .copier-answers.yml)"
