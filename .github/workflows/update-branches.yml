@@ -4,9 +4,10 @@ name: Update branches
 # auto-merge doesn't update a branch by itself. So after every change of main, this
 # workflow brings each pull request that waits for auto-merge up to date, as the
 # release app, so that its checks run again and it merges once they pass. A pull
-# request that conflicts with main gets the label merge-conflict and one comment;
-# both go once it no longer conflicts. The release bot and Renovate keep their own
-# pull requests current. https://github.com/Dennis-Otto/repo-blueprint
+# request that conflicts with main gets the label merge-conflict and one comment.
+# The label goes once it no longer conflicts; the comment stays for the history, so
+# a later conflict brings back only the label. The release bot and Renovate keep
+# their own pull requests current. https://github.com/Dennis-Otto/repo-blueprint
 
 on:
   push:

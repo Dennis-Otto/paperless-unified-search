@@ -13,7 +13,6 @@
 #   lifecycle  set and removed by the issue assistant's rules
 #   decision   set by the maintainer only
 #   release    sorts pull requests into the release notes (.github/release.yml)
-#   dependabot set by Dependabot on its pull requests
 #
 # ask = false keeps the assistant from asking reporters of that kind for information.
 
@@ -187,31 +186,11 @@ color = "ededed"
 description = "Leave out of the release notes"
 group = "release"
 
-# Dependabot
-
 [[label]]
 name = "dependencies"
 color = "0366d6"
 description = "Pull requests that update a dependency file"
-group = "dependabot"
-
-[[label]]
-name = "php"
-color = "45229e"
-description = "Pull requests that update php code"
-group = "dependabot"
-
-[[label]]
-name = "github_actions"
-color = "000000"
-description = "Pull requests that update GitHub Actions code"
-group = "dependabot"
-
-[[label]]
-name = "docker_compose"
-color = "e5f2fc"
-description = "Pull requests that update docker_compose code"
-group = "dependabot"
+group = "release"
 
 [[label]]
 name = "maintenance"
@@ -242,9 +221,3 @@ name = "autorelease: tagged"
 color = "ededed"
 description = "Release bot: the release is created"
 group = "release"
-
-[[label]]
-name = "docker"
-color = "21ceff"
-description = "Pull requests that update docker code"
-group = "dependabot"
