@@ -1,8 +1,8 @@
 name: After the checks
 
-# The two bots that act on a finished run of the checks. One workflow for both, so
-# that every run of the checks starts one run after it, not two that mostly have
-# nothing to do. Neither checks out or runs the code of a pull request.
+# The three bots that act on a finished run of the checks. One workflow for all, so
+# that every run of the checks starts one run after it, not three that mostly have
+# nothing to do. None checks out or runs the code of a pull request.
 #
 # The flaky-test bot: when a run of the tests fails for the first time, it runs the
 # failed jobs once more. A job that passes then failed without a change of the code:
@@ -14,12 +14,21 @@ name: After the checks
 # its tests with that of main, file by file, and keeps one comment on the pull
 # request up to date. It reads the coverage reports that the checks keep as the
 # artifact "coverage".
+#
+# The bot for cancelled checks: a newer run of a workflow cancels the one still running
+# for the same pull request. GitHub doesn't always create the runs in the order of the
+# commits, so a late run for an older commit can cancel the run for the head of the
+# pull request; its required checks then stay cancelled and block the merge. When a
+# run for the head of an open pull request was cancelled that way and no newer run of
+# its workflow for the same commit exists, the bot starts it again. A run that a
+# person cancelled, or one whose commit a newer push replaced, stays cancelled.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
   workflow_run:
     # The checks of this repository, and its end-to-end tests if a workflow of its own named Docker E2E runs them.
-    workflows: [CI (php), Docker E2E]
+    # Then those of the other required checks, the same in every repository.
+    workflows: [CI (php), Docker E2E, CodeQL, Dependency review, Docs, Lint, Pull request title, Secret scan]
     types: [completed]
 
 permissions: {}
@@ -27,8 +36,10 @@ permissions: {}
 jobs:
   rerun:
     name: run the failed jobs again
+    # The tests only; the other required checks fail the same way again.
     if: >-
       !github.event.repository.fork &&
+      !contains(fromJSON('["CodeQL", "Dependency review", "Docs", "Lint", "Pull request title", "Secret scan"]'), github.event.workflow_run.name) &&
       github.event.workflow_run.conclusion == 'failure' &&
       github.event.workflow_run.run_attempt == 1
     concurrency:
@@ -57,6 +68,7 @@ jobs:
     name: report the flaky tests
     if: >-
       !github.event.repository.fork &&
+      !contains(fromJSON('["CodeQL", "Dependency review", "Docs", "Lint", "Pull request title", "Secret scan"]'), github.event.workflow_run.name) &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.run_attempt > 1
     concurrency:
@@ -82,6 +94,11 @@ jobs:
           BRANCH: ${{ github.event.workflow_run.head_branch }}
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
+          # A run that the bot for cancelled checks started again didn't fail at first.
+          if [[ "$(gh api "repos/$GH_REPO/actions/runs/$RUN/attempts/1" --jq .conclusion)" == cancelled ]]; then
+            echo "The first attempt was cancelled, not failed; nothing to report." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           # The backticks are Markdown of jq's output, not the shell's.
           # shellcheck disable=SC2016
           jobs="$(gh api "repos/$GH_REPO/actions/runs/$RUN/attempts/1/jobs" --paginate \
@@ -107,6 +124,69 @@ jobs:
             echo "### Flaky"
             echo "$jobs"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  cancelled:
+    name: run the cancelled checks again
+    if: >-
+      !github.event.repository.fork &&
+      github.event.workflow_run.conclusion == 'cancelled' &&
+      contains(fromJSON('["pull_request", "pull_request_target"]'), github.event.workflow_run.event) &&
+      github.event.workflow_run.run_attempt < 3
+    concurrency:
+      group: ${{ github.workflow }}-cancelled-${{ github.event.workflow_run.id }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      checks: read
+      pull-requests: read
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: Run the checks of the head of the pull request again
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.event.workflow_run.id }}
+          ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          WORKFLOW: ${{ github.event.workflow_run.workflow_id }}
+          NAME: ${{ github.event.workflow_run.name }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          # Only the runs for the head of a pull request report its checks.
+          number="$(gh api "repos/$GH_REPO/commits/$SHA/pulls" \
+            --jq "map(select(.state == \"open\" and .head.sha == \"$SHA\")) | .[0].number // empty")"
+          if [[ -z "$number" ]]; then
+            echo "${SHA:0:7} is not the head of an open pull request; its run of $NAME stays cancelled." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # A newer run of the same commit reports the checks itself.
+          newer="$(gh api "repos/$GH_REPO/actions/workflows/$WORKFLOW/runs?head_sha=$SHA" --paginate \
+            --jq ".workflow_runs[] | select(.id > $RUN) | .id")"
+          if [[ -n "$newer" ]]; then
+            echo "A newer run of $NAME for ${SHA:0:7} reports the checks of #$number." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # Cancelled by the concurrency of the workflow, which says so on the job.
+          jobs="$(gh api "repos/$GH_REPO/actions/runs/$RUN/attempts/$ATTEMPT/jobs" --paginate \
+            --jq '.jobs[] | select(.conclusion == "cancelled") | .id')"
+          raced=false
+          for job in $jobs; do
+            if gh api "repos/$GH_REPO/check-runs/$job/annotations" --paginate --jq '.[].message' |
+              grep -q "higher priority waiting request"; then
+              raced=true
+              break
+            fi
+          done
+          if [[ "$raced" != true ]]; then
+            echo "No newer run of $NAME cancelled it, but a person or a time limit; it stays cancelled." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          gh run rerun "$RUN"
+          echo "A run for an older commit cancelled $NAME for the head of #$number; it runs again." >> "$GITHUB_STEP_SUMMARY"
 
   coverage:
     name: coverage comment
