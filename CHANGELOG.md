@@ -8,6 +8,13 @@ All notable changes to this project are documented in this file.
 
 - **The settings stand right below those of Paperless Sync.** In the navigation of the administration settings, *Flow* came between the sections of Paperless Sync and Paperless Unified Search when both apps are installed. The section of the app now has the priority of Paperless Sync, so that both stand together.
 
+## [0.4.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.4.0...v0.4.1) (2026-10-12)
+
+
+### Bug fixes
+
+* **settings:** put the section right below Paperless Sync ([#88](https://github.com/Dennis-Otto/paperless-unified-search/issues/88)) ([17c804c](https://github.com/Dennis-Otto/paperless-unified-search/commit/17c804c33a0262470c2433ca7390a5b319e91058))
+
 ## [0.4.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.3.0...v0.4.0) (2026-10-09)
 
 ### Added
