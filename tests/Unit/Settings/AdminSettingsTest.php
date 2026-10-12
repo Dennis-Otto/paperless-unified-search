@@ -135,7 +135,7 @@ final class AdminSettingsTest extends TestCase {
 		self::assertSame($section->getID(), $settings->getSection());
 		self::assertSame('Paperless-Suche', $section->getName());
 		self::assertSame('/apps/paperless_unified_search/img/app.svg', $section->getIcon());
-		self::assertSame(56, $section->getPriority());
+		self::assertSame(55, $section->getPriority());
 		self::assertSame(50, $settings->getPriority());
 	}
 
