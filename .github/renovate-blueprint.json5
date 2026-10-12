@@ -3,9 +3,10 @@
 // workflows current; the Renovate workflow of the blueprint runs it for every
 // repository with a .github/renovate.json5, as the release app. An update waits a
 // week after its release; one that fixes a vulnerability comes at once. Routine
-// updates merge on their own once every check passes; a major update waits for the
-// maintainer. Updates of what the users run are committed as fix(deps) and lead to
-// a patch release, updates of the tools as chore(deps).
+// updates and the weekly refresh of the lock files merge on their own once every
+// check passes; a major update waits for the maintainer. Updates of what the users
+// run are committed as fix(deps) and lead to a patch release, updates of the tools
+// as chore(deps).
 // https://github.com/Dennis-Otto/repo-blueprint
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
@@ -40,9 +41,14 @@
   devcontainer: { enabled: false },
   // The blueprint bot brings the updates of the blueprint.
   copier: { enabled: false },
-  // The hash-pinned requirements are compiled from their .in files.
+  // The hash-pinned requirements are compiled from their .in files. Renovate
+  // installs pip-tools once per repository, for the Python of the first lock file
+  // it compiles: a lock file for another Python is compiled with
+  // `uv pip compile --python-version`, which doesn't depend on the Python it runs on.
   pip_requirements: { enabled: false },
   "pip-compile": { managerFilePatterns: ["/(^|/)requirements[^/]*\\.txt$/"] },
+  // The hooks of .pre-commit-config.yaml, which Renovate leaves alone by default.
+  "pre-commit": { enabled: true },
   customManagers: [
     {
       // Images that the scripts of workflows and checks start, by tag and digest,
@@ -73,6 +79,13 @@
     {
       // Routine updates merge on their own, a week after their release.
       matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
+      automerge: true,
+    },
+    {
+      // The weekly refresh of the lock files has no release date to wait for, so
+      // its age check would stay pending; it merges once every check passes.
+      matchUpdateTypes: ["lockFileMaintenance"],
+      minimumReleaseAge: null,
       automerge: true,
     },
     {
@@ -129,6 +142,14 @@
       matchManagers: ["composer"],
       matchDepNames: ["php"],
       enabled: false,
+    },
+    {
+      // Only releases that run on that PHP, the platform of composer.json: a tool
+      // that needs a newer one waits until the app raises it. A project with a
+      // newer PHP sets it in .github/renovate.json5.
+      matchManagers: ["composer"],
+      constraints: { php: "8.2.*" },
+      constraintsFiltering: "strict",
     },
     {
       // The public API of Nextcloud follows the min-version of appinfo/info.xml.
