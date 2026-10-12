@@ -6,8 +6,11 @@ name: Update branches
 # release app, so that its checks run again and it merges once they pass. A pull
 # request that conflicts with main gets the label merge-conflict and one comment.
 # The label goes once it no longer conflicts; the comment stays for the history, so
-# a later conflict brings back only the label. The release bot and Renovate keep
-# their own pull requests current. https://github.com/Dennis-Otto/repo-blueprint
+# a later conflict brings back only the label. The release bot keeps its own pull
+# request current. Renovate's pull requests are brought up to date as well, which
+# spares them the wait for its next run: Renovate commits as the release app too,
+# so it still takes the branch for its own; one that conflicts with main it builds
+# anew itself. https://github.com/Dennis-Otto/repo-blueprint
 
 on:
   push:
@@ -61,10 +64,13 @@ jobs:
           gh pr list --state open --limit 100 \
             --json number,headRefName,autoMergeRequest,isCrossRepository,mergeable,labels \
             --jq '.[] | select(.autoMergeRequest != null and (.isCrossRepository | not)
-              and (.headRefName | startswith("release-please--") | not)
-              and (.headRefName | startswith("renovate/") | not))
+              and (.headRefName | startswith("release-please--") | not))
               | "\(.number) \(.headRefName) \(.mergeable) \([.labels[].name] | index("merge-conflict") != null)"' |
             while read -r number branch mergeable labelled; do
+              # Renovate builds a branch that conflicts with main anew on its next run.
+              if [[ "$branch" == renovate/* && "$mergeable" == CONFLICTING ]]; then
+                continue
+              fi
               if [[ "$mergeable" != CONFLICTING ]]; then
                 if [[ "$labelled" == true ]]; then
                   gh pr edit "$number" --remove-label merge-conflict
