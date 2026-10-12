@@ -21,6 +21,9 @@ rules:
       # After the checks, the flaky-test bot only runs failed jobs again and writes an
       # issue, and the coverage bot reads the coverage reports and writes one comment.
       - after-checks.yml
+      # The rollout starts after a run of the Release workflow on main; it reads the
+      # latest release and the repositories of the release app, and checks out nothing.
+      - rollout.yml
       # The issue assistant's templates, which its check keeps equal to the action's.
       - findings.yml
       - issue-lifecycle.yml
