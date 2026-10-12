@@ -30,9 +30,14 @@ final class AdminSection implements IIconSection {
 		return $this->l10n->t('Paperless Unified Search');
 	}
 
-	/** Right after the section of Paperless Sync (55), when both apps are installed. */
+	/**
+	 * The priority of Paperless Sync, so that both sections stand together. Nextcloud orders
+	 * sections of equal priority by the order the apps load in, which is that of their IDs, and
+	 * so puts this one right after Paperless Sync. With a priority of its own, Flow (55 as well)
+	 * would come between them.
+	 */
 	public function getPriority(): int {
-		return 56;
+		return 55;
 	}
 
 	public function getIcon(): string {
