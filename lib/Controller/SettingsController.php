@@ -72,9 +72,9 @@ final class SettingsController extends Controller {
 			$normalizedUrl = $this->configService->normalizeUrl($url);
 			$effectiveToken = $this->configService->resolveToken($token, $normalizedUrl);
 			$owner = $this->configService->resolveArchiveOwner($archiveOwner);
-			$this->paperlessApi->testConnection($normalizedUrl, $effectiveToken, $allowLocal);
+			$version = $this->paperlessApi->testConnection($normalizedUrl, $effectiveToken, $allowLocal);
 
-			return new JSONResponse($this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner, $allowLocal));
+			return new JSONResponse($this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner, $allowLocal, $version));
 		} catch (InvalidSettingException $exception) {
 			return $this->refusal($this->settingMessage($exception->problem, trim($archiveOwner)), $exception->problem->value);
 		} catch (PaperlessRequestException $exception) {

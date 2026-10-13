@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import json
+import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlparse
@@ -20,6 +21,15 @@ DROP_TERM = "e2e-drop"
 # Like Paperless, the mock answers in pages of 25 documents unless a request asks for
 # another size, and refuses a page past the last one.
 DEFAULT_PAGE_SIZE = 25
+
+# Like Paperless, the mock names its version in the headers of every answer to a valid
+# token, as Paperless-ngx 3.3.0 does, so that the app may send a query that the advanced
+# syntax refuses to the simple mode of the search, the parameter text.
+VERSION_HEADERS = {"X-Version": "3.3.0", "X-Api-Version": "10"}
+
+# A range of dates whose end is still being typed, such as created:[2026 to, which
+# Paperless 3 refuses in its advanced syntax with HTTP 400 and the errors of the query.
+UNFINISHED_RANGE = re.compile(r"(\w+):\[([^\]\s]*)[^\]]*$")
 
 # Like Paperless, the mock sends only the fields of the documents that a request names,
 # and the excerpt of a search with them. Unlike Paperless, it refuses a request that names
@@ -123,8 +133,21 @@ def number(parameters, name, default):
     return int(value) if value.isdigit() and int(value) > 0 else None
 
 
+def documents_of(term):
+    """The documents that a search for this term ranks, as the demo has them."""
+    if term in ("", "mobiletest", DROP_TERM):
+        return MOBILE_DOCUMENTS
+    if term == "invoice":
+        return DEMO_DOCUMENTS
+    if term == "pagetest":
+        return PAGE_TEST_DOCUMENTS
+    return []
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        # Only an answer to a valid token names the version, as with Paperless.
+        self.versioned = False
         parsed = urlparse(self.path)
         if parsed.path == "/health":
             self._json(200, {"status": "ok"})
@@ -138,6 +161,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json(401, {"detail": "Invalid token"})
             return
 
+        self.versioned = True
         parameters = parse_qs(parsed.query)
         fields = set(parameters.get("fields", [""])[0].split(",")) - {""}
         if not fields:
@@ -145,6 +169,11 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         query = parameters.get("query", [""])[0].strip().lower()
+        unfinished = UNFINISHED_RANGE.search(query)
+        if unfinished:
+            field, value = unfinished.groups()
+            self._json(400, {"query": [f"Invalid date value '[{value}' for field '{field}'."]})
+            return
         if query == ERROR_TERM:
             self._send(500, "text/html", SERVER_ERROR_PAGE)
             return
@@ -154,13 +183,12 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True
             return
 
-        results = []
-        if query in ("", "mobiletest", DROP_TERM):
-            results = MOBILE_DOCUMENTS
-        elif query == "invoice":
-            results = DEMO_DOCUMENTS
-        elif query == "pagetest":
-            results = PAGE_TEST_DOCUMENTS
+        results = documents_of(query)
+        if "text" in parameters:
+            # The simple mode takes any input and searches its words; the mock ranks the
+            # documents of the first word that names some.
+            words = parameters["text"][0].lower().split()
+            results = next((documents_of(word) for word in words if documents_of(word)), [])
 
         page = number(parameters, "page", 1)
         page_size = number(parameters, "page_size", DEFAULT_PAGE_SIZE)
@@ -202,6 +230,9 @@ class Handler(BaseHTTPRequestHandler):
     def _send(self, status, content_type, body):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
+        if self.versioned:
+            for name, value in VERSION_HEADERS.items():
+                self.send_header(name, value)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
