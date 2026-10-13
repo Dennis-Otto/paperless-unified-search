@@ -92,7 +92,7 @@ bash tests/e2e/run-all.sh                       # every version from min-version
 E2E_VERSIONS="33 35" bash tests/e2e/run-all.sh  # only Nextcloud 33 and 35
 ```
 
-On a runner of GitHub, with four CPUs and 16 GB of memory, three versions at once take about two and a half minutes and one alone about a minute and a half. The script first downloads the images of Nextcloud and of the mock for every version, and the image of Playwright only while Nextcloud sets itself up, which is faster than downloading them all at once.
+On a runner of GitHub, with four CPUs and 16 GB of memory, three versions at once take about three to four minutes; half of it goes to the checks in Chromium, as three browsers and three Nextclouds share the CPUs. The script first downloads the images of Nextcloud and of the mock for every version, and the image of Playwright only while Nextcloud sets itself up, which is faster than downloading them all at once.
 
 ## In the CI
 
