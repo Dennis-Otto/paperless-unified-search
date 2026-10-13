@@ -192,8 +192,8 @@ flowchart TB
 ```
 
 1. Nextcloud forwards an enabled external-search query to Paperless-ngx.
-2. Paperless returns results from its native OCR/full-text index.
-3. The app maps each Paperless document ID to a synchronized file of the archive account whose name contains the unique marker `[P<ID>]`, for example `[P123]`. The archive account is the one that owns the synchronized files: the account of Paperless Sync, or the one of the settings.
+2. Paperless returns results from its native OCR/full-text index, with only the fields that a result shows: not the whole OCR text of each document, only the excerpt around the term.
+3. The app maps each Paperless document ID to a synchronized file of the archive account whose name contains the unique marker `[P<ID>]`, for example `[P123]`, with one search of Nextcloud's file cache for all documents of a page. The archive account is the one that owns the synchronized files: the account of Paperless Sync, or the one of the settings.
 4. A result is returned only if the current Nextcloud user can access that file: the archive account itself, or a user it shared the file with. A file with the marker in its name that belongs to another account stands for no document.
 5. Selecting a result opens the synchronized file in Nextcloud, not Paperless. Browsers use Nextcloud's
    `/f/{fileId}` viewer route. The official iOS app receives its native `nextcloud://open-file` deep link,

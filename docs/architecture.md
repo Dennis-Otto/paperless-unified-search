@@ -62,8 +62,8 @@ flowchart TB
 | --- | --- | --- |
 | App | `lib/AppInfo/Application.php` | Registers the search provider with Nextcloud |
 | Search provider | `lib/Search/PaperlessSearchProvider.php` | Answers a search of Nextcloud: asks Paperless, keeps the results with a readable file and builds each entry with its title, an excerpt and the link that opens the file in the browser, the iOS app or the Android app |
-| Paperless client | `lib/Service/PaperlessApiService.php` | Sends the search term to the full-text search of Paperless through Nextcloud's HTTP client and checks the shape of the answer |
-| File locator | `lib/Service/NextcloudFileLocator.php` | Finds the file of the archive account whose name carries the marker `[P<ID>]` of a document in the folders that the searching user can read |
+| Paperless client | `lib/Service/PaperlessApiService.php` | Sends the search term to the full-text search of Paperless through Nextcloud's HTTP client, asks only for the fields that a result shows, and checks the shape of the answer |
+| File locator | `lib/Service/NextcloudFileLocator.php`, `lib/Search/Files/` | Finds the files of the archive account whose names carry the markers `[P<ID>]` of the documents of a page, in one search of the folders that the searching user can read |
 | Configuration | `lib/Service/ConfigService.php`, `lib/Model/PublicConfig.php` | Checks and stores the URL of Paperless, the archive account and the switch *Always include Paperless in global search*; the API token goes to Nextcloud's credentials manager, is read from it once per request and is sent only to the server it was saved for; without an archive account of its own it takes the account of Paperless Sync, and it uses the ID of either as Nextcloud spells it |
 | Settings page | `lib/Settings/`, `lib/Controller/SettingsController.php`, `templates/settings.php`, `js/settings.js` | The page under *Administration settings → Paperless Unified Search*, a section of its own: save after a test of the connection, and reset; Nextcloud lets only administrators call its routes and checks the CSRF token of every request |
 
@@ -81,7 +81,7 @@ config:
 ---
 sequenceDiagram
     accTitle: The data flow of a search
-    accDescr: A user searches for invoice. The unified search passes the term, the page and the user to the search provider. Without a term, an archive account or a connection, the provider answers with no results and doesn't ask Paperless. Otherwise the Paperless client asks Paperless-ngx for at most 50 results with the token, and Paperless answers with documents 412, 389 and 371 and whether a next page exists. For every document, the file locator returns a file of the archive account with its marker, or none. The provider answers with an entry for every document with a file, and the next page.
+    accDescr: A user searches for invoice. The unified search passes the term, the page and the user to the search provider. Without a term, an archive account or a connection, the provider answers with no results and doesn't ask Paperless. Otherwise the Paperless client asks Paperless-ngx with the token for at most 50 results and only for the fields that a result shows, and Paperless answers with the ID, the title, the date and the excerpt of documents 412, 389 and 371 and whether a next page exists. One call of the file locator covers all documents of the page and returns for each a file of the archive account with its marker, or none. The provider answers with an entry for every document with a file, and the next page.
 
     actor User
     participant Search as Unified search
@@ -95,12 +95,10 @@ sequenceDiagram
         Provider-->>Search: no results, without asking Paperless
     else
         Provider->>Client: term, page, at most 50 results
-        Client->>Paperless: GET /api/documents/<br>?query=invoice,<br>with the token
-        Paperless-->>Client: documents 412, 389, 371 and whether a next page exists
-        loop every document
-            Provider->>Locator: document 412, user, archive account
-            Locator-->>Provider: a file of the archive account with [P412], or none
-        end
+        Client->>Paperless: GET /api/documents/<br>?query=invoice&fields=…,<br>with the token
+        Paperless-->>Client: ID, title, date and excerpt<br>of documents 412, 389, 371,<br>and whether a next page exists
+        Provider->>Locator: documents 412, 389, 371,<br>user, archive account
+        Locator-->>Provider: per document a file of the<br>archive account with its marker,<br>or none
         Provider-->>Search: an entry for every document with a file, and the next page
     end
 ```
@@ -108,11 +106,44 @@ sequenceDiagram
 </div>
 
 1. A user searches in Nextcloud. Nextcloud asks the provider when the user has switched on *Search connected services*, or always when an administrator has marked Paperless as trusted.
-2. The provider sends the term to the full-text search of Paperless, at most 50 results per page.
-3. For every document of the answer, the file locator looks for a file of the archive account with the marker `[P<ID>]` in the folders of the searching user. A document without such a file is left out, and without an archive account Paperless isn't asked at all.
+2. The provider sends the term to the full-text search of Paperless, at most 50 results per page, and asks only for the fields that a result shows: the ID, the title, the date, the correspondent and the type of each document, and the excerpt of the text that Paperless found. Without them, Paperless would send the whole OCR text of every document, its notes and its permissions as well, half a megabyte for a long document.
+3. The file locator looks for the files of all documents of the answer at once, in one search of the file cache: the files of the archive account with the marker `[P<ID>]` of one of the documents, in the folders of the searching user. Of several files of a document, the one with the first path counts. A document without such a file is left out, and without an archive account Paperless isn't asked at all. A file that fails to answer costs only its own document, not the whole search, and the log notes how many files failed. When the search then shows no document at all, the history of the diagnostics notes it as a failed search of the files.
 4. Each remaining document becomes an entry: its title, the date and an excerpt of the text that Paperless found, and the link that opens the file in Nextcloud. Further pages of Paperless become further pages of the search.
 5. A request to Paperless that gets no answer at all, because the name of the host doesn't resolve or the connection fails or times out, is sent a second time. An answer of Paperless, whatever its status, is not. When the second try gets an answer, the client notes the first error in the history of the diagnostics.
 6. A search that still fails returns no results, as an empty search does. The provider logs the kind of error and notes the failure in the history: the time, the step, asking Paperless or looking for the files, the kind and the message of the error, and how long it took. The first search that works afterwards notes when searches work again.
+
+## Finding the files
+
+```mermaid
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: Finding the files of a page of documents
+    accDescr: Paperless answers with documents 412, 389 and 371. One search of the file cache looks in the folders of the searching user for the names that carry any of their markers. Of the files it finds, only a file of the archive account with the exact marker of a document stands for it, and of several such files the one with the first path. Documents 412 and 371 get their file; document 389 has none and is left out.
+
+    page["Documents of a page<br>412, 389, 371"]
+    query["One search of the file cache<br>name LIKE '%[P412]%'<br>or '%[P389]%' or '%[P371]%'"]
+    found["Files with one of the markers<br>in the folders of the user"]
+    check{"A file of the<br>archive account, with the<br>exact marker?"}
+    first["Per document, the file<br>with the first path<br>412 and 371"]
+    none["Left out<br>389"]
+    page --> query --> found --> check
+    check -- "yes" --> first
+    check -- "no" --> none
+
+    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class query,check app
+    class first yes
+    class none no
+```
+
+The database has no index for a part of a name, so every search of the file cache reads the names of all files that the user can see, on every storage and in every share. One search per page keeps that to one such scan per keystroke, however many documents Paperless finds, where a search per document took five in the web search and up to 50 in the apps or after *Load more*. The file locator checks the marker of each file it finds once more, so that `[P1]` never counts for `[P12]`, nor `[p12]` for `[P12]`.
 
 ## Diagnostics
 
@@ -151,7 +182,7 @@ flowchart TB
     class search no
 ```
 
-The history is one value of the app configuration of Nextcloud, loaded only when it is needed. It counts the failed searches and the requests that only their second try answered since it began, and keeps the latest 20 of these events, newest first, each with its time, its kind, its step, the kind and the message of the error and how long it took: for a failed search the whole search, for a second try the first request that got no answer. Only problems write to it, and a search that works writes only once after a failure, so searches that keep working write nothing. Two problems at the same moment may keep only one of them, which a history for diagnosis can afford.
+The history is one value of the app configuration of Nextcloud, loaded only when it is needed. It counts the failed searches and the requests that only their second try answered since it began, and keeps the latest 20 of these events, newest first, each with its time, its kind, its step, the kind and the message of the error and how long it took: for a failed search the whole search, for a second try the first request that got no answer. Only problems write to it, and a search that works writes only once after a failure, so searches that keep working write nothing. A search whose files fail to answer and that shows no document counts as failed, since the user sees none; one that still shows the documents of other files works, and only the log notes the files it left out. Two problems at the same moment may keep only one of them, which a history for diagnosis can afford.
 
 The message loses the API token, the search term when it has at least three characters, cURL's pointer to the page of its error codes, and the query and the fragment of every URL, and is cut to 300 characters.
 
@@ -209,7 +240,7 @@ sequenceDiagram
     Controller->>Config: checks the URL, the token and the archive account
     Note over Controller,Config: a blank token keeps the stored one only for its server (the same scheme, host and port), else HTTP 400
     Controller->>Client: test the connection
-    Client->>Paperless: GET /api/documents/<br>?page_size=1
+    Client->>Paperless: GET /api/documents/<br>?page_size=1&fields=id
     Paperless-->>Client: 200
     Controller->>Config: save
     Config->>Config: URL, switch and archive account to the app configuration, the token to the credentials manager
@@ -224,6 +255,7 @@ A token left blank keeps the stored one, but only for the server it was saved fo
 
 - **Nextcloud decides who sees a file.** The app shows a document only through a file that the searching user can read in Nextcloud, and opens that file, not Paperless.
 - **Paperless does the searching.** Its OCR and full-text index answer the search; the app keeps no index of its own.
+- **One search of the file cache per page**, for the markers of all its documents, since each search reads the names of all files of the user ([Finding the files](#finding-the-files)). Nextcloud's public API has only the interfaces of such a search, so the app brings its own small classes for it in `lib/Search/Files/`, and never uses Nextcloud's private ones. Nextcloud adds methods to these interfaces even in a maintenance release, and PHP refuses a class that lacks one with a fatal error that no `catch` sees. So before each search the file locator compares the methods of the interfaces with those of its classes, without loading them, and when Nextcloud asks for more, it searches once per document by text, as before, and logs a warning: slower, but every search still answers.
 - **The marker `[P<ID>]`** in the file name ties a file of the archive account to its document. [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) writes such files, and the two apps work together without depending on each other's releases.
 - **The owner, not the name, decides.** Only files of the archive account count, because anyone can give a file the marker of a document ([decision 0002](decisions/0002-trust-the-archive-account.md)).
 - **External by default.** Like every provider that sends search terms to another server, the app searches Paperless only when the user asks for it, unless an administrator marks Paperless as trusted.
