@@ -8,6 +8,12 @@
 // its role and name, as a screen reader does, in every supported version of Nextcloud:
 // Nextcloud 33 and 34 search in a dialog that a button of the header opens, and
 // Nextcloud 35 in a field of the header, with the results below it.
+//
+// No workflow runs screenshots.mjs, and some steps here serve only it: search() with a
+// group, searchConnectedServices(), paperlessResult() and the drawn PDF of
+// waitForViewer(). After a change here, run `bash scripts/screenshots.sh` once and see
+// that it still takes every picture; `git checkout screenshots/` drops the pictures
+// again if they shouldn't change.
 
 export const BASE_URL = process.env.E2E_BASE_URL ?? 'http://nextcloud'
 export const PASSWORD = process.env.E2E_PASSWORD ?? 'e2e-only-password'

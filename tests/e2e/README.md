@@ -87,7 +87,7 @@ The search looks different in each supported version, and `flow.mjs` finds every
   <img src="../../docs/images/diagrams/the-search-dialog-in-flow-mjs.svg" alt="The search dialog in flow.mjs: flow.mjs signs in as e2e-user, opens the personal settings and the search, types mobiletest and adds the connected services, with the switch of Nextcloud 33 and 34 or the button of Nextcloud 35. It expects the group Paperless documents with only Mobile viewer test, read out with its title, its date and its excerpt as text. A click on the result opens the file in Files, in the Viewer, which names it in its header. It does this on a laptop and then on a phone.">
 </picture>
 
-`ui.mjs` holds the steps through the pages of Nextcloud that `flow.mjs`, `accessibility.mjs` and the screenshots share: signing in, the search of each version, its results and the Viewer.
+`ui.mjs` holds the steps through the pages of Nextcloud that `flow.mjs`, `accessibility.mjs` and the screenshots share: signing in, the search of each version, its results and the Viewer. No workflow runs the screenshots, so after a change of `ui.mjs`, run `scripts/screenshots.sh` once by hand and see that it still takes every picture.
 
 ## Screenshots
 
