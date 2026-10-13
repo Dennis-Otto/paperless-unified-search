@@ -25,6 +25,8 @@ final class PaperlessRequestException extends RuntimeException {
 	private const HANDSHAKE_ERRORS = [35, 58, 59];
 	private const UNKNOWN_HOST_ERROR = 6;
 	private const TIMEOUT_ERROR = 28;
+	/** How the DNS pinning of Nextcloud begins the message for a name that doesn't resolve. */
+	private const NO_DNS_RECORD = 'No DNS record found for ';
 
 	/**
 	 * @param ?int $status the status of the answer of Paperless, null without an answer
@@ -70,7 +72,12 @@ final class PaperlessRequestException extends RuntimeException {
 	private static function reasonOf(Throwable $error): RequestFailure {
 		for ($cause = $error; $cause !== null; $cause = $cause->getPrevious()) {
 			if ($cause instanceof LocalServerException) {
-				return RequestFailure::LocalAddress;
+				// With dns_pinning on, as by default, Nextcloud resolves the name itself for
+				// a request without local addresses and reports a name without a record of
+				// DNS with this exception too: that one is a wrong name, not a local address.
+				return str_starts_with($cause->getMessage(), self::NO_DNS_RECORD)
+					? RequestFailure::UnknownHost
+					: RequestFailure::LocalAddress;
 			}
 
 			if (preg_match('/\bcURL error (\d+)\b/', $cause->getMessage(), $match) === 1) {

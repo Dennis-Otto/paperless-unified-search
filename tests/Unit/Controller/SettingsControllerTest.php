@@ -432,6 +432,11 @@ final class SettingsControllerTest extends TestCase {
 				'Nextcloud could not find the host of this URL. Check its spelling; the name of a Docker service only works when Nextcloud runs in the same Docker network.',
 				RuntimeException::class, $detail('6: Could not resolve host: paperless.invalid'),
 			],
+			'a host that does not resolve, found by the DNS pinning of Nextcloud' => [
+				new LocalServerException('No DNS record found for paperless.invalid'), 'unknown_host',
+				'Nextcloud could not find the host of this URL. Check its spelling; the name of a Docker service only works when Nextcloud runs in the same Docker network.',
+				LocalServerException::class, 'No DNS record found for paperless.invalid',
+			],
 			'no answer in time' => [
 				$curl('28: Operation timed out after 10001 milliseconds with 0 bytes received'), 'timeout',
 				'Paperless did not answer in time. Check that it runs and is not overloaded, then try again.',

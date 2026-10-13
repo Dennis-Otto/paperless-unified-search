@@ -294,6 +294,13 @@ final class PaperlessApiServiceTest extends TestCase {
 		return [
 			'an address that Nextcloud refuses' => [$localAddress, RequestFailure::LocalAddress],
 			'an address that Nextcloud refuses, inside another error' => [new RuntimeException('The request failed.', 0, $localAddress), RequestFailure::LocalAddress],
+			// The DNS pinning of Nextcloud, on by default, reports a name without a record
+			// as a LocalServerException when the request doesn't allow local addresses.
+			'a host without a record of DNS, found by Nextcloud' => [new LocalServerException('No DNS record found for paperless.invalid'), RequestFailure::UnknownHost],
+			'a host without a record of DNS, inside another error' => [
+				new RuntimeException('The request failed.', 0, new LocalServerException('No DNS record found for paperless.invalid')),
+				RequestFailure::UnknownHost,
+			],
 			'an untrusted certificate' => [
 				new RuntimeException('cURL error 60: SSL certificate problem: self-signed certificate (see https://curl.haxx.se/libcurl/c/libcurl-errors.html) for https://paperless.example.com/api/documents/?page=1&page_size=1&fields=id'),
 				RequestFailure::Certificate,

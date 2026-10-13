@@ -293,10 +293,27 @@ if ! grep --fixed-strings 'Paperless runs in my local network' "${TMP_DIR}/answe
 	echo "The refused save of an address of the local network doesn't name the switch: $(cat "${TMP_DIR}/answer.json")" >&2
 	exit 1
 fi
+expect_text '"code":"local_address"' "${TMP_DIR}/answer.json" \
+	"The refused save of an address of the local network has the wrong code: $(cat "${TMP_DIR}/answer.json")"
 if [[ "$(mock_requests)" != "${requests}" ]]; then
 	echo "The save without the switch for the local network reached the mock." >&2
 	exit 1
 fi
+
+# Without the switch, the DNS pinning of Nextcloud, on by default, resolves the name
+# itself and reports a name without a record as a refused local address. The answer
+# names the misspelled host instead of the switch, which would lift the protection for
+# a URL that can't work anyway (#120).
+expect_status 400 'Saving a host that does not resolve, without the switch for the local network' \
+	--user "e2e-admin:${PASSWORD}" \
+	--request POST \
+	--data-urlencode 'url=https://paperless.invalid' \
+	--data-urlencode 'token=e2e-only-token' \
+	--data-urlencode 'allowLocal=0' \
+	--data-urlencode 'archiveOwner=e2e-user' \
+	"${SETTINGS_URL}"
+expect_text '"code":"unknown_host"' "${TMP_DIR}/answer.json" \
+	"A host that does not resolve isn't named as one: $(cat "${TMP_DIR}/answer.json")"
 
 curl --fail-with-body --silent --show-error \
 	--user "e2e-admin:${PASSWORD}" \
