@@ -201,6 +201,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$provider = $this->provider($this->createStub(IClient::class));
 
 		self::assertSame(AppConstants::APP_ID . '_documents', $provider->getId());
+		self::assertSame(PaperlessSearchProvider::ID, $provider->getId());
 		self::assertSame('Paperless documents', $provider->getName());
 		self::assertSame(40, $provider->getOrder('files.view.index', []));
 	}

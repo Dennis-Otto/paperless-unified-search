@@ -14,7 +14,9 @@ What Paperless Unified Search protects, what it trusts and which risks remain. [
 - The Paperless API token is stored in Nextcloud's credentials manager and goes only to the Paperless server it was saved for: no response, page or message of the app contains it, and a URL with another scheme, host or port needs the token entered again ([decision 0003](decisions/0003-bind-the-token-to-its-server.md)).
 - A stored token that can't be decrypted, as after a move of Nextcloud with another secret in `config.php`, counts as none: the settings ask for it again, and the search shows no Paperless documents instead of failing.
 - A Paperless document appears in the results of a user only when that user can open a file of the archive account whose name carries its marker `[P<ID>]`: their own if they are that account, or one it shared with them. A file that only carries the marker in its name stands for no document. Selecting the result opens that file in Nextcloud.
-- Search terms reach Paperless only when the user switches on *Search connected services*, when an administrator has marked Paperless as trusted, or when a client of the user, such as a script, asks for this search by its ID through Nextcloud's OCS search API. They travel from server to server, never from the browser to Paperless.
+- Search terms reach Paperless only when the user switches on *Search connected services*, picks *Paperless documents* in the smart picker, when an administrator has marked Paperless as trusted, or when a client of the user, such as a script, asks for this search by its ID through Nextcloud's OCS search API. They travel from server to server, never from the browser to Paperless.
+- In the smart picker of Talk, Text, Deck and Mail, a term reaches Paperless only after the user chose *Paperless documents* in it, a choice as explicit as switching on *Search connected services*. The picker searches through the same search provider, with the same rules of who sees which document.
+- The link that the smart picker inserts is the link of the synchronized file in Nextcloud, and the app resolves no link itself: Nextcloud renders it with the permissions of whoever reads it, as the preview of the file for a reader who can open it and as the bare link for anyone else.
 - The app asks Paperless only for the fields that a result shows: the ID, the title, the date, the correspondent and the type of a document, and the excerpt around the term. The whole OCR text, the notes and the permissions of the documents never reach Nextcloud.
 - Requests to Paperless go through Nextcloud's HTTP client, which checks TLS certificates.
 - A failed search is logged with the kind of error only, without the term, the URL or the token. The history of the administration settings shows it with its message as well, as it shows a request that only its second try answered; the message loses the token, the term and the query of every URL first.
@@ -39,11 +41,11 @@ config:
 ---
 flowchart TB
     accTitle: The trust boundaries
-    accDescr: Four boundaries meet at Paperless Unified Search on the Nextcloud server. 1, the browser of an administrator sends the settings. 2, the unified search of a user sends the term and the page. 3, the app sends the term and the token to Paperless-ngx outside the server and gets an untrusted answer. 4, the app looks into the folders of the user for files of the archive account. The token stays in the credentials manager of the server.
+    accDescr: Four boundaries meet at Paperless Unified Search on the Nextcloud server. 1, the browser of an administrator sends the settings. 2, the unified search or the smart picker of a user sends the term and the page. 3, the app sends the term and the token to Paperless-ngx outside the server and gets an untrusted answer. 4, the app looks into the folders of the user for files of the archive account. The token stays in the credentials manager of the server.
 
     browser(["Browser of an<br>administrator"])
     subgraph server ["Nextcloud server"]
-        search["Unified search<br>of a user"]
+        search["Unified search or<br>smart picker of a user"]
         app["Paperless<br>Unified Search"]
         files[("Files of<br>Nextcloud")]
         credentials[("Credentials<br>manager<br>the token")]
@@ -67,7 +69,7 @@ flowchart TB
 ```
 
 1. **Browser → app.** The routes of the settings page pass Nextcloud's login, its CSRF check and the check of the administrator, and saving and *Disconnect* its password confirmation. The URL must use `http` or `https` and carry no credentials, query or fragment. A blank token keeps the stored one only for a URL with the scheme, host and port of the stored URL; the archive account must exist and is stored as Nextcloud spells its ID.
-2. **Nextcloud's search → app.** The term and the cursor of a page come from the user: the cursor must be a number, and a page holds at most 50 results.
+2. **Nextcloud's search → app.** The term and the cursor of a page come from the user, through the unified search or the smart picker: the cursor must be a number, and a page holds at most 50 results.
 3. **App → Paperless.** The request names the fields of the documents to send, so that the OCR text stays in Paperless. Every answer is untrusted input. It must be JSON with a list of results; a document without a numeric ID is left out; titles and dates are used only when they are text; the excerpt loses every HTML tag and is cut to 180 characters.
 4. **App → files of Nextcloud.** The file locator searches only the folders of the searching user, with Nextcloud's permissions, and takes only files, never folders, and only those that the archive account owns, with the exact marker of a document in their name. The marker in a name is chosen by whoever names the file and proves nothing by itself; the files of the archive account reach other users only through its shares.
 
@@ -81,6 +83,7 @@ flowchart TB
 | A token that can't be decrypted takes down the settings or the search | The token counts as none, one warning without it goes to the log, and the settings ask for it again | `testATokenThatCannotBeDecryptedCountsAsNoneAndIsLoggedOnce`, `testTheFormAsksForTheTokenAgainWhenTheStoredOneCannotBeDecrypted`, `testAStoredTokenThatCannotBeDecryptedShowsNoDocumentsInsteadOfFailing` |
 | The API token reaches the browser | The token stays in the credentials manager; the settings carry only whether one is configured | `testPublicConfigNeverContainsToken` in `tests/Unit/Service/ConfigServiceTest.php` |
 | A malformed or hostile answer of Paperless | The answer is checked for its shape; documents without a usable ID are left out; a failing search returns no results instead of an error | `testAWrongAnswerOfPaperlessFails`, `testDocumentsWithoutAUsableIdAreLeftOut`, `testAFailedSearchIsLoggedWithoutItsDetails` |
+| A link of the smart picker shows a document to a reader who may not open its file | The inserted link is the link of the file in Nextcloud; the app resolves no link, and Nextcloud's own provider of file links shows the preview only to a reader who can open the file | `testLeavesTheLinkOfAResultToTheProviderOfFileLinks` in `tests/Unit/Reference/PaperlessReferenceProviderTest.php`, and the end-to-end tests, which resolve the link as the archive account, as a user without access and as a user the file was shared with |
 | Text of a document runs as script in the search | The excerpt loses every HTML tag; Nextcloud's search shows titles and excerpts as text | `testTitleAndSublineComeFromTheDocument` in `tests/Unit/Search/PaperlessSearchProviderTest.php` |
 | A user names a file with the marker of a document that they may not see | Only files that the archive account owns stand for documents, and users receive them only through its shares; without an archive account the search shows no documents and doesn't ask Paperless | `testIgnoresFilesThatTheArchiveAccountDoesNotOwn`, `testAFileOfAnotherAccountShowsNoDocument`, `testWithoutAnArchiveAccountPaperlessIsNotAsked`, and the forged file of the end-to-end tests |
 | A slow Paperless blocks the search | A connection timeout of 3 seconds and a timeout of 10 seconds for every request, and a second try only for a request that got no answer at all | `lib/Service/PaperlessApiService.php`, `testARequestWithoutAnswerGetsASecondTry`, `testAnAnswerOfPaperlessGetsNoSecondTry` |
@@ -90,6 +93,7 @@ The Docker end-to-end tests run the real search endpoint of every supported Next
 
 ## Residual risks
 
+- A link of the smart picker carries the ID of the file in Nextcloud. A reader who can't open the file sees that number, but neither its name nor its content.
 - The marker `[P<ID>]` ties a file of the archive account to a document. Whoever may write into a folder of the archive account, for example through a share with write permission, can give a file of that account the marker of any document and see its title and excerpt. Share the archive read-only.
 - The permissions of the Paperless account decide which documents the search can find. Use a dedicated account with only the read permissions that the search needs, as the [README](https://github.com/Dennis-Otto/paperless-unified-search#configuration) describes.
 - With *Always include Paperless in global search* on, every search term of every user reaches Paperless. Turn it on only for a Paperless server that you trust as much as Nextcloud.

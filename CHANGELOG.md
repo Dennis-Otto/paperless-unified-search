@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Added
+
+- **Find a Paperless document by its text from the smart picker in Talk, Text, Deck and Mail and insert a link to it.** Type `/` in Text or Collectives, or open the smart picker in Talk, Deck or Mail, choose *Paperless documents* and search as in Nextcloud's search: the picker lists the documents whose file you can open and inserts the link to the file you pick. Everyone who can open that file sees its preview; anyone else sees only the bare link. Your term reaches Paperless only after you chose *Paperless documents* in the picker.
+
 ### Fixed
 
 - **Changing the Paperless server asks for the API token again.** Saving the settings with a new URL and a blank token sent the stored token to the new server, so whoever could use the session of an administrator could collect it with a server of their own, or read it on its way over plain HTTP. The stored token now goes only to the server it was saved for, with the same scheme, host and port, and never to another server: for another one, the settings ask for the token again, and the token field says so as soon as the URL changes. Another path on the same server keeps the stored token.

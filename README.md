@@ -174,6 +174,20 @@ Each screenshot below but those of the phone has a dark version, which a dark th
 
 Nextcloud in the browser of a phone. The Nextcloud apps for iOS and Android open a result in their own viewer.
 
+### Paperless documents in the smart picker
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/07-smart-picker-dark.png">
+  <img alt="The smart picker in a note of Text: under Paperless documents, the search for invoice lists the electricity invoice, the home insurance renewal and the internet invoice" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/07-smart-picker.png">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/08-smart-picker-link-dark.png">
+  <img alt="The note of Text after picking the electricity invoice: the inserted link shows the PDF of the invoice" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/08-smart-picker-link.png">
+</picture>
+
+Type `/` in a note of Text and choose *Paperless documents*: the picker finds the documents by their text and inserts the link to the file you pick, which Text shows as the file itself to everyone who can open it.
+
 ### Secure server-side administration
 
 <picture>
@@ -334,7 +348,7 @@ The configuration is global. Access control remains user-specific because the ap
 
 When Paperless documents are missing from the search, look at **Search problems** at the end of the settings. A failed search shows the users no Paperless documents and no error, and a request to Paperless that gets no answer at all, as when the connection fails, is sent a second time before the search gives up. The settings count both, the failed searches and the requests that only their second try answered, and list the latest 20 with the time, the step, asking Paperless or looking for the files in Nextcloud, the kind and the message of the error and how long it took, along with since when searches work again after the last failure. This helps where the hoster keeps the log of Nextcloud from administrators. **Clear history** and **Disconnect** forget the history; saving the settings keeps it.
 
-By default, Nextcloud's search in the browser asks Paperless only after the user enables **Search connected services**. When the trusted-service option is enabled, every global search term from every Nextcloud user is sent to Paperless automatically and the connected-services switch no longer controls this provider. Reload Nextcloud after changing this option.
+By default, Nextcloud's search in the browser asks Paperless only after the user enables **Search connected services**, and the smart picker only after the user picks **Paperless documents** in it. When the trusted-service option is enabled, every global search term from every Nextcloud user is sent to Paperless automatically and the connected-services switch no longer controls this provider. Reload Nextcloud after changing this option.
 
 <!-- --8<-- [end:configuration] -->
 <!-- --8<-- [start:usage] -->
@@ -344,6 +358,12 @@ By default, Nextcloud's search in the browser asks Paperless only after the user
 Open Nextcloud's global search, enable **Search connected services**, and select **Paperless documents**. Nextcloud 32 and later disable external providers after a page reload, so this switch must be enabled again unless an administrator has enabled trusted-service mode.
 
 Documents without a synchronized `[P<ID>]` file of the archive account are intentionally omitted. This also keeps Inbox-only documents out of Nextcloud search when the synchronization process does not export them.
+
+### In Talk, Text, Deck and Mail
+
+Nextcloud's smart picker finds Paperless documents too, wherever you write: type `/` in Text or Collectives, or open the smart picker in a conversation of Talk, a card of Deck or a message of Mail. Choose **Paperless documents**, search, and pick a result: the picker inserts the link to its file. Everyone who can open that file sees its preview; anyone else sees only the link.
+
+The picker searches through the same provider as Nextcloud's search, so it lists the same documents. It asks Paperless once you have chosen **Paperless documents** and typed a term, without the switch **Search connected services**: choosing it is the same consent.
 
 <!-- --8<-- [end:usage] -->
 <!-- --8<-- [start:search-syntax] -->
@@ -415,7 +435,8 @@ Give an assistant the app password of a user who sees only what it may read, and
 - Saving the settings and disconnecting ask for the administrator's password when it wasn't confirmed in the last 30 minutes.
 - Search results are filtered through the current user's Nextcloud filesystem view.
 - The settings show administrators the history of the problems of the search without the API token, the search term or the query of any URL.
-- Search terms are sent server-to-server only when connected-services search or trusted-service mode is enabled, or when a client asks this search by its ID through the API.
+- Search terms are sent server-to-server only when connected-services search or trusted-service mode is enabled, after the user chose **Paperless documents** in the smart picker, or when a client asks this search by its ID through the API.
+- A link that the smart picker inserts is the link of the file in Nextcloud, which shows its preview only to readers who can open the file.
 - Administrators can explicitly trust the configured Paperless server to include it automatically in every user's global searches.
 - No deployment credentials, private hostnames, internal addresses, or instance configuration belong in this repository.
 - Gitleaks scans every push and pull request.
@@ -452,7 +473,7 @@ The production archive intentionally excludes tests, release tools, Composer dev
 
 ### Docker end-to-end tests
 
-The Docker suite starts a clean Nextcloud instance with the app mounted as a Custom App and a deterministic Paperless API mock. It exercises the real OCS search endpoint, user-specific file access, trusted-service metadata, and browser/iOS/Android result contracts.
+The Docker suite starts a clean Nextcloud instance with the app mounted as a Custom App and a deterministic Paperless API mock. It exercises the real OCS search endpoint, user-specific file access, trusted-service metadata, the smart picker and the links it inserts, and browser/iOS/Android result contracts.
 
 ```bash
 bash tests/e2e/run.sh       # one Nextcloud version
@@ -469,7 +490,7 @@ The screenshots and the animation in `screenshots/` come from a script, so that 
 bash scripts/screenshots.sh
 ```
 
-It starts the Docker suite under a project of its own with a demo: the archive account `paperless`, whose synthetic documents are shared read-only with `jamie`, and a Paperless mock that finds three of them for "invoice". Chromium then searches, opens a result and saves the settings, light and dark, on a phone and as an animation. Set `KEEP_SCREENSHOTS=1` to look around in the demo afterwards.
+It starts the Docker suite under a project of its own with a demo: the archive account `paperless`, whose synthetic documents are shared read-only with `jamie`, and a Paperless mock that finds three of them for "invoice". Chromium then searches, opens a result, links a document from the smart picker in a note of Text and saves the settings, light and dark, on a phone and as an animation. Set `KEEP_SCREENSHOTS=1` to look around in the demo afterwards.
 
 See [CONTRIBUTING.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CONTRIBUTING.md) before opening a pull request.
 

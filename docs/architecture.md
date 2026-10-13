@@ -6,7 +6,7 @@ description: "How Paperless Unified Search asks Paperless-ngx from Nextcloud's u
 
 [← README](https://github.com/Dennis-Otto/paperless-unified-search) · [Security design](security.md) · [Roadmap](roadmap.md) · [Releases](releases.md)
 
-Paperless Unified Search is a Nextcloud app in PHP. It adds a provider to Nextcloud's unified search that asks Paperless-ngx and shows the documents whose synchronized files the searching user can read. It stores no documents and no index of its own, and has no server, daemon or port of its own.
+Paperless Unified Search is a Nextcloud app in PHP. It adds a provider to Nextcloud's unified search that asks Paperless-ngx and shows the documents whose synchronized files the searching user can read, and offers the same search in the smart picker of Talk, Text, Deck and Mail. It stores no documents and no index of its own, and has no server, daemon or port of its own.
 
 ## Components
 
@@ -21,12 +21,14 @@ config:
 ---
 flowchart TB
     accTitle: The components
-    accDescr: Inside Nextcloud, the unified search calls the search provider of the app, and the administration settings call its settings page. The search provider uses the Paperless client, the file locator and the configuration; the settings page uses the Paperless client and the configuration. The Paperless client reaches /api/documents/ of Paperless-ngx through Nextcloud's HTTP client, the file locator looks into the folders of the users, and the configuration keeps its values in the app configuration and the token in the credentials manager.
+    accDescr: Inside Nextcloud, the unified search calls the search provider of the app, and the administration settings call its settings page. The smart picker finds Paperless documents through the reference provider of the app, which names the search provider, and then calls the search provider as the unified search does. The search provider uses the Paperless client, the file locator and the configuration; the settings page uses the Paperless client and the configuration. The Paperless client reaches /api/documents/ of Paperless-ngx through Nextcloud's HTTP client, the file locator looks into the folders of the users, and the configuration keeps its values in the app configuration and the token in the credentials manager.
 
     subgraph nextcloud ["Nextcloud"]
         search["Unified<br>search"]
+        picker["Smart<br>picker"]
         page["Administration<br>settings"]
         subgraph app ["Paperless Unified Search"]
+            reference["Reference<br>provider"]
             provider["Search<br>provider"]
             controller["Settings<br>page"]
             client["Paperless<br>client"]
@@ -41,6 +43,9 @@ flowchart TB
     paperless[("Paperless-ngx<br>/api/documents/")]
 
     search --> provider
+    picker -. "lists" .-> reference
+    reference -. "names" .-> provider
+    picker --> provider
     page --> controller
     provider --> client
     provider --> locator
@@ -53,15 +58,16 @@ flowchart TB
     config --> credentials
 
     classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
-    class provider,controller,client,locator,config app
+    class reference,provider,controller,client,locator,config app
 ```
 
 </div>
 
 | Component | Files | What it does |
 | --- | --- | --- |
-| App | `lib/AppInfo/Application.php` | Registers the search provider with Nextcloud |
+| App | `lib/AppInfo/Application.php` | Registers the search provider and the reference provider with Nextcloud |
 | Search provider | `lib/Search/PaperlessSearchProvider.php` | Answers a search of Nextcloud: asks Paperless, keeps the results with a readable file and builds each entry with its title, an excerpt and the link that opens the file in the browser, the iOS app or the Android app |
+| Reference provider | `lib/Reference/PaperlessReferenceProvider.php` | Lists *Paperless documents* in the smart picker with the icon of the app and names the search provider, through which the picker searches; it resolves no link, so that Nextcloud renders the inserted link of a file with the permissions of whoever reads it |
 | Paperless client | `lib/Service/PaperlessApiService.php` | Sends the search term to the full-text search of Paperless through Nextcloud's HTTP client, asks only for the fields that a result shows, and checks the shape of the answer |
 | File locator | `lib/Service/NextcloudFileLocator.php`, `lib/Search/Files/` | Finds the files of the archive account whose names carry the markers `[P<ID>]` of the documents of a page, in one search of the folders that the searching user can read |
 | Configuration | `lib/Service/ConfigService.php`, `lib/Model/PublicConfig.php` | Checks and stores the URL of Paperless, the archive account and the switch *Always include Paperless in global search*; the API token goes to Nextcloud's credentials manager, is read from it once per request and is sent only to the server it was saved for; without an archive account of its own it takes the account of Paperless Sync, and it uses the ID of either as Nextcloud spells it |
@@ -210,6 +216,46 @@ flowchart TB
 
 Every entry carries the ID of the file and its path in the folders of the user as well; the Android app opens the file with them.
 
+## The smart picker
+
+The smart picker is the menu that `/` opens in Text and Collectives and that a button opens in Talk, Deck and Mail. It lists the reference providers of the apps; the one of this app, *Paperless documents*, names the search provider, and the picker searches through it as the unified search does, with the same rules of who sees which document:
+
+<div class="diagram-wide" markdown tabindex="0" role="region" aria-label="Diagram of linking a document from the smart picker">
+
+```mermaid
+---
+config:
+  sequence:
+    wrap: true
+    width: 120
+    actorMargin: 10
+---
+sequenceDiagram
+    accTitle: Linking a document from the smart picker
+    accDescr: jamie types / in Text and chooses Paperless documents. The picker sends the term invoice to the search provider of the app, which asks Paperless-ngx and answers with the documents whose file jamie can open, each with the link /f/412 of its file. jamie picks a result, and the picker inserts that link. When someone reads the page, Nextcloud's own provider of file links renders the link: as the preview of the file for a reader who can open the file, and as the bare link for anyone else.
+
+    actor jamie
+    participant picker as Smart picker<br>in Text
+    participant provider as Search provider
+    participant paperless as Paperless-ngx
+    participant files as Nextcloud's provider<br>of file links
+    actor reader as A reader
+
+    jamie->>picker: / and Paperless documents
+    picker->>provider: invoice
+    provider->>paperless: invoice
+    paperless-->>provider: document 412, …
+    provider-->>picker: the documents whose file jamie can open,<br>each with the link /f/412 of its file
+    jamie->>picker: picks document 412
+    picker-->>jamie: inserts /f/412
+    reader->>files: reads the page with /f/412
+    files-->>reader: the preview of the file if the reader can open it,<br>the bare link otherwise
+```
+
+</div>
+
+The term reaches Paperless only after the user chose *Paperless documents*, so the picker needs no switch like *Search connected services*. The inserted link is the link of the result, `/f/<ID>` of the file, which opens it in Nextcloud's viewer.
+
 ## Saving the settings
 
 <div class="diagram-wide" markdown tabindex="0" role="region" aria-label="Diagram of saving the settings">
@@ -258,4 +304,5 @@ A token left blank keeps the stored one, but only for the server it was saved fo
 - **One search of the file cache per page**, for the markers of all its documents, since each search reads the names of all files of the user ([Finding the files](#finding-the-files)). Nextcloud's public API has only the interfaces of such a search, so the app brings its own small classes for it in `lib/Search/Files/`, and never uses Nextcloud's private ones. Nextcloud adds methods to these interfaces even in a maintenance release, and PHP refuses a class that lacks one with a fatal error that no `catch` sees. So before each search the file locator compares the methods of the interfaces with those of its classes, without loading them, and when Nextcloud asks for more, it searches once per document by text, as before, and logs a warning: slower, but every search still answers.
 - **The marker `[P<ID>]`** in the file name ties a file of the archive account to its document. [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) writes such files, and the two apps work together without depending on each other's releases.
 - **The owner, not the name, decides.** Only files of the archive account count, because anyone can give a file the marker of a document ([decision 0002](decisions/0002-trust-the-archive-account.md)).
-- **External by default.** Like every provider that sends search terms to another server, the app searches Paperless only when the user asks for it, with the switch in the search or a request for this search through the API, unless an administrator marks Paperless as trusted.
+- **Links of the smart picker are links of files.** The app resolves no link of its own: Nextcloud's provider of file links renders the inserted link for each reader with that reader's permissions, so a link reveals no document to a reader who can't open its file.
+- **External by default.** Like every provider that sends search terms to another server, the app searches Paperless only when the user asks for it, with the switch in the search, the choice of *Paperless documents* in the smart picker or a request for this search through the API, unless an administrator marks Paperless as trusted.

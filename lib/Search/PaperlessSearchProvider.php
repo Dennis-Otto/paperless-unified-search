@@ -28,6 +28,9 @@ use Psr\Log\LoggerInterface;
 use Throwable;
 
 final class PaperlessSearchProvider implements IExternalProvider {
+	/** The ID in the routes of Nextcloud's search, through which the smart picker searches too. */
+	public const ID = AppConstants::APP_ID . '_documents';
+
 	/** @psalm-suppress PossiblyUnusedMethod */
 	public function __construct(
 		private PaperlessApiService $paperlessApi,
@@ -42,7 +45,7 @@ final class PaperlessSearchProvider implements IExternalProvider {
 	}
 
 	public function getId(): string {
-		return AppConstants::APP_ID . '_documents';
+		return self::ID;
 	}
 
 	public function getName(): string {

@@ -7,8 +7,9 @@
 // of Paperless run. It writes the synthetic documents of the demo as PDF files into
 // the folder Paperless of the archive account, shares the folder read-only with
 // jamie, and goes through the app in Chromium as a person does: the search, the
-// opened file and the settings, light and dark, on a phone, and as an animation. The
-// images go to the folder of SCREENSHOTS_OUT.
+// opened file, the smart picker in a note of Text with the link that it inserts, and the
+// settings, light and dark, on a phone, and as an animation. The images go to the
+// folder of SCREENSHOTS_OUT.
 
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -168,9 +169,21 @@ async function request(user, method, path, body) {
 	if (!response.ok && !(method === 'MKCOL' && response.status === 405)) {
 		throw new Error(`${method} ${path} as ${user}: ${response.status} ${await response.text()}`)
 	}
+	return response
 }
 
 const davPath = (user, path) => `/remote.php/dav/files/${user}/${path.split('/').map(encodeURIComponent).join('/')}`
+
+// The ID of a file, which the link /f/<ID> opens.
+async function fileId(user, path) {
+	const response = await request(user, 'PROPFIND', davPath(user, path),
+		'<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop><oc:fileid/></d:prop></d:propfind>')
+	const id = (await response.text()).match(/<oc:fileid>(\d+)<\/oc:fileid>/)?.[1]
+	if (!id) {
+		throw new Error(`${path} of ${user} has no ID.`)
+	}
+	return id
+}
 
 // Writes the documents into the archive account and shares its folder with the reader.
 async function createArchive(browser) {
@@ -338,6 +351,43 @@ async function searchAndOpen(browser, session, theme) {
 	await paperlessResult(page, electricity).click()
 	await waitForViewer(page, electricity)
 	await save(page, `02-nextcloud-pdf-viewer${suffix}.png`, 1500)
+	await page.context().close()
+}
+
+// The note of jamie in Text, in which the smart picker finds the electricity invoice.
+const NOTE_LINE = 'The electricity bill of August, due on September 2:'
+
+// The smart picker in a note of Text, with the Paperless documents that it finds, and
+// the link that it inserts, which Text shows as the preview of the file.
+async function smartPicker(browser, session, theme) {
+	const suffix = theme === 'dark' ? '-dark' : ''
+	// A note of its own for each theme: Text would keep the link of the other one.
+	const folder = `Notes/${theme}`
+	for (const path of ['Notes', folder]) {
+		await request(READER, 'MKCOL', davPath(READER, path))
+	}
+	await request(READER, 'PUT', davPath(READER, `${folder}/Household.md`), `# Household\n\n${NOTE_LINE}\n`)
+	const id = await fileId(READER, `${folder}/Household.md`)
+	const page = await newPage(browser, session, { viewport: { width: 1280, height: 800 }, colorScheme: theme })
+	await page.goto(`${BASE_URL}/index.php/f/${id}`)
+	const editor = page.locator('.ProseMirror[contenteditable="true"]')
+	await editor.getByText(NOTE_LINE).waitFor()
+	// Text sets up the collaboration of the note first and would move the cursor.
+	await settle(page, 1500)
+	await editor.getByText(NOTE_LINE).click()
+	await page.keyboard.press('End')
+	await page.keyboard.press('Enter')
+	await page.keyboard.type('/Paperless')
+	await page.locator('.suggestion-list').getByText('Paperless documents', { exact: true }).click()
+	const picker = page.locator('.modal-container').filter({ has: page.locator('.smart-picker-search') })
+	await picker.locator('.smart-picker-search input').fill(TERM)
+	await picker.getByRole('option', { name: /^Internet invoice - July 2026/ }).waitFor()
+	await page.mouse.move(0, 0)
+	await save(page, `07-smart-picker${suffix}.png`)
+	await picker.getByRole('option', { name: /^Electricity invoice - August 2026/ }).click()
+	await page.frameLocator('iframe.widget-file').locator('.page[data-loaded="true"]').first().waitFor({ timeout: 30000 })
+	await page.mouse.move(0, 0)
+	await save(page, `08-smart-picker-link${suffix}.png`, 1500)
 	await page.context().close()
 }
 
@@ -544,6 +594,7 @@ try {
 	const admin = await signIn(browser, ADMIN)
 	for (const theme of ['light', 'dark']) {
 		await searchAndOpen(browser, reader, theme)
+		await smartPicker(browser, reader, theme)
 		await settings(browser, admin, theme)
 	}
 	await phone(browser, reader)

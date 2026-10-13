@@ -39,6 +39,12 @@ Paperless Sync is the companion, not a must: [any synchronization](guide.md#work
 
     A result opens the synchronized file in Nextcloud, not in Paperless: in the viewer of the browser, and in the viewers of the official iOS and Android apps.
 
+- :material-link-plus:{ .lg .middle } **Links in Talk, Text, Deck and Mail**
+
+    ---
+
+    Nextcloud's smart picker finds Paperless documents wherever you write and inserts the link to the file, whose preview only readers who can open the file see.
+
 - :material-account-lock-outline:{ .lg .middle } **Only files you may open**
 
     ---
@@ -55,7 +61,7 @@ Paperless Sync is the companion, not a must: [any synchronization](guide.md#work
 
     ---
 
-    By default, search terms reach Paperless only when the user switches on **Search connected services** or asks the search API for Paperless documents. Administrators can trust their Paperless server to include it in every search.
+    By default, search terms reach Paperless only when the user switches on **Search connected services**, picks **Paperless documents** in the smart picker or asks the search API for Paperless documents. Administrators can trust their Paperless server to include it in every search.
 
 - :material-key-chain-variant:{ .lg .middle } **The token stays on the server**
 

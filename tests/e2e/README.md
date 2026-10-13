@@ -28,7 +28,7 @@ flowchart TB
     class run person
 ```
 
-Besides the search, the suite checks the guarantees of the settings: every route of the settings answers a user who isn't an administrator with HTTP 403 and a request without a login with 401, and leaves the settings as they are; a save with a blank token for another server answers 400 and sends that server nothing, which the log of the mock shows, as it answers as `other-host` too; and an archive account typed in another case is stored as Nextcloud spells it.
+Besides the search, the suite checks the smart picker: it lists *Paperless documents* with the search provider and the icon of the app, and Nextcloud renders the link of a result as the file for the archive account and for a user the file was shared with, and as the bare link, without the name of the file, for a user who can't open it. It checks the guarantees of the settings as well: every route of the settings answers a user who isn't an administrator with HTTP 403 and a request without a login with 401, and leaves the settings as they are; a save with a blank token for another server answers 400 and sends that server nothing, which the log of the mock shows, as it answers as `other-host` too; and an archive account typed in another case is stored as Nextcloud spells it.
 
 Run:
 

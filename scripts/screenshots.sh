@@ -13,14 +13,15 @@
 # image of Playwright then goes through the app as a person does
 # (tests/e2e/screenshots.mjs). KEEP_SCREENSHOTS=1 leaves the demo running at
 # http://127.0.0.1:18083, for jamie, paperless and e2e-admin with the password
-# e2e-only-password.
+# e2e-only-password. SCREENSHOTS_PORT and SCREENSHOTS_PROJECT_NAME choose another port
+# and Compose project, for a second checkout that takes them at the same time.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 # Git Bash on Windows: keep the paths of the container as they are.
 export MSYS_NO_PATHCONV=1
 export E2E_PORT="${SCREENSHOTS_PORT:-18083}"
-PROJECT_NAME=paperless_unified_search_screenshots
+PROJECT_NAME="${SCREENSHOTS_PROJECT_NAME:-paperless_unified_search_screenshots}"
 PASSWORD=e2e-only-password
 BASE_URL="http://127.0.0.1:${E2E_PORT}"
 COMPOSE=(docker compose --project-name "${PROJECT_NAME}" --file tests/e2e/compose.yaml)
