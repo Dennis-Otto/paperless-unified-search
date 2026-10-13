@@ -33,6 +33,8 @@ final class CheckTest extends TestCase {
 	use AppServices;
 	use Files;
 
+	private const NONE_COVERED = "No document of Paperless has a file of the archive account archive, so the search shows no Paperless documents. Name the account that owns the synchronized files with occ paperless_unified_search:setup --archive-account, and check that their names carry the markers of the documents, such as [P412].\n";
+
 	public function testPassesWhenEveryDocumentHasAFile(): void {
 		$this->connected();
 		foreach ([1, 2, 3] as $documentId) {
@@ -73,7 +75,7 @@ final class CheckTest extends TestCase {
 			"✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.\n"
 			. "✓ The archive account is archive.\n"
 			. "! Coverage: 3 of 1,234 Paperless document(s) have a file of the archive account. Without one, among others: 4, 5, 6, 7, 8, 9, 10, 11, 12, 13.\n"
-			. "! 1 file(s) of the archive account carry the marker of a document that the account of the API token doesn't see in Paperless, maybe one deleted there.\n",
+			. "! 1 document(s) have a file of the archive account, but the account of the API token doesn't see them in Paperless, maybe because they were deleted there.\n",
 			$tester->getDisplay(),
 		);
 		// One search of the file cache for all files with a marker.
@@ -106,9 +108,56 @@ final class CheckTest extends TestCase {
 		self::assertSame(
 			"✓ Paperless answers at https://paperless.example.com.\n"
 			. "✓ The archive account is archive, the account of Paperless Sync.\n"
-			. "! Coverage: 1 file(s) of the archive account carry the marker of a document; Paperless has 1,180 document(s), without naming them.\n",
+			. "! Coverage: 1 document(s) have a file of the archive account; Paperless has 1,180 document(s), without naming them.\n",
 			$tester->getDisplay(),
 		);
+	}
+
+	/**
+	 * An archive account that exists but owns none of the synchronized files, or only
+	 * files without markers, leaves the search without a single Paperless document: the
+	 * mistake that a script that reads the exit code must notice.
+	 */
+	public function testFailsWhenNoDocumentHasAFile(): void {
+		$this->connected();
+		$this->file('/archive/files/Paperless/Deleted [P9999].pdf');
+		$this->file('/archive/files/Paperless/Invoice without a marker.pdf');
+		$tester = $this->tester($this->documents([['id' => 1]], 2, [1, 2]));
+
+		self::assertSame(Command::FAILURE, $tester->execute([], ['capture_stderr_separately' => true]));
+
+		self::assertSame(
+			"✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.\n"
+			. "✓ The archive account is archive.\n"
+			. "! Coverage: 0 of 2 Paperless document(s) have a file of the archive account. Without one: 1, 2.\n"
+			. "! 1 document(s) have a file of the archive account, but the account of the API token doesn't see them in Paperless, maybe because they were deleted there.\n",
+			$tester->getDisplay(),
+		);
+		self::assertSame(self::NONE_COVERED, $tester->getErrorOutput());
+	}
+
+	public function testFailsWhenNoFileHasAMarkerWithoutTheIdsOfPaperless(): void {
+		$this->connected();
+		$tester = $this->tester($this->documents([['id' => 1]], 1180, headers: []));
+
+		self::assertSame(Command::FAILURE, $tester->execute([], ['capture_stderr_separately' => true]));
+
+		self::assertStringEndsWith("! Coverage: 0 document(s) have a file of the archive account; Paperless has 1,180 document(s), without naming them.\n", $tester->getDisplay());
+		self::assertSame(self::NONE_COVERED, $tester->getErrorOutput());
+	}
+
+	/**
+	 * A Paperless without documents leaves nothing to show, which is no mistake of the
+	 * set-up, also when it doesn't list their IDs.
+	 */
+	public function testPassesWhenPaperlessHasNoDocuments(): void {
+		$this->connected();
+		$tester = $this->tester($this->documents([], 0, headers: []));
+
+		self::assertSame(Command::SUCCESS, $tester->execute([], ['capture_stderr_separately' => true]));
+
+		self::assertStringEndsWith("! Coverage: 0 document(s) have a file of the archive account; Paperless has 0 document(s), without naming them.\n", $tester->getDisplay());
+		self::assertSame('', $tester->getErrorOutput());
 	}
 
 	public function testFailsWithoutAConnection(): void {

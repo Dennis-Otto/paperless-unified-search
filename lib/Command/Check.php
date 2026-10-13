@@ -29,7 +29,8 @@ use Symfony\Component\Console\Output\OutputInterface;
  * occ paperless_unified_search:check: everything that the search needs, in one go. The
  * connection to Paperless, the archive account, and how many documents of Paperless have
  * a file of the archive account, which the search can show. It exits with 1 when the
- * search can show no document at all, and with 0 otherwise.
+ * search can show no document at all, also when no document has a file, and with 0
+ * otherwise.
  */
 final class Check extends Command {
 	use ReportsProblems;
@@ -58,12 +59,10 @@ final class Check extends Command {
 	protected function execute(InputInterface $input, OutputInterface $output): int {
 		$status = $this->checkTheConnection($output);
 		$archive = $this->checkTheArchiveAccount($output);
-		if ($status !== null && $archive !== null) {
-			$this->checkTheCoverage($output, $status, $archive);
-		}
+		$showsDocuments = $status !== null && $archive !== null && $this->checkTheCoverage($output, $status, $archive);
 		$this->checkTheHistory($output);
 
-		return $status !== null && $archive !== null ? self::SUCCESS : self::FAILURE;
+		return $showsDocuments ? self::SUCCESS : self::FAILURE;
 	}
 
 	private function checkTheConnection(OutputInterface $output): ?PaperlessStatus {
@@ -111,17 +110,19 @@ final class Check extends Command {
 	/**
 	 * Compares the documents of Paperless with the files of the archive account: by their
 	 * IDs where Paperless lists them, and else only by their number.
+	 *
+	 * @return bool whether the search can show a document, or Paperless has none to show
 	 */
-	private function checkTheCoverage(OutputInterface $output, PaperlessStatus $status, IUser $archive): void {
+	private function checkTheCoverage(OutputInterface $output, PaperlessStatus $status, IUser $archive): bool {
 		$archived = $this->fileLocator->findArchivedDocumentIds($archive);
 		if ($status->documentIds === null) {
 			self::noted($output, sprintf(
-				'Coverage: %s file(s) of the archive account carry the marker of a document; Paperless has %s document(s), without naming them.',
+				'Coverage: %s document(s) have a file of the archive account; Paperless has %s document(s), without naming them.',
 				number_format(count($archived)),
 				number_format($status->documents),
 			));
 
-			return;
+			return self::showsDocuments($output, $archive, $archived !== [] || $status->documents === 0);
 		}
 
 		$missing = array_values(array_diff($status->documentIds, $archived));
@@ -140,10 +141,30 @@ final class Check extends Command {
 		$unknown = count(array_diff($archived, $status->documentIds));
 		if ($unknown > 0) {
 			self::noted($output, sprintf(
-				'%s file(s) of the archive account carry the marker of a document that the account of the API token doesn\'t see in Paperless, maybe one deleted there.',
+				'%s document(s) have a file of the archive account, but the account of the API token doesn\'t see them in Paperless, maybe because they were deleted there.',
 				number_format($unknown),
 			));
 		}
+
+		return self::showsDocuments($output, $archive, $covered > 0 || $status->documentIds === []);
+	}
+
+	/**
+	 * Says why the search shows no Paperless document although Paperless has some and the
+	 * archive account exists, the mistake that the check is above all there to find.
+	 *
+	 * @param bool $shows whether a document has a file, or Paperless has none
+	 * @return bool the same, for the exit code of the check
+	 */
+	private static function showsDocuments(OutputInterface $output, IUser $archive, bool $shows): bool {
+		if (!$shows) {
+			self::error($output, sprintf(
+				'No document of Paperless has a file of the archive account %s, so the search shows no Paperless documents. Name the account that owns the synchronized files with occ paperless_unified_search:setup --archive-account, and check that their names carry the markers of the documents, such as [P412].',
+				$archive->getUID(),
+			));
+		}
+
+		return $shows;
 	}
 
 	/**

@@ -58,6 +58,10 @@ final class Setup extends Command {
 				  occ paperless_unified_search:setup --url=https://paperless.example.com --token-env=PAPERLESS_TOKEN
 
 				Without either, the stored token stays, for the server that it was saved for.
+
+				Exits with 0 once the settings are saved, with 1 when Paperless doesn't answer
+				or a setting is wrong, and with 2 for a wrong call, such as a missing --url or
+				an empty token source.
 				HELP)
 			->addOption('url', null, InputOption::VALUE_REQUIRED, 'The address of Paperless-ngx, such as https://paperless.example.com')
 			->addOption('token-stdin', null, InputOption::VALUE_NONE, 'Read the API token from the first line of the standard input')

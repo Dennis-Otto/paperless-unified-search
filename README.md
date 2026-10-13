@@ -367,7 +367,7 @@ Four commands of `occ` do without a browser what the settings do, and more: they
 
 | Command | What it does | Exit code |
 | --- | --- | --- |
-| `paperless_unified_search:setup` | Tests the connection with the URL and the token, then saves the settings, as **Test connection and save** does | 0 once saved, 1 when Paperless doesn't answer or a setting is wrong |
+| `paperless_unified_search:setup` | Tests the connection with the URL and the token, then saves the settings, as **Test connection and save** does | 0 once saved, 1 when Paperless doesn't answer or a setting is wrong, 2 for a wrong call, such as a missing `--url` or an empty token source |
 | `paperless_unified_search:test` | Tests the connection with the stored settings and names the version of Paperless | 0 when Paperless answers, 1 otherwise |
 | `paperless_unified_search:search <user> <term>` | Searches as the user and says for each document whether it shows to them, with `--explain` why not | 0 once Paperless answered |
 | `paperless_unified_search:check` | Tests the connection and the archive account, and counts the documents of Paperless that have a file | 0 when the search can show documents, 1 otherwise |
@@ -452,7 +452,7 @@ $ occ paperless_unified_search:check
 ! Coverage: 1,180 of 1,234 Paperless document(s) have a file of the archive account. Without one, among others: 17, 18, 19, 20, 23, 31, 40, 41, 42, 57.
 ```
 
-Documents without a file are no failure, as long as the search can show others: the synchronization may not have written them yet, or leaves some out on purpose. `search --explain` with a term of such a document says why it doesn't show.
+Documents without a file are no failure, as long as the search can show others: the synchronization may not have written them yet, or leaves some out on purpose. When not one document has a file, as with an archive account that owns none of the synchronized files, `check` exits with 1 and says what to correct. `search --explain` with a term of such a document says why it doesn't show.
 
 ### In the administration overview
 
