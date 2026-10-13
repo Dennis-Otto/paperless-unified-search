@@ -386,6 +386,59 @@ flowchart TB
 
 The URL may name a Docker service with an underscore, such as `http://paperless_ngx:8000`, an IPv6 address in brackets, such as `http://[fd00::5]:8000`, or an internationalized name, which the settings store in the ASCII form that DNS knows, such as `https://xn--bcher-kva.example` for `https://bücher.example`.
 
+### When the test of the connection fails
+
+**Test connection and save** saves nothing until Paperless answers with a list of documents, and when it doesn't, the message says what failed and what to correct, in the language of your account. The log of Nextcloud gets a warning with the error itself, such as `cURL error 6: Could not resolve host`, without the token and without the query of the URL.
+
+```mermaid
+flowchart TB
+    accTitle: What the test of the connection checks
+    accDescr: Test connection and save asks Paperless for one document. First Nextcloud has to reach Paperless at the URL: find its host, be allowed to connect to its address, connect within 3 seconds, trust its certificate and get an answer within 10 seconds; otherwise the message names which of these failed. Then Paperless has to answer with a status of 2xx; a refused token, a wrong path, a redirect or an error of the server each have their own message. Last, the answer has to be a list of documents of Paperless-ngx. Only then are the settings saved.
+
+    test(["<b>Test connection and save</b>"])
+    reach{"Does Nextcloud reach<br>Paperless at the URL?"}
+    status{"Does Paperless<br>answer with 2xx?"}
+    list{"Is the answer a list<br>of documents?"}
+    saved["Saved"]
+    network["Host not found, local address,<br>not reached, certificate,<br>encryption or no answer in time"]
+    refused["Token refused, wrong path,<br>redirect or error of the server"]
+    other["Not like Paperless-ngx"]
+
+    test --> reach
+    reach -- "yes" --> status
+    reach -- "no" --> network
+    status -- "yes" --> list
+    status -- "no" --> refused
+    list -- "yes" --> saved
+    list -- "no" --> other
+
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class saved yes
+    class network,refused,other no
+```
+
+| The message says | What failed | What to do |
+| --- | --- | --- |
+| Paperless rejected the API token (HTTP 401 or 403) | Paperless doesn't know the token, or its account may not view documents | Copy the token again from the profile of the Paperless account, and give the account the permission to view documents |
+| This URL answers, but not with the API of Paperless (HTTP 404) | The path of the URL, or a proxy in front of Paperless | Enter the address that opens Paperless in the browser, with the path when Paperless runs under one, such as `https://example.com/paperless` |
+| This URL forwards to another address | The URL redirects, and with **Paperless runs in my local network** Nextcloud follows no redirect | Enter the address that it forwards to, such as the one with `https` |
+| Paperless answered with an error | Paperless itself failed, with a status of 5xx | Look into the log of Paperless, or try again later |
+| This URL answers, but not like Paperless-ngx | Another service, or the login page of a proxy | Check the address and its path |
+| Nextcloud does not connect to addresses of the local network | Paperless runs at an address of the local network | Select **Paperless runs in my local network** ([above](#paperless-in-your-local-network)) |
+| Nextcloud does not trust the certificate of Paperless | A certificate of your own authority, a self-signed one, or one for another name | Import the certificate of the authority with `occ security:certificates:import`, or use the name that the certificate is for |
+| Nextcloud could not set up an encrypted connection | Mostly `https` at a port that speaks plain HTTP | Enter the URL with `http`, or the port of HTTPS |
+| Nextcloud could not find the host of this URL | The name doesn't resolve, as a Docker service outside the network of Nextcloud doesn't | Check its spelling, and put Nextcloud and Paperless into one Docker network |
+| Paperless did not answer in time | No connection within 3 seconds or no answer within 10 | Check that Paperless runs and isn't busy, and that no firewall drops the requests |
+| Nextcloud could not reach Paperless at this URL | The connection was refused, as at a wrong port | Check the address and the port, and that Paperless runs |
+| The settings could not be saved | Something after the test, such as the database | Look into the log of Nextcloud |
+
+The answer of the settings route carries a `code` beside the message, such as `unauthorized`, `not_found` or `unknown_host`, for scripts that save the settings.
+
+### Languages
+
+The settings speak English and German: German with *du* for accounts set to *Deutsch (Persönlich: Du)*, and with *Sie* for accounts set to *Deutsch (Förmlich: Sie)*.
+
 <!-- --8<-- [end:configuration] -->
 <!-- --8<-- [start:usage] -->
 

@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace OCA\PaperlessUnifiedSearch\Service;
 
+use JsonException;
+use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
 use OCP\Http\Client\IClient;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
@@ -43,20 +45,30 @@ final class PaperlessApiService {
 	/**
 	 * @param bool $allowLocal whether Nextcloud may reach this Paperless at an address of
 	 *                         the local network
+	 * @throws PaperlessRequestException whatever failed, with the reason that the settings
+	 *                                   name: also when the request got no answer
 	 */
 	public function testConnection(string $url, string $token, bool $allowLocal): void {
-		// The test reads nothing of the document, so Paperless sends only its ID.
-		$this->requestDocuments($url, $token, $allowLocal, [
-			'page' => 1,
-			'page_size' => 1,
-			'fields' => 'id',
-		]);
+		try {
+			// The test reads nothing of the document, so Paperless sends only its ID.
+			$this->requestDocuments($url, $token, $allowLocal, [
+				'page' => 1,
+				'page_size' => 1,
+				'fields' => 'id',
+			]);
+		} catch (PaperlessRequestException $exception) {
+			throw $exception;
+		} catch (Throwable $error) {
+			throw PaperlessRequestException::unanswered($error);
+		}
 	}
 
 	/**
 	 * Search Paperless through its native full-text index.
 	 *
 	 * @return array{count: int, next: ?string, results: list<array<array-key, mixed>>}
+	 * @throws PaperlessRequestException when Paperless answers, but not with documents
+	 * @throws Throwable the error of a request without answer, as the history shows it
 	 */
 	public function searchDocuments(string $query, int $page, int $pageSize): array {
 		return $this->requestDocuments(
@@ -82,6 +94,7 @@ final class PaperlessApiService {
 	 *
 	 * @param array<string, int|string> $query
 	 * @return array{count: int, next: ?string, results: list<array<array-key, mixed>>}
+	 * @throws PaperlessRequestException when Paperless answers, but not with documents
 	 */
 	private function requestDocuments(string $url, string $token, bool $allowLocal, array $query): array {
 		if ($url === '' || $token === '') {
@@ -108,17 +121,22 @@ final class PaperlessApiService {
 
 		$statusCode = $response->getStatusCode();
 		if ($statusCode < 200 || $statusCode >= 300) {
-			throw new UnexpectedValueException('Paperless returned HTTP ' . $statusCode . '.');
+			throw PaperlessRequestException::forStatus($statusCode);
 		}
 
 		$body = $response->getBody();
 		if (!is_string($body)) {
-			throw new UnexpectedValueException('Paperless returned an invalid response body.');
+			throw PaperlessRequestException::notPaperless('Paperless returned an invalid response body.');
 		}
 
-		$data = json_decode($body, true, 512, JSON_THROW_ON_ERROR);
+		try {
+			$data = json_decode($body, true, 512, JSON_THROW_ON_ERROR);
+		} catch (JsonException $error) {
+			// A page of HTML, such as the login page of a proxy or another service.
+			throw PaperlessRequestException::notPaperless('Paperless returned no JSON: ' . $error->getMessage(), $error);
+		}
 		if (!is_array($data) || !isset($data['results']) || !is_array($data['results'])) {
-			throw new UnexpectedValueException('Paperless returned an invalid document response.');
+			throw PaperlessRequestException::notPaperless('Paperless returned an invalid document response.');
 		}
 
 		$results = [];

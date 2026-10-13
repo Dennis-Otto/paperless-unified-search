@@ -78,15 +78,6 @@ assert_history() {
 	"${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_history.py "${mode}" "$@" < "${file}"
 }
 
-# The page of the administration settings of the app, as Nextcloud renders it for an
-# administrator, into the file $1.
-settings_page() {
-	curl --fail-with-body --silent --show-error \
-		--user "e2e-admin:${PASSWORD}" \
-		--output "$1" \
-		"${BASE_URL}/index.php/settings/admin/paperless_unified_search"
-}
-
 # Uploads a PDF of one page with the line $3 as the file $2 of the user $1, a path of
 # WebDAV with its special characters encoded.
 upload_pdf() {
@@ -134,6 +125,33 @@ expect_status() {
 		"$@")"
 	if [[ "${status}" != "${expected}" ]]; then
 		echo "${request} answered HTTP ${status} instead of ${expected}." >&2
+		exit 1
+	fi
+}
+
+# Sets the language of e2e-admin to $1 through the provisioning API, which needs no occ,
+# as the menu of the account does.
+language() {
+	expect_status 200 "Setting the language of e2e-admin to $1" \
+		--user "e2e-admin:${PASSWORD}" \
+		--request PUT \
+		--data-urlencode 'key=language' \
+		--data-urlencode "value=$1" \
+		"${BASE_URL}/ocs/v2.php/cloud/users/e2e-admin"
+}
+
+# Fetches the administration settings of the app as e2e-admin into the file $1.
+admin_settings() {
+	curl --fail-with-body --silent --show-error \
+		--user "e2e-admin:${PASSWORD}" \
+		--output "$1" \
+		"${BASE_URL}/index.php/settings/admin/paperless_unified_search"
+}
+
+# Fails with the message $3 unless the file $2 contains the text $1.
+expect_text() {
+	if ! grep --fixed-strings -- "$1" "$2" >/dev/null; then
+		echo "$3" >&2
 		exit 1
 	fi
 }
@@ -242,7 +260,7 @@ phase "Restart Nextcloud"
 
 phase "Check the settings, the routes and the search"
 # The administration settings render the form with its save and reset routes (#25).
-settings_page "${TMP_DIR}/admin-settings.html"
+admin_settings "${TMP_DIR}/admin-settings.html"
 for attribute in data-save-url data-reset-url; do
 	if ! grep --fixed-strings "${attribute}=\"/apps/paperless_unified_search/settings\"" \
 		"${TMP_DIR}/admin-settings.html" >/dev/null; then
@@ -297,10 +315,27 @@ if ! grep --fixed-strings 'Paperless runs in my local network' "${TMP_DIR}/answe
 	echo "The refused save of an address of the local network doesn't name the switch: $(cat "${TMP_DIR}/answer.json")" >&2
 	exit 1
 fi
+expect_text '"code":"local_address"' "${TMP_DIR}/answer.json" \
+	"The refused save of an address of the local network has the wrong code: $(cat "${TMP_DIR}/answer.json")"
 if [[ "$(mock_requests)" != "${requests}" ]]; then
 	echo "The save without the switch for the local network reached the mock." >&2
 	exit 1
 fi
+
+# Without the switch, the DNS pinning of Nextcloud, on by default, resolves the name
+# itself and reports a name without a record as a refused local address. The answer
+# names the misspelled host instead of the switch, which would lift the protection for
+# a URL that can't work anyway (#120).
+expect_status 400 'Saving a host that does not resolve, without the switch for the local network' \
+	--user "e2e-admin:${PASSWORD}" \
+	--request POST \
+	--data-urlencode 'url=https://paperless.invalid' \
+	--data-urlencode 'token=e2e-only-token' \
+	--data-urlencode 'allowLocal=0' \
+	--data-urlencode 'archiveOwner=e2e-user' \
+	"${SETTINGS_URL}"
+expect_text '"code":"unknown_host"' "${TMP_DIR}/answer.json" \
+	"A host that does not resolve isn't named as one: $(cat "${TMP_DIR}/answer.json")"
 
 curl --fail-with-body --silent --show-error \
 	--user "e2e-admin:${PASSWORD}" \
@@ -375,6 +410,38 @@ done
 received=$(($(mock_requests) - requests))
 if [[ "${received}" -ne 2 ]]; then
 	echo "The mock received ${received} request(s) instead of the 2 of the saves with a token." >&2
+	exit 1
+fi
+
+# A failed test of the connection names its cause in the language of the administrator,
+# with a code that says what failed, and keeps the settings as they are (#120). An
+# account set to Deutsch (Förmlich: Sie) has the language de_DE, which the app brings as
+# well: without it, Nextcloud would show the app in English there.
+language de
+expect_status 400 'Saving a token that Paperless refuses, in German' \
+	--user "e2e-admin:${PASSWORD}" \
+	--request POST \
+	--data-urlencode 'url=http://paperless-mock:8080' \
+	--data-urlencode 'allowLocal=1' \
+	--data-urlencode 'token=e2e-wrong-token' \
+	--data-urlencode 'archiveOwner=e2e-user' \
+	"${SETTINGS_URL}"
+expect_text 'Paperless hat das API-Token abgelehnt (HTTP 401)' "${TMP_DIR}/answer.json" \
+	"The refused token isn't named in German: $(cat "${TMP_DIR}/answer.json")"
+expect_text '"code":"unauthorized"' "${TMP_DIR}/answer.json" \
+	"The refused token has no code: $(cat "${TMP_DIR}/answer.json")"
+admin_settings "${TMP_DIR}/admin-settings-de.html"
+expect_text 'Verbindung testen und speichern' "${TMP_DIR}/admin-settings-de.html" \
+	'The settings page of an administrator who speaks German is not in German.'
+expect_text 'Verwende ein eigenes Paperless-Konto' "${TMP_DIR}/admin-settings-de.html" \
+	'The settings page in German does not address the administrator informally.'
+language de_DE
+admin_settings "${TMP_DIR}/admin-settings-de-formal.html"
+expect_text 'Verwenden Sie ein eigenes Paperless-Konto' "${TMP_DIR}/admin-settings-de-formal.html" \
+	'The settings page of an administrator set to Deutsch (Förmlich: Sie) is not in formal German.'
+language en
+if [[ "$(occ config:app:get paperless_unified_search paperless_url)" != 'http://paperless-mock:8080' ]]; then
+	echo "The refused save changed the settings." >&2
 	exit 1
 fi
 
@@ -497,7 +564,7 @@ search e2e-user 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "
 assert_response no-results "${TMP_DIR}/error.json"
 search e2e-user 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/drop.json" e2e-drop
 assert_response browser "${TMP_DIR}/drop.json"
-settings_page "${TMP_DIR}/problems.html"
+admin_settings "${TMP_DIR}/problems.html"
 assert_history recorded "${TMP_DIR}/problems.html" e2e-error e2e-drop e2e-only-token
 
 curl --fail-with-body --silent --show-error \
@@ -553,11 +620,11 @@ for setting in 'paperless_url=http://paperless-mock:8080' 'archive_owner=e2e-use
 	fi
 done
 # Nextcloud forgot the problems that the browser cleared.
-settings_page "${TMP_DIR}/cleared.html"
+admin_settings "${TMP_DIR}/cleared.html"
 assert_history cleared "${TMP_DIR}/cleared.html"
 
 phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed in ${SECONDS} s: settings for administrators only, the token only for its server, the local network only with the switch of the app, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, pages of results filled across pages of Paperless, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, the settings page in the browser with its accessibility, and the search dialog with a result that opens the Viewer on a laptop and a phone."
+echo "Docker E2E passed in ${SECONDS} s: settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, pages of results filled across pages of Paperless, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, the settings page in the browser with its accessibility, and the search dialog with a result that opens the Viewer on a laptop and a phone."
