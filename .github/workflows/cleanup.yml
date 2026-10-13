@@ -22,7 +22,7 @@ jobs:
   cleanup:
     name: clean up
     if: ${{ !github.event.repository.fork }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       actions: write

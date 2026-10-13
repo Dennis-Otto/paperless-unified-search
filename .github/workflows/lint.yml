@@ -3,11 +3,11 @@ name: Lint
 # The checks every repository of the blueprint shares: the workflows, the license
 # of every file (REUSE), the Markdown of every document with hints at its spelling
 # and style, the sign-off of every commit (DCO) and the set-up of the issue assistant.
+# In every pull request, not after a merge: main takes a pull request only when it is
+# up to date, so a merge gives main the files that the pull request passed with.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -21,7 +21,7 @@ concurrency:
 jobs:
   workflow-lint:
     name: workflow-lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Record the network traffic of the job
@@ -36,7 +36,7 @@ jobs:
 
   reuse:
     name: reuse
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Record the network traffic of the job
@@ -51,7 +51,7 @@ jobs:
 
   markdown:
     name: markdown
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Record the network traffic of the job
@@ -70,10 +70,15 @@ jobs:
 
   # Hints at the spelling (cspell, English and German) and the style of the English
   # (Vale) of the documents that a pull request changes. A hint, never a failure.
+  # Not in the release pull request, the branch of the release bot in this
+  # repository, which changes no document but the changelog.
   prose:
     name: prose
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'pull_request' &&
+      (!startsWith(github.head_ref, 'release-please--') ||
+      github.event.pull_request.head.repo.full_name != github.repository)
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Record the network traffic of the job
@@ -116,7 +121,7 @@ jobs:
   dco:
     name: dco
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Record the network traffic of the job
@@ -157,7 +162,7 @@ jobs:
 
   issue-assistant:
     name: issue-assistant
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Record the network traffic of the job

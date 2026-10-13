@@ -22,6 +22,7 @@ from blueprint.coverage_comment import Coverage, coverage_comment
 from blueprint.github import Api, GitHubError, current_repo
 from blueprint.notices import third_party_notices
 from blueprint.settings import CONFIG, Settings, apply, check, describe
+from blueprint.update import SOURCE, Outdated, update_pull_request
 from blueprint.vex import openvex
 
 
@@ -154,6 +155,31 @@ def main(
     )
     notices_parser.add_argument("version", help="the tag of the release")
     notices_parser.add_argument("sbom", help="the SBOM of GitHub's dependency graph")
+    update_parser = commands.add_parser(
+        "update-commit",
+        help="commit what copier update staged and keep its one pull request, for the "
+        "blueprint bot",
+    )
+    update_parser.add_argument(
+        "--app",
+        required=True,
+        help="the login of the release app, such as name[bot]; the branch of a pull "
+        "request with commits of anyone else stays as it is",
+    )
+    update_parser.add_argument(
+        "--automerge", default="on", help="off leaves the merge to the maintainer"
+    )
+    update_parser.add_argument(
+        "--run-id",
+        default="manual",
+        help="names the branch that a commit without the modes of the files needs",
+    )
+    update_parser.add_argument(
+        "--source",
+        default=SOURCE,
+        help="the blueprint on GitHub as OWNER/NAME, a fork perhaps, whose release the "
+        "pull request links",
+    )
     arguments = parser.parse_args(argv)
 
     if arguments.command == "coverage":
@@ -171,6 +197,19 @@ def main(
     api = api or Api()
     try:
         repo = arguments.repo or current_repo(api)
+        if arguments.command == "update-commit":
+            print(
+                update_pull_request(
+                    api,
+                    repo,
+                    root,
+                    app=arguments.app,
+                    automerge=arguments.automerge != "off",
+                    run_id=arguments.run_id,
+                    source=arguments.source,
+                )
+            )
+            return 0
         settings = Settings.load(root / arguments.config)
         if arguments.command == "checklist":
             print(f"The set-up of {repo}:")
@@ -194,6 +233,6 @@ def main(
         if arguments.action == "check":
             print("python3 blueprint.py settings apply sets what the API can set.")
         return 2 if refused else 1
-    except (GitHubError, OSError, tomllib.TOMLDecodeError) as error:
+    except (GitHubError, OSError, tomllib.TOMLDecodeError, Outdated) as error:
         print(f"blueprint.py: {error}", file=sys.stderr)
         return 2

@@ -14,15 +14,19 @@ on:
 permissions:
   contents: read
 
+# One run for each commit: a newer run for the same commit, such as one of an edited
+# title, replaces the older one, but runs for different commits never cancel each
+# other. The release bot edits its pull request while release-please pushes to it, and
+# a late run for an older commit cancelled the checks of the head.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
   cancel-in-progress: true
 
 jobs:
   title:
     name: conventional title
     if: ${{ !github.event.repository.fork }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       issues: write
@@ -80,7 +84,7 @@ jobs:
   changelog:
     name: changelog
     if: ${{ !github.event.repository.fork }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       pull-requests: read

@@ -29,7 +29,7 @@ jobs:
   verify:
     name: verify the release
     if: ${{ !github.event.repository.fork }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       attestations: read
@@ -45,6 +45,10 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ inputs.tag }}
           PUBLISH_TO: ${{ vars.PUBLISH_TO }}
+          # The weekly run of the latest release accepts what older releases lack. A run
+          # that the release workflow calls has the event of that run, which may be its
+          # hourly schedule, but always a tag, and checks in full.
+          WEEKLY: ${{ github.event_name == 'schedule' && inputs.tag == '' }}
           # The gitsign of .github/sign-tag.sh.
           GITSIGN_VERSION: 0.17.1
           GITSIGN_SHA256: 69213a8a0813a151e5a47d0060862952ff833a845d57309dff76f7ba6600abae
@@ -65,7 +69,7 @@ jobs:
           release="$(gh api "repos/$GH_REPO/releases/tags/$TAG")"
           # A release from before the release workflow of the blueprint has none of
           # what it attaches; the weekly run waits for the next release instead.
-          if [[ "$GITHUB_EVENT_NAME" == schedule ]] &&
+          if [[ "$WEEKLY" == true ]] &&
             ! jq -e 'any(.assets[]; .name == "provenance.sigstore.json")' <<<"$release" >/dev/null; then
             echo "The release $TAG was made before the release workflow of the blueprint; the next one is verified in full." >> "$GITHUB_STEP_SUMMARY"
             exit 0
@@ -83,16 +87,18 @@ jobs:
           fi
           # The tag, signed without a key by the release workflow (gitsign, as in
           # .github/sign-tag.sh); releases made before have a tag without a signature,
-          # which the weekly run only notes.
+          # which the weekly run only notes. It checks the tag on its own, as a user
+          # would, not with the verify of sign-tag.sh, one of the scripts it checks.
           gitsign="$RUNNER_TEMP/gitsign"
-          curl --fail --location --silent --show-error --output "$gitsign" \
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            --connect-timeout 15 --max-time 300 --output "$gitsign" \
             "https://github.com/sigstore/gitsign/releases/download/v$GITSIGN_VERSION/gitsign_${GITSIGN_VERSION}_linux_amd64"
           echo "$GITSIGN_SHA256  $gitsign" | sha256sum --check --strict >/dev/null
           chmod +x "$gitsign"
           git init --quiet "$RUNNER_TEMP/tag"
           git -C "$RUNNER_TEMP/tag" fetch --quiet --depth=1 "https://github.com/$GH_REPO.git" "refs/tags/$TAG:refs/tags/$TAG"
           if [[ "$(git -C "$RUNNER_TEMP/tag" cat-file -t "$TAG")" != tag ]]; then
-            if [[ "$GITHUB_EVENT_NAME" == schedule ]]; then
+            if [[ "$WEEKLY" == true ]]; then
               echo "::notice::The tag $TAG is older than the signed tags."
             else
               fail "The tag $TAG is not a signed tag."
@@ -129,7 +135,7 @@ jobs:
           # only notes that.
           if compgen -G "*.cdx.json" >/dev/null; then
             pass "The SBOM as CycloneDX is attached."
-          elif [[ "$GITHUB_EVENT_NAME" == schedule ]]; then
+          elif [[ "$WEEKLY" == true ]]; then
             echo "::notice::The release is older than the SBOM as CycloneDX."
           else
             fail "The release has no SBOM as CycloneDX."
@@ -157,7 +163,7 @@ jobs:
             [[ "$asset" == provenance.sigstore.json || "$asset" == *.intoto.jsonl ]] && continue
             if provenance "$asset" "$build"; then
               pass "$asset carries the signed provenance of the isolated build."
-            elif [[ "$GITHUB_EVENT_NAME" == schedule ]] && provenance "$asset" "$older"; then
+            elif [[ "$WEEKLY" == true ]] && provenance "$asset" "$older"; then
               pass "$asset carries the signed provenance of the release workflow, from before the isolated build."
             else
               fail "$asset has no valid provenance of the isolated build."
@@ -168,8 +174,13 @@ jobs:
           case "$PUBLISH_TO" in
             pypi)
               name="${GH_REPO#*/}"
-              published="$(curl --fail --silent --show-error "https://pypi.org/pypi/$name/$version/json" |
-                jq -r '.urls[].digests.sha256' | sort)"
+              published=""
+              # Into a file, which curl empties before it tries again.
+              if curl --fail --silent --show-error --retry 5 --retry-all-errors \
+                --connect-timeout 15 --max-time 300 --output "$RUNNER_TEMP/pypi.json" \
+                "https://pypi.org/pypi/$name/$version/json"; then
+                published="$(jq -r '.urls[].digests.sha256' "$RUNNER_TEMP/pypi.json" | sort)"
+              fi
               attached="$(sha256sum ./*.whl ./*.tar.gz 2>/dev/null | cut -d' ' -f1 | sort)"
               if [[ -n "$published" && "$published" == "$attached" ]]; then
                 pass "PyPI has the same files of $version."
@@ -200,12 +211,15 @@ jobs:
                 "repos/$GH_REPO/contents/appinfo/info.xml?ref=$TAG" |
                 python3 -c 'import sys, xml.etree.ElementTree as t; print(t.parse(sys.stdin).getroot().findtext("id"))')"
               # The page of the app shows a new release at once and links its signed
-              # package; the list of all apps follows up to hours later.
+              # package; the list of all apps follows up to hours later. The loop waits
+              # for the package, curl itself tries again after a passing error.
               package="https://github.com/$GH_REPO/releases/download/$TAG/$app_id.tar.gz"
               offered=false
               for attempt in 1 2 3 4 5 6; do
-                if curl --fail --silent --show-error --max-time 60 "https://apps.nextcloud.com/apps/$app_id" |
-                  grep -qF "href=\"$package\""; then
+                if curl --fail --silent --show-error --retry 2 --retry-all-errors \
+                  --connect-timeout 15 --max-time 30 --output "$RUNNER_TEMP/app.html" \
+                  "https://apps.nextcloud.com/apps/$app_id" &&
+                  grep -qF "href=\"$package\"" "$RUNNER_TEMP/app.html"; then
                   offered=true
                   break
                 fi

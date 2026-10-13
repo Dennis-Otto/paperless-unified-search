@@ -6,7 +6,8 @@ name: Release
 # version) and is decided anew with every merge. What the pull requests wrote under
 # "## Unreleased" of CHANGELOG.md becomes the section of the release; without it,
 # the section lists the pull requests. Merging the pull request creates the release
-# as a draft, with its tag. The jobs below attach the package, its SBOMs (SPDX and
+# as a draft, on a tag that this workflow signs first, and the build checks the tag
+# before anything else. The jobs below attach the package, its SBOMs (SPDX and
 # CycloneDX), the licenses of its third-party components, the advisories that don't
 # affect it (OpenVEX) and its signed provenance, write the notes, make the
 # release public, announce it in the discussions, and then deliver it where the
@@ -34,7 +35,7 @@ jobs:
   release-please:
     name: release pull request
     if: ${{ !github.event.repository.fork }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     # The environment holds the private key of the release app; only main may use it.
     environment:
@@ -50,6 +51,8 @@ jobs:
     outputs:
       created: ${{ steps.release.outputs.release_created == 'true' || steps.beta.outputs.tag != '' || steps.resume.outputs.tag != '' }}
       tag: ${{ steps.release.outputs.tag_name || steps.beta.outputs.tag || steps.resume.outputs.tag }}
+      # The commit that the tag has to point at, which the build checks.
+      sha: ${{ steps.release.outputs.sha || steps.beta.outputs.sha || steps.resume.outputs.sha }}
       version: ${{ steps.release.outputs.version || steps.beta.outputs.version || steps.resume.outputs.version }}
       major: ${{ steps.release.outputs.major || steps.resume.outputs.major }}
     steps:
@@ -70,26 +73,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # The merge of the release pull request: its tag comes first, signed, and
-      # release-please creates the release on it.
-      - name: Sign the tag of the release that this merge makes
-        if: github.event_name == 'push' && steps.app.outputs.token != ''
-        env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
-          MESSAGE: ${{ github.event.head_commit.message }}
-        run: |
-          subject="${MESSAGE%%$'\n'*}"
-          if [[ "$subject" != "chore: release "* ]]; then
-            echo "No release pull request was merged."
-            exit 0
-          fi
-          tag="v$(jq -r '.["."]' .release-please-manifest.json)"
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --silent 2>/dev/null; then
-            echo "The tag $tag exists already."
-            exit 0
-          fi
-          bash .github/sign-tag.sh "$tag"
-          echo "The tag $tag is signed." >> "$GITHUB_STEP_SUMMARY"
       - name: Have the release pull request rebuilt on the current main
         if: steps.app.outputs.token != ''
         env:
@@ -116,6 +99,49 @@ jobs:
                 gh pr edit "$number" --body "$(printf '%s\n\n%s\n' "$body" "<!-- The release bot rebuilds this pull request on the current main. -->")"
               fi
             done
+      # A merged release pull request: its tag comes first, signed, and release-please
+      # creates the release on it. Every run looks, not only the push of the merge, so
+      # that a run that is lost or fails early leaves the signing to the next one; a tag
+      # is locked for good once a release stands on it. A tag that exists already must
+      # be the one that the release workflow signed at the merge, such as that of a run
+      # that failed after it pushed the tag; any other stops the release here.
+      - name: Sign the tag of a release that a merged release pull request makes
+        id: sign
+        if: steps.app.outputs.token != ''
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          # The merged release pull requests that wait for their release, as release-please
+          # finds them, each with the commit of its merge and the version it releases. The
+          # list of pull requests, unlike their search, doesn't lag behind a merge. GitHub
+          # fails for a moment now and then, so it asks three times.
+          for attempt in 1 2 3; do
+            # The variables of the query are GraphQL's, not the shell's.
+            # shellcheck disable=SC2016
+            if pending="$(gh api graphql -F owner="${GITHUB_REPOSITORY%/*}" -F name="${GITHUB_REPOSITORY#*/}" \
+              -f query='query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {
+                pullRequests(labels: ["autorelease: pending"], states: MERGED, baseRefName: "main", first: 10, orderBy: {field: UPDATED_AT, direction: DESC}) {
+                  nodes { mergeCommit { oid file(path: ".release-please-manifest.json") { object { ... on Blob { text } } } } } } } }' \
+              --jq '.data.repository.pullRequests.nodes[].mergeCommit | "\(.oid) \(.file.object.text | fromjson | .["."])"')"; then
+              break
+            fi
+            if ((attempt == 3)); then
+              echo "::error::The merged release pull requests could not be read."
+              exit 1
+            fi
+            sleep $((attempt * 10))
+          done
+          if [[ -z "$pending" ]]; then
+            echo "No merged release pull request waits for its release."
+            exit 0
+          fi
+          while read -r -u 3 commit version; do
+            tag="v$version"
+            bash .github/sign-tag.sh "$tag" "$commit"
+            echo "The tag $tag is signed." >> "$GITHUB_STEP_SUMMARY"
+          done 3<<<"$pending"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
       - name: Update the release pull request, or create the release
         id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
@@ -125,6 +151,11 @@ jobs:
           token: ${{ steps.app.outputs.token || secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          # Releases only on the tags that the step above signed: a release pull request
+          # merged after it looked, or a run without the release app, would get a tag
+          # without a signature, which the build refuses and nobody can delete. Its
+          # release waits for the next run, which signs the tag first.
+          skip-github-release: ${{ steps.sign.outputs.signed != 'true' }}
       - name: Take up a release that an earlier run left as a draft
         id: resume
         # A run that failed after the release was created leaves it as a draft, with
@@ -140,8 +171,11 @@ jobs:
             echo "No draft of v$version to finish."
             exit 0
           fi
+          # The merge of the release pull request, the last commit that changed the version.
+          sha="$(gh api "repos/$GITHUB_REPOSITORY/commits?path=.release-please-manifest.json&sha=$GITHUB_SHA&per_page=1" --jq '.[0].sha')"
           {
             echo "tag=v$version"
+            echo "sha=$sha"
             echo "version=$version"
             echo "major=${version%%.*}"
           } >> "$GITHUB_OUTPUT"
@@ -248,8 +282,11 @@ jobs:
           bash .github/sign-tag.sh "v$version"
           gh release create "v$version" --draft --prerelease --verify-tag \
             --title "v$version" --notes-file "$RUNNER_TEMP/beta.md"
-          echo "tag=v$version" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          {
+            echo "tag=v$version"
+            echo "sha=$GITHUB_SHA"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
           echo "The beta v$version of $next is on its way." >> "$GITHUB_STEP_SUMMARY"
 
   # The build runs in a reusable workflow of its own, so that the provenance of the
@@ -269,12 +306,13 @@ jobs:
     secrets: inherit
     with:
       tag: ${{ needs.release-please.outputs.tag }}
+      sha: ${{ needs.release-please.outputs.sha }}
       version: ${{ needs.release-please.outputs.version }}
 
   publish:
     name: publish the release
     needs: [release-please, assets]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: write
@@ -311,7 +349,7 @@ jobs:
     name: deliver to PyPI
     needs: [release-please, publish]
     if: vars.PUBLISH_TO == 'pypi'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     # Trusted publishing: PyPI accepts this workflow and environment, no token.
     environment:
@@ -336,7 +374,7 @@ jobs:
     name: deliver to npm
     needs: [release-please, publish]
     if: vars.PUBLISH_TO == 'npm'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     # Trusted publishing with provenance: npm accepts this workflow, no token.
     environment:
@@ -369,7 +407,7 @@ jobs:
     name: deliver to GHCR
     needs: [release-please, publish]
     if: vars.PUBLISH_TO == 'ghcr'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       attestations: write
@@ -425,7 +463,7 @@ jobs:
     name: deliver to the Nextcloud App Store
     needs: [release-please, publish]
     if: vars.PUBLISH_TO == 'nextcloud-appstore'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment:
       name: release
@@ -470,7 +508,7 @@ jobs:
     needs: [release-please, publish]
     # A prerelease leaves the major tag at the last release.
     if: vars.PUBLISH_TO == 'github-action' && !contains(needs.release-please.outputs.tag, '-')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: write

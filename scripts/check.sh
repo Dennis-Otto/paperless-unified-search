@@ -76,11 +76,18 @@ composer audit
 step "App metadata"
 xsd="$(mktemp)"
 schema=https://apps.nextcloud.com/schema/apps/info.xsd
-if curl --fail --location --silent --show-error --max-time 30 --output "$xsd" "$schema"; then
+# Again after a passing error of the network or of the App Store. Only the CI can't do
+# without it, because no other check of info.xml follows there.
+if curl --fail --location --silent --show-error --retry 3 --retry-all-errors \
+  --connect-timeout 10 --max-time 30 --output "$xsd" "$schema"; then
   # This is PHP code, not a shell expression.
   # shellcheck disable=SC2016
   php -r '$info = new DOMDocument(); $info->load("appinfo/info.xml"); exit($info->schemaValidate($argv[1]) ? 0 : 1);' "$xsd"
   echo "appinfo/info.xml follows the schema of the App Store."
+elif [[ -n "${CI:-}" ]]; then
+  rm -f "$xsd"
+  echo "The schema of the App Store is out of reach, and the CI checks appinfo/info.xml against it; run the checks again once apps.nextcloud.com answers."
+  exit 1
 else
   echo "The schema of the App Store is out of reach here; the CI checks it."
 fi
@@ -130,6 +137,45 @@ if command -v krankerl >/dev/null 2>&1; then
   echo "The package build/artifacts/$app_id.tar.gz builds."
 else
   echo "krankerl is not installed here; the CI builds the package."
+fi
+
+step "Website"
+# The website of the Docs workflow, built strictly as the check docs builds it, so
+# that a link or an anchor that leads nowhere fails here already. Its tools are those
+# of the preview in .venv-docs, which CONTRIBUTING.md sets up, or those of an activated
+# virtual environment. A MkDocs from elsewhere on the PATH lacks the theme and the
+# plugins of the website as a rule, so the step leaves it alone.
+if [[ ! -f mkdocs.yml ]] || [[ ! -f docs/index.md && ! -f docs/README.md ]]; then
+  echo "No website here: it needs mkdocs.yml and a home page, docs/index.md."
+else
+  candidates=(.venv-docs/bin/mkdocs .venv-docs/Scripts/mkdocs.exe)
+  if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+    candidates+=("$VIRTUAL_ENV/bin/mkdocs" "$VIRTUAL_ENV/Scripts/mkdocs.exe")
+  fi
+  mkdocs=""
+  for candidate in "${candidates[@]}"; do
+    if [[ -x "$candidate" ]]; then
+      mkdocs="$candidate"
+      break
+    fi
+  done
+  if [[ -z "$mkdocs" ]]; then
+    echo "MkDocs is not installed here; the CI builds the website."
+  else
+    # Into a folder of its own, which goes in any case, and with the log only when
+    # the build fails. Without the warning about MkDocs 2.0, as in the Docs workflow.
+    (
+      site="$(mktemp -d)"
+      trap 'rm -rf "$site"' EXIT
+      if ! log="$(NO_MKDOCS_2_WARNING=true "$mkdocs" build --strict --site-dir "$site" 2>&1)"; then
+        printf '%s\n' "$log"
+        echo "The website fails to build strictly with $mkdocs; the log above says why."
+        echo "Tools that are out of date or incomplete install again as CONTRIBUTING.md shows."
+        exit 1
+      fi
+    )
+    echo "The website builds strictly."
+  fi
 fi
 
 if [[ -f scripts/check-project.sh ]]; then
