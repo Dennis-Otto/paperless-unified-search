@@ -7,8 +7,8 @@
 // A serious or critical violation fails the check; the others are listed. On the way
 // to each state of a page, it checks what the page does there, such as the token
 // field that asks for the token again for another server, and an unexpected state
-// fails the check as well. At the end, it clears the history of the problems of the
-// search. run.sh starts it in the image of Playwright, inside the network of the
+// fails the check as well. After the first page, it clears the history of the problems
+// of the search. run.sh starts it in the image of Playwright, inside the network of the
 // Compose project, after npm ci of package-lock.json.
 
 import { readFileSync } from 'node:fs'
@@ -80,8 +80,10 @@ async function saveSettings(page, expected = 'Connection successful. Settings sa
 // found them, as it runs once for each theme.
 const PAGES = [
 	{
-		// run.sh made a search fail and another one need a second try.
-		name: 'administration settings with recorded problems',
+		// run.sh made a search fail and another one need a second try, and stored an
+		// archive account that doesn't exist. Once both themes are checked, Clear history
+		// forgets the problems, and the other pages show the empty history.
+		name: 'administration settings with recorded problems and a missing archive account',
 		path: SETTINGS,
 		scope: SETTINGS_SCOPE,
 		async prepare(page) {
@@ -90,20 +92,17 @@ const PAGES = [
 			)
 			expectEqual(events.join(', '), 'Second try answered, Search failed', 'Recorded problems, newest first')
 			await page.locator(CLEAR_HISTORY_BUTTON).waitFor()
-		},
-	},
-	{
-		// run.sh stored an archive account that doesn't exist.
-		name: 'administration settings with a missing archive account',
-		path: SETTINGS,
-		scope: SETTINGS_SCOPE,
-		async prepare(page) {
 			expectEqual(
 				await page.locator(ARCHIVE_OWNER_MISSING).textContent(),
 				'The archive account e2e-gone does not exist.',
 				'Warning about the archive account',
 			)
 			await expectTokenField(page, 'the stored URL', false)
+		},
+		async after(page, theme) {
+			if (theme === THEMES.at(-1)) {
+				return await clearHistory(page)
+			}
 		},
 	},
 	{
@@ -158,19 +157,12 @@ const PAGES = [
 ]
 
 // Clear history forgets the problems of the search: the page says so at once, and
-// run.sh checks that Nextcloud forgot them too.
-async function clearHistory(browser, session) {
-	const context = await browser.newContext({ storageState: session })
-	try {
-		const page = await context.newPage()
-		await page.goto(`${BASE_URL}${SETTINGS}`)
-		await page.locator(CLEAR_HISTORY_BUTTON).click()
-		await page.locator(DIAGNOSTICS).getByText('No problem recorded.', { exact: true }).waitFor()
-		expectEqual(await page.locator(STATUS).textContent(), 'History cleared.', 'Status after clearing the history')
-		console.log('Clear history: the page and its message say that no problem is recorded.')
-	} finally {
-		await context.close()
-	}
+// run.sh checks that Nextcloud forgot them too. Returns the line for the log.
+async function clearHistory(page) {
+	await page.locator(CLEAR_HISTORY_BUTTON).click()
+	await page.locator(DIAGNOSTICS).getByText('No problem recorded.', { exact: true }).waitFor()
+	expectEqual(await page.locator(STATUS).textContent(), 'History cleared.', 'Status after clearing the history')
+	return 'Clear history: the page and its message say that no problem is recorded.'
 }
 
 async function check(browser, session, target, theme) {
@@ -186,13 +178,15 @@ async function check(browser, session, target, theme) {
 		await target.prepare(page)
 		await page.waitForLoadState('networkidle')
 		await page.evaluate(AXE)
-		return await page.evaluate(
+		const results = await page.evaluate(
 			({ scope, tags }) => window.axe.run(scope, {
 				runOnly: { type: 'tag', values: tags },
 				resultTypes: ['violations'],
 			}),
 			{ scope: target.scope, tags: WCAG_TAGS },
 		)
+		// What the page does after the check, such as a line for the log.
+		return { ...results, note: await target.after?.(page, theme) }
 	} finally {
 		await context.close()
 	}
@@ -204,7 +198,7 @@ try {
 	const session = await signIn(browser, USER)
 	for (const target of PAGES) {
 		for (const theme of THEMES) {
-			const { violations, passes } = await check(browser, session, target, theme)
+			const { violations, passes, note } = await check(browser, session, target, theme)
 			const failing = violations.filter((violation) => FAILING.has(violation.impact))
 			failures += failing.length
 			console.log(`axe-core, ${target.name}, ${theme} theme: ${passes.length} rule(s) passed, ${violations.length} violated, ${failing.length} of them serious or critical`)
@@ -216,9 +210,11 @@ try {
 					console.log(`      ${node.failureSummary.replaceAll('\n', '\n      ')}`)
 				}
 			}
+			if (note) {
+				console.log(note)
+			}
 		}
 	}
-	await clearHistory(browser, session)
 } finally {
 	await browser.close()
 }

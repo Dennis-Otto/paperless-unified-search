@@ -15,8 +15,8 @@
 # Each version writes its log to a file of its own, which the script prints once all
 # are done, in a group of the log of GitHub Actions per version. A version that fails
 # fails the script, and so does one that takes longer than E2E_VERSION_TIMEOUT seconds
-# (default 600, four times what it needs): it stops, so that its log still shows where
-# it hung, long before the job of the CI times out after 20 minutes.
+# (default 600, more than twice what it needs): it stops, so that its log still shows
+# where it hung, long before the job of the CI times out after 20 minutes.
 # scripts/check-project.sh tests this script with tests/e2e/selftest.sh.
 
 set -euo pipefail
