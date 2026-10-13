@@ -3,17 +3,29 @@
 The suite starts Nextcloud with this checkout mounted read-only as a Custom App; locally the image of `compose.yaml`, in the CI the current release of every version from `min-version` to `max-version` in `appinfo/info.xml` (set `NEXTCLOUD_IMAGE` to choose one, such as `nextcloud:35-apache`), and every week [the coming Nextcloud](#the-coming-nextcloud). A deterministic local HTTP service emulates the small Paperless API surface used by the app.
 
 ```mermaid
-flowchart LR
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: The end-to-end tests
+    accDescr: run.sh starts a Compose project with Nextcloud, which has the checkout as a read-only Custom App, a mock of Paperless, mock_server.py, and the Chromium of Playwright with accessibility.mjs and axe-core. run.sh drives Nextcloud through occ, OCS and WebDAV and starts the browser; Nextcloud searches the mock, and the browser opens the settings of the app.
+
     run["run.sh"]
     subgraph compose["Compose project"]
-        nextcloud["Nextcloud<br/>the checkout as Custom App, read-only"]
+        nextcloud["Nextcloud<br/>the checkout as<br/>Custom App, read-only"]
         mock["Paperless mock<br/>mock_server.py"]
-        browser["Chromium of Playwright<br/>accessibility.mjs with axe-core"]
+        browser["Chromium of Playwright<br/>accessibility.mjs<br/>with axe-core"]
     end
     run -- "occ, OCS and WebDAV" --> nextcloud
     run -- "starts" --> browser
     nextcloud -- "searches" --> mock
     browser -- "opens the settings" --> nextcloud
+
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    class run person
 ```
 
 Run:

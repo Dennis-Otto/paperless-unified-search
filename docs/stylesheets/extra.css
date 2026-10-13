@@ -1,0 +1,13 @@
+/* A diagram too wide for the column of a phone, such as a sequence diagram with its
+   six lifelines, keeps a size that can be read there and scrolls sideways, instead of
+   shrinking to the width of the screen. Wrap it in <div class="diagram-wide" markdown>;
+   from the width of a tablet on, it fits the column as every diagram does. */
+@media screen and (max-width: 44.9375em) {
+  .md-typeset .diagram-wide {
+    overflow-x: auto;
+  }
+
+  .md-typeset .diagram-wide > .mermaid {
+    min-width: 38rem;
+  }
+}

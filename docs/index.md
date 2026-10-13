@@ -19,6 +19,8 @@ A Nextcloud app that brings the OCR and full-text search of Paperless-ngx into N
 
 The search of files finds the two invoices by their names. Paperless also finds the home insurance renewal: its text says "invoice", its name doesn't.
 
+--8<-- "README.md:two-apps"
+
 ## What it does
 
 <div class="grid cards" markdown>

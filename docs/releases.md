@@ -7,15 +7,31 @@ description: "How Paperless Unified Search is released: the version from the pul
 Releases follow the [repository blueprint](https://github.com/Dennis-Otto/repo-blueprint): nobody chooses a version or writes release notes by hand.
 
 ```mermaid
-flowchart TD
-    merged["Pull requests merged into main"] --> bot["The release bot keeps the pull request<br/>chore: release x.y.z"]
-    bot -- "the maintainer merges it,<br/>dependency updates alone merge themselves" --> draft["Draft release with its tag"]
-    draft --> build["krankerl builds the package,<br/>check-package.sh checks it"]
-    build --> sign["Signed with the app's certificate, checked again,<br/>detached SHA-512 signature"]
-    sign --> assets["Package, signature, SPDX SBOM<br/>and signed build provenance"]
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: From merged pull requests to a release
+    accDescr: The release bot keeps the pull request chore: release x.y.z for the pull requests merged into main. When the maintainer merges it, or by itself for dependency updates alone, a draft release with its tag is made. krankerl builds the package and check-package.sh checks it; it is signed with the app's certificate, checked again and gets a detached SHA-512 signature. The package, its signature, an SPDX SBOM and the signed build provenance make the published, immutable release, which goes to the Nextcloud App Store. The release verification checks it then and every week.
+
+    merged["Pull requests merged into main"] --> bot["The release bot keeps the pull request<br><code>chore: release x.y.z</code>"]
+    bot -- "the maintainer merges it,<br>dependency updates alone merge themselves" --> draft["Draft release with its tag"]
+    draft --> build["krankerl builds the package,<br>check-package.sh checks it"]
+    build --> sign["Signed with the app's certificate,<br>checked again, detached<br>SHA-512 signature"]
+    sign --> assets["Package, signature, SPDX SBOM<br>and signed build provenance"]
     assets --> published["Published release, immutable"]
     published --> store["Nextcloud App Store"]
-    store --> verify["Release verification,<br/>and every week again"]
+    store --> verify["Release verification,<br>and every week again"]
+
+    classDef bot fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    class bot,verify bot
+    class merged person
+    class published,store done
 ```
 
 ## The release pull request

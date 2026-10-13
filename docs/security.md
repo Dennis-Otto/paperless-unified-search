@@ -29,20 +29,39 @@ What Paperless Unified Search protects, what it trusts and which risks remain. [
 ## Trust boundaries
 
 ```mermaid
-flowchart LR
-    browser["Browser of an administrator"]
-    paperless[("Paperless-ngx")]
-    subgraph server["Nextcloud server"]
-        search["Unified search<br/>of a user"]
-        app["Paperless Unified Search"]
-        files[("Files of Nextcloud")]
-        credentials[("Credentials manager<br/>the token")]
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: The trust boundaries
+    accDescr: Four boundaries meet at Paperless Unified Search on the Nextcloud server. 1, the browser of an administrator sends the settings. 2, the unified search of a user sends the term and the page. 3, the app sends the term and the token to Paperless-ngx outside the server and gets an untrusted answer. 4, the app looks into the folders of the user for files of the archive account. The token stays in the credentials manager of the server.
+
+    browser(["Browser of an<br>administrator"])
+    subgraph server ["Nextcloud server"]
+        search["Unified search<br>of a user"]
+        app["Paperless<br>Unified Search"]
+        files[("Files of<br>Nextcloud")]
+        credentials[("Credentials<br>manager<br>the token")]
     end
+    paperless[("Paperless-ngx")]
+
     browser -- "1 · settings" --> app
-    search -- "2 · term and page" --> app
-    app -- "3 · term and token,<br/>an untrusted answer" --> paperless
-    app -- "4 · folders of the user,<br/>files of the archive account" --> files
+    search -- "2 · term<br>and page" --> app
+    app -- "3 · term and token,<br>an untrusted answer" --> paperless
+    app -- "4 · folders<br>of the user" --> files
     app --- credentials
+    browser ~~~ search
+    files ~~~ paperless
+
+    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef untrusted fill:#dc26262e,stroke:#dc2626,stroke-width:2px,stroke-dasharray:4 3
+    class app app
+    class browser person
+    class paperless untrusted
 ```
 
 1. **Browser → app.** The routes of the settings page pass Nextcloud's login, its CSRF check and the check of the administrator. The URL must use `http` or `https` and carry no credentials, query or fragment.

@@ -17,6 +17,44 @@ Paperless Unified Search brings Paperless-ngx OCR and full-text search into Next
 
 <sub>The search of files finds the two invoices by their names. Paperless also finds the home insurance renewal: its text says "invoice", its name doesn't.</sub>
 
+<!-- --8<-- [start:two-apps] -->
+
+Two apps, one archive: [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) writes every document of Paperless-ngx as a file of one Nextcloud account, the archive account, with the marker `[P<ID>]` in its name. Paperless Unified Search asks Paperless for the documents that match a search and shows each one to whoever can open its file.
+
+```mermaid
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: Two apps, one archive
+    accDescr: Paperless Sync writes every document of Paperless-ngx as a file of the archive account paperless, with the marker of the document in its name, such as invoice [P412].pdf. The archive account shares its archive read-only with jamie. When jamie searches, Paperless Unified Search asks Paperless-ngx, finds the file of document 412 by its marker, and shows jamie the document because jamie can open that file; the result opens the file in Nextcloud.
+
+    paperless[("Paperless-ngx<br>OCR and full-text index")]
+    sync(["Paperless Sync"])
+    search(["Paperless<br>Unified Search"])
+    subgraph archive ["paperless, the archive account"]
+        file["… invoice [P412].pdf"]
+    end
+    jamie(["jamie"])
+
+    paperless -- "every document" --> sync
+    paperless -- "the documents<br>that match" --> search
+    sync -- "writes it as a file<br>with its marker" --> file
+    search -. "finds the file<br>by its marker" .-> file
+    file -- "shared read-only" --> jamie
+    search -- "document 412,<br>opens its file" --> jamie
+
+    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    class sync,search app
+    class jamie,archive person
+```
+
+<!-- --8<-- [end:two-apps] -->
+
 The [documentation website](https://dennis-otto.github.io/paperless-unified-search/) has this documentation as a guide, together with the architecture, the security design and the roadmap.
 
 <sub>💛 If Paperless Unified Search is useful to you, you can [support its development](https://github.com/sponsors/Dennis-Otto).</sub>
@@ -32,7 +70,41 @@ The [documentation website](https://dennis-otto.github.io/paperless-unified-sear
 1. Install **Paperless Unified Search** from the [Nextcloud App Store](https://apps.nextcloud.com/apps/paperless_unified_search) under *Apps*, or with `occ app:install paperless_unified_search`.
 2. In Paperless-ngx, create an account that may read the documents to search, and an API token for it.
 3. In Nextcloud, open **Administration settings → Paperless Unified Search**, enter the Paperless URL and the token, and select **Test connection and save**. With [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) installed, the account it writes the archive with is the **Archive account**; otherwise enter the account that owns the synchronized files.
-4. Search in Nextcloud, switch on **Search connected services** and look under **Paperless documents**. A result appears for every document whose synchronized file you can open: a file of the archive account with `[P<ID>]` in its name, your own if you are that account, or one it shared with you. [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) creates such files.
+4. As the archive account, share the archive read-only with the users who may find its documents, as any folder in Nextcloud. The archive account itself finds them all.
+5. Search in Nextcloud, switch on **Search connected services** and look under **Paperless documents**. A result appears for every document whose synchronized file you can open: a file of the archive account with `[P<ID>]` in its name, your own if you are that account, or one it shared with you. [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) creates such files.
+
+```mermaid
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: Setting up the search
+    accDescr: Install the app. In Paperless-ngx, create an account that may read the documents and an API token for it. In the administration settings of Nextcloud, enter the URL, the token and the archive account, and select Test connection and save. When Paperless answers, the settings are saved; otherwise nothing is saved and the message says what to correct. The archive account shares its archive read-only with the users who may find its documents, and they find them under Paperless documents in Nextcloud's search, with Search connected services switched on.
+
+    install["1 · Install the app"]
+    token["2 · In Paperless-ngx: an account<br>that may read the documents,<br>and its API token"]
+    save["3 · In the administration<br>settings: URL, token and<br>archive account, then<br><b>Test connection and save</b>"]
+    answers{"Paperless<br>answers?"}
+    fix["Nothing is saved;<br>the message says<br>what to correct"]
+    share["4 · The archive account<br>shares its archive<br>read-only"]
+    search["5 · Search with<br><b>Search connected<br>services</b> on"]
+    found(["Paperless documents<br>in the results"])
+
+    install --> token --> save --> answers
+    answers -- "yes, saved" --> share --> search --> found
+    answers -- "no" --> fix
+    fix -.-> save
+
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class install,token,save,share,search person
+    class found done
+    class fix no
+```
 
 <!-- --8<-- [end:quick-start] -->
 
@@ -88,12 +160,35 @@ The end of the settings counts the failed searches and the requests that only th
 ## How it works
 
 ```mermaid
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
 flowchart TB
-    search(["Nextcloud's search"]) -- "invoice" --> app["Paperless Unified Search"]
-    app -- "searches the OCR text" --> paperless[("Paperless-ngx")]
-    app -- "finds the file of each hit<br/>by its marker" --> archive[("Archive in Nextcloud<br/>… invoice [P412].pdf")]
-    paperless -. "every document" .-> sync["Paperless Sync"]
-    sync -. "writes it as a file<br/>with its marker" .-> archive
+    accTitle: How a search finds its documents
+    accDescr: Nextcloud's search sends the term, such as invoice, to Paperless Unified Search, which searches the OCR text in Paperless-ngx. Paperless answers with the documents that match, such as document 412. The app looks for a file of the archive account with the marker [P412] in its name among the files that the searching user can open. With such a file, document 412 is a result that opens the file in Nextcloud; without one, it is left out.
+
+    search(["Nextcloud's search"])
+    app["Paperless Unified Search"]
+    paperless[("Paperless-ngx")]
+    file{"A file of the archive account<br>with [P412] in its name<br>that the user can open?"}
+    result(["Document 412 in the results,<br>opens that file in Nextcloud"])
+    left(["Left out"])
+
+    search -- "invoice" --> app
+    app -- "searches the OCR text" --> paperless
+    paperless -- "document 412, …" --> file
+    file -- "yes" --> result
+    file -- "no" --> left
+
+    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class app app
+    class result yes
+    class left no
 ```
 
 1. Nextcloud forwards an enabled external-search query to Paperless-ngx.
@@ -107,22 +202,37 @@ flowchart TB
 Who sees document 412, when `paperless` is the archive account and has shared its archive with `jamie`:
 
 ```mermaid
-flowchart LR
-    subgraph owner["paperless, the archive account"]
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: Who sees document 412
+    accDescr: The archive account paperless owns the file invoice [P412].pdf and sees document 412. It shares the file read-only with jamie, who sees document 412 as well. sam has a file of sam's own named Copy [P412].pdf; it isn't a file of the archive account, so sam sees no document.
+
+    subgraph owner ["paperless, the archive account"]
         own["… invoice [P412].pdf"]
     end
-    subgraph reader["jamie"]
-        shared["… invoice [P412].pdf<br/>shared read-only"]
+    subgraph reader ["jamie"]
+        shared["… invoice [P412].pdf<br>shared read-only"]
     end
-    subgraph other["sam"]
-        copy["Copy [P412].pdf<br/>a file of sam's own"]
+    subgraph other ["sam"]
+        copy["Copy [P412].pdf<br>a file of sam's own"]
     end
+    seen1(["✓ document 412"])
+    seen2(["✓ document 412"])
+    unseen(["✗ no document"])
+
     own -- "share" --> shared
-    own --> seen1(["✓ document 412"])
-    shared --> seen2(["✓ document 412"])
-    copy --> unseen(["✗ no document"])
-    classDef yes fill:#dcfce7,stroke:#16a34a,color:#14532d
-    classDef no fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+    own --> seen1
+    shared --> seen2
+    seen2 ~~~ copy
+    copy --> unseen
+
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
     class seen1,seen2 yes
     class unseen no
 ```
@@ -198,7 +308,7 @@ composer install
 bash scripts/check.sh
 ```
 
-`scripts/check.sh` checks Composer, `appinfo/info.xml` against the schema of the App Store, PHP syntax, the coding standard, Psalm, PHPUnit, the package that krankerl builds with `scripts/check-package.sh`, and, with `scripts/check-project.sh`, the JavaScript, the translations, the pictures of the README and a description of its own for every page of the website.
+`scripts/check.sh` checks Composer, `appinfo/info.xml` against the schema of the App Store, PHP syntax, the coding standard, Psalm, PHPUnit, the package that krankerl builds with `scripts/check-package.sh`, and, with `scripts/check-project.sh`, the JavaScript, the translations, the pictures of the README, a description of its own for every page of the website, and that every diagram runs from top to bottom with a title and a description for screen readers.
 
 The production archive intentionally excludes tests, release tools, Composer development dependencies, screenshots, and repository metadata. Packaging uses [Krankerl](https://github.com/ChristophWurst/krankerl), and `scripts/check-package.sh` validates the finished archive.
 
