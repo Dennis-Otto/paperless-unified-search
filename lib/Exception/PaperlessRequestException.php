@@ -16,9 +16,10 @@ use Throwable;
 /**
  * A request to Paperless that failed, with the reason that the settings name. Its message
  * is the technical one, in English, for the log and the history of problems; the settings
- * show a translated message for its reason instead.
+ * show a translated message for its reason instead. A search whose query Paperless
+ * refuses fails with the subclass PaperlessQueryRejected, which is no problem of the search.
  */
-final class PaperlessRequestException extends RuntimeException {
+class PaperlessRequestException extends RuntimeException {
 	/** The errors of cURL about the certificate of the server. */
 	private const CERTIFICATE_ERRORS = [51, 60, 77, 83];
 	/** The errors of cURL that fail the encryption before any certificate is checked. */

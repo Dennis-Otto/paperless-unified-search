@@ -15,3 +15,4 @@ Copy [the template](0000-template.md) to the next free number, replace the descr
 | [0003](0003-bind-the-token-to-its-server.md) | Send the stored token only to the server it was saved for | accepted |
 | [0004](0004-local-network-opt-in.md) | Allow the local network for this Paperless alone, by a switch of the settings | accepted |
 | [0005](0005-name-the-cause-of-a-failed-connection-test.md) | Name the cause of a failed test of the connection, in the language of the administrator | accepted |
+| [0006](0006-retry-only-before-a-connection.md) | Try a request again only before it has a connection, and count no refused query as a problem | accepted |

@@ -12,6 +12,7 @@ namespace OCA\PaperlessUnifiedSearch\Service;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Exception\InvalidSettingException;
 use OCA\PaperlessUnifiedSearch\Exception\SettingProblem;
+use OCA\PaperlessUnifiedSearch\Model\PaperlessVersion;
 use OCA\PaperlessUnifiedSearch\Model\PublicConfig;
 use OCP\IAppConfig;
 use OCP\IUserManager;
@@ -25,6 +26,12 @@ final class ConfigService {
 	private const ALWAYS_SEARCH_KEY = 'always_search';
 	private const ARCHIVE_OWNER_KEY = 'archive_owner';
 	private const ALLOW_LOCAL_KEY = 'allow_local';
+	/**
+	 * The version of the Paperless of the settings and the one of its API, as its last
+	 * answer named them. Not lazy, so that a search compares them without loading more.
+	 */
+	private const VERSION_KEY = 'paperless_version';
+	private const API_VERSION_KEY = 'paperless_api_version';
 	private const TOKEN_IDENTIFIER = AppConstants::APP_ID . '.api-token';
 	// Paperless Sync writes the archive into the files of this account.
 	private const SYNC_APP_ID = 'paperless_sync';
@@ -74,6 +81,7 @@ final class ConfigService {
 			$this->isTokenUnreadable(),
 			$this->isMissing($archiveOwner !== '' ? $archiveOwner : $syncAccount),
 			$this->isLocalNetworkAllowed(),
+			$this->getPaperlessVersion(),
 		);
 	}
 
@@ -163,6 +171,31 @@ final class ConfigService {
 	}
 
 	/**
+	 * The version of the Paperless of the settings, as its last answer named it: the test
+	 * of the connection when the settings were saved, or a search since. Null when none
+	 * named it.
+	 */
+	public function getPaperlessVersion(): ?PaperlessVersion {
+		return PaperlessVersion::of(
+			$this->config->getValueString(AppConstants::APP_ID, self::VERSION_KEY, ''),
+			$this->config->getValueString(AppConstants::APP_ID, self::API_VERSION_KEY, ''),
+		);
+	}
+
+	/**
+	 * Stores the version that an answer of Paperless named, when it differs from the stored
+	 * one: a search that works writes nothing until Paperless is updated. An answer that
+	 * names none keeps the stored one.
+	 */
+	public function rememberPaperlessVersion(?PaperlessVersion $version): void {
+		if ($version === null || $version->equals($this->getPaperlessVersion())) {
+			return;
+		}
+
+		$this->storePaperlessVersion($version);
+	}
+
+	/**
 	 * The token to test and save with a URL: the one entered, or else the stored one, but
 	 * only for the Paperless server that it was saved for. Otherwise whoever can use the
 	 * session of an administrator could send the stored token to a server of their own,
@@ -209,9 +242,11 @@ final class ConfigService {
 	}
 
 	/**
+	 * @param ?PaperlessVersion $paperlessVersion the version that the test of the connection
+	 *                                            found, null when Paperless named none
 	 * @throws InvalidSettingException when the URL is invalid or the token blank
 	 */
-	public function save(string $url, #[SensitiveParameter] string $token, bool $alwaysSearch = false, string $archiveOwner = '', bool $allowLocal = false): PublicConfig {
+	public function save(string $url, #[SensitiveParameter] string $token, bool $alwaysSearch = false, string $archiveOwner = '', bool $allowLocal = false, ?PaperlessVersion $paperlessVersion = null): PublicConfig {
 		$normalizedUrl = $this->normalizeUrl($url);
 		$normalizedToken = trim($token);
 		if ($normalizedToken === '') {
@@ -230,6 +265,8 @@ final class ConfigService {
 		$this->credentialsManager->store('', self::TOKEN_IDENTIFIER, $normalizedToken);
 		$this->token = $normalizedToken;
 		$this->tokenUnreadable = false;
+		// The version of another server, or of an older answer, would be wrong now.
+		$this->storePaperlessVersion($paperlessVersion);
 
 		$syncAccount = $this->getSyncAccount();
 
@@ -242,6 +279,7 @@ final class ConfigService {
 			false,
 			$this->isMissing($normalizedOwner !== '' ? $normalizedOwner : $syncAccount),
 			$allowLocal,
+			$paperlessVersion,
 		);
 	}
 
@@ -250,6 +288,7 @@ final class ConfigService {
 		$this->config->deleteKey(AppConstants::APP_ID, self::ALWAYS_SEARCH_KEY);
 		$this->config->deleteKey(AppConstants::APP_ID, self::ARCHIVE_OWNER_KEY);
 		$this->config->deleteKey(AppConstants::APP_ID, self::ALLOW_LOCAL_KEY);
+		$this->storePaperlessVersion(null);
 		$this->credentialsManager->delete('', self::TOKEN_IDENTIFIER);
 		$this->token = '';
 		$this->tokenUnreadable = false;
@@ -325,6 +364,18 @@ final class ConfigService {
 		$asciiHost = function_exists('idn_to_ascii') ? idn_to_ascii($host, self::IDNA_NONTRANSITIONAL_TO_ASCII, self::INTL_IDNA_VARIANT_UTS46) : false;
 
 		return $asciiHost !== false ? $asciiHost : throw new InvalidSettingException(SettingProblem::HostNotAscii, 'Enter the host of the Paperless URL in its ASCII form (punycode), such as xn--bcher-kva.example for bücher.example.');
+	}
+
+	private function storePaperlessVersion(?PaperlessVersion $version): void {
+		if ($version === null) {
+			$this->config->deleteKey(AppConstants::APP_ID, self::VERSION_KEY);
+			$this->config->deleteKey(AppConstants::APP_ID, self::API_VERSION_KEY);
+
+			return;
+		}
+
+		$this->config->setValueString(AppConstants::APP_ID, self::VERSION_KEY, $version->version);
+		$this->config->setValueString(AppConstants::APP_ID, self::API_VERSION_KEY, $version->apiVersion);
 	}
 
 	/**

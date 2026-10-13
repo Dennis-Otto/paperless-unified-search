@@ -21,6 +21,7 @@ use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IAppConfig;
+use OCP\ICacheFactory;
 use OCP\IDateTimeFormatter;
 use OCP\IL10N;
 use OCP\IURLGenerator;
@@ -73,6 +74,8 @@ final class AdminSettingsTest extends TestCase {
 			'tokenUnreadable' => false,
 			'archiveOwnerMissing' => false,
 			'allowLocal' => true,
+			'paperlessVersion' => '',
+			'paperlessApiVersion' => '',
 		], $params['config']->jsonSerialize());
 		self::assertStringNotContainsString('TEST_VALUE', json_encode($params, JSON_THROW_ON_ERROR));
 		self::assertNull($params['history']);
@@ -180,7 +183,7 @@ final class AdminSettingsTest extends TestCase {
 		return new AdminSettings(
 			new ConfigService($config, $credentials, $this->accounts('sync'), $this->createStub(LoggerInterface::class)),
 			$urlGenerator,
-			new SearchDiagnostics($config, $this->createStub(ITimeFactory::class)),
+			new SearchDiagnostics($config, $this->createStub(ITimeFactory::class), $this->createStub(ICacheFactory::class)),
 			$formatter,
 		);
 	}

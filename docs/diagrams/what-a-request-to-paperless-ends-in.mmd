@@ -1,0 +1,41 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: What a request to Paperless ends in
+    accDescr: The Paperless client asks Paperless for a page of documents. A request without an answer gets one second try only when it failed within 3.5 seconds, before it had a connection, and Nextcloud didn't refuse its address; a request that waited for a Paperless that hangs fails the search at once. An answer of 2xx brings the documents. HTTP 400 for the query, as for an advanced query that the user is still typing, or HTTP 404 for a page after the first, is no problem of the search, and the history stays untouched; on Paperless 3, the client asks once more with the same term in the simple mode of the search, which brings the documents of its words, finds nothing when refused again, and fails the search with any other answer. Every other answer fails the search, which the history notes.
+
+    request(["`**Ask Paperless**`"])
+    answered{"Did Paperless<br>answer?"}
+    early{"Within 3.5 s, before<br>a connection, and no<br>refused local address?"}
+    second["One second try;<br>its answer notes a retry"]
+    status{"Which status?"}
+    documents["The documents"]
+    paperless3{"Paperless 3<br>and HTTP 400?"}
+    simple["The same term in the<br>simple mode, text"]
+    nothing["Nothing found,<br>the history untouched"]
+    failed["The search failed,<br>noted in the history"]
+
+    request --> answered
+    answered -- "no" --> early
+    early -- "yes" --> second
+    early -- "no" --> failed
+    second -- "no answer" --> failed
+    second -- "answer" --> status
+    answered -- "yes" --> status
+    status -- "2xx" --> documents
+    status -- "400 for the query,<br>404 for a later page" --> paperless3
+    status -- "any other" --> failed
+    paperless3 -- "yes" --> simple
+    paperless3 -- "no" --> nothing
+    simple -- "2xx" --> documents
+    simple -- "refused again" --> nothing
+    simple -- "any other" --> failed
+
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class documents,nothing yes
+    class failed no

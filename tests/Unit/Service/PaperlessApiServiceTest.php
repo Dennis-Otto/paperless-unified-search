@@ -9,18 +9,23 @@ declare(strict_types=1);
 
 namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Service;
 
+use DateTimeImmutable;
 use JsonException;
+use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
+use OCA\PaperlessUnifiedSearch\Exception\PaperlessQueryRejected;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
 use OCA\PaperlessUnifiedSearch\Exception\RequestFailure;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
+use OCP\App\IAppManager;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Http\Client\IClient;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
 use OCP\Http\Client\LocalServerException;
 use OCP\IAppConfig;
+use OCP\ICacheFactory;
 use OCP\IUserManager;
 use OCP\Security\ICredentialsManager;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -31,10 +36,23 @@ use Throwable;
 use UnexpectedValueException;
 
 final class PaperlessApiServiceTest extends TestCase {
+	private const NOW = 1791500000;
 	private const NO_DOCUMENTS = '{"count":0,"next":null,"results":[]}';
+	private const FIELDS = 'id,title,created,correspondent,document_type,__search_hit__';
+	/** The headers of an answer of Paperless 3.3.0, as it names its version. */
+	private const PAPERLESS_3 = ['X-Version' => '3.3.0', 'X-Api-Version' => '10'];
+	private const PAPERLESS_2 = ['X-Version' => '2.20.13', 'X-Api-Version' => '9'];
+	/** How Paperless 3.3.0 refuses the query created:[2026 to, measured. */
+	private const INVALID_DATE = '{"query":["Invalid date value \'[2026\' for field \'created\'."]}';
 
-	/** @var array<string, mixed> the values that the diagnostics stored, by key */
+	/** @var array<string, mixed> the values of the app, by key */
 	private array $stored = [];
+
+	/** @var list<string> the keys of the strings that the app wrote, in their order */
+	private array $written = [];
+
+	/** @var list<float> the seconds that the clock reads one after the other, before it stands still at NOW */
+	private array $readings = [];
 
 	/**
 	 * @return array<string, array{string, ?string, bool}>
@@ -63,7 +81,7 @@ final class PaperlessApiServiceTest extends TestCase {
 				'headers' => [
 					'Authorization' => 'Token TEST_VALUE',
 					'Accept' => 'application/json',
-					'User-Agent' => 'Nextcloud-Paperless-Unified-Search/0.1',
+					'User-Agent' => 'Nextcloud-Paperless-Unified-Search/0.5.1',
 				],
 				'connect_timeout' => 3,
 				'timeout' => 10,
@@ -126,22 +144,35 @@ final class PaperlessApiServiceTest extends TestCase {
 	}
 
 	/**
-	 * Nextcloud refuses an address of the local network before any request leaves it, and
-	 * would refuse it again (#117).
+	 * @return array<string, array{Throwable}>
 	 */
-	public function testAnAddressThatNextcloudRefusesGetsNoSecondTry(): void {
+	public static function refusedAddresses(): array {
+		$refused = new LocalServerException('Host "paperless-ngx" violates local access rules');
+
+		return [
+			'the error of Nextcloud' => [$refused],
+			'the error of Nextcloud inside another error' => [new RuntimeException('The request failed.', 0, $refused)],
+		];
+	}
+
+	/**
+	 * Nextcloud refuses an address of the local network before any request leaves it, and
+	 * would refuse it again (#117, #128).
+	 */
+	#[DataProvider('refusedAddresses')]
+	public function testAnAddressThatNextcloudRefusesGetsNoSecondTry(Throwable $error): void {
 		$client = $this->createMock(IClient::class);
 		$client->expects(self::once())
 			->method('get')
-			->willThrowException(new LocalServerException('Host "paperless-ngx" violates local access rules'));
+			->willThrowException($error);
 
 		try {
 			$this->service($client)->searchDocuments('invoice', 1, 10);
 			self::fail('The refused address did not fail the search.');
-		} catch (LocalServerException $exception) {
-			self::assertSame('Host "paperless-ngx" violates local access rules', $exception->getMessage());
+		} catch (Throwable $exception) {
+			self::assertSame($error, $exception);
 		}
-		self::assertSame([], $this->stored);
+		self::assertArrayNotHasKey('diagnostics', $this->stored);
 	}
 
 	/**
@@ -273,6 +304,8 @@ final class PaperlessApiServiceTest extends TestCase {
 
 		$exception = $this->failedConnectionTest($client);
 
+		// A test of the connection searches nothing: even an answer that refuses a query fails it.
+		self::assertSame(PaperlessRequestException::class, $exception::class);
 		self::assertSame($reason, $exception->reason);
 		self::assertSame($answeredStatus, $exception->status);
 		self::assertSame($message, $exception->getMessage());
@@ -394,7 +427,7 @@ final class PaperlessApiServiceTest extends TestCase {
 			self::assertSame('cURL error 7: Failed to connect', $exception->getMessage());
 		}
 		// The search that fails records the failure, not the request.
-		self::assertSame([], $this->stored);
+		self::assertArrayNotHasKey('diagnostics', $this->stored);
 	}
 
 	public function testAnAnswerOfPaperlessGetsNoSecondTry(): void {
@@ -410,6 +443,305 @@ final class PaperlessApiServiceTest extends TestCase {
 	}
 
 	/**
+	 * A request that had a connection and then waited for Paperless in vain, as for a
+	 * Paperless that hangs while it consumes documents, gets no second try: it would make
+	 * the user wait twice as long and load the struggling Paperless twice (#128).
+	 */
+	public function testARequestThatFailsAfterTheTimeToConnectGetsNoSecondTry(): void {
+		$this->readings = [self::NOW, self::NOW + 3.5];
+		$error = new RuntimeException('cURL error 28: Operation timed out after 10001 milliseconds with 0 bytes received');
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())->method('get')->willThrowException($error);
+
+		try {
+			$this->service($client)->searchDocuments('invoice', 1, 10);
+			self::fail('The request that timed out did not fail the search.');
+		} catch (RuntimeException $exception) {
+			self::assertSame($error, $exception);
+		}
+		self::assertArrayNotHasKey('diagnostics', $this->stored);
+	}
+
+	/**
+	 * A request that fails within the time to connect, and half a second to spare, never
+	 * reached Paperless, and gets its second try (#128).
+	 */
+	public function testARequestThatFailsWithinTheTimeToConnectGetsASecondTry(): void {
+		$this->readings = [self::NOW, self::NOW + 3.499];
+		$calls = 0;
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::exactly(2))
+			->method('get')
+			->willReturnCallback(function () use (&$calls): IResponse {
+				if (++$calls === 1) {
+					throw new RuntimeException('cURL error 28: Connection timed out after 3001 milliseconds');
+				}
+
+				return $this->response(200, self::NO_DOCUMENTS);
+			});
+
+		$this->service($client)->searchDocuments('invoice', 1, 10);
+
+		self::assertSame(1, $this->stored['diagnostics']['retried'] ?? null);
+		self::assertSame(3499, $this->stored['diagnostics']['events'][0]['durationMs'] ?? null);
+	}
+
+	/**
+	 * The history keeps neither the token nor the term of a request that only its second
+	 * try answered, in whatever case the error repeats them (#128).
+	 */
+	public function testARetryLeavesOutTheTokenAndTheTerm(): void {
+		$calls = 0;
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function () use (&$calls): IResponse {
+			if (++$calls === 1) {
+				throw new RuntimeException('Token TEST_VALUE refused for Invoice at host');
+			}
+
+			return $this->response(200, self::NO_DOCUMENTS);
+		});
+
+		$this->service($client)->searchDocuments('invoice', 1, 10);
+
+		self::assertSame('Token … refused for … at host', $this->stored['diagnostics']['events'][0]['message'] ?? null);
+	}
+
+	/**
+	 * The User-Agent names the version of the app, which Nextcloud is asked for once.
+	 */
+	public function testTheRequestsNameTheVersionOfTheApp(): void {
+		$appManager = $this->createMock(IAppManager::class);
+		$appManager->expects(self::once())
+			->method('getAppVersion')
+			->with(AppConstants::APP_ID)
+			->willReturn('0.6.0');
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::exactly(2))
+			->method('get')
+			->with(self::anything(), self::callback(
+				static fn (array $options): bool => $options['headers']['User-Agent'] === 'Nextcloud-Paperless-Unified-Search/0.6.0',
+			))
+			->willReturn($this->response(200, self::NO_DOCUMENTS));
+
+		$service = $this->service($client, appManager: $appManager);
+		$service->searchDocuments('invoice', 1, 10);
+		$service->searchDocuments('invoice', 2, 10);
+	}
+
+	/**
+	 * Paperless 3 refuses a query of its advanced syntax that it can't parse, such as the
+	 * range of dates that a user is still typing; its simple mode takes the same term and
+	 * finds the documents of its words. Neither answer is a problem of the search (#128).
+	 */
+	public function testAnUnfinishedQueryOfPaperless3GoesToItsSimpleMode(): void {
+		$queries = [];
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options) use (&$queries): IResponse {
+			$queries[] = $options['query'];
+
+			return isset($options['query']['query'])
+				? $this->response(400, self::INVALID_DATE, self::PAPERLESS_3)
+				: $this->response(200, '{"count":1,"next":null,"results":[{"id":7}]}', self::PAPERLESS_3);
+		});
+
+		self::assertSame(
+			['count' => 1, 'next' => null, 'results' => [['id' => 7]]],
+			$this->service($client)->searchDocuments('created:[2026 to', 2, 25),
+		);
+		self::assertSame([
+			['query' => 'created:[2026 to', 'page' => 2, 'page_size' => 25, 'fields' => self::FIELDS],
+			['text' => 'created:[2026 to', 'page' => 2, 'page_size' => 25, 'fields' => self::FIELDS],
+		], $queries);
+		self::assertArrayNotHasKey('diagnostics', $this->stored);
+	}
+
+	/**
+	 * The second try of a request of the simple mode leaves out the term as well.
+	 */
+	public function testARetryOfTheSimpleModeLeavesOutTheTerm(): void {
+		$calls = 0;
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function () use (&$calls): IResponse {
+			return match (++$calls) {
+				1 => $this->response(400, self::INVALID_DATE, self::PAPERLESS_3),
+				2 => throw new RuntimeException('cURL error 7: Failed to connect for created:[2026 to'),
+				default => $this->response(200, self::NO_DOCUMENTS, self::PAPERLESS_3),
+			};
+		});
+
+		$this->service($client)->searchDocuments('created:[2026 to', 1, 25);
+
+		self::assertSame('cURL error 7: Failed to connect for …', $this->stored['diagnostics']['events'][0]['message'] ?? null);
+	}
+
+	/**
+	 * @return array<string, array{array<string, string>}>
+	 */
+	public static function versionsWithoutSimpleSearch(): array {
+		return [
+			// Paperless 2 ignores the parameter text and would list all documents.
+			'Paperless 2' => [self::PAPERLESS_2],
+			'a Paperless that names no version' => [[]],
+		];
+	}
+
+	/**
+	 * @param array<string, string> $headers
+	 */
+	#[DataProvider('versionsWithoutSimpleSearch')]
+	public function testOnlyPaperless3GetsTheTermInItsSimpleMode(array $headers): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->willReturn($this->response(400, self::INVALID_DATE, $headers));
+
+		$rejection = $this->rejectedSearch($client, 'created:[2026 to');
+
+		self::assertSame(400, $rejection->status);
+		self::assertSame(RequestFailure::Http, $rejection->reason);
+		self::assertSame('Paperless rejected the query with HTTP 400.', $rejection->getMessage());
+	}
+
+	/**
+	 * @return array<string, array{int, int}>
+	 */
+	public static function termLengths(): array {
+		return [
+			'the longest term of Paperless' => [4096, 2],
+			'a longer one, which its simple mode refuses as well' => [4097, 1],
+		];
+	}
+
+	/**
+	 * Paperless 3 searches at most 4096 characters in any mode; a longer term goes to no
+	 * other mode, and the refusal of the simple mode is no problem either.
+	 */
+	#[DataProvider('termLengths')]
+	public function testATermTooLongForPaperlessGoesToNoOtherMode(int $length, int $requests): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::exactly($requests))
+			->method('get')
+			->willReturn($this->response(400, '{"query":["The search query is too long (' . $length . ' characters). The maximum allowed length is 4096 characters."]}', self::PAPERLESS_3));
+
+		// Characters, not bytes: ä takes two.
+		self::assertSame(400, $this->rejectedSearch($client, str_repeat('ä', $length))->status);
+	}
+
+	/**
+	 * Paperless refuses a page past the last one, as when documents go away between two
+	 * pages of a search; the search finds nothing more (#128).
+	 */
+	public function testAPagePastTheLastOneIsRejected(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->willReturn($this->response(404, '{"detail":"Invalid page."}', self::PAPERLESS_3));
+
+		$rejection = $this->rejectedSearch($client, 'invoice', 3);
+
+		self::assertSame(404, $rejection->status);
+		self::assertSame(RequestFailure::NotFound, $rejection->reason);
+		self::assertFalse($rejection->allowsSimpleSearch());
+	}
+
+	/**
+	 * @return array<string, array{int, int, ?string}>
+	 */
+	public static function failuresOfASearch(): array {
+		return [
+			'a first page that is not found, at a wrong URL' => [404, 1, '{"detail":"Not found."}'],
+			'HTTP 400 of a proxy' => [400, 1, '<html><title>400 The plain HTTP request was sent to HTTPS port</title></html>'],
+			'HTTP 400 for another parameter' => [400, 1, '{"detail":"Specify only one of text, title_search, query, or more_like_id."}'],
+			'HTTP 400 with a list' => [400, 1, '["query"]'],
+			'HTTP 400 without a body' => [400, 1, null],
+			'a refused token' => [401, 2, '{"detail":"Invalid token."}'],
+			'a server error' => [500, 2, ''],
+		];
+	}
+
+	/**
+	 * Every other answer that isn't 2xx still fails the search, and the history shows it,
+	 * also HTTP 400 and 404 that don't refuse what the user typed (#128).
+	 */
+	#[DataProvider('failuresOfASearch')]
+	public function testOtherAnswersStillFailTheSearch(int $status, int $page, ?string $body): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->willReturn($this->response($status, $body, self::PAPERLESS_3));
+
+		try {
+			$this->service($client)->searchDocuments('invoice', $page, 25);
+			self::fail('The answer did not fail the search.');
+		} catch (PaperlessRequestException $exception) {
+			self::assertSame(PaperlessRequestException::class, $exception::class);
+			self::assertSame($status, $exception->status);
+		}
+	}
+
+	/**
+	 * The test of the connection returns the version that Paperless names, which saving
+	 * stores for the settings.
+	 */
+	public function testTheConnectionTestReturnsTheVersionOfPaperless(): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response(200, self::NO_DOCUMENTS, self::PAPERLESS_3));
+
+		$version = $this->service($client)->testConnection('https://paperless.example.com', 'TEST_VALUE', false);
+
+		self::assertNotNull($version);
+		self::assertSame('3.3.0', $version->version);
+		self::assertSame('10', $version->apiVersion);
+	}
+
+	public function testAConnectionTestWithoutAVersionReturnsNone(): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response(200, self::NO_DOCUMENTS));
+
+		self::assertNull($this->service($client)->testConnection('https://paperless.example.com', 'TEST_VALUE', false));
+	}
+
+	/**
+	 * A search stores the version of Paperless only when it changes, so that searches that
+	 * work write nothing; an answer without a version keeps the stored one.
+	 */
+	public function testASearchRemembersTheVersionOfPaperlessWhenItChanges(): void {
+		$headers = self::PAPERLESS_2;
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function () use (&$headers): IResponse {
+			return $this->response(200, self::NO_DOCUMENTS, $headers);
+		});
+		$service = $this->service($client);
+
+		$service->searchDocuments('invoice', 1, 10);
+		$service->searchDocuments('invoice', 1, 10);
+		self::assertSame(['paperless_version', 'paperless_api_version'], $this->written);
+		self::assertSame('2.20.13', $this->stored['paperless_version']);
+
+		$headers = self::PAPERLESS_3;
+		$service->searchDocuments('invoice', 1, 10);
+		$headers = [];
+		$service->searchDocuments('invoice', 1, 10);
+
+		self::assertCount(4, $this->written);
+		self::assertSame('3.3.0', $this->stored['paperless_version']);
+		self::assertSame('10', $this->stored['paperless_api_version']);
+	}
+
+	/**
+	 * The rejection of a search that Paperless refused.
+	 */
+	private function rejectedSearch(IClient $client, string $term, int $page = 1): PaperlessQueryRejected {
+		try {
+			$this->service($client)->searchDocuments($term, $page, 25);
+		} catch (PaperlessQueryRejected $rejection) {
+			return $rejection;
+		}
+
+		self::fail('Paperless did not reject the search.');
+	}
+
+	/**
 	 * The exception of a test of the connection that failed.
 	 */
 	private function failedConnectionTest(IClient $client): PaperlessRequestException {
@@ -422,9 +754,26 @@ final class PaperlessApiServiceTest extends TestCase {
 		self::fail('The test of the connection did not fail.');
 	}
 
-	private function service(IClient $client, string $url = 'https://paperless.example.com', ?string $token = 'TEST_VALUE', bool $allowLocal = false): PaperlessApiService {
+	private function service(
+		IClient $client,
+		string $url = 'https://paperless.example.com',
+		?string $token = 'TEST_VALUE',
+		bool $allowLocal = false,
+		?IAppManager $appManager = null,
+	): PaperlessApiService {
+		$this->stored['paperless_url'] = $url;
 		$config = $this->createStub(IAppConfig::class);
-		$config->method('getValueString')->willReturn($url);
+		$config->method('getValueString')->willReturnCallback(function (string $app, string $key, string $default = ''): string {
+			$value = $this->stored[$key] ?? $default;
+
+			return is_string($value) ? $value : $default;
+		});
+		$config->method('setValueString')->willReturnCallback(function (string $app, string $key, string $value): bool {
+			$this->stored[$key] = $value;
+			$this->written[] = $key;
+
+			return true;
+		});
 		$config->method('getValueBool')->willReturn($allowLocal);
 		$config->method('setValueArray')->willReturnCallback(function (string $app, string $key, array $value): bool {
 			$this->stored[$key] = $value;
@@ -443,17 +792,37 @@ final class PaperlessApiServiceTest extends TestCase {
 		$clientService = $this->createStub(IClientService::class);
 		$clientService->method('newClient')->willReturn($client);
 
+		$clock = $this->createStub(ITimeFactory::class);
+		$clock->method('getTime')->willReturn(self::NOW);
+		$clock->method('now')->willReturnCallback(function (): DateTimeImmutable {
+			$time = DateTimeImmutable::createFromFormat('U.u', sprintf('%.6F', array_shift($this->readings) ?? self::NOW));
+			self::assertInstanceOf(DateTimeImmutable::class, $time);
+
+			return $time;
+		});
+
+		if ($appManager === null) {
+			$appManager = $this->createStub(IAppManager::class);
+			$appManager->method('getAppVersion')->willReturn('0.5.1');
+		}
+
 		return new PaperlessApiService(
 			new ConfigService($config, $credentials, $this->createStub(IUserManager::class), $this->createStub(LoggerInterface::class)),
 			$clientService,
-			new SearchDiagnostics($config, $this->createStub(ITimeFactory::class)),
+			new SearchDiagnostics($config, $clock, $this->createStub(ICacheFactory::class)),
+			$clock,
+			$appManager,
 		);
 	}
 
-	private function response(int $status, ?string $body): IResponse {
+	/**
+	 * @param array<string, string> $headers by name
+	 */
+	private function response(int $status, ?string $body, array $headers = []): IResponse {
 		$response = $this->createStub(IResponse::class);
 		$response->method('getStatusCode')->willReturn($status);
 		$response->method('getBody')->willReturn($body);
+		$response->method('getHeader')->willReturnCallback(static fn (string $name): string => $headers[$name] ?? '');
 
 		return $response;
 	}
