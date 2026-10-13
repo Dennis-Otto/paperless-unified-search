@@ -1,6 +1,6 @@
 # Mobile release test matrix
 
-Automated E2E tests validate the server response contract. Before a release that changes result links, file metadata, or search-provider behavior, also perform these checks with the current official clients.
+Automated E2E tests validate the server response contract, and `flow.mjs` goes through the search dialog in Chromium at the size of a laptop and of a phone, from the term to the file in the Viewer ([the search dialog](README.md#the-search-dialog)). Before a release that changes result links, file metadata, or search-provider behavior, also perform these checks with the current official clients, and the browser check in a browser other than Chromium.
 
 | Client | Required behavior | Evidence |
 | --- | --- | --- |
