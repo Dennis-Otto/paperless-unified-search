@@ -401,7 +401,7 @@ curl asks for the app password, which keeps it out of the history of the shell; 
 }
 ```
 
-Each entry names the document, a line of its text that matches, the link that opens its file and the file's ID and path for that user. `limit` sets how many documents Paperless is asked for per page, 5 by default and up to 50. A page can hold fewer results, even none, when the user can't open the files of some documents, so keep asking with `cursor` set to the `cursor` of the answer while `isPaginated` is `true`. The switch **Search connected services** belongs to the search in the browser; the API asks Paperless without it.
+Each entry names the document, a line of its text that matches, the link that opens its file and the file's ID and path for that user. `limit` sets how many results a page holds, 5 by default and up to 50. To fill a page, the app goes through up to 4 pages of 25 documents that Paperless finds, for at most 3 seconds. A page can still hold fewer results, even none, when the user can open the files of only a few of the documents that Paperless finds, so keep asking with `cursor` set to the `cursor` of the answer while `isPaginated` is `true`. Send the `cursor` back as you got it: it counts the documents of Paperless that the pages before went through. The switch **Search connected services** belongs to the search in the browser; the API asks Paperless without it.
 
 Give an assistant the app password of a user who sees only what it may read, and revoke the app password in the personal security settings once the assistant no longer needs it.
 

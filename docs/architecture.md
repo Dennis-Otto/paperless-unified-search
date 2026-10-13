@@ -189,7 +189,7 @@ flowchart TB
     class none no
 ```
 
-The database has no index for a part of a name, so every search of the file cache reads the names of all files that the user can see, on every storage and in every share. One search per page keeps that to one such scan per keystroke, however many documents Paperless finds, where a search per document took five in the web search and up to 50 in the apps or after *Load more*. The file locator checks the marker of each file it finds once more, so that `[P1]` never counts for `[P12]`, nor `[p12]` for `[P12]`.
+The database has no index for a part of a name, so every search of the file cache reads the names of all files that the user can see, on every storage and in every share. One search per page of Paperless keeps that to one such scan per page and at most 4 per keystroke, within the [budget of a search](#filling-a-page-of-results), however many documents a page holds, where a search per document took five in the web search and up to 50 in the apps or after *Load more*. The file locator checks the marker of each file it finds once more, so that `[P1]` never counts for `[P12]`, nor `[p12]` for `[P12]`.
 
 ## Diagnostics
 
