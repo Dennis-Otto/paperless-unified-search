@@ -31,11 +31,11 @@ The application stores the Paperless API token through Nextcloud's server-side c
 
 ## How the project keeps itself secure
 
-- Every pull request and every push to `main` runs CodeQL, a Gitleaks secret scan and, for changed dependencies, a review against known vulnerabilities. OpenSSF Scorecard checks the practices of the repository every week.
+- Every pull request runs CodeQL, a Gitleaks secret scan of its commits and, for changed dependencies, a review against known vulnerabilities. CodeQL runs after every change of `main` as well, Gitleaks every week over the whole history, and GitHub's secret scanning with push protection stops a known kind of secret before it lands. OpenSSF Scorecard checks the practices of the repository every week.
 - Actions are pinned to commit hashes, tokens get the least permissions they need, and Renovate keeps actions, dependencies and images current, with the updates that fix a vulnerability at once.
-- OSV-Scanner checks every lock file against the OSV database of known vulnerabilities, on every pull request and every week.
+- OSV-Scanner checks every lock file against the OSV database of known vulnerabilities: in every pull request that changes a lock file, after every change of `main` and every week.
 - Harden-Runner records the network traffic of every job of the workflows, so that a connection that doesn't belong there shows.
-- Releases carry an SBOM as SPDX and as CycloneDX, the licenses of their third-party components (`THIRD_PARTY_NOTICES.md`), an OpenVEX document of the advisories that the project accepts with their reasons, and the signed provenance of an isolated build (SLSA Build Level 3); their tags are signed without a key by the release workflow (gitsign); they are immutable once published and are verified as their users can after every release and every week.
+- Releases carry an SBOM as SPDX and as CycloneDX, the licenses of their third-party components (`THIRD_PARTY_NOTICES.md`), an OpenVEX document of the advisories that the project accepts with their reasons, and the signed provenance of an isolated build (SLSA Build Level 3); their tags are signed without a key by the release workflow (gitsign), which builds no release on a tag that it didn't sign; they are immutable once published and are verified as their users can after every release and every week.
 
 ## Findings of code scanning
 
@@ -75,7 +75,7 @@ An attacker would most likely try to bring malicious code into `main`, through a
 2. **Pull requests → `main`.** A change reaches `main` only through a pull request that passes every required check, squashed into one signed commit. The rules of `main` and of the release tags have no exceptions, not even for administrators.
 3. **`main` → secrets.** Every secret lives in an environment that only workflows on `main` can use, and the jobs that use one run no code of a pull request.
 4. **Third-party code → the build.** Dependencies are pinned by version and hash, actions by commit hash and images by digest. An update waits a week after its release, unless it fixes a vulnerability, and passes the same checks as every other change.
-5. **The release → its users.** The release workflow builds every release from its tagged commit; GitHub keeps it immutable, and its signatures let users check it, as [Verify a release](#verify-a-release) shows.
+5. **The release → its users.** The release workflow builds every release from its tagged commit, once it has checked that it signed the tag itself, at the commit of the release; GitHub keeps it immutable, and its signatures let users check it, as [Verify a release](#verify-a-release) shows.
 6. **Issues → the issue assistant.** Anyone can write an issue, so its text is data for an AI that only reads; a job without the AI checks the answer before anything is posted.
 
 ### Secure design principles
@@ -97,7 +97,7 @@ How the [OWASP Top 10 CI/CD security risks](https://owasp.org/www-project-top-10
 | --- | --- |
 | Insufficient flow control mechanisms | pull requests only, every required check, a linear history, release tags that never move |
 | Inadequate identity and access management | administrator access only for the maintainers; bots act as GitHub Apps or with the token of their workflow |
-| Dependency chain abuse | lock files with hashes, pins by commit hash and digest, updates only a week after their release, the dependency review and OSV-Scanner |
+| Dependency chain abuse | lock files with hashes, pins by commit hash and digest, updates only a week after their release, a weekly refresh of the lock files that waits for the maintainer, the dependency review and OSV-Scanner |
 | Poisoned pipeline execution | no code of a pull request runs with a secret; actionlint and zizmor audit every workflow |
 | Insufficient pipeline-based access controls | permissions per job, environments that only `main` can use, actions pinned to commit hashes as a setting of the repository |
 | Insufficient credential hygiene | the secret scan and push protection, tokens of the release app that expire after an hour, no secret printed or committed |

@@ -23,7 +23,7 @@ concurrency:
 jobs:
   register:
     name: register the app
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     # The environment holds the key of the app's certificate; only main may use it.
     environment:
@@ -62,7 +62,8 @@ jobs:
           printf '%s' "$APP_PRIVATE_KEY" > "$key"
           openssl pkey -in "$key" -check -noout
 
-          curl --fail --location --silent --show-error --output "$certificate" \
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            --connect-timeout 15 --max-time 300 --output "$certificate" \
             "https://raw.githubusercontent.com/nextcloud/app-certificate-requests/master/$app_id/$app_id.crt"
           openssl x509 -in "$certificate" -noout -checkend 0
           openssl x509 -in "$certificate" -noout -subject | grep --fixed-strings "CN = $app_id"

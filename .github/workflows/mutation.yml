@@ -4,31 +4,43 @@ name: Mutation
 # (mutants) and run the tests against each: a mutant that no test notices shows a
 # line that the tests run but don't check. mutmut does it for Python, Infection for
 # the PHP of a Nextcloud app. The run reports the score and the surviving mutants in
-# its summary and keeps the details as an artifact; a low score fails nothing.
+# its summary and keeps the details as an artifact; a low score fails nothing, a run
+# that measures nothing fails. A pull request that changes how the mutants run tries
+# them and shows a defect as a red check. That check isn't required: a pull request
+# that merges itself, such as an update of mutmut, doesn't wait for it.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
   schedule:
     - cron: "15 1 * * 6"
   workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/mutation.yml
+      - .github/mutation-requirements.txt
+      - stacks/mutation/requirements.txt
 
 permissions: {}
 
 concurrency:
-  group: ${{ github.workflow }}
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || 'weekly' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   mutation:
     name: mutation
     if: ${{ !github.event.repository.fork }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 350
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 30 || 350 }}
     permissions:
       contents: read
     env:
       INFECTION_VERSION: 0.35.6
       INFECTION_SHA256: 3fd4216875260b8e47c48ec1a92473f500d88bd36d8ffec21cc0d24e18d7f0ea
+      # The time of mutmut, which keeps the mutants it reached: a pull request tries
+      # them for a quarter of an hour. Infection, which reports at its end only, takes
+      # the time of the job.
+      MUTMUT_LIMIT: ${{ github.event_name == 'pull_request' && '15m' || '320m' }}
     steps:
       - name: Record the network traffic of the job
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -74,25 +86,30 @@ jobs:
             else
               # The modules of the root and its packages, such as blueprint/, without the tests.
               paths="$(
-                {
-                  find . -maxdepth 1 -name '*.py' ! -name 'conftest.py' -printf '%f\n'
-                  find . -mindepth 2 -maxdepth 2 -name __init__.py ! -path './tests/*' -printf '%h\n' | cut -c3-
-                } | sort | paste -sd, -
+                find . -maxdepth 1 -name '*.py' ! -name 'conftest.py' -printf '%f\n'
+                find . -mindepth 2 -maxdepth 2 -name __init__.py ! -path './tests/*' -printf '%h\n' | cut -c3-
               )"
             fi
-            # The tests may read any file of the repository, so mutmut copies them all.
+            # mutmut reads a list in setup.cfg as one item on each line. The tests may read
+            # any file of the repository, so it copies them all; a test marked
+            # mutation_unsafe needs the repository itself, not that copy, and stays out.
             {
               echo "[mutmut]"
-              echo "paths_to_mutate=$paths"
+              echo "source_paths="
+              sort <<< "$paths" | sed 's/^/    /'
               echo "also_copy="
               find . -mindepth 1 -maxdepth 1 ! -name .git ! -name mutants ! -name setup.cfg -printf '    %f\n' | sort
+              echo "pytest_add_cli_args="
+              echo "    -m"
+              echo "    not mutation_unsafe"
             } > "$RUNNER_TEMP/mutmut.cfg"
             cat "$RUNNER_TEMP/mutmut.cfg" >> setup.cfg
           fi
           status=0
-          timeout 320m mutmut run --max-children "$(nproc)" > "$RUNNER_TEMP/run.txt" 2>&1 || status=$?
+          timeout "$MUTMUT_LIMIT" mutmut run --max-children "$(nproc)" > "$RUNNER_TEMP/run.txt" 2>&1 || status=$?
           echo "status=$status" >> "$GITHUB_ENV"
-          tail -n 5 "$RUNNER_TEMP/run.txt"
+          # Without the spinner, which redraws its line thousands of times.
+          sed 's/.*\r//' "$RUNNER_TEMP/run.txt" | tail -n 5
       - name: Report the score and the surviving mutants
         if: always() && steps.kind.outputs.kind == 'python'
         run: |
@@ -106,7 +123,12 @@ jobs:
             if ((total)); then
               echo "**$((100 * killed / total)) %** of the mutants were noticed by a test: $killed killed, $survived survived, $other other."
             else
-              echo "No mutant ran."
+              # Its last words, such as "failed to collect stats".
+              echo "No mutant ran. The end of the output of mutmut:"
+              echo
+              echo '```text'
+              sed 's/.*\r//' "$RUNNER_TEMP/run.txt" | tail -n 20
+              echo '```'
             fi
             if [[ "${status:-0}" == 124 ]]; then
               echo "The run stopped at its time limit; these are the mutants it reached."
@@ -115,12 +137,13 @@ jobs:
               echo
               echo "The first surviving mutants; \`mutmut show <name>\` shows one:"
               echo
-              grep ': survived$' "$RUNNER_TEMP/results.txt" | head -n 30 | sed 's/: survived$//; s/^/- /'
+              grep -m 30 ': survived$' "$RUNNER_TEMP/results.txt" | sed 's/: survived$//; s/^ */- /'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
-          # An error of the tool itself, not a low score, fails the run.
-          if [[ "${status:-0}" != 0 && "${status:-0}" != 124 ]] && ((total == 0)); then
-            tail -n 40 "$RUNNER_TEMP/run.txt"
+          # A run that measures nothing, not a low score, fails: an error of the tool
+          # or of its configuration.
+          if ((total == 0)); then
+            sed 's/.*\r//' "$RUNNER_TEMP/run.txt" | tail -n 40
             exit 1
           fi
       - name: Keep the results
@@ -134,7 +157,9 @@ jobs:
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         if: steps.kind.outputs.kind == 'php'
         with:
-          php-version: "8.2"
+          # Infection needs PHP 8.3 or newer. The app's locked dependencies stay those
+          # of its oldest PHP, which config.platform.php of composer.json sets.
+          php-version: "8.3"
           extensions: dom, libxml, mbstring, xml
           coverage: pcov
           tools: composer:v2
@@ -142,28 +167,72 @@ jobs:
         if: steps.kind.outputs.kind == 'php'
         run: |
           composer install --no-interaction --prefer-dist --no-progress
-          curl --fail --location --silent --show-error --output "$RUNNER_TEMP/infection.phar" \
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            --connect-timeout 15 --max-time 300 --output "$RUNNER_TEMP/infection.phar" \
             "https://github.com/infection/infection/releases/download/$INFECTION_VERSION/infection.phar"
           echo "$INFECTION_SHA256  $RUNNER_TEMP/infection.phar" | sha256sum --check --strict
       - name: Run the mutants against the tests
         if: steps.kind.outputs.kind == 'php'
         run: |
           if ! compgen -G "infection.json*" >/dev/null; then
-            echo '{"source": {"directories": ["lib"]}, "timeout": 30, "logs": {"text": "build/infection.log", "summary": "build/infection-summary.log"}}' > infection.json5
+            {
+              echo "{"
+              if [[ -f tests/bootstrap.php ]]; then
+                # The classes of Nextcloud that the code of the app uses come from the
+                # bootstrap of the tests, also for Infection itself.
+                echo '  "bootstrap": "tests/bootstrap.php",'
+              fi
+              echo '  "source": {"directories": ["lib"]},'
+              echo '  "timeout": 30,'
+              echo '  "logs": {"text": "build/infection.log", "summary": "build/infection-summary.log"}'
+              echo "}"
+            } > infection.json5
           fi
-          php "$RUNNER_TEMP/infection.phar" --threads=max --min-msi=0 --no-progress --no-interaction \
-            --logger-github=false | tail -n 20
+          # Its output has the score, "Covered Code MSI: 87%", the share of the mutants
+          # of the code that the tests run which a test noticed, as the score of mutmut;
+          # no log of Infection has it. --with-uncovered adds the mutants of code that
+          # no test runs, which it counts but doesn't run, and with them the MSI of all
+          # the code and its coverage. The artifact keeps the output for the dashboard.
+          # A low score fails nothing, also where the project's own configuration sets
+          # a minimum; an error of Infection fails the step, through tee and tail.
+          mkdir -p build
+          set -o pipefail
+          php "$RUNNER_TEMP/infection.phar" --threads=max --with-uncovered --min-msi=0 --min-covered-msi=0 \
+            --no-progress --no-interaction --no-ansi --logger-github=false 2>&1 |
+            tee build/infection-output.log | tail -n 20
       - name: Report the score
         if: always() && steps.kind.outputs.kind == 'php'
         run: |
+          # "40 mutations were generated:", in the output of Infection with any configuration.
+          generated="$(sed -nE '/^ *[0-9]+ mutations were generated/{s/^ *([0-9]+).*/\1/p;q;}' build/infection-output.log 2>/dev/null || true)"
+          scored=false
+          if ((${generated:-0} > 0)) && grep -qs 'Covered Code MSI' build/infection-output.log; then
+            scored=true
+          fi
           {
             echo "### Mutation tests (Infection)"
-            if [[ -f build/infection-summary.log ]]; then
-              cat build/infection-summary.log
+            if [[ "$scored" == true ]]; then
+              grep -E '(Mutation Score Indicator|Mutation Code Coverage|Covered Code MSI)' build/infection-output.log \
+                | sed 's/^ */- /'
             else
-              echo "Infection wrote no summary."
+              echo "Infection reported no score. The end of its output:"
+              echo
+              echo '```text'
+              tail -n 20 build/infection-output.log 2>/dev/null || true
+              echo '```'
+            fi
+            if [[ -f build/infection-summary.log ]]; then
+              echo
+              echo '```text'
+              cat build/infection-summary.log
+              echo '```'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+          # A run that measures nothing, not a low score, fails: no mutant, such as of a
+          # configuration whose code is missing, or no score that it could read.
+          if [[ "$scored" != true ]]; then
+            exit 1
+          fi
       - name: Keep the results
         if: always() && steps.kind.outputs.kind == 'php'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

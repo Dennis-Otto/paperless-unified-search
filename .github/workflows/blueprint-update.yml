@@ -1,10 +1,12 @@
 name: Blueprint update
 
 # The blueprint bot. Every week, and on demand, it brings the repository up to the
-# latest release of the blueprint with `copier update` and opens a pull request as
-# the release app, so that its checks run. Without conflicts, the pull request merges
-# itself once every check passes; conflicts stay in it as markers for the maintainer.
-# The repository variable BLUEPRINT_AUTOMERGE set to off makes every update wait.
+# latest published release of the blueprint with `copier update` and keeps one pull
+# request for it as the release app, so that its checks run: a newer release moves
+# that pull request on. Without conflicts, it merges itself once every check passes;
+# conflicts stay in it as markers for the maintainer, with auto-merge off. Once the
+# maintainer commits to its branch, the bot leaves the branch alone. The repository
+# variable BLUEPRINT_AUTOMERGE set to off makes every update wait.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -21,7 +23,7 @@ concurrency:
 jobs:
   update:
     name: blueprint update
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     # The environment holds the private key of the release app; only main may use it.
     environment:
@@ -53,9 +55,35 @@ jobs:
           python-version: "3.12"
       - name: Install the hash-pinned Copier
         run: pip install --require-hashes -r .github/copier-requirements.txt
+      - name: Find the latest published release of the blueprint
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The blueprint that Copier updates from, as the answers name it: a fork
+          # perhaps, which has releases of its own.
+          source="$(sed -n 's/^_src_path: *//p' .copier-answers.yml)"
+          source="${source#gh:}"
+          source="${source#https://github.com/}"
+          source="${source%.git}"
+          if [[ ! "$source" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+            source=Dennis-Otto/repo-blueprint
+          fi
+          # Not the newest tag: the Release workflow pushes the tag before it publishes
+          # the release, which may stay a draft or fail.
+          tag="$(gh release view --repo "$source" --json tagName --jq .tagName)"
+          if [[ -z "$tag" ]]; then
+            echo "::error::The blueprint $source has no published release to update to."
+            exit 1
+          fi
+          echo "source=$source" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - name: Update to the latest release of the blueprint
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+          SOURCE: ${{ steps.release.outputs.source }}
+          TAG: ${{ steps.release.outputs.tag }}
+          APP: ${{ steps.app.outputs.app-slug }}
           AUTOMERGE: ${{ vars.BLUEPRINT_AUTOMERGE }}
           # Git starts its maintenance in the background after a commit, and Copier
           # deletes the repositories it commits to for the update right away: the two
@@ -65,77 +93,19 @@ jobs:
           GIT_CONFIG_VALUE_0: "false"
         run: |
           set -euo pipefail
-          before="$(sed -n 's/^_commit: //p' .copier-answers.yml)"
-          copier update --defaults --conflict inline
-          after="$(sed -n 's/^_commit: //p' .copier-answers.yml)"
-          changed="$(git status --porcelain | cut -c4-)"
-          if [[ -z "$changed" || "$changed" == ".copier-answers.yml" ]]; then
-            echo "The release $after of the blueprint changes nothing in this repository."
-            exit 0
-          fi
-          conflicts="$(git grep -l -E '^<{7} ' -- . || true)"
-
-          # The commit goes through GitHub's API as the release app: GitHub signs it, as
-          # main requires, and the DCO check accepts the pull requests of the app.
-          branch="blueprint/update"
-          base="$(git rev-parse HEAD)"
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$branch" >/dev/null 2>&1; then
-            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/$branch" \
-              -f sha="$base" -F force=true >/dev/null
-          else
-            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
-              -f ref="refs/heads/$branch" -f sha="$base" >/dev/null
-          fi
+          # The bot of main makes the pull request, not the one the update brings:
+          # updating runs no code of the blueprint before the checks of this
+          # repository have passed it.
+          tool="$RUNNER_TEMP/blueprint-tool"
+          mkdir -p "$tool"
+          cp -R .github/blueprint.py .github/blueprint "$tool/"
+          copier update --defaults --conflict inline --vcs-ref "$TAG"
           git add --all
-          python3 - "$branch" "$base" "$before" "$after" > "$RUNNER_TEMP/commit.json" <<'PYTHON'
-          import base64
-          import json
-          import os
-          import subprocess
-          import sys
-
-          branch, base, before, after = sys.argv[1:]
-          entries = subprocess.run(
-              ["git", "diff", "--cached", "--name-status", "--no-renames", "-z", "HEAD"],
-              capture_output=True, check=True,
-          ).stdout.decode().split("\0")
-          additions, deletions = [], []
-          for status, path in zip(entries[0::2], entries[1::2]):
-              if status == "D":
-                  deletions.append({"path": path})
-              else:
-                  with open(path, "rb") as file:
-                      contents = base64.b64encode(file.read()).decode()
-                  additions.append({"path": path, "contents": contents})
-          release = f"https://github.com/Dennis-Otto/repo-blueprint/releases/tag/{after}"
-          print(json.dumps({
-              "query": "mutation($input: CreateCommitOnBranchInput!) "
-                       "{ createCommitOnBranch(input: $input) { commit { oid } } }",
-              "variables": {"input": {
-                  "branch": {"repositoryNameWithOwner": os.environ["GITHUB_REPOSITORY"], "branchName": branch},
-                  "expectedHeadOid": base,
-                  "message": {
-                      "headline": f"chore: update to the blueprint {after}",
-                      "body": f"The changes of the blueprint from {before} to {after}: {release}",
-                  },
-                  "fileChanges": {"additions": additions, "deletions": deletions},
-              }},
-          }))
-          PYTHON
-          gh api graphql --input "$RUNNER_TEMP/commit.json" --jq .data.createCommitOnBranch.commit.oid
-
-          body="$(printf '%s\n' \
-            "Brings the repository from the blueprint's $before to [$after](https://github.com/Dennis-Otto/repo-blueprint/releases/tag/$after) with \`copier update\`." \
-            "" \
-            "${conflicts:+The update conflicts with changes of this repository in these files; resolve the markers, then merge:}" \
-            "${conflicts}")"
-          number="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --state open --json number --jq '.[0].number // empty')"
-          if [[ -n "$number" ]]; then
-            gh pr edit "$number" --repo "$GITHUB_REPOSITORY" --title "chore: update to the blueprint $after" --body "$body"
-          else
-            gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
-              --title "chore: update to the blueprint $after" --body "$body"
-          fi
-          if [[ -z "$conflicts" && "$AUTOMERGE" != "off" ]]; then
-            gh pr merge "$branch" --repo "$GITHUB_REPOSITORY" --auto --squash
-          fi
+          # The commit goes through GitHub's API as the release app: GitHub signs it, as
+          # main requires, and the DCO check accepts the pull requests of the app. The
+          # bot moves the branch blueprint/update on from the update before, so its pull
+          # request stays open; it leaves a branch with commits of anyone else alone.
+          # Conflicts turn auto-merge off and add the label merge-conflict.
+          python3 "$tool/blueprint.py" --repo "$GITHUB_REPOSITORY" update-commit \
+            --app "${APP}[bot]" --automerge "$AUTOMERGE" --run-id "$GITHUB_RUN_ID" \
+            --source "$SOURCE"

@@ -1,14 +1,25 @@
 name: OSV-Scanner
 
 # Every lock file of the repository against the OSV database of known vulnerabilities:
-# on every pull request the vulnerabilities that it brings in, and on main and every
-# week all of them. Findings go to code scanning, where the Findings workflow keeps
-# them fixed or accepted; osv-scanner.toml lists those that the project accepts, each
-# with its reason, such as an advisory in a test base that pins its dependencies.
-# https://github.com/Dennis-Otto/repo-blueprint
+# in every pull request that changes a lock file the vulnerabilities that it brings in,
+# and on main and every week all of them. Findings go to code scanning, where the
+# Findings workflow keeps them fixed or accepted; osv-scanner.toml lists those that the
+# project accepts, each with its reason, such as an advisory in a test base that pins
+# its dependencies. https://github.com/Dennis-Otto/repo-blueprint
 
 on:
   pull_request:
+    # The lock files of Python, Node and PHP, and what the project accepts.
+    paths:
+      - "**/*requirements*.txt"
+      - "**/uv.lock"
+      - "**/poetry.lock"
+      - "**/package-lock.json"
+      - "**/yarn.lock"
+      - "**/pnpm-lock.yaml"
+      - "**/composer.lock"
+      - "**/osv-scanner.toml"
+      - .github/workflows/osv-scanner.yml
   push:
     branches: [main]
   schedule:
@@ -24,7 +35,11 @@ concurrency:
 jobs:
   pull-request:
     name: osv-scanner (pull request)
-    if: github.event_name == 'pull_request'
+    # Not in the release pull request: the branch of the release bot in this repository.
+    if: >-
+      github.event_name == 'pull_request' &&
+      (!startsWith(github.head_ref, 'release-please--') ||
+      github.event.pull_request.head.repo.full_name != github.repository)
     permissions:
       actions: read
       contents: read

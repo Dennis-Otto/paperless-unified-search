@@ -16,14 +16,17 @@ on:
 permissions:
   contents: read
 
+# One run for each commit of a pull request: a quick check, whose runs for different
+# commits never cancel each other, so that a late run for an older commit can't
+# cancel the check of the head.
 concurrency:
-  group: dependency-review-${{ github.event.pull_request.number || github.run_id }}
+  group: dependency-review-${{ github.event.pull_request.number || github.run_id }}-${{ github.event.pull_request.head.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   dependency-review:
     name: dependency-review
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Record the network traffic of the job

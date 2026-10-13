@@ -1,10 +1,15 @@
 name: Links
 
-# The link bot. lychee checks every link of the documentation on every change of a
-# Markdown file, and every week, since sites move without a change here. A broken
-# link fails the check of a pull request; the weekly run keeps one issue with the
-# broken links open until they are fixed, and closes it then. lychee.toml holds the
-# rules, .lycheeignore the exceptions of this repository.
+# The link bot. lychee checks the links of the documentation on every change of a
+# Markdown file, and every week, since sites move without a change here. A pull
+# request checks the documents that it changes, so that a site that is down for a
+# moment fails only the pull requests that link to it; one that changes the rules or
+# moves or deletes a file checks every document, as main and the weekly run do. The
+# answers of the sites stay in a cache for a day. A broken link fails the check of a
+# pull request; the weekly run keeps one issue with the broken links open until they
+# are fixed, and closes it then. lychee.toml holds the rules, .lycheeignore the
+# exceptions of this repository. The entry in the changelog that most pull requests
+# bring starts no check on its own; the weekly run checks the links of the changelog.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -12,12 +17,14 @@ on:
     branches: [main]
     paths:
       - "**/*.md"
+      - "!CHANGELOG.md"
       - lychee.toml
       - .lycheeignore
       - .github/workflows/links.yml
   pull_request:
     paths:
       - "**/*.md"
+      - "!CHANGELOG.md"
       - lychee.toml
       - .lycheeignore
       - .github/workflows/links.yml
@@ -34,7 +41,11 @@ concurrency:
 jobs:
   links:
     name: links
-    runs-on: ubuntu-latest
+    # Not in the release pull request: the branch of the release bot in this repository.
+    if: >-
+      !startsWith(github.head_ref, 'release-please--') ||
+      github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -46,14 +57,54 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # A pull request compares its documents with its base.
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
           persist-credentials: false
+      - name: Choose the documents to check
+        id: documents
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # The documents that a pull request adds or changes. One that changes the rules,
+          # or moves or deletes a file that a document may link to, checks every
+          # document. lychee gets the names through a shell, so a name with another
+          # character checks every document too.
+          if [[ "$EVENT" == pull_request ]] &&
+            [[ -z "$(git diff --name-only "$BASE_SHA" HEAD -- lychee.toml .lycheeignore .github/workflows/links.yml)" ]] &&
+            [[ -z "$(git diff --name-only --diff-filter=DR "$BASE_SHA" HEAD)" ]]; then
+            mapfile -t changed < <(git diff --name-only --diff-filter=AM "$BASE_SHA" HEAD -- '*.md' ':!CHANGELOG.md')
+            if ((${#changed[@]} == 0)); then
+              echo "The pull request changes no document; no link to check." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            if ! printf '%s\n' "${changed[@]}" | grep -qv '^[A-Za-z0-9._/@+-]*$'; then
+              echo "files=$(printf "'./%s' " "${changed[@]}")" >> "$GITHUB_OUTPUT"
+              echo "The check reads the ${#changed[@]} document(s) that the pull request changes." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          fi
+          echo "files='./**/*.md'" >> "$GITHUB_OUTPUT"
+          echo "every=true" >> "$GITHUB_OUTPUT"
+      # The answers of the sites from the runs of the last day; lychee asks again for a
+      # link that failed.
+      - name: Restore the answers of the sites
+        if: steps.documents.outputs.files != ''
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .lycheecache
+          key: lychee-${{ github.run_id }}
+          restore-keys: lychee-
       - name: Check the links of the documentation
         id: lychee
+        if: steps.documents.outputs.files != ''
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
-          args: --config lychee.toml --no-progress "./**/*.md"
+          args: --config lychee.toml --no-progress --cache --max-cache-age 1d ${{ steps.documents.outputs.files }}
           output: ${{ runner.temp }}/links.md
           fail: ${{ github.event_name != 'schedule' }}
+          # A changed document may have no link at all.
+          failIfEmpty: ${{ steps.documents.outputs.every == 'true' }}
       - name: Keep the issue of broken links current
         if: github.event_name == 'schedule'
         env:

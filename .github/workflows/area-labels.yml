@@ -11,15 +11,17 @@ on:
 
 permissions: {}
 
+# One run for each commit, so that a late run for an older commit cancels none for
+# a newer one; each run labels by the files of the pull request as they are then.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
   cancel-in-progress: true
 
 jobs:
   labels:
     name: area labels
     if: ${{ !github.event.repository.fork }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read

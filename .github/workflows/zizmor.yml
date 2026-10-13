@@ -2,14 +2,22 @@ name: Workflow security
 
 # zizmor checks every workflow for the ways a workflow gets attacked: template
 # injection, permissions wider than needed, credentials that persist, unpinned
-# actions and dangerous triggers. Its findings go to code scanning, where the
-# Findings workflow keeps them fixed or accepted; .github/zizmor.yml holds what the
-# repository accepts on purpose. https://github.com/Dennis-Otto/repo-blueprint
+# actions and dangerous triggers: in every pull request that changes a workflow, an
+# action or the settings of Dependabot, and on main and every week for the analysis
+# that code scanning compares pull requests with. Its findings go to code scanning,
+# where the Findings workflow keeps them fixed or accepted; .github/zizmor.yml holds
+# what the repository accepts on purpose. https://github.com/Dennis-Otto/repo-blueprint
 
 on:
   push:
     branches: [main]
   pull_request:
+    paths:
+      - .github/workflows/**
+      - "**/action.yml"
+      - "**/action.yaml"
+      - .github/dependabot.yml
+      - .github/zizmor.yml
   schedule:
     - cron: "35 5 * * 2"
   workflow_dispatch:
@@ -23,7 +31,11 @@ concurrency:
 jobs:
   zizmor:
     name: zizmor
-    runs-on: ubuntu-latest
+    # Not in the release pull request: the branch of the release bot in this repository.
+    if: >-
+      !startsWith(github.head_ref, 'release-please--') ||
+      github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read

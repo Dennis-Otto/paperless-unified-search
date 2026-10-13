@@ -1,14 +1,16 @@
 name: After the checks
 
-# The three bots that act on a finished run of the checks. One workflow for all, so
-# that every run of the checks starts one run after it, not three that mostly have
-# nothing to do. None checks out or runs the code of a pull request.
+# The bots that act on a finished run of the checks and of the release. One workflow
+# for all, so that every run starts one run after it, not one for each bot that
+# mostly has nothing to do. None checks out or runs the code of a pull request.
 #
-# The flaky-test bot: when a run of the tests fails for the first time, it runs the
-# failed jobs once more. A job that passes then failed without a change of the code:
-# its test is flaky, and the bot reports it in one issue, so that it gets fixed
+# The flaky-test bot: when a run of the tests fails for the first time, or a job of it
+# runs out of time, it runs the failed jobs once more. A job that passes then failed
+# without a change of the code: its test is flaky, and the bot reports it in one
+# issue, with the step, the test and the error that failed, so that it gets fixed
 # instead of failing pull requests at random. A job that fails again is a real
-# failure and stays red.
+# failure and stays red, and so does one that failed the same way for the commit
+# before: running it again would only keep a runner busy.
 #
 # The coverage bot: after the checks of a pull request, it compares the coverage of
 # its tests with that of main, file by file, and keeps one comment on the pull
@@ -21,14 +23,22 @@ name: After the checks
 # pull request; its required checks then stay cancelled and block the merge. When a
 # run for the head of an open pull request was cancelled that way and no newer run of
 # its workflow for the same commit exists, the bot starts it again. A run that a
-# person cancelled, or one whose commit a newer push replaced, stays cancelled.
+# person cancelled, or one whose commit a newer push replaced, stays cancelled. The
+# quick checks avoid the race: their runs for different commits never cancel each
+# other.
+#
+# The bot for failed releases: when the release that a merge started fails, such as
+# at a push of its tag that GitHub refused for a moment, it runs the failed jobs once
+# more, where they stopped, instead of leaving the release and its rollout to a
+# person. The release workflow takes up a tag that it pushed already.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
   workflow_run:
-    # The checks of this repository, and its end-to-end tests if a workflow of its own named Docker E2E runs them.
-    # Then those of the other required checks, the same in every repository.
-    workflows: [CI (php), Docker E2E, CodeQL, Dependency review, Docs, Lint, Pull request title, Secret scan]
+    # The checks of this repository, its end-to-end tests if a workflow of its own named Docker E2E runs them,
+    # and the workflows of its other tests that the answer test_workflows of the blueprint names.
+    # Then those of the other required checks, the same in every repository, and the release.
+    workflows: [CI (php), Docker E2E, CodeQL, Dependency review, Docs, Lint, Pull request title, Secret scan, Release]
     types: [completed]
 
 permissions: {}
@@ -36,19 +46,21 @@ permissions: {}
 jobs:
   rerun:
     name: run the failed jobs again
-    # The tests only; the other required checks fail the same way again.
+    # The tests only; the other required checks fail the same way again, and the
+    # release has a bot of its own.
     if: >-
       !github.event.repository.fork &&
-      !contains(fromJSON('["CodeQL", "Dependency review", "Docs", "Lint", "Pull request title", "Secret scan"]'), github.event.workflow_run.name) &&
-      github.event.workflow_run.conclusion == 'failure' &&
+      !contains(fromJSON('["CodeQL", "Dependency review", "Docs", "Lint", "Pull request title", "Secret scan", "Release"]'), github.event.workflow_run.name) &&
+      contains(fromJSON('["failure", "cancelled"]'), github.event.workflow_run.conclusion) &&
       github.event.workflow_run.run_attempt == 1
     concurrency:
       group: ${{ github.workflow }}-flaky-${{ github.event.workflow_run.id }}
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       actions: write
+      checks: read
     steps:
       - name: Record the network traffic of the job
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -59,8 +71,68 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           RUN: ${{ github.event.workflow_run.id }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           NAME: ${{ github.event.workflow_run.name }}
+          WORKFLOW: ${{ github.event.workflow_run.workflow_id }}
+          EVENT: ${{ github.event.workflow_run.event }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
+          # The jobs of an attempt that failed or ran out of time, by name, given the
+          # conclusion of the attempt: GitHub cancels a job at its time limit and says
+          # so in an annotation. An attempt that a newer run cancelled broke nothing; it
+          # is the business of the bot for cancelled checks. In one that a person or a
+          # time limit cancelled, only the jobs that ran out of time broke: a job that
+          # waits for the others fails when they are cancelled. With a third argument,
+          # only the jobs it names.
+          broken() {
+            local jobs id conclusion name messages found=""
+            jobs="$(gh api "repos/$GH_REPO/actions/runs/$1/jobs" --paginate \
+              --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | [.id, .conclusion, .name] | @tsv')" ||
+              return 1
+            while IFS=$'\t' read -r -u 4 id conclusion name; do
+              if [[ -z "$id" ]] || [[ "$conclusion" == failure && "$2" == cancelled ]]; then
+                continue
+              fi
+              if [[ "$conclusion" == cancelled ]]; then
+                messages="$(gh api "repos/$GH_REPO/check-runs/$id/annotations" --paginate --jq '.[].message')" ||
+                  return 1
+                if grep -q "higher priority waiting request" <<<"$messages"; then
+                  return 0
+                fi
+                if ! grep -q "has exceeded the maximum execution time" <<<"$messages"; then
+                  continue
+                fi
+              fi
+              if [[ -z "${3:-}" ]] || grep -Fxq -- "$name" <<<"$3"; then
+                found+="$name"$'\n'
+              fi
+            done 4<<<"$jobs"
+            printf '%s' "$found"
+          }
+          now="$(broken "$RUN/attempts/1" "$CONCLUSION")"
+          if [[ -z "$now" ]]; then
+            echo "No job of $NAME failed or ran out of time; a newer run or a person cancelled it." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # A failure that the commit before ended with as well is a real one: the same
+          # jobs broke in the last attempt of the run for the previous commit of the
+          # branch, after the bot had run them once more. When that can't be read, the
+          # jobs run once more.
+          previous="$(gh api --method GET "repos/$GH_REPO/actions/workflows/$WORKFLOW/runs" \
+            -f branch="$BRANCH" -f event="$EVENT" -f status=completed -f per_page=30 \
+            --jq ".workflow_runs | map(select(.id < $RUN and .head_sha != \"$SHA\" and .head_repository.full_name == \"$HEAD_REPO\")) | .[0] // empty | [.id, .conclusion] | @tsv" ||
+            true)"
+          if [[ -n "$previous" ]] &&
+            [[ "$(broken "${previous%%$'\t'*}" "${previous#*$'\t'}" "$now" | sort)" == "$(sort <<<"$now")" ]]; then
+            mapfile -t jobs <<<"$now"
+            {
+              echo "The same jobs of $NAME broke for the commit before, so they don't run again:"
+              printf -- '- %s\n' "${jobs[@]}"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           gh run rerun "$RUN" --failed
           echo "The failed jobs of $NAME run once more: a flaky test passes now." >> "$GITHUB_STEP_SUMMARY"
 
@@ -68,16 +140,17 @@ jobs:
     name: report the flaky tests
     if: >-
       !github.event.repository.fork &&
-      !contains(fromJSON('["CodeQL", "Dependency review", "Docs", "Lint", "Pull request title", "Secret scan"]'), github.event.workflow_run.name) &&
+      !contains(fromJSON('["CodeQL", "Dependency review", "Docs", "Lint", "Pull request title", "Secret scan", "Release"]'), github.event.workflow_run.name) &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.run_attempt > 1
     concurrency:
       group: ${{ github.workflow }}-flaky-${{ github.event.workflow_run.id }}
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       actions: read
+      checks: read
       issues: write
     steps:
       - name: Record the network traffic of the job
@@ -94,36 +167,118 @@ jobs:
           BRANCH: ${{ github.event.workflow_run.head_branch }}
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          # A run that the bot for cancelled checks started again didn't fail at first.
-          if [[ "$(gh api "repos/$GH_REPO/actions/runs/$RUN/attempts/1" --jq .conclusion)" == cancelled ]]; then
-            echo "The first attempt was cancelled, not failed; nothing to report." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          # The backticks are Markdown of jq's output, not the shell's.
-          # shellcheck disable=SC2016
+          # Lengths in characters, not bytes, so that a cut keeps every character whole.
+          export LC_ALL=C.UTF-8
+          # A cell of the table, as code: the names and the logs of a pull request reach
+          # it, so it keeps no backtick, line break or pipe of their own, and no more
+          # than a line.
+          cell() {
+            local text
+            text="$(printf '%s' "$1" | tr -d '`' | tr '\000-\037\177' ' ' | sed 's/|/\\|/g')"
+            if ((${#text} > 150)); then
+              text="${text:0:149}…"
+            fi
+            if [[ -n "${text// /}" ]]; then
+              # The backticks are Markdown, not the shell's.
+              # shellcheck disable=SC2016
+              printf '`%s`' "$text"
+            else
+              printf '–'
+            fi
+          }
+          # Each job that failed in the first attempt, or ran out of time there, with
+          # the step that broke, the tests that pytest names in its log, and the first
+          # error that it reported. An attempt that a newer run cancelled, as one that
+          # the bot for cancelled checks started again, failed in no test. In one that
+          # a person or a time limit cancelled, only the jobs that ran out of time
+          # broke: a job that waits for the others fails when they are cancelled.
+          first="$(gh api "repos/$GH_REPO/actions/runs/$RUN/attempts/1" --jq .conclusion)"
           jobs="$(gh api "repos/$GH_REPO/actions/runs/$RUN/attempts/1/jobs" --paginate \
-            --jq '.jobs[] | select(.conclusion == "failure") | "- `\(.name)`"')"
-          if [[ -z "$jobs" ]]; then
-            echo "No job failed at first; nothing to report." >> "$GITHUB_STEP_SUMMARY"
+            --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | [.id, .conclusion, .html_url, .name, ([.steps[]? | select(.conclusion == "failure" or .conclusion == "cancelled") | .name] | join(", "))] | @tsv')"
+          rows=""
+          while IFS=$'\t' read -r -u 3 id conclusion url name steps; do
+            if [[ -z "$id" ]] || [[ "$conclusion" == failure && "$first" == cancelled ]]; then
+              continue
+            fi
+            errors="$(gh api "repos/$GH_REPO/check-runs/$id/annotations" --paginate \
+              --jq '.[] | select(.annotation_level == "failure") | .message | gsub("\\s+"; " ")' || true)"
+            if grep -q "higher priority waiting request" <<<"$errors"; then
+              rows=""
+              break
+            fi
+            if [[ "$conclusion" == cancelled ]] && ! grep -q "has exceeded the maximum execution time" <<<"$errors"; then
+              continue
+            fi
+            failed="$(gh api "repos/$GH_REPO/actions/jobs/$id/logs" 2>/dev/null |
+              sed -E 's/\x1b\[[0-9;]*m//g; s/^[0-9-]+T[0-9:.]+Z //' |
+              grep -E '^(FAILED|ERROR) [^ ]+\.py(::| |$)' | head -n 3)"
+            tests="$(sed -nE 's/^[A-Z]+ ([^ ]+).*/\1/p' <<<"$failed" | awk 'NR > 1 { printf ", " } { printf "%s", $0 }')"
+            error="$(grep -v -e '^Process completed with exit code' -e '^The operation was canceled' <<<"$errors" | head -n 1)"
+            if [[ -z "$error" ]]; then
+              error="$(sed -nE '1s/^[A-Z]+ [^ ]+ - //p' <<<"$failed")"
+            fi
+            if [[ -z "$error" ]]; then
+              error="$(head -n 1 <<<"$errors")"
+            fi
+            rows+="| [$(cell "$name")]($url) | $(cell "$steps") | $(cell "$tests") | $(cell "$error") |"$'\n'
+          done 3<<<"$jobs"
+          if [[ -z "$rows" ]]; then
+            echo "No job failed or ran out of time at first; nothing to report." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           title="Flaky tests"
-          body="$(printf '%s failed at first and passed when it ran again, on %s at %s ([the run](%s)):\n\n%s\n' \
-            "$NAME" "$BRANCH" "${SHA:0:7}" "$URL" "$jobs")"
+          body="$(printf '**%s** failed at first and passed when it ran again, on %s at %s ([the run](%s)):\n\n%s\n%s\n%s' \
+            "$NAME" "$(cell "$BRANCH")" "${SHA:0:7}" "$URL" \
+            "| Job | Step | Test | Error |" "| --- | --- | --- | --- |" "$rows")"
           number="$(gh issue list --state open --search "in:title \"$title\"" --json number,title \
             --jq "map(select(.title == \"$title\")) | .[0].number // empty")"
           if [[ -n "$number" ]]; then
             gh issue comment "$number" --body "$body"
           else
             printf '%s\n\n%s\n' \
-              "The flaky-test bot lists here every job that failed and then passed without a change of the code. Fix its test, then close this issue." \
+              "The flaky-test bot lists here every job that failed and then passed without a change of the code, with the step, the test and the error that failed. Fix its test, then close this issue." \
               "$body" > "$RUNNER_TEMP/issue.md"
-            gh issue create --title "$title" --body-file "$RUNNER_TEMP/issue.md"
+            gh issue create --title "$title" --label maintenance --body-file "$RUNNER_TEMP/issue.md"
           fi
           {
             echo "### Flaky"
-            echo "$jobs"
+            echo
+            echo "| Job | Step | Test | Error |"
+            echo "| --- | --- | --- | --- |"
+            printf '%s' "$rows"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: run the failed release again
+    # The release of a merge, once: a run that a person started is theirs, and the
+    # hourly run looks again anyway.
+    if: >-
+      !github.event.repository.fork &&
+      github.event.workflow_run.name == 'Release' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.run_attempt == 1
+    concurrency:
+      group: ${{ github.workflow }}-release-${{ github.event.workflow_run.id }}
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: Run the failed jobs of the release once more
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.event.workflow_run.id }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          gh run rerun "$RUN" --failed
+          echo "The failed jobs of the release of ${SHA:0:7} run once more, where they stopped." >> "$GITHUB_STEP_SUMMARY"
 
   cancelled:
     name: run the cancelled checks again
@@ -135,7 +290,7 @@ jobs:
     concurrency:
       group: ${{ github.workflow }}-cancelled-${{ github.event.workflow_run.id }}
       cancel-in-progress: false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       actions: write
@@ -199,7 +354,7 @@ jobs:
     concurrency:
       group: ${{ github.workflow }}-coverage-${{ github.event.workflow_run.head_sha }}
       cancel-in-progress: true
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       actions: read
