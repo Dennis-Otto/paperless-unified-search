@@ -2,31 +2,10 @@
 
 The suite starts Nextcloud with this checkout mounted read-only as a Custom App: `run.sh` the image of `compose.yaml` (set `NEXTCLOUD_IMAGE` to choose another, such as `nextcloud:35-apache`), [`run-all.sh`](#every-supported-version-at-once) and the CI the current release of every version from `min-version` to `max-version` in `appinfo/info.xml` at the same time, and every week also [the coming Nextcloud](#the-coming-nextcloud). A deterministic local HTTP service emulates the small Paperless API surface used by the app. Like Paperless, it sends only the fields of the documents that a request names, and the excerpt of a search with them; unlike Paperless, it answers a request that names none with HTTP 400, so that the suite fails as soon as the app would make Paperless send the whole OCR text of every document. Like Paperless, it answers in pages, of 25 documents unless a request asks for another size, with the absolute link to the next page, and refuses a page past the last one with HTTP 404. Like Paperless, it marks up the words of the term in the excerpt with `<b>` and writes the characters of HTML as entities, such as `&#x27;` and `&quot;`, which the result has to show as text again. And as Paperless or its network sometimes does, it fails: with HTTP 500 for the term `e2e-error`, and for `e2e-drop` it breaks off the connection of the first request without an answer.
 
-```mermaid
----
-config:
-  flowchart:
-    wrappingWidth: 400
-    nodeSpacing: 30
----
-flowchart TB
-    accTitle: The end-to-end tests
-    accDescr: run.sh starts a Compose project with Nextcloud, which has the checkout as a read-only Custom App, a mock of Paperless, mock_server.py, which also answers as other-host and fails for some terms, and the Chromium of Playwright with accessibility.mjs, axe-core and flow.mjs. run.sh drives Nextcloud through occ, OCS, WebDAV and the routes of the settings and starts the browser; Nextcloud searches the mock, and the browser opens the settings of the app and searches in the search dialog.
-
-    run["run.sh"]
-    subgraph compose["Compose project"]
-        nextcloud["Nextcloud<br/>the checkout as<br/>Custom App, read-only"]
-        mock["Paperless mock<br/>mock_server.py,<br/>also as other-host,<br/>fails for e2e-error<br/>and e2e-drop"]
-        browser["Chromium of Playwright<br/>accessibility.mjs<br/>with axe-core,<br/>flow.mjs"]
-    end
-    run -- "occ, OCS, WebDAV<br/>and the routes of the settings" --> nextcloud
-    run -- "starts" --> browser
-    nextcloud -- "searches" --> mock
-    browser -- "opens the settings,<br/>searches in the dialog" --> nextcloud
-
-    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
-    class run person
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../docs/images/diagrams/the-end-to-end-tests.dark.svg">
+  <img src="../../docs/images/diagrams/the-end-to-end-tests.svg" alt="The end-to-end tests: run.sh starts a Compose project with Nextcloud, which has the checkout as a read-only Custom App, a mock of Paperless, mock_server.py, which also answers as other-host and fails for some terms, and the Chromium of Playwright with accessibility.mjs, axe-core and flow.mjs. run.sh drives Nextcloud through occ, OCS, WebDAV and the routes of the settings and starts the browser; Nextcloud searches the mock, and the browser opens the settings of the app and searches in the search dialog.">
+</picture>
 
 The search for `pagetest` checks how the app fills a page of results: the mock ranks 40 documents for it, more than a page of the app's requests to Paperless, and the archive account shares a folder with the files of seven of them, none of the first 19, with `e2e-other`, and keeps one more file to itself. The first page of 5 results takes its documents from both pages of Paperless, and the next page, from the cursor of the first, holds the remaining two, without repeating or leaving out a document.
 
@@ -34,33 +13,10 @@ Besides the search, the suite checks the smart picker: it lists *Paperless docum
 
 The suite makes the search fail, too, and checks the history of its problems that the administration settings show under *Search problems*, which Nextcloud keeps in its configuration of the apps. A search for `e2e-error` shows no documents and goes into the history as a failed search, with the message *Paperless returned HTTP 500.*; a search for `e2e-drop` shows its document from the second try of the request, which goes into the history as well, with the message of the HTTP client, and shows that searches work again. `assert_history.py` reads the page that Nextcloud renders: neither term appears on it, nor the token, nor the query of the URL that the message of the HTTP client repeats. The browser then clears the history with *Clear history*, after which the page says *No problem recorded.*.
 
-```mermaid
----
-config:
-  flowchart:
-    wrappingWidth: 400
----
-flowchart TB
-    accTitle: The problems of the search in the end-to-end tests
-    accDescr: run.sh searches as e2e-user for e2e-error, which the mock answers with HTTP 500, and the search shows no documents and records a failed search. Then it searches for e2e-drop; the mock breaks off the first request without an answer, the app sends it a second time and gets the document, and the history records the second try and that searches work again. assert_history.py checks the page of the administration settings, without the terms and the token. accessibility.mjs checks that page with axe-core, then clicks Clear history, and assert_history.py checks that the page says No problem recorded.
-
-    error["Search for <code>e2e-error</code>"]
-    failed["The mock answers HTTP 500<br/>no documents,<br/>a failed search recorded"]
-    drop["Search for <code>e2e-drop</code>"]
-    retried["The mock breaks off the first request,<br/>the second try gets the document,<br/>recorded with the recovery"]
-    page["<code>assert_history.py</code><br/>both on the page,<br/>no term, no token, no query"]
-    axe["<code>accessibility.mjs</code><br/>axe-core on the page,<br/>then <i>Clear history</i>"]
-    cleared["<code>assert_history.py</code><br/><i>No problem recorded.</i>"]
-
-    error --> failed --> drop --> retried --> page --> axe --> cleared
-
-    classDef bot fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
-    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
-    classDef fail fill:#dc26262e,stroke:#dc2626,stroke-width:2px
-    class error,drop,axe bot
-    class failed,retried fail
-    class page,cleared done
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../docs/images/diagrams/the-problems-of-the-search-in-the-end-to-end-tests.dark.svg">
+  <img src="../../docs/images/diagrams/the-problems-of-the-search-in-the-end-to-end-tests.svg" alt="The problems of the search in the end-to-end tests: run.sh searches as e2e-user for e2e-error, which the mock answers with HTTP 500, and the search shows no documents and records a failed search. Then it searches for e2e-drop; the mock breaks off the first request without an answer, the app sends it a second time and gets the document, and the history records the second try and that searches work again. assert_history.py checks the page of the administration settings, without the terms and the token. accessibility.mjs checks that page with axe-core, then clicks Clear history, and assert_history.py checks that the page says No problem recorded.">
+</picture>
 
 Run:
 
@@ -105,45 +61,10 @@ The workflow *Docker E2E* (`.github/workflows/e2e.yml`) runs `run-all.sh` in one
 
 The weekly run on Mondays and a run started by hand always test every version, so that the newest release behind each image `nextcloud:<version>-apache` is tested even in a week without a change of the app.
 
-```mermaid
----
-config:
-  flowchart:
-    wrappingWidth: 400
----
-flowchart TB
-    accTitle: The required check nextcloud
-    accDescr: A pull request or a push to main that changes no file the end-to-end tests cover passes the check nextcloud in seconds, with a notice. Otherwise, and in the weekly run and a run started by hand, run-all.sh tests every Nextcloud version from min-version to max-version at the same time in one job, and the check passes only when every version passes; the log of each version is a group of its own.
-
-    change["Pull request<br>or push to <code>main</code>"]
-    timed["Weekly run<br>or a start by hand"]
-    scope{"A file the tests<br>cover changed?"}
-    skipped["<code>nextcloud</code> passes in seconds<br>with a notice"]
-    all["<code>run-all.sh</code><br>one download of the browser"]
-    low["Nextcloud <i>min-version</i>"]
-    middle["every version<br>in between"]
-    high["Nextcloud <i>max-version</i>"]
-    every{"Every version<br>passes?"}
-    passed["<code>nextcloud</code> passes"]
-    failed["<code>nextcloud</code> fails<br>the log of each version<br>in a group of its own"]
-
-    change --> scope
-    scope -- "no" --> skipped
-    scope -- "yes" --> all
-    timed --> all
-    all --> low & middle & high --> every
-    every -- "yes" --> passed
-    every -- "no" --> failed
-
-    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
-    classDef bot fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
-    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
-    classDef fail fill:#dc26262e,stroke:#dc2626,stroke-width:2px
-    class change person
-    class timed,all,low,middle,high bot
-    class skipped,passed done
-    class failed fail
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../docs/images/diagrams/the-required-check-nextcloud.dark.svg">
+  <img src="../../docs/images/diagrams/the-required-check-nextcloud.svg" alt="The required check nextcloud: A pull request or a push to main that changes no file the end-to-end tests cover passes the check nextcloud in seconds, with a notice. Otherwise, and in the weekly run and a run started by hand, run-all.sh tests every Nextcloud version from min-version to max-version at the same time in one job, and the check passes only when every version passes; the log of each version is a group of its own.">
+</picture>
 
 ## Accessibility
 
@@ -161,31 +82,10 @@ After the accessibility check, in the same container, `flow.mjs` goes through th
 
 The search looks different in each supported version, and `flow.mjs` finds every part of it by its role and its name, as a screen reader does. Nextcloud 33 and 34 open a dialog from a button in the header, which Nextcloud 33 names *Unified search* and Nextcloud 34 *Search apps, files, tags, messages …*, and add Paperless with the switch *Search connected services*. Nextcloud 35 searches in a field of the header, *Apps, files, messages, and more*, a button on a phone, shows the results below it, and adds Paperless with the button *More from connected services*.
 
-```mermaid
----
-config:
-  flowchart:
-    wrappingWidth: 400
----
-flowchart TB
-    accTitle: The search dialog in flow.mjs
-    accDescr: flow.mjs signs in as e2e-user, opens the personal settings and the search, types mobiletest and adds the connected services, with the switch of Nextcloud 33 and 34 or the button of Nextcloud 35. It expects the group Paperless documents with only Mobile viewer test, read out with its title, its date and its excerpt as text. A click on the result opens the file in Files, in the Viewer, which names it in its header. It does this on a laptop and then on a phone.
-
-    signin["Sign in as <code>e2e-user</code><br/>open the personal settings"]
-    dialog["Open the search<br/>type <code>mobiletest</code>"]
-    connected["Add the connected services<br/>the switch of 33 and 34,<br/>the button of 35"]
-    result["<i>Paperless documents</i><br/>only the one result, read out with<br/>title, date and excerpt as text"]
-    viewer["Click the result:<br/>the Viewer opens the file,<br/>named in its header"]
-    sizes["On a laptop, 1280 × 800,<br/>then on a phone, 375 × 812"]
-
-    signin --> dialog --> connected --> result --> viewer
-    sizes -.- signin
-
-    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
-    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
-    class signin,dialog,connected person
-    class result,viewer done
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../docs/images/diagrams/the-search-dialog-in-flow-mjs.dark.svg">
+  <img src="../../docs/images/diagrams/the-search-dialog-in-flow-mjs.svg" alt="The search dialog in flow.mjs: flow.mjs signs in as e2e-user, opens the personal settings and the search, types mobiletest and adds the connected services, with the switch of Nextcloud 33 and 34 or the button of Nextcloud 35. It expects the group Paperless documents with only Mobile viewer test, read out with its title, its date and its excerpt as text. A click on the result opens the file in Files, in the Viewer, which names it in its header. It does this on a laptop and then on a phone.">
+</picture>
 
 `ui.mjs` holds the steps through the pages of Nextcloud that `flow.mjs`, `accessibility.mjs` and the screenshots share: signing in, the search of each version, its results and the Viewer.
 

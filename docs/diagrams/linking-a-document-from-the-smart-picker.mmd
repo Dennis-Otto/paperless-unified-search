@@ -1,0 +1,27 @@
+---
+config:
+  sequence:
+    wrap: true
+    width: 120
+    actorMargin: 10
+---
+sequenceDiagram
+    accTitle: Linking a document from the smart picker
+    accDescr: jamie types / in Text and chooses Paperless documents. The picker sends the term invoice to the search provider of the app, which asks Paperless-ngx and answers with the documents whose file jamie can open, each with the link /f/412 of its file. jamie picks a result, and the picker inserts that link. When someone reads the page, Nextcloud's own provider of file links renders the link: as the preview of the file for a reader who can open the file, and as the bare link for anyone else.
+
+    actor jamie
+    participant picker as Smart picker<br>in Text
+    participant provider as Search provider
+    participant paperless as Paperless-ngx
+    participant files as Nextcloud's provider<br>of file links
+    actor reader as A reader
+
+    jamie->>picker: / and Paperless documents
+    picker->>provider: invoice
+    provider->>paperless: invoice
+    paperless-->>provider: document 412, …
+    provider-->>picker: the documents whose file jamie can open,<br>each with the link /f/412 of its file
+    jamie->>picker: picks document 412
+    picker-->>jamie: inserts /f/412
+    reader->>files: reads the page with /f/412
+    files-->>reader: the preview of the file if the reader can open it,<br>the bare link otherwise

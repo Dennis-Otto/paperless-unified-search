@@ -34,41 +34,10 @@ What Paperless Unified Search protects, what it trusts and which risks remain. [
 
 ## Trust boundaries
 
-```mermaid
----
-config:
-  flowchart:
-    wrappingWidth: 400
-    nodeSpacing: 30
----
-flowchart TB
-    accTitle: The trust boundaries
-    accDescr: Four boundaries meet at Paperless Unified Search on the Nextcloud server. 1, the browser of an administrator sends the settings. 2, the unified search or the smart picker of a user sends the term and the page. 3, the app sends the term and the token to Paperless-ngx outside the server and gets an untrusted answer. 4, the app looks into the folders of the user for files of the archive account. The token stays in the credentials manager of the server.
-
-    browser(["Browser of an<br>administrator"])
-    subgraph server ["Nextcloud server"]
-        search["Unified search or<br>smart picker of a user"]
-        app["Paperless<br>Unified Search"]
-        files[("Files of<br>Nextcloud")]
-        credentials[("Credentials<br>manager<br>the token")]
-    end
-    paperless[("Paperless-ngx")]
-
-    browser -- "1 · settings" --> app
-    search -- "2 · term<br>and page" --> app
-    app -- "3 · term and token,<br>an untrusted answer" --> paperless
-    app -- "4 · folders<br>of the user" --> files
-    app --- credentials
-    browser ~~~ search
-    files ~~~ paperless
-
-    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
-    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
-    classDef untrusted fill:#dc26262e,stroke:#dc2626,stroke-width:2px,stroke-dasharray:4 3
-    class app app
-    class browser person
-    class paperless untrusted
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/diagrams/the-trust-boundaries.dark.svg">
+  <img src="images/diagrams/the-trust-boundaries.svg" alt="The trust boundaries: Four boundaries meet at Paperless Unified Search on the Nextcloud server. 1, the browser of an administrator sends the settings. 2, the unified search or the smart picker of a user sends the term and the page. 3, the app sends the term and the token to Paperless-ngx outside the server and gets an untrusted answer. 4, the app looks into the folders of the user for files of the archive account. The token stays in the credentials manager of the server.">
+</picture>
 
 1. **Browser → app.** The routes of the settings page pass Nextcloud's login, its CSRF check and the check of the administrator, and saving and *Disconnect* its password confirmation. The URL must use `http` or `https`, name a host, an IPv4 address or an IPv6 address in brackets, and carry no credentials, query or fragment; an internationalized name is stored in punycode. A blank token keeps the stored one only for a URL with the scheme, host and port of the stored URL; the archive account must exist and is stored as Nextcloud spells its ID.
 2. **Nextcloud's search → app.** The term and the cursor of a page come from the user, through the unified search or the smart picker: the cursor must be a whole number, the offset of a hit, and a search pages through the first 10,000 hits; a page holds at most 50 results, and one search asks Paperless for at most 4 pages of 25 hits.

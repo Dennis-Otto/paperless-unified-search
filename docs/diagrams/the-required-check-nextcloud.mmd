@@ -1,0 +1,37 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+---
+flowchart TB
+    accTitle: The required check nextcloud
+    accDescr: A pull request or a push to main that changes no file the end-to-end tests cover passes the check nextcloud in seconds, with a notice. Otherwise, and in the weekly run and a run started by hand, run-all.sh tests every Nextcloud version from min-version to max-version at the same time in one job, and the check passes only when every version passes; the log of each version is a group of its own.
+
+    change["Pull request<br>or push to main"]
+    timed["Weekly run<br>or a start by hand"]
+    scope{"A file the tests<br>cover changed?"}
+    skipped["nextcloud passes in seconds<br>with a notice"]
+    all["run-all.sh<br>one download of the browser"]
+    low["`Nextcloud *min-version*`"]
+    middle["every version<br>in between"]
+    high["`Nextcloud *max-version*`"]
+    every{"Every version<br>passes?"}
+    passed["nextcloud passes"]
+    failed["nextcloud fails<br>the log of each version<br>in a group of its own"]
+
+    change --> scope
+    scope -- "no" --> skipped
+    scope -- "yes" --> all
+    timed --> all
+    all --> low & middle & high --> every
+    every -- "yes" --> passed
+    every -- "no" --> failed
+
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef bot fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef fail fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class change person
+    class timed,all,low,middle,high bot
+    class skipped,passed done
+    class failed fail

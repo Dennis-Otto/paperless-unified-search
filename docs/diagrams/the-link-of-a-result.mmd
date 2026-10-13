@@ -1,0 +1,15 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: The link of a result
+    accDescr: The entry of document 412 carries the ID of its file and its path in the folders of the user. When the iOS app searches, its link is nextcloud://open-file with the user and the link /f/412. Otherwise its link is /f/412, which a browser opens in Nextcloud's viewer; the Android app opens the file in its own viewer by the ID and the path.
+
+    entry["Entry of document 412,<br>with the ID and the path<br>of its file"] --> ios{"The iOS app<br>searches?"}
+    ios -- "yes" --> deep["nextcloud://<br>open-file with the<br>user and /f/412"]
+    ios -- "no" --> web["/f/412"]
+    web -- "a browser" --> viewer["Nextcloud's<br>viewer"]
+    web -- "the Android app" --> android["Its own viewer,<br>by the ID<br>and the path"]

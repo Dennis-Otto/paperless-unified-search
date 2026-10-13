@@ -1,0 +1,32 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: Filling a page of results
+    accDescr: The cursor of a page of results is the offset of its first hit in the ranking of Paperless, 0 for the first page. The provider asks Paperless for the page of 25 hits that holds this hit and the file locator for the files of its documents, in one search. It goes through the hits in their order and makes an entry of each document with a file, until the page of results is full. When no hit is left at Paperless, the results are the last page. When the page of results is full, the results go back with the cursor of the first hit that the provider didn't go through. Otherwise it asks Paperless for its next page, as long as it asked for fewer than 4 pages and for less than 3 seconds; after that, the results go back with the cursor as well.
+
+    cursor["Cursor of the page of results<br>the offset of its first hit<br>in the ranking, 0 at first"]
+    ask["Paperless: the page of 25 hits<br>that holds the next hit"]
+    files["File locator: the files of<br>its documents, in one search"]
+    take["An entry for each document<br>with a file, in the order of<br>Paperless, until the page is full"]
+    hits{"Hits left<br>at Paperless?"}
+    full{"Page of results<br>full?"}
+    budget{"Fewer than 4 pages<br>and 3 seconds?"}
+    next(["The results, and the cursor<br>of the first hit not gone through"])
+    last(["The results,<br>the last page"])
+
+    cursor --> ask --> files --> take --> hits
+    hits -- "no" --> last
+    hits -- "yes" --> full
+    full -- "yes" --> next
+    full -- "no" --> budget
+    budget -- "yes, the next page" --> ask
+    budget -- "no" --> next
+
+    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    class ask,files,take app
+    class next,last yes

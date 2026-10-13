@@ -1,0 +1,29 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: Two apps, one archive
+    accDescr: Paperless Sync writes every document of Paperless-ngx as a file of the archive account paperless, with the marker of the document in its name, such as invoice [P412].pdf. The archive account shares its archive read-only with jamie. When jamie searches, Paperless Unified Search asks Paperless-ngx, finds the file of document 412 by its marker, and shows jamie the document because jamie can open that file; the result opens the file in Nextcloud.
+
+    paperless[("Paperless-ngx<br>OCR and full-text index")]
+    sync(["Paperless Sync"])
+    search(["Paperless<br>Unified Search"])
+    subgraph archive ["paperless, the archive account"]
+        file["… invoice [P412].pdf"]
+    end
+    jamie(["jamie"])
+
+    paperless -- "every document" --> sync
+    paperless -- "the documents<br>that match" --> search
+    sync -- "writes it as a file<br>with its marker" --> file
+    search -. "finds the file<br>by its marker" .-> file
+    file -- "shared read-only" --> jamie
+    search -- "document 412,<br>opens its file" --> jamie
+
+    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    class sync,search app
+    class jamie,archive person

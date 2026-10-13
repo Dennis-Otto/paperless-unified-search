@@ -24,37 +24,10 @@ Paperless Unified Search brings Paperless-ngx OCR and full-text search into Next
 
 Two apps, one archive: [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) writes every document of Paperless-ngx as a file of one Nextcloud account, the archive account, with the marker `[P<ID>]` in its name. Paperless Unified Search asks Paperless for the documents that match a search and shows each one to whoever can open its file.
 
-```mermaid
----
-config:
-  flowchart:
-    wrappingWidth: 400
-    nodeSpacing: 30
----
-flowchart TB
-    accTitle: Two apps, one archive
-    accDescr: Paperless Sync writes every document of Paperless-ngx as a file of the archive account paperless, with the marker of the document in its name, such as invoice [P412].pdf. The archive account shares its archive read-only with jamie. When jamie searches, Paperless Unified Search asks Paperless-ngx, finds the file of document 412 by its marker, and shows jamie the document because jamie can open that file; the result opens the file in Nextcloud.
-
-    paperless[("Paperless-ngx<br>OCR and full-text index")]
-    sync(["Paperless Sync"])
-    search(["Paperless<br>Unified Search"])
-    subgraph archive ["paperless, the archive account"]
-        file["… invoice [P412].pdf"]
-    end
-    jamie(["jamie"])
-
-    paperless -- "every document" --> sync
-    paperless -- "the documents<br>that match" --> search
-    sync -- "writes it as a file<br>with its marker" --> file
-    search -. "finds the file<br>by its marker" .-> file
-    file -- "shared read-only" --> jamie
-    search -- "document 412,<br>opens its file" --> jamie
-
-    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
-    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
-    class sync,search app
-    class jamie,archive person
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/two-apps-one-archive.dark.svg">
+  <img src="docs/images/diagrams/two-apps-one-archive.svg" alt="Two apps, one archive: Paperless Sync writes every document of Paperless-ngx as a file of the archive account paperless, with the marker of the document in its name, such as invoice [P412].pdf. The archive account shares its archive read-only with jamie. When jamie searches, Paperless Unified Search asks Paperless-ngx, finds the file of document 412 by its marker, and shows jamie the document because jamie can open that file; the result opens the file in Nextcloud.">
+</picture>
 
 <!-- --8<-- [end:two-apps] -->
 
@@ -108,38 +81,10 @@ The [comparison](docs/compare.md) explains each of them, and when another one is
 4. As the archive account, share the archive read-only with the users who may find its documents, as any folder in Nextcloud. The archive account itself finds them all.
 5. Search in Nextcloud, switch on **Search connected services** and look under **Paperless documents**. A result appears for every document whose synchronized file you can open: a file of the archive account with `[P<ID>]` in its name, your own if you are that account, or one it shared with you. [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) creates such files.
 
-```mermaid
----
-config:
-  flowchart:
-    wrappingWidth: 400
-    nodeSpacing: 30
----
-flowchart TB
-    accTitle: Setting up the search
-    accDescr: Install the app. In Paperless-ngx, create an account that may read the documents and an API token for it. In the administration settings of Nextcloud, enter the URL, the token and the archive account, select Paperless runs in my local network when Nextcloud reaches Paperless at such an address, and select Test connection and save. When Paperless answers, the settings are saved; otherwise nothing is saved and the message says what to correct. The archive account shares its archive read-only with the users who may find its documents, and they find them under Paperless documents in Nextcloud's search, with Search connected services switched on.
-
-    install["1 · Install the app"]
-    token["2 · In Paperless-ngx: an account<br>that may read the documents,<br>and its API token"]
-    save["3 · In the administration<br>settings: URL, token,<br>archive account and, in a<br>local network, its switch, then<br><b>Test connection and save</b>"]
-    answers{"Paperless<br>answers?"}
-    fix["Nothing is saved;<br>the message says<br>what to correct"]
-    share["4 · The archive account<br>shares its archive<br>read-only"]
-    search["5 · Search with<br><b>Search connected<br>services</b> on"]
-    found(["Paperless documents<br>in the results"])
-
-    install --> token --> save --> answers
-    answers -- "yes, saved" --> share --> search --> found
-    answers -- "no" --> fix
-    fix -.-> save
-
-    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
-    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
-    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
-    class install,token,save,share,search person
-    class found done
-    class fix no
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/setting-up-the-search.dark.svg">
+  <img src="docs/images/diagrams/setting-up-the-search.svg" alt="Setting up the search: Install the app. In Paperless-ngx, create an account that may read the documents and an API token for it. In the administration settings of Nextcloud, enter the URL, the token and the archive account, select Paperless runs in my local network when Nextcloud reaches Paperless at such an address, and select Test connection and save. When Paperless answers, the settings are saved; otherwise nothing is saved and the message says what to correct. The archive account shares its archive read-only with the users who may find its documents, and they find them under Paperless documents in Nextcloud's search, with Search connected services switched on.">
+</picture>
 
 <!-- --8<-- [end:quick-start] -->
 
@@ -208,37 +153,10 @@ The end of the settings counts the failed searches and the requests that only th
 
 ## How it works
 
-```mermaid
----
-config:
-  flowchart:
-    wrappingWidth: 400
-    nodeSpacing: 30
----
-flowchart TB
-    accTitle: How a search finds its documents
-    accDescr: Nextcloud's search sends the term, such as invoice, to Paperless Unified Search, which searches the OCR text in Paperless-ngx. Paperless answers with the documents that match, such as document 412. The app looks for a file of the archive account with the marker [P412] in its name among the files that the searching user can open. With such a file, document 412 is a result that opens the file in Nextcloud; without one, it is left out.
-
-    search(["Nextcloud's search"])
-    app["Paperless Unified Search"]
-    paperless[("Paperless-ngx")]
-    file{"A file of the archive account<br>with [P412] in its name<br>that the user can open?"}
-    result(["Document 412 in the results,<br>opens that file in Nextcloud"])
-    left(["Left out"])
-
-    search -- "invoice" --> app
-    app -- "searches the OCR text" --> paperless
-    paperless -- "document 412, …" --> file
-    file -- "yes" --> result
-    file -- "no" --> left
-
-    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
-    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
-    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
-    class app app
-    class result yes
-    class left no
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/how-a-search-finds-its-documents.dark.svg">
+  <img src="docs/images/diagrams/how-a-search-finds-its-documents.svg" alt="How a search finds its documents: Nextcloud's search sends the term, such as invoice, to Paperless Unified Search, which searches the OCR text in Paperless-ngx. Paperless answers with the documents that match, such as document 412. The app looks for a file of the archive account with the marker [P412] in its name among the files that the searching user can open. With such a file, document 412 is a result that opens the file in Nextcloud; without one, it is left out.">
+</picture>
 
 1. Nextcloud forwards an enabled external-search query to Paperless-ngx.
 2. Paperless returns results from its native OCR/full-text index, with only the fields that a result shows: not the whole OCR text of each document, only the excerpt around the term.
@@ -251,41 +169,10 @@ flowchart TB
 
 Who sees document 412, when `paperless` is the archive account and has shared its archive with `jamie`:
 
-```mermaid
----
-config:
-  flowchart:
-    wrappingWidth: 400
-    nodeSpacing: 30
----
-flowchart TB
-    accTitle: Who sees document 412
-    accDescr: The archive account paperless owns the file invoice [P412].pdf and sees document 412. It shares the file read-only with jamie, who sees document 412 as well. sam has a file of sam's own named Copy [P412].pdf; it isn't a file of the archive account, so sam sees no document.
-
-    subgraph owner ["paperless, the archive account"]
-        own["… invoice [P412].pdf"]
-    end
-    subgraph reader ["jamie"]
-        shared["… invoice [P412].pdf<br>shared read-only"]
-    end
-    subgraph other ["sam"]
-        copy["Copy [P412].pdf<br>a file of sam's own"]
-    end
-    seen1(["✓ document 412"])
-    seen2(["✓ document 412"])
-    unseen(["✗ no document"])
-
-    own -- "share" --> shared
-    own --> seen1
-    shared --> seen2
-    seen2 ~~~ copy
-    copy --> unseen
-
-    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
-    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
-    class seen1,seen2 yes
-    class unseen no
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/who-sees-document-412.dark.svg">
+  <img src="docs/images/diagrams/who-sees-document-412.svg" alt="Who sees document 412: The archive account paperless owns the file invoice [P412].pdf and sees document 412. It shares the file read-only with jamie, who sees document 412 as well. sam has a file of sam's own named Copy [P412].pdf; it isn't a file of the archive account, so sam sees no document.">
+</picture>
 
 This app does not synchronize documents itself. The companion app [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) does, natively and with settings of its own, and [any other synchronization](#works-with-any-synchronization) that writes the marker into the file names works as well. Both apps use the same stable `[P<ID>]` marker and are designed to work together without coupling their release cycles.
 
@@ -360,29 +247,10 @@ Don't set `allow_local_remote_servers` in `config.php` for Paperless: it lifts t
 
 If you set `allow_local_remote_servers` in `config.php` for Paperless before, first select **Paperless runs in my local network** and save, and only then remove it from `config.php`. Otherwise the search shows no Paperless documents until the switch is saved.
 
-```mermaid
-flowchart TB
-    accTitle: Which requests reach an address of the local network
-    accDescr: A request of this app to the Paperless URL of the settings reaches an address of the local network when Paperless runs in my local network is selected, and then follows no redirect. Without the switch, Nextcloud refuses the address before any request leaves it, and saving says to select the switch. Requests of other apps keep Nextcloud's protection, unless allow_local_remote_servers in config.php lifts it for all of them.
-
-    request(["A request to an address<br>of the local network"])
-    ours{"From this app,<br>to the Paperless URL<br>of the settings?"}
-    switch{"<b>Paperless runs in<br>my local network</b><br>selected?"}
-    allowed["Nextcloud connects,<br>without redirects"]
-    refused["Nextcloud refuses it;<br>saving names<br>the switch"]
-    others["Nextcloud refuses it,<br>as it always does"]
-
-    request --> ours
-    ours -- "yes" --> switch
-    ours -- "no, another app" --> others
-    switch -- "yes" --> allowed
-    switch -- "no" --> refused
-
-    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
-    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
-    class allowed yes
-    class refused,others no
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/which-requests-reach-an-address-of-the-local-network.dark.svg">
+  <img src="docs/images/diagrams/which-requests-reach-an-address-of-the-local-network.svg" alt="Which requests reach an address of the local network: A request of this app to the Paperless URL of the settings reaches an address of the local network when Paperless runs in my local network is selected, and then follows no redirect. Without the switch, Nextcloud refuses the address before any request leaves it, and saving says to select the switch. Requests of other apps keep Nextcloud's protection, unless allow_local_remote_servers in config.php lifts it for all of them.">
+</picture>
 
 The URL may name a Docker service with an underscore, such as `http://paperless_ngx:8000`, an IPv6 address in brackets, such as `http://[fd00::5]:8000`, or an internationalized name, which the settings store in the ASCII form that DNS knows, such as `https://xn--bcher-kva.example` for `https://bücher.example`.
 
@@ -390,33 +258,10 @@ The URL may name a Docker service with an underscore, such as `http://paperless_
 
 **Test connection and save** saves nothing until Paperless answers with a list of documents, and when it doesn't, the message says what failed and what to correct, in the language of your account. The log of Nextcloud gets a warning with the error itself, such as `cURL error 6: Could not resolve host`, without the token and without the query of the URL.
 
-```mermaid
-flowchart TB
-    accTitle: What the test of the connection checks
-    accDescr: Test connection and save asks Paperless for one document. First Nextcloud has to reach Paperless at the URL: find its host, be allowed to connect to its address, connect within 3 seconds, trust its certificate and get an answer within 10 seconds; otherwise the message names which of these failed. Then Paperless has to answer with a status of 2xx; a refused token, a wrong path, a redirect or an error of the server each have their own message. Last, the answer has to be a list of documents of Paperless-ngx. Only then are the settings saved.
-
-    test(["<b>Test connection and save</b>"])
-    reach{"Does Nextcloud reach<br>Paperless at the URL?"}
-    status{"Does Paperless<br>answer with 2xx?"}
-    list{"Is the answer a list<br>of documents?"}
-    saved["Saved"]
-    network["Host not found, local address,<br>not reached, certificate,<br>encryption or no answer in time"]
-    refused["Token refused, wrong path,<br>redirect or error of the server"]
-    other["Not like Paperless-ngx"]
-
-    test --> reach
-    reach -- "yes" --> status
-    reach -- "no" --> network
-    status -- "yes" --> list
-    status -- "no" --> refused
-    list -- "yes" --> saved
-    list -- "no" --> other
-
-    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
-    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
-    class saved yes
-    class network,refused,other no
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/what-the-test-of-the-connection-checks.dark.svg">
+  <img src="docs/images/diagrams/what-the-test-of-the-connection-checks.svg" alt="What the test of the connection checks: Test connection and save asks Paperless for one document. First Nextcloud has to reach Paperless at the URL: find its host, be allowed to connect to its address, connect within 3 seconds, trust its certificate and get an answer within 10 seconds; otherwise the message names which of these failed. Then Paperless has to answer with a status of 2xx; a refused token, a wrong path, a redirect or an error of the server each have their own message. Last, the answer has to be a list of documents of Paperless-ngx. Only then are the settings saved.">
+</picture>
 
 | The message says | What failed | What to do |
 | --- | --- | --- |

@@ -1,0 +1,21 @@
+flowchart TB
+    accTitle: Which requests reach an address of the local network
+    accDescr: A request of this app to the Paperless URL of the settings reaches an address of the local network when Paperless runs in my local network is selected, and then follows no redirect. Without the switch, Nextcloud refuses the address before any request leaves it, and saving says to select the switch. Requests of other apps keep Nextcloud's protection, unless allow_local_remote_servers in config.php lifts it for all of them.
+
+    request(["A request to an address<br>of the local network"])
+    ours{"From this app,<br>to the Paperless URL<br>of the settings?"}
+    switch{"`**Paperless runs in<br>my local network**<br>selected?`"}
+    allowed["Nextcloud connects,<br>without redirects"]
+    refused["Nextcloud refuses it;<br>saving names<br>the switch"]
+    others["Nextcloud refuses it,<br>as it always does"]
+
+    request --> ours
+    ours -- "yes" --> switch
+    ours -- "no, another app" --> others
+    switch -- "yes" --> allowed
+    switch -- "no" --> refused
+
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class allowed yes
+    class refused,others no
