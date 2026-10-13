@@ -26,22 +26,10 @@ On top of any of them, Nextcloud's password confirmation can protect the routes 
 
 Option 4, with the password confirmation for saving and for *Disconnect*.
 
-```mermaid
-flowchart TB
-    accTitle: Which token a save of the settings uses
-    accDescr: A token entered is used for any URL. A blank token keeps the stored one only when the new URL has the scheme, the host and the port of the stored URL; otherwise the settings ask for the token again before any request leaves Nextcloud.
-    save(["Save, with a URL"]) --> entered{"Token entered?"}
-    entered -- "yes" --> use["Test and save it<br/>with the new URL"]
-    entered -- "no" --> stored{"Is a token stored<br/>that can be decrypted?"}
-    stored -- "no" --> required["“A Paperless API token is required.”"]
-    stored -- "yes" --> origin{"Same scheme, host and port<br/>as the stored URL?"}
-    origin -- "yes, another path at most" --> keep["Test and save<br/>the stored token"]
-    origin -- "no" --> again["“Enter the API token again”<br/>nothing reaches the new server"]
-    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
-    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
-    class use,keep yes
-    class required,again no
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../images/diagrams/which-token-a-save-of-the-settings-uses.dark.svg">
+  <img src="../images/diagrams/which-token-a-save-of-the-settings-uses.svg" alt="Which token a save of the settings uses: A token entered is used for any URL. A blank token keeps the stored one only when the new URL has the scheme, the host and the port of the stored URL; otherwise the settings ask for the token again before any request leaves Nextcloud.">
+</picture>
 
 The origin decides which server receives the token, and with the scheme, whether it travels encrypted. Hosts and schemes count in lower case, and a port that a URL doesn't name is the one of its scheme, so `https://paperless.example.com` and `HTTPS://Paperless.Example.com:443/paperless` are the same server. The settings page marks the token field as required as soon as the URL names another server, so that the administrator learns it before saving.
 

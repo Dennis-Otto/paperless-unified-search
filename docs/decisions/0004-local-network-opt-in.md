@@ -26,31 +26,10 @@ Nextcloud offers an exception for a single request: the option `['nextcloud' => 
 
 Option 3. The switch *Paperless runs in my local network* stands right below the URL, and the requests of the app pass `allow_local_address` as it says: the test of the connection with the value of the form, so that it tests what will be saved, and every search with the stored one. A request that allows the local network follows no redirect, since Nextcloud would follow it to any address unchecked: the exception holds for the URL of the settings alone. When Nextcloud refuses an address because the switch is off, saving says so and names the switch.
 
-```mermaid
-flowchart TB
-    accTitle: How a request of the app to Paperless reaches the local network
-    accDescr: The test of the connection takes the switch from the form, a search takes the stored one. With the switch, the request passes allow_local_address and follows no redirect, so it reaches only the Paperless URL of the settings. Without it, Nextcloud checks the address: a public one is reached as before, with redirects that Nextcloud checks as well, and an address of the local network is refused before any request leaves Nextcloud, unless allow_local_remote_servers in config.php allows it to every app. A refused save names the switch.
-
-    test(["Test of the connection:<br>the switch of the form"])
-    search(["Search:<br>the stored switch"])
-    switch{"Paperless runs in<br>my local network?"}
-    local["allow_local_address,<br>no redirect followed:<br>only the URL of the settings"]
-    check{"An address of<br>the local network?"}
-    public["Reached as before;<br>Nextcloud checks<br>every redirect"]
-    refused["Refused before any<br>request leaves Nextcloud;<br>saving names the switch"]
-
-    test --> switch
-    search --> switch
-    switch -- "yes" --> local
-    switch -- "no" --> check
-    check -- "no" --> public
-    check -- "yes" --> refused
-
-    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
-    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
-    class local,public yes
-    class refused no
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../images/diagrams/how-a-request-of-the-app-to-paperless-reaches-the-local-network.dark.svg">
+  <img src="../images/diagrams/how-a-request-of-the-app-to-paperless-reaches-the-local-network.svg" alt="How a request of the app to Paperless reaches the local network: The test of the connection takes the switch from the form, a search takes the stored one. With the switch, the request passes allow_local_address and follows no redirect, so it reaches only the Paperless URL of the settings. Without it, Nextcloud checks the address: a public one is reached as before, with redirects that Nextcloud checks as well, and an address of the local network is refused before any request leaves Nextcloud, unless allow_local_remote_servers in config.php allows it to every app. A refused save names the switch.">
+</picture>
 
 The stored token goes only to the server it was saved for ([decision 0003](0003-bind-the-token-to-its-server.md)). So whoever takes over the session of an administrator can't send it to a service inside the network either: for another host, the settings ask for the token again before any request leaves Nextcloud. The settings also accept the URLs of such setups that PHP's filter of URLs refused: names of Docker services with an underscore, such as `http://paperless_ngx:8000`, and internationalized names, stored in punycode.
 

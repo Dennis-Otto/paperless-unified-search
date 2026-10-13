@@ -1,0 +1,25 @@
+flowchart TB
+    accTitle: What the test of the connection checks
+    accDescr: Test connection and save asks Paperless for one document. First Nextcloud has to reach Paperless at the URL: find its host, be allowed to connect to its address, connect within 3 seconds, trust its certificate and get an answer within 10 seconds; otherwise the message names which of these failed. Then Paperless has to answer with a status of 2xx; a refused token, a wrong path, a redirect or an error of the server each have their own message. Last, the answer has to be a list of documents of Paperless-ngx. Only then are the settings saved.
+
+    test(["`**Test connection and save**`"])
+    reach{"Does Nextcloud reach<br>Paperless at the URL?"}
+    status{"Does Paperless<br>answer with 2xx?"}
+    list{"Is the answer a list<br>of documents?"}
+    saved["Saved"]
+    network["Host not found, local address,<br>not reached, certificate,<br>encryption or no answer in time"]
+    refused["Token refused, wrong path,<br>redirect or error of the server"]
+    other["Not like Paperless-ngx"]
+
+    test --> reach
+    reach -- "yes" --> status
+    reach -- "no" --> network
+    status -- "yes" --> list
+    status -- "no" --> refused
+    list -- "yes" --> saved
+    list -- "no" --> other
+
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class saved yes
+    class network,refused,other no

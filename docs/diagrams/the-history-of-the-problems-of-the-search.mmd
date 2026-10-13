@@ -1,0 +1,30 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: The history of the problems of the search
+    accDescr: A second try that gets an answer notes a retried request, a failed search notes a failure, and the first search that works after a failure notes the recovery. The history keeps since when it counts, the counts, the last failure, the recovery and the latest 20 events, and the settings page shows it under Search problems. Disconnect and Clear history forget it.
+
+    retry["A second try<br>answers"]
+    search["A search<br>fails"]
+    success["A search<br>works again"]
+    history[("Diagnostics<br>since, counts, last failure,<br>recovery, latest 20 events")]
+    page["Settings page<br>Search problems"]
+    clear["Disconnect or<br>Clear history<br>forget it"]
+
+    retry -- "retried" --> history
+    search -- "failed" --> history
+    success -- "recovery" --> history
+    history --> page
+    %% A plain dotted line keeps Clear history below the history. An arrow from it
+    %% would rank it with the three causes, too wide for a phone, and Mermaid 11
+    %% draws no arrowhead on "<-.-" and breaks on a label of a reversed edge.
+    history -.- clear
+
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class success yes
+    class search no

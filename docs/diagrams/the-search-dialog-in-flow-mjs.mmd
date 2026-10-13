@@ -1,0 +1,23 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+---
+flowchart TB
+    accTitle: The search dialog in flow.mjs
+    accDescr: flow.mjs signs in as e2e-user, opens the personal settings and the search, types mobiletest and adds the connected services, with the switch of Nextcloud 33 and 34 or the button of Nextcloud 35. It expects the group Paperless documents with only Mobile viewer test, read out with its title, its date and its excerpt as text. A click on the result opens the file in Files, in the Viewer, which names it in its header. It does this on a laptop and then on a phone.
+
+    signin["Sign in as e2e-user<br>open the personal settings"]
+    dialog["Open the search<br>type mobiletest"]
+    connected["Add the connected services<br>the switch of 33 and 34,<br>the button of 35"]
+    result["`*Paperless documents*<br>only the one result, read out with<br>title, date and excerpt as text`"]
+    viewer["Click the result:<br>the Viewer opens the file,<br>named in its header"]
+    sizes["On a laptop, 1280 × 800,<br>then on a phone, 375 × 812"]
+
+    signin --> dialog --> connected --> result --> viewer
+    sizes -.- signin
+
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    class signin,dialog,connected person
+    class result,viewer done

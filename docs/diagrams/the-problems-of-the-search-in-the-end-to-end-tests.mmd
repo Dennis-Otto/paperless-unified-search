@@ -1,0 +1,25 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+---
+flowchart TB
+    accTitle: The problems of the search in the end-to-end tests
+    accDescr: run.sh searches as e2e-user for e2e-error, which the mock answers with HTTP 500, and the search shows no documents and records a failed search. Then it searches for e2e-drop; the mock breaks off the first request without an answer, the app sends it a second time and gets the document, and the history records the second try and that searches work again. assert_history.py checks the page of the administration settings, without the terms and the token. accessibility.mjs checks that page with axe-core, then clicks Clear history, and assert_history.py checks that the page says No problem recorded.
+
+    error["Search for e2e-error"]
+    failed["The mock answers HTTP 500<br>no documents,<br>a failed search recorded"]
+    drop["Search for e2e-drop"]
+    retried["The mock breaks off the first request,<br>the second try gets the document,<br>recorded with the recovery"]
+    page["assert_history.py<br>both on the page,<br>no term, no token, no query"]
+    axe["`accessibility.mjs<br>axe-core on the page,<br>then *Clear history*`"]
+    cleared["`assert_history.py<br>*No problem recorded.*`"]
+
+    error --> failed --> drop --> retried --> page --> axe --> cleared
+
+    classDef bot fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef fail fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class error,drop,axe bot
+    class failed,retried fail
+    class page,cleared done

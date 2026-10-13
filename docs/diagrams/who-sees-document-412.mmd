@@ -1,0 +1,33 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: Who sees document 412
+    accDescr: The archive account paperless owns the file invoice [P412].pdf and sees document 412. It shares the file read-only with jamie, who sees document 412 as well. sam has a file of sam's own named Copy [P412].pdf; it isn't a file of the archive account, so sam sees no document.
+
+    subgraph owner ["paperless, the archive account"]
+        own["… invoice [P412].pdf"]
+    end
+    subgraph reader ["jamie"]
+        shared["… invoice [P412].pdf<br>shared read-only"]
+    end
+    subgraph other ["sam"]
+        copy["Copy [P412].pdf<br>a file of sam's own"]
+    end
+    seen1(["✓ document 412"])
+    seen2(["✓ document 412"])
+    unseen(["✗ no document"])
+
+    own -- "share" --> shared
+    own --> seen1
+    shared --> seen2
+    seen2 ~~~ copy
+    copy --> unseen
+
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class seen1,seen2 yes
+    class unseen no

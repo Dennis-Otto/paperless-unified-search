@@ -1,0 +1,31 @@
+---
+config:
+  sequence:
+    wrap: true
+    width: 120
+    actorMargin: 10
+---
+sequenceDiagram
+    accTitle: Saving the settings
+    accDescr: The administrator enters the URL, whether Paperless runs in the local network, the token and the archive account. When the password wasn't confirmed in the last 30 minutes, Nextcloud asks for it first. The settings page sends them with the CSRF token to the settings controller, which checks the URL, the token and the archive account: a blank token keeps the stored one only for its server, the same scheme, host and port, and otherwise the answer is HTTP 400. Then the controller has the Paperless client test the connection with one request to Paperless-ngx, which Nextcloud lets reach an address of the local network only with the switch, and then without redirects. Only when Paperless answers does the configuration save them, the URL, the switches and the archive account in the app configuration and the token in the credentials manager. The page gets the settings back, without the token.
+
+    actor Admin as Administrator
+    participant Page as Settings page
+    participant Controller as Settings controller
+    participant Client as Paperless client
+    participant Config as Configuration
+    participant Paperless as Paperless-ngx
+    Admin->>Page: URL, local network, token, archive account
+    opt the password wasn't confirmed in the last 30 minutes
+        Page->>Admin: Nextcloud asks for the password
+    end
+    Page->>Controller: POST /apps/<br>paperless_unified_search<br>/settings, with the<br>CSRF token
+    Controller->>Config: checks the URL, the token and the archive account
+    Note over Controller,Config: a blank token keeps the stored one only for its server (the same scheme, host and port), else HTTP 400
+    Controller->>Client: test the connection
+    Note over Client,Paperless: an address of the local network only with the switch, then without redirects
+    Client->>Paperless: GET /api/documents/<br>?page_size=1&fields=id
+    Paperless-->>Client: 200
+    Controller->>Config: save
+    Config->>Config: URL, switches and archive account to the app configuration, the token to the credentials manager
+    Controller-->>Page: the settings, without the token

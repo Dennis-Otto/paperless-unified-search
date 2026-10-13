@@ -1,0 +1,26 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: Finding the files of a page of documents
+    accDescr: Paperless answers with documents 412, 389 and 371. One search of the file cache looks in the folders of the searching user for the names that carry any of their markers. Of the files it finds, only a file of the archive account with the exact marker of a document stands for it, and of several such files the one with the first path. Documents 412 and 371 get their file; document 389 has none and is left out.
+
+    page["Documents of a page<br>412, 389, 371"]
+    query["One search of the file cache<br>name LIKE '%[P412]%'<br>or '%[P389]%' or '%[P371]%'"]
+    found["Files with one of the markers<br>in the folders of the user"]
+    check{"A file of the<br>archive account, with the<br>exact marker?"}
+    first["Per document, the file<br>with the first path<br>412 and 371"]
+    none["Left out<br>389"]
+    page --> query --> found --> check
+    check -- "yes" --> first
+    check -- "no" --> none
+
+    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class query,check app
+    class first yes
+    class none no

@@ -1,0 +1,14 @@
+flowchart TB
+    accTitle: Which token a save of the settings uses
+    accDescr: A token entered is used for any URL. A blank token keeps the stored one only when the new URL has the scheme, the host and the port of the stored URL; otherwise the settings ask for the token again before any request leaves Nextcloud.
+    save(["Save, with a URL"]) --> entered{"Token entered?"}
+    entered -- "yes" --> use["Test and save it<br>with the new URL"]
+    entered -- "no" --> stored{"Is a token stored<br>that can be decrypted?"}
+    stored -- "no" --> required["“A Paperless API token is required.”"]
+    stored -- "yes" --> origin{"Same scheme, host and port<br>as the stored URL?"}
+    origin -- "yes, another path at most" --> keep["Test and save<br>the stored token"]
+    origin -- "no" --> again["“Enter the API token again”<br>nothing reaches the new server"]
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class use,keep yes
+    class required,again no

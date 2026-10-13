@@ -1,0 +1,29 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: How a search finds its documents
+    accDescr: Nextcloud's search sends the term, such as invoice, to Paperless Unified Search, which searches the OCR text in Paperless-ngx. Paperless answers with the documents that match, such as document 412. The app looks for a file of the archive account with the marker [P412] in its name among the files that the searching user can open. With such a file, document 412 is a result that opens the file in Nextcloud; without one, it is left out.
+
+    search(["Nextcloud's search"])
+    app["Paperless Unified Search"]
+    paperless[("Paperless-ngx")]
+    file{"A file of the archive account<br>with [P412] in its name<br>that the user can open?"}
+    result(["Document 412 in the results,<br>opens that file in Nextcloud"])
+    left(["Left out"])
+
+    search -- "invoice" --> app
+    app -- "searches the OCR text" --> paperless
+    paperless -- "document 412, …" --> file
+    file -- "yes" --> result
+    file -- "no" --> left
+
+    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class app app
+    class result yes
+    class left no

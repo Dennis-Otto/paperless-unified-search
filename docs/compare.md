@@ -10,44 +10,10 @@ Paperless-ngx recognizes the text of every document and keeps an index of its wo
 
 ## One index or two
 
-```mermaid
----
-config:
-  flowchart:
-    wrappingWidth: 400
-    nodeSpacing: 30
----
-flowchart TB
-    accTitle: One index or two
-    accDescr: With Paperless Unified Search there is one index. Nextcloud's search asks Paperless-ngx, whose OCR and full-text index already holds the words of every document, and each document that matches opens its synchronized file in Nextcloud. With a search of its own in Nextcloud, such as Full text search with Elasticsearch, Context Chat or Findling, there are two. The synchronized files are read again, scans are recognized again, and their words are stored a second time, in an index with a server or a container of its own, which Nextcloud's search asks instead.
-
-    subgraph one ["Paperless Unified Search: one index"]
-        direction TB
-        search1(["Nextcloud's search"])
-        paperless1[("Paperless-ngx<br>OCR and full-text index")]
-        files1["The synchronized files,<br>opened in Nextcloud"]
-        search1 -- "asks" --> paperless1
-        paperless1 -- "the documents<br>that match" --> files1
-    end
-    subgraph two ["A search of its own: two indexes"]
-        direction TB
-        paperless2[("Paperless-ngx<br>OCR and full-text index")]
-        files2["The synchronized files"]
-        index2[("A second index,<br>in a server or a container<br>of its own")]
-        search2(["Nextcloud's search"])
-        paperless2 -- "synchronized" --> files2
-        files2 -- "read again,<br>scans recognized again" --> index2
-        search2 -- "asks" --> index2
-    end
-    one ~~~ two
-
-    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
-    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
-    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
-    class search1,search2 app
-    class one yes
-    class index2 no
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/diagrams/one-index-or-two.dark.svg">
+  <img src="images/diagrams/one-index-or-two.svg" alt="One index or two: With Paperless Unified Search there is one index. Nextcloud's search asks Paperless-ngx, whose OCR and full-text index already holds the words of every document, and each document that matches opens its synchronized file in Nextcloud. With a search of its own in Nextcloud, such as Full text search with Elasticsearch, Context Chat or Findling, there are two. The synchronized files are read again, scans are recognized again, and their words are stored a second time, in an index with a server or a container of its own, which Nextcloud's search asks instead.">
+</picture>
 
 One index means nothing more to run, back up or keep current, no second copy of the text of the documents, and no delay: a document is found in Nextcloud as soon as Paperless has it and its file has arrived. It also means the search of Paperless itself, with its ranking, its highlights and its [syntax](guide.md#search-like-in-paperless), which knows the correspondent, the type, the tags and the dates of a document, not only its words.
 

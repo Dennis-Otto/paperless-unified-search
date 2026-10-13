@@ -12,54 +12,10 @@ Paperless Unified Search is a Nextcloud app in PHP. It adds a provider to Nextcl
 
 <div class="diagram-wide" markdown tabindex="0" role="region" aria-label="Diagram of the components">
 
-```mermaid
----
-config:
-  flowchart:
-    wrappingWidth: 400
-    nodeSpacing: 30
----
-flowchart TB
-    accTitle: The components
-    accDescr: Inside Nextcloud, the unified search calls the search provider of the app, and the administration settings call its settings page. The smart picker finds Paperless documents through the reference provider of the app, which names the search provider, and then calls the search provider as the unified search does. The search provider uses the Paperless client, the file locator and the configuration; the settings page uses the Paperless client and the configuration. The Paperless client reaches /api/documents/ of Paperless-ngx through Nextcloud's HTTP client, the file locator looks into the folders of the users, and the configuration keeps its values in the app configuration and the token in the credentials manager.
-
-    subgraph nextcloud ["Nextcloud"]
-        search["Unified<br>search"]
-        picker["Smart<br>picker"]
-        page["Administration<br>settings"]
-        subgraph app ["Paperless Unified Search"]
-            reference["Reference<br>provider"]
-            provider["Search<br>provider"]
-            controller["Settings<br>page"]
-            client["Paperless<br>client"]
-            locator["File<br>locator"]
-            config["Configuration"]
-        end
-        http["HTTP<br>client"]
-        folders[("Folders<br>of the<br>users")]
-        appconfig[("App<br>configuration")]
-        credentials[("Credentials<br>manager")]
-    end
-    paperless[("Paperless-ngx<br>/api/documents/")]
-
-    search --> provider
-    picker -. "lists" .-> reference
-    reference -. "names" .-> provider
-    picker --> provider
-    page --> controller
-    provider --> client
-    provider --> locator
-    provider --> config
-    controller --> client
-    controller --> config
-    client --> http --> paperless
-    locator --> folders
-    config --> appconfig
-    config --> credentials
-
-    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
-    class reference,provider,controller,client,locator,config app
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/diagrams/the-components.dark.svg">
+  <img src="images/diagrams/the-components.svg" alt="The components: Inside Nextcloud, the unified search calls the search provider of the app, and the administration settings call its settings page. The smart picker finds Paperless documents through the reference provider of the app, which names the search provider, and then calls the search provider as the unified search does. The search provider uses the Paperless client, the file locator and the configuration; the settings page uses the Paperless client and the configuration. The Paperless client reaches /api/documents/ of Paperless-ngx through Nextcloud's HTTP client, the file locator looks into the folders of the users, and the configuration keeps its values in the app configuration and the token in the credentials manager.">
+</picture>
 
 </div>
 
@@ -79,39 +35,10 @@ flowchart TB
 
 <div class="diagram-wide" markdown tabindex="0" role="region" aria-label="Diagram of the data flow of a search">
 
-```mermaid
----
-config:
-  sequence:
-    wrap: true
-    width: 120
-    actorMargin: 10
----
-sequenceDiagram
-    accTitle: The data flow of a search
-    accDescr: A user searches for invoice. The unified search passes the term, the cursor, the limit and the user to the search provider. Without a term, an archive account or a connection, the provider answers with no results and doesn't ask Paperless. Otherwise, until the page of results is full, the Paperless client asks Paperless-ngx with the token for the page of 25 hits that holds the next hit, and only for the fields that a result shows, and Paperless answers with the ID, the title, the date and the excerpt of documents 412, 389, 371 and more, and whether a next page exists. One call of the file locator covers all documents of that page and returns for each a file of the archive account with its marker, or none. This repeats for at most 4 pages of Paperless or 3 seconds. The provider answers with an entry for every document with a file, up to the limit, and the cursor of the first hit that it didn't go through.
-
-    actor User
-    participant Search as Unified search
-    participant Provider as Search provider
-    participant Client as Paperless client
-    participant Paperless as Paperless-ngx
-    participant Locator as File locator
-    User->>Search: invoice
-    Search->>Provider: term, cursor, limit and user
-    alt no term, no archive account or no connection
-        Provider-->>Search: no results, without asking Paperless
-    else
-        loop until the page of results is full, for at most 4 pages of Paperless or 3 seconds
-            Provider->>Client: term, the page of 25 hits with the next hit
-            Client->>Paperless: GET /api/documents/<br>?query=invoice&page=1<br>&page_size=25&fields=…,<br>with the token
-            Paperless-->>Client: ID, title, date and excerpt<br>of documents 412, 389, 371, …,<br>and whether a next page exists
-            Provider->>Locator: the documents of the page,<br>user, archive account
-            Locator-->>Provider: per document a file of the<br>archive account with its marker,<br>or none
-        end
-        Provider-->>Search: an entry for every document with a file, up to the limit, and the cursor of the next hit
-    end
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/diagrams/the-data-flow-of-a-search.dark.svg">
+  <img src="images/diagrams/the-data-flow-of-a-search.svg" alt="The data flow of a search: A user searches for invoice. The unified search passes the term, the cursor, the limit and the user to the search provider. Without a term, an archive account or a connection, the provider answers with no results and doesn't ask Paperless. Otherwise, until the page of results is full, the Paperless client asks Paperless-ngx with the token for the page of 25 hits that holds the next hit, and only for the fields that a result shows, and Paperless answers with the ID, the title, the date and the excerpt of documents 412, 389, 371 and more, and whether a next page exists. One call of the file locator covers all documents of that page and returns for each a file of the archive account with its marker, or none. This repeats for at most 4 pages of Paperless or 3 seconds. The provider answers with an entry for every document with a file, up to the limit, and the cursor of the first hit that it didn't go through.">
+</picture>
 
 </div>
 
@@ -126,40 +53,10 @@ sequenceDiagram
 
 Paperless ranks every document that matches, also those whose files the searching user can't open, so a page of Paperless and a page of results rarely hold the same documents. Nextcloud's web search asks for 5 results, shows a provider only when its answer holds some, and offers *Load more results* only when a page holds as many results as it asked for; then it asks again from the start for 5 more. The apps of Nextcloud ask for the next page with the cursor of the page before. So the provider fills each page:
 
-```mermaid
----
-config:
-  flowchart:
-    wrappingWidth: 400
-    nodeSpacing: 30
----
-flowchart TB
-    accTitle: Filling a page of results
-    accDescr: The cursor of a page of results is the offset of its first hit in the ranking of Paperless, 0 for the first page. The provider asks Paperless for the page of 25 hits that holds this hit and the file locator for the files of its documents, in one search. It goes through the hits in their order and makes an entry of each document with a file, until the page of results is full. When no hit is left at Paperless, the results are the last page. When the page of results is full, the results go back with the cursor of the first hit that the provider didn't go through. Otherwise it asks Paperless for its next page, as long as it asked for fewer than 4 pages and for less than 3 seconds; after that, the results go back with the cursor as well.
-
-    cursor["Cursor of the page of results<br>the offset of its first hit<br>in the ranking, 0 at first"]
-    ask["Paperless: the page of 25 hits<br>that holds the next hit"]
-    files["File locator: the files of<br>its documents, in one search"]
-    take["An entry for each document<br>with a file, in the order of<br>Paperless, until the page is full"]
-    hits{"Hits left<br>at Paperless?"}
-    full{"Page of results<br>full?"}
-    budget{"Fewer than 4 pages<br>and 3 seconds?"}
-    next(["The results, and the cursor<br>of the first hit not gone through"])
-    last(["The results,<br>the last page"])
-
-    cursor --> ask --> files --> take --> hits
-    hits -- "no" --> last
-    hits -- "yes" --> full
-    full -- "yes" --> next
-    full -- "no" --> budget
-    budget -- "yes, the next page" --> ask
-    budget -- "no" --> next
-
-    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
-    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
-    class ask,files,take app
-    class next,last yes
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/diagrams/filling-a-page-of-results.dark.svg">
+  <img src="images/diagrams/filling-a-page-of-results.svg" alt="Filling a page of results: The cursor of a page of results is the offset of its first hit in the ranking of Paperless, 0 for the first page. The provider asks Paperless for the page of 25 hits that holds this hit and the file locator for the files of its documents, in one search. It goes through the hits in their order and makes an entry of each document with a file, until the page of results is full. When no hit is left at Paperless, the results are the last page. When the page of results is full, the results go back with the cursor of the first hit that the provider didn't go through. Otherwise it asks Paperless for its next page, as long as it asked for fewer than 4 pages and for less than 3 seconds; after that, the results go back with the cursor as well.">
+</picture>
 
 - **The cursor is an offset.** It counts the hits of Paperless that the pages before went through, documents without a file among them, so the next page goes on with the first hit that the page before didn't go through, also in the middle of a page of Paperless, without repeating or leaving out a document. `lib/Search/PaperlessPager.php` does this arithmetic. Nextcloud and its apps send the cursor back as they got it.
 - **Pages of Paperless have one size.** The provider asks for 25 hits at a time, whatever the limit of the page of results, which cost little since a hit carries only the fields that a result shows and the files of a page take one search.
@@ -168,34 +65,10 @@ flowchart TB
 
 ## Finding the files
 
-```mermaid
----
-config:
-  flowchart:
-    wrappingWidth: 400
-    nodeSpacing: 30
----
-flowchart TB
-    accTitle: Finding the files of a page of documents
-    accDescr: Paperless answers with documents 412, 389 and 371. One search of the file cache looks in the folders of the searching user for the names that carry any of their markers. Of the files it finds, only a file of the archive account with the exact marker of a document stands for it, and of several such files the one with the first path. Documents 412 and 371 get their file; document 389 has none and is left out.
-
-    page["Documents of a page<br>412, 389, 371"]
-    query["One search of the file cache<br>name LIKE '%[P412]%'<br>or '%[P389]%' or '%[P371]%'"]
-    found["Files with one of the markers<br>in the folders of the user"]
-    check{"A file of the<br>archive account, with the<br>exact marker?"}
-    first["Per document, the file<br>with the first path<br>412 and 371"]
-    none["Left out<br>389"]
-    page --> query --> found --> check
-    check -- "yes" --> first
-    check -- "no" --> none
-
-    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
-    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
-    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
-    class query,check app
-    class first yes
-    class none no
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/diagrams/finding-the-files-of-a-page-of-documents.dark.svg">
+  <img src="images/diagrams/finding-the-files-of-a-page-of-documents.svg" alt="Finding the files of a page of documents: Paperless answers with documents 412, 389 and 371. One search of the file cache looks in the folders of the searching user for the names that carry any of their markers. Of the files it finds, only a file of the archive account with the exact marker of a document stands for it, and of several such files the one with the first path. Documents 412 and 371 get their file; document 389 has none and is left out.">
+</picture>
 
 The database has no index for a part of a name, so every search of the file cache reads the names of all files that the user can see, on every storage and in every share. One search per page of Paperless keeps that to one such scan per page and at most 4 per keystroke, within the [budget of a search](#filling-a-page-of-results), however many documents a page holds, where a search per document took five in the web search and up to 50 in the apps or after *Load more*. The file locator checks the marker of each file it finds once more, so that `[P1]` never counts for `[P12]`, nor `[p12]` for `[P12]`.
 
@@ -203,38 +76,10 @@ The database has no index for a part of a name, so every search of the file cach
 
 Users see no difference between a failed search and one without documents, and some hosters keep the log of Nextcloud from administrators. So the settings page shows the history of the problems of the search under *Search problems*.
 
-```mermaid
----
-config:
-  flowchart:
-    wrappingWidth: 400
-    nodeSpacing: 30
----
-flowchart TB
-    accTitle: The history of the problems of the search
-    accDescr: A second try that gets an answer notes a retried request, a failed search notes a failure, and the first search that works after a failure notes the recovery. The history keeps since when it counts, the counts, the last failure, the recovery and the latest 20 events, and the settings page shows it under Search problems. Disconnect and Clear history forget it.
-
-    retry["A second try<br>answers"]
-    search["A search<br>fails"]
-    success["A search<br>works again"]
-    history[("Diagnostics<br>since, counts, last failure,<br>recovery, latest 20 events")]
-    page["Settings page<br>Search problems"]
-    clear["Disconnect or<br>Clear history<br>forget it"]
-
-    retry -- "retried" --> history
-    search -- "failed" --> history
-    success -- "recovery" --> history
-    history --> page
-    %% A plain dotted line keeps Clear history below the history. An arrow from it
-    %% would rank it with the three causes, too wide for a phone, and Mermaid 11
-    %% draws no arrowhead on "<-.-" and breaks on a label of a reversed edge.
-    history -.- clear
-
-    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
-    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
-    class success yes
-    class search no
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/diagrams/the-history-of-the-problems-of-the-search.dark.svg">
+  <img src="images/diagrams/the-history-of-the-problems-of-the-search.svg" alt="The history of the problems of the search: A second try that gets an answer notes a retried request, a failed search notes a failure, and the first search that works after a failure notes the recovery. The history keeps since when it counts, the counts, the last failure, the recovery and the latest 20 events, and the settings page shows it under Search problems. Disconnect and Clear history forget it.">
+</picture>
 
 The history is one value of the app configuration of Nextcloud, loaded only when it is needed. It counts the failed searches and the requests that only their second try answered since it began, and keeps the latest 20 of these events, newest first, each with its time, its kind, its step, the kind and the message of the error and how long it took: for a failed search the whole search, for a second try the first request that got no answer. Only problems write to it, and a search that works writes only once after a failure, so searches that keep working write nothing. A search whose files fail to answer and that shows no document counts as failed, since the user sees none; one that still shows the documents of other files works, and only the log notes the files it left out. A search that asks Paperless for several pages counts once, and so does its failure. Two problems at the same moment may keep only one of them, which a history for diagnosis can afford.
 
@@ -244,23 +89,10 @@ The message loses the API token, the search term when it has at least three char
 
 The link of an entry depends on who searches, which the provider tells from the user agent of the request:
 
-```mermaid
----
-config:
-  flowchart:
-    wrappingWidth: 400
-    nodeSpacing: 30
----
-flowchart TB
-    accTitle: The link of a result
-    accDescr: The entry of document 412 carries the ID of its file and its path in the folders of the user. When the iOS app searches, its link is nextcloud://open-file with the user and the link /f/412. Otherwise its link is /f/412, which a browser opens in Nextcloud's viewer; the Android app opens the file in its own viewer by the ID and the path.
-
-    entry["Entry of document 412,<br>with the ID and the path<br>of its file"] --> ios{"The iOS app<br>searches?"}
-    ios -- "yes" --> deep["nextcloud://<br>open-file with the<br>user and /f/412"]
-    ios -- "no" --> web["/f/412"]
-    web -- "a browser" --> viewer["Nextcloud's<br>viewer"]
-    web -- "the Android app" --> android["Its own viewer,<br>by the ID<br>and the path"]
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/diagrams/the-link-of-a-result.dark.svg">
+  <img src="images/diagrams/the-link-of-a-result.svg" alt="The link of a result: The entry of document 412 carries the ID of its file and its path in the folders of the user. When the iOS app searches, its link is nextcloud://open-file with the user and the link /f/412. Otherwise its link is /f/412, which a browser opens in Nextcloud's viewer; the Android app opens the file in its own viewer by the ID and the path.">
+</picture>
 
 Every entry carries the ID of the file and its path in the folders of the user as well; the Android app opens the file with them.
 
@@ -270,35 +102,10 @@ The smart picker is the menu that `/` opens in Text and Collectives and that a b
 
 <div class="diagram-wide" markdown tabindex="0" role="region" aria-label="Diagram of linking a document from the smart picker">
 
-```mermaid
----
-config:
-  sequence:
-    wrap: true
-    width: 120
-    actorMargin: 10
----
-sequenceDiagram
-    accTitle: Linking a document from the smart picker
-    accDescr: jamie types / in Text and chooses Paperless documents. The picker sends the term invoice to the search provider of the app, which asks Paperless-ngx and answers with the documents whose file jamie can open, each with the link /f/412 of its file. jamie picks a result, and the picker inserts that link. When someone reads the page, Nextcloud's own provider of file links renders the link: as the preview of the file for a reader who can open the file, and as the bare link for anyone else.
-
-    actor jamie
-    participant picker as Smart picker<br>in Text
-    participant provider as Search provider
-    participant paperless as Paperless-ngx
-    participant files as Nextcloud's provider<br>of file links
-    actor reader as A reader
-
-    jamie->>picker: / and Paperless documents
-    picker->>provider: invoice
-    provider->>paperless: invoice
-    paperless-->>provider: document 412, …
-    provider-->>picker: the documents whose file jamie can open,<br>each with the link /f/412 of its file
-    jamie->>picker: picks document 412
-    picker-->>jamie: inserts /f/412
-    reader->>files: reads the page with /f/412
-    files-->>reader: the preview of the file if the reader can open it,<br>the bare link otherwise
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/diagrams/linking-a-document-from-the-smart-picker.dark.svg">
+  <img src="images/diagrams/linking-a-document-from-the-smart-picker.svg" alt="Linking a document from the smart picker: jamie types / in Text and chooses Paperless documents. The picker sends the term invoice to the search provider of the app, which asks Paperless-ngx and answers with the documents whose file jamie can open, each with the link /f/412 of its file. jamie picks a result, and the picker inserts that link. When someone reads the page, Nextcloud's own provider of file links renders the link: as the preview of the file for a reader who can open the file, and as the bare link for anyone else.">
+</picture>
 
 </div>
 
@@ -308,39 +115,10 @@ The term reaches Paperless only after the user chose *Paperless documents*, so t
 
 <div class="diagram-wide" markdown tabindex="0" role="region" aria-label="Diagram of saving the settings">
 
-```mermaid
----
-config:
-  sequence:
-    wrap: true
-    width: 120
-    actorMargin: 10
----
-sequenceDiagram
-    accTitle: Saving the settings
-    accDescr: The administrator enters the URL, whether Paperless runs in the local network, the token and the archive account. When the password wasn't confirmed in the last 30 minutes, Nextcloud asks for it first. The settings page sends them with the CSRF token to the settings controller, which checks the URL, the token and the archive account: a blank token keeps the stored one only for its server, the same scheme, host and port, and otherwise the answer is HTTP 400. Then the controller has the Paperless client test the connection with one request to Paperless-ngx, which Nextcloud lets reach an address of the local network only with the switch, and then without redirects. Only when Paperless answers does the configuration save them, the URL, the switches and the archive account in the app configuration and the token in the credentials manager. The page gets the settings back, without the token.
-
-    actor Admin as Administrator
-    participant Page as Settings page
-    participant Controller as Settings controller
-    participant Client as Paperless client
-    participant Config as Configuration
-    participant Paperless as Paperless-ngx
-    Admin->>Page: URL, local network, token, archive account
-    opt the password wasn't confirmed in the last 30 minutes
-        Page->>Admin: Nextcloud asks for the password
-    end
-    Page->>Controller: POST /apps/<br>paperless_unified_search<br>/settings, with the<br>CSRF token
-    Controller->>Config: checks the URL, the token and the archive account
-    Note over Controller,Config: a blank token keeps the stored one only for its server (the same scheme, host and port), else HTTP 400
-    Controller->>Client: test the connection
-    Note over Client,Paperless: an address of the local network only with the switch, then without redirects
-    Client->>Paperless: GET /api/documents/<br>?page_size=1&fields=id
-    Paperless-->>Client: 200
-    Controller->>Config: save
-    Config->>Config: URL, switches and archive account to the app configuration, the token to the credentials manager
-    Controller-->>Page: the settings, without the token
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/diagrams/saving-the-settings.dark.svg">
+  <img src="images/diagrams/saving-the-settings.svg" alt="Saving the settings: The administrator enters the URL, whether Paperless runs in the local network, the token and the archive account. When the password wasn't confirmed in the last 30 minutes, Nextcloud asks for it first. The settings page sends them with the CSRF token to the settings controller, which checks the URL, the token and the archive account: a blank token keeps the stored one only for its server, the same scheme, host and port, and otherwise the answer is HTTP 400. Then the controller has the Paperless client test the connection with one request to Paperless-ngx, which Nextcloud lets reach an address of the local network only with the switch, and then without redirects. Only when Paperless answers does the configuration save them, the URL, the switches and the archive account in the app configuration and the token in the credentials manager. The page gets the settings back, without the token.">
+</picture>
 
 </div>
 
