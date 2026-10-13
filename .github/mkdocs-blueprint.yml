@@ -98,7 +98,9 @@ markdown_extensions:
   # --8<-- "CHANGELOG.md", so that nothing is written twice.
   pymdownx.snippets:
     check_paths: true
-  # Diagrams in ```mermaid blocks, as GitHub draws them.
+  # The live diagrams of the website: the hook in .github/mkdocs_blueprint.py puts
+  # the Mermaid source of docs/diagrams/ in place of each picture of a diagram, and
+  # Material draws it in the colors of its theme.
   pymdownx.superfences:
     custom_fences:
       - name: mermaid

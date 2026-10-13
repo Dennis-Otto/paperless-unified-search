@@ -9,6 +9,8 @@ each task is a module of the package blueprint/ next to this file.
     python3 blueprint.py unreleased ...     an entry under Unreleased (the other bots)
     python3 blueprint.py notices ...        the licenses of the third-party components
     python3 blueprint.py update-commit ...  the pull request of an update (the blueprint bot)
+    python3 blueprint.py diagrams extract   the ```mermaid blocks as sources and pictures
+    python3 blueprint.py diagrams ...       keep, commit and report (the diagram bots)
 """
 
 import sys

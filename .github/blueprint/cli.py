@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 import tomllib
 from collections.abc import Sequence
@@ -19,6 +20,7 @@ from blueprint.changelog import (
 )
 from blueprint.checklist import checklist, describe_steps
 from blueprint.coverage_comment import Coverage, coverage_comment
+from blueprint.diagrams import SOURCES, commit_request, extract, keep, listing, report
 from blueprint.github import Api, GitHubError, current_repo
 from blueprint.notices import third_party_notices
 from blueprint.settings import CONFIG, Settings, apply, check, describe
@@ -68,6 +70,41 @@ def coverage_command(arguments: argparse.Namespace) -> int:
         else None
     )
     sys.stdout.write(coverage_comment(head, base))
+    return 0
+
+
+def diagrams_command(arguments: argparse.Namespace, root: Path) -> int:
+    if arguments.action == "keep":
+        print(listing(keep(root, arguments.folder)), end="")
+        return 0
+    if arguments.action == "commit":
+        if not arguments.repo:
+            print("blueprint.py: diagrams commit needs --repo", file=sys.stderr)
+            return 2
+        request = commit_request(
+            arguments.folder,
+            arguments.repo,
+            arguments.branch,
+            arguments.head,
+            arguments.headline,
+            arguments.body,
+        )
+        print(json.dumps(request))
+        return 0
+    if arguments.action == "report":
+        print(report(arguments.folder, arguments.kind), end="")
+        return 0
+    extracted = extract(root)
+    for diagram in extracted:
+        known = "" if diagram.new else ", which was there already"
+        print(f"{diagram.page.as_posix()}: {diagram.source.as_posix()}{known}")
+    if extracted:
+        print(
+            f"{len(extracted)} diagram(s) became pictures of their sources in "
+            f"{SOURCES.as_posix()}/."
+        )
+    else:
+        print("No ```mermaid block in the Markdown.")
     return 0
 
 
@@ -180,12 +217,57 @@ def main(
         help="the blueprint on GitHub as OWNER/NAME, a fork perhaps, whose release the "
         "pull request links",
     )
+    diagrams_parser = commands.add_parser(
+        "diagrams",
+        help="the ```mermaid blocks of the Markdown as sources in docs/diagrams/ and "
+        "their pictures, for scripts/diagrams.sh",
+    )
+    diagrams_actions = diagrams_parser.add_subparsers(dest="action", required=True)
+    diagrams_actions.add_parser(
+        "extract", help="every ```mermaid block as a source and the <picture> of it"
+    )
+    keep_parser = diagrams_actions.add_parser(
+        "keep",
+        help="copy the sources, pictures and pages that scripts/diagrams.sh changed "
+        "into a folder, for the diagram bot",
+    )
+    keep_parser.add_argument("folder", type=Path)
+    commit_parser = diagrams_actions.add_parser(
+        "commit",
+        help="the request to GitHub's GraphQL API that commits what a folder of keep "
+        "holds onto a branch of --repo, once it is checked",
+    )
+    commit_parser.add_argument("folder", type=Path)
+    commit_parser.add_argument("--branch", required=True)
+    commit_parser.add_argument(
+        "--head", required=True, help="the commit that the branch must still be at"
+    )
+    commit_parser.add_argument("--headline", required=True)
+    commit_parser.add_argument("--body", default="")
+    report_parser = diagrams_actions.add_parser(
+        "report", help="what the diagram bot says about what a folder of keep holds"
+    )
+    report_parser.add_argument("folder", type=Path)
+    report_parser.add_argument(
+        "--for",
+        dest="kind",
+        choices=["comment", "pull-request"],
+        default="comment",
+        help="comment: on the pull request whose blocks became pictures; "
+        "pull-request: the description of the bot's pull request for main",
+    )
     arguments = parser.parse_args(argv)
 
     if arguments.command == "coverage":
         try:
             return coverage_command(arguments)
         except (OSError, ElementTree.ParseError) as error:
+            print(f"blueprint.py: {error}", file=sys.stderr)
+            return 2
+    if arguments.command == "diagrams":
+        try:
+            return diagrams_command(arguments, root)
+        except (OSError, ValueError, subprocess.CalledProcessError) as error:
             print(f"blueprint.py: {error}", file=sys.stderr)
             return 2
     if arguments.command in ("changelog", "unreleased", "beta", "vex", "notices"):

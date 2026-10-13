@@ -45,6 +45,7 @@ required_checks = [
   "workflow-lint",
   "reuse",
   "markdown",
+  "diagrams",
   "docs",
   "dco",
   "issue-assistant",
