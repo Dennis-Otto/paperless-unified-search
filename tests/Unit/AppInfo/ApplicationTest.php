@@ -7,6 +7,7 @@ namespace OCA\PaperlessUnifiedSearch\Tests\Unit\AppInfo;
 use OC;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\AppInfo\Application;
+use OCA\PaperlessUnifiedSearch\Reference\PaperlessReferenceProvider;
 use OCA\PaperlessUnifiedSearch\Search\PaperlessSearchProvider;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IRegistrationContext;
@@ -54,6 +55,15 @@ final class ApplicationTest extends TestCase {
 		$context->expects(self::once())
 			->method('registerSearchProvider')
 			->with(PaperlessSearchProvider::class);
+
+		$this->application()->register($context);
+	}
+
+	public function testRegistersTheDocumentsOfTheSmartPicker(): void {
+		$context = $this->createMock(IRegistrationContext::class);
+		$context->expects(self::once())
+			->method('registerReferenceProvider')
+			->with(PaperlessReferenceProvider::class);
 
 		$this->application()->register($context);
 	}

@@ -134,6 +134,22 @@ search() {
 		"${BASE_URL}/ocs/v2.php/search/providers/paperless_unified_search_documents/search"
 }
 
+# Resolves the link $2 as the user $1 into $3, as Talk, Text and the other apps of the
+# smart picker do to render a link that someone inserted.
+resolve() {
+	user="$1"
+	link="$2"
+	output="$3"
+	curl --fail-with-body --silent --show-error \
+		--user "${user}:${PASSWORD}" \
+		--header 'Accept: application/json' \
+		--header 'OCS-APIRequest: true' \
+		--get \
+		--data-urlencode "reference=${link}" \
+		--output "${output}" \
+		"${BASE_URL}/ocs/v2.php/references/resolve"
+}
+
 cd "${REPOSITORY_ROOT}"
 "${COMPOSE[@]}" down --volumes --remove-orphans --timeout 0 >/dev/null 2>&1 || true
 # The browser is needed only at the end: its image loads while Nextcloud sets itself up.
@@ -332,8 +348,24 @@ curl --fail-with-body --silent --show-error \
 	"${BASE_URL}/ocs/v2.php/search/providers"
 assert_response external "${TMP_DIR}/providers-external.json"
 
+# The smart picker offers Paperless documents with an icon that Nextcloud serves, and
+# searches through the search provider (#110).
+curl --fail-with-body --silent --show-error \
+	--user "e2e-user:${PASSWORD}" \
+	--header 'Accept: application/json' \
+	--header 'OCS-APIRequest: true' \
+	--output "${TMP_DIR}/picker.json" \
+	"${BASE_URL}/ocs/v2.php/references/providers"
+ICON="$(assert_response picker "${TMP_DIR}/picker.json")"
+curl --fail --silent --show-error --output /dev/null "${BASE_URL}${ICON}"
+
 search e2e-user 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/browser.json"
 assert_response browser "${TMP_DIR}/browser.json"
+# The link that the smart picker inserts for this result, which Nextcloud renders as the
+# preview of the file for whoever can open it, and as a bare link for anyone else.
+LINK="$(assert_response link "${TMP_DIR}/browser.json")"
+resolve e2e-user "${LINK}" "${TMP_DIR}/link-owner.json"
+assert_response file-link "${TMP_DIR}/link-owner.json"
 
 search e2e-user 'Mozilla/5.0 (iOS) Nextcloud-iOS/7.1.0' "${TMP_DIR}/ios.json"
 assert_response ios "${TMP_DIR}/ios.json"
@@ -343,6 +375,8 @@ assert_response android "${TMP_DIR}/android.json"
 
 search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/inaccessible.json"
 assert_response no-results "${TMP_DIR}/inaccessible.json"
+resolve e2e-other "${LINK}" "${TMP_DIR}/link-inaccessible.json"
+assert_response no-file-link "${TMP_DIR}/link-inaccessible.json"
 
 # A file whose name only carries the marker, here in the folder of e2e-other, stands for
 # no document: only the files of the archive account e2e-user count.
@@ -368,6 +402,8 @@ curl --fail-with-body --silent --show-error \
 	"${BASE_URL}/ocs/v2.php/apps/files_sharing/api/v1/shares"
 search e2e-other 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/shared.json"
 assert_response shared "${TMP_DIR}/shared.json"
+resolve e2e-other "${LINK}" "${TMP_DIR}/link-shared.json"
+assert_response file-link "${TMP_DIR}/link-shared.json"
 
 # Paperless ranks 40 documents for "pagetest", more than one page of 25 of the requests
 # of the app. The archive account shares the files of seven of them with e2e-other, in
@@ -445,4 +481,4 @@ phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed in ${SECONDS} s: settings for administrators only, the token only for its server, access filtering by the archive account and its shares, trusted mode, browser, iOS, and Android contracts, pages of results filled across pages of Paperless, and the settings page in the browser with its accessibility."
+echo "Docker E2E passed in ${SECONDS} s: settings for administrators only, the token only for its server, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, pages of results filled across pages of Paperless, and the settings page in the browser with its accessibility."

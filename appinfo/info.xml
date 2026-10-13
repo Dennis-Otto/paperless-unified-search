@@ -13,6 +13,7 @@ Find invoices, contracts, letters, statements, and any text recognized inside yo
 
 - Uses Paperless-ngx's native OCR and full-text search, with no index of its own to build or keep current
 - Shows results directly in Nextcloud's global search
+- Finds documents from the smart picker in Talk, Text, Deck, and Mail, and inserts a link to their file
 - Opens the synchronized file in Nextcloud's built-in viewer on web, iOS, and Android
 - Matches documents through stable markers such as `[P123]`
 - Shows a document only to the users who may open its synchronized file
@@ -23,7 +24,7 @@ Find invoices, contracts, letters, statements, and any text recognized inside yo
 
 Paperless is queried server-to-server. The API token is stored in Nextcloud's encrypted credentials manager and is never exposed to the browser.
 
-By default, Nextcloud's search sends terms to Paperless only when users enable connected-services search; a client that asks the search API for this provider sends them as well. Administrators can optionally mark their Paperless server as trusted and include it automatically in every global search.
+By default, Nextcloud's search sends terms to Paperless only when users enable connected-services search, and the smart picker only when users pick Paperless documents in it; a client that asks the search API for this provider sends them as well. Administrators can optionally mark their Paperless server as trusted and include it automatically in every global search.
 
 A dedicated, read-only Paperless account is recommended.
 
@@ -50,6 +51,7 @@ Finde Rechnungen, Verträge, Briefe, Bescheide und beliebige Inhalte aus deinen 
 
 - Verwendet die native OCR- und Volltextsuche von Paperless-ngx, ohne eigenen Index, der aufgebaut oder aktuell gehalten werden muss
 - Zeigt Treffer direkt in der globalen Nextcloud-Suche
+- Findet Dokumente auch über den Smart Picker in Talk, Text, Deck und Mail und fügt einen Link auf ihre Datei ein
 - Öffnet die synchronisierte Datei im integrierten Nextcloud-Viewer in Web, iOS und Android
 - Ordnet Dokumente über stabile Kennzeichnungen wie `[P123]` zu
 - Zeigt ein Dokument nur den Benutzern, die seine synchronisierte Datei öffnen dürfen
@@ -60,7 +62,7 @@ Finde Rechnungen, Verträge, Briefe, Bescheide und beliebige Inhalte aus deinen 
 
 Die Kommunikation mit Paperless erfolgt ausschließlich zwischen den Servern. Das API-Token wird verschlüsselt im Zugangsdatenmanager von Nextcloud gespeichert und niemals an den Browser übertragen.
 
-Standardmäßig wird Paperless nur durchsucht, wenn der Benutzer die Suche in verbundenen Diensten aktiviert. Administratoren können den eigenen Paperless-Server optional als vertrauenswürdig einstufen und automatisch in jede globale Suche einbeziehen.
+Standardmäßig wird Paperless nur durchsucht, wenn der Benutzer die Suche in verbundenen Diensten aktiviert oder im Smart Picker Paperless-Dokumente auswählt. Administratoren können den eigenen Paperless-Server optional als vertrauenswürdig einstufen und automatisch in jede globale Suche einbeziehen.
 
 Empfohlen wird ein eigener Paperless-Dienstbenutzer mit ausschließlich lesendem Zugriff.
 
@@ -96,6 +98,7 @@ Dokumentation (auf Englisch): <https://dennis-otto.github.io/paperless-unified-s
 	<repository type="git">https://github.com/Dennis-Otto/paperless-unified-search.git</repository>
 	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.4.1/screenshots/01-unified-search.png</screenshot><!-- x-release-please-version -->
 	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.4.1/screenshots/02-nextcloud-pdf-viewer.png</screenshot><!-- x-release-please-version -->
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.4.1/screenshots/07-smart-picker.png</screenshot><!-- x-release-please-version -->
 	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.4.1/screenshots/03-admin-settings.png</screenshot><!-- x-release-please-version -->
 	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.4.1/screenshots/04-mobile-search.png</screenshot><!-- x-release-please-version -->
 	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.4.1/screenshots/06-search-problems.png</screenshot><!-- x-release-please-version -->

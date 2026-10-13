@@ -30,6 +30,9 @@ use Psr\Log\LoggerInterface;
 use Throwable;
 
 final class PaperlessSearchProvider implements IExternalProvider {
+	/** The ID in the routes of Nextcloud's search, through which the smart picker searches too. */
+	public const ID = AppConstants::APP_ID . '_documents';
+
 	/** The pages of Paperless that a search asks for at most to fill its results. */
 	private const PAGE_BUDGET = 4;
 
@@ -51,7 +54,7 @@ final class PaperlessSearchProvider implements IExternalProvider {
 	}
 
 	public function getId(): string {
-		return AppConstants::APP_ID . '_documents';
+		return self::ID;
 	}
 
 	public function getName(): string {
