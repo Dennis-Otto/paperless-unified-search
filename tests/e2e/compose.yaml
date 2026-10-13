@@ -5,6 +5,9 @@ services:
   paperless-mock:
     image: python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc
     command: ["python", "/mock/mock_server.py"]
+    # A tiny init as process 1 passes on the signal to stop, which Python as process 1
+    # would ignore until Docker kills it after ten seconds.
+    init: true
     read_only: true
     tmpfs:
       - /tmp
@@ -30,6 +33,9 @@ services:
       NEXTCLOUD_ADMIN_USER: e2e-admin
       NEXTCLOUD_ADMIN_PASSWORD: e2e-only-password
       NEXTCLOUD_TRUSTED_DOMAINS: localhost 127.0.0.1
+      # A variable NC_<name> sets that value of config.php, without a call of occ: the
+      # app may reach the mock of Paperless at its address in the network of the project.
+      NC_allow_local_remote_servers: "true"
     ports:
       - "${E2E_PORT:-18082}:80"
     volumes:

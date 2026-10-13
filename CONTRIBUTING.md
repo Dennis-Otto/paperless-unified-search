@@ -40,10 +40,10 @@ composer install
 bash scripts/check.sh
 ```
 
-The end-to-end tests run the app in Docker against every supported Nextcloud version and a mock of Paperless-ngx:
+The end-to-end tests run the app in Docker against every supported Nextcloud version at the same time and a mock of Paperless-ngx; `bash tests/e2e/run.sh` runs them against one version:
 
 ```sh
-bash tests/e2e/run.sh
+bash tests/e2e/run-all.sh
 ```
 
 To run them before every push on its own, turn on the hook of the repository once:
