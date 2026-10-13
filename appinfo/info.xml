@@ -24,7 +24,7 @@ Find invoices, contracts, letters, statements, and any text recognized inside yo
 
 Paperless is queried server-to-server. The API token is stored in Nextcloud's encrypted credentials manager and is never exposed to the browser.
 
-By default, searches are sent to Paperless only when users enable connected-services search or pick Paperless documents in the smart picker. Administrators can optionally mark their Paperless server as trusted and include it automatically in every global search.
+By default, Nextcloud's search sends terms to Paperless only when users enable connected-services search, and the smart picker only when users pick Paperless documents in it; a client that asks the search API for this provider sends them as well. Administrators can optionally mark their Paperless server as trusted and include it automatically in every global search.
 
 A dedicated, read-only Paperless account is recommended.
 

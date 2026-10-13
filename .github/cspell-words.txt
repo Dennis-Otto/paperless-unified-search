@@ -1,2 +1,3 @@
 # The words of this project that the spelling check of the Lint workflow should
 # know: names, terms and words of its trade, one per line.
+Tesseract
