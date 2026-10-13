@@ -1,3 +1,7 @@
+---
+description: "What Paperless Unified Search protects, what it trusts and which risks remain: the API token, who sees which document and where search terms go."
+---
+
 # Security design
 
 [← README](https://github.com/Dennis-Otto/paperless-unified-search) · [Architecture](architecture.md) · [Roadmap](roadmap.md) · [Releases](releases.md)

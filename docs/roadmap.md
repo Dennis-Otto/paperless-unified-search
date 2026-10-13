@@ -1,3 +1,7 @@
+---
+description: "What Paperless Unified Search intends to do until October 2027, such as following every new version of Nextcloud, and what it will not do."
+---
+
 # Roadmap
 
 [← README](https://github.com/Dennis-Otto/paperless-unified-search) · [Architecture](architecture.md) · [Security design](security.md) · [Releases](releases.md)

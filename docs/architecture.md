@@ -1,3 +1,7 @@
+---
+description: "How Paperless Unified Search asks Paperless-ngx from Nextcloud's unified search and shows only the documents a user may open, with no index of its own."
+---
+
 # Architecture
 
 [← README](https://github.com/Dennis-Otto/paperless-unified-search) · [Security design](security.md) · [Roadmap](roadmap.md) · [Releases](releases.md)

@@ -1,8 +1,12 @@
+---
+description: "The decisions that shape Paperless Unified Search, each with its reasons, so that a later change can see why things are as they are."
+---
+
 # Decisions
 
 The decisions that shape this project, each with its reasons, so that a later change can see why things are as they are. A decision that changes an earlier one gets a new record, and the earlier one says which record replaces it.
 
-Copy [the template](0000-template.md) to the next free number and describe the decision in the pull request that makes it.
+Copy [the template](0000-template.md) to the next free number, replace the description at its top with the decision and its reason in one sentence, which search engines and shared links show, and describe the decision in the pull request that makes it.
 
 | Record | Decision | Status |
 | --- | --- | --- |

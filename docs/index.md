@@ -1,12 +1,16 @@
 ---
+title: Paperless-ngx full-text search for Nextcloud
+description: "Search the OCR full text of Paperless-ngx in Nextcloud's unified search, without Elasticsearch or a second index, and open each result in Nextcloud's viewer."
 hide:
   - navigation
   - toc
 ---
 
+<!-- The title of the front matter is the one that search engines and the browser show; the heading is the name of the app. -->
+<!-- markdownlint-disable-next-line MD025 -->
 # Paperless Unified Search
 
-A Nextcloud app that brings the OCR and full-text search of Paperless-ngx into Nextcloud's global search. A result opens the matching synchronized file directly in Nextcloud's viewer.
+A Nextcloud app that brings the OCR and full-text search of Paperless-ngx into Nextcloud's global search, without Elasticsearch, a second index or another container: Paperless answers, Nextcloud decides who sees the file. A result opens the matching synchronized file directly in Nextcloud's viewer.
 
 [Get it from the App Store](https://apps.nextcloud.com/apps/paperless_unified_search){ .md-button .md-button--primary }
 [Quick start](#quick-start){ .md-button }
