@@ -386,6 +386,45 @@ final class PaperlessApiServiceTest extends TestCase {
 		}
 	}
 
+	/**
+	 * @return array<string, array{Throwable}>
+	 */
+	public static function namesThatDidNotResolve(): array {
+		$unknown = new LocalServerException('No DNS record found for paperless.example.com');
+
+		return [
+			'the error of Nextcloud' => [$unknown],
+			'the error of Nextcloud inside another error' => [new RuntimeException('The request failed.', 0, $unknown)],
+		];
+	}
+
+	/**
+	 * With dns_pinning on, as by default, Nextcloud's own lookup reports a name that doesn't
+	 * resolve with the exception of a local address. That one is no refused address, and a
+	 * lookup that failed for a moment gets its second try as with cURL's error 6 (#133).
+	 */
+	#[DataProvider('namesThatDidNotResolve')]
+	public function testANameThatNextcloudCouldNotResolveGetsASecondTry(Throwable $error): void {
+		$answer = $this->response(200, '{"count":1,"next":null,"results":[{"id":7}]}');
+		$calls = 0;
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::exactly(2))
+			->method('get')
+			->willReturnCallback(static function () use (&$calls, $answer, $error): IResponse {
+				if (++$calls === 1) {
+					throw $error;
+				}
+
+				return $answer;
+			});
+
+		self::assertSame(
+			['count' => 1, 'next' => null, 'results' => [['id' => 7]]],
+			$this->service($client)->searchDocuments('invoice', 1, 10),
+		);
+		self::assertSame(1, $this->stored['diagnostics']['retried'] ?? null);
+	}
+
 	public function testARequestWithoutAnswerGetsASecondTry(): void {
 		$answer = $this->response(200, '{"count":1,"next":null,"results":[{"id":7}]}');
 		$calls = 0;

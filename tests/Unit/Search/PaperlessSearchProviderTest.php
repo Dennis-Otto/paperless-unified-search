@@ -865,7 +865,8 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$history = $this->history();
 		self::assertSame(1, $history->failed);
 		self::assertSame('Paperless returned HTTP ' . $status . '.', $history->events[0]->message);
-		self::assertTrue($this->stored['diagnostics_pending']);
+		// Without the mark, the next search that works reads the history and notes the recovery.
+		self::assertArrayNotHasKey('diagnostics_pending', $this->stored);
 	}
 
 	/**
@@ -1349,6 +1350,9 @@ final class PaperlessSearchProviderTest extends TestCase {
 			return is_bool($value) ? $value : $default;
 		});
 		$config->method('hasKey')->willReturnCallback(fn (string $app, string $key): bool => array_key_exists($key, $this->stored));
+		$config->method('deleteKey')->willReturnCallback(function (string $app, string $key): void {
+			unset($this->stored[$key]);
+		});
 
 		return $config;
 	}

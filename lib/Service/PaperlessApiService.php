@@ -19,7 +19,6 @@ use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Http\Client\IClient;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
-use OCP\Http\Client\LocalServerException;
 use Throwable;
 use UnexpectedValueException;
 
@@ -264,14 +263,14 @@ final class PaperlessApiService {
 
 	/**
 	 * A request that gets no answer before a connection exists, because the name of the
-	 * host doesn't resolve or the connection fails or isn't set up in time, gets one more
-	 * try: such failures often pass within a moment. None gets an answer of Paperless,
-	 * whatever its status; a request that failed only after the time to connect, which had
-	 * a connection and timed out waiting for Paperless, as a Paperless that hangs does,
-	 * since a second try would make the user wait twice and load Paperless twice; and an
-	 * address that Nextcloud refuses as one of the local network, which it would refuse
-	 * again. A second try that gets an answer goes into the history of the diagnostics;
-	 * one that fails as well fails the request.
+	 * host doesn't resolve, also when Nextcloud's own lookup reports it, or the connection
+	 * fails or isn't set up in time, gets one more try: such failures often pass within a
+	 * moment. None gets an answer of Paperless, whatever its status; a request that failed
+	 * only after the time to connect, which had a connection and timed out waiting for
+	 * Paperless, as a Paperless that hangs does, since a second try would make the user
+	 * wait twice and load Paperless twice; and an address that Nextcloud refuses as one of
+	 * the local network, which it would refuse again. A second try that gets an answer goes
+	 * into the history of the diagnostics; one that fails as well fails the request.
 	 *
 	 * @param array<string, mixed> $options
 	 * @param list<string> $secrets the token and the term, which the history must not show
@@ -282,7 +281,7 @@ final class PaperlessApiService {
 			return $this->client->get($url, $options);
 		} catch (Throwable $error) {
 			$durationMs = (int)round(($this->getSeconds() - $started) * 1000.0);
-			if ($durationMs >= self::RETRY_WITHIN_MS || self::isRefusedByNextcloud($error)) {
+			if ($durationMs >= self::RETRY_WITHIN_MS || PaperlessRequestException::isRefusedAddress($error)) {
 				throw $error;
 			}
 
@@ -291,20 +290,6 @@ final class PaperlessApiService {
 
 			return $response;
 		}
-	}
-
-	/**
-	 * Whether Nextcloud refused the address of the request as one of the local network,
-	 * maybe inside another error.
-	 */
-	private static function isRefusedByNextcloud(Throwable $error): bool {
-		for ($cause = $error; $cause !== null; $cause = $cause->getPrevious()) {
-			if ($cause instanceof LocalServerException) {
-				return true;
-			}
-		}
-
-		return false;
 	}
 
 	private function getSeconds(): float {

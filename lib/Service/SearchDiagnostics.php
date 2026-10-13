@@ -29,9 +29,10 @@ use Throwable;
 final class SearchDiagnostics {
 	private const HISTORY_KEY = 'diagnostics';
 	/**
-	 * Whether a failure of the history waits for a search that works again. The history is
-	 * lazy, and reading it loads the lazy values of every app; this value isn't, so that a
-	 * search that works reads the history only while a failure waits.
+	 * Whether a failure of the history may wait for a search that works again: false when
+	 * none does, and true or missing when one may. The history is lazy, and reading it
+	 * loads the lazy values of every app; this value isn't, so that a search that works
+	 * reads the history only while a failure may wait.
 	 */
 	private const PENDING_KEY = 'diagnostics_pending';
 	/** The keys of the last failure of version 0.3.0, which the history replaces. */
@@ -43,7 +44,9 @@ final class SearchDiagnostics {
 	 * The seconds in which problems of one kind write the history only once. During an
 	 * outage every keystroke of every user fails, and every write of the configuration of
 	 * the apps empties the cache of it for all of Nextcloud; the problems in between only
-	 * count, in the distributed cache, until the next write takes them along.
+	 * count, in the distributed cache, until the next write takes them along. A search
+	 * that works again doesn't end the interval, so that a Paperless that fails every
+	 * other request writes one failure and one recovery in it, not one of each per request.
 	 */
 	private const WRITE_INTERVAL = 30;
 
@@ -77,19 +80,19 @@ final class SearchDiagnostics {
 
 	/**
 	 * Notes the first search that works after a failure; every later one changes nothing.
+	 * The mark goes first, and a failure that is saved after the recovery removes it
+	 * again, so that the next search that works notes the recovery of that failure.
 	 */
 	public function recordSuccess(): void {
 		if (!$this->mayAwaitRecovery()) {
 			return;
 		}
 
+		$this->config->setValueBool(AppConstants::APP_ID, self::PENDING_KEY, false);
 		$history = $this->getHistory();
 		if ($history !== null && $history->awaitsRecovery()) {
 			$this->save($this->withCounted($history)->recovered($this->timeFactory->getTime()));
-			// The next failure is a new outage, which the history shows at once.
-			$this->getMemcache()?->remove(self::guardKey(SearchEvent::KIND_FAILED));
 		}
-		$this->config->setValueBool(AppConstants::APP_ID, self::PENDING_KEY, false);
 	}
 
 	public function getHistory(): ?DiagnosticsHistory {
@@ -127,17 +130,19 @@ final class SearchDiagnostics {
 			max(0, $durationMs),
 		);
 
-		if ($kind === SearchEvent::KIND_FAILED) {
-			// Before the history, so that no failure goes without its recovery.
-			$this->config->setValueBool(AppConstants::APP_ID, self::PENDING_KEY, true);
-		}
 		$this->save($this->withCounted($this->getHistory() ?? DiagnosticsHistory::start($time))->with($event));
+		if ($kind === SearchEvent::KIND_FAILED) {
+			// After the history, so that a recovery saved meanwhile can't hide this failure,
+			// and removed rather than set: a request that began before that recovery still
+			// holds the mark as true, and Nextcloud would write no value that it holds.
+			$this->config->deleteKey(AppConstants::APP_ID, self::PENDING_KEY);
+		}
 	}
 
 	/**
 	 * Whether a failure may wait for a search that works again: as the value of the app
-	 * says, and when it has none, as after an update from 0.5.0, as the history says, which
-	 * recordSuccess() reads once for it.
+	 * says, and when it has none, as after a failure or an update from 0.5.0, as the
+	 * history says, which recordSuccess() reads once for it.
 	 */
 	private function mayAwaitRecovery(): bool {
 		if (!$this->config->hasKey(AppConstants::APP_ID, self::PENDING_KEY)) {
@@ -219,9 +224,10 @@ final class SearchDiagnostics {
 	/**
 	 * The message of an error without the token, the term and the query of a URL, in
 	 * which Guzzle and cURL repeat the term, as the history and the log may show it. The
-	 * token and the term go in any case of any script, Ärger for ärger as well, and after
-	 * the rest is cleaned up, so that removing a part of the message can't join one of
-	 * them together.
+	 * token and the term go in any case, also of letters beyond ASCII, Ärger for ärger as
+	 * well, by the simple case folding of Unicode, which leaves STRASSE for straße; and
+	 * after the rest is cleaned up, so that removing a part of the message can't join one
+	 * of them together.
 	 *
 	 * @param list<string> $secrets
 	 */

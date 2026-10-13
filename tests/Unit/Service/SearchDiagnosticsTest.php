@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Service;
 
+use Closure;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Model\DiagnosticsHistory;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
@@ -34,6 +35,10 @@ final class SearchDiagnosticsTest extends TestCase {
 	private int $reads = 0;
 	/** The number of times that the history was written. */
 	private int $writes = 0;
+	/** The number of times that the mark of a failure that waits was written. */
+	private int $marks = 0;
+	/** What another request does right after the next write of the history, as a race. */
+	private ?Closure $afterNextWrite = null;
 
 	/**
 	 * @return array<string, array{Throwable, list<string>, string, string}>
@@ -166,20 +171,34 @@ final class SearchDiagnosticsTest extends TestCase {
 
 	/**
 	 * The history is lazy, and the mark that a failure waits for a search that works again
-	 * isn't, so that a search that works reads only the mark.
+	 * isn't, so that a search that works reads only the mark. A failure removes the mark
+	 * after it saved the history: a request that began before a recovery still holds the
+	 * mark as true, and Nextcloud writes no value that it holds (#133).
 	 */
 	public function testTheHistoryIsStoredLazilyUnderOneKey(): void {
+		$calls = [];
 		$config = $this->createMock(IAppConfig::class);
 		$config->method('getValueArray')->willReturn([]);
 		$config->expects(self::once())
 			->method('setValueArray')
-			->with(AppConstants::APP_ID, 'diagnostics', self::callback(static fn (array $value): bool => $value['failed'] === 1), true);
+			->with(AppConstants::APP_ID, 'diagnostics', self::callback(static fn (array $value): bool => $value['failed'] === 1), true)
+			->willReturnCallback(static function () use (&$calls): bool {
+				$calls[] = 'history';
+
+				return true;
+			});
 		$config->expects(self::once())
-			->method('setValueBool')
-			->with(AppConstants::APP_ID, 'diagnostics_pending', true);
+			->method('deleteKey')
+			->with(AppConstants::APP_ID, 'diagnostics_pending')
+			->willReturnCallback(static function () use (&$calls): void {
+				$calls[] = 'mark';
+			});
+		$config->expects(self::never())->method('setValueBool');
 
 		(new SearchDiagnostics($config, $this->clock(), $this->noCache()))
 			->recordFailure(SearchEvent::STEP_FILES, new RuntimeException('Storage unavailable'), 20, []);
+
+		self::assertSame(['history', 'mark'], $calls);
 	}
 
 	public function testANegativeDurationCountsAsNone(): void {
@@ -246,13 +265,15 @@ final class SearchDiagnosticsTest extends TestCase {
 	}
 
 	public function testAFailureMarksThatItWaitsForASearchThatWorksAgain(): void {
+		$this->stored['diagnostics_pending'] = false;
 		$diagnostics = $this->diagnostics();
 
 		$diagnostics->recordRetry(new RuntimeException('Timeout'), 3000, []);
-		self::assertArrayNotHasKey('diagnostics_pending', $this->stored);
+		self::assertFalse($this->stored['diagnostics_pending']);
 
+		// Without the mark, the next search that works reads the history once.
 		$diagnostics->recordFailure(SearchEvent::STEP_PAPERLESS, new RuntimeException('Timeout'), 3000, []);
-		self::assertTrue($this->stored['diagnostics_pending']);
+		self::assertArrayNotHasKey('diagnostics_pending', $this->stored);
 
 		$diagnostics->recordSuccess();
 		self::assertFalse($this->stored['diagnostics_pending']);
@@ -327,8 +348,9 @@ final class SearchDiagnosticsTest extends TestCase {
 	}
 
 	/**
-	 * The search that works again takes the counted failures along, and the next failure
-	 * is a new outage, which the history shows at once.
+	 * The search that works again takes the counted failures along. It doesn't end the 30
+	 * seconds: a failure within them only counts, and the first one after them writes as a
+	 * new outage (#133).
 	 */
 	public function testTheRecoveryTakesTheCountedFailuresAlong(): void {
 		$diagnostics = $this->diagnostics($this->memoryCache());
@@ -343,13 +365,79 @@ final class SearchDiagnosticsTest extends TestCase {
 		self::assertSame(self::NOW + 6, $diagnostics->getHistory()?->recoveredAt);
 
 		$this->now = self::NOW + 7;
+		$diagnostics->recordFailure(SearchEvent::STEP_PAPERLESS, new RuntimeException('Counted after the recovery'), 3000, []);
+		self::assertSame(2, $this->writes);
+		self::assertSame(self::NOW + 6, $diagnostics->getHistory()?->recoveredAt);
+
+		$this->now = self::NOW + 30;
 		$diagnostics->recordFailure(SearchEvent::STEP_PAPERLESS, new RuntimeException('New outage'), 3000, []);
 
 		$history = $diagnostics->getHistory();
 		self::assertNotNull($history);
-		self::assertSame(3, $history->failed);
+		self::assertSame(4, $history->failed);
 		self::assertTrue($history->awaitsRecovery());
 		self::assertSame('New outage', $history->events[0]->message);
+	}
+
+	/**
+	 * A struggling Paperless often fails only some of the requests. Failing every other one
+	 * for 30 seconds writes one failure and one recovery, not one of each per request, and
+	 * the first write after the 30 seconds counts every failure in between (#133).
+	 */
+	public function testAPaperlessThatFailsEveryOtherRequestWritesOnceInThirtySeconds(): void {
+		$diagnostics = $this->diagnostics($this->memoryCache());
+
+		for ($second = 0; $second < 30; $second++) {
+			$this->now = self::NOW + $second;
+			if ($second % 2 === 0) {
+				$diagnostics->recordFailure(SearchEvent::STEP_PAPERLESS, new RuntimeException('Failure at ' . $second), 3000, []);
+			} else {
+				$diagnostics->recordSuccess();
+			}
+		}
+
+		self::assertSame(2, $this->writes);
+		self::assertSame(2, $this->marks);
+		self::assertSame(1, $diagnostics->getHistory()?->failed);
+		self::assertSame(self::NOW + 1, $diagnostics->getHistory()?->recoveredAt);
+
+		$this->now = self::NOW + 30;
+		$diagnostics->recordFailure(SearchEvent::STEP_PAPERLESS, new RuntimeException('Failure at 30'), 3000, []);
+		$this->now = self::NOW + 31;
+		$diagnostics->recordSuccess();
+
+		$history = $diagnostics->getHistory();
+		self::assertNotNull($history);
+		self::assertSame(4, $this->writes);
+		self::assertSame(16, $history->failed);
+		self::assertSame(self::NOW + 31, $history->recoveredAt);
+		self::assertSame(['Failure at 30', 'Failure at 0'], array_map(static fn (SearchEvent $event): string => $event->message, $history->events));
+	}
+
+	/**
+	 * A failure of another request that is saved right after a recovery awaits the next
+	 * search that works, which notes its recovery, rather than staying unrecovered while
+	 * every search after it works (#133).
+	 */
+	public function testAFailureSavedRightAfterTheRecoveryAwaitsTheNextSearchThatWorks(): void {
+		$diagnostics = $this->diagnostics();
+		$diagnostics->recordFailure(SearchEvent::STEP_PAPERLESS, new RuntimeException('First'), 3000, []);
+
+		$this->now = self::NOW + 10;
+		$this->afterNextWrite = function (): void {
+			$this->diagnostics()->recordFailure(SearchEvent::STEP_PAPERLESS, new RuntimeException('Meanwhile'), 3000, []);
+		};
+		$diagnostics->recordSuccess();
+		self::assertTrue($diagnostics->getHistory()?->awaitsRecovery());
+
+		$this->now = self::NOW + 20;
+		$diagnostics->recordSuccess();
+
+		$history = $diagnostics->getHistory();
+		self::assertNotNull($history);
+		self::assertSame(2, $history->failed);
+		self::assertSame(self::NOW + 20, $history->recoveredAt);
+		self::assertFalse($this->stored['diagnostics_pending']);
 	}
 
 	/**
@@ -510,6 +598,11 @@ final class SearchDiagnosticsTest extends TestCase {
 		$config->method('setValueArray')->willReturnCallback(function (string $app, string $key, array $value): bool {
 			$this->stored[$key] = $value;
 			$this->writes++;
+			$race = $this->afterNextWrite;
+			$this->afterNextWrite = null;
+			if ($race !== null) {
+				$race();
+			}
 
 			return true;
 		});
@@ -521,6 +614,7 @@ final class SearchDiagnosticsTest extends TestCase {
 		});
 		$config->method('setValueBool')->willReturnCallback(function (string $app, string $key, bool $value): bool {
 			$this->stored[$key] = $value;
+			$this->marks += $key === 'diagnostics_pending' ? 1 : 0;
 
 			return true;
 		});
@@ -532,6 +626,7 @@ final class SearchDiagnosticsTest extends TestCase {
 		$config->method('hasKey')->willReturnCallback(fn (string $app, string $key): bool => array_key_exists($key, $this->stored));
 		$config->method('deleteKey')->willReturnCallback(function (string $app, string $key): void {
 			unset($this->stored[$key]);
+			$this->marks += $key === 'diagnostics_pending' ? 1 : 0;
 		});
 
 		return $config;
