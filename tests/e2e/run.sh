@@ -68,6 +68,15 @@ assert_response() {
 	"${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_response.py "${mode}" "$@" < "${file}"
 }
 
+# Checks what a command of occ wrote as JSON into the file $2, in the mode $1 of
+# assert_occ.py, with the rest as the arguments of the mode.
+assert_occ() {
+	mode="$1"
+	file="$2"
+	shift 2
+	"${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_occ.py "${mode}" "$@" < "${file}"
+}
+
 # Checks the history of the problems of the search on the page of the administration
 # settings in the file $2 in the mode $1 of assert_history.py, with the rest as the
 # arguments of the mode.
@@ -337,21 +346,19 @@ expect_status 400 'Saving a host that does not resolve, without the switch for t
 expect_text '"code":"unknown_host"' "${TMP_DIR}/answer.json" \
 	"A host that does not resolve isn't named as one: $(cat "${TMP_DIR}/answer.json")"
 
-curl --fail-with-body --silent --show-error \
-	--user "e2e-admin:${PASSWORD}" \
-	--header 'Accept: application/json' \
-	--header 'OCS-APIRequest: true' \
-	--request POST \
-	--data-urlencode 'url=http://paperless-mock:8080' \
-	--data-urlencode 'allowLocal=1' \
-	--data-urlencode 'token=e2e-only-token' \
-	--data-urlencode 'alwaysSearch=0' \
-	--data-urlencode 'archiveOwner=e2e-user' \
-	--output "${TMP_DIR}/settings.json" \
-	"${SETTINGS_URL}"
-
-if grep --fixed-strings 'e2e-only-token' "${TMP_DIR}/settings.json" >/dev/null; then
-	echo "Settings response exposed the Paperless API token." >&2
+# occ sets the app up as the settings page does, for Ansible, Docker and other scripts,
+# with the token from the standard input instead of the command line (#136). It saves
+# the settings once the mock answers, and says so without the token; the test command
+# then tests them and exits with 0.
+printf '%s\n' 'e2e-only-token' \
+	| occ paperless_unified_search:setup --url=http://paperless-mock:8080 \
+		--archive-account=e2e-user --allow-local --no-always-search --token-stdin \
+		>"${TMP_DIR}/setup.txt"
+expect_text 'Paperless 3.3.0 (API 10) answers at http://paperless-mock:8080. The settings are saved.' \
+	"${TMP_DIR}/setup.txt" "occ didn't set the app up: $(cat "${TMP_DIR}/setup.txt")"
+occ paperless_unified_search:test >"${TMP_DIR}/test.txt"
+if grep --fixed-strings 'e2e-only-token' "${TMP_DIR}/setup.txt" "${TMP_DIR}/test.txt" >/dev/null; then
+	echo "occ showed the Paperless API token." >&2
 	exit 1
 fi
 
@@ -498,6 +505,10 @@ assert_response android "${TMP_DIR}/android.json"
 
 search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/inaccessible.json"
 assert_response no-results "${TMP_DIR}/inaccessible.json"
+# occ names the reason of each document that the search leaves out (#136): the archive
+# account hasn't shared the file of 123 with e2e-other, and no file stands for 999.
+occ paperless_unified_search:search e2e-other mobiletest --explain --json >"${TMP_DIR}/explain-unshared.json"
+assert_occ verdicts "${TMP_DIR}/explain-unshared.json" '123=not_shared=/Documents/Mobile viewer test [P123].pdf' 999=no_file
 resolve e2e-other "${LINK}" "${TMP_DIR}/link-inaccessible.json"
 assert_response no-file-link "${TMP_DIR}/link-inaccessible.json"
 
@@ -525,6 +536,13 @@ curl --fail-with-body --silent --show-error \
 	"${BASE_URL}/ocs/v2.php/apps/files_sharing/api/v1/shares"
 search e2e-other 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/shared.json"
 assert_response shared "${TMP_DIR}/shared.json"
+occ paperless_unified_search:search e2e-other mobiletest --explain --json >"${TMP_DIR}/explain-shared.json"
+assert_occ verdicts "${TMP_DIR}/explain-shared.json" '123=shown=/Mobile viewer test [P123].pdf' 999=no_file
+# The check of occ compares the documents of Paperless with the files of the archive
+# account: the mock lists 123 and 999, and only 123 has a file.
+occ paperless_unified_search:check >"${TMP_DIR}/check.txt"
+expect_text 'Coverage: 1 of 2 Paperless document(s) have a file of the archive account. Without one: 999.' \
+	"${TMP_DIR}/check.txt" "occ checked the coverage wrongly: $(cat "${TMP_DIR}/check.txt")"
 resolve e2e-other "${LINK}" "${TMP_DIR}/link-shared.json"
 assert_response file-link "${TMP_DIR}/link-shared.json"
 
@@ -636,6 +654,10 @@ expect_status 200 'Storing an archive account that does not exist' \
 	--request POST \
 	--data-urlencode 'value=e2e-gone' \
 	"${BASE_URL}/ocs/v2.php/apps/provisioning_api/api/v1/config/apps/paperless_unified_search/archive_owner"
+# The overview of the administration settings warns that the search shows no Paperless
+# documents, with a link to the settings of the app (#136).
+occ setupchecks --output=json >"${TMP_DIR}/setupchecks.json" || true
+assert_occ setupcheck "${TMP_DIR}/setupchecks.json" warning 'The archive account e2e-gone does not exist'
 browser_checks
 for setting in 'paperless_url=http://paperless-mock:8080' 'archive_owner=e2e-user'; do
 	if [[ "$(occ config:app:get paperless_unified_search "${setting%%=*}")" != "${setting#*=}" ]]; then
@@ -651,4 +673,4 @@ phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed in ${SECONDS} s: settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, pages of results filled across pages of Paperless, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, the settings page in the browser with its accessibility, and the search dialog with a result that opens the Viewer on a laptop and a phone."
+echo "Docker E2E passed in ${SECONDS} s: the set-up, the test, the explained search and the check of occ, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, pages of results filled across pages of Paperless, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, the settings page in the browser with its accessibility, and the search dialog with a result that opens the Viewer on a laptop and a phone."

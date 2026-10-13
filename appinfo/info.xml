@@ -19,6 +19,7 @@ Find invoices, contracts, letters, statements, and any text recognized inside yo
 - Shows a document only to the users who may open its synchronized file
 - Automatically excludes documents that have not yet been synchronized
 - Diagnostics: the settings test the connection and keep a history of failed searches with their errors, also where the hoster keeps Nextcloud's log from administrators
+- For administrators: set the app up and test it with occ, without a browser, ask occ why a user doesn't see a document, and see the state of the search in the overview of the administration settings
 
 ### Privacy and access control
 
@@ -57,6 +58,7 @@ Finde Rechnungen, Verträge, Briefe, Bescheide und beliebige Inhalte aus deinen 
 - Zeigt ein Dokument nur den Benutzern, die seine synchronisierte Datei öffnen dürfen
 - Blendet noch nicht synchronisierte Dokumente automatisch aus
 - Diagnose: Die Einstellungen testen die Verbindung und führen einen Verlauf der fehlgeschlagenen Suchen mit ihren Fehlern, auch wenn der Hoster das Protokoll von Nextcloud vor Administratoren verbirgt
+- Für Administratoren: Die App mit occ ohne Browser einrichten und testen, mit occ erklären lassen, warum ein Benutzer ein Dokument nicht sieht, und den Zustand der Suche in der Übersicht der Verwaltungseinstellungen sehen
 
 ### Datenschutz und Zugriffssteuerung
 
@@ -107,6 +109,12 @@ Dokumentation (auf Englisch): <https://dennis-otto.github.io/paperless-unified-s
 		<php min-version="8.2"/>
 		<nextcloud min-version="33" max-version="35"/>
 	</dependencies>
+	<commands>
+		<command>OCA\PaperlessUnifiedSearch\Command\Setup</command>
+		<command>OCA\PaperlessUnifiedSearch\Command\Test</command>
+		<command>OCA\PaperlessUnifiedSearch\Command\Search</command>
+		<command>OCA\PaperlessUnifiedSearch\Command\Check</command>
+	</commands>
 	<settings>
 		<admin>OCA\PaperlessUnifiedSearch\Settings\AdminSettings</admin>
 		<admin-section>OCA\PaperlessUnifiedSearch\Settings\AdminSection</admin-section>

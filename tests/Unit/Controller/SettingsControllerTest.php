@@ -17,6 +17,7 @@ use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
+use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Http;
@@ -611,6 +612,7 @@ final class SettingsControllerTest extends TestCase {
 			$configService,
 			new PaperlessApiService($configService, $clientService, $diagnostics, $clock, $appManager),
 			$diagnostics,
+			new SettingsMessages($l10n),
 			$l10n,
 			$logger ?? $this->createStub(LoggerInterface::class),
 		);

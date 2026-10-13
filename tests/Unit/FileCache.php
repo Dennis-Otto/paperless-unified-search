@@ -24,14 +24,14 @@ trait FileCache {
 	private array $searches = [];
 
 	/**
-	 * The folder /dennis/files of the user dennis, with these files and folders in it or in
-	 * the folders shared with him. Its search answers a query as Nextcloud's file cache
-	 * does, with the nodes whose names match it, and fails the test for a search by text,
-	 * which Nextcloud runs as a query of its own for every call.
+	 * The folder /dennis/files of the user dennis, or of another user, with these files and
+	 * folders in it or in the folders shared with the user. Its search answers a query as
+	 * Nextcloud's file cache does, with the nodes whose names match it, and fails the test
+	 * for a search by text, which Nextcloud runs as a query of its own for every call.
 	 *
 	 * @param list<Node> $nodes
 	 */
-	private function userFolder(array $nodes): Folder {
+	private function userFolder(array $nodes, string $uid = 'dennis'): Folder {
 		$folder = $this->createStub(Folder::class);
 		$folder->method('search')->willReturnCallback(function (string|ISearchQuery $query) use ($nodes): array {
 			self::assertInstanceOf(ISearchQuery::class, $query, 'The file cache was searched by text.');
@@ -42,8 +42,9 @@ trait FileCache {
 				fn (Node $node): bool => $this->finds($query->getSearchOperation(), $node->getName()),
 			));
 		});
+		$home = '/' . $uid . '/files';
 		$folder->method('getRelativePath')->willReturnCallback(
-			static fn (string $path): ?string => str_starts_with($path, '/dennis/files/') ? substr($path, strlen('/dennis/files')) : null,
+			static fn (string $path): ?string => str_starts_with($path, $home . '/') ? substr($path, strlen($home)) : null,
 		);
 
 		return $folder;

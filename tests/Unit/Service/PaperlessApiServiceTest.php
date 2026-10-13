@@ -741,6 +741,62 @@ final class PaperlessApiServiceTest extends TestCase {
 	}
 
 	/**
+	 * @return array<string, array{string, int, ?list<int>}>
+	 */
+	public static function probes(): array {
+		return [
+			'the IDs of all documents' => ['{"count":3,"next":null,"all":[3,2,1],"results":[{"id":3}]}', 3, [3, 2, 1]],
+			'no documents' => ['{"count":0,"next":null,"all":[],"results":[]}', 0, []],
+			'no field all' => ['{"count":1180,"next":null,"results":[{"id":3}]}', 1180, null],
+			'no list in all' => ['{"count":3,"all":"3,2,1","results":[{"id":3}]}', 3, null],
+			'an ID that is no number' => ['{"count":2,"all":[2,"1"],"results":[{"id":2}]}', 2, null],
+			'no count' => ['{"results":[{"id":3}]}', 1, null],
+		];
+	}
+
+	/**
+	 * The test of the connection also says how many documents the account of the token may
+	 * view, and which, when Paperless lists their IDs in the field all, as Paperless-ngx
+	 * does for the selection of all documents.
+	 *
+	 * @param ?list<int> $documentIds
+	 */
+	#[DataProvider('probes')]
+	public function testTheProbeCountsTheDocumentsOfPaperless(string $body, int $documents, ?array $documentIds): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response(200, $body, self::PAPERLESS_3));
+
+		$status = $this->service($client)->probe('https://paperless.example.com', 'TEST_VALUE', false);
+
+		self::assertSame('3.3.0', $status->version?->version);
+		self::assertSame($documents, $status->documents);
+		self::assertSame($documentIds, $status->documentIds);
+	}
+
+	/**
+	 * occ tests the stored settings, and the overview of the administration settings then
+	 * shows the version of the answer.
+	 */
+	public function testProbingTheSettingsUsesThemAndRemembersTheVersion(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with(
+				'http://paperless:8000/api/documents/',
+				self::callback(static fn (array $options): bool => $options['headers']['Authorization'] === 'Token TEST_VALUE'
+					&& $options['query'] === ['page' => 1, 'page_size' => 1, 'fields' => 'id']
+					&& $options['nextcloud'] === ['allow_local_address' => true]),
+			)
+			->willReturn($this->response(200, self::NO_DOCUMENTS, self::PAPERLESS_3));
+
+		$status = $this->service($client, 'http://paperless:8000', 'TEST_VALUE', true)->probeTheSettings();
+
+		self::assertSame(0, $status->documents);
+		self::assertSame(['paperless_version', 'paperless_api_version'], $this->written);
+		self::assertSame('3.3.0', $this->stored['paperless_version']);
+	}
+
+	/**
 	 * A search stores the version of Paperless only when it changes, so that searches that
 	 * work write nothing; an answer without a version keeps the stored one.
 	 */
