@@ -13,6 +13,7 @@ use ArrayObject;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Exception\InvalidSettingException;
 use OCA\PaperlessUnifiedSearch\Exception\SettingProblem;
+use OCA\PaperlessUnifiedSearch\Model\PaperlessVersion;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCP\IAppConfig;
@@ -35,6 +36,8 @@ final class ConfigServiceTest extends TestCase {
 		$config = $this->settings([
 			AppConstants::APP_ID . '.paperless_url' => 'https://paperless.example.com',
 			AppConstants::APP_ID . '.archive_owner' => 'archive',
+			AppConstants::APP_ID . '.paperless_version' => '3.3.0',
+			AppConstants::APP_ID . '.paperless_api_version' => '10',
 			'paperless_sync.target_user' => 'sync',
 		]);
 		$config->method('getValueBool')->willReturnCallback(
@@ -56,6 +59,8 @@ final class ConfigServiceTest extends TestCase {
 			'tokenUnreadable' => false,
 			'archiveOwnerMissing' => false,
 			'allowLocal' => true,
+			'paperlessVersion' => '3.3.0',
+			'paperlessApiVersion' => '10',
 		], $serialized);
 		self::assertStringNotContainsString('TEST_VALUE', json_encode($serialized, JSON_THROW_ON_ERROR));
 	}
@@ -512,7 +517,7 @@ final class ConfigServiceTest extends TestCase {
 	public function testResetDeletesTheUrlTheSwitchesTheArchiveAccountAndTheToken(): void {
 		$deletedKeys = [];
 		$config = $this->createMock(IAppConfig::class);
-		$config->expects(self::exactly(4))
+		$config->expects(self::exactly(6))
 			->method('deleteKey')
 			->willReturnCallback(static function (string $app, string $key) use (&$deletedKeys): void {
 				$deletedKeys[] = $app . '.' . $key;
@@ -532,6 +537,8 @@ final class ConfigServiceTest extends TestCase {
 			AppConstants::APP_ID . '.always_search',
 			AppConstants::APP_ID . '.archive_owner',
 			AppConstants::APP_ID . '.allow_local',
+			AppConstants::APP_ID . '.paperless_version',
+			AppConstants::APP_ID . '.paperless_api_version',
 		], $deletedKeys);
 		self::assertSame([
 			'url' => '',
@@ -542,8 +549,89 @@ final class ConfigServiceTest extends TestCase {
 			'tokenUnreadable' => false,
 			'archiveOwnerMissing' => false,
 			'allowLocal' => false,
+			'paperlessVersion' => '',
+			'paperlessApiVersion' => '',
 		], $result->jsonSerialize());
 		self::assertSame('', $service->getToken());
+	}
+
+	/**
+	 * Saving stores the version of Paperless that the test of the connection found, which
+	 * the settings show, and forgets an older one when the answer named none.
+	 */
+	public function testSaveStoresTheVersionOfTheTestedPaperless(): void {
+		$strings = [];
+		$deleted = [];
+		$config = $this->createStub(IAppConfig::class);
+		$config->method('setValueString')->willReturnCallback(static function (string $app, string $key, string $value) use (&$strings): bool {
+			$strings[$app . '.' . $key] = $value;
+
+			return true;
+		});
+		$config->method('deleteKey')->willReturnCallback(static function (string $app, string $key) use (&$deleted): void {
+			$deleted[] = $app . '.' . $key;
+		});
+		$service = $this->service($config, $this->createStub(ICredentialsManager::class));
+
+		$result = $service->save('https://paperless.example.com', 'TEST_VALUE', paperlessVersion: PaperlessVersion::of('3.3.0', '10'));
+
+		self::assertSame('3.3.0', $strings[AppConstants::APP_ID . '.paperless_version'] ?? null);
+		self::assertSame('10', $strings[AppConstants::APP_ID . '.paperless_api_version'] ?? null);
+		self::assertSame('3.3.0', $result->jsonSerialize()['paperlessVersion']);
+		self::assertSame('10', $result->jsonSerialize()['paperlessApiVersion']);
+
+		$result = $service->save('https://paperless.example.com', 'TEST_VALUE');
+
+		self::assertContains(AppConstants::APP_ID . '.paperless_version', $deleted);
+		self::assertContains(AppConstants::APP_ID . '.paperless_api_version', $deleted);
+		self::assertSame('', $result->jsonSerialize()['paperlessVersion']);
+	}
+
+	/**
+	 * A search stores the version that Paperless names only when it changed, so that the
+	 * searches that work write nothing.
+	 */
+	public function testTheVersionOfPaperlessIsWrittenOnlyWhenItChanges(): void {
+		$config = $this->settings([
+			AppConstants::APP_ID . '.paperless_version' => '3.3.0',
+			AppConstants::APP_ID . '.paperless_api_version' => '10',
+		]);
+		$written = [];
+		$config->expects(self::exactly(2))
+			->method('setValueString')
+			->willReturnCallback(static function (string $app, string $key, string $value) use (&$written): bool {
+				$written[$key] = $value;
+
+				return true;
+			});
+		$service = $this->service($config, $this->createStub(ICredentialsManager::class));
+
+		$service->rememberPaperlessVersion(PaperlessVersion::of('3.3.0', '10'));
+		$service->rememberPaperlessVersion(null);
+		$service->rememberPaperlessVersion(PaperlessVersion::of('3.4.0', '10'));
+
+		self::assertSame(['paperless_version' => '3.4.0', 'paperless_api_version' => '10'], $written);
+	}
+
+	/**
+	 * @return array<string, array{string, string}>
+	 */
+	public static function storedValuesOfNoVersion(): array {
+		return [
+			'nothing stored' => ['', ''],
+			'no version of the API' => ['3.3.0', ''],
+			'markup' => ['<b>3.3.0</b>', '10'],
+		];
+	}
+
+	#[DataProvider('storedValuesOfNoVersion')]
+	public function testStoredValuesThatAreNoVersionAreNone(string $version, string $apiVersion): void {
+		$config = $this->settings([
+			AppConstants::APP_ID . '.paperless_version' => $version,
+			AppConstants::APP_ID . '.paperless_api_version' => $apiVersion,
+		]);
+
+		self::assertNull($this->service($config, $this->createStub(ICredentialsManager::class))->getPaperlessVersion());
 	}
 
 	public function testResetForgetsATokenThatCannotBeDecrypted(): void {

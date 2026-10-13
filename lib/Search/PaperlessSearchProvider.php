@@ -11,6 +11,7 @@ namespace OCA\PaperlessUnifiedSearch\Search;
 
 use DateTimeImmutable;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
+use OCA\PaperlessUnifiedSearch\Exception\PaperlessQueryRejected;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
@@ -97,6 +98,7 @@ final class PaperlessSearchProvider implements IExternalProvider {
 		$entryError = null;
 		$fileError = null;
 		$more = false;
+		$rejected = false;
 		$step = SearchEvent::STEP_PAPERLESS;
 		try {
 			do {
@@ -124,6 +126,14 @@ final class PaperlessSearchProvider implements IExternalProvider {
 				}
 			} while ($more && count($entries) < $pager->limit && $pages < self::PAGE_BUDGET
 				&& $this->getElapsedMs($started) < self::TIME_BUDGET_MS);
+		} catch (PaperlessQueryRejected $rejection) {
+			// A query that the user is still typing, or a page past the last one: Paperless
+			// works, and there is nothing more to find.
+			$this->logger->debug('Paperless rejected the query of a search with HTTP {status}', [
+				'app' => AppConstants::APP_ID,
+				'status' => $rejection->status,
+			]);
+			$rejected = true;
 		} catch (Throwable $exception) {
 			$this->logger->warning('Paperless unified search failed ({errorType})', [
 				'app' => AppConstants::APP_ID,
@@ -146,6 +156,12 @@ final class PaperlessSearchProvider implements IExternalProvider {
 				'count' => $leftOut,
 				'errorType' => $entryError::class,
 			]);
+		}
+
+		// A search whose query Paperless refused is no search for the diagnostics: what
+		// users type can neither fill the history nor end a failure in it.
+		if ($rejected) {
+			return SearchResult::complete($this->getName(), $entries);
 		}
 
 		// However many pages of Paperless it took, this is one search for the diagnostics.

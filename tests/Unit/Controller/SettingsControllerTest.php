@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Controller;
 
+use DateTimeImmutable;
 use JsonException;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Controller\SettingsController;
@@ -17,6 +18,7 @@ use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
+use OCP\App\IAppManager;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Http\Client\IClient;
@@ -24,6 +26,7 @@ use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
 use OCP\Http\Client\LocalServerException;
 use OCP\IAppConfig;
+use OCP\ICacheFactory;
 use OCP\IL10N;
 use OCP\IRequest;
 use OCP\Security\ICredentialsManager;
@@ -88,6 +91,8 @@ final class SettingsControllerTest extends TestCase {
 			'tokenUnreadable' => false,
 			'archiveOwnerMissing' => false,
 			'allowLocal' => false,
+			'paperlessVersion' => '',
+			'paperlessApiVersion' => '',
 		], json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR));
 		self::assertStringNotContainsString('TEST_VALUE', $response->render());
 		self::assertNotContains(AppConstants::APP_ID . '.diagnostics', $deleted);
@@ -556,6 +561,8 @@ final class SettingsControllerTest extends TestCase {
 			'tokenUnreadable' => false,
 			'archiveOwnerMissing' => false,
 			'allowLocal' => false,
+			'paperlessVersion' => '',
+			'paperlessApiVersion' => '',
 		], json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR));
 		self::assertContains(AppConstants::APP_ID . '.diagnostics', $deleted);
 	}
@@ -588,7 +595,11 @@ final class SettingsControllerTest extends TestCase {
 		$clientService = $this->createStub(IClientService::class);
 		$clientService->method('newClient')->willReturn($client);
 		$configService = new ConfigService($config, $credentials, $this->accounts('archive'), $this->createStub(LoggerInterface::class));
-		$diagnostics = new SearchDiagnostics($config, $this->createStub(ITimeFactory::class));
+		$clock = $this->createStub(ITimeFactory::class);
+		$clock->method('now')->willReturn(new DateTimeImmutable('@1791500000'));
+		$diagnostics = new SearchDiagnostics($config, $clock, $this->createStub(ICacheFactory::class));
+		$appManager = $this->createStub(IAppManager::class);
+		$appManager->method('getAppVersion')->willReturn('0.5.1');
 		$l10n = $this->createStub(IL10N::class);
 		$l10n->method('t')->willReturnCallback(
 			static fn (string $text, array $parameters = []): string => 'DE:' . vsprintf($text, $parameters),
@@ -598,7 +609,7 @@ final class SettingsControllerTest extends TestCase {
 			AppConstants::APP_ID,
 			$this->createStub(IRequest::class),
 			$configService,
-			new PaperlessApiService($configService, $clientService, $diagnostics),
+			new PaperlessApiService($configService, $clientService, $diagnostics, $clock, $appManager),
 			$diagnostics,
 			$l10n,
 			$logger ?? $this->createStub(LoggerInterface::class),

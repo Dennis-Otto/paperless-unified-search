@@ -413,6 +413,12 @@ if [[ "${received}" -ne 2 ]]; then
 	echo "The mock received ${received} request(s) instead of the 2 of the saves with a token." >&2
 	exit 1
 fi
+# The test of the connection stores the version that the answer of Paperless names, which
+# decides whether a query goes to the simple mode of its search (#128).
+if ! grep --fixed-strings '"paperlessVersion":"3.3.0","paperlessApiVersion":"10"' "${TMP_DIR}/answer.json" >/dev/null; then
+	echo "The save doesn't name the version of Paperless: $(cat "${TMP_DIR}/answer.json")" >&2
+	exit 1
+fi
 
 # A failed test of the connection names its cause in the language of the administrator,
 # with a code that says what failed, and keeps the settings as they are (#120). An
@@ -555,6 +561,16 @@ cursor="$(assert_response page "${TMP_DIR}/page-1.json" more 620 624 626 627 630
 search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/page-2.json" pagetest "${cursor}"
 assert_response page "${TMP_DIR}/page-2.json" last 635 640 >/dev/null
 
+# Paperless 3 refuses a query of its advanced syntax that is still being typed with
+# HTTP 400, and the app finds the documents of its words in the simple mode of the
+# search instead; it refuses a page past the last one with HTTP 404, which finds nothing.
+# Neither is a problem of the search: the history below counts only the failure and the
+# retry that follow them (#128).
+search e2e-user 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/typing.json" 'mobiletest created:[2026 to'
+assert_response browser "${TMP_DIR}/typing.json"
+search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/past-the-end.json" pagetest 100
+assert_response no-results "${TMP_DIR}/past-the-end.json"
+
 # Paperless fails with HTTP 500 for e2e-error, and the connection of the first search
 # for e2e-drop breaks off without an answer. The first search shows no document and
 # goes into the history of the problems of the search; the second shows its document,
@@ -637,4 +653,4 @@ phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed in ${SECONDS} s: settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, pages of results filled across pages of Paperless, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."
+echo "Docker E2E passed in ${SECONDS} s: settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, pages of results filled across pages of Paperless, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."

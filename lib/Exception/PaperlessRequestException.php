@@ -16,9 +16,10 @@ use Throwable;
 /**
  * A request to Paperless that failed, with the reason that the settings name. Its message
  * is the technical one, in English, for the log and the history of problems; the settings
- * show a translated message for its reason instead.
+ * show a translated message for its reason instead. A search whose query Paperless
+ * refuses fails with the subclass PaperlessQueryRejected, which is no problem of the search.
  */
-final class PaperlessRequestException extends RuntimeException {
+class PaperlessRequestException extends RuntimeException {
 	/** The errors of cURL about the certificate of the server. */
 	private const CERTIFICATE_ERRORS = [51, 60, 77, 83];
 	/** The errors of cURL that fail the encryption before any certificate is checked. */
@@ -69,15 +70,35 @@ final class PaperlessRequestException extends RuntimeException {
 		return new self(self::reasonOf($error), $error->getMessage(), null, $error);
 	}
 
+	/**
+	 * Whether Nextcloud refused the address of a request as one of the local network, maybe
+	 * inside another error, which it would refuse again; not for a name that doesn't
+	 * resolve, which Nextcloud reports with the same exception.
+	 */
+	public static function isRefusedAddress(Throwable $error): bool {
+		for ($cause = $error; $cause !== null; $cause = $cause->getPrevious()) {
+			if ($cause instanceof LocalServerException) {
+				return !self::isUnknownName($cause);
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * With dns_pinning on, as by default, Nextcloud resolves the name itself for a request
+	 * without local addresses and reports a name without a record of DNS with the exception
+	 * of a local address too: that one is a wrong name, or a lookup that failed for a
+	 * moment, not a local address.
+	 */
+	private static function isUnknownName(LocalServerException $error): bool {
+		return str_starts_with($error->getMessage(), self::NO_DNS_RECORD);
+	}
+
 	private static function reasonOf(Throwable $error): RequestFailure {
 		for ($cause = $error; $cause !== null; $cause = $cause->getPrevious()) {
 			if ($cause instanceof LocalServerException) {
-				// With dns_pinning on, as by default, Nextcloud resolves the name itself for
-				// a request without local addresses and reports a name without a record of
-				// DNS with this exception too: that one is a wrong name, not a local address.
-				return str_starts_with($cause->getMessage(), self::NO_DNS_RECORD)
-					? RequestFailure::UnknownHost
-					: RequestFailure::LocalAddress;
+				return self::isUnknownName($cause) ? RequestFailure::UnknownHost : RequestFailure::LocalAddress;
 			}
 
 			if (preg_match('/\bcURL error (\d+)\b/', $cause->getMessage(), $match) === 1) {

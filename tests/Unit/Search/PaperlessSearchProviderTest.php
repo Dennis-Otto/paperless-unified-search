@@ -20,6 +20,7 @@ use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\FileCache;
+use OCP\App\IAppManager;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Files\File;
 use OCP\Files\Folder;
@@ -28,6 +29,7 @@ use OCP\Http\Client\IClient;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
 use OCP\IAppConfig;
+use OCP\ICacheFactory;
 use OCP\IL10N;
 use OCP\IRequest;
 use OCP\IURLGenerator;
@@ -46,8 +48,14 @@ final class PaperlessSearchProviderTest extends TestCase {
 
 	private const NOW = 1791500000;
 
+	/**
+	 * What the app keeps while no problem happens: the mark that no failure waits for a
+	 * search that works again, which the first search after the update to 0.5.1 stores.
+	 */
+	private const NO_PROBLEM = ['diagnostics_pending' => false];
+
 	/** @var array<string, mixed> the values that the app stored, by key */
-	private array $stored = [];
+	private array $stored = self::NO_PROBLEM;
 
 	/** @var list<array<string, int|string>> the queries of the requests that reached Paperless, oldest first */
 	private array $requests = [];
@@ -88,7 +96,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 				'https://paperless.example.com/api/documents/',
 				self::callback(static function (array $options): bool {
 					return $options['headers']['Authorization'] === 'Token TEST_VALUE'
-						&& $options['headers']['User-Agent'] === 'Nextcloud-Paperless-Unified-Search/0.1'
+						&& $options['headers']['User-Agent'] === 'Nextcloud-Paperless-Unified-Search/0.5.1'
 						&& $options['query']['query'] === 'gross salary'
 						&& $options['query']['fields'] === 'id,title,created,correspondent,document_type,__search_hit__';
 				}),
@@ -135,14 +143,14 @@ final class PaperlessSearchProviderTest extends TestCase {
 
 		$configService = new ConfigService($config, $credentials, $this->accounts('archive'), $this->createStub(LoggerInterface::class));
 		$provider = new PaperlessSearchProvider(
-			new PaperlessApiService($configService, $clientService, new SearchDiagnostics($config, $this->clock())),
+			new PaperlessApiService($configService, $clientService, $this->diagnostics($config), $this->clock(), $this->appManager()),
 			new NextcloudFileLocator($root, $this->createStub(LoggerInterface::class)),
 			$l10n,
 			$urlGenerator,
 			$request,
 			$this->createMock(LoggerInterface::class),
 			$configService,
-			new SearchDiagnostics($config, $this->clock()),
+			$this->diagnostics($config),
 			$this->clock(),
 		);
 
@@ -189,14 +197,14 @@ final class PaperlessSearchProviderTest extends TestCase {
 
 		$configService = new ConfigService($config, $this->createStub(ICredentialsManager::class), $this->accounts(), $this->createStub(LoggerInterface::class));
 		$provider = new PaperlessSearchProvider(
-			new PaperlessApiService($configService, $this->createStub(IClientService::class), new SearchDiagnostics($config, $this->clock())),
+			new PaperlessApiService($configService, $this->createStub(IClientService::class), $this->diagnostics($config), $this->clock(), $this->appManager()),
 			new NextcloudFileLocator($this->createStub(IRootFolder::class), $this->createStub(LoggerInterface::class)),
 			$this->createStub(IL10N::class),
 			$this->createStub(IURLGenerator::class),
 			$this->createStub(IRequest::class),
 			$this->createStub(LoggerInterface::class),
 			$configService,
-			new SearchDiagnostics($config, $this->clock()),
+			$this->diagnostics($config),
 			$this->clock(),
 		);
 
@@ -426,7 +434,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		self::assertSame(100, $result['cursor']);
 		// Four requests to Paperless, one search of the file cache each, and one search.
 		self::assertCount(4, $this->searches);
-		self::assertSame([], $this->stored);
+		self::assertSame(self::NO_PROBLEM, $this->stored);
 	}
 
 	/**
@@ -474,7 +482,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		self::assertTrue($result['isPaginated']);
 		self::assertSame(25, $result['cursor']);
 		// The user sees documents, so the search worked.
-		self::assertSame([], $this->stored);
+		self::assertSame(self::NO_PROBLEM, $this->stored);
 	}
 
 	/**
@@ -684,7 +692,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		self::assertCount(1, $result['entries']);
 		self::assertSame('Receipt', $result['entries'][0]->jsonSerialize()['title']);
 		// The search worked, so the history of its problems stays as it is.
-		self::assertSame([], $this->stored);
+		self::assertSame(self::NO_PROBLEM, $this->stored);
 	}
 
 	/**
@@ -752,7 +760,136 @@ final class PaperlessSearchProviderTest extends TestCase {
 
 		$this->provider($client, [7 => $this->file(7, 'Invoice [P7].pdf')])->search($this->user(), $this->query('invoice'));
 
-		self::assertSame([], $this->stored);
+		self::assertSame(self::NO_PROBLEM, $this->stored);
+	}
+
+	/**
+	 * The first search that works after the update to 0.5.1 stores only the mark that no
+	 * failure waits, after which searches that work read nothing else (#128).
+	 */
+	public function testTheFirstSearchAfterTheUpdateStoresOnlyTheMark(): void {
+		$this->stored = [];
+		$client = $this->paperless(['count' => 1, 'next' => null, 'results' => [['id' => 7, 'title' => 'Invoice']]]);
+
+		$this->provider($client, [7 => $this->file(7, 'Invoice [P7].pdf')])->search($this->user(), $this->query('invoice'));
+
+		self::assertSame(self::NO_PROBLEM, $this->stored);
+	}
+
+	/**
+	 * @return array<string, array{int, string, array<string, string>, int|string|null}>
+	 */
+	public static function rejectedSearches(): array {
+		return [
+			// Paperless 2 never gets the term in the simple mode, which it doesn't have.
+			'a query that Paperless can\'t parse' => [400, '{"query":["Invalid date value \'[2026\' for field \'created\'."]}', ['X-Version' => '2.20.13', 'X-Api-Version' => '9'], null],
+			'a query too long for Paperless' => [400, '{"query":["The search query is too long (4097 characters). The maximum allowed length is 4096 characters."]}', ['X-Version' => '3.3.0', 'X-Api-Version' => '10'], null],
+			'a page past the last one' => [404, '{"detail":"Invalid page."}', [], '25'],
+		];
+	}
+
+	/**
+	 * Nextcloud searches while the user types: a query that Paperless refuses, such as a
+	 * range of dates that isn't typed to its end, finds nothing, and the history of the
+	 * problems neither counts it nor takes it for a search that works again. Every call of
+	 * the API wrote the history, which any user could fill with false failures (#128).
+	 *
+	 * @param array<string, string> $headers
+	 */
+	#[DataProvider('rejectedSearches')]
+	public function testASearchThatPaperlessRejectsLeavesTheHistoryUntouched(int $status, string $body, array $headers, int|string|null $cursor): void {
+		$this->stored['diagnostics'] = ['since' => self::NOW, 'failed' => 1, 'retried' => 0, 'lastFailureAt' => self::NOW, 'recoveredAt' => null, 'events' => []];
+		$this->stored['diagnostics_pending'] = true;
+		$before = $this->stored;
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->answer($status, $body, $headers));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::never())->method('warning');
+		$logger->expects(self::once())
+			->method('debug')
+			->with('Paperless rejected the query of a search with HTTP {status}', [
+				'app' => AppConstants::APP_ID,
+				'status' => $status,
+			]);
+
+		$result = $this->provider($client, logger: $logger)
+			->search($this->user(), $this->query('created:[2026 to', $cursor))
+			->jsonSerialize();
+
+		self::assertSame([], $result['entries']);
+		self::assertFalse($result['isPaginated']);
+		self::assertSame($before, $this->stored);
+	}
+
+	/**
+	 * A later page of Paperless past the last one, as when documents went away between two
+	 * pages, ends the results with those of the pages before (#128).
+	 */
+	public function testARejectedLaterPageKeepsTheResultsOfTheEarlierOnes(): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options): IResponse {
+			return $options['query']['page'] === 1
+				? $this->response(['count' => 30, 'next' => 'https://paperless.example.com/api/documents/?page=2', 'results' => self::documentsWithIds(range(1, 25))])
+				: $this->answer(404, '{"detail":"Invalid page."}');
+		});
+
+		$result = $this->provider($client, $this->files([3, 7]))
+			->search($this->user(), $this->query('invoice', null, 5))
+			->jsonSerialize();
+
+		self::assertSame(self::titlesOf([3, 7]), self::titles($result['entries']));
+		self::assertFalse($result['isPaginated']);
+		self::assertSame(self::NO_PROBLEM, $this->stored);
+	}
+
+	/**
+	 * @return array<string, array{int}>
+	 */
+	public static function failingAnswers(): array {
+		return [
+			'a refused token' => [401],
+			'a server error' => [500],
+		];
+	}
+
+	/**
+	 * Answers that aren't the query of the user stay failures in the history (#128).
+	 */
+	#[DataProvider('failingAnswers')]
+	public function testAnswersThatFailStillGoIntoTheHistory(int $status): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->answer($status, '{"detail":"Failed."}', ['X-Version' => '3.3.0', 'X-Api-Version' => '10']));
+
+		$this->provider($client)->search($this->user(), $this->query('created:[2026 to'));
+
+		$history = $this->history();
+		self::assertSame(1, $history->failed);
+		self::assertSame('Paperless returned HTTP ' . $status . '.', $history->events[0]->message);
+		// Without the mark, the next search that works reads the history and notes the recovery.
+		self::assertArrayNotHasKey('diagnostics_pending', $this->stored);
+	}
+
+	/**
+	 * Paperless 3 finds the documents of an unfinished query in its simple mode: a search
+	 * that works, which ends a failure of the history.
+	 */
+	public function testAnUnfinishedQueryFindsDocumentsInTheSimpleModeOfPaperless3(): void {
+		$this->stored['diagnostics'] = ['since' => self::NOW, 'failed' => 1, 'retried' => 0, 'lastFailureAt' => self::NOW, 'recoveredAt' => null, 'events' => []];
+		$this->stored['diagnostics_pending'] = true;
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options): IResponse {
+			return isset($options['query']['query'])
+				? $this->answer(400, '{"query":["Invalid date value \'[2026\' for field \'created\'."]}', ['X-Version' => '3.3.0', 'X-Api-Version' => '10'])
+				: $this->response(['count' => 1, 'next' => null, 'results' => [['id' => 7, 'title' => 'Invoice']]]);
+		});
+
+		$result = $this->provider($client, [7 => $this->file(7, 'Invoice [P7].pdf')])
+			->search($this->user(), $this->query('invoice created:[2026 to'))
+			->jsonSerialize();
+
+		self::assertCount(1, $result['entries']);
+		self::assertSame(self::NOW, $this->history()->recoveredAt);
+		self::assertFalse($this->stored['diagnostics_pending']);
 	}
 
 	public function testDocumentsWithoutAUsableIdAreLeftOut(): void {
@@ -916,7 +1053,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 
 		self::assertFalse($result['isPaginated']);
 		self::assertSame([], $result['entries']);
-		self::assertSame([], $this->stored);
+		self::assertSame(self::NO_PROBLEM, $this->stored);
 	}
 
 	/**
@@ -982,14 +1119,14 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$configService = new ConfigService($config, $credentials, $this->accounts('archive', 'sync'), $this->createStub(LoggerInterface::class));
 
 		return new PaperlessSearchProvider(
-			new PaperlessApiService($configService, $clientService, new SearchDiagnostics($config, $this->clock())),
+			new PaperlessApiService($configService, $clientService, $this->diagnostics($config), $this->clock(), $this->appManager()),
 			new NextcloudFileLocator($root, $this->createStub(LoggerInterface::class)),
 			$l10n,
 			$urlGenerator,
 			$request,
 			$logger ?? $this->createStub(LoggerInterface::class),
 			$configService,
-			new SearchDiagnostics($config, $this->clock()),
+			$this->diagnostics($config),
 			$clock ?? $this->clock(),
 		);
 	}
@@ -1011,6 +1148,20 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$response = $this->createStub(IResponse::class);
 		$response->method('getStatusCode')->willReturn(200);
 		$response->method('getBody')->willReturn(json_encode($answer, JSON_THROW_ON_ERROR));
+
+		return $response;
+	}
+
+	/**
+	 * An answer of Paperless with this status and body.
+	 *
+	 * @param array<string, string> $headers by name
+	 */
+	private function answer(int $status, string $body, array $headers = []): IResponse {
+		$response = $this->createStub(IResponse::class);
+		$response->method('getStatusCode')->willReturn($status);
+		$response->method('getBody')->willReturn($body);
+		$response->method('getHeader')->willReturnCallback(static fn (string $name): string => $headers[$name] ?? '');
 
 		return $response;
 	}
@@ -1145,6 +1296,17 @@ final class PaperlessSearchProviderTest extends TestCase {
 		return $history;
 	}
 
+	private function diagnostics(IAppConfig $config): SearchDiagnostics {
+		return new SearchDiagnostics($config, $this->clock(), $this->createStub(ICacheFactory::class));
+	}
+
+	private function appManager(): IAppManager {
+		$appManager = $this->createStub(IAppManager::class);
+		$appManager->method('getAppVersion')->willReturn('0.5.1');
+
+		return $appManager;
+	}
+
 	private function clock(): ITimeFactory {
 		$clock = $this->createStub(ITimeFactory::class);
 		$clock->method('getTime')->willReturn(self::NOW);
@@ -1176,6 +1338,20 @@ final class PaperlessSearchProviderTest extends TestCase {
 			$value = $this->stored[$key] ?? $default;
 
 			return is_array($value) ? $value : $default;
+		});
+		$config->method('setValueBool')->willReturnCallback(function (string $app, string $key, bool $value): bool {
+			$this->stored[$key] = $value;
+
+			return true;
+		});
+		$config->method('getValueBool')->willReturnCallback(function (string $app, string $key, bool $default = false): bool {
+			$value = $this->stored[$key] ?? $default;
+
+			return is_bool($value) ? $value : $default;
+		});
+		$config->method('hasKey')->willReturnCallback(fn (string $app, string $key): bool => array_key_exists($key, $this->stored));
+		$config->method('deleteKey')->willReturnCallback(function (string $app, string $key): void {
+			unset($this->stored[$key]);
 		});
 
 		return $config;

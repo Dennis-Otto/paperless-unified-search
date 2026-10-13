@@ -63,6 +63,21 @@ final class DiagnosticsHistory implements JsonSerializable {
 	}
 
 	/**
+	 * The history with problems that it counts without keeping them as events, such as
+	 * those that came too soon after the one before to write the history themselves.
+	 */
+	public function counting(int $failed, int $retried): self {
+		return new self(
+			$this->since,
+			$this->failed + max(0, $failed),
+			$this->retried + max(0, $retried),
+			$this->lastFailureAt,
+			$this->recoveredAt,
+			$this->events,
+		);
+	}
+
+	/**
 	 * The history of the stored values, or null when they describe none. Stored events
 	 * of the wrong shape are left out.
 	 *

@@ -19,6 +19,8 @@ final class PublicConfig implements JsonSerializable {
 	 *                                  of Paperless Sync, doesn't exist
 	 * @param bool $allowLocal Nextcloud may reach this Paperless at an address of the local
 	 *                         network, which it refuses to other requests
+	 * @param ?PaperlessVersion $paperlessVersion the version of this Paperless and of its API,
+	 *                                            as its last answer named them
 	 */
 	public function __construct(
 		public readonly string $url,
@@ -29,11 +31,12 @@ final class PublicConfig implements JsonSerializable {
 		public readonly bool $tokenUnreadable = false,
 		public readonly bool $archiveOwnerMissing = false,
 		public readonly bool $allowLocal = false,
+		public readonly ?PaperlessVersion $paperlessVersion = null,
 	) {
 	}
 
 	/**
-	 * @return array{url: string, tokenConfigured: bool, alwaysSearch: bool, archiveOwner: string, syncAccount: string, tokenUnreadable: bool, archiveOwnerMissing: bool, allowLocal: bool}
+	 * @return array{url: string, tokenConfigured: bool, alwaysSearch: bool, archiveOwner: string, syncAccount: string, tokenUnreadable: bool, archiveOwnerMissing: bool, allowLocal: bool, paperlessVersion: string, paperlessApiVersion: string}
 	 */
 	public function jsonSerialize(): array {
 		return [
@@ -45,6 +48,9 @@ final class PublicConfig implements JsonSerializable {
 			'tokenUnreadable' => $this->tokenUnreadable,
 			'archiveOwnerMissing' => $this->archiveOwnerMissing,
 			'allowLocal' => $this->allowLocal,
+			// Empty while no answer of Paperless named them.
+			'paperlessVersion' => $this->paperlessVersion?->version ?? '',
+			'paperlessApiVersion' => $this->paperlessVersion?->apiVersion ?? '',
 		];
 	}
 }
