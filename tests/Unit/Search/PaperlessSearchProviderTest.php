@@ -17,6 +17,7 @@ use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Files\File;
 use OCP\Files\Folder;
@@ -37,6 +38,8 @@ use Psr\Log\LoggerInterface;
 use RuntimeException;
 
 final class PaperlessSearchProviderTest extends TestCase {
+	use Accounts;
+
 	private const NOW = 1791500000;
 
 	/** @var array<string, mixed> the values that the app stored, by key */
@@ -130,7 +133,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$query->method('getLimit')->willReturn(10);
 		$query->method('getCursor')->willReturn(null);
 
-		$configService = new ConfigService($config, $credentials);
+		$configService = new ConfigService($config, $credentials, $this->accounts('archive'), $this->createStub(LoggerInterface::class));
 		$provider = new PaperlessSearchProvider(
 			new PaperlessApiService($configService, $clientService, new SearchDiagnostics($config, $this->clock())),
 			new NextcloudFileLocator($root),
@@ -183,7 +186,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			->with(AppConstants::APP_ID, 'always_search', false)
 			->willReturn(true);
 
-		$configService = new ConfigService($config, $this->createStub(ICredentialsManager::class));
+		$configService = new ConfigService($config, $this->createStub(ICredentialsManager::class), $this->accounts(), $this->createStub(LoggerInterface::class));
 		$provider = new PaperlessSearchProvider(
 			new PaperlessApiService($configService, $this->createStub(IClientService::class), new SearchDiagnostics($config, $this->clock())),
 			new NextcloudFileLocator($this->createStub(IRootFolder::class)),
@@ -521,9 +524,81 @@ final class PaperlessSearchProviderTest extends TestCase {
 	}
 
 	/**
-	 * Builds the provider on a Paperless behind the given client and a user who can see the given files.
+	 * @return array<string, array{string, string, string}>
+	 */
+	public static function archiveAccountsInAnotherCase(): array {
+		return [
+			'setting stored before #99' => ['Archive', '', 'archive'],
+			'account of Paperless Sync, which stores it as typed' => ['', 'SYNC', 'sync'],
+		];
+	}
+
+	/**
+	 * Nextcloud accepts an account whatever the case of its ID, but the owner of a file
+	 * carries the exact ID (#99).
+	 */
+	#[DataProvider('archiveAccountsInAnotherCase')]
+	public function testAnArchiveAccountInAnotherCaseFindsItsFiles(string $archiveOwner, string $syncAccount, string $owner): void {
+		$client = $this->paperless(['count' => 1, 'next' => null, 'results' => [['id' => 7, 'title' => 'Invoice']]]);
+
+		$result = $this->provider($client, [7 => $this->file(7, 'Invoice [P7].pdf', $owner)], archiveOwner: $archiveOwner, syncAccount: $syncAccount)
+			->search($this->user(), $this->query('invoice'))
+			->jsonSerialize();
+
+		self::assertCount(1, $result['entries']);
+	}
+
+	public function testWithAnArchiveAccountThatDoesNotExistPaperlessIsNotAsked(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::never())->method('get');
+
+		$result = $this->provider($client, [7 => $this->file(7, 'Invoice [P7].pdf', 'deleted')], archiveOwner: 'deleted')
+			->search($this->user(), $this->query('invoice'))
+			->jsonSerialize();
+
+		self::assertSame([], $result['entries']);
+	}
+
+	/**
+	 * After a move or a restore of Nextcloud with another secret in config.php, the stored
+	 * token can't be decrypted. Every search failed with HTTP 500 then (#99).
+	 */
+	public function testAStoredTokenThatCannotBeDecryptedShowsNoDocumentsInsteadOfFailing(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::never())->method('get');
+		$credentials = $this->createStub(ICredentialsManager::class);
+		$credentials->method('retrieve')->willThrowException(new RuntimeException('HMAC does not match.'));
+
+		$result = $this->provider($client, [7 => $this->file(7, 'Invoice [P7].pdf')], credentials: $credentials)
+			->search($this->user(), $this->query('invoice'))
+			->jsonSerialize();
+
+		self::assertFalse($result['isPaginated']);
+		self::assertSame([], $result['entries']);
+		self::assertSame([], $this->stored);
+	}
+
+	/**
+	 * The credentials manager decrypts the token on every call; a failed search asked for
+	 * it three times.
+	 */
+	public function testTheTokenIsDecryptedOncePerSearch(): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willThrowException(new RuntimeException('cURL error 7: Failed to connect'));
+		$credentials = $this->createMock(ICredentialsManager::class);
+		$credentials->expects(self::once())->method('retrieve')->willReturn('TEST_VALUE');
+
+		$this->provider($client, credentials: $credentials)->search($this->user(), $this->query('invoice'));
+
+		self::assertSame(1, $this->history()->failed);
+	}
+
+	/**
+	 * Builds the provider on a Paperless behind the given client and a user who can see the given files,
+	 * in a Nextcloud with the accounts archive and sync.
 	 *
 	 * @param array<int, File> $files by Paperless document id
+	 * @param ?ICredentialsManager $credentials the one that stores the token, by default one that holds $token
 	 */
 	private function provider(
 		IClient $client,
@@ -532,11 +607,14 @@ final class PaperlessSearchProviderTest extends TestCase {
 		?LoggerInterface $logger = null,
 		string $archiveOwner = 'archive',
 		string $syncAccount = '',
+		?ICredentialsManager $credentials = null,
 	): PaperlessSearchProvider {
 		$config = $this->settings($archiveOwner, $syncAccount);
 
-		$credentials = $this->createStub(ICredentialsManager::class);
-		$credentials->method('retrieve')->willReturn($token);
+		if ($credentials === null) {
+			$credentials = $this->createStub(ICredentialsManager::class);
+			$credentials->method('retrieve')->willReturn($token);
+		}
 
 		$clientService = $this->createStub(IClientService::class);
 		$clientService->method('newClient')->willReturn($client);
@@ -570,7 +648,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$request = $this->createStub(IRequest::class);
 		$request->method('getHeader')->willReturn('Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0');
 
-		$configService = new ConfigService($config, $credentials);
+		$configService = new ConfigService($config, $credentials, $this->accounts('archive', 'sync'), $this->createStub(LoggerInterface::class));
 
 		return new PaperlessSearchProvider(
 			new PaperlessApiService($configService, $clientService, new SearchDiagnostics($config, $this->clock())),

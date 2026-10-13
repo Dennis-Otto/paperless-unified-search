@@ -349,9 +349,12 @@ async function settings(browser, session, theme) {
 	await page.locator('#paperless-unified-search-save').click()
 	await page.getByText('Connection successful. Settings saved.').waitFor()
 	// The demo talks to the mock in the network of Docker; the picture shows the
-	// address that an administrator enters.
-	await page.locator('#paperless-unified-search-url').fill('https://paperless.example.com')
-	await page.locator('#paperless-unified-search-url').blur()
+	// address that an administrator enters, as the stored one. Typed, it would name
+	// another server, and the token field would ask for the token again.
+	await page.locator('#paperless-unified-search-url').evaluate((input) => {
+		input.defaultValue = 'https://paperless.example.com'
+		input.value = input.defaultValue
+	})
 	await page.locator('#app-navigation a[href$="/settings/admin/paperless_unified_search"]').scrollIntoViewIfNeeded()
 	await save(page, `03-admin-settings${suffix}.png`)
 	// The history of the problems of the search, which scripts/screenshots.sh sets up.

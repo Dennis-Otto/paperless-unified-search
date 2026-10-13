@@ -14,6 +14,8 @@ style('paperless_unified_search', 'settings');
 
 $config = $_['config'];
 $history = $_['history'];
+// The archive account in use: the one of the settings, or else that of Paperless Sync.
+$archiveAccount = $config->archiveOwner !== '' ? $config->archiveOwner : $config->syncAccount;
 ?>
 
 <div
@@ -48,11 +50,19 @@ $history = $_['history'];
 				name="token"
 				type="password"
 				autocomplete="new-password"
-				placeholder="<?php p($config->tokenConfigured ? $l->t('Configured — leave blank to keep it') : $l->t('Required')); ?>">
+				aria-describedby="paperless-unified-search-token-unreadable paperless-unified-search-token-hint"
+				placeholder="<?php p($config->tokenConfigured ? $l->t('Configured — leave blank to keep it') : $l->t('Required')); ?>"
+				<?php if (!$config->tokenConfigured) {
+					print_unescaped('required');
+				} ?>>
 		</p>
 
-		<p class="settings-hint">
-			<?php p($l->t('Use a dedicated, read-only Paperless account. The token is encrypted by Nextcloud and is never returned to the browser.')); ?>
+		<p id="paperless-unified-search-token-unreadable" class="paperless-unified-search-warning"><?php if ($config->tokenUnreadable) {
+			p($l->t('The stored API token can\'t be decrypted, for example because the secret in config.php changed. Enter it again.'));
+		} ?></p>
+
+		<p id="paperless-unified-search-token-hint" class="settings-hint">
+			<?php p($l->t('Use a dedicated, read-only Paperless account. The token is encrypted by Nextcloud and is never returned to the browser. It is only sent to the server it was saved for, so another server needs it entered again.')); ?>
 		</p>
 
 		<p>
@@ -63,9 +73,13 @@ $history = $_['history'];
 				type="text"
 				autocomplete="off"
 				value="<?php p($config->archiveOwner); ?>"
-				aria-describedby="paperless-unified-search-archive-owner-hint"
+				aria-describedby="paperless-unified-search-archive-owner-missing paperless-unified-search-archive-owner-hint"
 				placeholder="<?php p($config->syncAccount !== '' ? $l->t('Paperless Sync: %s — leave blank to use it', [$config->syncAccount]) : $l->t('User ID of the account that owns the synchronized files')); ?>">
 		</p>
+
+		<p id="paperless-unified-search-archive-owner-missing" class="paperless-unified-search-warning"><?php if ($config->archiveOwnerMissing) {
+			p($l->t('The archive account %s does not exist.', [$archiveAccount]));
+		} ?></p>
 
 		<p id="paperless-unified-search-archive-owner-hint" class="settings-hint">
 			<?php p($l->t('Only the files of this account stand for Paperless documents: a user sees a document when this account shares its file with them. Share the archive read-only. Without an archive account, the search shows no Paperless documents.')); ?>

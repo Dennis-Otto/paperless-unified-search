@@ -17,6 +17,7 @@ use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCA\PaperlessUnifiedSearch\Settings\AdminSection;
 use OCA\PaperlessUnifiedSearch\Settings\AdminSettings;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IAppConfig;
@@ -25,8 +26,12 @@ use OCP\IL10N;
 use OCP\IURLGenerator;
 use OCP\Security\ICredentialsManager;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
+use RuntimeException;
 
 final class AdminSettingsTest extends TestCase {
+	use Accounts;
+
 	public function testTheFormShowsThePublicConfigAndTheRoutesOfTheSettings(): void {
 		$config = $this->createStub(IAppConfig::class);
 		$config->method('getValueString')->willReturnCallback(static fn (string $app, string $key): string => match ($app . '.' . $key) {
@@ -65,9 +70,35 @@ final class AdminSettingsTest extends TestCase {
 			'alwaysSearch' => true,
 			'archiveOwner' => '',
 			'syncAccount' => 'sync',
+			'tokenUnreadable' => false,
+			'archiveOwnerMissing' => false,
 		], $params['config']->jsonSerialize());
 		self::assertStringNotContainsString('TEST_VALUE', json_encode($params, JSON_THROW_ON_ERROR));
 		self::assertNull($params['history']);
+	}
+
+	/**
+	 * After a move or a restore of Nextcloud with another secret in config.php, the stored
+	 * token can't be decrypted. The page failed with HTTP 500 then, so that the token
+	 * couldn't even be entered again (#99).
+	 */
+	public function testTheFormAsksForTheTokenAgainWhenTheStoredOneCannotBeDecrypted(): void {
+		$config = $this->createStub(IAppConfig::class);
+		$config->method('getValueString')->willReturnCallback(static fn (string $app, string $key): string => match ($app . '.' . $key) {
+			AppConstants::APP_ID . '.paperless_url' => 'https://paperless.example.com',
+			AppConstants::APP_ID . '.archive_owner' => 'deleted',
+			default => '',
+		});
+		$credentials = $this->createStub(ICredentialsManager::class);
+		$credentials->method('retrieve')->willThrowException(new RuntimeException('HMAC does not match.'));
+
+		$params = $this->settings($config, $credentials, $this->createStub(IURLGenerator::class))->getForm()->getParams();
+
+		self::assertInstanceOf(PublicConfig::class, $params['config']);
+		self::assertSame('https://paperless.example.com', $params['config']->url);
+		self::assertFalse($params['config']->tokenConfigured);
+		self::assertTrue($params['config']->tokenUnreadable);
+		self::assertTrue($params['config']->archiveOwnerMissing);
 	}
 
 	public function testTheFormShowsTheHistoryOfTheProblemsWithFormattedTimes(): void {
@@ -146,7 +177,7 @@ final class AdminSettingsTest extends TestCase {
 			->willReturnCallback(static fn (int $timestamp): string => 'at ' . $timestamp);
 
 		return new AdminSettings(
-			new ConfigService($config, $credentials),
+			new ConfigService($config, $credentials, $this->accounts('sync'), $this->createStub(LoggerInterface::class)),
 			$urlGenerator,
 			new SearchDiagnostics($config, $this->createStub(ITimeFactory::class)),
 			$formatter,
