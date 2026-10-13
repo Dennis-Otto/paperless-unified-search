@@ -175,10 +175,13 @@ final class AdminSettingsTest extends TestCase {
 	}
 
 	private function settings(IAppConfig $config, ICredentialsManager $credentials, IURLGenerator $urlGenerator): AdminSettings {
-		$formatter = $this->createMock(IDateTimeFormatter::class);
-		$formatter->method('formatDateTime')
-			->with(self::isType('int'), 'short', 'medium')
-			->willReturnCallback(static fn (int $timestamp): string => 'at ' . $timestamp);
+		$formatter = $this->createStub(IDateTimeFormatter::class);
+		$formatter->method('formatDateTime')->willReturnCallback(static function (mixed $timestamp, string $date, string $time): string {
+			self::assertIsInt($timestamp);
+			self::assertSame(['short', 'medium'], [$date, $time]);
+
+			return 'at ' . $timestamp;
+		});
 
 		return new AdminSettings(
 			new ConfigService($config, $credentials, $this->accounts('sync'), $this->createStub(LoggerInterface::class)),
