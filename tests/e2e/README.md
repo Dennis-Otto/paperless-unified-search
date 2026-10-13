@@ -157,7 +157,7 @@ The browser runs in the image of Playwright that `run.sh` names, inside the netw
 
 ## The search dialog
 
-After the accessibility check, in the same container, `flow.mjs` goes through the search of Nextcloud as a person does, on a laptop, 1280 × 800 pixels, and on a phone, 375 × 812, both at once: signed in as `e2e-user`, it opens Files and the search, types `mobiletest`, adds the connected services and expects the group *Paperless documents* with only the result *Mobile viewer test*, without the document that no file stands for. A screen reader reads the result as its title, the date of the document and its excerpt as text, `O'Brien & "Sons" <GmbH>` from the tags and entities of Paperless. A click on the result opens the file in the Viewer, which shows its name and draws the first page of the PDF that `pdf.py` writes. A group that holds another result, or more than this one, fails the suite with what a screen reader reads in it; a step that doesn't come within its time, 30 seconds by default, fails it with the step that it waited for. The log shows how long each size took, about 11 seconds, both at once.
+After the accessibility check, in the same container, `flow.mjs` goes through the search of Nextcloud as a person does, on a laptop, 1280 × 800 pixels, and on a phone, 375 × 812, both at once: signed in as `e2e-user`, it opens Files and the search, types `mobiletest`, adds the connected services and expects the group *Paperless documents* with only the result *Mobile viewer test*, without the document that no file stands for. A screen reader reads the result as its title, the date of the document and its excerpt as text, `O'Brien & "Sons" <GmbH>` from the tags and entities of Paperless. A click on the result opens the file in the Viewer, which names it in its header; the file is a real PDF that `pdf.py` writes, which the Viewer draws, but the check doesn't wait for that, which is Nextcloud's own job and takes Chromium seconds. A group that holds another result, or more than this one, fails the suite with what a screen reader reads in it; a step that doesn't come within a minute fails it with the step that it waited for. The log shows how long each size took: about 11 seconds on a desktop computer, both at once, and about half a minute on a runner of GitHub, where three versions of Nextcloud and their browsers share four CPUs. The phone draws one pixel per CSS pixel, which gives the same layout as a screen with twice the density for a quarter of the work.
 
 The search looks different in each supported version, and `flow.mjs` finds every part of it by its role and its name, as a screen reader does. Nextcloud 33 and 34 open a dialog from a button in the header, which Nextcloud 33 names *Unified search* and Nextcloud 34 *Search apps, files, tags, messages …*, and add Paperless with the switch *Search connected services*. Nextcloud 35 searches in a field of the header, *Apps, files, messages, and more*, a button on a phone, shows the results below it, and adds Paperless with the button *More from connected services*.
 
@@ -169,13 +169,13 @@ config:
 ---
 flowchart TB
     accTitle: The search dialog in flow.mjs
-    accDescr: flow.mjs signs in as e2e-user, opens Files and the search, types mobiletest and adds the connected services, with the switch of Nextcloud 33 and 34 or the button of Nextcloud 35. It expects the group Paperless documents with only Mobile viewer test, read out with its title, its date and its excerpt as text. A click on the result opens the file in the Viewer with its name and the first page of the PDF drawn. It does this on a laptop and on a phone at the same time.
+    accDescr: flow.mjs signs in as e2e-user, opens Files and the search, types mobiletest and adds the connected services, with the switch of Nextcloud 33 and 34 or the button of Nextcloud 35. It expects the group Paperless documents with only Mobile viewer test, read out with its title, its date and its excerpt as text. A click on the result opens the file in the Viewer, which names it in its header. It does this on a laptop and on a phone at the same time.
 
     signin["Sign in as <code>e2e-user</code><br/>open Files"]
     dialog["Open the search<br/>type <code>mobiletest</code>"]
     connected["Add the connected services<br/>the switch of 33 and 34,<br/>the button of 35"]
     result["<i>Paperless documents</i><br/>only the one result, read out with<br/>title, date and excerpt as text"]
-    viewer["Click the result:<br/>the Viewer shows the file<br/>and draws its PDF"]
+    viewer["Click the result:<br/>the Viewer opens the file,<br/>named in its header"]
     sizes["On a laptop, 1280 × 800,<br/>and on a phone, 375 × 812,<br/>at the same time"]
 
     signin --> dialog --> connected --> result --> viewer

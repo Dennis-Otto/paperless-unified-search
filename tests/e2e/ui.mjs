@@ -82,9 +82,12 @@ export async function searchConnectedServices(page, title) {
 }
 
 // Waits for the Viewer of Nextcloud, which a click on a result opens, with the file of
-// the name and the first page of the PDF drawn.
-export async function waitForViewer(page, name) {
+// the name in its header and, unless drawn is false, the first page of the PDF drawn,
+// which a picture needs and a check doesn't: drawing it takes Chromium seconds.
+export async function waitForViewer(page, name, { drawn = true } = {}) {
 	await page.waitForURL((url) => url.pathname.includes('/apps/files/'))
-	await page.frameLocator('iframe').locator('.page[data-loaded="true"]').first().waitFor({ timeout: 30000 })
+	if (drawn) {
+		await page.frameLocator('iframe').locator('.page[data-loaded="true"]').first().waitFor({ timeout: 30000 })
+	}
 	await page.locator('.modal-header').getByText(name).waitFor()
 }

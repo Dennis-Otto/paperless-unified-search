@@ -5,9 +5,9 @@
 // Files, the user opens the unified search, types the term, turns on the search of
 // connected services and sees the group Paperless documents with the title and the
 // excerpt of the document, and only the one that a file of the archive account stands
-// for. A click on the result opens that file in the Viewer, which draws the PDF. run.sh
-// starts it in the image of Playwright after accessibility.mjs, inside the network of
-// the Compose project.
+// for. A click on the result opens that file in the Viewer, which names it in its
+// header. run.sh starts it in the image of Playwright after accessibility.mjs, inside
+// the network of the Compose project.
 
 import { chromium } from 'playwright-core'
 import {
@@ -30,17 +30,20 @@ const SUBLINE = '2026-08-26 · Synthetic OCR mobiletest result for O\'Brien & "S
 const RESULT = `${TITLE} ${SUBLINE}`
 const FILE = 'Mobile viewer test [P123].pdf'
 
+// The phone draws one pixel per CSS pixel: its layout is the same, and Chromium draws
+// a quarter of the pixels of a screen with twice the density.
 const SIZES = [
 	{ name: 'laptop', options: { viewport: { width: 1280, height: 800 } } },
-	{
-		name: 'phone',
-		options: { viewport: { width: 375, height: 812 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true },
-	},
+	{ name: 'phone', options: { viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true } },
 ]
+// A step waits this long, in milliseconds: on a runner of the CI, the three versions of
+// Nextcloud and their browsers share four CPUs, and a page of Files takes seconds there.
+const TIMEOUT = 60000
 
 async function searchAndOpen(browser, session, size) {
 	const started = Date.now()
 	const context = await browser.newContext({ storageState: session, locale: 'en-US', ...size.options })
+	context.setDefaultTimeout(TIMEOUT)
 	try {
 		const page = await context.newPage()
 		// The search waits for its button, not for every script of Files.
@@ -61,7 +64,8 @@ async function searchAndOpen(browser, session, size) {
 		}
 
 		await result.click()
-		await waitForViewer(page, FILE)
+		// The header names the file of the result; drawing the PDF is Nextcloud's own job.
+		await waitForViewer(page, FILE, { drawn: false })
 		const seconds = ((Date.now() - started) / 1000).toFixed(1)
 		console.log(`Search dialog on a ${size.name}: ${TITLE} with its excerpt among the Paperless documents, opened in the Viewer, in ${seconds} s.`)
 	} finally {
