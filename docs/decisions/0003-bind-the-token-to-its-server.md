@@ -37,8 +37,8 @@ flowchart TB
     stored -- "yes" --> origin{"Same scheme, host and port<br/>as the stored URL?"}
     origin -- "yes, another path at most" --> keep["Test and save<br/>the stored token"]
     origin -- "no" --> again["“Enter the API token again”<br/>nothing reaches the new server"]
-    classDef yes fill:#dcfce7,stroke:#16a34a,color:#14532d
-    classDef no fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
     class use,keep yes
     class required,again no
 ```

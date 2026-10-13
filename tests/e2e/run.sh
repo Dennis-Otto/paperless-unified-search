@@ -45,7 +45,7 @@ assert_response() {
 }
 
 # axe-core checks the pages of the app in Chromium (accessibility.mjs), inside the
-# network of the Compose project. The files of the check reach the browser through
+# network of the Compose project, and the script checks what the settings page does. The files of the check reach the browser through
 # standard input, so that npm leaves nothing in the checkout. Keep the version of the
 # image of Playwright equal to playwright-core in package.json; Renovate updates both
 # together, and scripts/check-project.sh compares them.
@@ -336,10 +336,20 @@ curl --fail-with-body --silent --show-error \
 	"${BASE_URL}/ocs/v2.php/search/providers"
 assert_response trusted "${TMP_DIR}/providers-trusted.json"
 
-# The administration settings meet WCAG 2.1 AA, also with the message after saving.
+# The administration settings meet WCAG 2.1 AA, also with the warning about an archive
+# account that doesn't exist, with the token field required for another server and
+# with the message after saving. The browser corrects the archive account and saves
+# another server and then the mock again, each with the token (#99).
+occ config:app:set paperless_unified_search archive_owner --value=e2e-gone >/dev/null
 accessibility
+for setting in 'paperless_url=http://paperless-mock:8080' 'archive_owner=e2e-user'; do
+	if [[ "$(occ config:app:get paperless_unified_search "${setting%%=*}")" != "${setting#*=}" ]]; then
+		echo "The settings page in the browser didn't store ${setting}." >&2
+		exit 1
+	fi
+done
 
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed: settings for administrators only, the token only for its server, access filtering by the archive account and its shares, trusted mode, browser, iOS, and Android contracts, and accessibility."
+echo "Docker E2E passed: settings for administrators only, the token only for its server, access filtering by the archive account and its shares, trusted mode, browser, iOS, and Android contracts, and the settings page in the browser with its accessibility."
