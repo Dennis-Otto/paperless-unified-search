@@ -2,7 +2,7 @@
 
 [← README](https://github.com/Dennis-Otto/paperless-unified-search) · [Architecture](architecture.md) · [Security design](security.md) · [Releases](releases.md)
 
-What Paperless Unified Search intends to do in the next twelve months, until October 2027, and what it will not do. It is a direction, not a promise. Ideas are welcome as [feature requests](https://github.com/Dennis-Otto/paperless-unified-search/issues/new?template=feature_request.yml).
+What Paperless Unified Search intends to do in the next twelve months, until October 2027, and what it will not do. It is a direction, not a promise (throwaway test of the E2E path filter). Ideas are welcome as [feature requests](https://github.com/Dennis-Otto/paperless-unified-search/issues/new?template=feature_request.yml).
 
 ## The next twelve months
 
