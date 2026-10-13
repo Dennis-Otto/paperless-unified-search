@@ -13,16 +13,17 @@
 	margin-bottom: 4px;
 }
 
-.paperless-unified-search-trusted-service {
+/* A checkbox with its label on one line and its hint below, such as the local network. */
+.paperless-unified-search-option {
 	margin-top: 20px;
 }
 
-.paperless-unified-search-trusted-service input[type='checkbox'],
-.paperless-unified-search-trusted-service label {
+.paperless-unified-search-option input[type='checkbox'],
+.paperless-unified-search-option label {
 	display: inline-block;
 }
 
-.paperless-unified-search-trusted-service label {
+.paperless-unified-search-option label {
 	margin-inline-start: 4px;
 }
 

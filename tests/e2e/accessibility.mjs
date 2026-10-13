@@ -25,6 +25,7 @@ const THEMES = ['light', 'dark']
 const SETTINGS = '/index.php/settings/admin/paperless_unified_search'
 const SETTINGS_SCOPE = '#paperless-unified-search-settings'
 const URL_FIELD = '#paperless-unified-search-url'
+const LOCAL_NETWORK = '#paperless-unified-search-allow-local'
 const TOKEN_FIELD = '#paperless-unified-search-token'
 const ARCHIVE_OWNER_FIELD = '#paperless-unified-search-archive-owner'
 const ARCHIVE_OWNER_MISSING = '#paperless-unified-search-archive-owner-missing'
@@ -56,8 +57,8 @@ async function expectTokenField(page, url, required) {
 	)
 }
 
-// Saves the form and waits until the server has answered, with a success.
-async function saveSettings(page) {
+// Saves the form and waits until the server has answered, by default with a success.
+async function saveSettings(page, expected = 'Connection successful. Settings saved.') {
 	await page.locator(STATUS).evaluate((status) => {
 		status.textContent = ''
 	})
@@ -67,7 +68,7 @@ async function saveSettings(page) {
 			&& !['', 'Testing the Paperless connection…'].includes(document.querySelector(status).textContent),
 		{ save: SAVE_BUTTON, status: STATUS },
 	)
-	expectEqual(await page.locator(STATUS).textContent(), 'Connection successful. Settings saved.', 'Status after saving')
+	expectEqual(await page.locator(STATUS).textContent(), expected, 'Status after saving')
 }
 
 // The pages of the app, each with the element that holds its markup and what to do
@@ -112,16 +113,23 @@ const PAGES = [
 	},
 	{
 		// Saving another server with its token makes it the stored one, and an archive
-		// account that exists ends the warning. Then the mock's own name is another
-		// server, which gets the token once more.
+		// account that exists ends the warning. Nextcloud reaches the mock under either
+		// name only with the switch for the local network, which the settings show as
+		// stored (#117). Then the mock's own name is another server, which gets the token
+		// once more.
 		name: 'administration settings after saving',
 		path: SETTINGS,
 		scope: SETTINGS_SCOPE,
 		async prepare(page) {
+			expectEqual(await page.locator(LOCAL_NETWORK).isChecked(), true, 'Switch for the local network as stored')
+			await page.locator(LOCAL_NETWORK).uncheck()
 			await page.locator(URL_FIELD).fill(OTHER_URL)
 			await page.locator(TOKEN_FIELD).fill(TOKEN)
 			await page.locator(ARCHIVE_OWNER_FIELD).fill('e2e-user')
+			await saveSettings(page, 'Nextcloud does not connect to addresses of the local network unless you allow it. If Paperless runs in your local network or in Docker, select “Paperless runs in my local network”.')
+			await page.locator(LOCAL_NETWORK).check()
 			await saveSettings(page)
+			expectEqual(await page.locator(LOCAL_NETWORK).isChecked(), true, 'Switch for the local network after saving')
 			expectEqual(await page.locator(URL_FIELD).evaluate((input) => input.defaultValue), OTHER_URL, 'Stored URL after saving')
 			expectEqual(await page.locator(TOKEN_FIELD).inputValue(), '', 'Token field after saving')
 			expectEqual(await page.locator(ARCHIVE_OWNER_MISSING).textContent(), '', 'Warning about the archive account after saving')

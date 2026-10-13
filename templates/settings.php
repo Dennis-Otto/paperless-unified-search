@@ -43,6 +43,23 @@ $archiveAccount = $config->archiveOwner !== '' ? $config->archiveOwner : $config
 				required>
 		</p>
 
+		<div class="paperless-unified-search-option">
+			<input
+				id="paperless-unified-search-allow-local"
+				name="allowLocal"
+				type="checkbox"
+				aria-describedby="paperless-unified-search-allow-local-hint"
+				<?php if ($config->allowLocal) {
+					print_unescaped('checked');
+				} ?>>
+			<label for="paperless-unified-search-allow-local">
+				<?php p($l->t('Paperless runs in my local network')); ?>
+			</label>
+			<p id="paperless-unified-search-allow-local-hint" class="settings-hint">
+				<?php p($l->t('Select this when Nextcloud reaches Paperless at an address of your local network or by the name of its Docker service, such as http://192.168.1.20:8000 or http://paperless:8000. Nextcloud refuses such addresses unless they are allowed. This allows only the Paperless URL above, without redirects, and every other app keeps Nextcloud\'s protection.')); ?>
+			</p>
+		</div>
+
 		<p>
 			<label for="paperless-unified-search-token"><?php p($l->t('Paperless API token')); ?></label>
 			<input
@@ -85,7 +102,7 @@ $archiveAccount = $config->archiveOwner !== '' ? $config->archiveOwner : $config
 			<?php p($l->t('Only the files of this account stand for Paperless documents: a user sees a document when this account shares its file with them. Share the archive read-only. Without an archive account, the search shows no Paperless documents.')); ?>
 		</p>
 
-		<div class="paperless-unified-search-trusted-service">
+		<div class="paperless-unified-search-option">
 			<input
 				id="paperless-unified-search-always-search"
 				name="alwaysSearch"

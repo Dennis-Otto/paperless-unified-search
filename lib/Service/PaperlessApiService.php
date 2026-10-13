@@ -12,6 +12,7 @@ namespace OCA\PaperlessUnifiedSearch\Service;
 use OCP\Http\Client\IClient;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
+use OCP\Http\Client\LocalServerException;
 use Throwable;
 use UnexpectedValueException;
 
@@ -39,9 +40,13 @@ final class PaperlessApiService {
 		return $this->configService->isConfigured();
 	}
 
-	public function testConnection(string $url, string $token): void {
+	/**
+	 * @param bool $allowLocal whether Nextcloud may reach this Paperless at an address of
+	 *                         the local network
+	 */
+	public function testConnection(string $url, string $token, bool $allowLocal): void {
 		// The test reads nothing of the document, so Paperless sends only its ID.
-		$this->requestDocuments($url, $token, [
+		$this->requestDocuments($url, $token, $allowLocal, [
 			'page' => 1,
 			'page_size' => 1,
 			'fields' => 'id',
@@ -57,6 +62,7 @@ final class PaperlessApiService {
 		return $this->requestDocuments(
 			$this->configService->getUrl(),
 			$this->configService->getToken(),
+			$this->configService->isLocalNetworkAllowed(),
 			[
 				'query' => $query,
 				'page' => max(1, $page),
@@ -67,10 +73,17 @@ final class PaperlessApiService {
 	}
 
 	/**
+	 * Nextcloud refuses to connect to an address of the local network, unless the request
+	 * allows it with the option allow_local_address, or allow_local_remote_servers in
+	 * config.php allows it to every request of every app. With the option, Nextcloud
+	 * would also follow a redirect of Paperless to any address of the network unchecked;
+	 * so a request that allows the local network follows none, and only the address of
+	 * the settings gets the exception.
+	 *
 	 * @param array<string, int|string> $query
 	 * @return array{count: int, next: ?string, results: list<array<array-key, mixed>>}
 	 */
-	private function requestDocuments(string $url, string $token, array $query): array {
+	private function requestDocuments(string $url, string $token, bool $allowLocal, array $query): array {
 		if ($url === '' || $token === '') {
 			throw new UnexpectedValueException('Paperless is not configured.');
 		}
@@ -88,7 +101,8 @@ final class PaperlessApiService {
 				// Every answer of Paperless reaches the check of its status below.
 				'http_errors' => false,
 				'query' => $query,
-			],
+				'nextcloud' => ['allow_local_address' => $allowLocal],
+			] + ($allowLocal ? ['allow_redirects' => false] : []),
 			[$token, (string)($query['query'] ?? '')],
 		);
 
@@ -125,9 +139,10 @@ final class PaperlessApiService {
 	/**
 	 * A request that gets no answer at all, because the name of the host doesn't resolve
 	 * or the connection fails or times out, gets one more try: such failures often pass
-	 * within a moment. An answer of Paperless, whatever its status, gets none. A second
-	 * try that gets an answer goes into the history of the diagnostics; one that fails
-	 * as well fails the request.
+	 * within a moment. An answer of Paperless, whatever its status, gets none, and neither
+	 * does an address that Nextcloud refuses as one of the local network. A second try
+	 * that gets an answer goes into the history of the diagnostics; one that fails as
+	 * well fails the request.
 	 *
 	 * @param array<string, mixed> $options
 	 * @param list<string> $secrets the token and the term, which the history must not show
@@ -136,6 +151,8 @@ final class PaperlessApiService {
 		$started = microtime(true);
 		try {
 			return $this->client->get($url, $options);
+		} catch (LocalServerException $error) {
+			throw $error;
 		} catch (Throwable $error) {
 			$durationMs = (int)round((microtime(true) - $started) * 1000.0);
 			$response = $this->client->get($url, $options);

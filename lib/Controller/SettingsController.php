@@ -18,6 +18,7 @@ use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\Attribute\FrontpageRoute;
 use OCP\AppFramework\Http\Attribute\PasswordConfirmationRequired;
 use OCP\AppFramework\Http\JSONResponse;
+use OCP\Http\Client\LocalServerException;
 use OCP\IRequest;
 use SensitiveParameter;
 use Throwable;
@@ -42,21 +43,28 @@ final class SettingsController extends Controller {
 	/**
 	 * Saves the settings once Paperless answers at the URL with the token. Like
 	 * Disconnect, it asks for the password of the administrator when it wasn't confirmed
-	 * in the last 30 minutes.
+	 * in the last 30 minutes. $allowLocal lets Nextcloud reach this Paperless, and only
+	 * this one, at an address of the local network.
 	 */
 	#[FrontpageRoute(verb: 'POST', url: '/settings')]
 	#[PasswordConfirmationRequired]
-	public function save(string $url, #[SensitiveParameter] string $token = '', bool $alwaysSearch = false, string $archiveOwner = ''): JSONResponse {
+	public function save(string $url, #[SensitiveParameter] string $token = '', bool $alwaysSearch = false, string $archiveOwner = '', bool $allowLocal = false): JSONResponse {
 		try {
 			$normalizedUrl = $this->configService->normalizeUrl($url);
 			$effectiveToken = $this->configService->resolveToken($token, $normalizedUrl);
 			$owner = $this->configService->resolveArchiveOwner($archiveOwner);
-			$this->paperlessApi->testConnection($normalizedUrl, $effectiveToken);
+			$this->paperlessApi->testConnection($normalizedUrl, $effectiveToken, $allowLocal);
 
-			return new JSONResponse($this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner));
+			return new JSONResponse($this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner, $allowLocal));
 		} catch (InvalidArgumentException $exception) {
 			return new JSONResponse(
 				['message' => $exception->getMessage()],
+				Http::STATUS_BAD_REQUEST,
+			);
+		} catch (LocalServerException) {
+			// Nextcloud refused the address before any request left it.
+			return new JSONResponse(
+				['message' => 'Nextcloud does not connect to addresses of the local network unless you allow it. If Paperless runs in your local network or in Docker, select “Paperless runs in my local network”.'],
 				Http::STATUS_BAD_REQUEST,
 			);
 		} catch (Throwable) {

@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file.
 ### Added
 
 - **Find a Paperless document by its text from the smart picker in Talk, Text, Deck and Mail and insert a link to it.** Type `/` in Text or Collectives, or open the smart picker in Talk, Deck or Mail, choose *Paperless documents* and search as in Nextcloud's search: the picker lists the documents whose file you can open and inserts the link to the file you pick. Everyone who can open that file sees its preview; anyone else sees only the bare link. Your term reaches Paperless only after you chose *Paperless documents* in the picker.
+- **A Paperless in your local network or in Docker works with one switch, without lowering Nextcloud's protection for other apps.** Nextcloud refuses addresses such as `192.168.1.20` or the name of a Docker service, and so far only `allow_local_remote_servers` in `config.php` helped, which lifts that protection for every app and every URL that users enter. Select *Paperless runs in my local network* in the settings, and Nextcloud reaches this Paperless, and nothing else, at such an address; without it, saving now says that this switch is missing instead of only that the connection failed. The Paperless URL may now also name a Docker service with an underscore, such as `http://paperless_ngx:8000`, or an internationalized name. If you set `allow_local_remote_servers` for Paperless, first select the switch and save, and only then remove it from `config.php`.
 
 ### Fixed
 

@@ -17,6 +17,7 @@ use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Http\Client\IClient;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
+use OCP\Http\Client\LocalServerException;
 use OCP\IAppConfig;
 use OCP\IUserManager;
 use OCP\Security\ICredentialsManager;
@@ -66,10 +67,79 @@ final class PaperlessApiServiceTest extends TestCase {
 				'timeout' => 10,
 				'http_errors' => false,
 				'query' => ['page' => 1, 'page_size' => 1, 'fields' => 'id'],
+				'nextcloud' => ['allow_local_address' => false],
 			])
 			->willReturn($this->response(200, self::NO_DOCUMENTS));
 
-		$this->service($client, '', null)->testConnection('https://paperless.example.com/', 'TEST_VALUE');
+		$this->service($client, '', null, true)->testConnection('https://paperless.example.com/', 'TEST_VALUE', false);
+	}
+
+	/**
+	 * The test of a connection allows the local network as the form says, not as the
+	 * stored settings do (#117).
+	 */
+	public function testTheConnectionTestAllowsTheLocalNetworkAsTheFormSays(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with('http://paperless_ngx:8000/api/documents/', self::callback(
+				static fn (array $options): bool => $options['nextcloud'] === ['allow_local_address' => true]
+					&& $options['allow_redirects'] === false,
+			))
+			->willReturn($this->response(200, self::NO_DOCUMENTS));
+
+		$this->service($client, '', null, false)->testConnection('http://paperless_ngx:8000', 'TEST_VALUE', true);
+	}
+
+	/**
+	 * @return array<string, array{bool, array<string, mixed>}>
+	 */
+	public static function localNetwork(): array {
+		return [
+			// Nextcloud then also follows a redirect anywhere unchecked, so the request
+			// follows none.
+			'allowed' => [true, ['nextcloud' => ['allow_local_address' => true], 'allow_redirects' => false]],
+			// Nextcloud follows a redirect only to an address that it would reach as well.
+			'not allowed' => [false, ['nextcloud' => ['allow_local_address' => false]]],
+		];
+	}
+
+	/**
+	 * Nextcloud refuses addresses of the local network to a request that doesn't allow
+	 * them, unless config.php allows them to every request of every app (#117).
+	 *
+	 * @param array<string, mixed> $options
+	 */
+	#[DataProvider('localNetwork')]
+	public function testSearchAllowsTheLocalNetworkAsTheSettingsSay(bool $allowLocal, array $options): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with('https://paperless.example.com/api/documents/', self::callback(
+				static fn (array $sent): bool => array_intersect_key($sent, ['nextcloud' => true, 'allow_redirects' => true]) === $options,
+			))
+			->willReturn($this->response(200, self::NO_DOCUMENTS));
+
+		$this->service($client, allowLocal: $allowLocal)->searchDocuments('invoice', 1, 10);
+	}
+
+	/**
+	 * Nextcloud refuses an address of the local network before any request leaves it, and
+	 * would refuse it again (#117).
+	 */
+	public function testAnAddressThatNextcloudRefusesGetsNoSecondTry(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->willThrowException(new LocalServerException('Host "paperless-ngx" violates local access rules'));
+
+		try {
+			$this->service($client)->searchDocuments('invoice', 1, 10);
+			self::fail('The refused address did not fail the search.');
+		} catch (LocalServerException $exception) {
+			self::assertSame('Host "paperless-ngx" violates local access rules', $exception->getMessage());
+		}
+		self::assertSame([], $this->stored);
 	}
 
 	/**
@@ -197,7 +267,7 @@ final class PaperlessApiServiceTest extends TestCase {
 		$this->expectException($exception);
 		$this->expectExceptionMessage($message);
 
-		$this->service($client)->testConnection('https://paperless.example.com', 'TEST_VALUE');
+		$this->service($client)->testConnection('https://paperless.example.com', 'TEST_VALUE', false);
 	}
 
 	public function testARequestWithoutAnswerGetsASecondTry(): void {
@@ -256,9 +326,10 @@ final class PaperlessApiServiceTest extends TestCase {
 		$this->service($client)->searchDocuments('invoice', 1, 10);
 	}
 
-	private function service(IClient $client, string $url = 'https://paperless.example.com', ?string $token = 'TEST_VALUE'): PaperlessApiService {
+	private function service(IClient $client, string $url = 'https://paperless.example.com', ?string $token = 'TEST_VALUE', bool $allowLocal = false): PaperlessApiService {
 		$config = $this->createStub(IAppConfig::class);
 		$config->method('getValueString')->willReturn($url);
+		$config->method('getValueBool')->willReturn($allowLocal);
 		$config->method('setValueArray')->willReturnCallback(function (string $app, string $key, array $value): bool {
 			$this->stored[$key] = $value;
 

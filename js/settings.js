@@ -78,6 +78,7 @@
 
 		const form = document.getElementById('paperless-unified-search-form')
 		const urlInput = document.getElementById('paperless-unified-search-url')
+		const allowLocalInput = document.getElementById('paperless-unified-search-allow-local')
 		const tokenInput = document.getElementById('paperless-unified-search-token')
 		const tokenUnreadable = document.getElementById('paperless-unified-search-token-unreadable')
 		const alwaysSearchInput = document.getElementById('paperless-unified-search-always-search')
@@ -114,6 +115,7 @@
 		function showConfig(config) {
 			urlInput.value = config.url || ''
 			urlInput.defaultValue = urlInput.value
+			allowLocalInput.checked = Boolean(config.allowLocal)
 			tokenInput.value = ''
 			root.dataset.tokenConfigured = config.tokenConfigured ? 'true' : 'false'
 			updateToken()
@@ -152,6 +154,7 @@
 				showStatus(translate('Testing the Paperless connection…'), false)
 				const config = await request(root.dataset.saveUrl, 'POST', {
 					url: urlInput.value,
+					allowLocal: allowLocalInput.checked,
 					token: tokenInput.value,
 					alwaysSearch: alwaysSearchInput.checked,
 					archiveOwner: archiveOwnerInput.value,

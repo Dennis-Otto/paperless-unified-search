@@ -104,7 +104,7 @@ The [comparison](docs/compare.md) explains each of them, and when another one is
 
 1. Install **Paperless Unified Search** from the [Nextcloud App Store](https://apps.nextcloud.com/apps/paperless_unified_search) under *Apps*, or with `occ app:install paperless_unified_search`.
 2. In Paperless-ngx, create an account that may read the documents to search, and an API token for it.
-3. In Nextcloud, open **Administration settings → Paperless Unified Search**, enter the Paperless URL and the token, and select **Test connection and save**. With [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) installed, the account it writes the archive with is the **Archive account**; otherwise enter the account that owns the synchronized files.
+3. In Nextcloud, open **Administration settings → Paperless Unified Search**, enter the Paperless URL and the token, and select **Test connection and save**. When Nextcloud reaches Paperless at an address of your local network or by the name of its Docker service, such as `http://192.168.1.20:8000` or `http://paperless:8000`, also select **Paperless runs in my local network**. With [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) installed, the account it writes the archive with is the **Archive account**; otherwise enter the account that owns the synchronized files.
 4. As the archive account, share the archive read-only with the users who may find its documents, as any folder in Nextcloud. The archive account itself finds them all.
 5. Search in Nextcloud, switch on **Search connected services** and look under **Paperless documents**. A result appears for every document whose synchronized file you can open: a file of the archive account with `[P<ID>]` in its name, your own if you are that account, or one it shared with you. [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) creates such files.
 
@@ -117,11 +117,11 @@ config:
 ---
 flowchart TB
     accTitle: Setting up the search
-    accDescr: Install the app. In Paperless-ngx, create an account that may read the documents and an API token for it. In the administration settings of Nextcloud, enter the URL, the token and the archive account, and select Test connection and save. When Paperless answers, the settings are saved; otherwise nothing is saved and the message says what to correct. The archive account shares its archive read-only with the users who may find its documents, and they find them under Paperless documents in Nextcloud's search, with Search connected services switched on.
+    accDescr: Install the app. In Paperless-ngx, create an account that may read the documents and an API token for it. In the administration settings of Nextcloud, enter the URL, the token and the archive account, select Paperless runs in my local network when Nextcloud reaches Paperless at such an address, and select Test connection and save. When Paperless answers, the settings are saved; otherwise nothing is saved and the message says what to correct. The archive account shares its archive read-only with the users who may find its documents, and they find them under Paperless documents in Nextcloud's search, with Search connected services switched on.
 
     install["1 · Install the app"]
     token["2 · In Paperless-ngx: an account<br>that may read the documents,<br>and its API token"]
-    save["3 · In the administration<br>settings: URL, token and<br>archive account, then<br><b>Test connection and save</b>"]
+    save["3 · In the administration<br>settings: URL, token,<br>archive account and, in a<br>local network, its switch, then<br><b>Test connection and save</b>"]
     answers{"Paperless<br>answers?"}
     fix["Nothing is saved;<br>the message says<br>what to correct"]
     share["4 · The archive account<br>shares its archive<br>read-only"]
@@ -339,9 +339,10 @@ The search needs one thing from a synchronization: each document of Paperless-ng
 2. Create an API token for that account.
 3. In Nextcloud, open **Administration settings → Paperless Unified Search**.
 4. Enter the Paperless base URL and API token.
-5. Under **Archive account**, enter the Nextcloud account that owns the synchronized files, or leave it blank to use the account that Paperless Sync writes the archive with. The settings store the ID as Nextcloud spells it, whatever its case, and warn when the account doesn't exist.
-6. Optionally enable **Always include Paperless in global search** to treat the configured Paperless server as trusted.
-7. Select **Test connection and save**. Nextcloud asks for your password when you haven't confirmed it in the last 30 minutes, as for its own settings of this kind; so does **Disconnect**.
+5. When Nextcloud reaches Paperless at an address of your local network or by the name of its Docker service, such as `http://192.168.1.20:8000` or `http://paperless:8000`, select **Paperless runs in my local network** ([below](#paperless-in-your-local-network)).
+6. Under **Archive account**, enter the Nextcloud account that owns the synchronized files, or leave it blank to use the account that Paperless Sync writes the archive with. The settings store the ID as Nextcloud spells it, whatever its case, and warn when the account doesn't exist.
+7. Optionally enable **Always include Paperless in global search** to treat the configured Paperless server as trusted.
+8. Select **Test connection and save**. Nextcloud asks for your password when you haven't confirmed it in the last 30 minutes, as for its own settings of this kind; so does **Disconnect**.
 
 Leave the token blank to keep the stored one. The stored token goes only to the Paperless server it was saved for: when the URL names another server, with another scheme, host or port, the settings ask for the token again, so that the token never reaches a server it wasn't meant for. Another path on the same server keeps it. When Nextcloud can no longer decrypt the stored token, as after a move or a restore with another `secret` in `config.php`, the settings say so and ask for it again, and until then the search shows no Paperless documents.
 
@@ -350,6 +351,40 @@ The configuration is global. Access control remains user-specific because the ap
 When Paperless documents are missing from the search, look at **Search problems** at the end of the settings. A failed search shows the users no Paperless documents and no error, and a request to Paperless that gets no answer at all, as when the connection fails, is sent a second time before the search gives up. The settings count both, the failed searches and the requests that only their second try answered, and list the latest 20 with the time, the step, asking Paperless or looking for the files in Nextcloud, the kind and the message of the error and how long it took, along with since when searches work again after the last failure. This helps where the hoster keeps the log of Nextcloud from administrators. **Clear history** and **Disconnect** forget the history; saving the settings keeps it.
 
 By default, Nextcloud's search in the browser asks Paperless only after the user enables **Search connected services**, and the smart picker only after the user picks **Paperless documents** in it. When the trusted-service option is enabled, every global search term from every Nextcloud user is sent to Paperless automatically and the connected-services switch no longer controls this provider. Reload Nextcloud after changing this option.
+
+### Paperless in your local network
+
+Nextcloud refuses to connect to addresses of the local network, such as `192.168.1.20`, `paperless.local` or the name of a Docker service, so that no URL that someone enters can reach the services behind its firewall. Most Paperless servers run at exactly such an address. Select **Paperless runs in my local network**, and Nextcloud allows the address for the requests of this app to the Paperless URL of the settings, and for nothing else: those requests follow no redirect, and every other app keeps the protection. Without the switch, **Test connection and save** fails with a message that names it. Enter the address at which Paperless itself answers, such as `https://paperless.example.com` rather than `http://paperless.example.com` when a proxy redirects `http` to `https`: with the switch, Nextcloud follows no redirect, and a redirect makes the test of the connection fail.
+
+Don't set `allow_local_remote_servers` in `config.php` for Paperless: it lifts the protection for every app and every URL that users can enter, such as link previews, webhooks and the servers of federated shares.
+
+If you set `allow_local_remote_servers` in `config.php` for Paperless before, first select **Paperless runs in my local network** and save, and only then remove it from `config.php`. Otherwise the search shows no Paperless documents until the switch is saved.
+
+```mermaid
+flowchart TB
+    accTitle: Which requests reach an address of the local network
+    accDescr: A request of this app to the Paperless URL of the settings reaches an address of the local network when Paperless runs in my local network is selected, and then follows no redirect. Without the switch, Nextcloud refuses the address before any request leaves it, and saving says to select the switch. Requests of other apps keep Nextcloud's protection, unless allow_local_remote_servers in config.php lifts it for all of them.
+
+    request(["A request to an address<br>of the local network"])
+    ours{"From this app,<br>to the Paperless URL<br>of the settings?"}
+    switch{"<b>Paperless runs in<br>my local network</b><br>selected?"}
+    allowed["Nextcloud connects,<br>without redirects"]
+    refused["Nextcloud refuses it;<br>saving names<br>the switch"]
+    others["Nextcloud refuses it,<br>as it always does"]
+
+    request --> ours
+    ours -- "yes" --> switch
+    ours -- "no, another app" --> others
+    switch -- "yes" --> allowed
+    switch -- "no" --> refused
+
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class allowed yes
+    class refused,others no
+```
+
+The URL may name a Docker service with an underscore, such as `http://paperless_ngx:8000`, an IPv6 address in brackets, such as `http://[fd00::5]:8000`, or an internationalized name, which the settings store in the ASCII form that DNS knows, such as `https://xn--bcher-kva.example` for `https://bücher.example`.
 
 <!-- --8<-- [end:configuration] -->
 <!-- --8<-- [start:usage] -->
@@ -434,6 +469,7 @@ Give an assistant the app password of a user who sees only what it may read, and
 - The token is never returned to browser JavaScript or rendered into HTML.
 - The token is sent only to the Paperless server it was saved for; a URL with another scheme, host or port needs it entered again.
 - Saving the settings and disconnecting ask for the administrator's password when it wasn't confirmed in the last 30 minutes.
+- Nextcloud's protection against addresses of the local network stays on for every app. **Paperless runs in my local network** lifts it only for the requests of this app to the Paperless URL of the settings, which follow no redirect.
 - Search results are filtered through the current user's Nextcloud filesystem view.
 - The settings show administrators the history of the problems of the search without the API token, the search term or the query of any URL.
 - Search terms are sent server-to-server only when connected-services search or trusted-service mode is enabled, after the user chose **Paperless documents** in the smart picker, or when a client asks this search by its ID through the API.

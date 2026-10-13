@@ -163,9 +163,9 @@ phase "Start Nextcloud and the mock of Paperless"
 
 phase "Set up Nextcloud and the app"
 # Each call of occ starts PHP and Nextcloud anew, which takes a few seconds while
-# run-all.sh tests three versions at once. So occ does only what needs it; the access
-# to local servers comes from compose.yaml, and the rest from the web server, which
-# runs anyway.
+# run-all.sh tests three versions at once. So occ does only what needs it, and the rest
+# comes from the web server, which runs anyway. Nextcloud keeps its protection against
+# addresses of the local network: the app reaches the mock only through its own switch.
 if ! curl --silent "${BASE_URL}/status.php" | grep --fixed-strings '"installed":true' >/dev/null; then
 	occ maintenance:install \
 		--database=sqlite \
@@ -250,17 +250,42 @@ if [[ "${ROUTE}" != *"/apps/paperless_unified_search/settings" ]]; then
 	exit 1
 fi
 
+SETTINGS_URL="${BASE_URL}/apps/paperless_unified_search/settings"
+# Nextcloud refuses addresses of the local network, such as the one of the mock, to
+# every request that doesn't allow them, and config.php allows them to none here
+# (#117). Without the switch of the app, the test of the connection fails before any
+# request leaves Nextcloud, and the answer names the switch; with it, the app reaches
+# the mock, for that test and for every search below.
+requests="$(mock_requests)"
+expect_status 400 'Saving the mock without the switch for the local network' \
+	--user "e2e-admin:${PASSWORD}" \
+	--request POST \
+	--data-urlencode 'url=http://paperless-mock:8080' \
+	--data-urlencode 'token=e2e-only-token' \
+	--data-urlencode 'allowLocal=0' \
+	--data-urlencode 'archiveOwner=e2e-user' \
+	"${SETTINGS_URL}"
+if ! grep --fixed-strings 'Paperless runs in my local network' "${TMP_DIR}/answer.json" >/dev/null; then
+	echo "The refused save of an address of the local network doesn't name the switch: $(cat "${TMP_DIR}/answer.json")" >&2
+	exit 1
+fi
+if [[ "$(mock_requests)" != "${requests}" ]]; then
+	echo "The save without the switch for the local network reached the mock." >&2
+	exit 1
+fi
+
 curl --fail-with-body --silent --show-error \
 	--user "e2e-admin:${PASSWORD}" \
 	--header 'Accept: application/json' \
 	--header 'OCS-APIRequest: true' \
 	--request POST \
 	--data-urlencode 'url=http://paperless-mock:8080' \
+	--data-urlencode 'allowLocal=1' \
 	--data-urlencode 'token=e2e-only-token' \
 	--data-urlencode 'alwaysSearch=0' \
 	--data-urlencode 'archiveOwner=e2e-user' \
 	--output "${TMP_DIR}/settings.json" \
-	"${BASE_URL}/apps/paperless_unified_search/settings"
+	"${SETTINGS_URL}"
 
 if grep --fixed-strings 'e2e-only-token' "${TMP_DIR}/settings.json" >/dev/null; then
 	echo "Settings response exposed the Paperless API token." >&2
@@ -269,7 +294,6 @@ fi
 
 # Only administrators may change the settings (#99). Nextcloud answers a user who isn't
 # one with 403 and a request without a login with 401, and the settings stay as they are.
-SETTINGS_URL="${BASE_URL}/apps/paperless_unified_search/settings"
 for login in e2e-user anonymous; do
 	credentials=()
 	expected=401
@@ -315,6 +339,7 @@ for url in http://other-host:8080 http://paperless-mock:8080; do
 		--user "e2e-admin:${PASSWORD}" \
 		--request POST \
 		--data-urlencode "url=${url}" \
+		--data-urlencode 'allowLocal=1' \
 		--data-urlencode 'token=e2e-only-token' \
 		--data-urlencode 'archiveOwner=e2e-user' \
 		"${SETTINGS_URL}"
@@ -443,6 +468,7 @@ curl --fail-with-body --silent --show-error \
 	--header 'OCS-APIRequest: true' \
 	--request POST \
 	--data-urlencode 'url=http://paperless-mock:8080' \
+	--data-urlencode 'allowLocal=1' \
 	--data-urlencode 'token=' \
 	--data-urlencode 'alwaysSearch=1' \
 	--data-urlencode 'archiveOwner=E2E-User' \
@@ -481,4 +507,4 @@ phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed in ${SECONDS} s: settings for administrators only, the token only for its server, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, pages of results filled across pages of Paperless, and the settings page in the browser with its accessibility."
+echo "Docker E2E passed in ${SECONDS} s: settings for administrators only, the token only for its server, the local network only with the switch of the app, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, pages of results filled across pages of Paperless, and the settings page in the browser with its accessibility."
