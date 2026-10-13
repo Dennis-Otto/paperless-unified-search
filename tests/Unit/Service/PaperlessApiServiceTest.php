@@ -18,9 +18,11 @@ use OCP\Http\Client\IClient;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
 use OCP\IAppConfig;
+use OCP\IUserManager;
 use OCP\Security\ICredentialsManager;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use RuntimeException;
 use Throwable;
 use UnexpectedValueException;
@@ -263,7 +265,7 @@ final class PaperlessApiServiceTest extends TestCase {
 		$clientService->method('newClient')->willReturn($client);
 
 		return new PaperlessApiService(
-			new ConfigService($config, $credentials),
+			new ConfigService($config, $credentials, $this->createStub(IUserManager::class), $this->createStub(LoggerInterface::class)),
 			$clientService,
 			new SearchDiagnostics($config, $this->createStub(ITimeFactory::class)),
 		);

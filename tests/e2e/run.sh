@@ -45,7 +45,7 @@ assert_response() {
 }
 
 # axe-core checks the pages of the app in Chromium (accessibility.mjs), inside the
-# network of the Compose project. The files of the check reach the browser through
+# network of the Compose project, and the script checks what the settings page does. The files of the check reach the browser through
 # standard input, so that npm leaves nothing in the checkout. Keep the version of the
 # image of Playwright equal to playwright-core in package.json; Renovate updates both
 # together, and scripts/check-project.sh compares them.
@@ -58,6 +58,30 @@ accessibility() {
 			--env "E2E_PASSWORD=${PASSWORD}" \
 			mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27 \
 			sh -c 'mkdir /tmp/browser && cd /tmp/browser && tar -xf - && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error && node accessibility.mjs'
+}
+
+# Sends a request and expects the HTTP status $1. $2 says what the request does, for the
+# message of a failure; the rest are its options of curl. The answer lands in
+# ${TMP_DIR}/answer.json.
+expect_status() {
+	expected="$1"
+	request="$2"
+	shift 2
+	status="$(curl --silent --show-error \
+		--header 'Accept: application/json' \
+		--header 'OCS-APIRequest: true' \
+		--output "${TMP_DIR}/answer.json" \
+		--write-out '%{http_code}' \
+		"$@")"
+	if [[ "${status}" != "${expected}" ]]; then
+		echo "${request} answered HTTP ${status} instead of ${expected}." >&2
+		exit 1
+	fi
+}
+
+# The number of requests for documents that have reached the mock of Paperless so far.
+mock_requests() {
+	"${COMPOSE[@]}" logs --no-color paperless-mock | grep --count --fixed-strings 'GET /api/documents/' || true
 }
 
 search() {
@@ -168,6 +192,64 @@ if grep --fixed-strings 'e2e-only-token' "${TMP_DIR}/settings.json" >/dev/null; 
 	exit 1
 fi
 
+# Only administrators may change the settings (#99). Nextcloud answers a user who isn't
+# one with 403 and a request without a login with 401, and the settings stay as they are.
+SETTINGS_URL="${BASE_URL}/apps/paperless_unified_search/settings"
+for login in e2e-user anonymous; do
+	credentials=()
+	expected=401
+	if [[ "${login}" == e2e-user ]]; then
+		credentials=(--user "e2e-user:${PASSWORD}")
+		expected=403
+	fi
+	expect_status "${expected}" "Saving the settings as ${login}" "${credentials[@]}" \
+		--request POST \
+		--data-urlencode 'url=http://other-host:8080' \
+		--data-urlencode 'token=' \
+		"${SETTINGS_URL}"
+	expect_status "${expected}" "Disconnect as ${login}" "${credentials[@]}" \
+		--request DELETE \
+		"${SETTINGS_URL}"
+	expect_status "${expected}" "Clear history as ${login}" "${credentials[@]}" \
+		--request DELETE \
+		"${SETTINGS_URL}/diagnostics"
+done
+if [[ "$(occ config:app:get paperless_unified_search paperless_url)" != 'http://paperless-mock:8080' ]]; then
+	echo "A request of a user who isn't an administrator changed the settings." >&2
+	exit 1
+fi
+
+# A blank token keeps the stored one only for the server it was saved for (#99). The
+# mock answers as other-host too, so a test of the connection there would reach it: the
+# refused save sends it nothing, while a save with a token does, and so does the one
+# that returns to the mock's own name.
+requests="$(mock_requests)"
+expect_status 400 'Saving another server without a token' \
+	--user "e2e-admin:${PASSWORD}" \
+	--request POST \
+	--data-urlencode 'url=http://other-host:8080' \
+	--data-urlencode 'token=' \
+	--data-urlencode 'archiveOwner=e2e-user' \
+	"${SETTINGS_URL}"
+if ! grep --fixed-strings 'Enter the API token again' "${TMP_DIR}/answer.json" >/dev/null; then
+	echo "The refused save of another server doesn't ask for the token: $(cat "${TMP_DIR}/answer.json")" >&2
+	exit 1
+fi
+for url in http://other-host:8080 http://paperless-mock:8080; do
+	expect_status 200 "Saving ${url} with a token" \
+		--user "e2e-admin:${PASSWORD}" \
+		--request POST \
+		--data-urlencode "url=${url}" \
+		--data-urlencode 'token=e2e-only-token' \
+		--data-urlencode 'archiveOwner=e2e-user' \
+		"${SETTINGS_URL}"
+done
+received=$(($(mock_requests) - requests))
+if [[ "${received}" -ne 2 ]]; then
+	echo "The mock received ${received} request(s) instead of the 2 of the saves with a token." >&2
+	exit 1
+fi
+
 MKCOL_STATUS="$(curl --silent --output /dev/null --write-out '%{http_code}' \
 	--user "e2e-user:${PASSWORD}" \
 	--request MKCOL \
@@ -236,9 +318,15 @@ curl --fail-with-body --silent --show-error \
 	--data-urlencode 'url=http://paperless-mock:8080' \
 	--data-urlencode 'token=' \
 	--data-urlencode 'alwaysSearch=1' \
-	--data-urlencode 'archiveOwner=e2e-user' \
+	--data-urlencode 'archiveOwner=E2E-User' \
 	--output "${TMP_DIR}/settings-trusted.json" \
 	"${BASE_URL}/apps/paperless_unified_search/settings"
+# Nextcloud finds an account whatever the case of its ID; the settings store the ID as
+# Nextcloud spells it, which the owners of the files carry (#99).
+if [[ "$(occ config:app:get paperless_unified_search archive_owner)" != 'e2e-user' ]]; then
+	echo "The archive account E2E-User wasn't stored as e2e-user." >&2
+	exit 1
+fi
 
 curl --fail-with-body --silent --show-error \
 	--user "e2e-user:${PASSWORD}" \
@@ -248,10 +336,20 @@ curl --fail-with-body --silent --show-error \
 	"${BASE_URL}/ocs/v2.php/search/providers"
 assert_response trusted "${TMP_DIR}/providers-trusted.json"
 
-# The administration settings meet WCAG 2.1 AA, also with the message after saving.
+# The administration settings meet WCAG 2.1 AA, also with the warning about an archive
+# account that doesn't exist, with the token field required for another server and
+# with the message after saving. The browser corrects the archive account and saves
+# another server and then the mock again, each with the token (#99).
+occ config:app:set paperless_unified_search archive_owner --value=e2e-gone >/dev/null
 accessibility
+for setting in 'paperless_url=http://paperless-mock:8080' 'archive_owner=e2e-user'; do
+	if [[ "$(occ config:app:get paperless_unified_search "${setting%%=*}")" != "${setting#*=}" ]]; then
+		echo "The settings page in the browser didn't store ${setting}." >&2
+		exit 1
+	fi
+done
 
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed: access filtering by the archive account and its shares, trusted mode, browser, iOS, and Android contracts, and accessibility."
+echo "Docker E2E passed: settings for administrators only, the token only for its server, access filtering by the archive account and its shares, trusted mode, browser, iOS, and Android contracts, and the settings page in the browser with its accessibility."

@@ -258,9 +258,11 @@ This app does not synchronize documents itself. For a native, configurable synch
 2. Create an API token for that account.
 3. In Nextcloud, open **Administration settings → Paperless Unified Search**.
 4. Enter the Paperless base URL and API token.
-5. Under **Archive account**, enter the Nextcloud account that owns the synchronized files, or leave it blank to use the account that Paperless Sync writes the archive with.
+5. Under **Archive account**, enter the Nextcloud account that owns the synchronized files, or leave it blank to use the account that Paperless Sync writes the archive with. The settings store the ID as Nextcloud spells it, whatever its case, and warn when the account doesn't exist.
 6. Optionally enable **Always include Paperless in global search** to treat the configured Paperless server as trusted.
-7. Select **Test connection and save**.
+7. Select **Test connection and save**. Nextcloud asks for your password when you haven't confirmed it in the last 30 minutes, as for its own settings of this kind; so does **Disconnect**.
+
+Leave the token blank to keep the stored one. The stored token goes only to the Paperless server it was saved for: when the URL names another server, with another scheme, host or port, the settings ask for the token again, so that the token never reaches a server it wasn't meant for. Another path on the same server keeps it. When Nextcloud can no longer decrypt the stored token, as after a move or a restore with another `secret` in `config.php`, the settings say so and ask for it again, and until then the search shows no Paperless documents.
 
 The configuration is global. Access control remains user-specific because the app discards every Paperless hit for which the searching Nextcloud user can't open a matching file of the archive account. Share the archive read-only with the users who may see its documents. Without an archive account, the search shows no Paperless documents.
 
@@ -284,6 +286,8 @@ Documents without a synchronized `[P<ID>]` file of the archive account are inten
 
 - The Paperless API token is stored only in Nextcloud's server-side credentials manager.
 - The token is never returned to browser JavaScript or rendered into HTML.
+- The token is sent only to the Paperless server it was saved for; a URL with another scheme, host or port needs it entered again.
+- Saving the settings and disconnecting ask for the administrator's password when it wasn't confirmed in the last 30 minutes.
 - Search results are filtered through the current user's Nextcloud filesystem view.
 - The settings show administrators the history of the problems of the search without the API token, the search term or the query of any URL.
 - Search terms are sent server-to-server only when connected-services search or trusted-service mode is enabled.

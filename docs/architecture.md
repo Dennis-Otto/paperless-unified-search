@@ -64,7 +64,7 @@ flowchart TB
 | Search provider | `lib/Search/PaperlessSearchProvider.php` | Answers a search of Nextcloud: asks Paperless, keeps the results with a readable file and builds each entry with its title, an excerpt and the link that opens the file in the browser, the iOS app or the Android app |
 | Paperless client | `lib/Service/PaperlessApiService.php` | Sends the search term to the full-text search of Paperless through Nextcloud's HTTP client and checks the shape of the answer |
 | File locator | `lib/Service/NextcloudFileLocator.php` | Finds the file of the archive account whose name carries the marker `[P<ID>]` of a document in the folders that the searching user can read |
-| Configuration | `lib/Service/ConfigService.php`, `lib/Model/PublicConfig.php` | Checks and stores the URL of Paperless, the archive account and the switch *Always include Paperless in global search*; the API token goes to Nextcloud's credentials manager; without an archive account of its own it takes the account of Paperless Sync |
+| Configuration | `lib/Service/ConfigService.php`, `lib/Model/PublicConfig.php` | Checks and stores the URL of Paperless, the archive account and the switch *Always include Paperless in global search*; the API token goes to Nextcloud's credentials manager, is read from it once per request and is sent only to the server it was saved for; without an archive account of its own it takes the account of Paperless Sync, and it uses the ID of either as Nextcloud spells it |
 | Settings page | `lib/Settings/`, `lib/Controller/SettingsController.php`, `templates/settings.php`, `js/settings.js` | The page under *Administration settings → Paperless Unified Search*, a section of its own: save after a test of the connection, and reset; Nextcloud lets only administrators call its routes and checks the CSRF token of every request |
 
 ## Data flow
@@ -193,7 +193,7 @@ config:
 ---
 sequenceDiagram
     accTitle: Saving the settings
-    accDescr: The administrator enters the URL, the token and the archive account. The settings page sends them with the CSRF token to the settings controller, which checks them and has the Paperless client test the connection with one request to Paperless-ngx. Only when Paperless answers does the configuration save them, the URL, the switch and the archive account in the app configuration and the token in the credentials manager. The page gets the settings back, without the token.
+    accDescr: The administrator enters the URL, the token and the archive account. When the password wasn't confirmed in the last 30 minutes, Nextcloud asks for it first. The settings page sends them with the CSRF token to the settings controller, which checks the URL, the token and the archive account: a blank token keeps the stored one only for its server, the same scheme, host and port, and otherwise the answer is HTTP 400. Then the controller has the Paperless client test the connection with one request to Paperless-ngx. Only when Paperless answers does the configuration save them, the URL, the switch and the archive account in the app configuration and the token in the credentials manager. The page gets the settings back, without the token.
 
     actor Admin as Administrator
     participant Page as Settings page
@@ -202,8 +202,12 @@ sequenceDiagram
     participant Config as Configuration
     participant Paperless as Paperless-ngx
     Admin->>Page: URL, token, archive account
+    opt the password wasn't confirmed in the last 30 minutes
+        Page->>Admin: Nextcloud asks for the password
+    end
     Page->>Controller: POST /apps/<br>paperless_unified_search<br>/settings, with the<br>CSRF token
-    Controller->>Controller: checks the URL and that the archive account exists
+    Controller->>Config: checks the URL, the token and the archive account
+    Note over Controller,Config: a blank token keeps the stored one only for its server (the same scheme, host and port), else HTTP 400
     Controller->>Client: test the connection
     Client->>Paperless: GET /api/documents/<br>?page_size=1
     Paperless-->>Client: 200
@@ -214,7 +218,7 @@ sequenceDiagram
 
 </div>
 
-A token left blank keeps the stored one. *Disconnect* deletes every setting, the token included, and the history of the diagnostics as well; saving keeps the history.
+A token left blank keeps the stored one, but only for the server it was saved for ([decision 0003](decisions/0003-bind-the-token-to-its-server.md)); the page marks the token field as required as soon as the URL names another server. The archive account is stored as Nextcloud spells its ID. A stored token that the credentials manager can't decrypt counts as none, and the page says so. Saving and *Disconnect* ask for the password when it wasn't confirmed in the last 30 minutes. *Disconnect* deletes every setting, the token included, and the history of the diagnostics as well; saving keeps the history.
 
 ## Design decisions
 

@@ -33,6 +33,19 @@
 	width: 100%;
 }
 
+/*
+ * A warning about a field, such as a token that can't be decrypted. It stays in the page
+ * as the description of its field, empty and out of sight while all is well.
+ */
+.paperless-unified-search-warning {
+	color: var(--color-error-text, #b00020);
+	font-weight: 600;
+}
+
+.paperless-unified-search-warning:empty {
+	display: none;
+}
+
 .paperless-unified-search-actions {
 	display: flex;
 	flex-wrap: wrap;
