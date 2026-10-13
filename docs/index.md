@@ -55,7 +55,7 @@ Paperless Sync is the companion, not a must: [any synchronization](guide.md#work
 
     ---
 
-    By default, search terms reach Paperless only when the user switches on **Search connected services**. Administrators can trust their Paperless server to include it in every search.
+    By default, search terms reach Paperless only when the user switches on **Search connected services** or asks the search API for Paperless documents. Administrators can trust their Paperless server to include it in every search.
 
 - :material-key-chain-variant:{ .lg .middle } **The token stays on the server**
 
@@ -123,7 +123,7 @@ The [guide](guide.md) describes the configuration, the usage and the security an
 
     ---
 
-    Installation, how the search works, requirements, configuration, usage, and security and privacy.
+    Installation, how the search works, any synchronization, requirements, configuration, usage and the search syntax, scripts and AI assistants, and security and privacy.
 
     [:octicons-arrow-right-24: Read the guide](guide.md)
 
@@ -131,7 +131,7 @@ The [guide](guide.md) describes the configuration, the usage and the security an
 
     ---
 
-    How the app compares with Full text search and Elasticsearch, Workflow OCR, Context Chat, Findling and the web UI of Paperless, and when another one is the better choice.
+    How the app compares with Full text search and Elasticsearch, Workflow OCR, the Paperless integration, Context Chat, Findling and the web UI of Paperless, and when another one is the better choice.
 
     [:octicons-arrow-right-24: Compare](compare.md)
 

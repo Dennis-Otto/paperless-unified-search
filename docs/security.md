@@ -14,7 +14,7 @@ What Paperless Unified Search protects, what it trusts and which risks remain. [
 - The Paperless API token is stored in Nextcloud's credentials manager and goes only to the Paperless server it was saved for: no response, page or message of the app contains it, and a URL with another scheme, host or port needs the token entered again ([decision 0003](decisions/0003-bind-the-token-to-its-server.md)).
 - A stored token that can't be decrypted, as after a move of Nextcloud with another secret in `config.php`, counts as none: the settings ask for it again, and the search shows no Paperless documents instead of failing.
 - A Paperless document appears in the results of a user only when that user can open a file of the archive account whose name carries its marker `[P<ID>]`: their own if they are that account, or one it shared with them. A file that only carries the marker in its name stands for no document. Selecting the result opens that file in Nextcloud.
-- Search terms reach Paperless only when the user switches on *Search connected services*, or when an administrator has marked Paperless as trusted. They travel from server to server, never from the browser to Paperless.
+- Search terms reach Paperless only when the user switches on *Search connected services*, when an administrator has marked Paperless as trusted, or when a client of the user, such as a script, asks for this search by its ID through Nextcloud's OCS search API. They travel from server to server, never from the browser to Paperless.
 - Requests to Paperless go through Nextcloud's HTTP client, which checks TLS certificates.
 - A failed search is logged with the kind of error only, without the term, the URL or the token. The history of the administration settings shows it with its message as well, as it shows a request that only its second try answered; the message loses the token, the term and the query of every URL first.
 
@@ -23,7 +23,7 @@ What Paperless Unified Search protects, what it trusts and which risks remain. [
 | Asset | Where it lives | Protection |
 | --- | --- | --- |
 | The Paperless API token | Nextcloud's credentials manager | Stored only there; the settings carry only whether a token is configured; saving without a new token keeps the stored one, but only for the server it was saved for |
-| The search terms of the users | Sent to Paperless | Only when the user asks for it or an administrator trusts Paperless; never logged by the app; removed from the messages of the history of the diagnostics, as is the query of every URL |
+| The search terms of the users | Sent to Paperless | Only when the user asks for it, in the search or through the API, or an administrator trusts Paperless; never logged by the app; removed from the messages of the history of the diagnostics, as is the query of every URL |
 | Documents in Paperless | Paperless | Read through a dedicated account with read access only; shown only through a file of the archive account that the user can read |
 | The configuration | Nextcloud's app configuration | Changed only by administrators who confirmed their password in the last 30 minutes, after a test of the connection |
 

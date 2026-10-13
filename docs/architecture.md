@@ -107,7 +107,7 @@ sequenceDiagram
 
 </div>
 
-1. A user searches in Nextcloud. Nextcloud asks the provider when the user has switched on *Search connected services*, or always when an administrator has marked Paperless as trusted.
+1. A user searches in Nextcloud. Nextcloud asks the provider when the user has switched on *Search connected services*, or always when an administrator has marked Paperless as trusted. A client that asks for this search by its ID through Nextcloud's OCS search API, such as a script, gets it without the switch.
 2. The provider sends the term to the full-text search of Paperless, at most 50 results per page.
 3. For every document of the answer, the file locator looks for a file of the archive account with the marker `[P<ID>]` in the folders of the searching user. A document without such a file is left out, and without an archive account Paperless isn't asked at all.
 4. Each remaining document becomes an entry: its title, the date and an excerpt of the text that Paperless found, and the link that opens the file in Nextcloud. Further pages of Paperless become further pages of the search.
@@ -226,4 +226,4 @@ A token left blank keeps the stored one, but only for the server it was saved fo
 - **Paperless does the searching.** Its OCR and full-text index answer the search; the app keeps no index of its own.
 - **The marker `[P<ID>]`** in the file name ties a file of the archive account to its document. [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) writes such files, and the two apps work together without depending on each other's releases.
 - **The owner, not the name, decides.** Only files of the archive account count, because anyone can give a file the marker of a document ([decision 0002](decisions/0002-trust-the-archive-account.md)).
-- **External by default.** Like every provider that sends search terms to another server, the app searches Paperless only when the user asks for it, unless an administrator marks Paperless as trusted.
+- **External by default.** Like every provider that sends search terms to another server, the app searches Paperless only when the user asks for it, with the switch in the search or a request for this search through the API, unless an administrator marks Paperless as trusted.

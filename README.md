@@ -301,7 +301,7 @@ The search needs one thing from a synchronization: each document of Paperless-ng
         ```
 
     - **The Nextcloud desktop client**, signed in as the archive account, on a copy of the folder rather than the folder itself: it syncs both ways, and Paperless loses track of a file that is moved or deleted in its media folder.
-    - **An external storage** with the files, mounted for the archive account alone and shared from there. Nextcloud's search finds only the files it has scanned, so let a timer run `occ files:scan` for the storage. On a storage mounted for every user, each user owns the files they see there, and such a file stands for no document.
+    - **An external storage** with the files, mounted for the archive account alone and shared from there. A mount can't be shared until **Enable sharing** is switched on in its options, behind the gear of the storage under *External storage* in the administration settings. Nextcloud's search finds only the files it has scanned, so let a timer run `occ files:scan` for the storage. On a storage mounted for every user, each user owns the files they see there, and such a file stands for no document.
 
 3. **Share the archive read-only** with the users who may find its documents, and enter the archive account in the settings, as in the [quick start](#quick-start).
 
@@ -334,7 +334,7 @@ The configuration is global. Access control remains user-specific because the ap
 
 When Paperless documents are missing from the search, look at **Search problems** at the end of the settings. A failed search shows the users no Paperless documents and no error, and a request to Paperless that gets no answer at all, as when the connection fails, is sent a second time before the search gives up. The settings count both, the failed searches and the requests that only their second try answered, and list the latest 20 with the time, the step, asking Paperless or looking for the files in Nextcloud, the kind and the message of the error and how long it took, along with since when searches work again after the last failure. This helps where the hoster keeps the log of Nextcloud from administrators. **Clear history** and **Disconnect** forget the history; saving the settings keeps it.
 
-By default, Nextcloud searches Paperless only after the user enables **Search connected services**. When the trusted-service option is enabled, every global search term from every Nextcloud user is sent to Paperless automatically and the connected-services switch no longer controls this provider. Reload Nextcloud after changing this option.
+By default, Nextcloud's search in the browser asks Paperless only after the user enables **Search connected services**. When the trusted-service option is enabled, every global search term from every Nextcloud user is sent to Paperless automatically and the connected-services switch no longer controls this provider. Reload Nextcloud after changing this option.
 
 <!-- --8<-- [end:configuration] -->
 <!-- --8<-- [start:usage] -->
@@ -400,7 +400,7 @@ curl asks for the app password, which keeps it out of the history of the shell; 
 }
 ```
 
-Each entry names the document, a line of its text that matches, the link that opens its file and the file's ID and path for that user. `limit` sets the number of results, up to 50; when `isPaginated` is `true`, ask again with `cursor` set to the `cursor` of the answer for the next ones. The switch **Search connected services** belongs to the search in the browser; the API asks Paperless without it.
+Each entry names the document, a line of its text that matches, the link that opens its file and the file's ID and path for that user. `limit` sets how many documents Paperless is asked for per page, 5 by default and up to 50. A page can hold fewer results, even none, when the user can't open the files of some documents, so keep asking with `cursor` set to the `cursor` of the answer while `isPaginated` is `true`. The switch **Search connected services** belongs to the search in the browser; the API asks Paperless without it.
 
 Give an assistant the app password of a user who sees only what it may read, and revoke the app password in the personal security settings once the assistant no longer needs it.
 
