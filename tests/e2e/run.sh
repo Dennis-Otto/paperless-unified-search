@@ -14,8 +14,16 @@ PASSWORD="e2e-only-password"
 BASE_URL="http://127.0.0.1:${E2E_PORT}"
 TMP_DIR="$(mktemp -d)"
 COMPOSE=("${DOCKER_BIN}" compose --project-name "${PROJECT_NAME}" --file "${SCRIPT_DIR}/compose.yaml")
+# The browser of the accessibility check. Keep its version equal to playwright-core in
+# package.json: Renovate updates both together, and scripts/check-project.sh compares
+# them. The name stays on one line without quotes, where that check, run-all.sh and
+# scripts/screenshots.sh find it.
+PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+PLAYWRIGHT_PULL=""
 
 export E2E_PORT
+# Git Bash on Windows: keep the paths in the container of the mock as they are.
+export MSYS2_ARG_CONV_EXCL="/mock/${MSYS2_ARG_CONV_EXCL:+;${MSYS2_ARG_CONV_EXCL}}"
 
 cleanup() {
 	status=$?
@@ -25,8 +33,12 @@ cleanup() {
 		"${COMPOSE[@]}" logs --no-color --tail 200 || true
 	fi
 	rm -rf "${TMP_DIR}"
+	if [[ -n "${PLAYWRIGHT_PULL}" ]]; then
+		kill "${PLAYWRIGHT_PULL}" >/dev/null 2>&1 || true
+	fi
 	if [[ "${KEEP_E2E:-0}" != "1" ]]; then
-		"${COMPOSE[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
+		# The containers hold nothing worth a graceful stop.
+		"${COMPOSE[@]}" down --volumes --remove-orphans --timeout 0 >/dev/null 2>&1 || true
 	else
 		echo "E2E environment kept at ${BASE_URL} (project ${PROJECT_NAME})."
 	fi
@@ -78,7 +90,13 @@ search() {
 }
 
 cd "${REPOSITORY_ROOT}"
-"${COMPOSE[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
+"${COMPOSE[@]}" down --volumes --remove-orphans --timeout 0 >/dev/null 2>&1 || true
+# The browser is needed only at the end: its image loads while Nextcloud sets itself up.
+# run-all.sh loads it once for all versions and sets E2E_SKIP_PLAYWRIGHT_PULL=1.
+if [[ "${E2E_SKIP_PLAYWRIGHT_PULL:-0}" != "1" ]]; then
+	"${DOCKER_BIN}" pull --quiet "${PLAYWRIGHT_IMAGE}" >/dev/null 2>&1 &
+	PLAYWRIGHT_PULL=$!
+fi
 "${COMPOSE[@]}" up --detach --wait --wait-timeout 240
 
 if ! occ status --output=json 2>/dev/null | grep --fixed-strings '"installed":true' >/dev/null; then
@@ -102,6 +120,9 @@ occ router:list \
 	| grep --fixed-strings 'paperless_unified_search.settings.save' \
 	| grep --fixed-strings '/apps/paperless_unified_search/settings' >/dev/null
 
+# The password policy would check every new password against the public list of
+# Have I Been Pwned: no test may depend on a service outside the runner.
+occ config:app:set password_policy enforceHaveIBeenPwned --type=boolean --value=false >/dev/null
 for user in e2e-user e2e-other; do
 	"${COMPOSE[@]}" exec -T --user www-data --env "OC_PASS=${PASSWORD}" nextcloud \
 		php occ user:add --password-from-env "${user}" >/dev/null

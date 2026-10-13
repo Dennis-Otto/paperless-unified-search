@@ -5,7 +5,14 @@ name: Docker E2E
 
 # The end-to-end tests in Docker against the current release of every Nextcloud
 # version that appinfo/info.xml supports, from min-version to max-version, so that
-# raising max-version, as the upstream bot does, tests the new version at once.
+# raising max-version, as the upstream bot does, tests the new version at once. One
+# job, the required check "nextcloud", runs all versions at the same time
+# (tests/e2e/run-all.sh): no queue between jobs, and one download of the browser.
+#
+# A pull request or push that changes no file the tests cover, such as one of the
+# documentation, of the CI or from the blueprint, passes the check in seconds without
+# running them. The schedule and a start by hand always run them, so that the weekly
+# run also tests the newest release behind each image nextcloud:<version>-apache.
 #
 # Every Monday, and when started by hand, they also run against the coming Nextcloud
 # (tests/e2e/canary.sh): the beta or release candidate of the next major version, or
@@ -29,49 +36,12 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  versions:
-    name: supported Nextcloud versions
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    outputs:
-      majors: ${{ steps.versions.outputs.majors }}
-    steps:
-      - name: Record the network traffic of the job
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Read min-version and max-version of appinfo/info.xml
-        id: versions
-        run: |
-          python3 - >> "$GITHUB_OUTPUT" <<'PYTHON'
-          import json
-          import xml.etree.ElementTree as tree
-
-          nextcloud = tree.parse("appinfo/info.xml").getroot().find("dependencies/nextcloud")
-          low, high = int(nextcloud.get("min-version")), int(nextcloud.get("max-version"))
-          print("majors=" + json.dumps(list(range(low, high + 1))))
-          PYTHON
-
-  nextcloud-version:
-    name: Nextcloud ${{ matrix.nextcloud }}
-    needs: versions
-    runs-on: ubuntu-latest
+  nextcloud:
+    name: nextcloud
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        nextcloud: ${{ fromJSON(needs.versions.outputs.majors) }}
-    env:
-      # The current release of the major version.
-      NEXTCLOUD_IMAGE: nextcloud:${{ matrix.nextcloud }}-apache
     steps:
       - name: Record the network traffic of the job
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -79,31 +49,60 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The merge commit of a pull request and its first parent, the base branch.
+          fetch-depth: 2
           persist-credentials: false
-      - name: Run the Paperless Unified Search end-to-end tests
-        run: bash tests/e2e/run.sh
-
-  nextcloud:
-    name: nextcloud
-    if: always() && github.event_name != 'schedule'
-    needs: [versions, nextcloud-version]
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    steps:
-      - name: Record the network traffic of the job
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: audit
-      - name: Require every supported Nextcloud version to pass
+      # A skipped step leaves the job green, so that the required check passes without
+      # the tests when no file they cover changed.
+      - name: Find out whether a file the tests cover changed
+        id: scope
         env:
-          VERSIONS: ${{ needs.versions.result }}
-          RESULT: ${{ needs.nextcloud-version.result }}
-        run: test "$VERSIONS" = success && test "$RESULT" = success
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          # The app, its dependencies, the end-to-end tests and this workflow.
+          covered='^(appinfo|lib|templates|js|css|img|l10n|tests/e2e)/|^composer\.(json|lock)$|^\.github/workflows/e2e\.yml$'
+          base=""
+          case "$EVENT" in
+            pull_request)
+              # The checkout is the merge commit; its first parent is the base branch.
+              base=HEAD^1
+              ;;
+            push)
+              # A new branch has no commit before the push, and one that a force push
+              # removed can't be fetched: then the tests run.
+              if [[ -n "$BEFORE" && ! "$BEFORE" =~ ^0+$ ]] &&
+                git fetch --quiet --no-tags --depth=1 origin "$BEFORE"; then
+                base="$BEFORE"
+              fi
+              ;;
+          esac
+          run=true
+          if [[ -n "$base" ]] && changed="$(git diff --name-only --no-renames "$base" HEAD)"; then
+            echo "::group::Changed files"
+            echo "$changed"
+            echo "::endgroup::"
+            if grep -qE "$covered" <<<"$changed"; then
+              echo "A file the end-to-end tests cover changed: they run."
+            else
+              run=false
+              reason="No file the end-to-end tests cover changed: neither the app (appinfo/, lib/, templates/, js/, css/, img/, l10n/), composer.json, composer.lock, tests/e2e/ nor this workflow."
+              echo "::notice title=End-to-end tests skipped::$reason"
+              echo "$reason The check passes without running them." >>"$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo "No change to compare with ($EVENT): the end-to-end tests run."
+          fi
+          echo "run=$run" >>"$GITHUB_OUTPUT"
+      - name: Run the end-to-end tests against every supported Nextcloud version
+        if: steps.scope.outputs.run == 'true'
+        run: bash tests/e2e/run-all.sh
 
   coming:
     name: coming Nextcloud
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -130,7 +129,7 @@ jobs:
       always() &&
       (github.event_name == 'schedule' || github.ref_name == github.event.repository.default_branch) &&
       (needs.coming.result == 'success' || needs.coming.result == 'failure')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       issues: write
