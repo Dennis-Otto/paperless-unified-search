@@ -10,8 +10,9 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Service;
 
 use ArrayObject;
-use InvalidArgumentException;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
+use OCA\PaperlessUnifiedSearch\Exception\InvalidSettingException;
+use OCA\PaperlessUnifiedSearch\Exception\SettingProblem;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCP\IAppConfig;
@@ -137,9 +138,10 @@ final class ConfigServiceTest extends TestCase {
 	public function testAnArchiveAccountThatDoesNotExistIsRefused(): void {
 		$service = $this->service($this->createStub(IAppConfig::class), $this->createStub(ICredentialsManager::class));
 
-		$this->expectException(InvalidArgumentException::class);
-		$this->expectExceptionMessage('The archive account does not exist.');
-		$service->resolveArchiveOwner('nobody');
+		$exception = $this->refusal(static fn () => $service->resolveArchiveOwner('nobody'));
+
+		self::assertSame('The archive account does not exist.', $exception->getMessage());
+		self::assertSame(SettingProblem::UnknownArchiveAccount, $exception->problem);
 	}
 
 	/**
@@ -329,9 +331,10 @@ final class ConfigServiceTest extends TestCase {
 
 		$service = $this->service($this->settings([AppConstants::APP_ID . '.paperless_url' => $storedUrl]), $credentials);
 
-		$this->expectException(InvalidArgumentException::class);
-		$this->expectExceptionMessage(self::ENTER_AGAIN);
-		$service->resolveToken('', $url);
+		$exception = $this->refusal(static fn () => $service->resolveToken('', $url));
+
+		self::assertSame(self::ENTER_AGAIN, $exception->getMessage());
+		self::assertSame(SettingProblem::TokenForOtherServer, $exception->problem);
 	}
 
 	public function testTheCandidateTokenIsTrimmedAndWinsOverTheStoredOne(): void {
@@ -360,9 +363,10 @@ final class ConfigServiceTest extends TestCase {
 
 		$service = $this->service($this->settings([AppConstants::APP_ID . '.paperless_url' => self::STORED_URL]), $credentials);
 
-		$this->expectException(InvalidArgumentException::class);
-		$this->expectExceptionMessage('A Paperless API token is required.');
-		$service->resolveToken('  ', 'https://other.example');
+		$exception = $this->refusal(static fn () => $service->resolveToken('  ', 'https://other.example'));
+
+		self::assertSame('A Paperless API token is required.', $exception->getMessage());
+		self::assertSame(SettingProblem::TokenRequired, $exception->problem);
 	}
 
 	/**
@@ -472,9 +476,9 @@ final class ConfigServiceTest extends TestCase {
 			$this->undecryptable(),
 		);
 
-		$this->expectException(InvalidArgumentException::class);
-		$this->expectExceptionMessage('A Paperless API token is required.');
-		$service->resolveToken('', self::STORED_URL);
+		$exception = $this->refusal(static fn () => $service->resolveToken('', self::STORED_URL));
+
+		self::assertSame(SettingProblem::TokenRequired, $exception->problem);
 	}
 
 	public function testSavingANewTokenReplacesOneThatCannotBeDecrypted(): void {
@@ -499,9 +503,10 @@ final class ConfigServiceTest extends TestCase {
 
 		$service = $this->service($config, $credentials);
 
-		$this->expectException(InvalidArgumentException::class);
-		$this->expectExceptionMessage('A Paperless API token is required.');
-		$service->save('https://paperless.example.com', '   ');
+		$exception = $this->refusal(static fn () => $service->save('https://paperless.example.com', '   '));
+
+		self::assertSame('A Paperless API token is required.', $exception->getMessage());
+		self::assertSame(SettingProblem::TokenRequired, $exception->problem);
 	}
 
 	public function testResetDeletesTheUrlTheSwitchesTheArchiveAccountAndTheToken(): void {
@@ -586,45 +591,49 @@ final class ConfigServiceTest extends TestCase {
 		self::assertSame($normalizedUrl, $service->normalizeUrl($url));
 	}
 
+	/**
+	 * The settings name each problem with a translated message of their own (#120).
+	 */
 	#[DataProvider('invalidUrlProvider')]
-	public function testInvalidUrlsAreRejected(string $url, string $message): void {
+	public function testInvalidUrlsAreRejected(string $url, string $message, SettingProblem $problem): void {
 		$service = $this->service($this->createStub(IAppConfig::class), $this->createStub(ICredentialsManager::class));
 
-		$this->expectException(InvalidArgumentException::class);
-		$this->expectExceptionMessage($message);
-		$service->normalizeUrl($url);
+		$exception = $this->refusal(static fn () => $service->normalizeUrl($url));
+
+		self::assertSame($message, $exception->getMessage());
+		self::assertSame($problem, $exception->problem);
 	}
 
 	/**
-	 * @return iterable<string, array{string, string}>
+	 * @return iterable<string, array{string, string, SettingProblem}>
 	 */
 	public static function invalidUrlProvider(): iterable {
-		yield 'empty' => ['', 'Enter a valid Paperless URL.'];
-		yield 'only slashes' => [' // ', 'Enter a valid Paperless URL.'];
-		yield 'not a URL' => ['paperless', 'Enter a valid Paperless URL.'];
-		yield 'unsupported protocol' => ['file:///etc/passwd', 'The Paperless URL must use HTTP or HTTPS.'];
-		yield 'other protocol' => ['ftp://paperless.example.com', 'The Paperless URL must use HTTP or HTTPS.'];
-		yield 'embedded credentials' => ['https://user:pass@example.com', 'The Paperless URL must not contain credentials, a query, or a fragment.'];
-		yield 'embedded user' => ['https://user@example.com', 'The Paperless URL must not contain credentials, a query, or a fragment.'];
-		yield 'query string' => ['https://example.com?token=TEST_VALUE', 'The Paperless URL must not contain credentials, a query, or a fragment.'];
-		yield 'fragment' => ['https://example.com/#documents', 'The Paperless URL must not contain credentials, a query, or a fragment.'];
-		yield 'no host' => ['https://', 'Enter a valid Paperless URL.'];
-		yield 'no host before the path' => ['http:///paperless', 'Enter a valid Paperless URL.'];
-		yield 'port 0' => ['http://paperless.example.com:0', 'Enter a valid Paperless URL.'];
-		yield 'a port above 65535' => ['http://paperless.example.com:65536', 'Enter a valid Paperless URL.'];
-		yield 'a blank in the host' => ['http://paper less.example.com', 'Enter a valid Paperless URL.'];
-		yield 'a blank in the path' => ['https://paperless.example.com/my documents', 'Enter a valid Paperless URL.'];
-		yield 'a control character' => ["https://paperless.example.com/\x07", 'Enter a valid Paperless URL.'];
-		yield 'text that is not UTF-8' => ["https://paperless.example.com/\xff", 'Enter a valid Paperless URL.'];
-		yield 'a host that starts with a hyphen' => ['http://-paperless.example.com', 'Enter a valid Paperless URL.'];
-		yield 'a host that ends with an underscore' => ['http://paperless_:8000', 'Enter a valid Paperless URL.'];
-		yield 'an escaped character in the host' => ['http://paper%20less.example.com', 'Enter a valid Paperless URL.'];
-		yield 'an IPv6 address without brackets' => ['http://fd00::5:8000', 'Enter a valid Paperless URL.'];
-		yield 'an IPv6 address that is none' => ['http://[fd00::zz]:8000', 'Enter a valid Paperless URL.'];
-		yield 'empty brackets' => ['http://[]', 'Enter a valid Paperless URL.'];
-		yield 'an IPv4 address in brackets' => ['http://[192.168.1.20]', 'Enter a valid Paperless URL.'];
+		yield 'empty' => ['', 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
+		yield 'only slashes' => [' // ', 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
+		yield 'not a URL' => ['paperless', 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
+		yield 'unsupported protocol' => ['file:///etc/passwd', 'The Paperless URL must use HTTP or HTTPS.', SettingProblem::UnsupportedScheme];
+		yield 'other protocol' => ['ftp://paperless.example.com', 'The Paperless URL must use HTTP or HTTPS.', SettingProblem::UnsupportedScheme];
+		yield 'embedded credentials' => ['https://user:pass@example.com', 'The Paperless URL must not contain credentials, a query, or a fragment.', SettingProblem::UrlWithExtras];
+		yield 'embedded user' => ['https://user@example.com', 'The Paperless URL must not contain credentials, a query, or a fragment.', SettingProblem::UrlWithExtras];
+		yield 'query string' => ['https://example.com?token=TEST_VALUE', 'The Paperless URL must not contain credentials, a query, or a fragment.', SettingProblem::UrlWithExtras];
+		yield 'fragment' => ['https://example.com/#documents', 'The Paperless URL must not contain credentials, a query, or a fragment.', SettingProblem::UrlWithExtras];
+		yield 'no host' => ['https://', 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
+		yield 'no host before the path' => ['http:///paperless', 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
+		yield 'port 0' => ['http://paperless.example.com:0', 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
+		yield 'a port above 65535' => ['http://paperless.example.com:65536', 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
+		yield 'a blank in the host' => ['http://paper less.example.com', 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
+		yield 'a blank in the path' => ['https://paperless.example.com/my documents', 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
+		yield 'a control character' => ["https://paperless.example.com/\x07", 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
+		yield 'text that is not UTF-8' => ["https://paperless.example.com/\xff", 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
+		yield 'a host that starts with a hyphen' => ['http://-paperless.example.com', 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
+		yield 'a host that ends with an underscore' => ['http://paperless_:8000', 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
+		yield 'an escaped character in the host' => ['http://paper%20less.example.com', 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
+		yield 'an IPv6 address without brackets' => ['http://fd00::5:8000', 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
+		yield 'an IPv6 address that is none' => ['http://[fd00::zz]:8000', 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
+		yield 'empty brackets' => ['http://[]', 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
+		yield 'an IPv4 address in brackets' => ['http://[192.168.1.20]', 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
 		// An empty label: the name has no ASCII form, with or without PHP's intl.
-		yield 'an internationalized name without an ASCII form' => ['https://bücher..example', self::PUNYCODE];
+		yield 'an internationalized name without an ASCII form' => ['https://bücher..example', self::PUNYCODE, SettingProblem::HostNotAscii];
 	}
 
 	/**
@@ -662,9 +671,25 @@ final class ConfigServiceTest extends TestCase {
 
 		$service = $this->service($this->createStub(IAppConfig::class), $this->createStub(ICredentialsManager::class));
 
-		$this->expectException(InvalidArgumentException::class);
-		$this->expectExceptionMessage(self::PUNYCODE);
-		$service->normalizeUrl('https://bücher.example');
+		$exception = $this->refusal(static fn () => $service->normalizeUrl('https://bücher.example'));
+
+		self::assertSame(self::PUNYCODE, $exception->getMessage());
+		self::assertSame(SettingProblem::HostNotAscii, $exception->problem);
+	}
+
+	/**
+	 * The refusal of a setting by $refuse.
+	 *
+	 * @param callable(): mixed $refuse
+	 */
+	private function refusal(callable $refuse): InvalidSettingException {
+		try {
+			$refuse();
+		} catch (InvalidSettingException $exception) {
+			return $exception;
+		}
+
+		self::fail('The setting was not refused.');
 	}
 
 	/**

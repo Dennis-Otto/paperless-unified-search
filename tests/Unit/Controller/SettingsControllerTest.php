@@ -9,8 +9,10 @@ declare(strict_types=1);
 
 namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Controller;
 
+use JsonException;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Controller\SettingsController;
+use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
@@ -22,12 +24,14 @@ use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
 use OCP\Http\Client\LocalServerException;
 use OCP\IAppConfig;
+use OCP\IL10N;
 use OCP\IRequest;
 use OCP\Security\ICredentialsManager;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use RuntimeException;
+use Throwable;
 
 final class SettingsControllerTest extends TestCase {
 	use Accounts;
@@ -148,7 +152,10 @@ final class SettingsControllerTest extends TestCase {
 
 		self::assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
 		self::assertSame(
-			['message' => 'Nextcloud does not connect to addresses of the local network unless you allow it. If Paperless runs in your local network or in Docker, select “Paperless runs in my local network”.'],
+			[
+				'message' => 'DE:Nextcloud does not connect to addresses of the local network unless you allow it. If Paperless runs in your local network or in Docker, select “Paperless runs in my local network”.',
+				'code' => 'local_address',
+			],
 			$response->getData(),
 		);
 	}
@@ -186,10 +193,10 @@ final class SettingsControllerTest extends TestCase {
 		$client->expects(self::never())->method('get');
 
 		$response = $this->controller($this->unchangedConfig(), $this->unchangedCredentials(), $client)
-			->save('https://paperless.example.com', 'TEST_VALUE', false, 'nobody');
+			->save('https://paperless.example.com', 'TEST_VALUE', false, ' nobody ');
 
 		self::assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
-		self::assertSame(['message' => 'The archive account does not exist.'], $response->getData());
+		self::assertSame(['message' => 'DE:The archive account nobody does not exist.', 'code' => 'unknown_archive_account'], $response->getData());
 	}
 
 	/**
@@ -257,7 +264,7 @@ final class SettingsControllerTest extends TestCase {
 
 		self::assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
 		self::assertSame(
-			['message' => 'Enter the API token again: a stored token is only sent to the Paperless server it was saved for.'],
+			['message' => 'DE:Enter the API token again: a stored token is only sent to the Paperless server it was saved for.', 'code' => 'token_for_other_server'],
 			$response->getData(),
 		);
 		self::assertStringNotContainsString('STORED_TEST_VALUE', $response->render());
@@ -319,23 +326,28 @@ final class SettingsControllerTest extends TestCase {
 		$response = $this->controller($this->storedUrl(), $credentials, $client)->save(self::STORED_URL, '');
 
 		self::assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
-		self::assertSame(['message' => 'A Paperless API token is required.'], $response->getData());
+		self::assertSame(['message' => 'DE:A Paperless API token is required.', 'code' => 'token_required'], $response->getData());
 	}
 
 	/**
-	 * @return array<string, array{string, string, string}>
+	 * @return array<string, array{string, string, string, string}>
 	 */
 	public static function invalidSettings(): array {
 		return [
-			'invalid URL' => ['paperless', 'TEST_VALUE', 'Enter a valid Paperless URL.'],
-			'unsupported protocol' => ['ftp://paperless.example.com', 'TEST_VALUE', 'The Paperless URL must use HTTP or HTTPS.'],
-			'port 0' => ['http://paperless_ngx:0', 'TEST_VALUE', 'Enter a valid Paperless URL.'],
-			'no token at all' => ['https://paperless.example.com', ' ', 'A Paperless API token is required.'],
+			'invalid URL' => ['paperless', 'TEST_VALUE', 'invalid_url', 'Enter a valid Paperless URL.'],
+			'unsupported protocol' => ['ftp://paperless.example.com', 'TEST_VALUE', 'unsupported_scheme', 'The Paperless URL must use HTTP or HTTPS.'],
+			'port 0' => ['http://paperless_ngx:0', 'TEST_VALUE', 'invalid_url', 'Enter a valid Paperless URL.'],
+			'a query' => ['https://paperless.example.com/?token=TEST_VALUE', 'TEST_VALUE', 'url_extras', 'The Paperless URL must not contain credentials, a query, or a fragment.'],
+			'no token at all' => ['https://paperless.example.com', ' ', 'token_required', 'A Paperless API token is required.'],
 		];
 	}
 
+	/**
+	 * Each problem of a setting has a code and a message in the language of the
+	 * administrator (#120).
+	 */
 	#[DataProvider('invalidSettings')]
-	public function testSaveRejectsInvalidSettingsWithTheirReason(string $url, string $token, string $message): void {
+	public function testSaveRejectsInvalidSettingsWithTheirReason(string $url, string $token, string $code, string $message): void {
 		$client = $this->createMock(IClient::class);
 		$client->expects(self::never())->method('get');
 
@@ -343,33 +355,180 @@ final class SettingsControllerTest extends TestCase {
 			->save($url, $token);
 
 		self::assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
-		self::assertSame(['message' => $message], $response->getData());
-	}
-
-	public function testSaveKeepsTheSettingsWhenPaperlessIsOutOfReach(): void {
-		$client = $this->createStub(IClient::class);
-		$client->method('get')->willThrowException(new RuntimeException('cURL error 7 for TEST_VALUE'));
-
-		$this->assertConnectionFailed($client);
+		self::assertSame(['message' => 'DE:' . $message, 'code' => $code], $response->getData());
 	}
 
 	/**
-	 * @return array<string, array{int, string}>
+	 * A name of a host that isn't ASCII and has no ASCII form, with or without the
+	 * extension intl, has to be entered in punycode, and the settings say so.
 	 */
-	public static function wrongAnswers(): array {
+	public function testSaveAsksForAnInternationalizedNameInPunycode(): void {
+		$response = $this->controller($this->unchangedConfig(), $this->unchangedCredentials(), $this->createStub(IClient::class))
+			->save('https://bücher..example', 'TEST_VALUE');
+
+		self::assertSame([
+			'message' => 'DE:Enter the host of the Paperless URL in its ASCII form (punycode), such as xn--bcher-kva.example for bücher.example.',
+			'code' => 'host_not_ascii',
+		], $response->getData());
+	}
+
+	/**
+	 * @return array<string, array{IResponse|Throwable, string, string, class-string<Throwable>, string}>
+	 */
+	public static function failedConnections(): array {
+		$curl = static fn (string $error): RuntimeException => new RuntimeException(
+			'cURL error ' . $error . ' (see https://curl.haxx.se/libcurl/c/libcurl-errors.html) for https://paperless.example.com/api/documents/?page=1&page_size=1&fields=id',
+		);
+		$detail = static fn (string $error): string => 'cURL error ' . $error . ' for https://paperless.example.com/api/documents/';
+
 		return [
-			'refused token' => [403, '{"detail":"Invalid token."}'],
-			'not Paperless' => [200, '<html>'],
-			'no documents' => [200, '{"detail":"Not found."}'],
+			'a refused token' => [
+				self::answer(401, '{"detail":"Invalid token."}'), 'unauthorized',
+				'Paperless rejected the API token (HTTP 401). Check the token, and that its account may view documents.',
+				PaperlessRequestException::class, 'Paperless returned HTTP 401.',
+			],
+			'an account without permission' => [
+				self::answer(403, '{"detail":"You do not have permission to perform this action."}'), 'unauthorized',
+				'Paperless rejected the API token (HTTP 403). Check the token, and that its account may view documents.',
+				PaperlessRequestException::class, 'Paperless returned HTTP 403.',
+			],
+			'a wrong path' => [
+				self::answer(404, '<html>Not found</html>'), 'not_found',
+				'This URL answers, but not with the API of Paperless (HTTP 404). Check the address and its path.',
+				PaperlessRequestException::class, 'Paperless returned HTTP 404.',
+			],
+			'a redirect' => [
+				self::answer(301, ''), 'redirect',
+				'This URL forwards to another address (HTTP 301). Enter the address that it forwards to.',
+				PaperlessRequestException::class, 'Paperless returned HTTP 301.',
+			],
+			'an error of the server' => [
+				self::answer(502, '<html>Bad gateway</html>'), 'http',
+				'Paperless answered with an error (HTTP 502). Check its log, or try again later.',
+				PaperlessRequestException::class, 'Paperless returned HTTP 502.',
+			],
+			'a page of HTML' => [
+				self::answer(200, '<html>Sign in</html>'), 'not_paperless',
+				'This URL answers, but not like Paperless-ngx. Check the address and its path.',
+				JsonException::class, 'Syntax error',
+			],
+			'JSON without documents' => [
+				self::answer(200, '{"detail":"Not found."}'), 'not_paperless',
+				'This URL answers, but not like Paperless-ngx. Check the address and its path.',
+				PaperlessRequestException::class, 'Paperless returned an invalid document response.',
+			],
+			'an untrusted certificate' => [
+				$curl('60: SSL certificate problem: self-signed certificate'), 'tls',
+				'Nextcloud does not trust the certificate of Paperless at this URL. If Paperless uses a certificate of its own, import it with occ security:certificates:import.',
+				RuntimeException::class, $detail('60: SSL certificate problem: self-signed certificate'),
+			],
+			'plain HTTP at the port of HTTPS' => [
+				$curl('35: OpenSSL/3.0.13: error:0A00010B:SSL routines::wrong version number'), 'tls_handshake',
+				'Nextcloud could not set up an encrypted connection to Paperless at this URL. If Paperless answers plain HTTP at this port, enter the URL with http://.',
+				RuntimeException::class, $detail('35: OpenSSL/3.0.13: error:0A00010B:SSL routines::wrong version number'),
+			],
+			'a host that does not resolve' => [
+				$curl('6: Could not resolve host: paperless.invalid'), 'unknown_host',
+				'Nextcloud could not find the host of this URL. Check its spelling; the name of a Docker service only works when Nextcloud runs in the same Docker network.',
+				RuntimeException::class, $detail('6: Could not resolve host: paperless.invalid'),
+			],
+			'a host that does not resolve, found by the DNS pinning of Nextcloud' => [
+				new LocalServerException('No DNS record found for paperless.invalid'), 'unknown_host',
+				'Nextcloud could not find the host of this URL. Check its spelling; the name of a Docker service only works when Nextcloud runs in the same Docker network.',
+				LocalServerException::class, 'No DNS record found for paperless.invalid',
+			],
+			'no answer in time' => [
+				$curl('28: Operation timed out after 10001 milliseconds with 0 bytes received'), 'timeout',
+				'Paperless did not answer in time. Check that it runs and is not overloaded, then try again.',
+				RuntimeException::class, $detail('28: Operation timed out after 10001 milliseconds with 0 bytes received'),
+			],
+			'a refused connection' => [
+				$curl('7: Failed to connect to paperless.example.com port 443 after 3 ms: Connection refused'), 'unreachable',
+				'Nextcloud could not reach Paperless at this URL. Check the address and the port, and that Paperless runs.',
+				RuntimeException::class, $detail('7: Failed to connect to paperless.example.com port 443 after 3 ms: Connection refused'),
+			],
 		];
 	}
 
-	#[DataProvider('wrongAnswers')]
-	public function testSaveKeepsTheSettingsWhenPaperlessAnswersWrongly(int $status, string $body): void {
+	/**
+	 * Every failed test of the connection said "Could not connect to Paperless", in
+	 * English, and logged nothing. Now each cause has its code and a message in the
+	 * language of the administrator that says what to correct, and the log names the error
+	 * without the token and the query of the URL; nothing is saved (#120).
+	 *
+	 * @param class-string<Throwable> $errorType
+	 */
+	#[DataProvider('failedConnections')]
+	public function testSaveNamesTheCauseOfAFailedConnectionAndLogsIt(IResponse|Throwable $answer, string $code, string $message, string $errorType, string $detail): void {
 		$client = $this->createStub(IClient::class);
-		$client->method('get')->willReturn($this->response($status, $body));
+		if ($answer instanceof Throwable) {
+			$client->method('get')->willThrowException($answer);
+		} else {
+			$client->method('get')->willReturn($answer);
+		}
 
-		$this->assertConnectionFailed($client);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())
+			->method('warning')
+			->with('The test of the connection to Paperless failed: {reason} ({errorType}: {detail})', [
+				'app' => AppConstants::APP_ID,
+				'reason' => $code,
+				'errorType' => $errorType,
+				'detail' => $detail,
+			]);
+
+		$response = $this->controller($this->unchangedConfig(), $this->unchangedCredentials(), $client, $logger)
+			->save('https://paperless.example.com', 'TEST_VALUE', true);
+
+		self::assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
+		self::assertSame(['message' => 'DE:' . $message, 'code' => $code], $response->getData());
+	}
+
+	/**
+	 * The log never shows the token, also where an error repeats it.
+	 */
+	public function testTheLogOfAFailedConnectionLeavesOutTheToken(): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willThrowException(new RuntimeException('cURL error 7: Token SECRET_TEST_VALUE refused'));
+
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())
+			->method('warning')
+			->with(self::anything(), self::callback(static fn (array $context): bool => $context['detail'] === 'cURL error 7: Token … refused'));
+
+		$this->controller($this->unchangedConfig(), $this->unchangedCredentials(), $client, $logger)
+			->save('https://paperless.example.com', 'SECRET_TEST_VALUE');
+	}
+
+	/**
+	 * When saving fails after Paperless answered, for example in the database, the answer
+	 * says so instead of blaming the connection, and the log has the error.
+	 */
+	public function testSaveSaysWhenTheSettingsCannotBeStored(): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response(200, self::NO_DOCUMENTS));
+
+		$credentials = $this->createStub(ICredentialsManager::class);
+		$credentials->method('store')->willThrowException(new RuntimeException('The database went away while storing SECRET_TEST_VALUE.'));
+
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::never())->method('warning');
+		$logger->expects(self::once())
+			->method('error')
+			->with('The settings of Paperless Unified Search could not be saved ({errorType}: {detail})', [
+				'app' => AppConstants::APP_ID,
+				'errorType' => RuntimeException::class,
+				'detail' => 'The database went away while storing ….',
+			]);
+
+		$response = $this->controller($this->createStub(IAppConfig::class), $credentials, $client, $logger)
+			->save('https://paperless.example.com', 'SECRET_TEST_VALUE');
+
+		self::assertSame(Http::STATUS_INTERNAL_SERVER_ERROR, $response->getStatus());
+		self::assertSame([
+			'message' => 'DE:The settings could not be saved. The log of Nextcloud has the details.',
+			'code' => 'internal',
+		], $response->getData());
 	}
 
 	public function testResetForgetsTheSettings(): void {
@@ -422,13 +581,18 @@ final class SettingsControllerTest extends TestCase {
 	}
 
 	/**
-	 * The controller, in a Nextcloud with the account archive.
+	 * The controller, in a Nextcloud with the account archive, which translates every
+	 * text into "DE:" and the text with its parameters.
 	 */
-	private function controller(IAppConfig $config, ICredentialsManager $credentials, IClient $client): SettingsController {
+	private function controller(IAppConfig $config, ICredentialsManager $credentials, IClient $client, ?LoggerInterface $logger = null): SettingsController {
 		$clientService = $this->createStub(IClientService::class);
 		$clientService->method('newClient')->willReturn($client);
 		$configService = new ConfigService($config, $credentials, $this->accounts('archive'), $this->createStub(LoggerInterface::class));
 		$diagnostics = new SearchDiagnostics($config, $this->createStub(ITimeFactory::class));
+		$l10n = $this->createStub(IL10N::class);
+		$l10n->method('t')->willReturnCallback(
+			static fn (string $text, array $parameters = []): string => 'DE:' . vsprintf($text, $parameters),
+		);
 
 		return new SettingsController(
 			AppConstants::APP_ID,
@@ -436,6 +600,8 @@ final class SettingsControllerTest extends TestCase {
 			$configService,
 			new PaperlessApiService($configService, $clientService, $diagnostics),
 			$diagnostics,
+			$l10n,
+			$logger ?? $this->createStub(LoggerInterface::class),
 		);
 	}
 
@@ -466,22 +632,36 @@ final class SettingsControllerTest extends TestCase {
 		return $credentials;
 	}
 
-	private function assertConnectionFailed(IClient $client): void {
-		$response = $this->controller($this->unchangedConfig(), $this->unchangedCredentials(), $client)
-			->save('https://paperless.example.com', 'TEST_VALUE', true);
-
-		self::assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
-		self::assertSame(
-			['message' => 'Could not connect to Paperless. Check the URL, API token, and Nextcloud outbound connection policy.'],
-			$response->getData(),
-		);
+	private function response(int $status, string $body): IResponse {
+		return self::answer($status, $body);
 	}
 
-	private function response(int $status, string $body): IResponse {
-		$response = $this->createStub(IResponse::class);
-		$response->method('getStatusCode')->willReturn($status);
-		$response->method('getBody')->willReturn($body);
+	/**
+	 * An answer of Paperless, also for the data providers, which run before any test.
+	 */
+	private static function answer(int $status, string $body): IResponse {
+		return new class($status, $body) implements IResponse {
+			public function __construct(
+				private int $status,
+				private string $body,
+			) {
+			}
 
-		return $response;
+			public function getBody() {
+				return $this->body;
+			}
+
+			public function getStatusCode(): int {
+				return $this->status;
+			}
+
+			public function getHeader(string $key): string {
+				return '';
+			}
+
+			public function getHeaders(): array {
+				return [];
+			}
+		};
 	}
 }

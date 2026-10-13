@@ -106,12 +106,12 @@ final class SearchDiagnostics {
 	}
 
 	/**
-	 * The message of the error without the token, the term and the query of a URL, in
-	 * which Guzzle and cURL repeat the term.
+	 * The message of an error without the token, the term and the query of a URL, in
+	 * which Guzzle and cURL repeat the term, as the history and the log may show it.
 	 *
 	 * @param list<string> $secrets
 	 */
-	private static function describe(string $message, array $secrets): string {
+	public static function describe(string $message, array $secrets): string {
 		foreach ($secrets as $secret) {
 			if (mb_strlen($secret) >= self::SHORTEST_SECRET) {
 				$message = str_ireplace($secret, '…', $message);
