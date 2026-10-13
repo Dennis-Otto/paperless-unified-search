@@ -7,14 +7,16 @@ flowchart LR
     run["run.sh"]
     subgraph compose["Compose project"]
         nextcloud["Nextcloud<br/>the checkout as Custom App, read-only"]
-        mock["Paperless mock<br/>mock_server.py"]
+        mock["Paperless mock<br/>mock_server.py, also as other-host"]
         browser["Chromium of Playwright<br/>accessibility.mjs with axe-core"]
     end
-    run -- "occ, OCS and WebDAV" --> nextcloud
+    run -- "occ, OCS, WebDAV<br/>and the routes of the settings" --> nextcloud
     run -- "starts" --> browser
     nextcloud -- "searches" --> mock
     browser -- "opens the settings" --> nextcloud
 ```
+
+Besides the search, the suite checks the guarantees of the settings: every route of the settings answers a user who isn't an administrator with HTTP 403 and a request without a login with 401, and leaves the settings as they are; a save with a blank token for another server answers 400 and sends that server nothing, which the log of the mock shows, as it answers as `other-host` too; and an archive account typed in another case is stored as Nextcloud spells it.
 
 Run:
 
@@ -34,7 +36,9 @@ All credentials and document data are synthetic, local to the disposable Compose
 
 ## Accessibility
 
-At the end of the suite, `accessibility.mjs` checks the administration settings of the app in Chromium with [axe-core](https://github.com/dequelabs/axe-core) against WCAG 2.1 at levels A and AA, in the light and the dark theme of Nextcloud, once as loaded and once with the message after saving. It signs in through the login form and looks only into `#paperless-unified-search-settings`, the element that holds the markup of `templates/`, `js/` and `css/`, so that what Nextcloud draws around it doesn't count. A serious or critical violation fails the suite; the others are listed in the log.
+At the end of the suite, `accessibility.mjs` checks the administration settings of the app in Chromium with [axe-core](https://github.com/dequelabs/axe-core) against WCAG 2.1 at levels A and AA, in the light and the dark theme of Nextcloud, in three states: with the warning about an archive account that doesn't exist, which `run.sh` stores before; with the URL of another server, for which the token field is required; and with the message after saving. It signs in through the login form and looks only into `#paperless-unified-search-settings`, the element that holds the markup of `templates/`, `js/` and `css/`, so that what Nextcloud draws around it doesn't count. A serious or critical violation fails the suite; the others are listed in the log.
+
+On the way to these states, the script checks what the settings page does in the browser, and a state that differs fails the suite too. The token field asks for the token again for another scheme, host or port, but not for another path of the stored server. Saving another server with its token makes it the stored URL, after which the mock's own name is the other server; and an archive account that exists ends the warning. `run.sh` then checks that the settings are stored as the browser saved them.
 
 The results in the global search of Nextcloud are left out: Nextcloud draws them, and the app only gives the title, the line below it and the icon. axe-core does find a serious violation there, *nested-interactive*, but every search provider has it, because Nextcloud puts the link of each result into an option of a list box; only Nextcloud can fix it.
 
