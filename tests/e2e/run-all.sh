@@ -36,7 +36,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Ctrl-C or a cancelled job: every run tidies up its containers before the script ends.
+# Ctrl-C or a cancelled job: every run stops and tidies up before the script ends.
 stop() {
 	trap - INT TERM
 	echo "Interrupted: the end-to-end tests stop and remove their containers." >&2

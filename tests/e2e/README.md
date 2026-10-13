@@ -33,7 +33,7 @@ Optional environment variables:
 - `E2E_IGNORE_MAX_VERSION=1`: enable the app with `--force` on a Nextcloud newer than `max-version`, as `canary.sh` does
 - `E2E_SKIP_PLAYWRIGHT_PULL=1`: leave the download of the image of Playwright to the caller, as `run-all.sh` does
 
-`run.sh` downloads the image of Playwright in the background while Nextcloud sets itself up, removes the containers without waiting for them to stop, and turns off the check of new passwords against [Have I Been Pwned](https://haveibeenpwned.com/Passwords) of Nextcloud's password policy, so that no test depends on a service outside the machine.
+`run.sh` downloads the image of Playwright in the background while Nextcloud sets itself up, removes the containers without waiting for them to stop (and leaves them on a runner of GitHub, which is thrown away after the job anyway), and turns off the check of new passwords against [Have I Been Pwned](https://haveibeenpwned.com/Passwords) of Nextcloud's password policy, so that no test depends on a service outside the machine.
 
 All credentials and document data are synthetic, local to the disposable Compose project, and intentionally unsuitable for production.
 

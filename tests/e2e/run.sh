@@ -36,11 +36,12 @@ cleanup() {
 	if [[ -n "${PLAYWRIGHT_PULL}" ]]; then
 		kill "${PLAYWRIGHT_PULL}" >/dev/null 2>&1 || true
 	fi
-	if [[ "${KEEP_E2E:-0}" != "1" ]]; then
-		# The containers hold nothing worth a graceful stop.
-		"${COMPOSE[@]}" down --volumes --remove-orphans --timeout 0 >/dev/null 2>&1 || true
-	else
+	if [[ "${KEEP_E2E:-0}" == "1" ]]; then
 		echo "E2E environment kept at ${BASE_URL} (project ${PROJECT_NAME})."
+	elif [[ "${RUNNER_ENVIRONMENT:-}" != "github-hosted" ]]; then
+		# The containers hold nothing worth a graceful stop. A runner of GitHub is
+		# thrown away after the job, so there the files of Nextcloud aren't deleted.
+		"${COMPOSE[@]}" down --volumes --remove-orphans --timeout 0 >/dev/null 2>&1 || true
 	fi
 	exit "${status}"
 }
