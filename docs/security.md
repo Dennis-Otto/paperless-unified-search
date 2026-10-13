@@ -17,6 +17,7 @@ What Paperless Unified Search protects, what it trusts and which risks remain. [
 - Search terms reach Paperless only when the user switches on *Search connected services*, picks *Paperless documents* in the smart picker, or when an administrator has marked Paperless as trusted. They travel from server to server, never from the browser to Paperless.
 - In the smart picker of Talk, Text, Deck and Mail, a term reaches Paperless only after the user chose *Paperless documents* in it, a choice as explicit as switching on *Search connected services*. The picker searches through the same search provider, with the same rules of who sees which document.
 - The link that the smart picker inserts is the link of the synchronized file in Nextcloud, and the app resolves no link itself: Nextcloud renders it with the permissions of whoever reads it, as the preview of the file for a reader who can open it and as the bare link for anyone else.
+- The app asks Paperless only for the fields that a result shows: the ID, the title, the date, the correspondent and the type of a document, and the excerpt around the term. The whole OCR text, the notes and the permissions of the documents never reach Nextcloud.
 - Requests to Paperless go through Nextcloud's HTTP client, which checks TLS certificates.
 - A failed search is logged with the kind of error only, without the term, the URL or the token. The history of the administration settings shows it with its message as well, as it shows a request that only its second try answered; the message loses the token, the term and the query of every URL first.
 
@@ -69,8 +70,8 @@ flowchart TB
 
 1. **Browser → app.** The routes of the settings page pass Nextcloud's login, its CSRF check and the check of the administrator, and saving and *Disconnect* its password confirmation. The URL must use `http` or `https` and carry no credentials, query or fragment. A blank token keeps the stored one only for a URL with the scheme, host and port of the stored URL; the archive account must exist and is stored as Nextcloud spells its ID.
 2. **Nextcloud's search → app.** The term and the cursor of a page come from the user, through the unified search or the smart picker: the cursor must be a number, and a page holds at most 50 results.
-3. **App → Paperless.** Every answer is untrusted input. It must be JSON with a list of results; a document without a numeric ID is left out; titles and dates are used only when they are text; the excerpt loses every HTML tag and is cut to 180 characters.
-4. **App → files of Nextcloud.** The file locator searches only the folders of the searching user, with Nextcloud's permissions, and takes only files, never folders, and only those that the archive account owns. The marker in a name is chosen by whoever names the file and proves nothing by itself; the files of the archive account reach other users only through its shares.
+3. **App → Paperless.** The request names the fields of the documents to send, so that the OCR text stays in Paperless. Every answer is untrusted input. It must be JSON with a list of results; a document without a numeric ID is left out; titles and dates are used only when they are text; the excerpt loses every HTML tag and is cut to 180 characters.
+4. **App → files of Nextcloud.** The file locator searches only the folders of the searching user, with Nextcloud's permissions, and takes only files, never folders, and only those that the archive account owns, with the exact marker of a document in their name. The marker in a name is chosen by whoever names the file and proves nothing by itself; the files of the archive account reach other users only through its shares.
 
 ## Threats and countermeasures
 

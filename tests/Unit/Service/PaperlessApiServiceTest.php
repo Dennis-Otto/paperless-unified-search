@@ -49,6 +49,9 @@ final class PaperlessApiServiceTest extends TestCase {
 		self::assertSame($configured, $this->service($this->createStub(IClient::class), $url, $token)->isConfigured());
 	}
 
+	/**
+	 * The connection test needs no field of the document, so Paperless sends none but its ID.
+	 */
 	public function testTheConnectionTestAsksForOneDocumentWithTheGivenSettings(): void {
 		$client = $this->createMock(IClient::class);
 		$client->expects(self::once())
@@ -62,7 +65,7 @@ final class PaperlessApiServiceTest extends TestCase {
 				'connect_timeout' => 3,
 				'timeout' => 10,
 				'http_errors' => false,
-				'query' => ['page' => 1, 'page_size' => 1],
+				'query' => ['page' => 1, 'page_size' => 1, 'fields' => 'id'],
 			])
 			->willReturn($this->response(200, self::NO_DOCUMENTS));
 
@@ -81,6 +84,10 @@ final class PaperlessApiServiceTest extends TestCase {
 		];
 	}
 
+	/**
+	 * Without the fields, Paperless sends the whole OCR text of every document, its notes,
+	 * custom fields, permissions and versions, half a megabyte for a long document.
+	 */
 	#[DataProvider('pages')]
 	public function testSearchAsksPaperlessWithTheStoredSettingsWithinItsLimits(int $page, int $pageSize, int $expectedPage, int $expectedPageSize): void {
 		$client = $this->createMock(IClient::class);
@@ -89,7 +96,12 @@ final class PaperlessApiServiceTest extends TestCase {
 			->with(
 				'https://paperless.example.com/api/documents/',
 				self::callback(static fn (array $options): bool => $options['headers']['Authorization'] === 'Token TEST_VALUE'
-					&& $options['query'] === ['query' => 'invoice', 'page' => $expectedPage, 'page_size' => $expectedPageSize]),
+					&& $options['query'] === [
+						'query' => 'invoice',
+						'page' => $expectedPage,
+						'page_size' => $expectedPageSize,
+						'fields' => 'id,title,created,correspondent,document_type,__search_hit__',
+					]),
 			)
 			->willReturn($this->response(200, self::NO_DOCUMENTS));
 

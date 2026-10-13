@@ -16,6 +16,14 @@ use Throwable;
 use UnexpectedValueException;
 
 final class PaperlessApiService {
+	/**
+	 * The fields of a document that a result shows, its correspondent and its type as IDs,
+	 * and __search_hit__ with the excerpt. Without them, Paperless sends the whole OCR text
+	 * of every document, with its notes, custom fields, permissions and versions, half a
+	 * megabyte for a long document, and runs queries of its own for them.
+	 */
+	private const SEARCH_FIELDS = 'id,title,created,correspondent,document_type,__search_hit__';
+
 	private IClient $client;
 
 	/** @psalm-suppress PossiblyUnusedMethod */
@@ -32,9 +40,11 @@ final class PaperlessApiService {
 	}
 
 	public function testConnection(string $url, string $token): void {
+		// The test reads nothing of the document, so Paperless sends only its ID.
 		$this->requestDocuments($url, $token, [
 			'page' => 1,
 			'page_size' => 1,
+			'fields' => 'id',
 		]);
 	}
 
@@ -51,6 +61,7 @@ final class PaperlessApiService {
 				'query' => $query,
 				'page' => max(1, $page),
 				'page_size' => max(1, min(50, $pageSize)),
+				'fields' => self::SEARCH_FIELDS,
 			],
 		);
 	}

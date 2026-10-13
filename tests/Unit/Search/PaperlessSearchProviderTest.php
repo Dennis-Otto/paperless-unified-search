@@ -18,6 +18,7 @@ use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\FileCache;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Files\File;
 use OCP\Files\Folder;
@@ -31,6 +32,7 @@ use OCP\IRequest;
 use OCP\IURLGenerator;
 use OCP\IUser;
 use OCP\Search\ISearchQuery;
+use OCP\Search\SearchResultEntry;
 use OCP\Security\ICredentialsManager;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -39,6 +41,7 @@ use RuntimeException;
 
 final class PaperlessSearchProviderTest extends TestCase {
 	use Accounts;
+	use FileCache;
 
 	private const NOW = 1791500000;
 
@@ -82,7 +85,8 @@ final class PaperlessSearchProviderTest extends TestCase {
 				self::callback(static function (array $options): bool {
 					return $options['headers']['Authorization'] === 'Token TEST_VALUE'
 						&& $options['headers']['User-Agent'] === 'Nextcloud-Paperless-Unified-Search/0.1'
-						&& $options['query']['query'] === 'gross salary';
+						&& $options['query']['query'] === 'gross salary'
+						&& $options['query']['fields'] === 'id,title,created,correspondent,document_type,__search_hit__';
 				}),
 			)
 			->willReturn($response);
@@ -96,16 +100,8 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$file->method('getId')->willReturn(4711);
 		$file->method('getOwner')->willReturn($this->account('archive'));
 
-		$folder = $this->createMock(Folder::class);
-		$folder->method('search')->willReturnCallback(
-			static fn (string $marker): array => $marker === '[P123]' ? [$file] : [],
-		);
-		$folder->method('getRelativePath')
-			->with('/dennis/files/Paperless/Salary [P123].pdf')
-			->willReturn('/Paperless/Salary [P123].pdf');
-
 		$root = $this->createMock(IRootFolder::class);
-		$root->method('getUserFolder')->with('dennis')->willReturn($folder);
+		$root->method('getUserFolder')->with('dennis')->willReturn($this->userFolder([$file]));
 
 		$user = $this->createMock(IUser::class);
 		$user->method('getUID')->willReturn('dennis');
@@ -136,7 +132,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$configService = new ConfigService($config, $credentials, $this->accounts('archive'), $this->createStub(LoggerInterface::class));
 		$provider = new PaperlessSearchProvider(
 			new PaperlessApiService($configService, $clientService, new SearchDiagnostics($config, $this->clock())),
-			new NextcloudFileLocator($root),
+			new NextcloudFileLocator($root, $this->createStub(LoggerInterface::class)),
 			$l10n,
 			$urlGenerator,
 			$request,
@@ -189,7 +185,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$configService = new ConfigService($config, $this->createStub(ICredentialsManager::class), $this->accounts(), $this->createStub(LoggerInterface::class));
 		$provider = new PaperlessSearchProvider(
 			new PaperlessApiService($configService, $this->createStub(IClientService::class), new SearchDiagnostics($config, $this->clock())),
-			new NextcloudFileLocator($this->createStub(IRootFolder::class)),
+			new NextcloudFileLocator($this->createStub(IRootFolder::class), $this->createStub(LoggerInterface::class)),
 			$this->createStub(IL10N::class),
 			$this->createStub(IURLGenerator::class),
 			$this->createStub(IRequest::class),
@@ -261,6 +257,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 					'query' => 'invoice',
 					'page' => $page,
 					'page_size' => $pageSize,
+					'fields' => 'id,title,created,correspondent,document_type,__search_hit__',
 				]),
 			)
 			->willReturn($this->response(['count' => 0, 'next' => null, 'results' => []]));
@@ -375,14 +372,110 @@ final class PaperlessSearchProviderTest extends TestCase {
 
 	public function testAFailedLookupOfTheFilesGoesIntoTheHistoryAsSuch(): void {
 		$client = $this->paperless(['count' => 1, 'next' => null, 'results' => [['id' => 7, 'title' => 'Invoice']]]);
-		$file = $this->createStub(File::class);
-		$file->method('getName')->willThrowException(new RuntimeException('Storage unavailable'));
+		$userFolder = $this->createStub(Folder::class);
+		$userFolder->method('search')->willThrowException(new RuntimeException('Storage unavailable'));
 
-		$result = $this->provider($client, [7 => $file])->search($this->user(), $this->query('invoice'))->jsonSerialize();
+		$result = $this->provider($client, userFolder: $userFolder)->search($this->user(), $this->query('invoice'))->jsonSerialize();
 
 		self::assertSame([], $result['entries']);
 		self::assertSame(SearchEvent::STEP_FILES, $this->history()->events[0]->step);
 		self::assertSame('Storage unavailable', $this->history()->events[0]->message);
+	}
+
+	/**
+	 * Nextcloud's web search asks for 5 results and for 5 more with every "Load more", its
+	 * apps for more at once: a search of the file cache per document scanned the names of
+	 * all files of the user once per result.
+	 */
+	public function testTheFilesOfAPageAreFoundInOneSearch(): void {
+		$client = $this->paperless(['count' => 4, 'next' => null, 'results' => [
+			['id' => 12, 'title' => 'Payslip'],
+			['id' => 7, 'title' => 'Invoice'],
+			['id' => 999, 'title' => 'Not shared with this user'],
+			['id' => 1, 'title' => 'Contract'],
+		]]);
+		$files = [
+			1 => $this->file(1, 'Contract [P1].pdf'),
+			7 => $this->file(7, 'Invoice [P7].pdf'),
+			12 => $this->file(12, 'Payslip [P12].pdf'),
+		];
+
+		$result = $this->provider($client, $files)->search($this->user(), $this->query('invoice'))->jsonSerialize();
+
+		self::assertCount(1, $this->searches);
+		self::assertSame(
+			['Payslip', 'Invoice', 'Contract'],
+			array_map(static fn (SearchResultEntry $entry): string => $entry->jsonSerialize()['title'], $result['entries']),
+		);
+	}
+
+	/**
+	 * A file that fails to answer costs only its own entry, and the log says so once,
+	 * without the names of the files.
+	 */
+	public function testAResultThatFailsCostsOnlyItsOwnEntry(): void {
+		$client = $this->paperless(['count' => 3, 'next' => null, 'results' => [
+			['id' => 7, 'title' => 'Invoice'],
+			['id' => 8, 'title' => 'Receipt'],
+			['id' => 9, 'title' => 'Letter'],
+		]]);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())
+			->method('warning')
+			->with('Paperless unified search left out {count} result(s) it could not show ({errorType})', [
+				'app' => AppConstants::APP_ID,
+				'count' => 2,
+				'errorType' => RuntimeException::class,
+			]);
+
+		$result = $this->provider($client, [
+			7 => $this->brokenFile('Invoice [P7].pdf'),
+			8 => $this->file(8, 'Receipt [P8].pdf'),
+			9 => $this->brokenFile('Letter [P9].pdf'),
+		], logger: $logger)->search($this->user(), $this->query('invoice'))->jsonSerialize();
+
+		self::assertCount(1, $result['entries']);
+		self::assertSame('Receipt', $result['entries'][0]->jsonSerialize()['title']);
+		// The search worked, so the history of its problems stays as it is.
+		self::assertSame([], $this->stored);
+	}
+
+	/**
+	 * @return array<string, array{bool}>
+	 */
+	public static function failingFiles(): array {
+		return [
+			'when the file locator reads them' => [true],
+			'when their entries are built' => [false],
+		];
+	}
+
+	/**
+	 * When every file that the user could open fails to answer, as all files of an archive
+	 * account on a storage that is gone do, the user sees no document: the history notes a
+	 * failed search, and doesn't count it as one that works again.
+	 */
+	#[DataProvider('failingFiles')]
+	public function testASearchWhoseFilesAllFailGoesIntoTheHistory(bool $unreadable): void {
+		$client = $this->paperless(['count' => 2, 'next' => null, 'results' => [
+			['id' => 7, 'title' => 'Invoice'],
+			['id' => 8, 'title' => 'Receipt'],
+		]]);
+		$files = [];
+		foreach ([7 => 'Invoice [P7].pdf', 8 => 'Receipt [P8].pdf'] as $documentId => $name) {
+			$files[$documentId] = $unreadable ? $this->unreadableFile($name) : $this->brokenFile($name);
+		}
+
+		$result = $this->provider($client, $files)->search($this->user(), $this->query('invoice'))->jsonSerialize();
+
+		self::assertSame([], $result['entries']);
+		$history = $this->history();
+		self::assertSame(1, $history->failed);
+		self::assertTrue($history->awaitsRecovery());
+		self::assertSame(SearchEvent::KIND_FAILED, $history->events[0]->kind);
+		self::assertSame(SearchEvent::STEP_FILES, $history->events[0]->step);
+		self::assertSame('RuntimeException', $history->events[0]->error);
+		self::assertSame('Storage unavailable', $history->events[0]->message);
 	}
 
 	public function testTheFirstSearchThatWorksAgainIsTheRecovery(): void {
@@ -600,6 +693,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 	 *
 	 * @param array<int, File> $files by Paperless document id
 	 * @param ?ICredentialsManager $credentials the one that stores the token, by default one that holds $token
+	 * @param ?Folder $userFolder the folder of the user, by default one with the files
 	 */
 	private function provider(
 		IClient $client,
@@ -609,6 +703,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		string $archiveOwner = 'archive',
 		string $syncAccount = '',
 		?ICredentialsManager $credentials = null,
+		?Folder $userFolder = null,
 	): PaperlessSearchProvider {
 		$config = $this->settings($archiveOwner, $syncAccount);
 
@@ -620,22 +715,8 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$clientService = $this->createStub(IClientService::class);
 		$clientService->method('newClient')->willReturn($client);
 
-		$folder = $this->createStub(Folder::class);
-		$folder->method('search')->willReturnCallback(static function (string $marker) use ($files): array {
-			foreach ($files as $documentId => $file) {
-				if ($marker === '[P' . $documentId . ']') {
-					return [$file];
-				}
-			}
-
-			return [];
-		});
-		$folder->method('getRelativePath')->willReturnCallback(
-			static fn (string $path): string => substr($path, strlen('/dennis/files')),
-		);
-
 		$root = $this->createStub(IRootFolder::class);
-		$root->method('getUserFolder')->willReturn($folder);
+		$root->method('getUserFolder')->willReturn($userFolder ?? $this->userFolder(array_values($files)));
 
 		$l10n = $this->createStub(IL10N::class);
 		$l10n->method('t')->willReturnCallback(static fn (string $text): string => $text);
@@ -653,7 +734,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 
 		return new PaperlessSearchProvider(
 			new PaperlessApiService($configService, $clientService, new SearchDiagnostics($config, $this->clock())),
-			new NextcloudFileLocator($root),
+			new NextcloudFileLocator($root, $this->createStub(LoggerInterface::class)),
 			$l10n,
 			$urlGenerator,
 			$request,
@@ -690,6 +771,31 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$file->method('getPath')->willReturn('/dennis/files/Paperless/' . $name);
 		$file->method('getId')->willReturn(1000 + $documentId);
 		$file->method('getOwner')->willReturn($this->account($owner));
+
+		return $file;
+	}
+
+	/**
+	 * A file of the archive account that fails as soon as its entry needs it.
+	 */
+	private function brokenFile(string $name): File {
+		$file = $this->createStub(File::class);
+		$file->method('getName')->willReturn($name);
+		$file->method('getPath')->willReturn('/dennis/files/Paperless/' . $name);
+		$file->method('getId')->willThrowException(new RuntimeException('Storage unavailable'));
+		$file->method('getOwner')->willReturn($this->account('archive'));
+
+		return $file;
+	}
+
+	/**
+	 * A file that fails as soon as the file locator asks for its owner.
+	 */
+	private function unreadableFile(string $name): File {
+		$file = $this->createStub(File::class);
+		$file->method('getName')->willReturn($name);
+		$file->method('getPath')->willReturn('/dennis/files/Paperless/' . $name);
+		$file->method('getOwner')->willThrowException(new RuntimeException('Storage unavailable'));
 
 		return $file;
 	}
