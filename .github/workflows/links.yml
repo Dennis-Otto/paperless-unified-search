@@ -64,16 +64,19 @@ jobs:
         id: documents
         env:
           EVENT: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # The base branch as it is now, not the base that the event names: that one
+          # can be older than the commit of main that the branch was built on.
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
-          # The documents that a pull request adds or changes. One that changes the rules,
-          # or moves or deletes a file that a document may link to, checks every
-          # document. lychee gets the names through a shell, so a name with another
-          # character checks every document too.
+          # The documents that a pull request adds or changes, since the merge base, so
+          # none that only main changed. One that changes the rules, or moves or deletes
+          # a file that a document may link to, checks every document. lychee gets the
+          # names through a shell, so a name with another character checks every
+          # document too.
           if [[ "$EVENT" == pull_request ]] &&
-            [[ -z "$(git diff --name-only "$BASE_SHA" HEAD -- lychee.toml .lycheeignore .github/workflows/links.yml)" ]] &&
-            [[ -z "$(git diff --name-only --diff-filter=DR "$BASE_SHA" HEAD)" ]]; then
-            mapfile -t changed < <(git diff --name-only --diff-filter=AM "$BASE_SHA" HEAD -- '*.md' ':!CHANGELOG.md')
+            [[ -z "$(git diff --name-only "origin/$BASE_REF...HEAD" -- lychee.toml .lycheeignore .github/workflows/links.yml)" ]] &&
+            [[ -z "$(git diff --name-only --diff-filter=DR "origin/$BASE_REF...HEAD")" ]]; then
+            mapfile -t changed < <(git diff --name-only --diff-filter=AM "origin/$BASE_REF...HEAD" -- '*.md' ':!CHANGELOG.md')
             if ((${#changed[@]} == 0)); then
               echo "The pull request changes no document; no link to check." >> "$GITHUB_STEP_SUMMARY"
               exit 0

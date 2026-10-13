@@ -2,7 +2,8 @@ name: Lint
 
 # The checks every repository of the blueprint shares: the workflows, the license
 # of every file (REUSE), the Markdown of every document with hints at its spelling
-# and style, the sign-off of every commit (DCO) and the set-up of the issue assistant.
+# and style, the pictures of its diagrams, the sign-off of every commit (DCO) and the
+# set-up of the issue assistant.
 # In every pull request, not after a merge: main takes a pull request only when it is
 # up to date, so a merge gives main the files that the pull request passed with.
 # https://github.com/Dennis-Otto/repo-blueprint
@@ -68,6 +69,87 @@ jobs:
         with:
           globs: "**/*.md"
 
+  # The diagrams as pictures that every reader sees: the GitHub app shows a ```mermaid
+  # block as code. Drawn anew when a pull request changes a source, a picture or the
+  # script, or adds a ```mermaid block, which pulls the large image of mermaid-cli;
+  # any other pull request passes at once. Once a page shows a picture of a diagram,
+  # scripts/diagrams.sh --extract turns a new block into a source and its picture as
+  # well. For a branch of this repository, the diagram bot (After the checks) commits
+  # what changed; for a fork, the artifact diagrams of the run holds it.
+  diagrams:
+    name: diagrams
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The merge of the pull request into main, with main and the head of the
+          # pull request as its parents.
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Draw the diagrams and compare them with the committed pictures
+        id: draw
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          paths=(docs/diagrams docs/images/diagrams scripts/diagrams.sh)
+          fence='^\+[[:space:]]*(```+|~~~+)[[:space:]]*mermaid([[:space:]]|$)'
+          if [[ "$EVENT" == pull_request ]]; then
+            added="$(git diff HEAD^1 HEAD -- '*.md' | grep -E "$fence" || true)"
+            if [[ -z "$added" ]] && git diff --quiet HEAD^1 HEAD -- "${paths[@]}"; then
+              echo "The pull request changes no diagram." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            # The head of the pull request, onto which the diagram bot commits.
+            git checkout --quiet --detach HEAD^2
+          fi
+          if bash scripts/diagrams.sh --adopted; then
+            bash scripts/diagrams.sh --extract
+          else
+            # Until a page shows a picture, a ```mermaid block is a warning, and the
+            # sources in docs/diagrams/ may belong to the project's own way to draw
+            # them; the Diagrams workflow of main moves the blocks after the update of
+            # the blueprint.
+            echo "No page of this repository shows a picture of docs/images/diagrams/ yet: a \`mermaid\` block is a warning, and the Diagrams workflow of main turns the blocks into pictures after the merge." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          tool=.github/blueprint.py
+          [[ -f "$tool" ]] || tool=blueprint.py
+          kept="$RUNNER_TEMP/diagrams"
+          changed="$(python3 "$tool" diagrams keep "$kept")"
+          if [[ -z "$changed" ]]; then
+            echo "Every diagram is a picture of its source, as drawn." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "### Diagrams"
+            echo "The GitHub app shows a \`mermaid\` block as code, and a picture that differs from its source shows something else than the source says. \`bash scripts/diagrams.sh --extract\` changes these files:"
+            echo
+            echo "$changed"
+            echo
+            echo "Run it with Docker and commit what it changes. On a branch of this repository, the diagram bot commits it for you in a minute; the artifact \`diagrams\` of this run holds the files as well."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "stale=true" >> "$GITHUB_OUTPUT"
+      - name: Keep the diagrams for the diagram bot
+        if: steps.draw.outputs.stale == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: diagrams
+          path: ${{ runner.temp }}/diagrams/
+          # Pages of Markdown in .github/ as well.
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
+      - name: Report the diagrams that differ
+        if: steps.draw.outputs.stale == 'true'
+        run: |
+          echo "::error::Diagrams that not every reader sees: a \`\`\`mermaid block, which the GitHub app shows as code, or pictures that differ from their sources in docs/diagrams/. bash scripts/diagrams.sh --extract fixes them, with Docker; for a branch of this repository, the diagram bot commits the fix in a minute. The summary of this run lists the files."
+          exit 1
+
   # Hints at the spelling (cspell, English and German) and the style of the English
   # (Vale) of the documents that a pull request changes. A hint, never a failure.
   # Not in the release pull request, the branch of the release bot in this
@@ -94,10 +176,13 @@ jobs:
           node-version: 24
       - name: Hint at the spelling and the style of the changed documents
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # The base branch as it is now, not the base that the event names: that one
+          # can be older than the commit of main that the branch was built on.
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
           VALE: jdkato/vale:v3.24.0@sha256:f5a09410093936d4919d868120786da9789e2652ac321c66a895403eca020ae4
         run: |
-          mapfile -t files < <(git diff --name-only --diff-filter=AMR "$BASE_SHA" HEAD -- '*.md' ':!CHANGELOG.md')
+          # The changes since the merge base: those of the pull request alone.
+          mapfile -t files < <(git diff --name-only --diff-filter=AMR "origin/$BASE_REF...HEAD" -- '*.md' ':!CHANGELOG.md')
           if ((${#files[@]} == 0)); then
             echo "No document changes." >> "$GITHUB_STEP_SUMMARY"
             exit 0
@@ -134,7 +219,11 @@ jobs:
           persist-credentials: false
       - name: Check the sign-off of every commit
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # The base branch as it is now, not the base that the event names: that one
+          # can be older than the commit of main that the branch was built on, and
+          # would bring commits of main into the check, such as squash commits that
+          # GitHub authors with another address than their sign-off names.
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           # Bots can't sign the Developer Certificate of Origin. A pull request of a
           # bot, such as Dependabot or the release app, may carry its unsigned commits.
@@ -156,8 +245,9 @@ jobs:
             fi
             echo "::error::Commit $commit lacks the sign-off 'Signed-off-by: $author'. Commit with git commit -s."
             exit 1
-          # Merge commits only bring main into the branch, such as those of the branch bot.
-          done < <(git rev-list --reverse --no-merges "$BASE_SHA..$HEAD_SHA")
+          # The commits of the pull request that the base branch doesn't have. Merge
+          # commits only bring main into the branch, such as those of the branch bot.
+          done < <(git rev-list --reverse --no-merges "origin/$BASE_REF..$HEAD_SHA")
           echo "Checked the sign-off of $count commit(s)."
 
   issue-assistant:

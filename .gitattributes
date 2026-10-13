@@ -14,3 +14,6 @@
 requirements*.txt linguist-generated=true
 package-lock.json linguist-generated=true
 composer.lock linguist-generated=true
+
+# The pictures of the diagrams, which scripts/diagrams.sh draws from docs/diagrams/.
+docs/images/diagrams/*.svg linguist-generated=true

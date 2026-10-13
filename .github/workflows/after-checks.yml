@@ -31,6 +31,15 @@ name: After the checks
 # at a push of its tag that GitHub refused for a moment, it runs the failed jobs once
 # more, where they stopped, instead of leaving the release and its rollout to a
 # person. The release workflow takes up a tag that it pushed already.
+#
+# The diagram bot: when the check diagrams of Lint finds a ```mermaid block, which
+# the GitHub app shows as code, or pictures of diagrams that differ from their sources
+# in docs/diagrams/, in a pull request from a branch of this repository, it commits
+# what scripts/diagrams.sh --extract changed in the check onto that branch, as the
+# release app, so that the checks run again, and says in a comment which blocks became
+# pictures. blueprint.py of main takes only sources, SVG pictures and pages of
+# Markdown from the artifact "diagrams". A pull request from a fork keeps the failing
+# check, with the command that fixes it.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -415,4 +424,105 @@ jobs:
               -F "body=@$RUNNER_TEMP/comment.md" --silent
           else
             gh pr comment "$number" --body-file "$RUNNER_TEMP/comment.md"
+          fi
+
+  diagrams:
+    name: commit the diagrams
+    if: >-
+      !github.event.repository.fork &&
+      github.event.workflow_run.name == 'Lint' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    concurrency:
+      group: ${{ github.workflow }}-diagrams-${{ github.event.workflow_run.head_branch }}
+      cancel-in-progress: true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # The environment holds the private key of the release app; only main may use it.
+    environment:
+      name: release
+      deployment: false
+    permissions:
+      actions: read # the diagrams that the check kept
+      contents: read # blueprint.py of main, which checks them
+    env:
+      # The first line of the bot's commits.
+      HEADLINE: "docs: draw the diagrams anew"
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: Fetch the diagrams that the check drew
+        id: drawn
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.event.workflow_run.id }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if ! gh run download "$RUN" --name diagrams --dir "$RUNNER_TEMP/diagrams"; then
+            echo "The check diagrams kept nothing; another check failed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # The bot's own commit drew pictures that differ again: drawing them once more
+          # would only repeat that.
+          if [[ "$(gh api "repos/$GH_REPO/commits/$SHA" --jq '.commit.message | split("\n")[0]')" == "$HEADLINE" ]]; then
+            echo "::error::The diagrams that the diagram bot committed in ${SHA:0:7} differ again from what their sources draw; scripts/diagrams.sh doesn't draw them the same way twice."
+            exit 1
+          fi
+          echo "found=true" >> "$GITHUB_OUTPUT"
+      # The tool of main, never the code of the pull request.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.drawn.outputs.found == 'true'
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github/blueprint
+            blueprint
+      - name: Create a token of the release app
+        id: app
+        if: steps.drawn.outputs.found == 'true' && vars.RELEASE_AUTOMATION_CLIENT_ID != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY }}
+          # Only what a commit on the branch and one comment need.
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Commit the diagrams onto the branch of the pull request
+        if: steps.app.outputs.token != ''
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          head="$(gh api "repos/$GH_REPO/git/ref/heads/$BRANCH" --jq .object.sha)"
+          if [[ "$head" != "$SHA" ]]; then
+            echo "$BRANCH moved on from ${SHA:0:7}; the checks of its new head draw the diagrams again." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          tool=.github/blueprint.py
+          [[ -f "$tool" ]] || tool=blueprint.py
+          kept="$RUNNER_TEMP/diagrams"
+          # The commit goes through GitHub's API as the release app: GitHub signs it, and
+          # the push starts the checks again. The sign-off names the app's account, which
+          # is the author of the commit. blueprint.py takes only sources, pictures and
+          # pages of Markdown from what the check kept.
+          user_id="$(gh api "users/${APP_SLUG}[bot]" --jq .id)"
+          body="Drawn by scripts/diagrams.sh --extract from the sources in docs/diagrams/, in the check diagrams: $URL
+
+          Signed-off-by: ${APP_SLUG}[bot] <${user_id}+${APP_SLUG}[bot]@users.noreply.github.com>"
+          python3 "$tool" --repo "$GH_REPO" diagrams commit "$kept" --branch "$BRANCH" \
+            --head "$SHA" --headline "$HEADLINE" --body "$body" > "$RUNNER_TEMP/commit.json"
+          commit="$(gh api graphql --input "$RUNNER_TEMP/commit.json" --jq .data.createCommitOnBranch.commit.oid)"
+          echo "Committed the diagrams onto $BRANCH: $commit" >> "$GITHUB_STEP_SUMMARY"
+          python3 "$tool" diagrams report "$kept" --for comment > "$RUNNER_TEMP/comment.md"
+          if [[ -s "$RUNNER_TEMP/comment.md" ]]; then
+            gh pr comment "${NUMBER:-$BRANCH}" --body-file "$RUNNER_TEMP/comment.md"
           fi

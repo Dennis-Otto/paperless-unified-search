@@ -45,6 +45,11 @@ if ((problems > 0)); then
 fi
 echo "Every text file is clean."
 
+step "Diagrams"
+# Pictures drawn from the sources in docs/diagrams/, which the GitHub app shows too;
+# scripts/diagrams.sh draws them, with Docker.
+bash scripts/diagrams.sh --check
+
 step "Version"
 # The release bot writes the version of each release into these files.
 release="$(grep -oE '"\.": *"[^"]+"' .release-please-manifest.json | grep -oE '[0-9][^"]*')"

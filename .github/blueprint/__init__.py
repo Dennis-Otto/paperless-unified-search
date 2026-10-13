@@ -8,6 +8,8 @@ and the changelog of its releases.
     python3 blueprint.py unreleased ...     an entry under Unreleased (the other bots)
     python3 blueprint.py notices ...        the licenses of the third-party components
     python3 blueprint.py update-commit ...  the pull request of an update (the blueprint bot)
+    python3 blueprint.py diagrams extract   the ```mermaid blocks as sources and pictures
+    python3 blueprint.py diagrams ...       keep, commit and report (the diagram bots)
 
 Run it in the root of a repository made from the blueprint, with the GitHub CLI `gh`
 signed in as an administrator. It needs Python 3.12 and nothing else. It never reads,

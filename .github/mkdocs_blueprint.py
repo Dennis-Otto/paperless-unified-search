@@ -7,6 +7,8 @@ https://github.com/Dennis-Otto/repo-blueprint
 
 from __future__ import annotations
 
+import html
+import re
 import shutil
 import sys
 import time
@@ -19,6 +21,13 @@ from typing import Any
 DOWNLOADING = ("material/privacy", "material/social")
 # How often a download is tried before the plugin gets its error.
 ATTEMPTS = 3
+# The <picture> of a diagram, as scripts/diagrams.sh --extract writes it, with the
+# paragraph that Markdown puts around it.
+DIAGRAM = re.compile(
+    r"(?P<paragraph><p>\s*)?<picture>(?:(?!</picture>).)*?<img\b[^>]*?\bsrc=\"(?:[^\"]*/)?"
+    r"images/diagrams/(?P<name>[\w.-]+?)\.svg\".*?</picture>(?(paragraph)\s*</p>)",
+    re.S,
+)
 
 
 class Retrying:
@@ -59,6 +68,27 @@ def on_config(config: Any) -> None:
         module: Any = sys.modules[type(plugin).__module__]
         if not isinstance(module.requests, Retrying):
             module.requests = Retrying(module.requests)
+
+
+def on_page_content(html_text: str, page: Any, config: Any, files: Any) -> str:
+    """Draw each diagram live from its source, in place of its pictures.
+
+    The Markdown shows a diagram as the pictures that scripts/diagrams.sh draws from
+    docs/diagrams/NAME.mmd, which every renderer shows. The website draws the source
+    with Mermaid instead, as a block of Material: in the colors of the theme that the
+    reader switches to, sharp at every size and with text to search and select. A
+    picture without its source stays as it is.
+    """
+    sources = Path(config.docs_dir) / "diagrams"
+
+    def live(match: re.Match[str]) -> str:
+        source = sources / f"{match['name'].removesuffix('.dark')}.mmd"
+        if not source.is_file():
+            return match[0]
+        text = html.escape(source.read_text(encoding="utf-8"), quote=False)
+        return f'<pre class="mermaid"><code>{text}</code></pre>'
+
+    return DIAGRAM.sub(live, html_text)
 
 
 def on_post_build(config: Any) -> None:
