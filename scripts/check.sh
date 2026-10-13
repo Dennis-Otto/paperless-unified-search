@@ -112,7 +112,11 @@ rm -f "$xsd"
 
 step "PHP syntax"
 mapfile -t folders < <(find appinfo lib templates tests -maxdepth 0 -type d 2>/dev/null)
-find "${folders[@]}" -name '*.php' -print0 | xargs -0 -n 1 php --syntax-check >/dev/null
+# One PHP for each file, as many at once as there are processors; getconf counts them
+# on Linux, on macOS and in Git Bash. Only the errors show, wherever PHP writes them.
+find "${folders[@]}" -name '*.php' -print0 |
+  xargs -0 -n 1 -P "$(getconf _NPROCESSORS_ONLN)" php --syntax-check |
+  { grep -v '^No syntax errors detected in ' || true; }
 echo "Every PHP file parses."
 
 step "Coding standard"

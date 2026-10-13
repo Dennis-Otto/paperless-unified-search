@@ -14,8 +14,11 @@
 			<directory name="vendor"/>
 		</ignoreFiles>
 	</projectFiles>
+	<!-- The public API of Nextcloud, whose package ships no autoloader of Composer; Psalm
+	     finds every other class of vendor/ through the autoloader, when the code uses it,
+	     instead of reading all of vendor/ in each run. -->
 	<extraFiles>
-		<directory name="vendor"/>
+		<directory name="vendor/nextcloud/ocp"/>
 	</extraFiles>
 	<stubs>
 		<file name="tests/stubs/Emitter.php"/>

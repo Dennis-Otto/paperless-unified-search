@@ -171,22 +171,36 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-      - name: Hint at the spelling and the style of the changed documents
+      - name: Find the changed documents
+        id: documents
         env:
           # The base branch as it is now, not the base that the event names: that one
           # can be older than the commit of main that the branch was built on.
           BASE_REF: ${{ github.event.pull_request.base.ref }}
-          VALE: jdkato/vale:v3.24.0@sha256:f5a09410093936d4919d868120786da9789e2652ac321c66a895403eca020ae4
         run: |
           # The changes since the merge base: those of the pull request alone.
-          mapfile -t files < <(git diff --name-only --diff-filter=AMR "origin/$BASE_REF...HEAD" -- '*.md' ':!CHANGELOG.md')
-          if ((${#files[@]} == 0)); then
+          git diff -z --name-only --diff-filter=AMR "origin/$BASE_REF...HEAD" -- '*.md' ':!CHANGELOG.md' \
+            > "$RUNNER_TEMP/documents"
+          if [[ ! -s "$RUNNER_TEMP/documents" ]]; then
             echo "No document changes." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+      # npm keeps the packages of the spelling check in its cache, under a key of their
+      # lock file, and installs them from there. Only with changed documents, the only
+      # runs that install them, so that there is always a cache to save.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.documents.outputs.changed == 'true'
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: .github/prose/package-lock.json
+      - name: Hint at the spelling and the style of the changed documents
+        if: steps.documents.outputs.changed == 'true'
+        env:
+          VALE: jdkato/vale:v3.24.0@sha256:f5a09410093936d4919d868120786da9789e2652ac321c66a895403eca020ae4
+        run: |
+          mapfile -d '' -t files < "$RUNNER_TEMP/documents"
           npm ci --prefix .github/prose --ignore-scripts --no-audit --no-fund
           .github/prose/node_modules/.bin/cspell lint --config .github/prose/cspell.json --no-progress \
             --no-summary --no-color --no-must-find-files "${files[@]}" > "$RUNNER_TEMP/spelling.txt" || true
