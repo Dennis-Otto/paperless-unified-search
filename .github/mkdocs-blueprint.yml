@@ -52,8 +52,12 @@ plugins:
   # Fonts, scripts and pictures from other servers are downloaded when the website
   # is built and served with it, so that reading a page asks no other server.
   privacy: {}
-  # A preview card of every page, which shows where a link to it is shared.
-  social: {}
+  # A preview card of every page, which shows where a link to it is shared. The cards
+  # are drawn with the Cairo library, which Windows doesn't have, so only the CI
+  # makes them: GitHub's runners set CI to true. A preview on your computer, and
+  # scripts/check.sh, build the website without them.
+  social:
+    enabled: !ENV [CI, false]
   # A picture opens enlarged with a click.
   glightbox: {}
   # The pages of other languages, such as index.de.md beside index.md. A website in

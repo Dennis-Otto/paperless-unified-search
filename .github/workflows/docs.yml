@@ -4,8 +4,11 @@ name: Docs
 # and the pages in docs/, strictly, so that a link or an anchor that leads nowhere
 # fails: in every pull request as the check docs, and on main for GitHub Pages. A
 # repository without mkdocs.yml or a home page in docs/ has no website, and the
-# check passes, so that it can be required everywhere. The tools are the hash-pinned
-# ones of .github/docs-requirements.txt, which the blueprint keeps current.
+# check passes, so that it can be required everywhere. Where another workflow
+# publishes GitHub Pages, as the Dashboard of the blueprint does with its dashboard,
+# a run on main only builds the website; in a fork, where the Dashboard doesn't run,
+# Docs publishes it. The tools are the hash-pinned ones of
+# .github/docs-requirements.txt, which the blueprint keeps current.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -16,10 +19,12 @@ on:
 
 permissions: {}
 
-# Pull requests cancel their older runs; runs on main wait for each other, so that
-# the website of the latest commit is published last.
+# One run for each commit of a pull request: a quick check, whose runs for different
+# commits never cancel each other, so that a late run for an older commit can't
+# cancel the check of the head. Runs on main wait for each other, so that the
+# website of the latest commit is published last.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event.pull_request.head.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -30,7 +35,7 @@ env:
 jobs:
   docs:
     name: docs
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -48,11 +53,13 @@ jobs:
           # The date of the last change of every page comes from the history.
           fetch-depth: 0
       # A run on main publishes the website, and the next job builds it for that;
-      # every other run builds it here, as the check.
+      # every other run builds it here, as the check, and so does a run on main where
+      # another workflow publishes the website.
       - name: Look for the website
         id: site
         env:
           EVENT: ${{ github.event_name }}
+          FORK: ${{ github.event.repository.fork }}
           GH_TOKEN: ${{ github.token }}
         run: |
           if [[ ! -f mkdocs.yml ]] || [[ ! -f docs/index.md && ! -f docs/README.md ]]; then
@@ -60,6 +67,16 @@ jobs:
             exit 0
           fi
           if [[ "$EVENT" != pull_request && "$GITHUB_REF" == refs/heads/main ]]; then
+            # GitHub Pages has one website, and the other workflow publishes it; not in
+            # a fork, where the Dashboard of the blueprint doesn't run.
+            for workflow in .github/workflows/*.y*ml; do
+              if [[ "$FORK" != true && "$workflow" != .github/workflows/docs.yml ]] &&
+                grep -qF 'actions/deploy-pages@' "$workflow"; then
+                echo "::notice::$workflow publishes this website; this run only builds it."
+                echo "build=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            done
             # The settings bot sets GitHub Pages up from the [pages] table of
             # .github/repository.toml; until then, and in forks, nothing is published.
             build_type="$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq .build_type 2>/dev/null || true)"
@@ -86,7 +103,7 @@ jobs:
     name: build the website
     needs: docs
     if: needs.docs.outputs.publish == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -114,7 +131,7 @@ jobs:
   deploy:
     name: publish the website
     needs: pages
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment:
       name: github-pages

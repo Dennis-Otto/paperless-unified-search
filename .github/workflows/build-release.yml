@@ -15,6 +15,10 @@ on:
         description: The tag of the release or beta
         required: true
         type: string
+      sha:
+        description: The commit that the tag has to point at
+        required: true
+        type: string
       version:
         description: Its version
         required: true
@@ -25,7 +29,7 @@ permissions: {}
 jobs:
   assets:
     name: release assets
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     # The signing key of a Nextcloud app belongs to this environment.
     environment:
@@ -47,6 +51,19 @@ jobs:
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
+      # Anybody with a token that may push could create the tag of a coming release
+      # first, at a commit of their own. Only a tag that the release workflow signed, at
+      # the commit of the release, is built and signed here. The check is the script of
+      # the commit that runs this workflow, not the one of the tag.
+      - name: Verify the tag before building
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          gh api -H "Accept: application/vnd.github.raw+json" \
+            "repos/$GITHUB_REPOSITORY/contents/.github/sign-tag.sh?ref=$GITHUB_SHA" > "$RUNNER_TEMP/sign-tag.sh"
+          bash "$RUNNER_TEMP/sign-tag.sh" verify "$TAG" "$SHA"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.tag }}
@@ -104,7 +121,11 @@ jobs:
             exit 1
           fi
           app_id="$(python3 -c 'import xml.etree.ElementTree as t; print(t.parse("appinfo/info.xml").getroot().findtext("id"))')"
-          curl --fail --location --silent --show-error --output "$RUNNER_TEMP/krankerl.deb" \
+          # Each download tries again after a passing error of the network or of its
+          # server, which would otherwise leave the release a draft. A release builds
+          # without the cache of the checks.
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            --connect-timeout 15 --max-time 300 --output "$RUNNER_TEMP/krankerl.deb" \
             "https://github.com/ChristophWurst/krankerl/releases/download/v$KRANKERL_VERSION/krankerl_${KRANKERL_VERSION}_amd64.deb"
           echo "$KRANKERL_SHA256  $RUNNER_TEMP/krankerl.deb" | sha256sum --check --strict
           sudo dpkg --install "$RUNNER_TEMP/krankerl.deb"
@@ -115,9 +136,11 @@ jobs:
           fi
           umask 077
           printf '%s' "$APP_PRIVATE_KEY" > "$RUNNER_TEMP/app.key"
-          curl --fail --location --silent --show-error --output "$RUNNER_TEMP/app.crt" \
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            --connect-timeout 15 --max-time 300 --output "$RUNNER_TEMP/app.crt" \
             "https://raw.githubusercontent.com/nextcloud/app-certificate-requests/master/$app_id/$app_id.crt"
-          curl --fail --location --silent --show-error --output "$RUNNER_TEMP/nextcloud.zip" \
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            --connect-timeout 15 --max-time 600 --output "$RUNNER_TEMP/nextcloud.zip" \
             "https://download.nextcloud.com/server/releases/nextcloud-$NEXTCLOUD_VERSION.zip"
           echo "$NEXTCLOUD_SHA256  $RUNNER_TEMP/nextcloud.zip" | sha256sum --check --strict
           unzip -q "$RUNNER_TEMP/nextcloud.zip" -d "$RUNNER_TEMP/server"

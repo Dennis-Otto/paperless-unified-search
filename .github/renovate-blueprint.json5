@@ -2,11 +2,11 @@
 // Renovate keeps the actions, the dependencies, the images and the pins of the
 // workflows current; the Renovate workflow of the blueprint runs it for every
 // repository with a .github/renovate.json5, as the release app. An update waits a
-// week after its release; one that fixes a vulnerability comes at once. Routine
-// updates and the weekly refresh of the lock files merge on their own once every
-// check passes; a major update waits for the maintainer. Updates of what the users
-// run are committed as fix(deps) and lead to a patch release, updates of the tools
-// as chore(deps).
+// week after its release; one that fixes a vulnerability comes at once, and so does
+// the new commit of a branch that an action follows. Routine updates merge on their
+// own once every check passes; the weekly refresh of the lock files and a major
+// update wait for the maintainer. Updates of what the users run are committed as
+// fix(deps) and lead to a patch release, updates of the tools as chore(deps).
 // https://github.com/Dennis-Otto/repo-blueprint
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
@@ -15,6 +15,9 @@
   // Once a week, so that the release bot sums the updates up in one release.
   schedule: ["* 0-6 * * 1"],
   minimumReleaseAge: "7 days",
+  // In the same window, the lock files of every package manager are refreshed:
+  // their indirect dependencies move to their newest versions.
+  lockFileMaintenance: { enabled: true, schedule: ["* 0-6 * * 1"] },
   internalChecksFilter: "strict",
   // GitHub merges a routine update once every required check passes.
   platformAutomerge: true,
@@ -44,7 +47,10 @@
   // The hash-pinned requirements are compiled from their .in files. Renovate
   // installs pip-tools once per repository, for the Python of the first lock file
   // it compiles: a lock file for another Python is compiled with
-  // `uv pip compile --python-version`, which doesn't depend on the Python it runs on.
+  // `uv pip compile --python-version=`, which doesn't depend on the Python it runs
+  // on. Renovate compiles a lock file again with the command in its header, and
+  // skips the file for good if an option is new to it or lacks the = before its
+  // value.
   pip_requirements: { enabled: false },
   "pip-compile": { managerFilePatterns: ["/(^|/)requirements[^/]*\\.txt$/"] },
   // The hooks of .pre-commit-config.yaml, which Renovate leaves alone by default.
@@ -82,11 +88,17 @@
       automerge: true,
     },
     {
-      // The weekly refresh of the lock files has no release date to wait for, so
-      // its age check would stay pending; it merges once every check passes.
+      // The weekly refresh of the lock files brings the newest version of every
+      // indirect dependency, also one released minutes ago. It has no release date
+      // to wait for, so an age check would stay pending, and a cooldown of the
+      // package managers would hold back the fixes of vulnerabilities too: Renovate
+      // sets their environment for the whole repository, not for a rule. So the
+      // refresh waits for the maintainer. Renovate builds it anew only in its weekly
+      // window, so that the changes the maintainer reviewed are the ones that merge.
       matchUpdateTypes: ["lockFileMaintenance"],
       minimumReleaseAge: null,
-      automerge: true,
+      automerge: false,
+      updateNotScheduled: false,
     },
     {
       matchManagers: ["github-actions"],
@@ -97,6 +109,19 @@
       matchManagers: ["github-actions"],
       matchUpdateTypes: ["major"],
       groupName: "the actions to a new major version",
+    },
+    {
+      // An action pinned to a commit of a branch, with the branch in its comment, as
+      // a project may add one: zizmor reports the pin as soon as the branch moves on,
+      // and every commit to the branch starts the week of waiting anew, so Renovate
+      // would never catch up with a branch that moves every few days. It follows the
+      // branch in its next run instead.
+      matchManagers: ["github-actions"],
+      matchDatasources: ["github-digest"],
+      minimumReleaseAge: null,
+      schedule: ["at any time"],
+      automerge: true,
+      groupName: "the actions that follow a branch",
     },
     {
       // The versions of Python, Node and PHP that the workflows set up, and the
