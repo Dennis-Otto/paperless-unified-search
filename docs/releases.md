@@ -1,3 +1,7 @@
+---
+description: "How Paperless Unified Search is released: the version from the pull request titles, a signed package with SBOM and provenance, published in the App Store."
+---
+
 # Releases
 
 Releases follow the [repository blueprint](https://github.com/Dennis-Otto/repo-blueprint): nobody chooses a version or writes release notes by hand.

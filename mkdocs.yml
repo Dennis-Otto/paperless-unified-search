@@ -8,7 +8,7 @@
 # https://squidfunk.github.io/mkdocs-material/
 INHERIT: .github/mkdocs-blueprint.yml
 site_name: "Paperless Unified Search"
-site_description: "OCR-powered Paperless-ngx search, seamlessly integrated into Nextcloud"
+site_description: "Nextcloud app: Paperless-ngx OCR full-text search in Nextcloud's unified search, with no extra index; results open in the Nextcloud viewer"
 site_url: https://dennis-otto.github.io/paperless-unified-search/
 repo_url: https://github.com/Dennis-Otto/paperless-unified-search
 repo_name: Dennis-Otto/paperless-unified-search

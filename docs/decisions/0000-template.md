@@ -1,3 +1,7 @@
+---
+description: "The template of a decision record of Paperless Unified Search: the context, the options, the decision and its consequences."
+---
+
 # The decision, in a few words
 
 - Status: proposed, accepted, rejected, or replaced by [0000](0000-template.md)

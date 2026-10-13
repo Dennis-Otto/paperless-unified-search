@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # The checks of this app alone, which scripts/check.sh runs last: the browser of the
-# end-to-end tests, and the JavaScript of the settings and the translations, which
-# have no build step.
+# end-to-end tests, the pictures of the README, the descriptions of the pages of the
+# website, and the JavaScript of the settings and the translations, which have no
+# build step.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -31,6 +32,32 @@ for picture in "${pictures[@]}"; do
   fi
 done
 echo "The ${#pictures[@]} picture(s) of the README are in the repository."
+
+printf '\n== %s\n' "Descriptions of the website pages"
+# Search engines and shared links show the description of a page, from its front
+# matter; a page without one would show the description of the whole website.
+description() {
+  awk 'NR == 1 && $0 != "---" { exit }
+    NR > 1 && $0 == "---" { exit }
+    NR > 1 && sub(/^description: */, "") { gsub(/^"|"$/, ""); print; exit }' "$1"
+}
+mapfile -t pages < <(git ls-files 'docs/*.md')
+descriptions=()
+for page in "${pages[@]}"; do
+  text="$(description "$page")"
+  if [[ -z "$text" ]]; then
+    echo "$page has no description in its front matter; start it with:"
+    printf -- '---\ndescription: "What the page is about, in one sentence."\n---\n'
+    exit 1
+  fi
+  descriptions+=("$text")
+done
+twice="$(printf '%s\n' "${descriptions[@]}" | sort | uniq -d)"
+if [[ -n "$twice" ]]; then
+  echo "More than one page has the description: $twice"
+  exit 1
+fi
+echo "The ${#pages[@]} page(s) of the website each have a description of their own."
 
 printf '\n== %s\n' "JavaScript and translations"
 if ! command -v node >/dev/null 2>&1; then

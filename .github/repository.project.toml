@@ -3,6 +3,13 @@
 # lists gain their new items, and values replace those of repository.toml.
 # https://github.com/Dennis-Otto/repo-blueprint#settings-as-code
 
+# What people search for on GitHub and on the web: the description says what the app
+# does and how it differs, and the topics add those that people browse to the ones
+# of repository.toml.
+[repository]
+description = "Nextcloud app: Paperless-ngx OCR full-text search in Nextcloud's unified search, with no extra index; results open in the Nextcloud viewer"
+topics = ["nextcloud-app", "paperless", "unified-search", "self-hosted", "selfhosted", "homelab", "dms", "document-search"]
+
 # The end-to-end tests against every supported Nextcloud version (e2e.yml).
 [branch]
 required_checks = ["nextcloud"]
