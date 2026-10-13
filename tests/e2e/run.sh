@@ -14,7 +14,7 @@ PASSWORD="e2e-only-password"
 BASE_URL="http://127.0.0.1:${E2E_PORT}"
 TMP_DIR="$(mktemp -d)"
 COMPOSE=("${DOCKER_BIN}" compose --project-name "${PROJECT_NAME}" --file "${SCRIPT_DIR}/compose.yaml")
-# The browser of the accessibility check. Keep its version equal to playwright-core in
+# The browser of the checks in Chromium. Keep its version equal to playwright-core in
 # package.json: Renovate updates both together, and scripts/check-project.sh compares
 # them. The name stays on one line without quotes, where that check, run-all.sh and
 # scripts/screenshots.sh find it.
@@ -68,24 +68,46 @@ assert_response() {
 	"${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_response.py "${mode}" "$@" < "${file}"
 }
 
-# axe-core checks the pages of the app in Chromium (accessibility.mjs), inside the
-# network of the Compose project, and the script checks what the settings page does.
-# The files of the check reach the browser through standard input, so that npm leaves
-# nothing in the checkout.
-accessibility() {
+# Checks the history of the problems of the search on the page of the administration
+# settings in the file $2 in the mode $1 of assert_history.py, with the rest as the
+# arguments of the mode.
+assert_history() {
+	mode="$1"
+	file="$2"
+	shift 2
+	"${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_history.py "${mode}" "$@" < "${file}"
+}
+
+# Uploads a PDF of one page with the line $3 as the file $2 of the user $1, a path of
+# WebDAV with its special characters encoded.
+upload_pdf() {
+	"${COMPOSE[@]}" exec -T paperless-mock python /mock/pdf.py "$3" \
+		| curl --fail-with-body --silent --show-error \
+			--user "$1:${PASSWORD}" \
+			--upload-file - \
+			"${BASE_URL}/remote.php/dav/files/$1/$2" >/dev/null
+}
+
+# The checks in Chromium, inside the network of the Compose project: axe-core checks
+# the pages of the app (accessibility.mjs), which also checks what the settings page
+# does, and flow.mjs goes through the search dialog as a person does. The files of the
+# checks reach the browser through standard input, so that npm leaves nothing in the
+# checkout.
+browser_checks() {
 	# The image has been loading since the start; a failed pull leaves it to docker run.
 	if [[ -n "${PLAYWRIGHT_PULL}" ]]; then
 		wait "${PLAYWRIGHT_PULL}" || true
 		PLAYWRIGHT_PULL=""
 	fi
-	tar -C "${SCRIPT_DIR}" -cf - package.json package-lock.json accessibility.mjs \
+	tar -C "${SCRIPT_DIR}" -cf - package.json package-lock.json ui.mjs accessibility.mjs flow.mjs \
 		| "${DOCKER_BIN}" run --rm --interactive \
 			--network "${PROJECT_NAME}_default" \
 			--env NPM_CONFIG_UPDATE_NOTIFIER=false \
 			--env E2E_USER=e2e-admin \
+			--env E2E_SEARCH_USER=e2e-user \
 			--env "E2E_PASSWORD=${PASSWORD}" \
 			"${PLAYWRIGHT_IMAGE}" \
-			sh -c 'mkdir /tmp/browser && cd /tmp/browser && tar -xf - && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error && node accessibility.mjs'
+			sh -c 'mkdir /tmp/browser && cd /tmp/browser && tar -xf - && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error && node accessibility.mjs && node flow.mjs'
 }
 
 # Sends a request and expects the HTTP status $1. $2 says what the request does, for the
@@ -432,11 +454,8 @@ if [[ "${MKCOL_STATUS}" != "201" && "${MKCOL_STATUS}" != "405" ]]; then
 	exit 1
 fi
 
-printf '%s\n' 'Synthetic PDF fixture for Paperless Unified Search E2E.' \
-	| curl --fail-with-body --silent --show-error \
-		--user "e2e-user:${PASSWORD}" \
-		--upload-file - \
-		"${BASE_URL}/remote.php/dav/files/e2e-user/Documents/Mobile%20viewer%20test%20%5BP123%5D.pdf" >/dev/null
+# A real PDF, which the Viewer draws when the search dialog opens it.
+upload_pdf e2e-user 'Documents/Mobile%20viewer%20test%20%5BP123%5D.pdf' 'Synthetic PDF fixture for Paperless Unified Search E2E.'
 
 curl --fail-with-body --silent --show-error \
 	--user "e2e-user:${PASSWORD}" \
@@ -535,6 +554,19 @@ cursor="$(assert_response page "${TMP_DIR}/page-1.json" more 620 624 626 627 630
 search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/page-2.json" pagetest "${cursor}"
 assert_response page "${TMP_DIR}/page-2.json" last 635 640 >/dev/null
 
+# Paperless fails with HTTP 500 for e2e-error, and the connection of the first search
+# for e2e-drop breaks off without an answer. The first search shows no document and
+# goes into the history of the problems of the search; the second shows its document,
+# from the second try of the request, which goes into the history as well and ends
+# the failure. The page of the administration settings shows both, without the terms
+# and the token, also where the error of the HTTP client repeats the URL (#118).
+search e2e-user 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/error.json" e2e-error
+assert_response no-results "${TMP_DIR}/error.json"
+search e2e-user 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/drop.json" e2e-drop
+assert_response browser "${TMP_DIR}/drop.json"
+admin_settings "${TMP_DIR}/problems.html"
+assert_history recorded "${TMP_DIR}/problems.html" e2e-error e2e-drop e2e-only-token
+
 curl --fail-with-body --silent --show-error \
 	--user "e2e-admin:${PASSWORD}" \
 	--header 'Accept: application/json' \
@@ -562,22 +594,45 @@ curl --fail-with-body --silent --show-error \
 	"${BASE_URL}/ocs/v2.php/search/providers"
 assert_response trusted "${TMP_DIR}/providers-trusted.json"
 
-phase "Check the settings page and its accessibility in Chromium"
-# The administration settings meet WCAG 2.1 AA, also with the warning about an archive
-# account that doesn't exist, with the token field required for another server and
-# with the message after saving. The browser corrects the archive account and saves
-# another server and then the mock again, each with the token (#99).
-occ config:app:set paperless_unified_search archive_owner --value=e2e-gone >/dev/null
-accessibility
+phase "Check the settings page, its accessibility and the search dialog in Chromium"
+# The search dialog turns on the search of connected services, which Paperless is one
+# of again without trusted mode.
+expect_status 200 'Turning off trusted mode' \
+	--user "e2e-admin:${PASSWORD}" \
+	--request POST \
+	--data-urlencode 'url=http://paperless-mock:8080' \
+	--data-urlencode 'allowLocal=1' \
+	--data-urlencode 'token=' \
+	--data-urlencode 'alwaysSearch=0' \
+	--data-urlencode 'archiveOwner=e2e-user' \
+	"${SETTINGS_URL}"
+# The administration settings meet WCAG 2.1 AA, also with the problems of the search
+# above, with the warning about an archive account that doesn't exist, with the token
+# field required for another server and with the message after saving. The browser
+# corrects the archive account, saves another server and then the mock again, each
+# with the token (#99), and clears the history of the problems (#118).
+# The settings route refuses an archive account that doesn't exist, so the provisioning
+# API of Nextcloud stores it. occ would store it too, but Nextcloud serves the settings
+# of the apps from APCu for three seconds after the save above, which occ doesn't
+# clear: the first page in the browser then showed the archive account of that save.
+expect_status 200 'Storing an archive account that does not exist' \
+	--user "e2e-admin:${PASSWORD}" \
+	--request POST \
+	--data-urlencode 'value=e2e-gone' \
+	"${BASE_URL}/ocs/v2.php/apps/provisioning_api/api/v1/config/apps/paperless_unified_search/archive_owner"
+browser_checks
 for setting in 'paperless_url=http://paperless-mock:8080' 'archive_owner=e2e-user'; do
 	if [[ "$(occ config:app:get paperless_unified_search "${setting%%=*}")" != "${setting#*=}" ]]; then
 		echo "The settings page in the browser didn't store ${setting}." >&2
 		exit 1
 	fi
 done
+# Nextcloud forgot the problems that the browser cleared.
+admin_settings "${TMP_DIR}/cleared.html"
+assert_history cleared "${TMP_DIR}/cleared.html"
 
 phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed in ${SECONDS} s: settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, pages of results filled across pages of Paperless, and the settings page in the browser with its accessibility."
+echo "Docker E2E passed in ${SECONDS} s: settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, pages of results filled across pages of Paperless, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, the settings page in the browser with its accessibility, and the search dialog with a result that opens the Viewer on a laptop and a phone."

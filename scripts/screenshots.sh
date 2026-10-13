@@ -89,7 +89,7 @@ occ config:app:set paperless_unified_search diagnostics --type=array --lazy \
 
 # The files of the browser reach the container through standard input, and the
 # pictures leave it the same way, so that they belong to whoever runs this.
-tar -C tests/e2e -cf - package.json package-lock.json screenshots.mjs \
+tar -C tests/e2e -cf - package.json package-lock.json ui.mjs screenshots.mjs \
 	| docker run --rm --interactive \
 		--network "${PROJECT_NAME}_default" \
 		--env NPM_CONFIG_UPDATE_NOTIFIER=false \
