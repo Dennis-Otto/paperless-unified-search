@@ -54,7 +54,6 @@ if ! occ status --output=json 2>/dev/null | grep --fixed-strings '"installed":tr
 fi
 occ config:system:set trusted_domains 1 --value=127.0.0.1 >/dev/null
 occ config:system:set trusted_domains 2 --value=nextcloud >/dev/null
-occ config:system:set allow_local_remote_servers --type=boolean --value=true >/dev/null
 occ config:system:set default_language --value=en >/dev/null
 occ config:system:set default_locale --value=en_US >/dev/null
 occ app:enable paperless_unified_search >/dev/null
@@ -77,6 +76,7 @@ curl --fail-with-body --silent --show-error \
 	--header 'OCS-APIRequest: true' \
 	--request POST \
 	--data-urlencode 'url=http://paperless-mock:8080' \
+	--data-urlencode 'allowLocal=1' \
 	--data-urlencode 'token=e2e-only-token' \
 	--data-urlencode 'alwaysSearch=0' \
 	--data-urlencode 'archiveOwner=paperless' \

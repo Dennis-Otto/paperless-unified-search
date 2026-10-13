@@ -316,7 +316,7 @@ config:
 ---
 sequenceDiagram
     accTitle: Saving the settings
-    accDescr: The administrator enters the URL, the token and the archive account. When the password wasn't confirmed in the last 30 minutes, Nextcloud asks for it first. The settings page sends them with the CSRF token to the settings controller, which checks the URL, the token and the archive account: a blank token keeps the stored one only for its server, the same scheme, host and port, and otherwise the answer is HTTP 400. Then the controller has the Paperless client test the connection with one request to Paperless-ngx. Only when Paperless answers does the configuration save them, the URL, the switch and the archive account in the app configuration and the token in the credentials manager. The page gets the settings back, without the token.
+    accDescr: The administrator enters the URL, whether Paperless runs in the local network, the token and the archive account. When the password wasn't confirmed in the last 30 minutes, Nextcloud asks for it first. The settings page sends them with the CSRF token to the settings controller, which checks the URL, the token and the archive account: a blank token keeps the stored one only for its server, the same scheme, host and port, and otherwise the answer is HTTP 400. Then the controller has the Paperless client test the connection with one request to Paperless-ngx, which Nextcloud lets reach an address of the local network only with the switch, and then without redirects. Only when Paperless answers does the configuration save them, the URL, the switches and the archive account in the app configuration and the token in the credentials manager. The page gets the settings back, without the token.
 
     actor Admin as Administrator
     participant Page as Settings page
@@ -324,7 +324,7 @@ sequenceDiagram
     participant Client as Paperless client
     participant Config as Configuration
     participant Paperless as Paperless-ngx
-    Admin->>Page: URL, token, archive account
+    Admin->>Page: URL, local network, token, archive account
     opt the password wasn't confirmed in the last 30 minutes
         Page->>Admin: Nextcloud asks for the password
     end
@@ -332,16 +332,17 @@ sequenceDiagram
     Controller->>Config: checks the URL, the token and the archive account
     Note over Controller,Config: a blank token keeps the stored one only for its server (the same scheme, host and port), else HTTP 400
     Controller->>Client: test the connection
+    Note over Client,Paperless: an address of the local network only with the switch, then without redirects
     Client->>Paperless: GET /api/documents/<br>?page_size=1&fields=id
     Paperless-->>Client: 200
     Controller->>Config: save
-    Config->>Config: URL, switch and archive account to the app configuration, the token to the credentials manager
+    Config->>Config: URL, switches and archive account to the app configuration, the token to the credentials manager
     Controller-->>Page: the settings, without the token
 ```
 
 </div>
 
-A token left blank keeps the stored one, but only for the server it was saved for ([decision 0003](decisions/0003-bind-the-token-to-its-server.md)); the page marks the token field as required as soon as the URL names another server. The archive account is stored as Nextcloud spells its ID. A stored token that the credentials manager can't decrypt counts as none, and the page says so. Saving and *Disconnect* ask for the password when it wasn't confirmed in the last 30 minutes. *Disconnect* deletes every setting, the token included, and the history of the diagnostics as well; saving keeps the history.
+*Paperless runs in my local network* lets the test of the connection, and then every search, reach the Paperless URL at an address of the local network, which Nextcloud refuses otherwise, without lifting that protection for anything else ([decision 0004](decisions/0004-local-network-opt-in.md)). A token left blank keeps the stored one, but only for the server it was saved for ([decision 0003](decisions/0003-bind-the-token-to-its-server.md)); the page marks the token field as required as soon as the URL names another server. The archive account is stored as Nextcloud spells its ID. A stored token that the credentials manager can't decrypt counts as none, and the page says so. Saving and *Disconnect* ask for the password when it wasn't confirmed in the last 30 minutes. *Disconnect* deletes every setting, the token included, and the history of the diagnostics as well; saving keeps the history.
 
 ## Design decisions
 

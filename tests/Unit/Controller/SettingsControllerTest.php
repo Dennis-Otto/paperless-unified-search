@@ -20,6 +20,7 @@ use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Http\Client\IClient;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
+use OCP\Http\Client\LocalServerException;
 use OCP\IAppConfig;
 use OCP\IRequest;
 use OCP\Security\ICredentialsManager;
@@ -41,7 +42,9 @@ final class SettingsControllerTest extends TestCase {
 			->with(
 				'https://paperless.example.com/api/documents/',
 				self::callback(static fn (array $options): bool => $options['headers']['Authorization'] === 'Token TEST_VALUE'
-					&& $options['query'] === ['page' => 1, 'page_size' => 1, 'fields' => 'id']),
+					&& $options['query'] === ['page' => 1, 'page_size' => 1, 'fields' => 'id']
+					&& $options['nextcloud'] === ['allow_local_address' => false]
+					&& !isset($options['allow_redirects'])),
 			)
 			->willReturn($this->response(200, self::NO_DOCUMENTS));
 
@@ -49,9 +52,14 @@ final class SettingsControllerTest extends TestCase {
 		$config->expects(self::once())
 			->method('setValueString')
 			->with(AppConstants::APP_ID, 'paperless_url', 'https://paperless.example.com');
-		$config->expects(self::once())
+		$switches = [];
+		$config->expects(self::exactly(2))
 			->method('setValueBool')
-			->with(AppConstants::APP_ID, 'always_search', true);
+			->willReturnCallback(static function (string $app, string $key, bool $value) use (&$switches): bool {
+				$switches[$app . '.' . $key] = $value;
+
+				return true;
+			});
 		$config->expects(self::never())->method('setValueArray');
 		$deleted = [];
 		$config->method('deleteKey')->willReturnCallback(static function (string $app, string $key) use (&$deleted): void {
@@ -75,9 +83,74 @@ final class SettingsControllerTest extends TestCase {
 			'syncAccount' => '',
 			'tokenUnreadable' => false,
 			'archiveOwnerMissing' => false,
+			'allowLocal' => false,
 		], json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR));
 		self::assertStringNotContainsString('TEST_VALUE', $response->render());
 		self::assertNotContains(AppConstants::APP_ID . '.diagnostics', $deleted);
+		self::assertSame([AppConstants::APP_ID . '.always_search' => true, AppConstants::APP_ID . '.allow_local' => false], $switches);
+	}
+
+	/**
+	 * @return array<string, array{bool}>
+	 */
+	public static function localNetwork(): array {
+		return [
+			'allowed' => [true],
+			'not allowed' => [false],
+		];
+	}
+
+	/**
+	 * A Paperless in the local network or in Docker needs no change of config.php, which
+	 * would let every app reach every address of the network: the switch of the settings
+	 * allows it for this Paperless alone, for the test of the connection and then for the
+	 * searches (#117).
+	 */
+	#[DataProvider('localNetwork')]
+	public function testSaveAllowsTheLocalNetworkForThisPaperlessOnlyWhenAsked(bool $allowLocal): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with(
+				'http://paperless_ngx:8000/api/documents/',
+				self::callback(static fn (array $options): bool => $options['nextcloud'] === ['allow_local_address' => $allowLocal]),
+			)
+			->willReturn($this->response(200, self::NO_DOCUMENTS));
+
+		$switches = [];
+		$config = $this->createStub(IAppConfig::class);
+		$config->method('setValueBool')->willReturnCallback(static function (string $app, string $key, bool $value) use (&$switches): bool {
+			$switches[$app . '.' . $key] = $value;
+
+			return true;
+		});
+
+		$response = $this->controller($config, $this->createStub(ICredentialsManager::class), $client)
+			->save('http://paperless_ngx:8000', 'TEST_VALUE', false, '', $allowLocal);
+
+		self::assertSame(Http::STATUS_OK, $response->getStatus());
+		self::assertSame($allowLocal, $switches[AppConstants::APP_ID . '.allow_local'] ?? null);
+		self::assertSame($allowLocal, json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR)['allowLocal']);
+	}
+
+	/**
+	 * Nextcloud refuses an address of the local network unless it is allowed, and the
+	 * administrator saw only that the connection failed (#117).
+	 */
+	public function testSaveNamesTheSwitchWhenNextcloudRefusesALocalAddress(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->willThrowException(new LocalServerException('Host "paperless-ngx" violates local access rules'));
+
+		$response = $this->controller($this->unchangedConfig(), $this->unchangedCredentials(), $client)
+			->save('http://paperless-ngx:8000', 'TEST_VALUE');
+
+		self::assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
+		self::assertSame(
+			['message' => 'Nextcloud does not connect to addresses of the local network unless you allow it. If Paperless runs in your local network or in Docker, select “Paperless runs in my local network”.'],
+			$response->getData(),
+		);
 	}
 
 	/**
@@ -256,6 +329,7 @@ final class SettingsControllerTest extends TestCase {
 		return [
 			'invalid URL' => ['paperless', 'TEST_VALUE', 'Enter a valid Paperless URL.'],
 			'unsupported protocol' => ['ftp://paperless.example.com', 'TEST_VALUE', 'The Paperless URL must use HTTP or HTTPS.'],
+			'port 0' => ['http://paperless_ngx:0', 'TEST_VALUE', 'Enter a valid Paperless URL.'],
 			'no token at all' => ['https://paperless.example.com', ' ', 'A Paperless API token is required.'],
 		];
 	}
@@ -322,6 +396,7 @@ final class SettingsControllerTest extends TestCase {
 			'syncAccount' => '',
 			'tokenUnreadable' => false,
 			'archiveOwnerMissing' => false,
+			'allowLocal' => false,
 		], json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR));
 		self::assertContains(AppConstants::APP_ID . '.diagnostics', $deleted);
 	}

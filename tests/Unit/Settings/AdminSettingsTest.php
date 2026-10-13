@@ -72,6 +72,7 @@ final class AdminSettingsTest extends TestCase {
 			'syncAccount' => 'sync',
 			'tokenUnreadable' => false,
 			'archiveOwnerMissing' => false,
+			'allowLocal' => true,
 		], $params['config']->jsonSerialize());
 		self::assertStringNotContainsString('TEST_VALUE', json_encode($params, JSON_THROW_ON_ERROR));
 		self::assertNull($params['history']);

@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Service;
 
+use ArrayObject;
 use InvalidArgumentException;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
@@ -16,6 +17,7 @@ use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCP\IAppConfig;
 use OCP\Security\ICredentialsManager;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RequiresFunction;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -26,6 +28,7 @@ final class ConfigServiceTest extends TestCase {
 
 	private const STORED_URL = 'https://paperless.example.com';
 	private const ENTER_AGAIN = 'Enter the API token again: a stored token is only sent to the Paperless server it was saved for.';
+	private const PUNYCODE = 'Enter the host of the Paperless URL in its ASCII form (punycode), such as xn--bcher-kva.example for bücher.example.';
 
 	public function testPublicConfigNeverContainsToken(): void {
 		$config = $this->settings([
@@ -33,9 +36,9 @@ final class ConfigServiceTest extends TestCase {
 			AppConstants::APP_ID . '.archive_owner' => 'archive',
 			'paperless_sync.target_user' => 'sync',
 		]);
-		$config->method('getValueBool')
-			->with(AppConstants::APP_ID, 'always_search', false)
-			->willReturn(true);
+		$config->method('getValueBool')->willReturnCallback(
+			static fn (string $app, string $key, bool $default): bool => $app === AppConstants::APP_ID && in_array($key, ['always_search', 'allow_local'], true) && !$default,
+		);
 
 		$credentials = $this->createMock(ICredentialsManager::class);
 		$credentials->method('retrieve')->willReturn('TEST_VALUE');
@@ -51,6 +54,7 @@ final class ConfigServiceTest extends TestCase {
 			'syncAccount' => 'sync',
 			'tokenUnreadable' => false,
 			'archiveOwnerMissing' => false,
+			'allowLocal' => true,
 		], $serialized);
 		self::assertStringNotContainsString('TEST_VALUE', json_encode($serialized, JSON_THROW_ON_ERROR));
 	}
@@ -182,9 +186,7 @@ final class ConfigServiceTest extends TestCase {
 		$config->expects(self::once())
 			->method('setValueString')
 			->with(AppConstants::APP_ID, 'paperless_url', 'https://paperless.example.com');
-		$config->expects(self::once())
-			->method('setValueBool')
-			->with(AppConstants::APP_ID, 'always_search', true);
+		$switches = $this->switches($config);
 
 		$credentials = $this->createMock(ICredentialsManager::class);
 		$credentials->expects(self::once())
@@ -199,7 +201,51 @@ final class ConfigServiceTest extends TestCase {
 		self::assertTrue($result->tokenConfigured);
 		self::assertFalse($result->tokenUnreadable);
 		self::assertTrue($result->alwaysSearch);
+		self::assertFalse($result->allowLocal);
+		self::assertSame([AppConstants::APP_ID . '.always_search' => true, AppConstants::APP_ID . '.allow_local' => false], $switches->getArrayCopy());
 		self::assertSame('TEST_VALUE', $service->getToken());
+	}
+
+	/**
+	 * @return array<string, array{bool}>
+	 */
+	public static function localNetwork(): array {
+		return [
+			'allowed' => [true],
+			'not allowed' => [false],
+		];
+	}
+
+	/**
+	 * Nextcloud refuses addresses of the local network unless a request allows them; the
+	 * settings store whether the requests to this Paperless do (#117).
+	 */
+	#[DataProvider('localNetwork')]
+	public function testSaveStoresWhetherTheLocalNetworkIsAllowed(bool $allowLocal): void {
+		$config = $this->settings([]);
+		$switches = $this->switches($config);
+
+		$result = $this->service($config, $this->createStub(ICredentialsManager::class))
+			->save('http://paperless_ngx:8000', 'TEST_VALUE', false, '', $allowLocal);
+
+		self::assertSame($allowLocal, $switches[AppConstants::APP_ID . '.allow_local'] ?? null);
+		self::assertSame($allowLocal, $result->allowLocal);
+		self::assertSame($allowLocal, $result->jsonSerialize()['allowLocal']);
+		self::assertSame('http://paperless_ngx:8000', $result->url);
+	}
+
+	#[DataProvider('localNetwork')]
+	public function testThePublicConfigTellsWhetherTheLocalNetworkIsAllowed(bool $allowLocal): void {
+		$config = $this->createMock(IAppConfig::class);
+		$config->method('getValueBool')->willReturnCallback(
+			static fn (string $app, string $key, bool $default): bool => $app . '.' . $key === AppConstants::APP_ID . '.allow_local' ? $allowLocal : $default,
+		);
+
+		$service = $this->service($config, $this->createStub(ICredentialsManager::class));
+
+		self::assertSame($allowLocal, $service->isLocalNetworkAllowed());
+		self::assertSame($allowLocal, $service->getPublicConfig()->allowLocal);
+		self::assertFalse($service->getPublicConfig()->alwaysSearch);
 	}
 
 	public function testAlwaysSearchIsDisabledByDefault(): void {
@@ -212,6 +258,22 @@ final class ConfigServiceTest extends TestCase {
 		$service = $this->service($config, $this->createStub(ICredentialsManager::class));
 
 		self::assertFalse($service->isAlwaysSearchEnabled());
+	}
+
+	/**
+	 * Without the setting, Nextcloud's own rule holds: no address of the local network,
+	 * unless config.php allows them to every app.
+	 */
+	public function testTheLocalNetworkIsNotAllowedByDefault(): void {
+		$config = $this->createMock(IAppConfig::class);
+		$config->expects(self::once())
+			->method('getValueBool')
+			->with(AppConstants::APP_ID, 'allow_local', false)
+			->willReturn(false);
+
+		$service = $this->service($config, $this->createStub(ICredentialsManager::class));
+
+		self::assertFalse($service->isLocalNetworkAllowed());
 	}
 
 	/**
@@ -442,10 +504,10 @@ final class ConfigServiceTest extends TestCase {
 		$service->save('https://paperless.example.com', '   ');
 	}
 
-	public function testResetDeletesTheUrlTheSwitchTheArchiveAccountAndTheToken(): void {
+	public function testResetDeletesTheUrlTheSwitchesTheArchiveAccountAndTheToken(): void {
 		$deletedKeys = [];
 		$config = $this->createMock(IAppConfig::class);
-		$config->expects(self::exactly(3))
+		$config->expects(self::exactly(4))
 			->method('deleteKey')
 			->willReturnCallback(static function (string $app, string $key) use (&$deletedKeys): void {
 				$deletedKeys[] = $app . '.' . $key;
@@ -464,6 +526,7 @@ final class ConfigServiceTest extends TestCase {
 			AppConstants::APP_ID . '.paperless_url',
 			AppConstants::APP_ID . '.always_search',
 			AppConstants::APP_ID . '.archive_owner',
+			AppConstants::APP_ID . '.allow_local',
 		], $deletedKeys);
 		self::assertSame([
 			'url' => '',
@@ -473,6 +536,7 @@ final class ConfigServiceTest extends TestCase {
 			'syncAccount' => '',
 			'tokenUnreadable' => false,
 			'archiveOwnerMissing' => false,
+			'allowLocal' => false,
 		], $result->jsonSerialize());
 		self::assertSame('', $service->getToken());
 	}
@@ -502,6 +566,16 @@ final class ConfigServiceTest extends TestCase {
 			'HTTPS' => ['https://paperless.example.com', 'https://paperless.example.com'],
 			'HTTP with a port and a path' => ['http://paperless.example.com:8000/paperless/', 'http://paperless.example.com:8000/paperless'],
 			'protocol in capitals' => ['HTTPS://paperless.example.com', 'HTTPS://paperless.example.com'],
+			// The names of the services of Docker may hold underscores, which cURL and
+			// Docker's DNS accept, unlike PHP's filter of URLs (#117).
+			'a service of Docker with an underscore' => ['http://paperless_ngx:8000', 'http://paperless_ngx:8000'],
+			'a name without a domain' => ['http://paperless:8000/', 'http://paperless:8000'],
+			'an IPv4 address' => ['http://192.168.1.20:8000', 'http://192.168.1.20:8000'],
+			'an IPv6 address with a port' => ['http://[fd00::5]:8000/', 'http://[fd00::5]:8000'],
+			'an IPv6 address without a port' => ['http://[::1]', 'http://[::1]'],
+			'an internationalized name in punycode' => ['https://xn--bcher-kva.example', 'https://xn--bcher-kva.example'],
+			'the highest port' => ['https://paperless.example.com:65535', 'https://paperless.example.com:65535'],
+			'a path below a path' => ['https://paperless.example.com/apps/paperless/', 'https://paperless.example.com/apps/paperless'],
 		];
 	}
 
@@ -534,6 +608,63 @@ final class ConfigServiceTest extends TestCase {
 		yield 'embedded user' => ['https://user@example.com', 'The Paperless URL must not contain credentials, a query, or a fragment.'];
 		yield 'query string' => ['https://example.com?token=TEST_VALUE', 'The Paperless URL must not contain credentials, a query, or a fragment.'];
 		yield 'fragment' => ['https://example.com/#documents', 'The Paperless URL must not contain credentials, a query, or a fragment.'];
+		yield 'no host' => ['https://', 'Enter a valid Paperless URL.'];
+		yield 'no host before the path' => ['http:///paperless', 'Enter a valid Paperless URL.'];
+		yield 'port 0' => ['http://paperless.example.com:0', 'Enter a valid Paperless URL.'];
+		yield 'a port above 65535' => ['http://paperless.example.com:65536', 'Enter a valid Paperless URL.'];
+		yield 'a blank in the host' => ['http://paper less.example.com', 'Enter a valid Paperless URL.'];
+		yield 'a blank in the path' => ['https://paperless.example.com/my documents', 'Enter a valid Paperless URL.'];
+		yield 'a control character' => ["https://paperless.example.com/\x07", 'Enter a valid Paperless URL.'];
+		yield 'text that is not UTF-8' => ["https://paperless.example.com/\xff", 'Enter a valid Paperless URL.'];
+		yield 'a host that starts with a hyphen' => ['http://-paperless.example.com', 'Enter a valid Paperless URL.'];
+		yield 'a host that ends with an underscore' => ['http://paperless_:8000', 'Enter a valid Paperless URL.'];
+		yield 'an escaped character in the host' => ['http://paper%20less.example.com', 'Enter a valid Paperless URL.'];
+		yield 'an IPv6 address without brackets' => ['http://fd00::5:8000', 'Enter a valid Paperless URL.'];
+		yield 'an IPv6 address that is none' => ['http://[fd00::zz]:8000', 'Enter a valid Paperless URL.'];
+		yield 'empty brackets' => ['http://[]', 'Enter a valid Paperless URL.'];
+		yield 'an IPv4 address in brackets' => ['http://[192.168.1.20]', 'Enter a valid Paperless URL.'];
+		// An empty label: the name has no ASCII form, with or without PHP's intl.
+		yield 'an internationalized name without an ASCII form' => ['https://bücher..example', self::PUNYCODE];
+	}
+
+	/**
+	 * @return array<string, array{string, string}>
+	 */
+	public static function internationalizedUrls(): array {
+		return [
+			'a German name' => ['https://bücher.example', 'https://xn--bcher-kva.example'],
+			'in capitals, with a port and a path' => ['HTTPS://Bücher.Example:8443/paperless/', 'HTTPS://xn--bcher-kva.example:8443/paperless'],
+			'with a sharp s' => ['https://straße.example', 'https://xn--strae-oqa.example'],
+			'a Hindi name, with combining marks' => ['http://हिन्दी.example', 'http://xn--j2bd4cyah0f.example'],
+		];
+	}
+
+	/**
+	 * DNS knows an internationalized name only in its ASCII form, punycode, so the
+	 * settings store that (#117).
+	 */
+	#[DataProvider('internationalizedUrls')]
+	#[RequiresFunction('idn_to_ascii')]
+	public function testAnInternationalizedNameIsStoredInPunycode(string $url, string $normalizedUrl): void {
+		$service = $this->service($this->createStub(IAppConfig::class), $this->createStub(ICredentialsManager::class));
+
+		self::assertSame($normalizedUrl, $service->normalizeUrl($url));
+	}
+
+	/**
+	 * Nextcloud brings the functions of intl where PHP lacks the extension, but without
+	 * them, the settings ask for the name in punycode instead of guessing.
+	 */
+	public function testWithoutIntlAnInternationalizedNameIsAskedForInPunycode(): void {
+		if (function_exists('idn_to_ascii')) {
+			self::markTestSkipped('PHP has the functions of intl.');
+		}
+
+		$service = $this->service($this->createStub(IAppConfig::class), $this->createStub(ICredentialsManager::class));
+
+		$this->expectException(InvalidArgumentException::class);
+		$this->expectExceptionMessage(self::PUNYCODE);
+		$service->normalizeUrl('https://bücher.example');
 	}
 
 	/**
@@ -555,6 +686,25 @@ final class ConfigServiceTest extends TestCase {
 		);
 
 		return $config;
+	}
+
+	/**
+	 * The switches that the configuration stores, by "app.key", as it stores them.
+	 *
+	 * @return ArrayObject<string, bool>
+	 */
+	private function switches(IAppConfig&MockObject $config): ArrayObject {
+		/** @var ArrayObject<string, bool> $switches */
+		$switches = new ArrayObject();
+		$config->method('setValueBool')->willReturnCallback(
+			static function (string $app, string $key, bool $value) use ($switches): bool {
+				$switches[$app . '.' . $key] = $value;
+
+				return true;
+			},
+		);
+
+		return $switches;
 	}
 
 	/**

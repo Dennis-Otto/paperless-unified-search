@@ -398,11 +398,12 @@ async function settings(browser, session, theme) {
 	await page.locator('#paperless-unified-search-settings').waitFor()
 	await page.locator('#paperless-unified-search-save').click()
 	await page.getByText('Connection successful. Settings saved.').waitFor()
-	// The demo talks to the mock in the network of Docker; the picture shows the
-	// address that an administrator enters, as the stored one. Typed, it would name
-	// another server, and the token field would ask for the token again.
+	// The demo talks to the mock in the network of Docker, with the switch for the local
+	// network; the picture shows the name of a service of Docker that an administrator
+	// enters, as the stored one. Typed, it would name another server, and the token
+	// field would ask for the token again.
 	await page.locator('#paperless-unified-search-url').evaluate((input) => {
-		input.defaultValue = 'https://paperless.example.com'
+		input.defaultValue = 'http://paperless:8000'
 		input.value = input.defaultValue
 	})
 	await page.locator('#app-navigation a[href$="/settings/admin/paperless_unified_search"]').scrollIntoViewIfNeeded()

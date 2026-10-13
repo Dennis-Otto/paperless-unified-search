@@ -13,3 +13,4 @@ Copy [the template](0000-template.md) to the next free number, replace the descr
 | [0001](0001-record-decisions.md) | Record the decisions that shape the project | accepted |
 | [0002](0002-trust-the-archive-account.md) | Trust the owner of a file, not its name | accepted |
 | [0003](0003-bind-the-token-to-its-server.md) | Send the stored token only to the server it was saved for | accepted |
+| [0004](0004-local-network-opt-in.md) | Allow the local network for this Paperless alone, by a switch of the settings | accepted |

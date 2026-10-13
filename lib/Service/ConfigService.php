@@ -23,11 +23,25 @@ final class ConfigService {
 	private const URL_KEY = 'paperless_url';
 	private const ALWAYS_SEARCH_KEY = 'always_search';
 	private const ARCHIVE_OWNER_KEY = 'archive_owner';
+	private const ALLOW_LOCAL_KEY = 'allow_local';
 	private const TOKEN_IDENTIFIER = AppConstants::APP_ID . '.api-token';
 	// Paperless Sync writes the archive into the files of this account.
 	private const SYNC_APP_ID = 'paperless_sync';
 	private const SYNC_ACCOUNT_KEY = 'target_user';
 	private const DEFAULT_PORTS = ['http' => 80, 'https' => 443];
+	/**
+	 * A name of a host as DNS, a hosts file or the network of Docker know it: letters and
+	 * digits of any script, with dots, hyphens and underscores between them, such as
+	 * paperless.example.com, 192.168.1.20, paperless_ngx or bücher.example.
+	 */
+	private const HOST_NAME = '/^[\p{L}\p{N}](?:[\p{L}\p{M}\p{N}._-]*[\p{L}\p{M}\p{N}])?$/u';
+	/**
+	 * IDNA_NONTRANSITIONAL_TO_ASCII and INTL_IDNA_VARIANT_UTS46 of PHP's intl, which only
+	 * exist with the extension or the polyfill of Nextcloud: punycode as browsers write it,
+	 * which keeps ß instead of turning it into ss.
+	 */
+	private const IDNA_NONTRANSITIONAL_TO_ASCII = 16;
+	private const INTL_IDNA_VARIANT_UTS46 = 1;
 
 	/**
 	 * The stored token as this request read it: '' when there is none or it can't be
@@ -58,6 +72,7 @@ final class ConfigService {
 			$syncAccount,
 			$this->isTokenUnreadable(),
 			$this->isMissing($archiveOwner !== '' ? $archiveOwner : $syncAccount),
+			$this->isLocalNetworkAllowed(),
 		);
 	}
 
@@ -137,6 +152,16 @@ final class ConfigService {
 	}
 
 	/**
+	 * Whether Nextcloud may reach the stored Paperless at an address of the local network,
+	 * such as 192.168.1.20 or the name of a service of Docker. Nextcloud refuses such
+	 * addresses to every request that doesn't allow them itself, unless
+	 * allow_local_remote_servers in config.php allows them to all apps at once.
+	 */
+	public function isLocalNetworkAllowed(): bool {
+		return $this->config->getValueBool(AppConstants::APP_ID, self::ALLOW_LOCAL_KEY, false);
+	}
+
+	/**
 	 * The token to test and save with a URL: the one entered, or else the stored one, but
 	 * only for the Paperless server that it was saved for. Otherwise whoever can use the
 	 * session of an administrator could send the stored token to a server of their own,
@@ -182,7 +207,7 @@ final class ConfigService {
 		return $scheme . '://' . $host . ':' . $port;
 	}
 
-	public function save(string $url, #[SensitiveParameter] string $token, bool $alwaysSearch = false, string $archiveOwner = ''): PublicConfig {
+	public function save(string $url, #[SensitiveParameter] string $token, bool $alwaysSearch = false, string $archiveOwner = '', bool $allowLocal = false): PublicConfig {
 		$normalizedUrl = $this->normalizeUrl($url);
 		$normalizedToken = trim($token);
 		if ($normalizedToken === '') {
@@ -192,6 +217,7 @@ final class ConfigService {
 		$normalizedOwner = trim($archiveOwner);
 		$this->config->setValueString(AppConstants::APP_ID, self::URL_KEY, $normalizedUrl);
 		$this->config->setValueBool(AppConstants::APP_ID, self::ALWAYS_SEARCH_KEY, $alwaysSearch);
+		$this->config->setValueBool(AppConstants::APP_ID, self::ALLOW_LOCAL_KEY, $allowLocal);
 		if ($normalizedOwner === '') {
 			$this->config->deleteKey(AppConstants::APP_ID, self::ARCHIVE_OWNER_KEY);
 		} else {
@@ -211,6 +237,7 @@ final class ConfigService {
 			$syncAccount,
 			false,
 			$this->isMissing($normalizedOwner !== '' ? $normalizedOwner : $syncAccount),
+			$allowLocal,
 		);
 	}
 
@@ -218,6 +245,7 @@ final class ConfigService {
 		$this->config->deleteKey(AppConstants::APP_ID, self::URL_KEY);
 		$this->config->deleteKey(AppConstants::APP_ID, self::ALWAYS_SEARCH_KEY);
 		$this->config->deleteKey(AppConstants::APP_ID, self::ARCHIVE_OWNER_KEY);
+		$this->config->deleteKey(AppConstants::APP_ID, self::ALLOW_LOCAL_KEY);
 		$this->credentialsManager->delete('', self::TOKEN_IDENTIFIER);
 		$this->token = '';
 		$this->tokenUnreadable = false;
@@ -227,23 +255,72 @@ final class ConfigService {
 		return new PublicConfig('', false, false, '', $syncAccount, false, $this->isMissing($syncAccount));
 	}
 
+	/**
+	 * The URL to store for what an administrator entered, without the blanks and slashes
+	 * at its end: http or https, a host, and maybe a port and a path. The host is a name, an
+	 * IPv4 address or an IPv6 address in brackets. A name may be one of the local network
+	 * or of Docker, such as paperless_ngx, which cURL and Docker resolve although it isn't
+	 * a name of the internet, or an internationalized one, such as bücher.example, which
+	 * is stored in the ASCII form that DNS knows, xn--bcher-kva.example.
+	 *
+	 * @throws InvalidArgumentException when the URL is none of these, or carries
+	 *                                  credentials, a query or a fragment
+	 */
 	public function normalizeUrl(string $url): string {
 		$normalizedUrl = rtrim(trim($url), '/');
-		if ($normalizedUrl === '' || filter_var($normalizedUrl, FILTER_VALIDATE_URL) === false) {
+		// No part of a URL holds blanks or control characters, and the pattern fails for
+		// text that isn't UTF-8.
+		$parts = $normalizedUrl !== '' && preg_match('/^[^\s\x00-\x1f\x7f]+$/u', $normalizedUrl) === 1 ? parse_url($normalizedUrl) : false;
+		if (!is_array($parts) || !isset($parts['scheme'])) {
 			throw new InvalidArgumentException('Enter a valid Paperless URL.');
 		}
 
-		$parts = parse_url($normalizedUrl);
-		$scheme = is_array($parts) && isset($parts['scheme']) ? strtolower($parts['scheme']) : '';
-		if (!in_array($scheme, ['http', 'https'], true)) {
+		if (!in_array(strtolower($parts['scheme']), ['http', 'https'], true)) {
 			throw new InvalidArgumentException('The Paperless URL must use HTTP or HTTPS.');
 		}
 
-		if (is_array($parts) && (isset($parts['user']) || isset($parts['pass']) || isset($parts['query']) || isset($parts['fragment']))) {
+		if (isset($parts['user']) || isset($parts['pass']) || isset($parts['query']) || isset($parts['fragment'])) {
 			throw new InvalidArgumentException('The Paperless URL must not contain credentials, a query, or a fragment.');
 		}
 
-		return $normalizedUrl;
+		// PHP refuses a port above 65535 itself.
+		$host = $parts['host'] ?? '';
+		if (!$this->isHost($host) || ($parts['port'] ?? null) === 0) {
+			throw new InvalidArgumentException('Enter a valid Paperless URL.');
+		}
+
+		// Without credentials, the host follows right after "scheme://".
+		return substr_replace($normalizedUrl, $this->asciiHost($host), strlen($parts['scheme']) + 3, strlen($host));
+	}
+
+	/**
+	 * Whether the host of a URL is an IPv6 address in brackets, or else a name or an IPv4
+	 * address.
+	 */
+	private function isHost(string $host): bool {
+		if (str_starts_with($host, '[') && str_ends_with($host, ']')) {
+			return filter_var(substr($host, 1, -1), FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false;
+		}
+
+		return preg_match(self::HOST_NAME, $host) === 1;
+	}
+
+	/**
+	 * The ASCII form of a host, the one that DNS knows: an internationalized name in
+	 * punycode, as browsers write it. Nextcloud brings the functions of PHP's intl for it
+	 * where PHP lacks the extension; without them, a name that isn't ASCII has to be
+	 * entered in punycode.
+	 *
+	 * @throws InvalidArgumentException when the name has no ASCII form
+	 */
+	private function asciiHost(string $host): string {
+		if (mb_check_encoding($host, 'ASCII')) {
+			return $host;
+		}
+
+		$asciiHost = function_exists('idn_to_ascii') ? idn_to_ascii($host, self::IDNA_NONTRANSITIONAL_TO_ASCII, self::INTL_IDNA_VARIANT_UTS46) : false;
+
+		return $asciiHost !== false ? $asciiHost : throw new InvalidArgumentException('Enter the host of the Paperless URL in its ASCII form (punycode), such as xn--bcher-kva.example for bücher.example.');
 	}
 
 	/**

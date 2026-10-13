@@ -17,6 +17,8 @@ final class PublicConfig implements JsonSerializable {
 	 *                              the secret of config.php changed, and has to be entered again
 	 * @param bool $archiveOwnerMissing the archive account in use, the one of the settings or
 	 *                                  of Paperless Sync, doesn't exist
+	 * @param bool $allowLocal Nextcloud may reach this Paperless at an address of the local
+	 *                         network, which it refuses to other requests
 	 */
 	public function __construct(
 		public readonly string $url,
@@ -26,11 +28,12 @@ final class PublicConfig implements JsonSerializable {
 		public readonly string $syncAccount = '',
 		public readonly bool $tokenUnreadable = false,
 		public readonly bool $archiveOwnerMissing = false,
+		public readonly bool $allowLocal = false,
 	) {
 	}
 
 	/**
-	 * @return array{url: string, tokenConfigured: bool, alwaysSearch: bool, archiveOwner: string, syncAccount: string, tokenUnreadable: bool, archiveOwnerMissing: bool}
+	 * @return array{url: string, tokenConfigured: bool, alwaysSearch: bool, archiveOwner: string, syncAccount: string, tokenUnreadable: bool, archiveOwnerMissing: bool, allowLocal: bool}
 	 */
 	public function jsonSerialize(): array {
 		return [
@@ -41,6 +44,7 @@ final class PublicConfig implements JsonSerializable {
 			'syncAccount' => $this->syncAccount,
 			'tokenUnreadable' => $this->tokenUnreadable,
 			'archiveOwnerMissing' => $this->archiveOwnerMissing,
+			'allowLocal' => $this->allowLocal,
 		];
 	}
 }

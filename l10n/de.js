@@ -5,6 +5,8 @@ OC.L10N.register(
 		'Paperless documents': 'Paperless-Dokumente',
 		'Use Paperless-ngx OCR and full-text search from Nextcloud. Results open the matching synchronized file in Nextcloud.': 'Nutze die OCR- und Volltextsuche von Paperless-ngx direkt in Nextcloud. Treffer öffnen die passende synchronisierte Datei in Nextcloud.',
 		'Paperless URL': 'Paperless-URL',
+		'Paperless runs in my local network': 'Paperless läuft in meinem lokalen Netzwerk',
+		'Select this when Nextcloud reaches Paperless at an address of your local network or by the name of its Docker service, such as http://192.168.1.20:8000 or http://paperless:8000. Nextcloud refuses such addresses unless they are allowed. This allows only the Paperless URL above, without redirects, and every other app keeps Nextcloud\'s protection.': 'Wähle dies, wenn Nextcloud Paperless unter einer Adresse deines lokalen Netzwerks oder über den Namen seines Docker-Dienstes erreicht, zum Beispiel http://192.168.1.20:8000 oder http://paperless:8000. Nextcloud verweigert solche Adressen, solange sie nicht erlaubt sind. Dies erlaubt nur die Paperless-URL oben, ohne Weiterleitungen, und jede andere App behält den Schutz von Nextcloud.',
 		'Paperless API token': 'Paperless-API-Token',
 		'Configured — leave blank to keep it': 'Konfiguriert — zum Beibehalten leer lassen',
 		'Required': 'Erforderlich',
