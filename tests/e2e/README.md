@@ -33,24 +33,24 @@ Optional environment variables:
 - `E2E_IGNORE_MAX_VERSION=1`: enable the app with `--force` on a Nextcloud newer than `max-version`, as `canary.sh` does
 - `E2E_SKIP_PLAYWRIGHT_PULL=1`: leave the download of the image of Playwright to the caller, as `run-all.sh` does
 
-`run.sh` downloads the image of Playwright in the background while Nextcloud sets itself up, removes the containers without waiting for them to stop (and leaves them on a runner of GitHub, which is thrown away after the job anyway), and turns off the check of new passwords against [Have I Been Pwned](https://haveibeenpwned.com/Passwords) of Nextcloud's password policy, so that no test depends on a service outside the machine.
+`run.sh` downloads the image of Playwright in the background while Nextcloud sets itself up, removes the containers without waiting for them to stop (and leaves them on a runner of GitHub, which is thrown away after the job anyway), and turns off Nextcloud's password policy, which would check every new password against [Have I Been Pwned](https://haveibeenpwned.com/Passwords), so that no test depends on a service outside the machine. Each call of `occ` starts PHP and Nextcloud anew, which takes two to three seconds while three versions run at once; so the image sets the trusted domains on install, the variable `NC_allow_local_remote_servers` of `compose.yaml` lets the app reach the mock, and the users come from the API of the running web server.
 
 All credentials and document data are synthetic, local to the disposable Compose project, and intentionally unsuitable for production.
 
 ## Every supported version at once
 
-`run-all.sh` reads `min-version` and `max-version` of `appinfo/info.xml` and starts `run.sh` for every major version from the one to the other at the same time, each with the image `nextcloud:<version>-apache`, the Compose project `pus_e2e_<version>` and the port `18000 + <version>`, such as `18035` for Nextcloud 35. Each version writes its log to a file of its own; the script notes each version as it finishes and then prints the logs one after another, in the CI each in a group named after the version and its result. The script fails when one version does, and Ctrl-C stops every version and removes its containers.
+`run-all.sh` reads `min-version` and `max-version` of `appinfo/info.xml` and starts `run.sh` for every major version from the one to the other at the same time, each with the image `nextcloud:<version>-apache`, the Compose project `pus_e2e_<version>` and the port `18000 + <version>`, such as `18035` for Nextcloud 35. Each version writes its log to a file of its own; the script notes each version as it finishes and then prints the logs one after another, in the CI each in a group named after the version and its result. The script fails when one version does, and Ctrl-C stops every version and removes its containers. A version that takes longer than `E2E_VERSION_TIMEOUT` seconds, 600 by default and about four times what it needs, stops and fails as well, with its log up to that point and the state of its containers, long before the job of the CI times out.
 
 ```bash
 bash tests/e2e/run-all.sh                       # every version from min-version to max-version
 E2E_VERSIONS="33 35" bash tests/e2e/run-all.sh  # only Nextcloud 33 and 35
 ```
 
-On a runner of GitHub, with four CPUs and 16 GB of memory, three versions at once take a little more than two minutes and one alone about a minute and a half. The script first downloads the images of Nextcloud and of the mock for every version, and the image of Playwright only while Nextcloud sets itself up, which is faster than downloading them all at once.
+On a runner of GitHub, with four CPUs and 16 GB of memory, three versions at once take about two and a half minutes and one alone about a minute and a half. The script first downloads the images of Nextcloud and of the mock for every version, and the image of Playwright only while Nextcloud sets itself up, which is faster than downloading them all at once.
 
 ## In the CI
 
-The workflow *Docker E2E* (`.github/workflows/e2e.yml`) runs `run-all.sh` in one job, the required check `nextcloud`. A pull request or a push to `main` that changes no file the tests cover passes the check in seconds without running them, with a notice that says so; the job stays and passes, so that the required check reports success. The tests cover:
+The workflow *Docker E2E* (`.github/workflows/e2e.yml`) runs `run-all.sh` in one job, the required check `nextcloud`. A pull request or a push to `main` that changes no file the tests cover passes the check in seconds without running them, with a notice that says so; the job stays and passes, so that the required check reports success. `scope.sh` decides it, and `selftest.sh`, which `scripts/check.sh` runs, tests it with real merge commits and pushes in throwaway Git repositories, and `run-all.sh` with a fake Docker. The tests cover:
 
 - the app: `appinfo/`, `lib/`, `templates/`, `js/`, `css/`, `img/` and `l10n/`
 - `composer.json` and `composer.lock`

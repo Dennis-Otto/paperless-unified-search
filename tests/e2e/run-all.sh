@@ -14,13 +14,17 @@
 #
 # Each version writes its log to a file of its own, which the script prints once all
 # are done, in a group of the log of GitHub Actions per version. A version that fails
-# fails the script.
+# fails the script, and so does one that takes longer than E2E_VERSION_TIMEOUT seconds
+# (default 600, four times what it needs): it stops, so that its log still shows where
+# it hung, long before the job of the CI times out after 20 minutes.
+# scripts/check-project.sh tests this script with tests/e2e/selftest.sh.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 DOCKER_BIN="${DOCKER_BIN:-docker}"
+VERSION_TIMEOUT="${E2E_VERSION_TIMEOUT:-600}"
 LOG_DIR="$(mktemp -d)"
 versions=()
 pids=()
@@ -93,6 +97,18 @@ for version in "${versions[@]}"; do
 		exit 1
 	fi
 done
+if [[ ! "${VERSION_TIMEOUT}" =~ ^[1-9][0-9]*$ ]]; then
+	echo "E2E_VERSION_TIMEOUT is ${VERSION_TIMEOUT}, but must be a number of seconds, such as 600." >&2
+	exit 1
+fi
+# timeout of GNU coreutils, on Linux and in Git Bash, stops a version that hangs with
+# every process it started: first with TERM, after which run.sh writes the state of its
+# containers into its log, and 30 seconds later with KILL. Without it, as on macOS, a
+# version that hangs runs until the job does.
+deadline=()
+if timeout --version >/dev/null 2>&1; then
+	deadline=(timeout --kill-after=30 "${VERSION_TIMEOUT}")
+fi
 
 if ((${#versions[@]} == 1)); then
 	echo "The end-to-end tests run against Nextcloud ${versions[0]}."
@@ -127,7 +143,7 @@ for version in "${versions[@]}"; do
 		E2E_PROJECT_NAME="pus_e2e_${version}" \
 		NEXTCLOUD_IMAGE="nextcloud:${version}-apache" \
 		E2E_SKIP_PLAYWRIGHT_PULL=1 \
-		bash "${SCRIPT_DIR}/run.sh" >"${LOG_DIR}/e2e-${version}.log" 2>&1 &
+		"${deadline[@]}" bash "${SCRIPT_DIR}/run.sh" >"${LOG_DIR}/e2e-${version}.log" 2>&1 &
 	pids+=("$!")
 done
 
@@ -140,8 +156,13 @@ while ((${#pending[@]} > 0)); do
 			running+=("${index}")
 			continue
 		fi
-		if wait "${pids[index]}"; then
+		status=0
+		wait "${pids[index]}" || status=$?
+		if ((status == 0)); then
 			results[index]=passed
+		elif ((${#deadline[@]} > 0 && (status == 124 || status == 137))); then
+			# timeout ends with 124 after TERM, and with 137 when it had to send KILL.
+			results[index]="timed out"
 		else
 			results[index]=failed
 		fi
@@ -164,11 +185,14 @@ for index in "${!versions[@]}"; do
 	group "Nextcloud ${version} (${results[index]}, ${durations[index]} s)"
 	cat "${LOG_DIR}/e2e-${version}.log"
 	end_group
-	if [[ "${results[index]}" == failed ]]; then
-		failed+=("${version}")
-		if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
-			echo "::error title=Nextcloud ${version}::The end-to-end tests failed against Nextcloud ${version}; the group \"Nextcloud ${version} (failed, ${durations[index]} s)\" of the log shows why."
-		fi
+	case "${results[index]}" in
+		passed) continue ;;
+		failed) problem="failed against Nextcloud ${version}" ;;
+		*) problem="against Nextcloud ${version} took longer than ${VERSION_TIMEOUT} s and were stopped" ;;
+	esac
+	failed+=("${version}")
+	if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+		echo "::error title=Nextcloud ${version}::The end-to-end tests ${problem}; the group \"Nextcloud ${version} (${results[index]}, ${durations[index]} s)\" of the log shows why."
 	fi
 done
 
@@ -190,7 +214,7 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
 fi
 
 if ((${#failed[@]} > 0)); then
-	echo "The end-to-end tests failed against Nextcloud ${failed[*]}." >&2
+	echo "The end-to-end tests failed or timed out against Nextcloud ${failed[*]}." >&2
 	exit 1
 fi
 echo "The end-to-end tests passed against Nextcloud ${versions[*]} in ${SECONDS} s."

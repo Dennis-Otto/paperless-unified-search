@@ -53,48 +53,13 @@ jobs:
           fetch-depth: 2
           persist-credentials: false
       # A skipped step leaves the job green, so that the required check passes without
-      # the tests when no file they cover changed.
+      # the tests when no file they cover changed (tests/e2e/scope.sh).
       - name: Find out whether a file the tests cover changed
         id: scope
         env:
           EVENT: ${{ github.event_name }}
           BEFORE: ${{ github.event.before }}
-        run: |
-          set -euo pipefail
-          # The app, its dependencies, the end-to-end tests and this workflow.
-          covered='^(appinfo|lib|templates|js|css|img|l10n|tests/e2e)/|^composer\.(json|lock)$|^\.github/workflows/e2e\.yml$'
-          base=""
-          case "$EVENT" in
-            pull_request)
-              # The checkout is the merge commit; its first parent is the base branch.
-              base=HEAD^1
-              ;;
-            push)
-              # A new branch has no commit before the push, and one that a force push
-              # removed can't be fetched: then the tests run.
-              if [[ -n "$BEFORE" && ! "$BEFORE" =~ ^0+$ ]] &&
-                git fetch --quiet --no-tags --depth=1 origin "$BEFORE"; then
-                base="$BEFORE"
-              fi
-              ;;
-          esac
-          run=true
-          if [[ -n "$base" ]] && changed="$(git diff --name-only --no-renames "$base" HEAD)"; then
-            echo "::group::Changed files"
-            echo "$changed"
-            echo "::endgroup::"
-            if grep -qE "$covered" <<<"$changed"; then
-              echo "A file the end-to-end tests cover changed: they run."
-            else
-              run=false
-              reason="No file the end-to-end tests cover changed: neither the app (appinfo/, lib/, templates/, js/, css/, img/, l10n/), composer.json, composer.lock, tests/e2e/ nor this workflow."
-              echo "::notice title=End-to-end tests skipped::$reason"
-              echo "$reason The check passes without running them." >>"$GITHUB_STEP_SUMMARY"
-            fi
-          else
-            echo "No change to compare with ($EVENT): the end-to-end tests run."
-          fi
-          echo "run=$run" >>"$GITHUB_OUTPUT"
+        run: bash tests/e2e/scope.sh
       - name: Run the end-to-end tests against every supported Nextcloud version
         if: steps.scope.outputs.run == 'true'
         run: bash tests/e2e/run-all.sh

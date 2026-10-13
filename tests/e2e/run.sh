@@ -46,6 +46,8 @@ cleanup() {
 	exit "${status}"
 }
 trap cleanup EXIT
+# Stopped by the deadline of run-all.sh: the log shows the state of the containers.
+trap 'exit 143' TERM
 
 # A heading with the seconds since the start, so that the log shows where the time goes.
 phase() {
@@ -110,16 +112,18 @@ phase "Start Nextcloud and the mock of Paperless"
 "${COMPOSE[@]}" up --detach --wait --wait-timeout 240 --quiet-pull
 
 phase "Set up Nextcloud and the app"
-if ! occ status --output=json 2>/dev/null | grep --fixed-strings '"installed":true' >/dev/null; then
+# Each call of occ starts PHP and Nextcloud anew, which takes two to three seconds while
+# run-all.sh tests three versions at once. So the image installs Nextcloud on its first
+# start, with the trusted domains and the access to local servers of compose.yaml, and
+# the users come from the web server, which is running anyway.
+if ! curl --silent "${BASE_URL}/status.php" | grep --fixed-strings '"installed":true' >/dev/null; then
 	occ maintenance:install \
 		--database=sqlite \
 		--admin-user=e2e-admin \
 		--admin-pass="${PASSWORD}" >/dev/null
+	occ config:system:set trusted_domains 1 --value=127.0.0.1 >/dev/null
+	occ config:system:set trusted_domains 2 --value=nextcloud >/dev/null
 fi
-occ config:system:set trusted_domains 1 --value=127.0.0.1 >/dev/null
-# The browser of the accessibility check reaches Nextcloud by its name in the network.
-occ config:system:set trusted_domains 2 --value=nextcloud >/dev/null
-occ config:system:set allow_local_remote_servers --type=boolean --value=true >/dev/null
 # The coming Nextcloud of canary.sh is newer than max-version of appinfo/info.xml:
 # --force enables the app there anyway, without making it compatible.
 enable_options=()
@@ -132,14 +136,22 @@ occ router:list \
 	| grep --fixed-strings '/apps/paperless_unified_search/settings' >/dev/null
 
 # The password policy would check every new password against the public list of
-# Have I Been Pwned: no test may depend on a service outside the runner.
-occ config:app:set password_policy enforceHaveIBeenPwned --type=boolean --value=false >/dev/null
+# Have I Been Pwned, and no test may depend on a service outside the runner. The
+# first-run wizard would cover the pages that the accessibility check opens.
+occ app:disable password_policy firstrunwizard >/dev/null
 for user in e2e-user e2e-other; do
-	"${COMPOSE[@]}" exec -T --user www-data --env "OC_PASS=${PASSWORD}" nextcloud \
-		php occ user:add --password-from-env "${user}" >/dev/null
+	if ! curl --fail-with-body --silent --show-error \
+		--user "e2e-admin:${PASSWORD}" \
+		--header 'Accept: application/json' \
+		--header 'OCS-APIRequest: true' \
+		--data-urlencode "userid=${user}" \
+		--data-urlencode "password=${PASSWORD}" \
+		--output "${TMP_DIR}/user.json" \
+		"${BASE_URL}/ocs/v2.php/cloud/users"; then
+		echo "Nextcloud didn't create the user ${user}: $(cat "${TMP_DIR}/user.json" 2>/dev/null)" >&2
+		exit 1
+	fi
 done
-# The first-run wizard would cover the pages that the accessibility check opens.
-occ app:disable firstrunwizard >/dev/null 2>&1 || true
 phase "Restart Nextcloud"
 "${COMPOSE[@]}" restart nextcloud >/dev/null
 "${COMPOSE[@]}" up --detach --wait --wait-timeout 120 >/dev/null

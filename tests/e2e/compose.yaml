@@ -27,7 +27,13 @@ services:
     environment:
       NEXTCLOUD_ADMIN_USER: e2e-admin
       NEXTCLOUD_ADMIN_PASSWORD: e2e-only-password
-      NEXTCLOUD_TRUSTED_DOMAINS: localhost 127.0.0.1
+      # The image sets them on install: the address of the tests, and the name of
+      # Nextcloud in the network of the project, where the browser of the accessibility
+      # check reaches it.
+      NEXTCLOUD_TRUSTED_DOMAINS: 127.0.0.1 nextcloud
+      # A variable NC_<name> sets that value of config.php: the app may reach the mock
+      # of Paperless at its address in the network of the project.
+      NC_allow_local_remote_servers: "true"
     ports:
       - "${E2E_PORT:-18082}:80"
     volumes:
