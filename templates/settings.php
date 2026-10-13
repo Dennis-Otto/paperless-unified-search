@@ -107,13 +107,14 @@ $archiveAccount = $config->archiveOwner !== '' ? $config->archiveOwner : $config
 				id="paperless-unified-search-always-search"
 				name="alwaysSearch"
 				type="checkbox"
+				aria-describedby="paperless-unified-search-always-search-hint"
 				<?php if ($config->alwaysSearch) {
 					print_unescaped('checked');
 				} ?>>
 			<label for="paperless-unified-search-always-search">
 				<?php p($l->t('Always include Paperless in global search')); ?>
 			</label>
-			<p class="settings-hint">
+			<p id="paperless-unified-search-always-search-hint" class="settings-hint">
 				<?php p($l->t('Treat this Paperless server as a trusted service. When enabled, every global search term from every Nextcloud user is sent to Paperless automatically. The “Search connected services” switch no longer controls this provider. Reload Nextcloud after changing this setting.')); ?>
 			</p>
 		</div>
@@ -169,25 +170,35 @@ $archiveAccount = $config->archiveOwner !== '' ? $config->archiveOwner : $config
 						<?php } ?>
 					</tbody>
 				</table>
-				<table class="paperless-unified-search-events">
+				<?php
+				// On a phone, each row is a card whose cells name their column (data-label).
+				// The roles keep it a table for screen readers, which some browsers no
+				// longer see in a table whose parts the style displays as blocks.
+				$columns = [
+					'time' => $l->t('Time'),
+					'event' => $l->t('Event'),
+					'step' => $l->t('Step'),
+					'error' => $l->t('Error'),
+					'duration' => $l->t('Duration'),
+				];
+				?>
+				<table class="paperless-unified-search-events" role="table">
 					<caption><?php p($l->t('The latest problems, newest first')); ?></caption>
-					<thead>
-						<tr>
-							<th scope="col"><?php p($l->t('Time')); ?></th>
-							<th scope="col"><?php p($l->t('Event')); ?></th>
-							<th scope="col"><?php p($l->t('Step')); ?></th>
-							<th scope="col"><?php p($l->t('Error')); ?></th>
-							<th scope="col"><?php p($l->t('Duration')); ?></th>
+					<thead role="rowgroup">
+						<tr role="row">
+							<?php foreach ($columns as $column) { ?>
+								<th scope="col" role="columnheader"><?php p($column); ?></th>
+							<?php } ?>
 						</tr>
 					</thead>
-					<tbody>
+					<tbody role="rowgroup">
 						<?php foreach ($history['events'] as $event) { ?>
-							<tr>
-								<td><?php p($event['time']); ?></td>
-								<td><?php p($event['kind'] === \OCA\PaperlessUnifiedSearch\Model\SearchEvent::KIND_FAILED ? $l->t('Search failed') : $l->t('Second try answered')); ?></td>
-								<td><?php p($event['step'] === \OCA\PaperlessUnifiedSearch\Model\SearchEvent::STEP_FILES ? $l->t('Looking for the files in Nextcloud') : $l->t('Asking Paperless')); ?></td>
-								<td><?php p($event['error']); ?></td>
-								<td><?php p($l->t('%s ms', [(string)$event['durationMs']])); ?></td>
+							<tr role="row">
+								<td role="cell" data-label="<?php p($columns['time']); ?>"><?php p($event['time']); ?></td>
+								<td role="cell" data-label="<?php p($columns['event']); ?>"><?php p($event['kind'] === \OCA\PaperlessUnifiedSearch\Model\SearchEvent::KIND_FAILED ? $l->t('Search failed') : $l->t('Second try answered')); ?></td>
+								<td role="cell" data-label="<?php p($columns['step']); ?>"><?php p($event['step'] === \OCA\PaperlessUnifiedSearch\Model\SearchEvent::STEP_FILES ? $l->t('Looking for the files in Nextcloud') : $l->t('Asking Paperless')); ?></td>
+								<td role="cell" data-label="<?php p($columns['error']); ?>"><?php p($event['error']); ?></td>
+								<td role="cell" data-label="<?php p($columns['duration']); ?>"><?php p($l->t('%s ms', [(string)$event['durationMs']])); ?></td>
 							</tr>
 						<?php } ?>
 					</tbody>

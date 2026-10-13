@@ -90,16 +90,17 @@ upload_pdf() {
 
 # The checks in Chromium, inside the network of the Compose project: axe-core checks
 # the pages of the app (accessibility.mjs), which also checks what the settings page
-# does, and flow.mjs goes through the search dialog as a person does. The files of the
-# checks reach the browser through standard input, so that npm leaves nothing in the
-# checkout.
+# does, flow.mjs goes through the search dialog as a person does, and settings.mjs
+# checks the messages of the settings page and Disconnect, last, as it disconnects. The
+# files of the checks reach the browser through standard input, so that npm leaves
+# nothing in the checkout.
 browser_checks() {
 	# The image has been loading since the start; a failed pull leaves it to docker run.
 	if [[ -n "${PLAYWRIGHT_PULL}" ]]; then
 		wait "${PLAYWRIGHT_PULL}" || true
 		PLAYWRIGHT_PULL=""
 	fi
-	tar -C "${SCRIPT_DIR}" -cf - package.json package-lock.json ui.mjs accessibility.mjs flow.mjs \
+	tar -C "${SCRIPT_DIR}" -cf - package.json package-lock.json ui.mjs accessibility.mjs flow.mjs settings.mjs \
 		| "${DOCKER_BIN}" run --rm --interactive \
 			--network "${PROJECT_NAME}_default" \
 			--env NPM_CONFIG_UPDATE_NOTIFIER=false \
@@ -107,7 +108,7 @@ browser_checks() {
 			--env E2E_SEARCH_USER=e2e-user \
 			--env "E2E_PASSWORD=${PASSWORD}" \
 			"${PLAYWRIGHT_IMAGE}" \
-			sh -c 'mkdir /tmp/browser && cd /tmp/browser && tar -xf - && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error && node accessibility.mjs && node flow.mjs'
+			sh -c 'mkdir /tmp/browser && cd /tmp/browser && tar -xf - && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error && node accessibility.mjs && node flow.mjs && node settings.mjs'
 }
 
 # Sends a request and expects the HTTP status $1. $2 says what the request does, for the
@@ -610,7 +611,8 @@ expect_status 200 'Turning off trusted mode' \
 # above, with the warning about an archive account that doesn't exist, with the token
 # field required for another server and with the message after saving. The browser
 # corrects the archive account, saves another server and then the mock again, each
-# with the token (#99), and clears the history of the problems (#118).
+# with the token (#99), and clears the history of the problems (#118). Last, it
+# disconnects and saves the mock once more (#127).
 # The settings route refuses an archive account that doesn't exist, so the provisioning
 # API of Nextcloud stores it. occ would store it too, but Nextcloud serves the settings
 # of the apps from APCu for three seconds after the save above, which occ doesn't
@@ -635,4 +637,4 @@ phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed in ${SECONDS} s: settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, pages of results filled across pages of Paperless, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, the settings page in the browser with its accessibility, and the search dialog with a result that opens the Viewer on a laptop and a phone."
+echo "Docker E2E passed in ${SECONDS} s: settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, pages of results filled across pages of Paperless, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."

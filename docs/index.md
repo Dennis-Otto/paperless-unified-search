@@ -113,6 +113,11 @@ Each picture follows the light or dark theme of this website. Select one to enla
   <figcaption>On a phone, in the browser</figcaption>
 </figure>
 
+<figure markdown="span">
+  ![The settings on a phone, with the problems of the search as cards](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/09-admin-settings-mobile.png){ width="180" }
+  <figcaption>The settings on a phone</figcaption>
+</figure>
+
 </div>
 
 ## Quick start
