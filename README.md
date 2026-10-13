@@ -292,10 +292,11 @@ When Nextcloud itself can't take the request, the page says so in one sentence i
 
 | The message says | What happened | What to do |
 | --- | --- | --- |
-| Nextcloud is in maintenance mode | Nextcloud is being upgraded or maintained, and answers every request with HTTP 503 | Try again in a few minutes |
+| Nextcloud is in maintenance mode | Nextcloud is being upgraded or maintained, and answers every request with HTTP 503 and a header that says so | Try again in a few minutes |
 | Your session has expired | The session of your login ended, or its request token is no longer valid (HTTP 401 or 412) | Reload the page and try again |
 | Nextcloud could not be reached | The browser lost its connection to Nextcloud | Check your connection and try again |
-| The request failed (HTTP 502) | A proxy in front of Nextcloud answered with an error of its own, such as 502 or 504 | Check that Nextcloud runs, and the log of the proxy |
+| The request failed (HTTP 502) | A proxy in front of Nextcloud answered with an error of its own, such as 502, 503 or 504, or Nextcloud found a problem with its own setup, such as a data folder it can't write to | Check that Nextcloud runs, its log and the log of the proxy |
+| Nextcloud gave an unexpected answer | Something in front of Nextcloud, such as the login page of a proxy, answered instead of the app | Reload the page and try again |
 
 ### Languages
 

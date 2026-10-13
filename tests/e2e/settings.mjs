@@ -35,7 +35,8 @@ const isSettingsRoute = (url) => url.pathname.endsWith('/apps/paperless_unified_
 const TIMEOUT = 60000
 
 // The HTML page that Nextcloud shows in maintenance mode, as large as its own, which the
-// page used to show as its message.
+// page used to show as its message, and the headers that mark it (lib/base.php).
+const MAINTENANCE_HEADERS = { 'X-Nextcloud-Maintenance-Mode': '1', 'Retry-After': '120' }
 const MAINTENANCE_PAGE = `<!DOCTYPE html><html><head><title>Nextcloud</title></head><body>${
 	'<p>This Nextcloud instance is currently in maintenance mode, which may take a while.</p>'.repeat(160)
 }</body></html>`
@@ -44,8 +45,14 @@ const MAINTENANCE_PAGE = `<!DOCTYPE html><html><head><title>Nextcloud</title></h
 const FAILURES = [
 	{
 		name: 'maintenance mode',
-		answer: (route) => route.fulfill({ status: 503, contentType: 'text/html; charset=UTF-8', body: MAINTENANCE_PAGE }),
+		answer: (route) => route.fulfill({ status: 503, headers: MAINTENANCE_HEADERS, contentType: 'text/html; charset=UTF-8', body: MAINTENANCE_PAGE }),
 		message: 'Nextcloud is in maintenance mode, for example for an upgrade. Try again in a few minutes.',
+	},
+	{
+		// HAProxy's page when no server of the backend is healthy, which waiting doesn't fix.
+		name: 'a proxy without a working Nextcloud',
+		answer: (route) => route.fulfill({ status: 503, contentType: 'text/html', body: '<html><body><h1>503 Service Unavailable</h1>No server is available to handle this request.</body></html>' }),
+		message: 'The request failed (HTTP 503).',
 	},
 	{
 		name: 'a proxy whose Nextcloud doesn\'t answer',

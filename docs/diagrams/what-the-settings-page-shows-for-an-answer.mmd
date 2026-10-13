@@ -1,11 +1,11 @@
 flowchart TB
     accTitle: What the settings page shows for an answer
-    accDescr: The settings page sends a save or Disconnect to Nextcloud and shows one sentence for whatever comes back. When the browser gets no answer, the sentence says that Nextcloud could not be reached. HTTP 401 or 412 means that the session expired, and HTTP 503 that Nextcloud is in maintenance mode. A refusal of the app brings its own message in the language of the administrator. An answer of the app shows the settings as Nextcloud stored them, with the URL in its stored form, and the message of success; anything else, such as the HTML page of a proxy, gives the request failed with its HTTP status. Every message has the colour and the icon of its kind, and Disconnect is on only while a token or a URL is stored.
+    accDescr: The settings page sends a save or Disconnect to Nextcloud and shows one sentence for whatever comes back. When the browser gets no answer, the sentence says that Nextcloud could not be reached. HTTP 401 or 412 means that the session expired, and HTTP 503 with the headers that Nextcloud sends in maintenance mode and before an upgrade that Nextcloud is in maintenance mode. A refusal of the app brings its own message in the language of the administrator. An answer of the app shows the settings as Nextcloud stored them, with the URL in its stored form, and the message of success. An error without a message of the app, such as the HTML page of a proxy or a 503 without those headers, gives the request failed with its HTTP status, and a success that isn't JSON, such as a login page in front of Nextcloud, says that Nextcloud gave an unexpected answer. Every message has the colour and the icon of its kind, and Disconnect is on only while a token or a URL is stored.
 
     send(["`**Test connection and save**<br>or **Disconnect**`"])
     reached{"Does the browser<br>get an answer?"}
     session{"HTTP 401 or 412?"}
-    maintenance{"HTTP 503?"}
+    maintenance{"HTTP 503 that says<br>maintenance mode?"}
     app{"JSON of the app?"}
     unreached["Nextcloud could not be reached"]
     expired["Your session has expired"]
@@ -13,6 +13,7 @@ flowchart TB
     refusal["The message of the app,<br>such as Paperless rejected<br>the API token"]
     stored["The settings as stored,<br>the URL in its stored form:<br>Connection successful"]
     failed["The request failed (HTTP 502)"]
+    unexpected["Nextcloud gave an<br>unexpected answer"]
     disconnect["Disconnect on only while<br>a token or a URL is stored"]
 
     send --> reached
@@ -24,11 +25,12 @@ flowchart TB
     maintenance -- "no" --> app
     app -- "a refusal, with its message" --> refusal
     app -- "the settings" --> stored
-    app -- "no, such as the HTML<br>page of a proxy" --> failed
+    app -- "an error without a message,<br>such as the page of a proxy" --> failed
+    app -- "a success that isn't JSON,<br>such as a login page" --> unexpected
     stored --> disconnect
     refusal --> disconnect
 
     classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
     classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
     class stored yes
-    class unreached,expired,upgrade,refusal,failed no
+    class unreached,expired,upgrade,refusal,failed,unexpected no

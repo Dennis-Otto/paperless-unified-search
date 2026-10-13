@@ -4,10 +4,11 @@
 // The steps through the pages of Nextcloud that the checks in the browser (flow.mjs,
 // accessibility.mjs, settings.mjs) and the screenshots of the README (screenshots.mjs)
 // share: signing in, the unified search with the results of Paperless, the Viewer that a
-// result opens, and the message of the settings page of the app. Each step waits for what a person would see before going on, and finds it by
-// its role and name, as a screen reader does, in every supported version of Nextcloud:
-// Nextcloud 33 and 34 search in a dialog that a button of the header opens, and
-// Nextcloud 35 in a field of the header, with the results below it.
+// result opens, and the messages of the settings page of the app. Each step waits for
+// what a person would see before going on, and finds it by its role and name, as a
+// screen reader does, in every supported version of Nextcloud: Nextcloud 33 and 34
+// search in a dialog that a button of the header opens, and Nextcloud 35 in a field of
+// the header, with the results below it.
 //
 // No workflow runs screenshots.mjs, and some steps here serve only it: search() with a
 // group, searchConnectedServices(), paperlessResult() and the drawn PDF of
@@ -103,32 +104,57 @@ export const SETTINGS = '/index.php/settings/admin/paperless_unified_search'
 export const SETTINGS_SCOPE = '#paperless-unified-search-settings'
 export const STATUS = '#paperless-unified-search-status'
 
-// Checks the message of the settings page after an action: its text and its kind,
-// success or error, in the colour that the theme of Nextcloud has for that kind, which
-// Nextcloud's grey for the paragraphs of a section must not win over, and with its icon
-// in front, so that the kind doesn't rest on the colour alone (WCAG 1.4.1).
-export async function expectStatus(page, text, kind) {
-	const status = await page.locator(STATUS).evaluate((element, kind) => {
+// What keeps the kind of a message of the settings page from resting on its colour
+// alone (WCAG 1.4.1): the colour that the theme of Nextcloud has for that kind, which
+// Nextcloud's grey for the paragraphs of a section must not win over, and an icon in
+// front. The problems found, empty when there are none.
+async function lookProblems(locator, kind) {
+	const look = await locator.evaluate((element, kind) => {
 		const probe = document.createElement('span')
 		probe.style.color = `var(--color-${kind}-text)`
 		element.parentElement.append(probe)
-		const colour = getComputedStyle(probe).color
+		const expectedColour = getComputedStyle(probe).color
 		probe.remove()
 		return {
-			text: element.textContent,
-			kinds: [...element.classList].filter((name) => name.startsWith('paperless-unified-search-status--')),
 			colour: getComputedStyle(element).color,
-			expectedColour: colour,
+			expectedColour,
 			icon: getComputedStyle(element, '::before').maskImage,
 		}
 	}, kind)
+	return [
+		look.colour === look.expectedColour ? '' : `the colour ${look.colour} instead of ${look.expectedColour}, the one of ${kind} in the theme`,
+		look.icon.startsWith('url(') ? '' : `no icon but ${JSON.stringify(look.icon)}`,
+	].filter(Boolean)
+}
+
+// Checks the message of the settings page after an action: its text and its kind,
+// success or error, in the colour of that kind and with its icon.
+export async function expectStatus(page, text, kind) {
+	const locator = page.locator(STATUS)
+	const status = await locator.evaluate((element) => ({
+		text: element.textContent,
+		kinds: [...element.classList].filter((name) => name.startsWith('paperless-unified-search-status--')),
+	}))
 	const problems = [
 		status.text === text ? '' : `the text ${JSON.stringify(status.text)} instead of ${JSON.stringify(text)}`,
 		status.kinds.join(' ') === `paperless-unified-search-status--${kind}` ? '' : `the classes ${JSON.stringify(status.kinds)} instead of the one of ${kind}`,
-		status.colour === status.expectedColour ? '' : `the colour ${status.colour} instead of ${status.expectedColour}, the one of ${kind} in the theme`,
-		status.icon.startsWith('url(') ? '' : `no icon but ${JSON.stringify(status.icon)}`,
+		...await lookProblems(locator, kind),
 	].filter(Boolean)
 	if (problems.length > 0) {
 		throw new Error(`The message of the settings page has ${problems.join(', ')}.`)
+	}
+}
+
+// Checks a warning below a field of the settings page, such as the one about an archive
+// account that doesn't exist: its text, in the colour of an error and with its icon.
+export async function expectWarning(page, selector, text) {
+	const locator = page.locator(selector)
+	const actual = await locator.textContent()
+	const problems = [
+		actual === text ? '' : `the text ${JSON.stringify(actual)} instead of ${JSON.stringify(text)}`,
+		...await lookProblems(locator, 'error'),
+	].filter(Boolean)
+	if (problems.length > 0) {
+		throw new Error(`The warning ${selector} of the settings page has ${problems.join(', ')}.`)
 	}
 }

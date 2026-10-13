@@ -16,7 +16,7 @@
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { chromium } from 'playwright-core'
-import { BASE_URL, SETTINGS, SETTINGS_SCOPE, STATUS, expectStatus, signIn } from './ui.mjs'
+import { BASE_URL, SETTINGS, SETTINGS_SCOPE, STATUS, expectStatus, expectWarning, signIn } from './ui.mjs'
 
 const USER = process.env.E2E_USER ?? 'e2e-admin'
 const AXE = readFileSync(createRequire(import.meta.url).resolve('axe-core/axe.min.js'), 'utf8')
@@ -131,11 +131,7 @@ async function expectRecordedProblems(page) {
 	)
 	expectEqual(events.join(', '), 'Second try answered, Search failed', 'Recorded problems, newest first')
 	await page.locator(CLEAR_HISTORY_BUTTON).waitFor()
-	expectEqual(
-		await page.locator(ARCHIVE_OWNER_MISSING).textContent(),
-		'The archive account e2e-gone does not exist.',
-		'Warning about the archive account',
-	)
+	await expectWarning(page, ARCHIVE_OWNER_MISSING, 'The archive account e2e-gone does not exist.')
 	await expectTokenField(page, 'the stored URL', false)
 }
 

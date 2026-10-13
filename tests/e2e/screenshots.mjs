@@ -7,10 +7,9 @@
 // of Paperless run. It writes the synthetic documents of the demo as PDF files into
 // the folder Paperless of the archive account, shares the folder read-only with
 // jamie, and goes through the app in Chromium as a person does: the search, the
-// opened file, the smart picker in a note of Text with the link that it inserts, and the
-// settings, light and dark, the search and the settings on a phone, and the search as an
-// animation. The images go to the
-// folder of SCREENSHOTS_OUT.
+// opened file, the smart picker in a note of Text with the link that it inserts, the
+// settings, light and dark, the search and the settings on a phone, and the search as
+// an animation. The images go to the folder of SCREENSHOTS_OUT.
 
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'

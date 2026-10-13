@@ -31,6 +31,15 @@
 		}
 	}
 
+	// Whether Nextcloud answered 503 for maintenance mode, which it marks with
+	// X-Nextcloud-Maintenance-Mode and Retry-After, or for a pending upgrade, which it marks
+	// with Retry-After alone. A 503 without them, from a proxy whose Nextcloud is down or
+	// from Nextcloud for a broken configuration, doesn't go away by waiting.
+	function isMaintenance(response) {
+		return response.status === 503
+			&& (response.headers.get('X-Nextcloud-Maintenance-Mode') === '1' || response.headers.has('Retry-After'))
+	}
+
 	// One short sentence for an answer that isn't the one asked for. The app's own refusals
 	// bring their message in the language of the administrator; Nextcloud answers an expired
 	// session with 401 or 412 and maintenance mode with 503, in English or as an HTML page.
@@ -38,7 +47,7 @@
 		if (response.status === 401 || response.status === 412) {
 			return translate('Your session has expired. Reload the page and try again.')
 		}
-		if (response.status === 503) {
+		if (isMaintenance(response)) {
 			return translate('Nextcloud is in maintenance mode, for example for an upgrade. Try again in a few minutes.')
 		}
 		if (typeof payload?.message === 'string' && payload.message.trim() !== '') {

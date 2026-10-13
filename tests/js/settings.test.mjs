@@ -116,16 +116,21 @@ function page({ url = '', tokenConfigured = false, history = true } = {}) {
 	return elements
 }
 
-function json(body, status = 200) {
-	return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json; charset=utf-8' } })
+function json(body, status = 200, headers = {}) {
+	return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', ...headers } })
 }
 
-function html(status, bytes = 14488) {
+function html(status, headers = {}, bytes = 14488) {
 	return new Response(`<!DOCTYPE html><html><body>${'x'.repeat(bytes)}</body></html>`, {
 		status,
-		headers: { 'Content-Type': 'text/html; charset=UTF-8' },
+		headers: { 'Content-Type': 'text/html; charset=UTF-8', ...headers },
 	})
 }
+
+// The headers with which Nextcloud answers in maintenance mode (lib/base.php and
+// ocs/v1.php), and with which it shows the page of a pending upgrade.
+const MAINTENANCE = { 'X-Nextcloud-Maintenance-Mode': '1', 'Retry-After': '120' }
+const UPGRADE = { 'Retry-After': '120' }
 
 const CONFIG = {
 	url: STORED,
@@ -298,8 +303,11 @@ test('a refused save of a configured app keeps Disconnect on', async function() 
 // What Nextcloud or a proxy answers instead of the app, and the sentence that the page
 // shows for it in place of the answer.
 for (const [name, answer, expected] of [
-	['maintenance mode, as HTML', html(503), 'Nextcloud is in maintenance mode, for example for an upgrade. Try again in a few minutes.'],
-	['maintenance mode, as JSON', json({ message: 'Service unavailable' }, 503), 'Nextcloud is in maintenance mode, for example for an upgrade. Try again in a few minutes.'],
+	['maintenance mode, as HTML', html(503, MAINTENANCE), 'Nextcloud is in maintenance mode, for example for an upgrade. Try again in a few minutes.'],
+	['maintenance mode, as JSON', json({ message: 'Service unavailable' }, 503, MAINTENANCE), 'Nextcloud is in maintenance mode, for example for an upgrade. Try again in a few minutes.'],
+	['a pending upgrade', html(503, UPGRADE), 'Nextcloud is in maintenance mode, for example for an upgrade. Try again in a few minutes.'],
+	['a proxy whose Nextcloud is down, or a broken configuration', html(503), 'The request failed (HTTP 503).'],
+	['an app that is unavailable', json({ message: 'Paperless is unavailable.' }, 503), 'Paperless is unavailable.'],
 	['an expired session', json({ message: 'Current user is not logged in' }, 401), 'Your session has expired. Reload the page and try again.'],
 	['a failed check of the request token', json({ message: 'CSRF check failed' }, 412), 'Your session has expired. Reload the page and try again.'],
 	['a proxy whose Nextcloud times out', html(504), 'The request failed (HTTP 504).'],
@@ -455,7 +463,7 @@ test('Disconnect forgets the settings and the history of the problems', async fu
 })
 
 test('a failed Disconnect keeps the settings and Disconnect', async function() {
-	const { get } = load(page({ url: STORED, tokenConfigured: true }), { answers: [html(503)] })
+	const { get } = load(page({ url: STORED, tokenConfigured: true }), { answers: [html(503, MAINTENANCE)] })
 
 	await get('reset').dispatch('click')
 
