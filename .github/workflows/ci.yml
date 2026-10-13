@@ -40,6 +40,19 @@ jobs:
           extensions: dom, libxml, mbstring, xml
           coverage: pcov
           tools: composer:v2
+      # Composer keeps the packages that it downloads in its cache, so that a run
+      # unpacks them from there instead of downloading each again. The key changes
+      # with composer.lock; after a change of it, the cache of the last lock file
+      # still holds most of the packages.
+      - name: Find the cache of Composer
+        id: composer
+        run: echo "files=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+      - name: Restore the packages of Composer from the cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.composer.outputs.files }}
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
       - name: Install the locked tools
         run: composer install --no-interaction --prefer-dist --no-progress
       # krankerl comes from the cache of the CI once a run has downloaded it, so that
@@ -62,6 +75,16 @@ jobs:
           # The package of the cache too.
           echo "$KRANKERL_SHA256  $deb" | sha256sum --check --strict
           sudo dpkg --install "$deb"
+      # php-cs-fixer skips a file that its cache knows as clean by the hash of its
+      # content, and reads a cache only of the same version, rules and PHP. The key
+      # changes with every commit, so that each run that passed saves what it checked,
+      # and a run starts from the latest cache of its branch or of main.
+      - name: Restore the cache of php-cs-fixer
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .php-cs-fixer.cache
+          key: php-cs-fixer-${{ hashFiles('composer.lock', '.php-cs-fixer.dist.php') }}-${{ github.sha }}
+          restore-keys: php-cs-fixer-${{ hashFiles('composer.lock', '.php-cs-fixer.dist.php') }}-
       - name: Run the checks
         run: bash scripts/check.sh
       - name: Keep the coverage report
