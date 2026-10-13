@@ -5,13 +5,19 @@ name: Upstream
 # version, it opens a pull request as the release app that raises max-version to it
 # and says so under Unreleased in CHANGELOG.md, so that every check, the end-to-end
 # tests of the newest version included, runs against it. It merges itself once they
-# pass, unless the repository variable UPSTREAM_AUTOMERGE is off.
+# pass, unless the repository variable UPSTREAM_AUTOMERGE is off. Started by hand as a
+# dry run, it only shows the pull request it would open, and changes nothing.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
   schedule:
     - cron: "50 4 * * 3"
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only show the pull request it would open, and change nothing
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -22,7 +28,7 @@ concurrency:
 jobs:
   nextcloud:
     name: newest Nextcloud
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     # The environment holds the private key of the release app; only main may use it.
     environment:
@@ -52,6 +58,7 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
           AUTOMERGE: ${{ vars.UPSTREAM_AUTOMERGE }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
           latest="$(gh api repos/nextcloud/server/releases/latest --jq .tag_name)"
@@ -72,6 +79,11 @@ jobs:
           script=.github/blueprint.py
           [[ -f "$script" ]] || script=blueprint.py
           python3 "$script" unreleased Changed "- Supports Nextcloud $newest."
+          if [[ "$DRY_RUN" == true ]]; then
+            echo "A dry run: the pull request \"feat: support Nextcloud $newest\" from the branch $branch would make this change."
+            git --no-pager diff
+            exit 0
+          fi
 
           # The commit goes through GitHub's API as the release app, so GitHub signs
           # it, as main requires, and it starts the checks.

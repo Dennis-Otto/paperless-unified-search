@@ -19,7 +19,7 @@ concurrency:
 jobs:
   analyze:
     name: analyze (${{ matrix.language }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -52,7 +52,7 @@ jobs:
     name: codeql
     if: always()
     needs: analyze
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Record the network traffic of the job
