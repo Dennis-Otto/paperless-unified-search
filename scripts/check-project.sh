@@ -36,15 +36,24 @@ echo "The ${#pictures[@]} picture(s) of the README are in the repository."
 printf '\n== %s\n' "Descriptions of the website pages"
 # Search engines and shared links show the description of a page, from its front
 # matter; a page without one would show the description of the whole website.
+# The check reads one line, so a description written as a YAML block (">-" or "|",
+# then indented lines) fails with exit status 2 instead of passing unread.
 description() {
   awk 'NR == 1 && $0 != "---" { exit }
     NR > 1 && $0 == "---" { exit }
-    NR > 1 && sub(/^description: */, "") { gsub(/^"|"$/, ""); print; exit }' "$1"
+    NR > 1 && sub(/^description: */, "") {
+      if ($0 ~ /^[>|]/) { exit 2 }
+      gsub(/^"|"$/, ""); print; exit
+    }' "$1"
 }
 mapfile -t pages < <(git ls-files 'docs/*.md')
 descriptions=()
 for page in "${pages[@]}"; do
-  text="$(description "$page")"
+  if ! text="$(description "$page")"; then
+    echo "$page writes its description as a YAML block; write it on one line, in quotes:"
+    printf -- 'description: "What the page is about, in one sentence."\n'
+    exit 1
+  fi
   if [[ -z "$text" ]]; then
     echo "$page has no description in its front matter; start it with:"
     printf -- '---\ndescription: "What the page is about, in one sentence."\n---\n'
