@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Search;
 
+use DateTimeImmutable;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Model\DiagnosticsHistory;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
@@ -47,6 +48,9 @@ final class PaperlessSearchProviderTest extends TestCase {
 
 	/** @var array<string, mixed> the values that the app stored, by key */
 	private array $stored = [];
+
+	/** @var list<array<string, int|string>> the queries of the requests that reached Paperless, oldest first */
+	private array $requests = [];
 
 	#[DataProvider('resourceUrlCases')]
 	public function testReturnsOnlyAccessibleFilesWithPlatformCompatibleResourceUrl(
@@ -139,6 +143,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			$this->createMock(LoggerInterface::class),
 			$configService,
 			new SearchDiagnostics($config, $this->clock()),
+			$this->clock(),
 		);
 
 		self::assertTrue($provider->isExternalProvider());
@@ -192,6 +197,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			$this->createStub(LoggerInterface::class),
 			$configService,
 			new SearchDiagnostics($config, $this->clock()),
+			$this->clock(),
 		);
 
 		self::assertFalse($provider->isExternalProvider());
@@ -228,25 +234,29 @@ final class PaperlessSearchProviderTest extends TestCase {
 	}
 
 	/**
-	 * @return array<string, array{int|string|null, int, int, int}>
+	 * @return array<string, array{int|string|null, int}>
 	 */
-	public static function pages(): array {
+	public static function cursors(): array {
 		return [
-			'first search' => [null, 10, 1, 10],
-			'cursor of the next page' => [3, 10, 3, 10],
-			'cursor below one' => [0, 10, 1, 10],
-			'negative cursor' => [-2, 10, 1, 10],
-			'cursor as text' => ['4', 10, 4, 10],
-			'cursor zero as text' => ['0', 10, 1, 10],
-			'negative cursor as text' => ['-3', 10, 1, 10],
-			'cursor that is no number' => ['next', 10, 1, 10],
-			'limit above fifty' => [null, 100, 1, 50],
-			'limit below one' => [null, 0, 1, 1],
+			'first search' => [null, 1],
+			'cursor zero' => [0, 1],
+			'cursor in the first page' => [24, 1],
+			'cursor at the start of the second page' => [25, 2],
+			'cursor in the second page, as text' => ['30', 2],
+			'cursor zero as text' => ['0', 1],
+			'negative cursor' => [-2, 1],
+			'negative cursor as text' => ['-3', 1],
+			'cursor that is no number' => ['next', 1],
+			'last cursor that a search pages to' => [9999, 400],
 		];
 	}
 
-	#[DataProvider('pages')]
-	public function testTheCursorAndTheLimitChooseThePageOfPaperless(int|string|null $cursor, int $limit, int $page, int $pageSize): void {
+	/**
+	 * The cursor is the number of hits of Paperless that the earlier pages went through,
+	 * and Paperless is asked for pages of 25 hits, whatever the limit.
+	 */
+	#[DataProvider('cursors')]
+	public function testTheCursorChoosesThePageOfPaperless(int|string|null $cursor, int $page): void {
 		$client = $this->createMock(IClient::class);
 		$client->expects(self::once())
 			->method('get')
@@ -255,43 +265,280 @@ final class PaperlessSearchProviderTest extends TestCase {
 				self::callback(static fn (array $options): bool => $options['query'] === [
 					'query' => 'invoice',
 					'page' => $page,
-					'page_size' => $pageSize,
+					'page_size' => 25,
 					'fields' => 'id,title,created,correspondent,document_type,__search_hit__',
 				]),
 			)
 			->willReturn($this->response(['count' => 0, 'next' => null, 'results' => []]));
 
-		$this->provider($client)->search($this->user(), $this->query(' invoice ', $cursor, $limit));
+		$this->provider($client)->search($this->user(), $this->query(' invoice ', $cursor, 5));
 	}
 
 	/**
-	 * @return array<string, array{int|string|null, int}>
+	 * @return array<string, array{int|string}>
 	 */
-	public static function nextPages(): array {
+	public static function cursorsPastTheEnd(): array {
 		return [
-			'after the first page' => [null, 2],
-			'after a later page' => [5, 6],
-			'after a later page as text' => ['2', 3],
-			'after a cursor below one' => [0, 2],
-			'after a cursor zero as text' => ['0', 2],
+			'number' => [10000],
+			'text' => ['10000'],
+			'text beyond the largest integer' => ['99999999999999999999'],
 		];
 	}
 
-	#[DataProvider('nextPages')]
-	public function testMoreDocumentsAtPaperlessContinueOnTheNextPage(int|string|null $cursor, int $nextCursor): void {
-		$client = $this->paperless([
-			'count' => 61,
-			'next' => 'https://paperless.example.com/api/documents/?page=3&query=invoice',
-			'results' => [['id' => 7, 'title' => 'Invoice']],
-		]);
+	#[DataProvider('cursorsPastTheEnd')]
+	public function testACursorPastTheEndAsksPaperlessNothing(int|string $cursor): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::never())->method('get');
 
-		$result = $this->provider($client, [7 => $this->file(7, 'Invoice [P7].pdf')])
-			->search($this->user(), $this->query('invoice', $cursor))
+		$result = $this->provider($client)->search($this->user(), $this->query('invoice', $cursor, 5))->jsonSerialize();
+
+		self::assertFalse($result['isPaginated']);
+		self::assertSame([], $result['entries']);
+	}
+
+	/**
+	 * A search pages through the first 10,000 hits of Paperless: the page that holds the
+	 * last of them is the last page.
+	 */
+	public function testASearchEndsAfterTheFirstTenThousandHits(): void {
+		$result = $this->provider($this->ranking(self::documentsWithIds(range(1, 10030))), $this->files([10001]))
+			->search($this->user(), $this->query('invoice', 9990, 5))
 			->jsonSerialize();
 
+		self::assertSame([], $result['entries']);
+		self::assertSame([400], array_column($this->requests, 'page'));
+		self::assertFalse($result['isPaginated']);
+	}
+
+	/**
+	 * Nextcloud's web search shows Paperless documents only when its first answer holds
+	 * some: documents that the user can't open hid those further down, and all of them
+	 * when the first five hits were such documents.
+	 */
+	public function testDocumentsThatTheUserCannotOpenDoNotHideTheOnesFurtherDown(): void {
+		$client = $this->ranking(self::documentsWithIds(range(1, 26)));
+
+		$result = $this->provider($client, $this->files([26]))
+			->search($this->user(), $this->query('invoice', null, 5))
+			->jsonSerialize();
+
+		self::assertSame(['Document 26'], self::titles($result['entries']));
+		self::assertFalse($result['isPaginated']);
+		self::assertSame([1, 2], array_column($this->requests, 'page'));
+	}
+
+	/**
+	 * @return array<string, array{int}>
+	 */
+	public static function limits(): array {
+		return [
+			'the first answer of the web search' => [5],
+			'after one "Load more"' => [10],
+			'after two' => [15],
+		];
+	}
+
+	/**
+	 * Nextcloud's web search offers "Load more results" only when a page holds as many
+	 * results as it asked for, and asks for 5 more each time, from the start.
+	 */
+	#[DataProvider('limits')]
+	public function testAPageHoldsAsManyResultsAsAskedForWhileThereAreMore(int $limit): void {
+		$ids = range(1, 60);
+		$accessible = self::everyFifthLeftOut($ids);
+
+		$result = $this->provider($this->ranking(self::documentsWithIds($ids)), $this->files($accessible))
+			->search($this->user(), $this->query('invoice', null, $limit))
+			->jsonSerialize();
+
+		self::assertSame(self::titlesOf(array_slice($accessible, 0, $limit)), self::titles($result['entries']));
 		self::assertTrue($result['isPaginated']);
-		self::assertSame($nextCursor, $result['cursor']);
-		self::assertCount(1, $result['entries']);
+		self::assertSame([25], array_unique(array_column($this->requests, 'page_size')));
+	}
+
+	/**
+	 * The apps of Nextcloud ask for the next page with the cursor of the last one: each
+	 * page goes on with the hit after the last one that the page before went through,
+	 * also in the middle of a page of Paperless.
+	 */
+	public function testTheNextPageGoesOnWithoutRepeatingOrMissingADocument(): void {
+		$ids = range(1, 60);
+		$accessible = self::everyFifthLeftOut($ids);
+		$provider = $this->provider($this->ranking(self::documentsWithIds($ids)), $this->files($accessible));
+
+		$first = $provider->search($this->user(), $this->query('invoice', null, 5))->jsonSerialize();
+		self::assertSame(self::titlesOf([1, 2, 3, 4, 6]), self::titles($first['entries']));
+		self::assertTrue($first['isPaginated']);
+		// Hits 1 to 6 are gone through, document 5 without a file among them.
+		self::assertSame(6, $first['cursor']);
+
+		$shown = self::titles($first['entries']);
+		$result = $first;
+		for ($pages = 1; $result['isPaginated'] && $pages < 20; $pages++) {
+			$result = $provider->search($this->user(), $this->query('invoice', (string)$result['cursor'], 5))->jsonSerialize();
+			$shown = [...$shown, ...self::titles($result['entries'])];
+		}
+
+		self::assertFalse($result['isPaginated'], 'The search never came to an end.');
+		self::assertSame(self::titlesOf($accessible), $shown);
+	}
+
+	/**
+	 * A page full of results whose last hit is the last one of Paperless leaves nothing to
+	 * page to.
+	 */
+	public function testAPageThatTakesTheLastHitIsTheLastPage(): void {
+		$result = $this->provider($this->ranking(self::documentsWithIds([1, 2, 3])), $this->files([1, 2, 3]))
+			->search($this->user(), $this->query('invoice', null, 3))
+			->jsonSerialize();
+
+		self::assertCount(3, $result['entries']);
+		self::assertFalse($result['isPaginated']);
+	}
+
+	/**
+	 * Hits that a page doesn't need are left for the next one, even when they are the last
+	 * ones of Paperless.
+	 */
+	public function testHitsThatAPageDoesNotNeedAreLeftForTheNextOne(): void {
+		$result = $this->provider($this->ranking(self::documentsWithIds([1, 2, 3])), $this->files([1, 2, 3]))
+			->search($this->user(), $this->query('invoice', null, 2))
+			->jsonSerialize();
+
+		self::assertSame(self::titlesOf([1, 2]), self::titles($result['entries']));
+		self::assertTrue($result['isPaginated']);
+		self::assertSame(2, $result['cursor']);
+	}
+
+	/**
+	 * However few of the hits the user can open, a search asks Paperless for at most four
+	 * pages, and the next one goes on after them.
+	 */
+	public function testASearchAsksPaperlessForAtMostFourPages(): void {
+		$result = $this->provider($this->ranking(self::documentsWithIds(range(1, 200))), $this->files([150]))
+			->search($this->user(), $this->query('invoice', null, 5))
+			->jsonSerialize();
+
+		self::assertSame([], $result['entries']);
+		self::assertSame([1, 2, 3, 4], array_column($this->requests, 'page'));
+		self::assertTrue($result['isPaginated']);
+		self::assertSame(100, $result['cursor']);
+		// Four requests to Paperless, one search of the file cache each, and one search.
+		self::assertCount(4, $this->searches);
+		self::assertSame([], $this->stored);
+	}
+
+	/**
+	 * A slow Paperless gets no further request once the search has taken three seconds.
+	 */
+	public function testASlowPaperlessIsAskedForNoFurtherPageAfterThreeSeconds(): void {
+		// Every look at the clock finds it 2 seconds later.
+		$time = 0;
+		$clock = $this->createStub(ITimeFactory::class);
+		$clock->method('getTime')->willReturn(self::NOW);
+		$clock->method('now')->willReturnCallback(static function () use (&$time): DateTimeImmutable {
+			$time += 2;
+
+			return new DateTimeImmutable('@' . (self::NOW + $time));
+		});
+
+		$result = $this->provider($this->ranking(self::documentsWithIds(range(1, 200))), clock: $clock)
+			->search($this->user(), $this->query('invoice', null, 5))
+			->jsonSerialize();
+
+		self::assertSame([1, 2], array_column($this->requests, 'page'));
+		self::assertTrue($result['isPaginated']);
+		self::assertSame(50, $result['cursor']);
+	}
+
+	/**
+	 * A later page of Paperless that fails costs the search only the results it would
+	 * have added; the next search tries that page again.
+	 */
+	public function testALaterPageThatFailsKeepsTheResultsOfTheEarlierOnes(): void {
+		$client = $this->ranking(self::documentsWithIds(range(1, 30)), failingPage: 2);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())
+			->method('warning')
+			->with('Paperless unified search failed ({errorType})', [
+				'app' => AppConstants::APP_ID,
+				'errorType' => RuntimeException::class,
+			]);
+
+		$result = $this->provider($client, $this->files([3, 7, 28]), logger: $logger)
+			->search($this->user(), $this->query('invoice', null, 5))
+			->jsonSerialize();
+
+		self::assertSame(self::titlesOf([3, 7]), self::titles($result['entries']));
+		self::assertTrue($result['isPaginated']);
+		self::assertSame(25, $result['cursor']);
+		// The user sees documents, so the search worked.
+		self::assertSame([], $this->stored);
+	}
+
+	/**
+	 * A search that shows nothing because a later page failed is one failed search.
+	 */
+	public function testALaterPageThatFailsBeforeAnyResultFailsTheSearch(): void {
+		$client = $this->ranking(self::documentsWithIds(range(1, 30)), failingPage: 2);
+
+		$result = $this->provider($client, $this->files([28]))
+			->search($this->user(), $this->query('invoice', null, 5))
+			->jsonSerialize();
+
+		self::assertSame([], $result['entries']);
+		self::assertFalse($result['isPaginated']);
+		$history = $this->history();
+		self::assertSame(1, $history->failed);
+		self::assertCount(1, $history->events);
+		self::assertSame(SearchEvent::STEP_PAPERLESS, $history->events[0]->step);
+		self::assertSame('Paperless is gone', $history->events[0]->message);
+	}
+
+	/**
+	 * However many pages of Paperless a search asks for, it is one search in the
+	 * diagnostics, and so is its failure, with the error of the first file that failed.
+	 */
+	public function testASearchOfSeveralPagesIsOneSearchInTheDiagnostics(): void {
+		$files = [
+			3 => $this->unreadableFile('Document [P3].pdf'),
+			28 => $this->brokenFile('Document [P28].pdf'),
+		];
+
+		$result = $this->provider($this->ranking(self::documentsWithIds(range(1, 30))), $files)
+			->search($this->user(), $this->query('invoice', null, 5))
+			->jsonSerialize();
+
+		self::assertSame([], $result['entries']);
+		self::assertSame([1, 2], array_column($this->requests, 'page'));
+		$history = $this->history();
+		self::assertSame(1, $history->failed);
+		self::assertCount(1, $history->events);
+		self::assertSame(SearchEvent::STEP_FILES, $history->events[0]->step);
+		self::assertSame('Storage unavailable', $history->events[0]->message);
+	}
+
+	/**
+	 * Of all files that fail to answer on the pages of one search, the log notes how many
+	 * results they cost, once.
+	 */
+	public function testResultsThatFailOnSeveralPagesAreLoggedOnce(): void {
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())
+			->method('warning')
+			->with('Paperless unified search left out {count} result(s) it could not show ({errorType})', [
+				'app' => AppConstants::APP_ID,
+				'count' => 2,
+				'errorType' => RuntimeException::class,
+			]);
+
+		$result = $this->provider($this->ranking(self::documentsWithIds(range(1, 30))), [
+			3 => $this->brokenFile('Document [P3].pdf'),
+			4 => $this->file(4, 'Document [P4].pdf'),
+			28 => $this->brokenFile('Document [P28].pdf'),
+		], logger: $logger)->search($this->user(), $this->query('invoice', null, 5))->jsonSerialize();
+
+		self::assertSame(self::titlesOf([4]), self::titles($result['entries']));
 	}
 
 	public function testAFailedSearchIsLoggedWithoutItsDetails(): void {
@@ -693,6 +940,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 	 * @param array<int, File> $files by Paperless document id
 	 * @param ?ICredentialsManager $credentials the one that stores the token, by default one that holds $token
 	 * @param ?Folder $userFolder the folder of the user, by default one with the files
+	 * @param ?ITimeFactory $clock the clock of the search, by default one that stands still
 	 */
 	private function provider(
 		IClient $client,
@@ -703,6 +951,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		string $syncAccount = '',
 		?ICredentialsManager $credentials = null,
 		?Folder $userFolder = null,
+		?ITimeFactory $clock = null,
 	): PaperlessSearchProvider {
 		$config = $this->settings($archiveOwner, $syncAccount);
 
@@ -740,6 +989,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			$logger ?? $this->createStub(LoggerInterface::class),
 			$configService,
 			new SearchDiagnostics($config, $this->clock()),
+			$clock ?? $this->clock(),
 		);
 	}
 
@@ -762,6 +1012,87 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$response->method('getBody')->willReturn(json_encode($answer, JSON_THROW_ON_ERROR));
 
 		return $response;
+	}
+
+	/**
+	 * A Paperless whose full-text search ranks these documents in this order and answers
+	 * every page as Paperless does: with the documents of the page, and the link to the
+	 * next page while more documents follow. The queries of the requests land in
+	 * $this->requests.
+	 *
+	 * @param list<array<string, mixed>> $documents
+	 * @param ?int $failingPage a page whose every request gets no answer
+	 */
+	private function ranking(array $documents, ?int $failingPage = null): IClient {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options) use ($documents, $failingPage): IResponse {
+			$query = $options['query'];
+			$this->requests[] = $query;
+			$page = $query['page'];
+			$size = $query['page_size'];
+			if ($page === $failingPage) {
+				throw new RuntimeException('Paperless is gone');
+			}
+
+			return $this->response([
+				'count' => count($documents),
+				'next' => count($documents) > $page * $size ? 'https://paperless.example.com/api/documents/?page=' . ($page + 1) : null,
+				'results' => array_slice($documents, ($page - 1) * $size, $size),
+			]);
+		});
+
+		return $client;
+	}
+
+	/**
+	 * The documents "Document <ID>" with these IDs, in this order.
+	 *
+	 * @param list<int> $ids
+	 * @return list<array{id: int, title: string}>
+	 */
+	private static function documentsWithIds(array $ids): array {
+		return array_map(static fn (int $id): array => ['id' => $id, 'title' => 'Document ' . $id], $ids);
+	}
+
+	/**
+	 * The files of the archive account of the documents with these IDs, by document ID.
+	 *
+	 * @param list<int> $ids
+	 * @return array<int, File>
+	 */
+	private function files(array $ids): array {
+		$files = [];
+		foreach ($ids as $id) {
+			$files[$id] = $this->file($id, 'Document [P' . $id . '].pdf');
+		}
+
+		return $files;
+	}
+
+	/**
+	 * These IDs without every fifth: the documents whose files the user can open.
+	 *
+	 * @param list<int> $ids
+	 * @return list<int>
+	 */
+	private static function everyFifthLeftOut(array $ids): array {
+		return array_values(array_filter($ids, static fn (int $id): bool => $id % 5 !== 0));
+	}
+
+	/**
+	 * @param list<int> $ids
+	 * @return list<string>
+	 */
+	private static function titlesOf(array $ids): array {
+		return array_map(static fn (int $id): string => 'Document ' . $id, $ids);
+	}
+
+	/**
+	 * @param list<SearchResultEntry> $entries
+	 * @return list<string>
+	 */
+	private static function titles(array $entries): array {
+		return array_map(static fn (SearchResultEntry $entry): string => $entry->jsonSerialize()['title'], $entries);
 	}
 
 	private function file(int $documentId, string $name, string $owner = 'archive'): File {
@@ -816,6 +1147,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 	private function clock(): ITimeFactory {
 		$clock = $this->createStub(ITimeFactory::class);
 		$clock->method('getTime')->willReturn(self::NOW);
+		$clock->method('now')->willReturn(new DateTimeImmutable('@' . self::NOW));
 
 		return $clock;
 	}

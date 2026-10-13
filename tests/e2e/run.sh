@@ -22,8 +22,9 @@ PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f
 PLAYWRIGHT_PULL=""
 
 export E2E_PORT
-# Git Bash on Windows: keep the paths in the container of the mock as they are.
-export MSYS2_ARG_CONV_EXCL="/mock/${MSYS2_ARG_CONV_EXCL:+;${MSYS2_ARG_CONV_EXCL}}"
+# Git Bash on Windows: keep the paths in the container of the mock and the paths of the
+# shares in Nextcloud as they are.
+export MSYS2_ARG_CONV_EXCL="/mock/;path=/${MSYS2_ARG_CONV_EXCL:+;${MSYS2_ARG_CONV_EXCL}}"
 
 cleanup() {
 	status=$?
@@ -58,10 +59,13 @@ occ() {
 	"${COMPOSE[@]}" exec -T --user www-data nextcloud php occ "$@"
 }
 
+# Checks the answer of Nextcloud in the file $2 in the mode $1 of assert_response.py,
+# with the rest as the arguments of the mode.
 assert_response() {
 	mode="$1"
 	file="$2"
-	"${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_response.py "${mode}" < "${file}"
+	shift 2
+	"${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_response.py "${mode}" "$@" < "${file}"
 }
 
 # axe-core checks the pages of the app in Chromium (accessibility.mjs), inside the
@@ -108,19 +112,24 @@ mock_requests() {
 	"${COMPOSE[@]}" logs --no-color paperless-mock | grep --count --fixed-strings 'GET /api/documents/' || true
 }
 
+# Searches as the user $1 with the user agent $2 for the term $4, mobiletest by default,
+# from the cursor $5, 0 by default, 5 results as Nextcloud's web search asks for them.
+# The answer lands in the file $3.
 search() {
 	user="$1"
 	user_agent="$2"
 	output="$3"
+	term="${4:-mobiletest}"
+	cursor="${5:-0}"
 	curl --fail-with-body --silent --show-error \
 		--user "${user}:${PASSWORD}" \
 		--user-agent "${user_agent}" \
 		--header 'Accept: application/json' \
 		--header 'OCS-APIRequest: true' \
 		--get \
-		--data-urlencode 'term=mobiletest' \
+		--data-urlencode "term=${term}" \
 		--data-urlencode 'limit=5' \
-		--data-urlencode 'cursor=0' \
+		--data-urlencode "cursor=${cursor}" \
 		--output "${output}" \
 		"${BASE_URL}/ocs/v2.php/search/providers/paperless_unified_search_documents/search"
 }
@@ -360,6 +369,38 @@ curl --fail-with-body --silent --show-error \
 search e2e-other 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/shared.json"
 assert_response shared "${TMP_DIR}/shared.json"
 
+# Paperless ranks 40 documents for "pagetest", more than one page of 25 of the requests
+# of the app. The archive account shares the files of seven of them with e2e-other, in
+# one folder, none of the first 19 among them, and keeps the file of document 610 to
+# itself. A page of 5 results takes them from both pages of Paperless, and the next page
+# goes on with the cursor of the first, without repeating or leaving out a document.
+PAGES="${BASE_URL}/remote.php/dav/files/e2e-user/Pages"
+expect_status 201 'Creating the folder Pages' --user "e2e-user:${PASSWORD}" --request MKCOL "${PAGES}"
+for document in 620 624 626 627 630 635 640; do
+	printf 'Synthetic page test document %s.\n' "${document}" \
+		| curl --fail-with-body --silent --show-error \
+			--user "e2e-user:${PASSWORD}" \
+			--upload-file - \
+			"${PAGES}/Page%20test%20%5BP${document}%5D.pdf" >/dev/null
+done
+printf '%s\n' 'Synthetic page test document 610.' \
+	| curl --fail-with-body --silent --show-error \
+		--user "e2e-user:${PASSWORD}" \
+		--upload-file - \
+		"${BASE_URL}/remote.php/dav/files/e2e-user/Documents/Page%20test%20%5BP610%5D.pdf" >/dev/null
+expect_status 200 'Sharing the folder Pages with e2e-other' \
+	--user "e2e-user:${PASSWORD}" \
+	--request POST \
+	--data-urlencode 'path=/Pages' \
+	--data-urlencode 'shareType=0' \
+	--data-urlencode 'shareWith=e2e-other' \
+	--data-urlencode 'permissions=1' \
+	"${BASE_URL}/ocs/v2.php/apps/files_sharing/api/v1/shares"
+search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/page-1.json" pagetest
+cursor="$(assert_response page "${TMP_DIR}/page-1.json" more 620 624 626 627 630)"
+search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/page-2.json" pagetest "${cursor}"
+assert_response page "${TMP_DIR}/page-2.json" last 635 640 >/dev/null
+
 curl --fail-with-body --silent --show-error \
 	--user "e2e-admin:${PASSWORD}" \
 	--header 'Accept: application/json' \
@@ -404,4 +445,4 @@ phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed in ${SECONDS} s: settings for administrators only, the token only for its server, access filtering by the archive account and its shares, trusted mode, browser, iOS, and Android contracts, and the settings page in the browser with its accessibility."
+echo "Docker E2E passed in ${SECONDS} s: settings for administrators only, the token only for its server, access filtering by the archive account and its shares, trusted mode, browser, iOS, and Android contracts, pages of results filled across pages of Paperless, and the settings page in the browser with its accessibility."

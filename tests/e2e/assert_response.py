@@ -38,6 +38,20 @@ if mode in ("external", "trusted"):
 if not isinstance(data, dict):
     fail(f"Missing OCS data object: {payload!r}")
 
+if mode == "page":
+    # A page of the search for "pagetest": "more" or "last", whether another page
+    # follows, and the IDs of the documents of its entries in their order. The cursor of
+    # the next page goes to standard output.
+    follows = sys.argv[2] == "more"
+    expected = [f"Page test {document}" for document in sys.argv[3:]]
+    titles = [entry.get("title") for entry in data.get("entries", [])]
+    if titles != expected:
+        fail(f"Expected the entries {expected!r}, got {titles!r}")
+    if data.get("isPaginated") is not follows:
+        fail(f"Expected isPaginated={follows}, got {data!r}")
+    print(data.get("cursor"))
+    sys.exit(0)
+
 entries = data.get("entries", [])
 if len(entries) != 1:
     fail(f"Expected one accessible result, got {entries!r}")
