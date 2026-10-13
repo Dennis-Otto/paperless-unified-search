@@ -140,6 +140,8 @@ Type `/` in a note of Text and choose *Paperless documents*: the picker finds th
   <img alt="Paperless Unified Search administration settings in Nextcloud" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/03-admin-settings.png">
 </picture>
 
+Each message of the settings says in one sentence of your language what happened, in the colour and with the icon of a success or an error, and *Disconnect* is on only while something is stored to disconnect.
+
 ### Problems of the search
 
 <picture>
@@ -148,6 +150,12 @@ Type `/` in a note of Text and choose *Paperless documents*: the picker finds th
 </picture>
 
 The end of the settings counts the failed searches and the requests that only their second try answered, and lists the latest of them with their errors, also where the hoster keeps the log of Nextcloud from administrators.
+
+<p>
+  <img alt="The settings on a phone at the problems of the search: the counts, and below them the latest problems as cards, each with the time, the event, the step, the error and how long it took" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/09-admin-settings-mobile.png" width="320">
+</p>
+
+On a phone, the settings fit the screen, and each problem of the search is a card whose lines name what they show.
 
 <!-- --8<-- [start:how-it-works] -->
 
@@ -280,6 +288,16 @@ The URL may name a Docker service with an underscore, such as `http://paperless_
 
 The answer of the settings route carries a `code` beside the message, such as `unauthorized`, `not_found` or `unknown_host`, for scripts that save the settings.
 
+When Nextcloud itself can't take the request, the page says so in one sentence instead of showing the page of the error:
+
+| The message says | What happened | What to do |
+| --- | --- | --- |
+| Nextcloud is in maintenance mode | Nextcloud is being upgraded or maintained, and answers every request with HTTP 503 and a header that says so | Try again in a few minutes |
+| Your session has expired | The session of your login ended, or its request token is no longer valid (HTTP 401 or 412) | Reload the page and try again |
+| Nextcloud could not be reached | The browser lost its connection to Nextcloud | Check your connection and try again |
+| The request failed (HTTP 502) | A proxy in front of Nextcloud answered with an error of its own, such as 502, 503 or 504, or Nextcloud found a problem with its own setup, such as a data folder it can't write to | Check that Nextcloud runs, its log and the log of the proxy |
+| Nextcloud gave an unexpected answer | Something in front of Nextcloud, such as the login page of a proxy, answered instead of the app | Reload the page and try again |
+
 ### Languages
 
 The settings speak English and German: German with *du* for accounts set to *Deutsch (Persönlich: Du)*, and with *Sie* for accounts set to *Deutsch (Förmlich: Sie)*.
@@ -402,13 +420,13 @@ composer install
 bash scripts/check.sh
 ```
 
-`scripts/check.sh` checks Composer, `appinfo/info.xml` against the schema of the App Store, PHP syntax, the coding standard, Psalm, PHPUnit, the package that krankerl builds with `scripts/check-package.sh`, and, with `scripts/check-project.sh`, the JavaScript, the translations, the pictures of the README, a description of its own for every page of the website, and that every diagram runs from top to bottom with a title and a description for screen readers.
+`scripts/check.sh` checks Composer, `appinfo/info.xml` against the schema of the App Store, PHP syntax, the coding standard, Psalm, PHPUnit, the package that krankerl builds with `scripts/check-package.sh`, and, with `scripts/check-project.sh`, the JavaScript with the tests of the settings page, each line and branch of it, the translations, the pictures of the README, a description of its own for every page of the website, and that every diagram runs from top to bottom with a title and a description for screen readers.
 
 The production archive intentionally excludes tests, release tools, Composer development dependencies, screenshots, and repository metadata. Packaging uses [Krankerl](https://github.com/ChristophWurst/krankerl), and `scripts/check-package.sh` validates the finished archive.
 
 ### Docker end-to-end tests
 
-The Docker suite starts a clean Nextcloud instance with the app mounted as a Custom App and a deterministic Paperless API mock. It exercises the real OCS search endpoint, user-specific file access, trusted-service metadata, the smart picker and the links it inserts, and browser/iOS/Android result contracts. It makes Paperless fail and break off a connection, and checks the history of *Search problems* that the settings then show, without the term or the token. In Chromium, it checks the accessibility of the settings and goes through the search dialog on a laptop and on a phone, from the term to the file in the Viewer.
+The Docker suite starts a clean Nextcloud instance with the app mounted as a Custom App and a deterministic Paperless API mock. It exercises the real OCS search endpoint, user-specific file access, trusted-service metadata, the smart picker and the links it inserts, and browser/iOS/Android result contracts. It makes Paperless fail and break off a connection, and checks the history of *Search problems* that the settings then show, without the term or the token. In Chromium, it checks the accessibility of the settings on a laptop and on a phone, their message for every answer, also when Nextcloud is in maintenance mode or out of reach, and *Disconnect*, and goes through the search dialog on a laptop and on a phone, from the term to the file in the Viewer.
 
 ```bash
 bash tests/e2e/run.sh       # one Nextcloud version
