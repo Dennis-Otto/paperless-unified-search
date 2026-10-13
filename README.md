@@ -104,7 +104,7 @@ The [comparison](docs/compare.md) explains each of them, and when another one is
 
 1. Install **Paperless Unified Search** from the [Nextcloud App Store](https://apps.nextcloud.com/apps/paperless_unified_search) under *Apps*, or with `occ app:install paperless_unified_search`.
 2. In Paperless-ngx, create an account that may read the documents to search, and an API token for it.
-3. In Nextcloud, open **Administration settings → Paperless Unified Search**, enter the Paperless URL and the token, and select **Test connection and save**. With [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) installed, the account it writes the archive with is the **Archive account**; otherwise enter the account that owns the synchronized files.
+3. In Nextcloud, open **Administration settings → Paperless Unified Search**, enter the Paperless URL and the token, and select **Test connection and save**. When Nextcloud reaches Paperless at an address of your local network or by the name of its Docker service, such as `http://192.168.1.20:8000` or `http://paperless:8000`, also select **Paperless runs in my local network**. With [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) installed, the account it writes the archive with is the **Archive account**; otherwise enter the account that owns the synchronized files.
 4. As the archive account, share the archive read-only with the users who may find its documents, as any folder in Nextcloud. The archive account itself finds them all.
 5. Search in Nextcloud, switch on **Search connected services** and look under **Paperless documents**. A result appears for every document whose synchronized file you can open: a file of the archive account with `[P<ID>]` in its name, your own if you are that account, or one it shared with you. [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) creates such files.
 
@@ -117,11 +117,11 @@ config:
 ---
 flowchart TB
     accTitle: Setting up the search
-    accDescr: Install the app. In Paperless-ngx, create an account that may read the documents and an API token for it. In the administration settings of Nextcloud, enter the URL, the token and the archive account, and select Test connection and save. When Paperless answers, the settings are saved; otherwise nothing is saved and the message says what to correct. The archive account shares its archive read-only with the users who may find its documents, and they find them under Paperless documents in Nextcloud's search, with Search connected services switched on.
+    accDescr: Install the app. In Paperless-ngx, create an account that may read the documents and an API token for it. In the administration settings of Nextcloud, enter the URL, the token and the archive account, select Paperless runs in my local network when Nextcloud reaches Paperless at such an address, and select Test connection and save. When Paperless answers, the settings are saved; otherwise nothing is saved and the message says what to correct. The archive account shares its archive read-only with the users who may find its documents, and they find them under Paperless documents in Nextcloud's search, with Search connected services switched on.
 
     install["1 · Install the app"]
     token["2 · In Paperless-ngx: an account<br>that may read the documents,<br>and its API token"]
-    save["3 · In the administration<br>settings: URL, token and<br>archive account, then<br><b>Test connection and save</b>"]
+    save["3 · In the administration<br>settings: URL, token,<br>archive account and, in a<br>local network, its switch, then<br><b>Test connection and save</b>"]
     answers{"Paperless<br>answers?"}
     fix["Nothing is saved;<br>the message says<br>what to correct"]
     share["4 · The archive account<br>shares its archive<br>read-only"]
@@ -354,9 +354,11 @@ By default, Nextcloud's search in the browser asks Paperless only after the user
 
 ### Paperless in your local network
 
-Nextcloud refuses to connect to addresses of the local network, such as `192.168.1.20`, `paperless.local` or the name of a Docker service, so that no URL that someone enters can reach the services behind its firewall. Most Paperless servers run at exactly such an address. Select **Paperless runs in my local network**, and Nextcloud allows the address for the requests of this app to the Paperless URL of the settings, and for nothing else: those requests follow no redirect, and every other app keeps the protection. Without the switch, **Test connection and save** fails with a message that names it.
+Nextcloud refuses to connect to addresses of the local network, such as `192.168.1.20`, `paperless.local` or the name of a Docker service, so that no URL that someone enters can reach the services behind its firewall. Most Paperless servers run at exactly such an address. Select **Paperless runs in my local network**, and Nextcloud allows the address for the requests of this app to the Paperless URL of the settings, and for nothing else: those requests follow no redirect, and every other app keeps the protection. Without the switch, **Test connection and save** fails with a message that names it. Enter the address at which Paperless itself answers, such as `https://paperless.example.com` rather than `http://paperless.example.com` when a proxy redirects `http` to `https`: with the switch, Nextcloud follows no redirect, and a redirect makes the test of the connection fail.
 
 Don't set `allow_local_remote_servers` in `config.php` for Paperless: it lifts the protection for every app and every URL that users can enter, such as link previews, webhooks and the servers of federated shares.
+
+If you set `allow_local_remote_servers` in `config.php` for Paperless before, first select **Paperless runs in my local network** and save, and only then remove it from `config.php`. Otherwise the search shows no Paperless documents until the switch is saved.
 
 ```mermaid
 flowchart TB
