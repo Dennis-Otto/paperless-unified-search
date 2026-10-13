@@ -60,6 +60,18 @@ version_in version.txt '^[0-9][^[:space:]]*'
 version_in appinfo/info.xml '<version>[^<]+</version>'
 echo "Every file has version $release."
 
+step "Git hooks"
+# Git runs a hook only when its file is executable, which git records as the mode
+# 100755. A file added on Windows, which has no such mode, gets 100644, and git on
+# Linux and macOS, in the dev container and in Codespaces then skips the hook.
+mapfile -t hooks < <(git ls-files --stage -- .githooks | grep -v '^100755 ' | cut -f 2-)
+if ((${#hooks[@]} > 0)); then
+  printf '%s: is not executable, so git skips it\n' "${hooks[@]}"
+  echo "Make it executable and commit that: git update-index --chmod=+x ${hooks[*]}"
+  exit 1
+fi
+echo "Every hook in .githooks/ is executable."
+
 step "Shell scripts"
 mapfile -d '' scripts < <(files '*.sh')
 if ! command -v shellcheck >/dev/null 2>&1; then
