@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [0.5.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.4.1...v0.5.0) (2026-10-13)
+
 ### Added
 
 - **Find a Paperless document by its text from the smart picker in Talk, Text, Deck and Mail and insert a link to it.** Type `/` in Text or Collectives, or open the smart picker in Talk, Deck or Mail, choose *Paperless documents* and search as in Nextcloud's search: the picker lists the documents whose file you can open and inserts the link to the file you pick. Everyone who can open that file sees its preview; anyone else sees only the bare link. Your term reaches Paperless only after you chose *Paperless documents* in the picker.
