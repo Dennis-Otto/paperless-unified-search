@@ -10,36 +10,53 @@ Paperless Unified Search is a Nextcloud app in PHP. It adds a provider to Nextcl
 
 ## Components
 
+<div class="diagram-wide" markdown tabindex="0" role="region" aria-label="Diagram of the components">
+
 ```mermaid
-flowchart LR
-    paperless[("Paperless-ngx<br/>/api/documents/")]
-    subgraph nextcloud["Nextcloud"]
-        search["Unified search"]
-        page["Administration settings"]
-        subgraph app["Paperless Unified Search"]
-            provider["Search provider"]
-            client["Paperless client"]
-            locator["File locator"]
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: The components
+    accDescr: Inside Nextcloud, the unified search calls the search provider of the app, and the administration settings call its settings page. The search provider uses the Paperless client, the file locator and the configuration; the settings page uses the Paperless client and the configuration. The Paperless client reaches /api/documents/ of Paperless-ngx through Nextcloud's HTTP client, the file locator looks into the folders of the users, and the configuration keeps its values in the app configuration and the token in the credentials manager.
+
+    subgraph nextcloud ["Nextcloud"]
+        search["Unified<br>search"]
+        page["Administration<br>settings"]
+        subgraph app ["Paperless Unified Search"]
+            provider["Search<br>provider"]
+            controller["Settings<br>page"]
+            client["Paperless<br>client"]
+            locator["File<br>locator"]
             config["Configuration"]
-            controller["Settings page"]
         end
-        http["HTTP client"]
-        folders[("Folders of the users")]
-        appconfig[("App configuration")]
-        credentials[("Credentials manager")]
+        http["HTTP<br>client"]
+        folders[("Folders<br>of the<br>users")]
+        appconfig[("App<br>configuration")]
+        credentials[("Credentials<br>manager")]
     end
+    paperless[("Paperless-ngx<br>/api/documents/")]
+
     search --> provider
+    page --> controller
     provider --> client
     provider --> locator
     provider --> config
-    client --> http --> paperless
-    locator --> folders
-    page --> controller
     controller --> client
     controller --> config
+    client --> http --> paperless
+    locator --> folders
     config --> appconfig
     config --> credentials
+
+    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    class provider,controller,client,locator,config app
 ```
+
+</div>
 
 | Component | Files | What it does |
 | --- | --- | --- |
@@ -52,8 +69,20 @@ flowchart LR
 
 ## Data flow
 
+<div class="diagram-wide" markdown tabindex="0" role="region" aria-label="Diagram of the data flow of a search">
+
 ```mermaid
+---
+config:
+  sequence:
+    wrap: true
+    width: 120
+    actorMargin: 10
+---
 sequenceDiagram
+    accTitle: The data flow of a search
+    accDescr: A user searches for invoice. The unified search passes the term, the page and the user to the search provider. Without a term, an archive account or a connection, the provider answers with no results and doesn't ask Paperless. Otherwise the Paperless client asks Paperless-ngx with the token for at most 50 results and only for the fields that a result shows, and Paperless answers with the ID, the title, the date and the excerpt of documents 412, 389 and 371 and whether a next page exists. One call of the file locator covers all documents of the page and returns for each a file of the archive account with its marker, or none. The provider answers with an entry for every document with a file, and the next page.
+
     actor User
     participant Search as Unified search
     participant Provider as Search provider
@@ -66,13 +95,15 @@ sequenceDiagram
         Provider-->>Search: no results, without asking Paperless
     else
         Provider->>Client: term, page, at most 50 results
-        Client->>Paperless: GET /api/documents/?query=invoice&fields=id,title,…, with the token
-        Paperless-->>Client: ID, title, date and excerpt of documents 412, 389, 371, and whether a next page exists
-        Provider->>Locator: documents 412, 389 and 371, user, archive account
-        Locator-->>Provider: for each, a file of the archive account with its marker, or none
+        Client->>Paperless: GET /api/documents/<br>?query=invoice&fields=…,<br>with the token
+        Paperless-->>Client: ID, title, date and excerpt<br>of documents 412, 389, 371,<br>and whether a next page exists
+        Provider->>Locator: documents 412, 389, 371,<br>user, archive account
+        Locator-->>Provider: per document a file of the<br>archive account with its marker,<br>or none
         Provider-->>Search: an entry for every document with a file, and the next page
     end
 ```
+
+</div>
 
 1. A user searches in Nextcloud. Nextcloud asks the provider when the user has switched on *Search connected services*, or always when an administrator has marked Paperless as trusted.
 2. The provider sends the term to the full-text search of Paperless, at most 50 results per page, and asks only for the fields that a result shows: the ID, the title, the date, the correspondent and the type of each document, and the excerpt of the text that Paperless found. Without them, Paperless would send the whole OCR text of every document, its notes and its permissions as well, half a megabyte for a long document.
@@ -84,22 +115,29 @@ sequenceDiagram
 ## Finding the files
 
 ```mermaid
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
 flowchart TB
     accTitle: Finding the files of a page of documents
     accDescr: Paperless answers with documents 412, 389 and 371. One search of the file cache looks in the folders of the searching user for the names that carry any of their markers. Of the files it finds, only a file of the archive account with the exact marker of a document stands for it, and of several such files the one with the first path. Documents 412 and 371 get their file; document 389 has none and is left out.
 
-    page["Documents of a page<br/>412, 389, 371"]
-    query["One search of the file cache<br/>name LIKE '%[P412]%'<br/>or '%[P389]%' or '%[P371]%'"]
-    found["Files with one of the markers<br/>in the folders of the user"]
-    check{"A file of the<br/>archive account, with the<br/>exact marker?"}
-    first["Per document, the file<br/>with the first path<br/>412 and 371"]
-    none["Left out<br/>389"]
+    page["Documents of a page<br>412, 389, 371"]
+    query["One search of the file cache<br>name LIKE '%[P412]%'<br>or '%[P389]%' or '%[P371]%'"]
+    found["Files with one of the markers<br>in the folders of the user"]
+    check{"A file of the<br>archive account, with the<br>exact marker?"}
+    first["Per document, the file<br>with the first path<br>412 and 371"]
+    none["Left out<br>389"]
     page --> query --> found --> check
     check -- "yes" --> first
     check -- "no" --> none
+
     classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
-    classDef yes fill:#dcfce7,stroke:#16a34a,color:#14532d
-    classDef no fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
     class query,check app
     class first yes
     class none no
@@ -112,12 +150,36 @@ The database has no index for a part of a name, so every search of the file cach
 Users see no difference between a failed search and one without documents, and some hosters keep the log of Nextcloud from administrators. So the settings page shows the history of the problems of the search under *Search problems*.
 
 ```mermaid
-flowchart LR
-    retry["A second try<br/>gets an answer"] -- retried --> history[("diagnostics<br/>since, counts, last failure,<br/>recovery, latest 20 events")]
-    search["A search fails"] -- failed --> history
-    success["The first search that<br/>works after a failure"] -- recovery --> history
-    history --> page["Settings page<br/>Search problems"]
-    clear["Disconnect or<br/>Clear history"] -. forget .-> history
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: The history of the problems of the search
+    accDescr: A second try that gets an answer notes a retried request, a failed search notes a failure, and the first search that works after a failure notes the recovery. The history keeps since when it counts, the counts, the last failure, the recovery and the latest 20 events, and the settings page shows it under Search problems. Disconnect and Clear history forget it.
+
+    retry["A second try<br>answers"]
+    search["A search<br>fails"]
+    success["A search<br>works again"]
+    history[("Diagnostics<br>since, counts, last failure,<br>recovery, latest 20 events")]
+    page["Settings page<br>Search problems"]
+    clear["Disconnect or<br>Clear history<br>forget it"]
+
+    retry -- "retried" --> history
+    search -- "failed" --> history
+    success -- "recovery" --> history
+    history --> page
+    %% A plain dotted line keeps Clear history below the history. An arrow from it
+    %% would rank it with the three causes, too wide for a phone, and Mermaid 11
+    %% draws no arrowhead on "<-.-" and breaks on a label of a reversed edge.
+    history -.- clear
+
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class success yes
+    class search no
 ```
 
 The history is one value of the app configuration of Nextcloud, loaded only when it is needed. It counts the failed searches and the requests that only their second try answered since it began, and keeps the latest 20 of these events, newest first, each with its time, its kind, its step, the kind and the message of the error and how long it took: for a failed search the whole search, for a second try the first request that got no answer. Only problems write to it, and a search that works writes only once after a failure, so searches that keep working write nothing. Two problems at the same moment may keep only one of them, which a history for diagnosis can afford.
@@ -129,19 +191,41 @@ The message loses the API token, the search term when it has at least three char
 The link of an entry depends on who searches, which the provider tells from the user agent of the request:
 
 ```mermaid
-flowchart LR
-    entry["Entry of a document"] --> client{"Who searches?"}
-    client -- "a browser" --> web["/f/412<br/>Nextcloud's viewer"]
-    client -- "the iOS app" --> ios["nextcloud://open-file<br/>with the user and that link"]
-    client -- "the Android app" --> android["file ID and path of the user<br/>the viewer of the app"]
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: The link of a result
+    accDescr: The entry of document 412 carries the ID of its file and its path in the folders of the user. When the iOS app searches, its link is nextcloud://open-file with the user and the link /f/412. Otherwise its link is /f/412, which a browser opens in Nextcloud's viewer; the Android app opens the file in its own viewer by the ID and the path.
+
+    entry["Entry of document 412,<br>with the ID and the path<br>of its file"] --> ios{"The iOS app<br>searches?"}
+    ios -- "yes" --> deep["nextcloud://<br>open-file with the<br>user and /f/412"]
+    ios -- "no" --> web["/f/412"]
+    web -- "a browser" --> viewer["Nextcloud's<br>viewer"]
+    web -- "the Android app" --> android["Its own viewer,<br>by the ID<br>and the path"]
 ```
 
 Every entry carries the ID of the file and its path in the folders of the user as well; the Android app opens the file with them.
 
 ## Saving the settings
 
+<div class="diagram-wide" markdown tabindex="0" role="region" aria-label="Diagram of saving the settings">
+
 ```mermaid
+---
+config:
+  sequence:
+    wrap: true
+    width: 120
+    actorMargin: 10
+---
 sequenceDiagram
+    accTitle: Saving the settings
+    accDescr: The administrator enters the URL, the token and the archive account. When the password wasn't confirmed in the last 30 minutes, Nextcloud asks for it first. The settings page sends them with the CSRF token to the settings controller, which checks the URL, the token and the archive account: a blank token keeps the stored one only for its server, the same scheme, host and port, and otherwise the answer is HTTP 400. Then the controller has the Paperless client test the connection with one request to Paperless-ngx. Only when Paperless answers does the configuration save them, the URL, the switch and the archive account in the app configuration and the token in the credentials manager. The page gets the settings back, without the token.
+
     actor Admin as Administrator
     participant Page as Settings page
     participant Controller as Settings controller
@@ -152,16 +236,18 @@ sequenceDiagram
     opt the password wasn't confirmed in the last 30 minutes
         Page->>Admin: Nextcloud asks for the password
     end
-    Page->>Controller: POST /apps/paperless_unified_search/settings, with the CSRF token
+    Page->>Controller: POST /apps/<br>paperless_unified_search<br>/settings, with the<br>CSRF token
     Controller->>Config: checks the URL, the token and the archive account
-    Note over Controller,Config: a blank token keeps the stored one only for its server,<br/>the same scheme, host and port; else HTTP 400
+    Note over Controller,Config: a blank token keeps the stored one only for its server (the same scheme, host and port), else HTTP 400
     Controller->>Client: test the connection
-    Client->>Paperless: GET /api/documents/?page_size=1
+    Client->>Paperless: GET /api/documents/<br>?page_size=1&fields=id
     Paperless-->>Client: 200
     Controller->>Config: save
     Config->>Config: URL, switch and archive account to the app configuration, the token to the credentials manager
     Controller-->>Page: the settings, without the token
 ```
+
+</div>
 
 A token left blank keeps the stored one, but only for the server it was saved for ([decision 0003](decisions/0003-bind-the-token-to-its-server.md)); the page marks the token field as required as soon as the URL names another server. The archive account is stored as Nextcloud spells its ID. A stored token that the credentials manager can't decrypt counts as none, and the page says so. Saving and *Disconnect* ask for the password when it wasn't confirmed in the last 30 minutes. *Disconnect* deletes every setting, the token included, and the history of the diagnostics as well; saving keeps the history.
 

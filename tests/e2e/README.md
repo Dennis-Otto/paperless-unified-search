@@ -3,17 +3,29 @@
 The suite starts Nextcloud with this checkout mounted read-only as a Custom App: `run.sh` the image of `compose.yaml` (set `NEXTCLOUD_IMAGE` to choose another, such as `nextcloud:35-apache`), [`run-all.sh`](#every-supported-version-at-once) and the CI the current release of every version from `min-version` to `max-version` in `appinfo/info.xml` at the same time, and every week also [the coming Nextcloud](#the-coming-nextcloud). A deterministic local HTTP service emulates the small Paperless API surface used by the app. Like Paperless, it sends only the fields of the documents that a request names, and the excerpt of a search with them; unlike Paperless, it answers a request that names none with HTTP 400, so that the suite fails as soon as the app would make Paperless send the whole OCR text of every document.
 
 ```mermaid
-flowchart LR
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: The end-to-end tests
+    accDescr: run.sh starts a Compose project with Nextcloud, which has the checkout as a read-only Custom App, a mock of Paperless, mock_server.py, which also answers as other-host, and the Chromium of Playwright with accessibility.mjs and axe-core. run.sh drives Nextcloud through occ, OCS, WebDAV and the routes of the settings and starts the browser; Nextcloud searches the mock, and the browser opens the settings of the app.
+
     run["run.sh"]
     subgraph compose["Compose project"]
-        nextcloud["Nextcloud<br/>the checkout as Custom App, read-only"]
-        mock["Paperless mock<br/>mock_server.py, also as other-host"]
-        browser["Chromium of Playwright<br/>accessibility.mjs with axe-core"]
+        nextcloud["Nextcloud<br/>the checkout as<br/>Custom App, read-only"]
+        mock["Paperless mock<br/>mock_server.py,<br/>also as other-host"]
+        browser["Chromium of Playwright<br/>accessibility.mjs<br/>with axe-core"]
     end
     run -- "occ, OCS, WebDAV<br/>and the routes of the settings" --> nextcloud
     run -- "starts" --> browser
     nextcloud -- "searches" --> mock
     browser -- "opens the settings" --> nextcloud
+
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    class run person
 ```
 
 Besides the search, the suite checks the guarantees of the settings: every route of the settings answers a user who isn't an administrator with HTTP 403 and a request without a login with 401, and leaves the settings as they are; a save with a blank token for another server answers 400 and sends that server nothing, which the log of the mock shows, as it answers as `other-host` too; and an archive account typed in another case is stored as Nextcloud spells it.

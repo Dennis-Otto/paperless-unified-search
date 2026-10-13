@@ -14,6 +14,10 @@ repo_url: https://github.com/Dennis-Otto/paperless-unified-search
 repo_name: Dennis-Otto/paperless-unified-search
 copyright: "© 2026 Dennis Otto"
 
+# Wide diagrams that scroll sideways on a phone.
+extra_css:
+  - stylesheets/extra.css
+
 # The menu. A tab in the header for each section.
 nav:
   - Home: index.md
