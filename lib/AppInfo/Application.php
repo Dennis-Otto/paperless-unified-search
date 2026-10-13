@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\PaperlessUnifiedSearch\AppInfo;
 
+use OCA\PaperlessUnifiedSearch\Reference\PaperlessReferenceProvider;
 use OCA\PaperlessUnifiedSearch\Search\PaperlessSearchProvider;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
@@ -25,6 +26,8 @@ final class Application extends App implements IBootstrap {
 
 	public function register(IRegistrationContext $context): void {
 		$context->registerSearchProvider(PaperlessSearchProvider::class);
+		// "Paperless documents" in the smart picker, which searches through the provider above.
+		$context->registerReferenceProvider(PaperlessReferenceProvider::class);
 	}
 
 	public function boot(IBootContext $context): void {

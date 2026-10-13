@@ -35,6 +35,52 @@ if mode in ("external", "trusted"):
         fail(f"Expected isExternalProvider={expected}, got {provider!r}")
     sys.exit(0)
 
+if mode == "picker":
+    # The providers of the smart picker, from /ocs/v2.php/references/providers.
+    providers = data if isinstance(data, list) else []
+    provider = next(
+        (item for item in providers if item.get("id") == "paperless_unified_search-documents"),
+        None,
+    )
+    if provider is None:
+        fail(f"The smart picker offers no Paperless documents: {providers!r}")
+    if provider.get("title") != "Paperless documents":
+        fail(f"Unexpected title in the smart picker: {provider!r}")
+    if provider.get("search_providers_ids") != ["paperless_unified_search_documents"]:
+        fail(f"The smart picker doesn't search through the search provider: {provider!r}")
+    icon = urlparse(provider.get("icon_url", ""))
+    if icon.scheme not in ("http", "https") or not icon.path.endswith("/img/picker-dark.svg"):
+        fail(f"The icon in the smart picker isn't the absolute URL of its dark icon: {provider!r}")
+    # The path of the icon, which run.sh loads as the picker does.
+    print(icon.path)
+    sys.exit(0)
+
+if mode in ("file-link", "no-file-link"):
+    # A link that the smart picker inserted, resolved by /ocs/v2.php/references/resolve.
+    references = data.get("references", {}) if isinstance(data, dict) else {}
+    if len(references) != 1:
+        fail(f"Expected one resolved link, got {payload!r}")
+    link, reference = next(iter(references.items()))
+    if not isinstance(reference, dict) or reference.get("richObjectType") != "file":
+        fail(f"Nextcloud doesn't render {link} as a file: {reference!r}")
+    rich_object = reference.get("richObject")
+    if mode == "no-file-link":
+        # Nextcloud shows the bare link, without the name or any other detail of the file.
+        details = {"path", "size", "mimetype", "mtime", "preview-available"}
+        if (
+            reference.get("accessible") is not False
+            or (isinstance(rich_object, dict) and (details & rich_object.keys() or rich_object.get("name") != link))
+        ):
+            fail(f"A user who can't open the file sees it in {link}: {reference!r}")
+        sys.exit(0)
+    if reference.get("accessible") is not True or not isinstance(rich_object, dict):
+        fail(f"A user who can open the file doesn't see it in {link}: {reference!r}")
+    if not link.endswith(f"/f/{rich_object.get('id')}"):
+        fail(f"{link} renders another file: {reference!r}")
+    if rich_object.get("name") != "Mobile viewer test [P123].pdf":
+        fail(f"{link} renders a file of another name: {reference!r}")
+    sys.exit(0)
+
 if not isinstance(data, dict):
     fail(f"Missing OCS data object: {payload!r}")
 
@@ -70,8 +116,11 @@ if mode == "ios":
         fail(f"iOS deep link has the wrong user: {resource_url}")
     if not params.get("link", [""])[0].endswith(f"/f/{attributes['fileId']}"):
         fail(f"iOS deep link has the wrong web fallback: {resource_url}")
-elif mode in ("browser", "android", "shared"):
+elif mode in ("browser", "android", "shared", "link"):
     if not resource_url.endswith(f"/f/{attributes['fileId']}"):
         fail(f"Unexpected web/native viewer link: {resource_url}")
+    if mode == "link":
+        # The link that the smart picker inserts for the result.
+        print(resource_url)
 else:
     fail(f"Unknown assertion mode: {mode}")
