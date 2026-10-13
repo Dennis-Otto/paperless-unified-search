@@ -81,29 +81,41 @@ final class PaperlessSearchProvider implements IExternalProvider {
 			$step = SearchEvent::STEP_FILES;
 			$documents = $this->getDocuments($response['results']);
 			// The files of all documents of the page, in one search of the file cache.
-			$files = $this->fileLocator->findAllForUser($user, array_column($documents, 0), $archiveOwner);
+			$found = $this->fileLocator->findAllForUser($user, array_column($documents, 0), $archiveOwner);
 		} catch (Throwable $exception) {
 			$this->logger->warning('Paperless unified search failed ({errorType})', [
 				'app' => AppConstants::APP_ID,
 				'errorType' => $exception::class,
 			]);
-			$this->diagnostics->recordFailure(
-				$step,
-				$exception,
-				(int)round((microtime(true) - $started) * 1000.0),
-				[$this->configService->getToken(), $term],
-			);
+			$this->recordFailure($step, $exception, $started, $term);
 
 			return SearchResult::complete($this->getName(), []);
 		}
 
-		$entries = $this->createEntries($user, $documents, $files);
-		$this->diagnostics->recordSuccess();
+		[$entries, $entryError] = $this->createEntries($user, $documents, $found->files);
+		$error = $found->error ?? $entryError;
+		if ($entries === [] && $error !== null) {
+			// Files failed to answer and the search shows nothing, maybe for that reason: to
+			// the user, the search failed, and an earlier failure has not recovered.
+			$this->recordFailure(SearchEvent::STEP_FILES, $error, $started, $term);
+		} else {
+			$this->diagnostics->recordSuccess();
+		}
+
 		if ($response['next'] !== null) {
 			return SearchResult::paginated($this->getName(), $entries, $page + 1);
 		}
 
 		return SearchResult::complete($this->getName(), $entries);
+	}
+
+	private function recordFailure(string $step, Throwable $error, float $started, string $term): void {
+		$this->diagnostics->recordFailure(
+			$step,
+			$error,
+			(int)round((microtime(true) - $started) * 1000.0),
+			[$this->configService->getToken(), $term],
+		);
 	}
 
 	private function getPage(mixed $cursor): int {
@@ -142,12 +154,13 @@ final class PaperlessSearchProvider implements IExternalProvider {
 	 *
 	 * @param list<array{int, array<array-key, mixed>}> $documents
 	 * @param array<int, File> $files by document ID
-	 * @return list<SearchResultEntry>
+	 * @return array{list<SearchResultEntry>, ?Throwable} the entries, and the error of the
+	 *                                                    first file that failed to answer
 	 */
 	private function createEntries(IUser $user, array $documents, array $files): array {
 		$entries = [];
 		$skipped = 0;
-		$errorType = '';
+		$firstError = null;
 		foreach ($documents as [$documentId, $document]) {
 			if (!isset($files[$documentId])) {
 				continue;
@@ -157,19 +170,19 @@ final class PaperlessSearchProvider implements IExternalProvider {
 				$entries[] = $this->createEntry($user, $document, $files[$documentId]);
 			} catch (Throwable $error) {
 				$skipped++;
-				$errorType = $error::class;
+				$firstError ??= $error;
 			}
 		}
 
-		if ($skipped > 0) {
+		if ($firstError !== null) {
 			$this->logger->warning('Paperless unified search left out {count} result(s) it could not show ({errorType})', [
 				'app' => AppConstants::APP_ID,
 				'count' => $skipped,
-				'errorType' => $errorType,
+				'errorType' => $firstError::class,
 			]);
 		}
 
-		return $entries;
+		return [$entries, $firstError];
 	}
 
 	/**

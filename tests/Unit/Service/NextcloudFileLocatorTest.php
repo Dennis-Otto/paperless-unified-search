@@ -10,6 +10,9 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Service;
 
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
+use OCA\PaperlessUnifiedSearch\Search\Files\SearchBinaryOperator;
+use OCA\PaperlessUnifiedSearch\Search\Files\SearchComparison;
+use OCA\PaperlessUnifiedSearch\Search\Files\SearchQuery;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\FileCache;
 use OCP\Files\File;
@@ -18,6 +21,7 @@ use OCP\Files\IRootFolder;
 use OCP\Files\Node;
 use OCP\Files\Search\ISearchBinaryOperator;
 use OCP\Files\Search\ISearchComparison;
+use OCP\Files\Search\ISearchQuery;
 use OCP\IUser;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -38,7 +42,7 @@ final class NextcloudFileLocatorTest extends TestCase {
 		$letter = $this->file('Letter [P7].pdf', '/dennis/files/Paperless/Letter [P7].pdf');
 		$unrelated = $this->file('Holiday.jpg', '/dennis/files/Photos/Holiday.jpg');
 
-		$files = $this->locator([$unrelated, $letter, $invoice])->findAllForUser($this->user(), [123, 999, 7], self::ARCHIVE);
+		$files = $this->locator([$unrelated, $letter, $invoice])->findAllForUser($this->user(), [123, 999, 7], self::ARCHIVE)->files;
 
 		self::assertSame([123 => $invoice, 7 => $letter], $files);
 		self::assertCount(1, $this->searches);
@@ -102,7 +106,7 @@ final class NextcloudFileLocatorTest extends TestCase {
 	public function testOnlyTheExactMarkerStandsForADocument(array $documentIds, array $names, array $expected): void {
 		$nodes = array_map(fn (string $name): File => $this->file($name, '/dennis/files/Paperless/' . $name), $names);
 
-		$files = $this->locator($nodes)->findAllForUser($this->user(), $documentIds, self::ARCHIVE);
+		$files = $this->locator($nodes)->findAllForUser($this->user(), $documentIds, self::ARCHIVE)->files;
 
 		self::assertSame($expected, array_map(static fn (File $file): string => $file->getName(), $files));
 	}
@@ -117,7 +121,7 @@ final class NextcloudFileLocatorTest extends TestCase {
 		$third = $this->file('Invoice copy [P123].pdf', '/dennis/files/Shared/Invoice copy [P123].pdf');
 
 		foreach ([[$second, $first, $third], [$third, $second, $first], [$first, $third, $second]] as $nodes) {
-			self::assertSame([123 => $first], $this->locator($nodes)->findAllForUser($this->user(), [123], self::ARCHIVE));
+			self::assertSame([123 => $first], $this->locator($nodes)->findAllForUser($this->user(), [123], self::ARCHIVE)->files);
 		}
 	}
 
@@ -141,8 +145,8 @@ final class NextcloudFileLocatorTest extends TestCase {
 		$forged = $this->file('Copy [P123].txt', '/dennis/files/Copy [P123].txt', $owner);
 		$archived = $this->file('Invoice [P123].pdf', '/dennis/files/Shared/Invoice [P123].pdf');
 
-		self::assertSame([123 => $archived], $this->locator([$forged, $archived])->findAllForUser($this->user(), [123], self::ARCHIVE));
-		self::assertSame([], $this->locator([$forged])->findAllForUser($this->user(), [123], self::ARCHIVE));
+		self::assertSame([123 => $archived], $this->locator([$forged, $archived])->findAllForUser($this->user(), [123], self::ARCHIVE)->files);
+		self::assertSame([], $this->locator([$forged])->findAllForUser($this->user(), [123], self::ARCHIVE)->files);
 	}
 
 	public function testIgnoresFoldersWithTheMarker(): void {
@@ -150,7 +154,7 @@ final class NextcloudFileLocatorTest extends TestCase {
 		$folder->method('getName')->willReturn('Scans [P123]');
 		$folder->method('getPath')->willReturn('/dennis/files/Scans [P123]');
 
-		self::assertSame([], $this->locator([$folder])->findAllForUser($this->user(), [123], self::ARCHIVE));
+		self::assertSame([], $this->locator([$folder])->findAllForUser($this->user(), [123], self::ARCHIVE)->files);
 	}
 
 	/**
@@ -174,7 +178,7 @@ final class NextcloudFileLocatorTest extends TestCase {
 
 		$locator = new NextcloudFileLocator($root, $this->createStub(LoggerInterface::class));
 
-		self::assertSame([], $locator->findAllForUser($this->user(), $documentIds, $archiveOwner));
+		self::assertSame([], $locator->findAllForUser($this->user(), $documentIds, $archiveOwner)->files);
 	}
 
 	/**
@@ -199,9 +203,12 @@ final class NextcloudFileLocatorTest extends TestCase {
 				'errorType' => RuntimeException::class,
 			]);
 
-		$files = $this->locator([$broken, $invoice, $alsoBroken], $logger)->findAllForUser($this->user(), [7, 123, 8], self::ARCHIVE);
+		$found = $this->locator([$broken, $invoice, $alsoBroken], $logger)->findAllForUser($this->user(), [7, 123, 8], self::ARCHIVE);
 
-		self::assertSame([123 => $invoice], $files);
+		self::assertSame([123 => $invoice], $found->files);
+		// The provider notes in the history when such files leave the search empty.
+		self::assertInstanceOf(RuntimeException::class, $found->error);
+		self::assertSame('Storage unavailable', $found->error->getMessage());
 	}
 
 	public function testFilesThatWorkLogNothing(): void {
@@ -210,7 +217,83 @@ final class NextcloudFileLocatorTest extends TestCase {
 
 		$invoice = $this->file('Invoice [P123].pdf', '/dennis/files/Paperless/Invoice [P123].pdf');
 
-		self::assertSame([123 => $invoice], $this->locator([$invoice], $logger)->findAllForUser($this->user(), [123], self::ARCHIVE));
+		$found = $this->locator([$invoice], $logger)->findAllForUser($this->user(), [123], self::ARCHIVE);
+
+		self::assertSame([123 => $invoice], $found->files);
+		self::assertNull($found->error);
+	}
+
+	/**
+	 * The list of the methods that the locator compares with the interfaces of Nextcloud
+	 * is the one of the app's classes, so that the locator knows when they lack one.
+	 */
+	public function testKnowsTheMethodsOfTheClassesOfTheApp(): void {
+		$classes = [
+			ISearchQuery::class => SearchQuery::class,
+			ISearchBinaryOperator::class => SearchBinaryOperator::class,
+			ISearchComparison::class => SearchComparison::class,
+		];
+
+		self::assertSame(array_keys($classes), array_keys(NextcloudFileLocator::IMPLEMENTED_METHODS));
+		foreach ($classes as $interface => $class) {
+			$methods = array_diff(get_class_methods($class), ['__construct', '__toString']);
+			self::assertEqualsCanonicalizing($methods, NextcloudFileLocator::IMPLEMENTED_METHODS[$interface], $class);
+			self::assertSame([], array_diff(get_class_methods($interface), $methods), $interface);
+		}
+	}
+
+	/**
+	 * @return array<string, array{array<class-string, list<string>>, string}>
+	 */
+	public static function interfacesThatGrew(): array {
+		$methods = NextcloudFileLocator::IMPLEMENTED_METHODS;
+
+		return [
+			'a new method' => [
+				[...$methods, ISearchQuery::class => array_values(array_diff($methods[ISearchQuery::class], ['getSelectFields']))],
+				ISearchQuery::class . '::getSelectFields',
+			],
+			'a new interface' => [
+				[...$methods, 'OCP\\Files\\Search\\ISearchNothing' => []],
+				'OCP\\Files\\Search\\ISearchNothing',
+			],
+		];
+	}
+
+	/**
+	 * Nextcloud adds methods to the interfaces of a query of the file cache even in a
+	 * maintenance release, and PHP refuses to load a class that lacks one with a fatal
+	 * error that no catch sees. So when the app's classes lack a method, the locator
+	 * doesn't load them and searches for each document on its own, by text, as before.
+	 *
+	 * @param array<class-string, list<string>> $implementedMethods
+	 */
+	#[DataProvider('interfacesThatGrew')]
+	public function testSearchesForEachDocumentWhenNextcloudAsksForMoreThanTheAppKnows(array $implementedMethods, string $missing): void {
+		$invoice = $this->file('Invoice [P123].pdf', '/dennis/files/Paperless/Invoice [P123].pdf');
+		$letter = $this->file('Letter [P7] [P123].pdf', '/dennis/files/Paperless/A/Letter [P7] [P123].pdf');
+		$texts = [];
+		$userFolder = $this->createStub(Folder::class);
+		$userFolder->method('search')->willReturnCallback(static function (string|ISearchQuery $query) use (&$texts, $invoice, $letter): array {
+			self::assertIsString($query, 'The app loaded its own classes of a query.');
+			$texts[] = $query;
+
+			return array_values(array_filter([$invoice, $letter], static fn (File $file): bool => str_contains($file->getName(), $query)));
+		});
+		$root = $this->createStub(IRootFolder::class);
+		$root->method('getUserFolder')->willReturn($userFolder);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())
+			->method('warning')
+			->with('Paperless unified search looks for the files of each document on its own: Nextcloud asks its query of the file cache for {methods}', [
+				'app' => AppConstants::APP_ID,
+				'methods' => $missing,
+			]);
+		$locator = new NextcloudFileLocator($root, $logger, $implementedMethods);
+
+		self::assertSame([123 => $letter, 7 => $letter], $locator->findAllForUser($this->user(), [123, 7], self::ARCHIVE)->files);
+		self::assertSame([123 => $letter], $locator->findAllForUser($this->user(), [123], self::ARCHIVE)->files);
+		self::assertSame(['[P123]', '[P7]', '[P123]'], $texts);
 	}
 
 	/**

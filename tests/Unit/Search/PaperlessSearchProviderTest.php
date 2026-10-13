@@ -439,6 +439,44 @@ final class PaperlessSearchProviderTest extends TestCase {
 		self::assertSame([], $this->stored);
 	}
 
+	/**
+	 * @return array<string, array{bool}>
+	 */
+	public static function failingFiles(): array {
+		return [
+			'when the file locator reads them' => [true],
+			'when their entries are built' => [false],
+		];
+	}
+
+	/**
+	 * When every file that the user could open fails to answer, as all files of an archive
+	 * account on a storage that is gone do, the user sees no document: the history notes a
+	 * failed search, and doesn't count it as one that works again.
+	 */
+	#[DataProvider('failingFiles')]
+	public function testASearchWhoseFilesAllFailGoesIntoTheHistory(bool $unreadable): void {
+		$client = $this->paperless(['count' => 2, 'next' => null, 'results' => [
+			['id' => 7, 'title' => 'Invoice'],
+			['id' => 8, 'title' => 'Receipt'],
+		]]);
+		$files = [];
+		foreach ([7 => 'Invoice [P7].pdf', 8 => 'Receipt [P8].pdf'] as $documentId => $name) {
+			$files[$documentId] = $unreadable ? $this->unreadableFile($name) : $this->brokenFile($name);
+		}
+
+		$result = $this->provider($client, $files)->search($this->user(), $this->query('invoice'))->jsonSerialize();
+
+		self::assertSame([], $result['entries']);
+		$history = $this->history();
+		self::assertSame(1, $history->failed);
+		self::assertTrue($history->awaitsRecovery());
+		self::assertSame(SearchEvent::KIND_FAILED, $history->events[0]->kind);
+		self::assertSame(SearchEvent::STEP_FILES, $history->events[0]->step);
+		self::assertSame('RuntimeException', $history->events[0]->error);
+		self::assertSame('Storage unavailable', $history->events[0]->message);
+	}
+
 	public function testTheFirstSearchThatWorksAgainIsTheRecovery(): void {
 		$answer = $this->response(['count' => 0, 'next' => null, 'results' => []]);
 		$calls = 0;
@@ -745,6 +783,18 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$file->method('getPath')->willReturn('/dennis/files/Paperless/' . $name);
 		$file->method('getId')->willThrowException(new RuntimeException('Storage unavailable'));
 		$file->method('getOwner')->willReturn($this->account('archive'));
+
+		return $file;
+	}
+
+	/**
+	 * A file that fails as soon as the file locator asks for its owner.
+	 */
+	private function unreadableFile(string $name): File {
+		$file = $this->createStub(File::class);
+		$file->method('getName')->willReturn($name);
+		$file->method('getPath')->willReturn('/dennis/files/Paperless/' . $name);
+		$file->method('getOwner')->willThrowException(new RuntimeException('Storage unavailable'));
 
 		return $file;
 	}
