@@ -46,6 +46,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# A heading with the seconds since the start, so that the log shows where the time goes.
+phase() {
+	printf '\n== %s s: %s\n' "${SECONDS}" "$1"
+}
+
 occ() {
 	"${COMPOSE[@]}" exec -T --user www-data nextcloud php occ "$@"
 }
@@ -58,17 +63,20 @@ assert_response() {
 
 # axe-core checks the pages of the app in Chromium (accessibility.mjs), inside the
 # network of the Compose project. The files of the check reach the browser through
-# standard input, so that npm leaves nothing in the checkout. Keep the version of the
-# image of Playwright equal to playwright-core in package.json; Renovate updates both
-# together, and scripts/check-project.sh compares them.
+# standard input, so that npm leaves nothing in the checkout.
 accessibility() {
+	# The image has been loading since the start; a failed pull leaves it to docker run.
+	if [[ -n "${PLAYWRIGHT_PULL}" ]]; then
+		wait "${PLAYWRIGHT_PULL}" || true
+		PLAYWRIGHT_PULL=""
+	fi
 	tar -C "${SCRIPT_DIR}" -cf - package.json package-lock.json accessibility.mjs \
 		| "${DOCKER_BIN}" run --rm --interactive \
 			--network "${PROJECT_NAME}_default" \
 			--env NPM_CONFIG_UPDATE_NOTIFIER=false \
 			--env E2E_USER=e2e-admin \
 			--env "E2E_PASSWORD=${PASSWORD}" \
-			mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27 \
+			"${PLAYWRIGHT_IMAGE}" \
 			sh -c 'mkdir /tmp/browser && cd /tmp/browser && tar -xf - && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error && node accessibility.mjs'
 }
 
@@ -97,8 +105,10 @@ if [[ "${E2E_SKIP_PLAYWRIGHT_PULL:-0}" != "1" ]]; then
 	"${DOCKER_BIN}" pull --quiet "${PLAYWRIGHT_IMAGE}" >/dev/null 2>&1 &
 	PLAYWRIGHT_PULL=$!
 fi
-"${COMPOSE[@]}" up --detach --wait --wait-timeout 240
+phase "Start Nextcloud and the mock of Paperless"
+"${COMPOSE[@]}" up --detach --wait --wait-timeout 240 --quiet-pull
 
+phase "Set up Nextcloud and the app"
 if ! occ status --output=json 2>/dev/null | grep --fixed-strings '"installed":true' >/dev/null; then
 	occ maintenance:install \
 		--database=sqlite \
@@ -129,9 +139,11 @@ for user in e2e-user e2e-other; do
 done
 # The first-run wizard would cover the pages that the accessibility check opens.
 occ app:disable firstrunwizard >/dev/null 2>&1 || true
+phase "Restart Nextcloud"
 "${COMPOSE[@]}" restart nextcloud >/dev/null
 "${COMPOSE[@]}" up --detach --wait --wait-timeout 120 >/dev/null
 
+phase "Check the settings, the routes and the search"
 # The administration settings render the form with its save and reset routes (#25).
 curl --fail-with-body --silent --show-error \
 	--user "e2e-admin:${PASSWORD}" \
@@ -269,10 +281,12 @@ curl --fail-with-body --silent --show-error \
 	"${BASE_URL}/ocs/v2.php/search/providers"
 assert_response trusted "${TMP_DIR}/providers-trusted.json"
 
+phase "Check the accessibility of the settings in Chromium"
 # The administration settings meet WCAG 2.1 AA, also with the message after saving.
 accessibility
 
+phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed: access filtering by the archive account and its shares, trusted mode, browser, iOS, and Android contracts, and accessibility."
+echo "Docker E2E passed in ${SECONDS} s: access filtering by the archive account and its shares, trusted mode, browser, iOS, and Android contracts, and accessibility."
