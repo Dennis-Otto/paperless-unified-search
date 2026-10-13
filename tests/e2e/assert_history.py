@@ -115,7 +115,7 @@ if retry[1:3] != ["Second try answered", "Asking Paperless"]:
 # The message of the HTTP client names the address without its query.
 if DOCUMENTS_URL not in retry[3] or "?" in retry[3]:
     fail(f"The error of the retried request doesn't name {DOCUMENTS_URL} without its query: {retry!r}")
-if failure[1:4] != ["Search failed", "Asking Paperless", "UnexpectedValueException: Paperless returned HTTP 500."]:
+if failure[1:4] != ["Search failed", "Asking Paperless", "PaperlessRequestException: Paperless returned HTTP 500."]:
     fail(f"The older problem isn't the search that Paperless failed with HTTP 500: {failure!r}")
 for event in events:
     if not re.fullmatch(r"\d+ ms", event[4]):

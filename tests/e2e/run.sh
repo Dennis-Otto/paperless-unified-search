@@ -611,7 +611,15 @@ expect_status 200 'Turning off trusted mode' \
 # field required for another server and with the message after saving. The browser
 # corrects the archive account, saves another server and then the mock again, each
 # with the token (#99), and clears the history of the problems (#118).
-occ config:app:set paperless_unified_search archive_owner --value=e2e-gone >/dev/null
+# The settings route refuses an archive account that doesn't exist, so the provisioning
+# API of Nextcloud stores it. occ would store it too, but Nextcloud serves the settings
+# of the apps from APCu for three seconds after the save above, which occ doesn't
+# clear: the first page in the browser then showed the archive account of that save.
+expect_status 200 'Storing an archive account that does not exist' \
+	--user "e2e-admin:${PASSWORD}" \
+	--request POST \
+	--data-urlencode 'value=e2e-gone' \
+	"${BASE_URL}/ocs/v2.php/apps/provisioning_api/api/v1/config/apps/paperless_unified_search/archive_owner"
 browser_checks
 for setting in 'paperless_url=http://paperless-mock:8080' 'archive_owner=e2e-user'; do
 	if [[ "$(occ config:app:get paperless_unified_search "${setting%%=*}")" != "${setting#*=}" ]]; then
