@@ -510,7 +510,7 @@ The production archive intentionally excludes tests, release tools, Composer dev
 
 ### Docker end-to-end tests
 
-The Docker suite starts a clean Nextcloud instance with the app mounted as a Custom App and a deterministic Paperless API mock. It exercises the real OCS search endpoint, user-specific file access, trusted-service metadata, the smart picker and the links it inserts, and browser/iOS/Android result contracts.
+The Docker suite starts a clean Nextcloud instance with the app mounted as a Custom App and a deterministic Paperless API mock. It exercises the real OCS search endpoint, user-specific file access, trusted-service metadata, the smart picker and the links it inserts, and browser/iOS/Android result contracts. It makes Paperless fail and break off a connection, and checks the history of *Search problems* that the settings then show, without the term or the token. In Chromium, it checks the accessibility of the settings and goes through the search dialog on a laptop and on a phone, from the term to the file in the Viewer.
 
 ```bash
 bash tests/e2e/run.sh       # one Nextcloud version

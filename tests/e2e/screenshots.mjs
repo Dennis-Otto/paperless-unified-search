@@ -16,12 +16,22 @@ import { join } from 'node:path'
 import gifenc from 'gifenc'
 import pngjs from 'pngjs'
 import { chromium } from 'playwright-core'
+import {
+	BASE_URL,
+	PASSWORD,
+	connectedServices,
+	paperlessResult,
+	resultGroup,
+	search,
+	searchButton,
+	searchConnectedServices,
+	signIn,
+	waitForViewer,
+} from './ui.mjs'
 
 const { GIFEncoder, quantize } = gifenc
 const { PNG } = pngjs
 
-const BASE_URL = process.env.E2E_BASE_URL ?? 'http://nextcloud'
-const PASSWORD = process.env.E2E_PASSWORD ?? 'e2e-only-password'
 // The folder for the pictures, which scripts/screenshots.sh makes with mktemp.
 const OUT = process.env.SCREENSHOTS_OUT
 if (!OUT) {
@@ -207,22 +217,6 @@ async function createArchive(browser) {
 	await request(ARCHIVE, 'POST', `/ocs/v2.php/apps/files_sharing/api/v1/shares?${share}`)
 }
 
-// Signs in through the login form, as a person does, and keeps the session.
-async function signIn(browser, user) {
-	const context = await browser.newContext({ locale: 'en-US' })
-	try {
-		const page = await context.newPage()
-		await page.goto(`${BASE_URL}/index.php/login`)
-		await page.locator('input[name="user"]').fill(user)
-		await page.locator('input[name="password"]').fill(PASSWORD)
-		await page.locator('input[name="password"]').press('Enter')
-		await page.waitForURL((url) => !url.pathname.endsWith('/login'))
-		return await context.storageState()
-	} finally {
-		await context.close()
-	}
-}
-
 // A pointer for the animation: Chromium draws none into its screenshots. It follows
 // the mouse of Playwright and keeps its place across a page load.
 function pointer() {
@@ -301,43 +295,15 @@ async function save(page, name, milliseconds) {
 	console.log(`Took ${name}.`)
 }
 
-const searchDialog = (page) => page.locator('.modal-container').filter({ hasText: 'Unified search' })
-// A result of Paperless starts with the title of its document, one of the files with
-// the date that Paperless Sync puts in front of its name.
-const paperlessResult = (page, document) => searchDialog(page).getByRole('link', {
-	name: new RegExp(`^${document.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} `),
-})
-
 async function openArchive(page) {
 	await page.goto(`${BASE_URL}/index.php/apps/files/files?dir=/Paperless`)
 	await page.getByText('Northstar Energy', { exact: true }).first().waitFor()
 }
 
-const searchButton = (page) => page.locator('header').getByRole('button', { name: 'Unified search' })
-
-// Types into the open search with typing() and waits for the files that it finds.
-async function search(page, typing) {
-	const input = searchDialog(page).getByRole('textbox')
-	await input.waitFor()
-	await typing(input)
-	await searchDialog(page).getByText('Files', { exact: true }).waitFor()
-}
-
-async function searchConnectedServices(page) {
-	await searchDialog(page).getByText('Search connected services').click()
-	await searchDialog(page).getByText('Paperless documents').waitFor()
-	await paperlessResult(page, { title: 'Internet invoice - July 2026' }).waitFor()
-}
-
-async function waitForViewer(page, document) {
-	await page.waitForURL((url) => url.pathname.includes('/apps/files/'))
-	const viewer = page.frameLocator('iframe')
-	await viewer.locator('.page[data-loaded="true"]').first().waitFor({ timeout: 30000 })
-	await page.locator('.modal-header').getByText(fileName(document)).waitFor()
-}
-
 const electricity = { ...DOCUMENTS[0], title: 'Electricity invoice - August 2026' }
 const insurance = { ...DOCUMENTS[1], title: 'Home insurance renewal' }
+// The last of the results of Paperless for TERM, which shows that they are all there.
+const LAST_RESULT = 'Internet invoice - July 2026'
 
 // The search with its Paperless results, and the file that a result opens.
 async function searchAndOpen(browser, session, theme) {
@@ -345,11 +311,11 @@ async function searchAndOpen(browser, session, theme) {
 	const page = await newPage(browser, session, { viewport: { width: 1600, height: 900 }, colorScheme: theme })
 	await openArchive(page)
 	await searchButton(page).click()
-	await search(page, (input) => input.fill(TERM))
-	await searchConnectedServices(page)
+	await search(page, (input) => input.fill(TERM), 'Files')
+	await searchConnectedServices(page, LAST_RESULT)
 	await save(page, `01-unified-search${suffix}.png`)
-	await paperlessResult(page, electricity).click()
-	await waitForViewer(page, electricity)
+	await paperlessResult(page, electricity.title).click()
+	await waitForViewer(page, fileName(electricity))
 	await save(page, `02-nextcloud-pdf-viewer${suffix}.png`, 1500)
 	await page.context().close()
 }
@@ -428,11 +394,11 @@ async function phone(browser, session) {
 	})
 	await openArchive(page)
 	await searchButton(page).click()
-	await search(page, (input) => input.fill(TERM))
-	await searchConnectedServices(page)
+	await search(page, (input) => input.fill(TERM), 'Files')
+	await searchConnectedServices(page, LAST_RESULT)
 	await save(page, '04-mobile-search.png')
-	await paperlessResult(page, electricity).click()
-	await waitForViewer(page, electricity)
+	await paperlessResult(page, electricity.title).click()
+	await waitForViewer(page, fileName(electricity))
 	await save(page, '05-mobile-viewer.png', 1500)
 	await page.context().close()
 }
@@ -476,16 +442,16 @@ async function animation(browser, session) {
 			await input.press(letter)
 			await frame(110)
 		}
-	})
+	}, 'Files')
 	await settle(page, 400)
 	await frame(1400)
-	await click(searchDialog(page).getByText('Search connected services'))
-	await searchDialog(page).getByText('Paperless documents').waitFor()
-	await paperlessResult(page, { title: 'Internet invoice - July 2026' }).waitFor()
+	await click(connectedServices(page))
+	await resultGroup(page, 'Paperless documents').waitFor()
+	await paperlessResult(page, LAST_RESULT).waitFor()
 	await settle(page, 300)
 	await frame(2600)
-	await click(paperlessResult(page, insurance))
-	await waitForViewer(page, insurance)
+	await click(paperlessResult(page, insurance.title))
+	await waitForViewer(page, fileName(insurance))
 	await settle(page, 1200)
 	await frame(3800)
 	await page.context().close()

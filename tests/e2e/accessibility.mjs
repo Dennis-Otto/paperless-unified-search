@@ -7,16 +7,16 @@
 // A serious or critical violation fails the check; the others are listed. On the way
 // to each state of a page, it checks what the page does there, such as the token
 // field that asks for the token again for another server, and an unexpected state
-// fails the check as well. run.sh starts it in the image of Playwright, inside the
-// network of the Compose project, after npm ci of package-lock.json.
+// fails the check as well. At the end, it clears the history of the problems of the
+// search. run.sh starts it in the image of Playwright, inside the network of the
+// Compose project, after npm ci of package-lock.json.
 
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { chromium } from 'playwright-core'
+import { BASE_URL, signIn } from './ui.mjs'
 
-const BASE_URL = process.env.E2E_BASE_URL ?? 'http://nextcloud'
 const USER = process.env.E2E_USER ?? 'e2e-admin'
-const PASSWORD = process.env.E2E_PASSWORD ?? 'e2e-only-password'
 const AXE = readFileSync(createRequire(import.meta.url).resolve('axe-core/axe.min.js'), 'utf8')
 const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']
 const FAILING = new Set(['serious', 'critical'])
@@ -31,6 +31,8 @@ const ARCHIVE_OWNER_FIELD = '#paperless-unified-search-archive-owner'
 const ARCHIVE_OWNER_MISSING = '#paperless-unified-search-archive-owner-missing'
 const SAVE_BUTTON = '#paperless-unified-search-save'
 const STATUS = '#paperless-unified-search-status'
+const DIAGNOSTICS = '#paperless-unified-search-diagnostics'
+const CLEAR_HISTORY_BUTTON = '#paperless-unified-search-clear-diagnostics'
 const MOCK_URL = 'http://paperless-mock:8080'
 // The mock of Paperless answers by this name too: another server for Nextcloud.
 const OTHER_URL = 'http://other-host:8080'
@@ -77,6 +79,19 @@ async function saveSettings(page, expected = 'Connection successful. Settings sa
 // the line below it and the icon. A page that changes the settings leaves them as it
 // found them, as it runs once for each theme.
 const PAGES = [
+	{
+		// run.sh made a search fail and another one need a second try.
+		name: 'administration settings with recorded problems',
+		path: SETTINGS,
+		scope: SETTINGS_SCOPE,
+		async prepare(page) {
+			const events = await page.locator(`${DIAGNOSTICS} .paperless-unified-search-events tbody tr`).evaluateAll(
+				(rows) => rows.map((row) => row.cells[1].textContent.trim()),
+			)
+			expectEqual(events.join(', '), 'Second try answered, Search failed', 'Recorded problems, newest first')
+			await page.locator(CLEAR_HISTORY_BUTTON).waitFor()
+		},
+	},
 	{
 		// run.sh stored an archive account that doesn't exist.
 		name: 'administration settings with a missing archive account',
@@ -142,18 +157,17 @@ const PAGES = [
 	},
 ]
 
-// Signs in through the login form, as a person does, and keeps the session for every
-// page and theme.
-async function signIn(browser) {
-	const context = await browser.newContext()
+// Clear history forgets the problems of the search: the page says so at once, and
+// run.sh checks that Nextcloud forgot them too.
+async function clearHistory(browser, session) {
+	const context = await browser.newContext({ storageState: session })
 	try {
 		const page = await context.newPage()
-		await page.goto(`${BASE_URL}/index.php/login`)
-		await page.locator('input[name="user"]').fill(USER)
-		await page.locator('input[name="password"]').fill(PASSWORD)
-		await page.locator('input[name="password"]').press('Enter')
-		await page.waitForURL((url) => !url.pathname.endsWith('/login'))
-		return await context.storageState()
+		await page.goto(`${BASE_URL}${SETTINGS}`)
+		await page.locator(CLEAR_HISTORY_BUTTON).click()
+		await page.locator(DIAGNOSTICS).getByText('No problem recorded.', { exact: true }).waitFor()
+		expectEqual(await page.locator(STATUS).textContent(), 'History cleared.', 'Status after clearing the history')
+		console.log('Clear history: the page and its message say that no problem is recorded.')
 	} finally {
 		await context.close()
 	}
@@ -187,7 +201,7 @@ async function check(browser, session, target, theme) {
 const browser = await chromium.launch()
 let failures = 0
 try {
-	const session = await signIn(browser)
+	const session = await signIn(browser, USER)
 	for (const target of PAGES) {
 		for (const theme of THEMES) {
 			const { violations, passes } = await check(browser, session, target, theme)
@@ -204,6 +218,7 @@ try {
 			}
 		}
 	}
+	await clearHistory(browser, session)
 } finally {
 	await browser.close()
 }

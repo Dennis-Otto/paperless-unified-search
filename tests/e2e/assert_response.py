@@ -8,6 +8,11 @@ import sys
 from urllib.parse import parse_qs, urlparse
 
 
+# The line below the title of the result for "mobiletest": the date of the document and
+# its excerpt, which Paperless sends marked up and escaped as HTML, as text.
+SUBLINE = "2026-08-26 · Synthetic OCR mobiletest result for O'Brien & \"Sons\" <GmbH>"
+
+
 def fail(message):
     raise AssertionError(message)
 
@@ -105,8 +110,8 @@ if len(entries) != 1:
 entry = entries[0]
 if entry.get("title") != "Mobile viewer test":
     fail(f"Unexpected title: {entry!r}")
-if "Synthetic OCR mobiletest result" not in entry.get("subline", ""):
-    fail(f"OCR highlight is missing: {entry!r}")
+if entry.get("subline") != SUBLINE:
+    fail(f"Expected the subline {SUBLINE!r}, got {entry!r}")
 
 attributes = entry.get("attributes", {})
 if not str(attributes.get("fileId", "")).isdigit():
