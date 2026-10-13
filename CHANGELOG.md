@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- **Changing the Paperless server asks for the API token again.** Saving the settings with a new URL and a blank token sent the stored token to the new server, so whoever could use the session of an administrator could collect it with a server of their own, or read it on its way over plain HTTP. The stored token now goes only to the server it was saved for, with the same scheme, host and port, and never to another server: for another one, the settings ask for the token again, and the token field says so as soon as the URL changes. Another path on the same server keeps the stored token.
+- **The settings page and the search keep working when the stored token can no longer be decrypted.** After a move or a restore of Nextcloud with another secret in `config.php`, the settings page failed to open, so the token couldn't even be entered again, and every search failed. Now the page says that the token can't be decrypted and asks for it again, and until then the search shows no Paperless documents.
+- **An archive account typed in another case finds its files.** Nextcloud accepts `Archive` for the account `archive`, but the search then showed no Paperless documents, also when Paperless Sync named its account so. The settings now store the account as Nextcloud spells it, the search finds the files in either case, and the settings warn when the archive account doesn't exist.
+
+### Changed
+
+- **Saving the settings and *Disconnect* ask for the password.** As for Nextcloud's own settings of this kind, they ask for the password of the administrator when it wasn't confirmed in the last 30 minutes.
+
 ## [0.4.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.4.0...v0.4.1) (2026-10-12)
 
 ### Fixed

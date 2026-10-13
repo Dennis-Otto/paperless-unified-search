@@ -12,17 +12,25 @@ namespace OCA\PaperlessUnifiedSearch\Model;
 use JsonSerializable;
 
 final class PublicConfig implements JsonSerializable {
+	/**
+	 * @param bool $tokenUnreadable a token is stored that can't be decrypted, such as after
+	 *                              the secret of config.php changed, and has to be entered again
+	 * @param bool $archiveOwnerMissing the archive account in use, the one of the settings or
+	 *                                  of Paperless Sync, doesn't exist
+	 */
 	public function __construct(
 		public readonly string $url,
 		public readonly bool $tokenConfigured,
 		public readonly bool $alwaysSearch,
 		public readonly string $archiveOwner = '',
 		public readonly string $syncAccount = '',
+		public readonly bool $tokenUnreadable = false,
+		public readonly bool $archiveOwnerMissing = false,
 	) {
 	}
 
 	/**
-	 * @return array{url: string, tokenConfigured: bool, alwaysSearch: bool, archiveOwner: string, syncAccount: string}
+	 * @return array{url: string, tokenConfigured: bool, alwaysSearch: bool, archiveOwner: string, syncAccount: string, tokenUnreadable: bool, archiveOwnerMissing: bool}
 	 */
 	public function jsonSerialize(): array {
 		return [
@@ -31,6 +39,8 @@ final class PublicConfig implements JsonSerializable {
 			'alwaysSearch' => $this->alwaysSearch,
 			'archiveOwner' => $this->archiveOwner,
 			'syncAccount' => $this->syncAccount,
+			'tokenUnreadable' => $this->tokenUnreadable,
+			'archiveOwnerMissing' => $this->archiveOwnerMissing,
 		];
 	}
 }

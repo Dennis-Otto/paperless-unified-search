@@ -7,14 +7,16 @@ flowchart LR
     run["run.sh"]
     subgraph compose["Compose project"]
         nextcloud["Nextcloud<br/>the checkout as Custom App, read-only"]
-        mock["Paperless mock<br/>mock_server.py"]
+        mock["Paperless mock<br/>mock_server.py, also as other-host"]
         browser["Chromium of Playwright<br/>accessibility.mjs with axe-core"]
     end
-    run -- "occ, OCS and WebDAV" --> nextcloud
+    run -- "occ, OCS, WebDAV<br/>and the routes of the settings" --> nextcloud
     run -- "starts" --> browser
     nextcloud -- "searches" --> mock
     browser -- "opens the settings" --> nextcloud
 ```
+
+Besides the search, the suite checks the guarantees of the settings: every route of the settings answers a user who isn't an administrator with HTTP 403 and a request without a login with 401, and leaves the settings as they are; a save with a blank token for another server answers 400 and sends that server nothing, which the log of the mock shows, as it answers as `other-host` too; and an archive account typed in another case is stored as Nextcloud spells it.
 
 Run:
 
