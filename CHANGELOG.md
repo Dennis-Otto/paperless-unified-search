@@ -21,6 +21,25 @@ All notable changes to this project are documented in this file.
 - **Searches answer faster and transfer far less data from Paperless.** Paperless sent the whole OCR text of every document it found, with its notes and permissions, often hundreds of kilobytes per document, although a result shows only its title, its date and an excerpt; the search now asks Paperless only for what a result shows. And the files of the documents of a page are now found with one search in Nextcloud instead of one per document, each of which read the names of all files of the user. A file that can't be read now leaves out only its own result instead of all of them.
 - **Saving the settings and *Disconnect* ask for the password.** As for Nextcloud's own settings of this kind, they ask for the password of the administrator when it wasn't confirmed in the last 30 minutes.
 
+## [0.5.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.4.1...v0.5.0) (2026-10-13)
+
+
+### Features
+
+* find Paperless documents from the smart picker in Talk, Text, Deck and Mail ([#114](https://github.com/Dennis-Otto/paperless-unified-search/issues/114)) ([4ff85dd](https://github.com/Dennis-Otto/paperless-unified-search/commit/4ff85dd4a6e618b2e49207eeaefd344b7a4aeadc))
+* **settings:** reach a Paperless in the local network without turning off Nextcloud's protection for all apps ([#119](https://github.com/Dennis-Otto/paperless-unified-search/issues/119)) ([2c4220c](https://github.com/Dennis-Otto/paperless-unified-search/commit/2c4220c11ea6e66cfad69f386551329c4f061b0c))
+
+
+### Bug fixes
+
+* **search:** fill each page of results, so Paperless documents no longer vanish from the search ([#116](https://github.com/Dennis-Otto/paperless-unified-search/issues/116)) ([b13f51d](https://github.com/Dennis-Otto/paperless-unified-search/commit/b13f51dc824ab89c9a9dc8b9daa334551cb79152))
+* **settings:** ask for the API token again when the Paperless server changes ([#103](https://github.com/Dennis-Otto/paperless-unified-search/issues/103)) ([712bb93](https://github.com/Dennis-Otto/paperless-unified-search/commit/712bb93fef5da1279d99cff9d19f87b98470e97a))
+
+
+### Performance
+
+* **search:** fetch only the fields the results show and look up all files of a page in one query ([#111](https://github.com/Dennis-Otto/paperless-unified-search/issues/111)) ([9c38ca9](https://github.com/Dennis-Otto/paperless-unified-search/commit/9c38ca915e053be4a8f33e9db08f7800b18bdc7b))
+
 ## [0.4.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.4.0...v0.4.1) (2026-10-12)
 
 ### Fixed
