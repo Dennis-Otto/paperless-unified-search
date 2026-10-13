@@ -1,6 +1,6 @@
 # Docker end-to-end tests
 
-The suite starts Nextcloud with this checkout mounted read-only as a Custom App; locally the image of `compose.yaml`, in the CI the current release of every version from `min-version` to `max-version` in `appinfo/info.xml` (set `NEXTCLOUD_IMAGE` to choose one, such as `nextcloud:35-apache`), and every week [the coming Nextcloud](#the-coming-nextcloud). A deterministic local HTTP service emulates the small Paperless API surface used by the app.
+The suite starts Nextcloud with this checkout mounted read-only as a Custom App: `run.sh` the image of `compose.yaml` (set `NEXTCLOUD_IMAGE` to choose another, such as `nextcloud:35-apache`), [`run-all.sh`](#every-supported-version-at-once) and the CI the current release of every version from `min-version` to `max-version` in `appinfo/info.xml` at the same time, and every week also [the coming Nextcloud](#the-coming-nextcloud). A deterministic local HTTP service emulates the small Paperless API surface used by the app.
 
 ```mermaid
 ---
@@ -33,7 +33,8 @@ Besides the search, the suite checks the guarantees of the settings: every route
 Run:
 
 ```bash
-bash tests/e2e/run.sh
+bash tests/e2e/run.sh       # one version: the image of compose.yaml
+bash tests/e2e/run-all.sh   # every supported version at the same time, as the CI does
 ```
 
 Optional environment variables:
@@ -41,10 +42,76 @@ Optional environment variables:
 - `E2E_PORT`: host port for Nextcloud, default `18082`
 - `DOCKER_BIN`: Docker CLI path, default `docker`
 - `E2E_PROJECT_NAME`: Compose project name, default `paperless_unified_search_e2e`
+- `NEXTCLOUD_IMAGE`: the image of Nextcloud, default the release that `compose.yaml` pins
 - `KEEP_E2E=1`: keep containers and the test volume running after the suite
 - `E2E_IGNORE_MAX_VERSION=1`: enable the app with `--force` on a Nextcloud newer than `max-version`, as `canary.sh` does
+- `E2E_SKIP_PLAYWRIGHT_PULL=1`: leave the download of the image of Playwright to the caller, as `run-all.sh` does
+
+`run.sh` downloads the image of Playwright in the background while Nextcloud sets itself up, removes the containers without waiting for them to stop (and leaves them on a runner of GitHub, which is thrown away after the job anyway), and turns off Nextcloud's password policy, which would check every new password against [Have I Been Pwned](https://haveibeenpwned.com/Passwords), so that no test depends on a service outside the machine. Each call of `occ` starts PHP and Nextcloud anew, which takes a few seconds while three versions run at once; so `occ` only installs Nextcloud, trusts its name in the network and enables the app, the variable `NC_allow_local_remote_servers` of `compose.yaml` lets the app reach the mock, and the running web server turns off the password policy and creates the users. The web server has to do that itself: it caches the settings of the apps for three seconds and would go on checking passwords right after `occ` turned the policy off.
 
 All credentials and document data are synthetic, local to the disposable Compose project, and intentionally unsuitable for production.
+
+## Every supported version at once
+
+`run-all.sh` reads `min-version` and `max-version` of `appinfo/info.xml` and starts `run.sh` for every major version from the one to the other at the same time, each with the image `nextcloud:<version>-apache`, the Compose project `pus_e2e_<version>` and the port `18000 + <version>`, such as `18035` for Nextcloud 35. Each version writes its log to a file of its own; the script notes each version as it finishes and then prints the logs one after another, in the CI each in a group named after the version and its result. The script fails when one version does, and Ctrl-C stops every version and removes its containers. A version that takes longer than `E2E_VERSION_TIMEOUT` seconds, 600 by default and about four times what it needs, stops and fails as well, with its log up to that point and the state of its containers, long before the job of the CI times out.
+
+```bash
+bash tests/e2e/run-all.sh                       # every version from min-version to max-version
+E2E_VERSIONS="33 35" bash tests/e2e/run-all.sh  # only Nextcloud 33 and 35
+```
+
+On a runner of GitHub, with four CPUs and 16 GB of memory, three versions at once take about two and a half minutes and one alone about a minute and a half. The script first downloads the images of Nextcloud and of the mock for every version, and the image of Playwright only while Nextcloud sets itself up, which is faster than downloading them all at once.
+
+## In the CI
+
+The workflow *Docker E2E* (`.github/workflows/e2e.yml`) runs `run-all.sh` in one job, the required check `nextcloud`. A pull request or a push to `main` that changes no file the tests cover passes the check in seconds without running them, with a notice that says so; the job stays and passes, so that the required check reports success. `scope.sh` decides it, and `selftest.sh`, which `scripts/check.sh` runs, tests it with real merge commits and pushes in throwaway Git repositories, and `run-all.sh` with a fake Docker. The tests cover:
+
+- the app: `appinfo/`, `lib/`, `templates/`, `js/`, `css/`, `img/` and `l10n/`
+- `composer.json` and `composer.lock`
+- the tests themselves, `tests/e2e/`
+- the workflow `.github/workflows/e2e.yml`
+
+The weekly run on Mondays and a run started by hand always test every version, so that the newest release behind each image `nextcloud:<version>-apache` is tested even in a week without a change of the app.
+
+```mermaid
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+---
+flowchart TB
+    accTitle: The required check nextcloud
+    accDescr: A pull request or a push to main that changes no file the end-to-end tests cover passes the check nextcloud in seconds, with a notice. Otherwise, and in the weekly run and a run started by hand, run-all.sh tests every Nextcloud version from min-version to max-version at the same time in one job, and the check passes only when every version passes; the log of each version is a group of its own.
+
+    change["Pull request<br>or push to <code>main</code>"]
+    timed["Weekly run<br>or a start by hand"]
+    scope{"A file the tests<br>cover changed?"}
+    skipped["<code>nextcloud</code> passes in seconds<br>with a notice"]
+    all["<code>run-all.sh</code><br>one download of the browser"]
+    low["Nextcloud <i>min-version</i>"]
+    middle["every version<br>in between"]
+    high["Nextcloud <i>max-version</i>"]
+    every{"Every version<br>passes?"}
+    passed["<code>nextcloud</code> passes"]
+    failed["<code>nextcloud</code> fails<br>the log of each version<br>in a group of its own"]
+
+    change --> scope
+    scope -- "no" --> skipped
+    scope -- "yes" --> all
+    timed --> all
+    all --> low & middle & high --> every
+    every -- "yes" --> passed
+    every -- "no" --> failed
+
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef bot fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef fail fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class change person
+    class timed,all,low,middle,high bot
+    class skipped,passed done
+    class failed fail
+```
 
 ## Accessibility
 

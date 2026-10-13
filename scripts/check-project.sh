@@ -2,10 +2,10 @@
 # SPDX-FileCopyrightText: 2026 Dennis Otto
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# The checks of this app alone, which scripts/check.sh runs last: the browser of the
-# end-to-end tests, the pictures of the README, the descriptions of the pages of the
-# website, the diagrams of the documentation, and the JavaScript of the settings and
-# the translations, which have no build step.
+# The checks of this app alone, which scripts/check.sh runs last: the browser and the
+# scripts of the end-to-end tests, the pictures of the README, the descriptions of the
+# pages of the website, the diagrams of the documentation, and the JavaScript of the
+# settings and the translations, which have no build step.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -28,6 +28,11 @@ if [[ -z "$image" || "$image" != "$package" ]]; then
   exit 1
 fi
 echo "The image of Playwright and playwright-core are both at version $package."
+
+printf '\n== %s\n' "Scripts of the end-to-end tests"
+# The path filter that decides whether the required check nextcloud runs the tests, and
+# the parallel run of every Nextcloud version, without Docker.
+bash tests/e2e/selftest.sh
 
 printf '\n== %s\n' "Pictures of the README"
 # The README shows its pictures from main, so that the website shows them as well, and
