@@ -66,7 +66,7 @@ flowchart TB
 | Component | Files | What it does |
 | --- | --- | --- |
 | App | `lib/AppInfo/Application.php` | Registers the search provider and the reference provider with Nextcloud |
-| Search provider | `lib/Search/PaperlessSearchProvider.php` | Answers a search of Nextcloud: asks Paperless, keeps the results with a readable file and builds each entry with its title, an excerpt and the link that opens the file in the browser, the iOS app or the Android app |
+| Search provider | `lib/Search/PaperlessSearchProvider.php`, `lib/Search/PaperlessPager.php` | Answers a search of Nextcloud: asks Paperless, keeps the results with a readable file, fills the page of results from as many pages of Paperless as it takes, within a budget, and builds each entry with its title, an excerpt and the link that opens the file in the browser, the iOS app or the Android app |
 | Reference provider | `lib/Reference/PaperlessReferenceProvider.php` | Lists *Paperless documents* in the smart picker with the icon of the app and names the search provider, through which the picker searches; it resolves no link, so that Nextcloud renders the inserted link of a file with the permissions of whoever reads it |
 | Paperless client | `lib/Service/PaperlessApiService.php` | Sends the search term to the full-text search of Paperless through Nextcloud's HTTP client, asks only for the fields that a result shows, and checks the shape of the answer |
 | File locator | `lib/Service/NextcloudFileLocator.php`, `lib/Search/Files/` | Finds the files of the archive account whose names carry the markers `[P<ID>]` of the documents of a page, in one search of the folders that the searching user can read |
@@ -87,7 +87,7 @@ config:
 ---
 sequenceDiagram
     accTitle: The data flow of a search
-    accDescr: A user searches for invoice. The unified search passes the term, the page and the user to the search provider. Without a term, an archive account or a connection, the provider answers with no results and doesn't ask Paperless. Otherwise the Paperless client asks Paperless-ngx with the token for at most 50 results and only for the fields that a result shows, and Paperless answers with the ID, the title, the date and the excerpt of documents 412, 389 and 371 and whether a next page exists. One call of the file locator covers all documents of the page and returns for each a file of the archive account with its marker, or none. The provider answers with an entry for every document with a file, and the next page.
+    accDescr: A user searches for invoice. The unified search passes the term, the cursor, the limit and the user to the search provider. Without a term, an archive account or a connection, the provider answers with no results and doesn't ask Paperless. Otherwise, until the page of results is full, the Paperless client asks Paperless-ngx with the token for the page of 25 hits that holds the next hit, and only for the fields that a result shows, and Paperless answers with the ID, the title, the date and the excerpt of documents 412, 389, 371 and more, and whether a next page exists. One call of the file locator covers all documents of that page and returns for each a file of the archive account with its marker, or none. This repeats for at most 4 pages of Paperless or 3 seconds. The provider answers with an entry for every document with a file, up to the limit, and the cursor of the first hit that it didn't go through.
 
     actor User
     participant Search as Unified search
@@ -96,27 +96,73 @@ sequenceDiagram
     participant Paperless as Paperless-ngx
     participant Locator as File locator
     User->>Search: invoice
-    Search->>Provider: term, page and user
+    Search->>Provider: term, cursor, limit and user
     alt no term, no archive account or no connection
         Provider-->>Search: no results, without asking Paperless
     else
-        Provider->>Client: term, page, at most 50 results
-        Client->>Paperless: GET /api/documents/<br>?query=invoice&fields=…,<br>with the token
-        Paperless-->>Client: ID, title, date and excerpt<br>of documents 412, 389, 371,<br>and whether a next page exists
-        Provider->>Locator: documents 412, 389, 371,<br>user, archive account
-        Locator-->>Provider: per document a file of the<br>archive account with its marker,<br>or none
-        Provider-->>Search: an entry for every document with a file, and the next page
+        loop until the page of results is full, for at most 4 pages of Paperless or 3 seconds
+            Provider->>Client: term, the page of 25 hits with the next hit
+            Client->>Paperless: GET /api/documents/<br>?query=invoice&page=1<br>&page_size=25&fields=…,<br>with the token
+            Paperless-->>Client: ID, title, date and excerpt<br>of documents 412, 389, 371, …,<br>and whether a next page exists
+            Provider->>Locator: the documents of the page,<br>user, archive account
+            Locator-->>Provider: per document a file of the<br>archive account with its marker,<br>or none
+        end
+        Provider-->>Search: an entry for every document with a file, up to the limit, and the cursor of the next hit
     end
 ```
 
 </div>
 
 1. A user searches in Nextcloud. Nextcloud asks the provider when the user has switched on *Search connected services*, or always when an administrator has marked Paperless as trusted. A client that asks for this search by its ID through Nextcloud's OCS search API, such as a script, gets it without the switch.
-2. The provider sends the term to the full-text search of Paperless, at most 50 results per page, and asks only for the fields that a result shows: the ID, the title, the date, the correspondent and the type of each document, and the excerpt of the text that Paperless found. Without them, Paperless would send the whole OCR text of every document, its notes and its permissions as well, half a megabyte for a long document.
+2. The provider sends the term to the full-text search of Paperless, for a page of 25 hits, and asks only for the fields that a result shows: the ID, the title, the date, the correspondent and the type of each document, and the excerpt of the text that Paperless found. Without them, Paperless would send the whole OCR text of every document, its notes and its permissions as well, half a megabyte for a long document.
 3. The file locator looks for the files of all documents of the answer at once, in one search of the file cache: the files of the archive account with the marker `[P<ID>]` of one of the documents, in the folders of the searching user. Of several files of a document, the one with the first path counts. A document without such a file is left out, and without an archive account Paperless isn't asked at all. A file that fails to answer costs only its own document, not the whole search, and the log notes how many files failed. When the search then shows no document at all, the history of the diagnostics notes it as a failed search of the files.
-4. Each remaining document becomes an entry: its title, the date and an excerpt of the text that Paperless found, and the link that opens the file in Nextcloud. Further pages of Paperless become further pages of the search.
+4. Each remaining document becomes an entry: its title, the date and an excerpt of the text that Paperless found, and the link that opens the file in Nextcloud. The provider takes the hits in the order of Paperless until the page of results holds as many entries as Nextcloud asked for, and asks Paperless for its next page when a page runs out first, as [Filling a page of results](#filling-a-page-of-results) describes.
 5. A request to Paperless that gets no answer at all, because the name of the host doesn't resolve or the connection fails or times out, is sent a second time. An answer of Paperless, whatever its status, is not. When the second try gets an answer, the client notes the first error in the history of the diagnostics.
-6. A search that still fails returns no results, as an empty search does. The provider logs the kind of error and notes the failure in the history: the time, the step, asking Paperless or looking for the files, the kind and the message of the error, and how long it took. The first search that works afterwards notes when searches work again.
+6. A search that still fails returns no results, as an empty search does. The provider logs the kind of error and notes the failure in the history: the time, the step, asking Paperless or looking for the files, the kind and the message of the error, and how long it took. The first search that works afterwards notes when searches work again. When a later page of Paperless fails, the page of results keeps the entries of the pages before it, the log notes the error, and the cursor of the next page of results asks for the failed page again.
+
+## Filling a page of results
+
+Paperless ranks every document that matches, also those whose files the searching user can't open, so a page of Paperless and a page of results rarely hold the same documents. Nextcloud's web search asks for 5 results, shows a provider only when its answer holds some, and offers *Load more results* only when a page holds as many results as it asked for; then it asks again from the start for 5 more. The apps of Nextcloud ask for the next page with the cursor of the page before. So the provider fills each page:
+
+```mermaid
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: Filling a page of results
+    accDescr: The cursor of a page of results is the offset of its first hit in the ranking of Paperless, 0 for the first page. The provider asks Paperless for the page of 25 hits that holds this hit and the file locator for the files of its documents, in one search. It goes through the hits in their order and makes an entry of each document with a file, until the page of results is full. When no hit is left at Paperless, the results are the last page. When the page of results is full, the results go back with the cursor of the first hit that the provider didn't go through. Otherwise it asks Paperless for its next page, as long as it asked for fewer than 4 pages and for less than 3 seconds; after that, the results go back with the cursor as well.
+
+    cursor["Cursor of the page of results<br>the offset of its first hit<br>in the ranking, 0 at first"]
+    ask["Paperless: the page of 25 hits<br>that holds the next hit"]
+    files["File locator: the files of<br>its documents, in one search"]
+    take["An entry for each document<br>with a file, in the order of<br>Paperless, until the page is full"]
+    hits{"Hits left<br>at Paperless?"}
+    full{"Page of results<br>full?"}
+    budget{"Fewer than 4 pages<br>and 3 seconds?"}
+    next(["The results, and the cursor<br>of the first hit not gone through"])
+    last(["The results,<br>the last page"])
+
+    cursor --> ask --> files --> take --> hits
+    hits -- "no" --> last
+    hits -- "yes" --> full
+    full -- "yes" --> next
+    full -- "no" --> budget
+    budget -- "yes, the next page" --> ask
+    budget -- "no" --> next
+
+    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    class ask,files,take app
+    class next,last yes
+```
+
+- **The cursor is an offset.** It counts the hits of Paperless that the pages before went through, documents without a file among them, so the next page goes on with the first hit that the page before didn't go through, also in the middle of a page of Paperless, without repeating or leaving out a document. `lib/Search/PaperlessPager.php` does this arithmetic. Nextcloud and its apps send the cursor back as they got it.
+- **Pages of Paperless have one size.** The provider asks for 25 hits at a time, whatever the limit of the page of results, which cost little since a hit carries only the fields that a result shows and the files of a page take one search.
+- **A budget bounds each search.** It asks Paperless for at most 4 pages, 100 hits, and for no further page once it has taken 3 seconds; a page that isn't full then goes back with the cursor, so that the apps can go on. A search pages through the first 10,000 hits; a cursor past them finds nothing and asks Paperless nothing.
+- **One search is one search.** However many pages of Paperless it asks for, it counts once in the history of the diagnostics.
 
 ## Finding the files
 
@@ -149,7 +195,7 @@ flowchart TB
     class none no
 ```
 
-The database has no index for a part of a name, so every search of the file cache reads the names of all files that the user can see, on every storage and in every share. One search per page keeps that to one such scan per keystroke, however many documents Paperless finds, where a search per document took five in the web search and up to 50 in the apps or after *Load more*. The file locator checks the marker of each file it finds once more, so that `[P1]` never counts for `[P12]`, nor `[p12]` for `[P12]`.
+The database has no index for a part of a name, so every search of the file cache reads the names of all files that the user can see, on every storage and in every share. One search per page of Paperless keeps that to one such scan per page and at most 4 per keystroke, within the [budget of a search](#filling-a-page-of-results), however many documents a page holds, where a search per document took five in the web search and up to 50 in the apps or after *Load more*. The file locator checks the marker of each file it finds once more, so that `[P1]` never counts for `[P12]`, nor `[p12]` for `[P12]`.
 
 ## Diagnostics
 
@@ -188,7 +234,7 @@ flowchart TB
     class search no
 ```
 
-The history is one value of the app configuration of Nextcloud, loaded only when it is needed. It counts the failed searches and the requests that only their second try answered since it began, and keeps the latest 20 of these events, newest first, each with its time, its kind, its step, the kind and the message of the error and how long it took: for a failed search the whole search, for a second try the first request that got no answer. Only problems write to it, and a search that works writes only once after a failure, so searches that keep working write nothing. A search whose files fail to answer and that shows no document counts as failed, since the user sees none; one that still shows the documents of other files works, and only the log notes the files it left out. Two problems at the same moment may keep only one of them, which a history for diagnosis can afford.
+The history is one value of the app configuration of Nextcloud, loaded only when it is needed. It counts the failed searches and the requests that only their second try answered since it began, and keeps the latest 20 of these events, newest first, each with its time, its kind, its step, the kind and the message of the error and how long it took: for a failed search the whole search, for a second try the first request that got no answer. Only problems write to it, and a search that works writes only once after a failure, so searches that keep working write nothing. A search whose files fail to answer and that shows no document counts as failed, since the user sees none; one that still shows the documents of other files works, and only the log notes the files it left out. A search that asks Paperless for several pages counts once, and so does its failure. Two problems at the same moment may keep only one of them, which a history for diagnosis can afford.
 
 The message loses the API token, the search term when it has at least three characters, cURL's pointer to the page of its error codes, and the query and the fragment of every URL, and is cut to 300 characters.
 
@@ -301,6 +347,7 @@ A token left blank keeps the stored one, but only for the server it was saved fo
 
 - **Nextcloud decides who sees a file.** The app shows a document only through a file that the searching user can read in Nextcloud, and opens that file, not Paperless.
 - **Paperless does the searching.** Its OCR and full-text index answer the search; the app keeps no index of its own.
+- **Full pages of results.** Each page of results takes as many pages of Paperless as it needs, within a budget of 4 pages and 3 seconds, so that documents that the user can't open don't hide the others, and *Load more results* of Nextcloud's web search keeps working ([Filling a page of results](#filling-a-page-of-results)).
 - **One search of the file cache per page**, for the markers of all its documents, since each search reads the names of all files of the user ([Finding the files](#finding-the-files)). Nextcloud's public API has only the interfaces of such a search, so the app brings its own small classes for it in `lib/Search/Files/`, and never uses Nextcloud's private ones. Nextcloud adds methods to these interfaces even in a maintenance release, and PHP refuses a class that lacks one with a fatal error that no `catch` sees. So before each search the file locator compares the methods of the interfaces with those of its classes, without loading them, and when Nextcloud asks for more, it searches once per document by text, as before, and logs a warning: slower, but every search still answers.
 - **The marker `[P<ID>]`** in the file name ties a file of the archive account to its document. [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) writes such files, and the two apps work together without depending on each other's releases.
 - **The owner, not the name, decides.** Only files of the archive account count, because anyone can give a file the marker of a document ([decision 0002](decisions/0002-trust-the-archive-account.md)).

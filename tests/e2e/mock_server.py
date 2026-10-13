@@ -9,6 +9,10 @@ from urllib.parse import parse_qs, urlparse
 
 TOKEN = "e2e-only-token"
 
+# Like Paperless, the mock answers in pages of 25 documents unless a request asks for
+# another size, and refuses a page past the last one.
+DEFAULT_PAGE_SIZE = 25
+
 # Like Paperless, the mock sends only the fields of the documents that a request names,
 # and the excerpt of a search with them. Unlike Paperless, it refuses a request that names
 # none, for which Paperless sends every field, the whole OCR text of every document among
@@ -53,6 +57,28 @@ DEMO_DOCUMENTS = [
         },
     },
 ]
+
+
+# The ranking of the term "pagetest": 40 documents, more than one page of the requests of
+# the app, which ask for 25 at a time. run.sh shares the files of a few of them, on both
+# pages, with e2e-other, so that a page of its results takes hits from two pages.
+PAGE_TEST_DOCUMENTS = [
+    {
+        "id": document_id,
+        "title": f"Page test {document_id}",
+        "created": "2026-09-01",
+        "__search_hit__": {
+            "highlights": f"Synthetic <span class=\"highlight\">pagetest</span> document {document_id}"
+        },
+    }
+    for document_id in range(601, 641)
+]
+
+
+def number(parameters, name, default):
+    """The positive whole number of a parameter of the query, or None for another value."""
+    value = parameters.get(name, [str(default)])[0]
+    return int(value) if value.isdigit() and int(value) > 0 else None
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -100,16 +126,26 @@ class Handler(BaseHTTPRequestHandler):
             ]
         elif query == "invoice":
             results = DEMO_DOCUMENTS
+        elif query == "pagetest":
+            results = PAGE_TEST_DOCUMENTS
 
+        page = number(parameters, "page", 1)
+        page_size = number(parameters, "page_size", DEFAULT_PAGE_SIZE)
+        start = (page - 1) * page_size if page and page_size else None
+        if start is None or (page > 1 and start >= len(results)):
+            self._json(404, {"detail": "Invalid page."})
+            return
+
+        end = start + page_size
         self._json(
             200,
             {
                 "count": len(results),
-                "next": None,
-                "previous": None,
+                "next": f"http://paperless-mock:8080/api/documents/?page={page + 1}" if end < len(results) else None,
+                "previous": f"http://paperless-mock:8080/api/documents/?page={page - 1}" if page > 1 else None,
                 "results": [
                     {key: value for key, value in document.items() if key in fields | ALWAYS_SENT}
-                    for document in results
+                    for document in results[start:end]
                 ],
             },
         )

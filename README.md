@@ -244,7 +244,8 @@ flowchart TB
 2. Paperless returns results from its native OCR/full-text index, with only the fields that a result shows: not the whole OCR text of each document, only the excerpt around the term.
 3. The app maps each Paperless document ID to a synchronized file of the archive account whose name contains the unique marker `[P<ID>]`, for example `[P123]`, with one search of Nextcloud's file cache for all documents of a page. The archive account is the one that owns the synchronized files: the account of Paperless Sync, or the one of the settings.
 4. A result is returned only if the current Nextcloud user can access that file: the archive account itself, or a user it shared the file with. A file with the marker in its name that belongs to another account stands for no document.
-5. Selecting a result opens the synchronized file in Nextcloud, not Paperless. Browsers use Nextcloud's
+5. A page of results holds as many results as Nextcloud asks for while Paperless has more: when documents that the user can't open rank first, the app asks Paperless for its next pages, up to four pages of 25 hits per search, so that Paperless results still show and **Load more results** keeps working.
+6. Selecting a result opens the synchronized file in Nextcloud, not Paperless. Browsers use Nextcloud's
    `/f/{fileId}` viewer route. The official iOS app receives its native `nextcloud://open-file` deep link,
    while Android receives the file ID and user-relative path required by its in-app viewer.
 
@@ -420,7 +421,7 @@ curl asks for the app password, which keeps it out of the history of the shell; 
 }
 ```
 
-Each entry names the document, a line of its text that matches, the link that opens its file and the file's ID and path for that user. `limit` sets how many documents Paperless is asked for per page, 5 by default and up to 50. A page can hold fewer results, even none, when the user can't open the files of some documents, so keep asking with `cursor` set to the `cursor` of the answer while `isPaginated` is `true`. The switch **Search connected services** belongs to the search in the browser; the API asks Paperless without it.
+Each entry names the document, a line of its text that matches, the link that opens its file and the file's ID and path for that user. `limit` sets how many results a page holds, 5 by default and up to 50. To fill a page, the app goes through up to 4 pages of 25 documents that Paperless finds, for at most 3 seconds. A page can still hold fewer results, even none, when the user can open the files of only a few of the documents that Paperless finds, so keep asking with `cursor` set to the `cursor` of the answer while `isPaginated` is `true`. Send the `cursor` back as you got it: it counts the documents of Paperless that the pages before went through. The switch **Search connected services** belongs to the search in the browser; the API asks Paperless without it.
 
 Give an assistant the app password of a user who sees only what it may read, and revoke the app password in the personal security settings once the assistant no longer needs it.
 

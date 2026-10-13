@@ -1,6 +1,6 @@
 # Docker end-to-end tests
 
-The suite starts Nextcloud with this checkout mounted read-only as a Custom App: `run.sh` the image of `compose.yaml` (set `NEXTCLOUD_IMAGE` to choose another, such as `nextcloud:35-apache`), [`run-all.sh`](#every-supported-version-at-once) and the CI the current release of every version from `min-version` to `max-version` in `appinfo/info.xml` at the same time, and every week also [the coming Nextcloud](#the-coming-nextcloud). A deterministic local HTTP service emulates the small Paperless API surface used by the app. Like Paperless, it sends only the fields of the documents that a request names, and the excerpt of a search with them; unlike Paperless, it answers a request that names none with HTTP 400, so that the suite fails as soon as the app would make Paperless send the whole OCR text of every document.
+The suite starts Nextcloud with this checkout mounted read-only as a Custom App: `run.sh` the image of `compose.yaml` (set `NEXTCLOUD_IMAGE` to choose another, such as `nextcloud:35-apache`), [`run-all.sh`](#every-supported-version-at-once) and the CI the current release of every version from `min-version` to `max-version` in `appinfo/info.xml` at the same time, and every week also [the coming Nextcloud](#the-coming-nextcloud). A deterministic local HTTP service emulates the small Paperless API surface used by the app. Like Paperless, it sends only the fields of the documents that a request names, and the excerpt of a search with them; unlike Paperless, it answers a request that names none with HTTP 400, so that the suite fails as soon as the app would make Paperless send the whole OCR text of every document. Like Paperless, it answers in pages, of 25 documents unless a request asks for another size, with the link to the next page, and refuses a page past the last one.
 
 ```mermaid
 ---
@@ -27,6 +27,8 @@ flowchart TB
     classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
     class run person
 ```
+
+The search for `pagetest` checks how the app fills a page of results: the mock ranks 40 documents for it, more than a page of the app's requests to Paperless, and the archive account shares a folder with the files of seven of them, none of the first 19, with `e2e-other`, and keeps one more file to itself. The first page of 5 results takes its documents from both pages of Paperless, and the next page, from the cursor of the first, holds the remaining two, without repeating or leaving out a document.
 
 Besides the search, the suite checks the smart picker: it lists *Paperless documents* with the search provider and the icon of the app, and Nextcloud renders the link of a result as the file for the archive account and for a user the file was shared with, and as the bare link, without the name of the file, for a user who can't open it. It checks the guarantees of the settings as well: every route of the settings answers a user who isn't an administrator with HTTP 403 and a request without a login with 401, and leaves the settings as they are; a save with a blank token for another server answers 400 and sends that server nothing, which the log of the mock shows, as it answers as `other-host` too; and an archive account typed in another case is stored as Nextcloud spells it.
 
