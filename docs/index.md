@@ -59,7 +59,7 @@ The search of files finds the two invoices by their names. Paperless also finds 
 
     ---
 
-    By default, search terms reach Paperless only when the user switches on **Search connected services**. Administrators can trust their Paperless server to include it in every search.
+    By default, search terms reach Paperless only when the user switches on **Search connected services** or picks **Paperless documents** in the smart picker. Administrators can trust their Paperless server to include it in every search.
 
 - :material-key-chain-variant:{ .lg .middle } **The token stays on the server**
 

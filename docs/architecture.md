@@ -189,7 +189,16 @@ Every entry carries the ID of the file and its path in the folders of the user a
 
 The smart picker is the menu that `/` opens in Text and Collectives and that a button opens in Talk, Deck and Mail. It lists the reference providers of the apps; the one of this app, *Paperless documents*, names the search provider, and the picker searches through it as the unified search does, with the same rules of who sees which document:
 
+<div class="diagram-wide" markdown tabindex="0" role="region" aria-label="Diagram of linking a document from the smart picker">
+
 ```mermaid
+---
+config:
+  sequence:
+    wrap: true
+    width: 120
+    actorMargin: 10
+---
 sequenceDiagram
     accTitle: Linking a document from the smart picker
     accDescr: jamie types / in Text and chooses Paperless documents. The picker sends the term invoice to the search provider of the app, which asks Paperless-ngx and answers with the documents whose file jamie can open, each with the link /f/412 of its file. jamie picks a result, and the picker inserts that link. When someone reads the page, Nextcloud's own provider of file links renders the link: as the preview of the file for a reader who can open the file, and as the bare link for anyone else.
@@ -211,6 +220,8 @@ sequenceDiagram
     reader->>files: reads the page with /f/412
     files-->>reader: the preview of the file if the reader can open it,<br>the bare link otherwise
 ```
+
+</div>
 
 The term reaches Paperless only after the user chose *Paperless documents*, so the picker needs no switch like *Search connected services*. The inserted link is the link of the result, `/f/<ID>` of the file, which opens it in Nextcloud's viewer.
 
