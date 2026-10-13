@@ -41,7 +41,7 @@ final class SettingsControllerTest extends TestCase {
 			->with(
 				'https://paperless.example.com/api/documents/',
 				self::callback(static fn (array $options): bool => $options['headers']['Authorization'] === 'Token TEST_VALUE'
-					&& $options['query'] === ['page' => 1, 'page_size' => 1]),
+					&& $options['query'] === ['page' => 1, 'page_size' => 1, 'fields' => 'id']),
 			)
 			->willReturn($this->response(200, self::NO_DOCUMENTS));
 

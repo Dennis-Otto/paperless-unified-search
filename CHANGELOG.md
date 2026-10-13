@@ -12,6 +12,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- **Searches answer faster and transfer far less data from Paperless.** Paperless sent the whole OCR text of every document it found, with its notes and permissions, often hundreds of kilobytes per document, although a result shows only its title, its date and an excerpt; the search now asks Paperless only for what a result shows. And the files of the documents of a page are now found with one search in Nextcloud instead of one per document, each of which read the names of all files of the user.
 - **Saving the settings and *Disconnect* ask for the password.** As for Nextcloud's own settings of this kind, they ask for the password of the administrator when it wasn't confirmed in the last 30 minutes.
 
 ## [0.4.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.4.0...v0.4.1) (2026-10-12)

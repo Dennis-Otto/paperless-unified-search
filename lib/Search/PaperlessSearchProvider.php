@@ -79,14 +79,9 @@ final class PaperlessSearchProvider implements IExternalProvider {
 		try {
 			$response = $this->paperlessApi->searchDocuments($term, $page, $limit);
 			$step = SearchEvent::STEP_FILES;
-			$entries = [];
-
-			foreach ($response['results'] as $document) {
-				$entry = $this->createEntry($user, $document, $archiveOwner);
-				if ($entry !== null) {
-					$entries[] = $entry;
-				}
-			}
+			$documents = $this->getDocuments($response['results']);
+			// The files of all documents of the page, in one search of the file cache.
+			$files = $this->fileLocator->findAllForUser($user, array_column($documents, 0), $archiveOwner);
 		} catch (Throwable $exception) {
 			$this->logger->warning('Paperless unified search failed ({errorType})', [
 				'app' => AppConstants::APP_ID,
@@ -102,6 +97,7 @@ final class PaperlessSearchProvider implements IExternalProvider {
 			return SearchResult::complete($this->getName(), []);
 		}
 
+		$entries = $this->createEntries($user, $documents, $files);
 		$this->diagnostics->recordSuccess();
 		if ($response['next'] !== null) {
 			return SearchResult::paginated($this->getName(), $entries, $page + 1);
@@ -123,19 +119,63 @@ final class PaperlessSearchProvider implements IExternalProvider {
 	}
 
 	/**
+	 * The documents of an answer of Paperless, each with its ID; a document without a
+	 * numeric ID is left out.
+	 *
+	 * @param list<array<array-key, mixed>> $results
+	 * @return list<array{int, array<array-key, mixed>}>
+	 */
+	private function getDocuments(array $results): array {
+		$documents = [];
+		foreach ($results as $document) {
+			if (isset($document['id']) && is_numeric($document['id'])) {
+				$documents[] = [(int)$document['id'], $document];
+			}
+		}
+
+		return $documents;
+	}
+
+	/**
+	 * An entry for every document with a file, in the order of Paperless. A file that fails
+	 * to answer costs only its own entry, not the search.
+	 *
+	 * @param list<array{int, array<array-key, mixed>}> $documents
+	 * @param array<int, File> $files by document ID
+	 * @return list<SearchResultEntry>
+	 */
+	private function createEntries(IUser $user, array $documents, array $files): array {
+		$entries = [];
+		$skipped = 0;
+		$errorType = '';
+		foreach ($documents as [$documentId, $document]) {
+			if (!isset($files[$documentId])) {
+				continue;
+			}
+
+			try {
+				$entries[] = $this->createEntry($user, $document, $files[$documentId]);
+			} catch (Throwable $error) {
+				$skipped++;
+				$errorType = $error::class;
+			}
+		}
+
+		if ($skipped > 0) {
+			$this->logger->warning('Paperless unified search left out {count} result(s) it could not show ({errorType})', [
+				'app' => AppConstants::APP_ID,
+				'count' => $skipped,
+				'errorType' => $errorType,
+			]);
+		}
+
+		return $entries;
+	}
+
+	/**
 	 * @param array<array-key, mixed> $document
 	 */
-	private function createEntry(IUser $user, array $document, string $archiveOwner): ?SearchResultEntry {
-		if (!isset($document['id']) || !is_numeric($document['id'])) {
-			return null;
-		}
-
-		$documentId = (int)$document['id'];
-		$file = $this->fileLocator->findForUser($user, $documentId, $archiveOwner);
-		if ($file === null) {
-			return null;
-		}
-
+	private function createEntry(IUser $user, array $document, File $file): SearchResultEntry {
 		$title = isset($document['title']) && is_string($document['title']) ? trim($document['title']) : '';
 		if ($title === '') {
 			$title = $file->getName();
