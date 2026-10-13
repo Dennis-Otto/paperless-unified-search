@@ -6,7 +6,7 @@
 # The end-to-end tests against every Nextcloud version that appinfo/info.xml supports,
 # from min-version to max-version, all at the same time: run.sh for each version, with
 # the current release of its image nextcloud:<version>-apache, in a Compose project and
-# on a port of its own. Together they take about as long as one version alone. The
+# on a port of its own. Together they take far less time than one after the other. The
 # required check "nextcloud" of .github/workflows/e2e.yml runs this script.
 #
 #   bash tests/e2e/run-all.sh
@@ -24,7 +24,7 @@ DOCKER_BIN="${DOCKER_BIN:-docker}"
 LOG_DIR="$(mktemp -d)"
 versions=()
 pids=()
-pull=""
+downloads=()
 results=()
 durations=()
 
@@ -40,7 +40,7 @@ trap cleanup EXIT
 stop() {
 	trap - INT TERM
 	echo "Interrupted: the end-to-end tests stop and remove their containers." >&2
-	kill -TERM "${pids[@]}" ${pull:+"${pull}"} >/dev/null 2>&1 || true
+	kill -TERM "${pids[@]}" "${downloads[@]}" >/dev/null 2>&1 || true
 	wait || true
 	exit 130
 }
@@ -94,19 +94,34 @@ for version in "${versions[@]}"; do
 	fi
 done
 
-# The browser of the accessibility check, which every version needs at its end: one
-# pull for all of them, while Nextcloud sets itself up. A run that gets there first
-# waits for the same download in docker run.
-PLAYWRIGHT_IMAGE="$(grep -oE 'mcr\.microsoft\.com/playwright:v[^[:space:]]+' "${SCRIPT_DIR}/run.sh" | head -n 1)"
-"${DOCKER_BIN}" pull --quiet "${PLAYWRIGHT_IMAGE}" >/dev/null 2>&1 &
-pull=$!
-
 if ((${#versions[@]} == 1)); then
 	echo "The end-to-end tests run against Nextcloud ${versions[0]}."
 else
 	echo "The end-to-end tests run against Nextcloud ${versions[*]} at the same time."
 fi
 SECONDS=0
+
+# First the images of Nextcloud and of the mock, for every version at the same time:
+# each run needs them at once, the browser only at its end. On a runner of GitHub,
+# this is about ten seconds faster than downloading the browser along with them. A
+# download that fails is left to the run of its version, whose log then says why.
+for version in "${versions[@]}"; do
+	NEXTCLOUD_IMAGE="nextcloud:${version}-apache" \
+		"${DOCKER_BIN}" compose --project-name "pus_e2e_${version}" --file "${SCRIPT_DIR}/compose.yaml" \
+		pull --quiet >/dev/null 2>&1 &
+	downloads+=("$!")
+done
+wait "${downloads[@]}" || true
+downloads=()
+echo "The images of Nextcloud are there after ${SECONDS} s."
+
+# The browser of the accessibility check, which every version needs at its end: one
+# download for all of them, while Nextcloud sets itself up. A run that gets there
+# first waits for the same download in docker run.
+PLAYWRIGHT_IMAGE="$(grep -oE 'mcr\.microsoft\.com/playwright:v[^[:space:]]+' "${SCRIPT_DIR}/run.sh" | head -n 1)"
+"${DOCKER_BIN}" pull --quiet "${PLAYWRIGHT_IMAGE}" >/dev/null 2>&1 &
+downloads+=("$!")
+
 for version in "${versions[@]}"; do
 	E2E_PORT="$((18000 + version))" \
 		E2E_PROJECT_NAME="pus_e2e_${version}" \
@@ -139,9 +154,9 @@ while ((${#pending[@]} > 0)); do
 	fi
 done
 # No version needs the browser any more, such as when every one failed before it.
-kill "${pull}" >/dev/null 2>&1 || true
-wait "${pull}" || true
-pull=""
+kill "${downloads[@]}" >/dev/null 2>&1 || true
+wait "${downloads[@]}" || true
+downloads=()
 
 failed=()
 for index in "${!versions[@]}"; do

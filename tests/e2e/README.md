@@ -39,14 +39,14 @@ All credentials and document data are synthetic, local to the disposable Compose
 
 ## Every supported version at once
 
-`run-all.sh` reads `min-version` and `max-version` of `appinfo/info.xml` and starts `run.sh` for every major version from the one to the other at the same time, each with the image `nextcloud:<version>-apache`, the Compose project `pus_e2e_<version>` and the port `18000 + <version>`, such as `18035` for Nextcloud 35. It downloads the image of Playwright once for every version. Each version writes its log to a file of its own; the script notes each version as it finishes and then prints the logs one after another, in the CI each in a group named after the version and its result. The script fails when one version does, and Ctrl-C stops every version and removes its containers.
+`run-all.sh` reads `min-version` and `max-version` of `appinfo/info.xml` and starts `run.sh` for every major version from the one to the other at the same time, each with the image `nextcloud:<version>-apache`, the Compose project `pus_e2e_<version>` and the port `18000 + <version>`, such as `18035` for Nextcloud 35. Each version writes its log to a file of its own; the script notes each version as it finishes and then prints the logs one after another, in the CI each in a group named after the version and its result. The script fails when one version does, and Ctrl-C stops every version and removes its containers.
 
 ```bash
 bash tests/e2e/run-all.sh                       # every version from min-version to max-version
 E2E_VERSIONS="33 35" bash tests/e2e/run-all.sh  # only Nextcloud 33 and 35
 ```
 
-Three versions at once take about as long as one alone, as long as Docker has the room: four CPUs and 16 GB of memory, as on a runner of GitHub, are enough.
+On a runner of GitHub, with four CPUs and 16 GB of memory, three versions at once take a little more than two minutes and one alone about a minute and a half. The script first downloads the images of Nextcloud and of the mock for every version, and the image of Playwright only while Nextcloud sets itself up, which is faster than downloading them all at once.
 
 ## In the CI
 
