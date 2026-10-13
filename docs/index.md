@@ -21,6 +21,8 @@ The search of files finds the two invoices by their names. Paperless also finds 
 
 --8<-- "README.md:two-apps"
 
+Paperless Sync is the companion, not a must: [any synchronization](guide.md#works-with-any-synchronization) that writes the files with their marker into the archive account works as well, Paperless-ngx's own file names included.
+
 ## What it does
 
 <div class="grid cards" markdown>
@@ -62,6 +64,12 @@ The search of files finds the two invoices by their names. Paperless also finds 
     The Paperless API token is stored only in Nextcloud's server-side credentials manager and is never returned to browser JavaScript or rendered into HTML.
 
 </div>
+
+## How it compares
+
+--8<-- "README.md:comparison"
+
+[Compare it in detail](compare.md){ .md-button }
 
 ## Screenshots
 
@@ -118,6 +126,14 @@ The [guide](guide.md) describes the configuration, the usage and the security an
     Installation, how the search works, requirements, configuration, usage, and security and privacy.
 
     [:octicons-arrow-right-24: Read the guide](guide.md)
+
+- :material-compare-horizontal:{ .lg .middle } **Compare**
+
+    ---
+
+    How the app compares with Full text search and Elasticsearch, Workflow OCR, Context Chat, Findling and the web UI of Paperless, and when another one is the better choice.
+
+    [:octicons-arrow-right-24: Compare](compare.md)
 
 - :material-sitemap-outline:{ .lg .middle } **Architecture**
 
