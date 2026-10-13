@@ -10,7 +10,7 @@ Paperless Unified Search is a Nextcloud app in PHP. It adds a provider to Nextcl
 
 ## Components
 
-<div class="diagram-wide" markdown>
+<div class="diagram-wide" markdown tabindex="0" role="region" aria-label="Diagram of the components">
 
 ```mermaid
 ---
@@ -69,7 +69,7 @@ flowchart TB
 
 ## Data flow
 
-<div class="diagram-wide" markdown>
+<div class="diagram-wide" markdown tabindex="0" role="region" aria-label="Diagram of the data flow of a search">
 
 ```mermaid
 ---
@@ -140,8 +140,10 @@ flowchart TB
     search -- "failed" --> history
     success -- "recovery" --> history
     history --> page
-    %% A label on an edge that points back up breaks the layout of Mermaid 11.
-    history <-.- clear
+    %% A plain dotted line keeps Clear history below the history. An arrow from it
+    %% would rank it with the three causes, too wide for a phone, and Mermaid 11
+    %% draws no arrowhead on "<-.-" and breaks on a label of a reversed edge.
+    history -.- clear
 
     classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
     classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
@@ -179,7 +181,7 @@ Every entry carries the ID of the file and its path in the folders of the user a
 
 ## Saving the settings
 
-<div class="diagram-wide" markdown>
+<div class="diagram-wide" markdown tabindex="0" role="region" aria-label="Diagram of saving the settings">
 
 ```mermaid
 ---

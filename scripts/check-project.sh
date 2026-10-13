@@ -9,6 +9,15 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+# The Markdown files that match the patterns, found as scripts/check.sh finds its files:
+# new files that git doesn't track yet as well, but no tracked file deleted in the checkout.
+markdown() {
+  git ls-files --cached --others --exclude-standard "$@" | sort -u |
+    while IFS= read -r file; do
+      if [[ -f "$file" ]]; then printf '%s\n' "$file"; fi
+    done
+}
+
 printf '\n== %s\n' "Browser of the end-to-end tests"
 # A version of playwright-core drives the browsers in the image of the same version.
 image="$(grep -oE 'mcr\.microsoft\.com/playwright:v[0-9]+\.[0-9]+\.[0-9]+' tests/e2e/run.sh | head -n 1 || true)"
@@ -46,7 +55,7 @@ description() {
       gsub(/^"|"$/, ""); print; exit
     }' "$1"
 }
-mapfile -t pages < <(git ls-files 'docs/*.md')
+mapfile -t pages < <(markdown 'docs/*.md')
 descriptions=()
 for page in "${pages[@]}"; do
   if ! text="$(description "$page")"; then
@@ -73,7 +82,12 @@ printf '\n== %s\n' "Diagrams"
 # its size in the narrow column of a phone, and has a title and a description that
 # screen readers read out instead of the picture (accTitle and accDescr). A sequence
 # diagram has no direction and only needs the two.
-mapfile -t documents < <(git ls-files '*.md')
+mapfile -t documents < <(markdown '*.md')
+# Without files, awk would wait for its standard input.
+if ((${#documents[@]} == 0)); then
+  echo "No Markdown files found; run the check from the checkout of the repository."
+  exit 1
+fi
 if ! awk '
   FNR == 1 { inside = 0 }
   !inside && /^[ \t]*```mermaid[ \t]*$/ {
