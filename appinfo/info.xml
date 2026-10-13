@@ -5,18 +5,19 @@
 	<summary>Search Paperless-ngx OCR content from Nextcloud and open matching files directly in its viewer</summary>
 	<summary lang="de">Paperless-ngx-OCR direkt in Nextcloud durchsuchen und gefundene Dateien im Viewer öffnen</summary>
 	<description><![CDATA[
-### Paperless search, seamlessly integrated into Nextcloud
+Full-text search of your Paperless-ngx archive in Nextcloud's search bar, without Elasticsearch, a second index or another container: Paperless answers, Nextcloud decides who sees the file.
 
-Paperless Unified Search brings Paperless-ngx's OCR-powered document search directly into Nextcloud's global search. Find invoices, contracts, letters, statements, and any text recognized inside your documents — without leaving Nextcloud.
+Find invoices, contracts, letters, statements, and any text recognized inside your documents, and open the synchronized file in Nextcloud's viewer — without leaving Nextcloud.
 
 ### Search in Paperless. Work in Nextcloud.
 
-- Uses Paperless-ngx's native OCR and full-text search
+- Uses Paperless-ngx's native OCR and full-text search, with no index of its own to build or keep current
 - Shows results directly in Nextcloud's global search
 - Opens the synchronized file in Nextcloud's built-in viewer on web, iOS, and Android
 - Matches documents through stable markers such as `[P123]`
-- Includes only files the current Nextcloud user is allowed to access
+- Shows a document only to the users who may open its synchronized file
 - Automatically excludes documents that have not yet been synchronized
+- Diagnostics: the settings test the connection and keep a history of failed searches with their errors, also where the hoster keeps Nextcloud's log from administrators
 
 ### Privacy and access control
 
@@ -30,27 +31,30 @@ A dedicated, read-only Paperless account is recommended.
 
 - Nextcloud 33 to 35
 - A reachable Paperless-ngx instance with API access
-- Synchronized files whose names contain their Paperless document marker, for example `[P123]`
+- Synchronized files whose names contain their Paperless document marker, for example `[P123]`, owned by one Nextcloud account, the archive account, and shared read-only with the users who may see them
 
-This app provides search integration only. It does not synchronize documents between Paperless and Nextcloud.
+This app provides search integration only. It does not synchronize documents between Paperless and Nextcloud, and without such files the search shows no Paperless documents.
 
 ### Native synchronization companion
 
-For structured document synchronization, use the independent [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) Nextcloud app. Both apps use the same stable `[P123]` document marker and can be maintained and updated separately.
+The independent [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) Nextcloud app writes these files into the archive account. Both apps use the same stable `[P123]` document marker and can be maintained and updated separately.
+
+Documentation: <https://dennis-otto.github.io/paperless-unified-search/>
 ]]></description>
 	<description lang="de"><![CDATA[
-### Paperless-Suche nahtlos in Nextcloud integriert
+Volltextsuche in deinem Paperless-ngx-Archiv direkt in der Suchleiste von Nextcloud, ohne Elasticsearch, zweiten Index oder weiteren Container: Paperless antwortet, Nextcloud entscheidet, wer die Datei sieht.
 
-Paperless Unified Search bringt die OCR-gestützte Dokumentensuche von Paperless-ngx direkt in die globale Nextcloud-Suche. Finde Rechnungen, Verträge, Briefe, Bescheide und beliebige Inhalte aus deinen Dokumenten — ohne Nextcloud zu verlassen.
+Finde Rechnungen, Verträge, Briefe, Bescheide und beliebige Inhalte aus deinen Dokumenten und öffne die synchronisierte Datei im Viewer von Nextcloud — ohne Nextcloud zu verlassen.
 
 ### In Paperless suchen. In Nextcloud weiterarbeiten.
 
-- Verwendet die native OCR- und Volltextsuche von Paperless-ngx
+- Verwendet die native OCR- und Volltextsuche von Paperless-ngx, ohne eigenen Index, der aufgebaut oder aktuell gehalten werden muss
 - Zeigt Treffer direkt in der globalen Nextcloud-Suche
 - Öffnet die synchronisierte Datei im integrierten Nextcloud-Viewer in Web, iOS und Android
 - Ordnet Dokumente über stabile Kennzeichnungen wie `[P123]` zu
-- Zeigt nur Dateien an, auf die der aktuelle Nextcloud-Benutzer zugreifen darf
+- Zeigt ein Dokument nur den Benutzern, die seine synchronisierte Datei öffnen dürfen
 - Blendet noch nicht synchronisierte Dokumente automatisch aus
+- Diagnose: Die Einstellungen testen die Verbindung und führen einen Verlauf der fehlgeschlagenen Suchen mit ihren Fehlern, auch wenn der Hoster das Protokoll von Nextcloud vor Administratoren verbirgt
 
 ### Datenschutz und Zugriffssteuerung
 
@@ -64,13 +68,15 @@ Empfohlen wird ein eigener Paperless-Dienstbenutzer mit ausschließlich lesendem
 
 - Nextcloud 33 bis 35
 - Eine erreichbare Paperless-ngx-Instanz mit API-Zugriff
-- Synchronisierte Dateien mit einer Paperless-Dokumentkennung wie `[P123]` im Dateinamen
+- Synchronisierte Dateien mit einer Paperless-Dokumentkennung wie `[P123]` im Dateinamen, die einem Nextcloud-Konto, dem Archiv-Konto, gehören und nur lesend mit den Benutzern geteilt sind, die sie sehen dürfen
 
-Die App integriert ausschließlich die Suche. Sie synchronisiert selbst keine Dokumente zwischen Paperless und Nextcloud.
+Die App integriert ausschließlich die Suche. Sie synchronisiert selbst keine Dokumente zwischen Paperless und Nextcloud, und ohne solche Dateien zeigt die Suche keine Paperless-Dokumente.
 
 ### Native Synchronisierung als Ergänzung
 
-Für eine strukturierte Dokumentensynchronisierung steht die unabhängige Nextcloud-App [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) zur Verfügung. Beide Apps verwenden dieselbe stabile Dokumentkennung wie `[P123]` und lassen sich getrennt warten und aktualisieren.
+Die unabhängige Nextcloud-App [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) schreibt diese Dateien in das Archiv-Konto. Beide Apps verwenden dieselbe stabile Dokumentkennung wie `[P123]` und lassen sich getrennt warten und aktualisieren.
+
+Dokumentation (auf Englisch): <https://dennis-otto.github.io/paperless-unified-search/>
 ]]></description>
 	<version>0.4.1</version>
 	<licence>AGPL-3.0-or-later</licence>
@@ -83,12 +89,17 @@ Für eine strukturierte Dokumentensynchronisierung steht die unabhängige Nextcl
 	</documentation>
 	<category>integration</category>
 	<category>files</category>
+	<category>search</category>
 	<website>https://dennis-otto.github.io/paperless-unified-search/</website>
+	<discussion>https://github.com/Dennis-Otto/paperless-unified-search/discussions</discussion>
 	<bugs>https://github.com/Dennis-Otto/paperless-unified-search/issues</bugs>
 	<repository type="git">https://github.com/Dennis-Otto/paperless-unified-search.git</repository>
 	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.4.1/screenshots/01-unified-search.png</screenshot><!-- x-release-please-version -->
 	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.4.1/screenshots/02-nextcloud-pdf-viewer.png</screenshot><!-- x-release-please-version -->
 	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.4.1/screenshots/03-admin-settings.png</screenshot><!-- x-release-please-version -->
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.4.1/screenshots/04-mobile-search.png</screenshot><!-- x-release-please-version -->
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v0.4.1/screenshots/06-search-problems.png</screenshot><!-- x-release-please-version -->
+	<donation type="other" title="GitHub Sponsors">https://github.com/sponsors/Dennis-Otto</donation>
 	<dependencies>
 		<php min-version="8.2"/>
 		<nextcloud min-version="33" max-version="35"/>

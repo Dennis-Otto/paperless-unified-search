@@ -1,3 +1,7 @@
+---
+description: "Why Paperless Unified Search records each decision that shapes it, with its reasons, in a short file next to the code."
+---
+
 # Record the decisions that shape the project
 
 - Status: accepted

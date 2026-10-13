@@ -1,3 +1,7 @@
+---
+description: "Why a Paperless document appears only through a file that the archive account owns or shares, not through any file with its marker in the name."
+---
+
 # Trust the owner of a file, not its name
 
 - Status: accepted
