@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- **The test of the connection says what went wrong, in your language.** Saving the settings answered every failure with the same English sentence, "Could not connect to Paperless. Check the URL, API token, and Nextcloud outbound connection policy.", and logged nothing, whether Paperless refused the token, the path was wrong, the host didn't resolve, Nextcloud refused a local address or didn't trust the certificate. Now the message names the cause and what to correct, such as a refused token, a wrong address, a blocked local address or an untrusted certificate, and the log of Nextcloud has the error, without the token. Every message of the settings is now translated, and the app speaks formal German to accounts set to *Deutsch (Förmlich: Sie)*, which saw it in English so far.
+
 ## [0.5.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.4.1...v0.5.0) (2026-10-13)
 
 ### Added

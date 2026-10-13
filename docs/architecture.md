@@ -72,6 +72,8 @@ flowchart TB
 | File locator | `lib/Service/NextcloudFileLocator.php`, `lib/Search/Files/` | Finds the files of the archive account whose names carry the markers `[P<ID>]` of the documents of a page, in one search of the folders that the searching user can read |
 | Configuration | `lib/Service/ConfigService.php`, `lib/Model/PublicConfig.php` | Checks and stores the URL of Paperless, the archive account and the switch *Always include Paperless in global search*; the API token goes to Nextcloud's credentials manager, is read from it once per request and is sent only to the server it was saved for; without an archive account of its own it takes the account of Paperless Sync, and it uses the ID of either as Nextcloud spells it |
 | Settings page | `lib/Settings/`, `lib/Controller/SettingsController.php`, `templates/settings.php`, `js/settings.js` | The page under *Administration settings → Paperless Unified Search*, a section of its own: save after a test of the connection, and reset; Nextcloud lets only administrators call its routes and checks the CSRF token of every request |
+| Problems | `lib/Exception/` | Why a setting can't be saved or a request to Paperless failed, as a code: the settings page names each one with a message of its own in the language of the administrator |
+| Translations | `l10n/`, `scripts/check-l10n.mjs` | German in two forms, `de` with *du* and `de_DE` with *Sie*, for PHP and for the browser; the check makes sure that every text of the code has its translation in each, with its placeholders |
 
 ## Data flow
 
@@ -341,6 +343,8 @@ sequenceDiagram
 ```
 
 </div>
+
+A test of the connection that fails names its cause ([decision 0005](decisions/0005-name-the-cause-of-a-failed-connection-test.md)): the Paperless client throws a `PaperlessRequestException` with the reason, from the status of the answer, its content or the error of cURL, and the controller answers HTTP 400 with the code of the reason and a message in the language of the administrator that says what to correct, and logs a warning with the error, without the token and the query of the URL. A setting that can't be saved answers the same way, with the code of its problem. The [README](https://github.com/Dennis-Otto/paperless-unified-search#when-the-test-of-the-connection-fails) lists every message.
 
 *Paperless runs in my local network* lets the test of the connection, and then every search, reach the Paperless URL at an address of the local network, which Nextcloud refuses otherwise, without lifting that protection for anything else ([decision 0004](decisions/0004-local-network-opt-in.md)). A token left blank keeps the stored one, but only for the server it was saved for ([decision 0003](decisions/0003-bind-the-token-to-its-server.md)); the page marks the token field as required as soon as the URL names another server. The archive account is stored as Nextcloud spells its ID. A stored token that the credentials manager can't decrypt counts as none, and the page says so. Saving and *Disconnect* ask for the password when it wasn't confirmed in the last 30 minutes. *Disconnect* deletes every setting, the token included, and the history of the diagnostics as well; saving keeps the history.
 

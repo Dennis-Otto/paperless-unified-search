@@ -9,8 +9,9 @@ declare(strict_types=1);
 
 namespace OCA\PaperlessUnifiedSearch\Service;
 
-use InvalidArgumentException;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
+use OCA\PaperlessUnifiedSearch\Exception\InvalidSettingException;
+use OCA\PaperlessUnifiedSearch\Exception\SettingProblem;
 use OCA\PaperlessUnifiedSearch\Model\PublicConfig;
 use OCP\IAppConfig;
 use OCP\IUserManager;
@@ -102,7 +103,7 @@ final class ConfigService {
 	 * The archive account to store for what an administrator entered: its ID as Nextcloud
 	 * spells it, or '' to use the account of Paperless Sync.
 	 *
-	 * @throws InvalidArgumentException when no such account exists
+	 * @throws InvalidSettingException when no such account exists
 	 */
 	public function resolveArchiveOwner(string $candidate): string {
 		$owner = trim($candidate);
@@ -112,7 +113,7 @@ final class ConfigService {
 
 		$accountId = $this->accountId($owner);
 		if ($accountId === '') {
-			throw new InvalidArgumentException('The archive account does not exist.');
+			throw new InvalidSettingException(SettingProblem::UnknownArchiveAccount, 'The archive account does not exist.');
 		}
 
 		return $accountId;
@@ -168,7 +169,7 @@ final class ConfigService {
 	 * or over plain HTTP, just by changing the URL.
 	 *
 	 * @param string $normalizedUrl the new URL, as normalizeUrl() returns it
-	 * @throws InvalidArgumentException when the token has to be entered
+	 * @throws InvalidSettingException when the token has to be entered
 	 */
 	public function resolveToken(#[SensitiveParameter] string $candidate, string $normalizedUrl): string {
 		$token = trim($candidate);
@@ -178,12 +179,12 @@ final class ConfigService {
 
 		$token = $this->getToken();
 		if ($token === '') {
-			throw new InvalidArgumentException('A Paperless API token is required.');
+			throw new InvalidSettingException(SettingProblem::TokenRequired, 'A Paperless API token is required.');
 		}
 
 		$storedUrl = $this->getUrl();
 		if ($storedUrl === '' || $this->originOf($storedUrl) !== $this->originOf($normalizedUrl)) {
-			throw new InvalidArgumentException('Enter the API token again: a stored token is only sent to the Paperless server it was saved for.');
+			throw new InvalidSettingException(SettingProblem::TokenForOtherServer, 'Enter the API token again: a stored token is only sent to the Paperless server it was saved for.');
 		}
 
 		return $token;
@@ -207,11 +208,14 @@ final class ConfigService {
 		return $scheme . '://' . $host . ':' . $port;
 	}
 
+	/**
+	 * @throws InvalidSettingException when the URL is invalid or the token blank
+	 */
 	public function save(string $url, #[SensitiveParameter] string $token, bool $alwaysSearch = false, string $archiveOwner = '', bool $allowLocal = false): PublicConfig {
 		$normalizedUrl = $this->normalizeUrl($url);
 		$normalizedToken = trim($token);
 		if ($normalizedToken === '') {
-			throw new InvalidArgumentException('A Paperless API token is required.');
+			throw new InvalidSettingException(SettingProblem::TokenRequired, 'A Paperless API token is required.');
 		}
 
 		$normalizedOwner = trim($archiveOwner);
@@ -263,8 +267,8 @@ final class ConfigService {
 	 * a name of the internet, or an internationalized one, such as bücher.example, which
 	 * is stored in the ASCII form that DNS knows, xn--bcher-kva.example.
 	 *
-	 * @throws InvalidArgumentException when the URL is none of these, or carries
-	 *                                  credentials, a query or a fragment
+	 * @throws InvalidSettingException when the URL is none of these, or carries
+	 *                                 credentials, a query or a fragment
 	 */
 	public function normalizeUrl(string $url): string {
 		$normalizedUrl = rtrim(trim($url), '/');
@@ -272,21 +276,21 @@ final class ConfigService {
 		// text that isn't UTF-8.
 		$parts = $normalizedUrl !== '' && preg_match('/^[^\s\x00-\x1f\x7f]+$/u', $normalizedUrl) === 1 ? parse_url($normalizedUrl) : false;
 		if (!is_array($parts) || !isset($parts['scheme'])) {
-			throw new InvalidArgumentException('Enter a valid Paperless URL.');
+			throw new InvalidSettingException(SettingProblem::InvalidUrl, 'Enter a valid Paperless URL.');
 		}
 
 		if (!in_array(strtolower($parts['scheme']), ['http', 'https'], true)) {
-			throw new InvalidArgumentException('The Paperless URL must use HTTP or HTTPS.');
+			throw new InvalidSettingException(SettingProblem::UnsupportedScheme, 'The Paperless URL must use HTTP or HTTPS.');
 		}
 
 		if (isset($parts['user']) || isset($parts['pass']) || isset($parts['query']) || isset($parts['fragment'])) {
-			throw new InvalidArgumentException('The Paperless URL must not contain credentials, a query, or a fragment.');
+			throw new InvalidSettingException(SettingProblem::UrlWithExtras, 'The Paperless URL must not contain credentials, a query, or a fragment.');
 		}
 
 		// PHP refuses a port above 65535 itself.
 		$host = $parts['host'] ?? '';
 		if (!$this->isHost($host) || ($parts['port'] ?? null) === 0) {
-			throw new InvalidArgumentException('Enter a valid Paperless URL.');
+			throw new InvalidSettingException(SettingProblem::InvalidUrl, 'Enter a valid Paperless URL.');
 		}
 
 		// Without credentials, the host follows right after "scheme://".
@@ -311,7 +315,7 @@ final class ConfigService {
 	 * where PHP lacks the extension; without them, a name that isn't ASCII has to be
 	 * entered in punycode.
 	 *
-	 * @throws InvalidArgumentException when the name has no ASCII form
+	 * @throws InvalidSettingException when the name has no ASCII form
 	 */
 	private function asciiHost(string $host): string {
 		if (mb_check_encoding($host, 'ASCII')) {
@@ -320,7 +324,7 @@ final class ConfigService {
 
 		$asciiHost = function_exists('idn_to_ascii') ? idn_to_ascii($host, self::IDNA_NONTRANSITIONAL_TO_ASCII, self::INTL_IDNA_VARIANT_UTS46) : false;
 
-		return $asciiHost !== false ? $asciiHost : throw new InvalidArgumentException('Enter the host of the Paperless URL in its ASCII form (punycode), such as xn--bcher-kva.example for bücher.example.');
+		return $asciiHost !== false ? $asciiHost : throw new InvalidSettingException(SettingProblem::HostNotAscii, 'Enter the host of the Paperless URL in its ASCII form (punycode), such as xn--bcher-kva.example for bücher.example.');
 	}
 
 	/**

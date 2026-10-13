@@ -70,9 +70,19 @@ elif [[ -e "${APP_ROOT}/appinfo/signature.json" ]]; then
 	exit 1
 fi
 
+# Each translation of the repository, de and de_DE among them, for PHP and the browser.
+for catalog in l10n/*.json l10n/*.js; do
+	if ! cmp --silent "${catalog}" "${APP_ROOT}/${catalog}"; then
+		echo "The package lacks the translation ${catalog} of the repository, or holds another one." >&2
+		exit 1
+	fi
+done
+
 find "${APP_ROOT}" -type f -name '*.php' -print0 | xargs -0 -n1 php -l
 node --check "${APP_ROOT}/js/settings.js"
-node --check "${APP_ROOT}/l10n/de.js"
+for catalog in "${APP_ROOT}"/l10n/*.js; do
+	node --check "${catalog}"
+done
 
 FILE_COUNT="$(find "${APP_ROOT}" -type f | wc -l | tr -d ' ')"
 echo "Validated ${MODE} production package with ${FILE_COUNT} files: ${ARCHIVE}"

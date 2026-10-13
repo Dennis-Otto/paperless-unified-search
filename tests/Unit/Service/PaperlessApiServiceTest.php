@@ -10,6 +10,8 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Service;
 
 use JsonException;
+use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
+use OCA\PaperlessUnifiedSearch\Exception\RequestFailure;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
@@ -240,34 +242,108 @@ final class PaperlessApiServiceTest extends TestCase {
 	}
 
 	/**
-	 * @return array<string, array{int, ?string, class-string<Throwable>, string}>
+	 * @return array<string, array{int, ?string, RequestFailure, ?int, string}>
 	 */
 	public static function failures(): array {
 		return [
-			'informational status' => [100, self::NO_DOCUMENTS, UnexpectedValueException::class, 'Paperless returned HTTP 100.'],
-			'redirect' => [302, '', UnexpectedValueException::class, 'Paperless returned HTTP 302.'],
-			'refused token' => [401, '{"detail":"Invalid token."}', UnexpectedValueException::class, 'Paperless returned HTTP 401.'],
-			'server error' => [500, '', UnexpectedValueException::class, 'Paperless returned HTTP 500.'],
-			'no body' => [200, null, UnexpectedValueException::class, 'Paperless returned an invalid response body.'],
-			'no JSON' => [200, '<html>', JsonException::class, 'Syntax error'],
-			'no object' => [200, '"ok"', UnexpectedValueException::class, 'Paperless returned an invalid document response.'],
-			'no results' => [200, '{"count":0}', UnexpectedValueException::class, 'Paperless returned an invalid document response.'],
-			'results that are no list' => [200, '{"results":"none"}', UnexpectedValueException::class, 'Paperless returned an invalid document response.'],
+			'informational status' => [100, self::NO_DOCUMENTS, RequestFailure::Http, 100, 'Paperless returned HTTP 100.'],
+			'redirect' => [302, '', RequestFailure::Redirect, 302, 'Paperless returned HTTP 302.'],
+			'permanent redirect' => [301, '', RequestFailure::Redirect, 301, 'Paperless returned HTTP 301.'],
+			'refused token' => [401, '{"detail":"Invalid token."}', RequestFailure::Unauthorized, 401, 'Paperless returned HTTP 401.'],
+			'no permission' => [403, '{"detail":"You do not have permission to perform this action."}', RequestFailure::Unauthorized, 403, 'Paperless returned HTTP 403.'],
+			'wrong path' => [404, '<html>Not found</html>', RequestFailure::NotFound, 404, 'Paperless returned HTTP 404.'],
+			'wrong request' => [400, '{"query":["Invalid."]}', RequestFailure::Http, 400, 'Paperless returned HTTP 400.'],
+			'server error' => [500, '', RequestFailure::Http, 500, 'Paperless returned HTTP 500.'],
+			'no body' => [200, null, RequestFailure::NotPaperless, null, 'Paperless returned an invalid response body.'],
+			'no JSON' => [200, '<html>', RequestFailure::NotPaperless, null, 'Paperless returned no JSON: Syntax error'],
+			'no object' => [200, '"ok"', RequestFailure::NotPaperless, null, 'Paperless returned an invalid document response.'],
+			'no results' => [200, '{"count":0}', RequestFailure::NotPaperless, null, 'Paperless returned an invalid document response.'],
+			'results that are no list' => [200, '{"results":"none"}', RequestFailure::NotPaperless, null, 'Paperless returned an invalid document response.'],
 		];
 	}
 
 	/**
-	 * @param class-string<Throwable> $exception
+	 * Each wrong answer has a reason of its own, which the settings name with a message
+	 * that says what to correct (#120).
 	 */
 	#[DataProvider('failures')]
-	public function testAWrongAnswerOfPaperlessFails(int $status, ?string $body, string $exception, string $message): void {
+	public function testAWrongAnswerOfPaperlessFailsWithItsReason(int $status, ?string $body, RequestFailure $reason, ?int $answeredStatus, string $message): void {
 		$client = $this->createStub(IClient::class);
 		$client->method('get')->willReturn($this->response($status, $body));
 
-		$this->expectException($exception);
-		$this->expectExceptionMessage($message);
+		$exception = $this->failedConnectionTest($client);
 
-		$this->service($client)->testConnection('https://paperless.example.com', 'TEST_VALUE', false);
+		self::assertSame($reason, $exception->reason);
+		self::assertSame($answeredStatus, $exception->status);
+		self::assertSame($message, $exception->getMessage());
+	}
+
+	public function testAnAnswerThatIsNoJsonKeepsTheErrorOfJson(): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response(200, '<html>Sign in</html>'));
+
+		self::assertInstanceOf(JsonException::class, $this->failedConnectionTest($client)->getPrevious());
+	}
+
+	/**
+	 * @return array<string, array{Throwable, RequestFailure}>
+	 */
+	public static function errorsWithoutAnswer(): array {
+		$localAddress = new LocalServerException('Host "paperless-ngx" violates local access rules');
+
+		return [
+			'an address that Nextcloud refuses' => [$localAddress, RequestFailure::LocalAddress],
+			'an address that Nextcloud refuses, inside another error' => [new RuntimeException('The request failed.', 0, $localAddress), RequestFailure::LocalAddress],
+			'an untrusted certificate' => [
+				new RuntimeException('cURL error 60: SSL certificate problem: self-signed certificate (see https://curl.haxx.se/libcurl/c/libcurl-errors.html) for https://paperless.example.com/api/documents/?page=1&page_size=1&fields=id'),
+				RequestFailure::Certificate,
+			],
+			'a certificate for another name' => [new RuntimeException('cURL error 51: SSL: no alternative certificate subject name matches target host name'), RequestFailure::Certificate],
+			'a certificate of an unknown issuer' => [new RuntimeException('cURL error 83: SSL: issuer check failed'), RequestFailure::Certificate],
+			'certificates that Nextcloud cannot read' => [new RuntimeException('cURL error 77: error setting certificate verify locations'), RequestFailure::Certificate],
+			'a problem with a certificate of the client' => [new RuntimeException('cURL error 58: unable to set private key file'), RequestFailure::Handshake],
+			'no common cipher' => [new RuntimeException('cURL error 59: failed setting cipher list'), RequestFailure::Handshake],
+			'an error of cURL inside another error' => [new RuntimeException('The request failed.', 0, new RuntimeException('cURL error 60: SSL certificate problem')), RequestFailure::Certificate],
+			'plain HTTP at the port of HTTPS' => [new RuntimeException('cURL error 35: OpenSSL/3.0.13: error:0A00010B:SSL routines::wrong version number'), RequestFailure::Handshake],
+			'a host that does not resolve' => [new RuntimeException('cURL error 6: Could not resolve host: paperless.invalid'), RequestFailure::UnknownHost],
+			'no answer in time' => [new RuntimeException('cURL error 28: Operation timed out after 10001 milliseconds with 0 bytes received'), RequestFailure::Timeout],
+			'a refused connection' => [new RuntimeException('cURL error 7: Failed to connect to paperless.example.com port 443'), RequestFailure::Unreachable],
+			'an error without a code of cURL' => [new RuntimeException('Network is down'), RequestFailure::Unreachable],
+		];
+	}
+
+	/**
+	 * A test of the connection that gets no answer names the cause, from the error of
+	 * cURL, and keeps its message for the log (#120).
+	 */
+	#[DataProvider('errorsWithoutAnswer')]
+	public function testAConnectionTestWithoutAnswerNamesItsCause(Throwable $error, RequestFailure $reason): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willThrowException($error);
+
+		$exception = $this->failedConnectionTest($client);
+
+		self::assertSame($reason, $exception->reason);
+		self::assertNull($exception->status);
+		self::assertSame($error->getMessage(), $exception->getMessage());
+		self::assertSame($error, $exception->getPrevious());
+	}
+
+	/**
+	 * A search keeps the error of a request without answer as it is, so that the history
+	 * of problems names it, such as ConnectException.
+	 */
+	public function testASearchWithoutAnswerFailsWithTheErrorOfTheRequest(): void {
+		$error = new RuntimeException('cURL error 7: Failed to connect');
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willThrowException($error);
+
+		try {
+			$this->service($client)->searchDocuments('invoice', 1, 10);
+			self::fail('The search without answer did not fail.');
+		} catch (Throwable $exception) {
+			self::assertSame($error, $exception);
+		}
 	}
 
 	public function testARequestWithoutAnswerGetsASecondTry(): void {
@@ -320,10 +396,23 @@ final class PaperlessApiServiceTest extends TestCase {
 			->method('get')
 			->willReturn($this->response(502, '<html>Bad gateway</html>'));
 
-		$this->expectException(UnexpectedValueException::class);
+		$this->expectException(PaperlessRequestException::class);
 		$this->expectExceptionMessage('Paperless returned HTTP 502.');
 
 		$this->service($client)->searchDocuments('invoice', 1, 10);
+	}
+
+	/**
+	 * The exception of a test of the connection that failed.
+	 */
+	private function failedConnectionTest(IClient $client): PaperlessRequestException {
+		try {
+			$this->service($client)->testConnection('https://paperless.example.com', 'TEST_VALUE', false);
+		} catch (PaperlessRequestException $exception) {
+			return $exception;
+		}
+
+		self::fail('The test of the connection did not fail.');
 	}
 
 	private function service(IClient $client, string $url = 'https://paperless.example.com', ?string $token = 'TEST_VALUE', bool $allowLocal = false): PaperlessApiService {
