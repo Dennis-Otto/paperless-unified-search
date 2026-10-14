@@ -9,28 +9,39 @@ declare(strict_types=1);
 
 namespace OCA\PaperlessUnifiedSearch\Search;
 
+use DateTime;
 use DateTimeImmutable;
+use DateTimeInterface;
+use DateTimeZone;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessQueryRejected;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
+use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Files\File;
+use OCP\Files\IMimeTypeDetector;
+use OCP\IDateTimeFormatter;
+use OCP\IDateTimeZone;
 use OCP\IL10N;
+use OCP\IPreview;
 use OCP\IRequest;
 use OCP\IURLGenerator;
 use OCP\IUser;
+use OCP\Search\FilterDefinition;
 use OCP\Search\IExternalProvider;
+use OCP\Search\IFilter;
+use OCP\Search\IFilteringProvider;
 use OCP\Search\ISearchQuery;
 use OCP\Search\SearchResult;
 use OCP\Search\SearchResultEntry;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
-final class PaperlessSearchProvider implements IExternalProvider {
+final class PaperlessSearchProvider implements IExternalProvider, IFilteringProvider {
 	/** The ID in the routes of Nextcloud's search, through which the smart picker searches too. */
 	public const ID = AppConstants::APP_ID . '_documents';
 
@@ -39,6 +50,36 @@ final class PaperlessSearchProvider implements IExternalProvider {
 
 	/** After this many milliseconds, a search asks Paperless for no further page. */
 	private const TIME_BUDGET_MS = 3000;
+
+	/**
+	 * The filters of Nextcloud's search for a span of time, each with the filter of
+	 * Paperless for the date of a document that it becomes.
+	 */
+	private const DATE_FILTERS = [
+		IFilter::BUILTIN_SINCE => PaperlessApiService::CREATED_FROM,
+		IFilter::BUILTIN_UNTIL => PaperlessApiService::CREATED_UNTIL,
+	];
+
+	/** The most characters of the excerpt of a document. */
+	private const EXCERPT_LENGTH = 180;
+
+	/**
+	 * The size of the preview of a file in pixels: twice the size at which Nextcloud's
+	 * search shows it, for screens of twice the density.
+	 */
+	private const PREVIEW_SIZE = 64;
+
+	/**
+	 * A date as Paperless sends it: the day, and a time with it from API versions before
+	 * 9 and from Paperless-ngx 1, such as 2026-08-12T00:00:00+02:00.
+	 */
+	private const CREATED_PATTERN = '/^(\d{4}-\d{2}-\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/';
+
+	/**
+	 * The start of a tag of HTML: < before a letter, /, ! or ?. Before anything else, a
+	 * browser shows < as text.
+	 */
+	private const TAG_START = '/<(?=[a-z\/!?])/i';
 
 	/** @psalm-suppress PossiblyUnusedMethod */
 	public function __construct(
@@ -51,6 +92,11 @@ final class PaperlessSearchProvider implements IExternalProvider {
 		private ConfigService $configService,
 		private SearchDiagnostics $diagnostics,
 		private ITimeFactory $timeFactory,
+		private PaperlessNames $names,
+		private IPreview $previewManager,
+		private IMimeTypeDetector $mimeTypeDetector,
+		private IDateTimeFormatter $dateTimeFormatter,
+		private IDateTimeZone $dateTimeZone,
 	) {
 	}
 
@@ -64,6 +110,32 @@ final class PaperlessSearchProvider implements IExternalProvider {
 
 	public function getOrder(string $route, array $routeParameters): ?int {
 		return 40;
+	}
+
+	/**
+	 * The filters of Nextcloud's search that the provider takes: the term, and the span of
+	 * time of the date filter. Nextcloud's web search sends the date filter only to the
+	 * providers that name since and until, and lists any other one under "Partial
+	 * matches", searched without it.
+	 *
+	 * @return list<string>
+	 */
+	public function getSupportedFilters(): array {
+		return [IFilter::BUILTIN_TERM, ...array_keys(self::DATE_FILTERS)];
+	}
+
+	/**
+	 * @return list<string>
+	 */
+	public function getAlternateIds(): array {
+		return [];
+	}
+
+	/**
+	 * @return list<FilterDefinition>
+	 */
+	public function getCustomFilters(): array {
+		return [];
 	}
 
 	/**
@@ -91,6 +163,7 @@ final class PaperlessSearchProvider implements IExternalProvider {
 			return SearchResult::complete($this->getName(), []);
 		}
 
+		$filters = $this->getDateFilters($user, $query);
 		$started = $this->timeFactory->now();
 		$entries = [];
 		$pages = 0;
@@ -103,14 +176,18 @@ final class PaperlessSearchProvider implements IExternalProvider {
 		try {
 			do {
 				$step = SearchEvent::STEP_PAPERLESS;
-				$response = $this->paperlessApi->searchDocuments($term, $pager->getPage(), PaperlessPager::PAGE_SIZE);
+				$response = $this->paperlessApi->searchDocuments($term, $pager->getPage(), PaperlessPager::PAGE_SIZE, $filters);
 				$hits = $pager->getHitsFromOffset($response['results']);
 				$step = SearchEvent::STEP_FILES;
 				// The files of all documents of the page, in one search of the file cache.
 				$found = $this->fileLocator->findAllForUser($user, $this->getDocumentIds($hits), $archiveOwner);
 
+				// The names of the correspondents and the types of the documents with a file,
+				// with one request per kind at most, which never fails the search.
+				$names = $this->names->of(self::withFiles($hits, $found->files));
+
 				$pages++;
-				[$pageEntries, $used, $pageLeftOut, $pageError] = $this->createEntries($user, $hits, $found->files, $pager->limit - count($entries));
+				[$pageEntries, $used, $pageLeftOut, $pageError] = $this->createEntries($user, $hits, $found->files, $names, $pager->limit - count($entries));
 				$entries = [...$entries, ...$pageEntries];
 				$leftOut += $pageLeftOut;
 				$entryError ??= $pageError;
@@ -180,6 +257,28 @@ final class PaperlessSearchProvider implements IExternalProvider {
 		return SearchResult::complete($this->getName(), $entries);
 	}
 
+	/**
+	 * The span of time of the date filter as filters of Paperless for the date of a
+	 * document, each bound that the search has. Nextcloud's web search sends a bound as
+	 * a moment in UTC, such as midnight in the timezone of the browser for the first day
+	 * of the span; its day in the timezone of the user is the day that the user picked.
+	 *
+	 * @return array<string, string>
+	 */
+	private function getDateFilters(IUser $user, ISearchQuery $query): array {
+		$filters = [];
+		foreach (self::DATE_FILTERS as $name => $parameter) {
+			/** @psalm-suppress MixedAssignment The value of a filter is checked before use. */
+			$moment = $query->getFilter($name)?->get();
+			if ($moment instanceof DateTimeInterface) {
+				$timeZone = $this->dateTimeZone->getTimeZone($moment->getTimestamp(), $user->getUID());
+				$filters[$parameter] = DateTimeImmutable::createFromInterface($moment)->setTimezone($timeZone)->format('Y-m-d');
+			}
+		}
+
+		return $filters;
+	}
+
 	private function recordFailure(string $step, Throwable $error, DateTimeImmutable $started, string $term): void {
 		$this->diagnostics->recordFailure(
 			$step,
@@ -223,17 +322,33 @@ final class PaperlessSearchProvider implements IExternalProvider {
 	}
 
 	/**
+	 * The hits of documents that a file stands for, of which a page may show entries.
+	 *
+	 * @param list<array<array-key, mixed>> $hits
+	 * @param array<int, File> $files by document ID
+	 * @return list<array<array-key, mixed>>
+	 */
+	private static function withFiles(array $hits, array $files): array {
+		return array_values(array_filter($hits, static function (array $hit) use ($files): bool {
+			$documentId = self::getDocumentId($hit);
+
+			return $documentId !== null && isset($files[$documentId]);
+		}));
+	}
+
+	/**
 	 * Entries for the hits in their order, at most as many as wanted: one for every
 	 * document with a file. A file that fails to answer costs only its own entry, not the
 	 * search.
 	 *
 	 * @param list<array<array-key, mixed>> $hits
 	 * @param array<int, File> $files by document ID
+	 * @param array<string, array<int, string>> $names the names of correspondents and types, as PaperlessNames finds them
 	 * @return array{list<SearchResultEntry>, int, int, ?Throwable} the entries, how many
 	 *                                                              hits they went through, how many entries their files cost, and the
 	 *                                                              error of the first of these files
 	 */
-	private function createEntries(IUser $user, array $hits, array $files, int $wanted): array {
+	private function createEntries(IUser $user, array $hits, array $files, array $names, int $wanted): array {
 		$entries = [];
 		$used = 0;
 		$leftOut = 0;
@@ -250,7 +365,7 @@ final class PaperlessSearchProvider implements IExternalProvider {
 			}
 
 			try {
-				$entries[] = $this->createEntry($user, $hit, $files[$documentId]);
+				$entries[] = $this->createEntry($user, $hit, $files[$documentId], $names);
 			} catch (Throwable $error) {
 				$leftOut++;
 				$firstError ??= $error;
@@ -261,18 +376,26 @@ final class PaperlessSearchProvider implements IExternalProvider {
 	}
 
 	/**
+	 * The entry of a document: the preview of its file, or else the icon of the type of
+	 * the file, its title, and a line with its date, its correspondent, its type and the
+	 * text that Paperless found.
+	 *
 	 * @param array<array-key, mixed> $document
+	 * @param array<string, array<int, string>> $names
 	 */
-	private function createEntry(IUser $user, array $document, File $file): SearchResultEntry {
+	private function createEntry(IUser $user, array $document, File $file, array $names): SearchResultEntry {
 		$title = isset($document['title']) && is_string($document['title']) ? trim($document['title']) : '';
 		if ($title === '') {
 			$title = $file->getName();
 		}
 
+		// The picture goes into the thumbnail, which every client shows, and none into the
+		// icon: the smart picker shows an icon in place of the thumbnail, as the name of a
+		// class of CSS, which a URL isn't.
 		$entry = new SearchResultEntry(
-			$this->urlGenerator->imagePath(AppConstants::APP_ID, 'app.svg'),
+			$this->getPictureUrl($file),
 			$title,
-			$this->getSubline($document, $file),
+			$this->getSubline($document, $file, $names),
 			$this->getResourceUrl($user, $file),
 			'',
 			false,
@@ -281,6 +404,31 @@ final class PaperlessSearchProvider implements IExternalProvider {
 		$entry->addAttribute('path', $this->fileLocator->getPathForUser($user, $file));
 
 		return $entry;
+	}
+
+	/**
+	 * The picture of a file, as an absolute URL, which the apps for phones load as well:
+	 * its preview, for a type of file of which Nextcloud draws previews, as its search of
+	 * files shows it, or else the icon of the type; the icon of the app only when Nextcloud
+	 * has none. Should a preview fail, Nextcloud answers with the icon of the type.
+	 */
+	private function getPictureUrl(File $file): string {
+		$mimeType = $file->getMimetype();
+		if ($this->previewManager->isMimeSupported($mimeType)) {
+			return $this->urlGenerator->linkToRouteAbsolute('core.Preview.getPreviewByFileId', [
+				'x' => self::PREVIEW_SIZE,
+				'y' => self::PREVIEW_SIZE,
+				'fileId' => $file->getId(),
+				'mimeFallback' => true,
+			]);
+		}
+
+		$icon = $this->mimeTypeDetector->mimeTypeIcon($mimeType);
+		if ($icon === '') {
+			$icon = $this->urlGenerator->imagePath(AppConstants::APP_ID, 'app.svg');
+		}
+
+		return $this->urlGenerator->getAbsoluteURL($icon);
 	}
 
 	private function getResourceUrl(IUser $user, File $file): string {
@@ -302,46 +450,106 @@ final class PaperlessSearchProvider implements IExternalProvider {
 	}
 
 	/**
+	 * The line below the title: what Paperless knows of the document, its date, its
+	 * correspondent and its type, then the text that Paperless found, or else the name of
+	 * the file, such as "Aug 12, 2026 · ACME Energy · Invoice — Electricity invoice …".
+	 * It is text without any tag of HTML, also where Paperless or the document has one.
+	 *
 	 * @param array<array-key, mixed> $document
+	 * @param array<string, array<int, string>> $names
 	 */
-	private function getSubline(array $document, File $file): string {
-		$parts = [];
+	private function getSubline(array $document, File $file, array $names): string {
+		$facts = [];
 		if (isset($document['created']) && is_string($document['created']) && $document['created'] !== '') {
-			$parts[] = $document['created'];
+			$facts[] = $this->formatDate($document['created']);
+		}
+		foreach (array_keys(PaperlessNames::FIELDS) as $field) {
+			$id = PaperlessNames::idOf($document, $field);
+			$name = $id === null ? '' : self::oneLine($names[$field][$id] ?? '');
+			if ($name !== '') {
+				$facts[] = $name;
+			}
 		}
 
-		$snippet = $this->getHighlight($document);
-		if ($snippet !== '') {
-			$parts[] = $snippet;
-		} else {
-			$parts[] = $file->getName();
+		$text = $this->getExcerpt($document);
+		if ($text === '') {
+			$text = $file->getName();
 		}
 
-		return implode(' · ', $parts);
+		$subline = $facts === [] ? $text : implode(' · ', $facts) . ' — ' . $text;
+
+		return preg_replace(self::TAG_START, '< ', $subline) ?? '';
 	}
 
 	/**
+	 * The date of a document in the language of the user, such as Aug 12, 2026 in
+	 * English and 12.08.2026 in German. It is the day that Paperless names, in no other
+	 * timezone: with a time, Paperless names the day in its own timezone, which the time
+	 * would shift into the one of the user. Any other text stays as it is.
+	 */
+	private function formatDate(string $created): string {
+		if (preg_match(self::CREATED_PATTERN, $created, $match) !== 1) {
+			return $created;
+		}
+
+		$utc = new DateTimeZone('UTC');
+		$day = DateTime::createFromFormat('!Y-m-d', $match[1], $utc);
+		// No such day, as 2026-02-30, which PHP would turn into March 2.
+		if ($day === false || $day->format('Y-m-d') !== $match[1]) {
+			return $created;
+		}
+
+		return $this->dateTimeFormatter->formatDate($day, 'medium', $utc);
+	}
+
+	/**
+	 * The text that Paperless found: its excerpt of the content, or else, for a search
+	 * that matched a note only, its excerpt of the notes.
+	 *
 	 * @param array<array-key, mixed> $document
 	 */
-	private function getHighlight(array $document): string {
+	private function getExcerpt(array $document): string {
 		/** @psalm-suppress MixedAssignment JSON value is validated before use. */
 		$searchHit = $document['__search_hit__'] ?? null;
-		if (!is_array($searchHit) || !isset($searchHit['highlights'])) {
+		if (!is_array($searchHit)) {
 			return '';
 		}
 
-		$rawHighlights = $searchHit['highlights'];
-		if (is_array($rawHighlights)) {
-			$rawHighlights = implode(' ', array_filter($rawHighlights, 'is_string'));
+		$excerpt = self::plainText($searchHit['highlights'] ?? null);
+		if ($excerpt !== '') {
+			return $excerpt;
 		}
 
-		if (!is_string($rawHighlights)) {
+		$note = self::plainText($searchHit['note_highlights'] ?? null);
+
+		return $note === '' ? '' : $this->l10n->t('Note: %s', [$note]);
+	}
+
+	/**
+	 * Highlights of Paperless as text on one line, cut to EXCERPT_LENGTH characters.
+	 * Paperless marks the words of the term with tags, <b> in Paperless-ngx 3 and
+	 * <span class="match"> in 2, and escapes the text of the document as HTML around them:
+	 * the tags go, then the entities become characters again. What looks like a tag
+	 * after that, such as <GmbH>, is text of the document, which getSubline() keeps.
+	 */
+	private static function plainText(mixed $highlights): string {
+		if (is_array($highlights)) {
+			$highlights = implode(' ', array_filter($highlights, 'is_string'));
+		}
+		if (!is_string($highlights)) {
 			return '';
 		}
 
-		$snippet = html_entity_decode(strip_tags($rawHighlights), ENT_QUOTES | ENT_HTML5, 'UTF-8');
-		$snippet = preg_replace('/\s+/u', ' ', $snippet) ?? '';
+		$text = self::oneLine(html_entity_decode(strip_tags($highlights), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
 
-		return mb_strimwidth(trim($snippet), 0, 180, '…', 'UTF-8');
+		return mb_strimwidth($text, 0, self::EXCERPT_LENGTH, '…', 'UTF-8');
+	}
+
+	/**
+	 * The text with every run of white space, line breaks too, as one space, and none at
+	 * either end.
+	 */
+	private static function oneLine(string $text): string {
+		return trim(preg_replace('/\s+/u', ' ', $text) ?? '');
 	}
 }

@@ -60,6 +60,8 @@ required_checks = [
 PUBLISH_TO = "nextcloud-appstore"
 # The GitHub App that opens the release pull requests, so that their checks run.
 RELEASE_AUTOMATION_CLIENT_ID = "Iv23liP9PIEHOV74AiIA"
+# Its App ID: only this app may create release tags, which the release workflow signs.
+RELEASE_AUTOMATION_APP_ID = "4739928"
 
 # GitHub Pages, which publishes the website that the Docs workflow builds from
 # mkdocs.yml and docs/.

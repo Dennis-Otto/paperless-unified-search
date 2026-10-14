@@ -46,12 +46,13 @@ final class AdminSettingsTest extends TestCase {
 		$credentials->method('retrieve')->willReturn('TEST_VALUE');
 
 		$urlGenerator = $this->createMock(IURLGenerator::class);
-		$urlGenerator->expects(self::exactly(3))
+		$urlGenerator->expects(self::exactly(4))
 			->method('linkToRoute')
 			->willReturnCallback(static fn (string $routeName): string => match ($routeName) {
 				AppConstants::APP_ID . '.settings.save' => '/apps/paperless_unified_search/settings#save',
 				AppConstants::APP_ID . '.settings.reset' => '/apps/paperless_unified_search/settings#reset',
 				AppConstants::APP_ID . '.settings.clearDiagnostics' => '/apps/paperless_unified_search/settings/diagnostics',
+				AppConstants::APP_ID . '.settings.trySearch' => '/apps/paperless_unified_search/settings/try',
 			});
 
 		$form = $this->settings($config, $credentials, $urlGenerator)->getForm();
@@ -64,6 +65,7 @@ final class AdminSettingsTest extends TestCase {
 		self::assertSame('/apps/paperless_unified_search/settings#save', $params['saveUrl']);
 		self::assertSame('/apps/paperless_unified_search/settings#reset', $params['resetUrl']);
 		self::assertSame('/apps/paperless_unified_search/settings/diagnostics', $params['clearDiagnosticsUrl']);
+		self::assertSame('/apps/paperless_unified_search/settings/try', $params['tryUrl']);
 		self::assertInstanceOf(PublicConfig::class, $params['config']);
 		self::assertSame([
 			'url' => 'https://paperless.example.com',

@@ -6,16 +6,21 @@ config:
 ---
 flowchart TB
     accTitle: The components
-    accDescr: Inside Nextcloud, the unified search calls the search provider of the app, and the administration settings call its settings page. The smart picker finds Paperless documents through the reference provider of the app, which names the search provider, and then calls the search provider as the unified search does. The search provider uses the Paperless client, the file locator and the configuration; the settings page uses the Paperless client and the configuration. The Paperless client reaches /api/documents/ of Paperless-ngx through Nextcloud's HTTP client, the file locator looks into the folders of the users, and the configuration keeps its values in the app configuration and the token in the credentials manager.
+    accDescr: Inside Nextcloud, the unified search calls the search provider of the app, and the administration settings call its settings page. The smart picker finds Paperless documents through the reference provider of the app, which names the search provider, and then calls the search provider as the unified search does. occ runs the commands of the app, and the overview of the administration settings runs its setup check. The search provider uses the Paperless client, the file locator and the configuration; the settings page and the commands use the Paperless client and the configuration, and the commands also the explainer, which asks the file locator. The setup check reads only the configuration. The Paperless client reaches /api/documents/ of Paperless-ngx through Nextcloud's HTTP client, the file locator looks into the folders of the users, and the configuration keeps its values in the app configuration and the token in the credentials manager.
 
     subgraph nextcloud ["Nextcloud"]
         search["Unified<br>search"]
         picker["Smart<br>picker"]
         page["Administration<br>settings"]
+        occ["occ"]
+        overview["Overview of the<br>administration<br>settings"]
         subgraph app ["Paperless Unified Search"]
             reference["Reference<br>provider"]
             provider["Search<br>provider"]
             controller["Settings<br>page"]
+            commands["Commands<br>of occ"]
+            setupcheck["Setup<br>check"]
+            explainer["Explainer"]
             client["Paperless<br>client"]
             locator["File<br>locator"]
             config["Configuration"]
@@ -32,15 +37,21 @@ flowchart TB
     reference -. "names" .-> provider
     picker --> provider
     page --> controller
+    occ --> commands
+    overview --> setupcheck
     provider --> client
     provider --> locator
     provider --> config
     controller --> client
     controller --> config
+    commands --> client
+    commands --> explainer --> locator
+    commands --> config
+    setupcheck --> config
     client --> http --> paperless
     locator --> folders
     config --> appconfig
     config --> credentials
 
     classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
-    class reference,provider,controller,client,locator,config app
+    class reference,provider,controller,commands,setupcheck,explainer,client,locator,config app

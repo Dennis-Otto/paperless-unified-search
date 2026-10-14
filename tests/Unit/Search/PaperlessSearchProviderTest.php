@@ -9,7 +9,9 @@ declare(strict_types=1);
 
 namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Search;
 
+use DateTime;
 use DateTimeImmutable;
+use DateTimeZone;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Model\DiagnosticsHistory;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
@@ -17,24 +19,32 @@ use OCA\PaperlessUnifiedSearch\Search\PaperlessSearchProvider;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
+use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\FileCache;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryAppConfig;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryCache;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Files\File;
 use OCP\Files\Folder;
+use OCP\Files\IMimeTypeDetector;
 use OCP\Files\IRootFolder;
 use OCP\Http\Client\IClient;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
 use OCP\IAppConfig;
 use OCP\ICacheFactory;
+use OCP\IDateTimeFormatter;
+use OCP\IDateTimeZone;
 use OCP\IL10N;
+use OCP\IPreview;
 use OCP\IRequest;
 use OCP\IURLGenerator;
 use OCP\IUser;
+use OCP\Search\IFilter;
+use OCP\Search\IFilteringProvider;
 use OCP\Search\ISearchQuery;
 use OCP\Search\SearchResultEntry;
 use OCP\Security\ICredentialsManager;
@@ -60,6 +70,15 @@ final class PaperlessSearchProviderTest extends TestCase {
 
 	/** @var list<array<string, int|string>> the queries of the requests that reached Paperless, oldest first */
 	private array $requests = [];
+
+	/** @var list<array{string, array<string, int|string>}> the list and the query of each request for names, oldest first */
+	private array $nameRequests = [];
+
+	/** @var list<array{bool|int, ?string}> the timestamp and the user of each question for a timezone, oldest first */
+	private array $timeZoneRequests = [];
+
+	/** The distributed cache of Nextcloud, once the app uses it. */
+	private ?MemoryCache $cache = null;
 
 	protected function setUp(): void {
 		$this->config = new MemoryAppConfig([AppConstants::APP_ID . '.diagnostics_pending' => false]);
@@ -116,6 +135,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$file->method('getPath')->willReturn('/dennis/files/Paperless/Salary [P123].pdf');
 		$file->method('getId')->willReturn(4711);
 		$file->method('getOwner')->willReturn($this->account('archive'));
+		$file->method('getMimetype')->willReturn('application/pdf');
 
 		$root = $this->createMock(IRootFolder::class);
 		$root->expects(self::atLeastOnce())->method('getUserFolder')->with('dennis')->willReturn($this->userFolder([$file]));
@@ -127,10 +147,8 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$l10n->method('t')->willReturnCallback(static fn (string $text): string => $text);
 
 		$urlGenerator = $this->createMock(IURLGenerator::class);
-		$urlGenerator->expects(self::once())
-			->method('imagePath')
-			->with(AppConstants::APP_ID, 'app.svg')
-			->willReturn('/apps/paperless_unified_search/img/app.svg');
+		// A file of Paperless has an icon of its type: the icon of the app is not needed.
+		$urlGenerator->expects(self::never())->method('imagePath');
 		$urlGenerator->expects(self::once())
 			->method('linkToRouteAbsolute')
 			->with('files.view.showFile', ['fileid' => 4711])
@@ -148,8 +166,9 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$query->method('getCursor')->willReturn(null);
 
 		$configService = new ConfigService($config, $credentials, $this->accounts('archive'), $this->createStub(LoggerInterface::class));
+		$paperlessApi = new PaperlessApiService($configService, $clientService, $this->diagnostics($config), $this->clock(), $this->appManager());
 		$provider = new PaperlessSearchProvider(
-			new PaperlessApiService($configService, $clientService, $this->diagnostics($config), $this->clock(), $this->appManager()),
+			$paperlessApi,
 			new NextcloudFileLocator($root, $this->createStub(LoggerInterface::class)),
 			$l10n,
 			$urlGenerator,
@@ -158,6 +177,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			$configService,
 			$this->diagnostics($config),
 			$this->clock(),
+			...$this->presentation($paperlessApi, $configService),
 		);
 
 		self::assertTrue($provider->isExternalProvider());
@@ -171,7 +191,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			'fileId' => '4711',
 			'path' => '/Paperless/Salary [P123].pdf',
 		], $result['entries'][0]->jsonSerialize()['attributes']);
-		self::assertSame('2026-07-31 · Gross 5,000 EUR', $result['entries'][0]->jsonSerialize()['subline']);
+		self::assertSame('Jul 31, 2026 — Gross 5,000 EUR', $result['entries'][0]->jsonSerialize()['subline']);
 	}
 
 	/**
@@ -208,8 +228,9 @@ final class PaperlessSearchProviderTest extends TestCase {
 			->willReturn(true);
 
 		$configService = new ConfigService($config, $this->createStub(ICredentialsManager::class), $this->accounts(), $this->createStub(LoggerInterface::class));
+		$paperlessApi = new PaperlessApiService($configService, $this->createStub(IClientService::class), $this->diagnostics($config), $this->clock(), $this->appManager());
 		$provider = new PaperlessSearchProvider(
-			new PaperlessApiService($configService, $this->createStub(IClientService::class), $this->diagnostics($config), $this->clock(), $this->appManager()),
+			$paperlessApi,
 			new NextcloudFileLocator($this->createStub(IRootFolder::class), $this->createStub(LoggerInterface::class)),
 			$this->createStub(IL10N::class),
 			$this->createStub(IURLGenerator::class),
@@ -218,6 +239,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			$configService,
 			$this->diagnostics($config),
 			$this->clock(),
+			...$this->presentation($paperlessApi, $configService),
 		);
 
 		self::assertFalse($provider->isExternalProvider());
@@ -230,6 +252,111 @@ final class PaperlessSearchProviderTest extends TestCase {
 		self::assertSame(PaperlessSearchProvider::ID, $provider->getId());
 		self::assertSame('Paperless documents', $provider->getName());
 		self::assertSame(40, $provider->getOrder('files.view.index', []));
+	}
+
+	/**
+	 * Nextcloud's web search sends its date filter only to a provider that names since and
+	 * until, and lists any other one under "Partial matches", searched without it.
+	 */
+	public function testTakesTheTermAndTheDateFilterOfTheSearch(): void {
+		$provider = $this->provider($this->createStub(IClient::class));
+
+		self::assertInstanceOf(IFilteringProvider::class, $provider);
+		self::assertSame([IFilter::BUILTIN_TERM, IFilter::BUILTIN_SINCE, IFilter::BUILTIN_UNTIL], $provider->getSupportedFilters());
+		self::assertSame([], $provider->getAlternateIds());
+		self::assertSame([], $provider->getCustomFilters());
+	}
+
+	/**
+	 * @return array<string, array{array<string, mixed>, string, array<string, string>}>
+	 */
+	public static function dateFilters(): array {
+		return [
+			'no date filter' => [[], 'America/New_York', []],
+			'since alone' => [
+				['since' => new DateTimeImmutable('2026-08-01T04:00:00Z')],
+				'America/New_York',
+				['created__date__gte' => '2026-08-01'],
+			],
+			'until alone' => [
+				['until' => new DateTimeImmutable('2026-09-01T03:59:59.999Z')],
+				'America/New_York',
+				['created__date__lte' => '2026-08-31'],
+			],
+			'since and until' => [
+				['since' => new DateTimeImmutable('2026-08-01T04:00:00Z'), 'until' => new DateTimeImmutable('2026-09-01T03:59:59.999Z')],
+				'America/New_York',
+				['created__date__gte' => '2026-08-01', 'created__date__lte' => '2026-08-31'],
+			],
+			// Midnight in Berlin is the evening before in UTC.
+			'the day in the timezone of the user' => [
+				['since' => new DateTimeImmutable('2026-07-31T22:00:00Z'), 'until' => new DateTimeImmutable('2026-08-31T21:59:59.999Z')],
+				'Europe/Berlin',
+				['created__date__gte' => '2026-08-01', 'created__date__lte' => '2026-08-31'],
+			],
+			'a day of the winter' => [
+				['since' => new DateTimeImmutable('2026-12-31T23:00:00Z')],
+				'Europe/Berlin',
+				['created__date__gte' => '2027-01-01'],
+			],
+			'a mutable moment with an offset of its own' => [
+				['since' => new DateTime('2026-08-01T00:30:00+02:00')],
+				'UTC',
+				['created__date__gte' => '2026-07-31'],
+			],
+			'filters whose values are no dates' => [['since' => '2026-08-01', 'until' => null], 'UTC', []],
+		];
+	}
+
+	/**
+	 * The date filter of Nextcloud's search becomes the filter of Paperless for the date of
+	 * a document: each bound that the search has, as the day in the timezone of the user.
+	 *
+	 * @param array<string, mixed> $filters
+	 * @param array<string, string> $expected
+	 */
+	#[DataProvider('dateFilters')]
+	public function testTheDateFilterNarrowsTheDocumentsByTheirDate(array $filters, string $timeZone, array $expected): void {
+		$this->provider($this->ranking(self::documentsWithIds([1, 2])), $this->files([1, 2]), timeZone: $timeZone)
+			->search($this->user(), $this->query('invoice', null, 5, $filters));
+
+		self::assertCount(1, $this->requests);
+		self::assertSame($expected, self::filtersOf($this->requests[0]));
+	}
+
+	/**
+	 * The timezone is the one of the user who searches, at the moment of the bound: where
+	 * Nextcloud knows only the offset of the browser, the zone may differ in summer and in
+	 * winter.
+	 */
+	public function testTheTimezoneIsTheOneOfTheUserAtTheMomentOfTheBound(): void {
+		$since = new DateTimeImmutable('2026-01-01T05:00:00Z');
+		$until = new DateTimeImmutable('2026-08-01T03:59:59Z');
+
+		$this->provider($this->ranking(self::documentsWithIds([1])), $this->files([1]))
+			->search($this->user(), $this->query('invoice', null, 5, ['since' => $since, 'until' => $until]));
+
+		self::assertSame([[$since->getTimestamp(), 'dennis'], [$until->getTimestamp(), 'dennis']], $this->timeZoneRequests);
+		self::assertSame(['created__date__gte' => '2026-01-01', 'created__date__lte' => '2026-07-31'], self::filtersOf($this->requests[0]));
+	}
+
+	/**
+	 * Every page of Paperless that fills a page of results is asked with the date filter,
+	 * so that a later page finds no document outside of the span either.
+	 */
+	public function testEveryPageOfPaperlessIsAskedWithTheDateFilter(): void {
+		$result = $this->provider($this->ranking(self::documentsWithIds(range(1, 60))), $this->files([3, 26, 27, 51]))
+			->search($this->user(), $this->query('invoice', null, 5, [
+				'since' => new DateTimeImmutable('2026-08-01T04:00:00Z'),
+				'until' => new DateTimeImmutable('2026-09-01T03:59:59Z'),
+			]))
+			->jsonSerialize();
+
+		self::assertSame(self::titlesOf([3, 26, 27, 51]), self::titles($result['entries']));
+		self::assertSame([1, 2, 3], array_column($this->requests, 'page'));
+		foreach ($this->requests as $request) {
+			self::assertSame(['created__date__gte' => '2026-08-01', 'created__date__lte' => '2026-08-31'], self::filtersOf($request));
+		}
 	}
 
 	/**
@@ -1027,17 +1154,27 @@ final class PaperlessSearchProviderTest extends TestCase {
 	}
 
 	/**
-	 * @return array<string, array{array<string, mixed>, string, string}>
+	 * A document, its title and its subline, and the name of its file when it isn't Scan [P7].pdf.
+	 *
+	 * @return array<string, array{0: array<string, mixed>, 1: string, 2: string, 3?: string}>
 	 */
 	public static function documents(): array {
 		$file = 'Scan [P7].pdf';
 
 		return [
-			'title and date' => [['title' => ' Invoice ', 'created' => '2026-05-01'], 'Invoice', '2026-05-01 · ' . $file],
+			'title and date' => [['title' => ' Invoice ', 'created' => '2026-05-01'], 'Invoice', 'May 1, 2026 — ' . $file],
 			'blank title' => [['title' => '  '], $file, $file],
 			'title that is no text' => [['title' => 42], $file, $file],
 			'empty date' => [['title' => 'Invoice', 'created' => ''], 'Invoice', $file],
 			'date that is no text' => [['title' => 'Invoice', 'created' => 20260501], 'Invoice', $file],
+			// API versions before 9 send the start of the day in the timezone of Paperless,
+			// which is that day, also for a user west of it.
+			'date with a time' => [['title' => 'Invoice', 'created' => '2026-08-12T00:00:00+02:00'], 'Invoice', 'Aug 12, 2026 — ' . $file],
+			'date with a time in UTC' => [['title' => 'Invoice', 'created' => '2026-08-11T22:00:00.123456Z'], 'Invoice', 'Aug 11, 2026 — ' . $file],
+			'date with a time without its zone' => [['title' => 'Invoice', 'created' => '2026-08-12T09:30'], 'Invoice', 'Aug 12, 2026 — ' . $file],
+			'day that does not exist' => [['title' => 'Invoice', 'created' => '2026-02-30'], 'Invoice', '2026-02-30 — ' . $file],
+			'date in another form' => [['title' => 'Invoice', 'created' => '12.08.2026'], 'Invoice', '12.08.2026 — ' . $file],
+			'date with more after it' => [['title' => 'Invoice', 'created' => '2026-08-12 and later'], 'Invoice', '2026-08-12 and later — ' . $file],
 			'search hit that is no object' => [['title' => 'Invoice', '__search_hit__' => 'invoice'], 'Invoice', $file],
 			'search hit without highlights' => [['title' => 'Invoice', '__search_hit__' => ['score' => 1.5]], 'Invoice', $file],
 			'highlights that are no text' => [['title' => 'Invoice', '__search_hit__' => ['highlights' => 42]], 'Invoice', $file],
@@ -1048,15 +1185,40 @@ final class PaperlessSearchProviderTest extends TestCase {
 				'Invoice 42 paid',
 			],
 			'entities and whitespace' => [
-				['title' => 'Invoice', '__search_hit__' => ['highlights' => "Müller &amp; Co\n\t KG"]],
+				['title' => 'Invoice', '__search_hit__' => ['highlights' => "Müller &amp; Co\n\t KG&nbsp; &#x27;24"]],
 				'Invoice',
-				'Müller & Co KG',
+				"Müller & Co KG '24",
 			],
 			'long highlight' => [
 				['title' => 'Invoice', '__search_hit__' => ['highlights' => str_repeat('a', 200)]],
 				'Invoice',
 				str_repeat('a', 179) . '…',
 			],
+			// A search that found the term in a note only, as Paperless-ngx 3.3.0 answers it.
+			'note' => [
+				['title' => 'Invoice', '__search_hit__' => ['highlights' => '', 'note_highlights' => 'Paid by bank <b>transfer</b>']],
+				'Invoice',
+				'Note: Paid by bank transfer',
+			],
+			'note with an excerpt of the text' => [
+				['title' => 'Invoice', '__search_hit__' => ['highlights' => 'Total <b>due</b>', 'note_highlights' => 'Paid by bank <b>transfer</b>']],
+				'Invoice',
+				'Total due',
+			],
+			'note of markup only' => [['title' => 'Invoice', '__search_hit__' => ['highlights' => '', 'note_highlights' => '<b></b>']], 'Invoice', $file],
+			'no note' => [['title' => 'Invoice', '__search_hit__' => ['highlights' => '', 'note_highlights' => null]], 'Invoice', $file],
+			// The text of a document that looks like a tag stays, as text that is no tag.
+			'escaped tags' => [
+				['title' => 'Invoice', '__search_hit__' => ['highlights' => 'It quotes &lt;<b>script</b>&gt;alert(1)&lt;/<b>script</b>&gt; and &lt;!-- --&gt; &lt;?php']],
+				'Invoice',
+				'It quotes < script>alert(1)< /script> and < !-- --> < ?php',
+			],
+			'less-than signs that start no tag' => [
+				['title' => 'Invoice', '__search_hit__' => ['highlights' => 'Below &lt;5 °C, a &lt; b, x&lt;y and z']],
+				'Invoice',
+				'Below <5 °C, a < b, x< y and z',
+			],
+			'tag in the name of the file' => [['title' => 'Invoice'], 'Invoice', 'Scan < b>[P7].pdf', 'Scan <b>[P7].pdf'],
 			// Quotes of HTML 4, of HTML5 and as numbers.
 			'quotes' => [
 				['title' => 'Invoice', '__search_hit__' => ['highlights' => '&quot;Paid&quot; &apos;in full&apos; &#x27;2026&#x27;']],
@@ -1075,24 +1237,232 @@ final class PaperlessSearchProviderTest extends TestCase {
 	 * @param array<string, mixed> $document
 	 */
 	#[DataProvider('documents')]
-	public function testTitleAndSublineComeFromTheDocument(array $document, string $title, string $subline): void {
+	public function testTitleAndSublineComeFromTheDocument(array $document, string $title, string $subline, string $fileName = 'Scan [P7].pdf'): void {
 		$client = $this->paperless(['count' => 1, 'next' => null, 'results' => [['id' => 7] + $document]]);
 
-		$result = $this->provider($client, [7 => $this->file(7, 'Scan [P7].pdf')])
+		$result = $this->provider($client, [7 => $this->file(7, $fileName)])
 			->search($this->user(), $this->query('invoice'))
 			->jsonSerialize();
 
 		self::assertCount(1, $result['entries']);
+		$entry = $result['entries'][0]->jsonSerialize();
+		self::assertSame($title, $entry['title']);
+		self::assertSame($subline, $entry['subline']);
+		// Whatever the document holds, the line below the title holds no tag of HTML: a
+		// browser starts a tag at < before a letter, /, ! or ?.
+		self::assertDoesNotMatchRegularExpression('/<[a-z\/!?]/i', $entry['subline']);
+		self::assertSame('https://cloud.example.com/f/1007', $entry['resourceUrl']);
+		self::assertSame(['fileId' => '1007', 'path' => '/Paperless/' . $fileName], $entry['attributes']);
+	}
+
+	public function testTheDateIsInTheLanguageOfTheUser(): void {
+		$client = $this->paperless(['count' => 1, 'next' => null, 'results' => [['id' => 7, 'title' => 'Rechnung', 'created' => '2026-08-12']]]);
+
+		$result = $this->provider($client, [7 => $this->file(7, 'Rechnung [P7].pdf')], locale: 'de')
+			->search($this->user(), $this->query('rechnung'))
+			->jsonSerialize();
+
+		self::assertSame('12.08.2026 — Rechnung [P7].pdf', $result['entries'][0]->jsonSerialize()['subline']);
+	}
+
+	/**
+	 * A file of a type of which Nextcloud draws previews shows its preview, as the
+	 * search of files shows it; a preview that fails answers with the icon of the type.
+	 */
+	public function testAResultShowsThePreviewOfItsFile(): void {
+		$client = $this->paperless(['count' => 1, 'next' => null, 'results' => [['id' => 7, 'title' => 'Invoice']]]);
+
+		$result = $this->provider($client, [7 => $this->file(7, 'Invoice [P7].pdf')], previews: true)
+			->search($this->user(), $this->query('invoice'))
+			->jsonSerialize();
+
+		$entry = $result['entries'][0]->jsonSerialize();
+		self::assertSame('https://cloud.example.com/index.php/core/preview?x=64&y=64&fileId=1007&mimeFallback=1', $entry['thumbnailUrl']);
+		// The smart picker would show the icon in place of the thumbnail, as a class of CSS.
+		self::assertSame('', $entry['icon']);
+		self::assertFalse($entry['rounded']);
+	}
+
+	/**
+	 * Nextcloud draws no previews of PDF files by default: the result shows the icon of
+	 * the type of its file, as the search of files does, not one icon for every document.
+	 */
+	public function testWithoutAPreviewAResultShowsTheIconOfTheTypeOfItsFile(): void {
+		$client = $this->paperless(['count' => 1, 'next' => null, 'results' => [['id' => 7, 'title' => 'Invoice']]]);
+
+		$result = $this->provider($client, [7 => $this->file(7, 'Invoice [P7].pdf')])
+			->search($this->user(), $this->query('invoice'))
+			->jsonSerialize();
+
+		$entry = $result['entries'][0]->jsonSerialize();
+		self::assertSame('https://cloud.example.com/core/img/filetypes/application-pdf.svg', $entry['thumbnailUrl']);
+		self::assertSame('', $entry['icon']);
+	}
+
+	public function testATypeOfFileWithoutAnIconShowsTheIconOfTheApp(): void {
+		$client = $this->paperless(['count' => 1, 'next' => null, 'results' => [['id' => 7, 'title' => 'Invoice']]]);
+
+		$result = $this->provider($client, [7 => $this->file(7, 'Invoice [P7].xyz', mimeType: 'application/x-unknown')], previews: true)
+			->search($this->user(), $this->query('invoice'))
+			->jsonSerialize();
+
+		$entry = $result['entries'][0]->jsonSerialize();
+		self::assertSame('https://cloud.example.com/apps/paperless_unified_search/img/app.svg', $entry['thumbnailUrl']);
+		self::assertSame('', $entry['icon']);
+	}
+
+	/**
+	 * Paperless sends the IDs of the correspondent and the type of a document; one
+	 * request per kind names all of a page, and the result shows them after its date.
+	 */
+	public function testAResultNamesTheCorrespondentAndTheTypeOfItsDocument(): void {
+		$client = $this->paperlessWithLists(['count' => 4, 'next' => null, 'results' => [
+			['id' => 7, 'title' => 'Invoice', 'created' => '2026-08-12', 'correspondent' => 3, 'document_type' => 1],
+			['id' => 8, 'title' => 'Renewal', 'created' => '2026-07-21', 'correspondent' => 5, 'document_type' => 2],
+			['id' => 9, 'title' => 'Not shared with this user', 'correspondent' => 9, 'document_type' => 9],
+			['id' => 10, 'title' => 'Bill', 'correspondent' => 3, 'document_type' => null],
+		]], [
+			'correspondents' => [3 => 'ACME Energy', 5 => "Harbor\n Mutual ", 9 => 'Secret'],
+			'document_types' => [1 => 'Invoice', 2 => 'Insurance'],
+		]);
+		$files = [7 => $this->file(7, 'Invoice [P7].pdf'), 8 => $this->file(8, 'Renewal [P8].pdf'), 10 => $this->file(10, 'Bill [P10].pdf')];
+
+		$result = $this->provider($client, $files)->search($this->user(), $this->query('invoice'))->jsonSerialize();
+
 		self::assertSame([
-			'thumbnailUrl' => '/apps/paperless_unified_search/img/app.svg',
-			'title' => $title,
-			'subline' => $subline,
-			'resourceUrl' => 'https://cloud.example.com/f/1007',
-			'icon' => '',
-			// The icon of the app, which a round frame would cut off.
-			'rounded' => false,
-			'attributes' => ['fileId' => '1007', 'path' => '/Paperless/Scan [P7].pdf'],
-		], $result['entries'][0]->jsonSerialize());
+			'Aug 12, 2026 · ACME Energy · Invoice — Invoice [P7].pdf',
+			'Jul 21, 2026 · Harbor Mutual · Insurance — Renewal [P8].pdf',
+			'ACME Energy — Bill [P10].pdf',
+		], self::sublines($result['entries']));
+		// Only for the documents with a file, each ID once.
+		self::assertSame([
+			['correspondents', ['id__in' => '3,5', 'page_size' => 2]],
+			['document_types', ['id__in' => '1,2', 'page_size' => 2]],
+		], $this->nameRequests);
+	}
+
+	/**
+	 * The next search takes the names from the cache, also the knowledge that Paperless
+	 * has none for an ID, and asks only for the names that the cache doesn't hold.
+	 */
+	public function testTheNextSearchTakesTheNamesFromTheCache(): void {
+		$answer = ['count' => 2, 'next' => null, 'results' => [
+			['id' => 7, 'title' => 'Invoice', 'correspondent' => 3, 'document_type' => 1],
+			['id' => 8, 'title' => 'Renewal', 'correspondent' => 4, 'document_type' => 1],
+		]];
+		$lists = ['correspondents' => [3 => 'ACME Energy'], 'document_types' => [1 => 'Invoice']];
+		$files = [7 => $this->file(7, 'Invoice [P7].pdf'), 8 => $this->file(8, 'Renewal [P8].pdf')];
+
+		$this->provider($this->paperlessWithLists($answer, $lists), $files)->search($this->user(), $this->query('invoice'));
+		$answer['results'][] = ['id' => 9, 'title' => 'Letter', 'correspondent' => 6];
+		$files[9] = $this->file(9, 'Letter [P9].pdf');
+		$lists['correspondents'][6] = 'City of Sampletown';
+		$result = $this->provider($this->paperlessWithLists($answer, $lists), $files)
+			->search($this->user(), $this->query('invoice'))
+			->jsonSerialize();
+
+		self::assertSame([
+			'ACME Energy · Invoice — Invoice [P7].pdf',
+			'Invoice — Renewal [P8].pdf',
+			'City of Sampletown — Letter [P9].pdf',
+		], self::sublines($result['entries']));
+		self::assertSame([
+			['correspondents', ['id__in' => '3,4', 'page_size' => 2]],
+			['document_types', ['id__in' => '1', 'page_size' => 1]],
+			['correspondents', ['id__in' => '6', 'page_size' => 1]],
+		], $this->nameRequests);
+	}
+
+	/**
+	 * Names only add to a result: without an answer, the results show without them, the
+	 * other kind isn't asked for, and the history of the problems of the search stays as
+	 * it is, as the search worked.
+	 */
+	public function testALookupOfNamesWithoutAnswerLeavesOutTheNames(): void {
+		$client = $this->paperlessWithLists(
+			['count' => 1, 'next' => null, 'results' => [['id' => 7, 'title' => 'Invoice', 'created' => '2026-08-12', 'correspondent' => 3, 'document_type' => 1]]],
+			['correspondents' => new RuntimeException('cURL error 28: Operation timed out'), 'document_types' => [1 => 'Invoice']],
+		);
+
+		$result = $this->provider($client, [7 => $this->file(7, 'Invoice [P7].pdf')])
+			->search($this->user(), $this->query('invoice'))
+			->jsonSerialize();
+
+		self::assertSame(['Aug 12, 2026 — Invoice [P7].pdf'], self::sublines($result['entries']));
+		self::assertSame([['correspondents', ['id__in' => '3', 'page_size' => 1]]], $this->nameRequests);
+		self::assertSame(self::NO_PROBLEM, $this->problems());
+	}
+
+	/**
+	 * A token that may not view the correspondents gets HTTP 403 for them: the types are
+	 * still named, and the correspondents aren't asked for again while the cache knows.
+	 */
+	public function testAListThatPaperlessRefusesIsNotAskedForAgain(): void {
+		$answer = ['count' => 1, 'next' => null, 'results' => [['id' => 7, 'title' => 'Invoice', 'correspondent' => 3, 'document_type' => 1]]];
+		$lists = ['correspondents' => 403, 'document_types' => [1 => 'Invoice']];
+
+		$this->provider($this->paperlessWithLists($answer, $lists), [7 => $this->file(7, 'Invoice [P7].pdf')])
+			->search($this->user(), $this->query('invoice'));
+		$result = $this->provider($this->paperlessWithLists($answer, $lists), [7 => $this->file(7, 'Invoice [P7].pdf')])
+			->search($this->user(), $this->query('invoice'))
+			->jsonSerialize();
+
+		self::assertSame(['Invoice — Invoice [P7].pdf'], self::sublines($result['entries']));
+		self::assertSame([
+			['correspondents', ['id__in' => '3', 'page_size' => 1]],
+			['document_types', ['id__in' => '1', 'page_size' => 1]],
+		], $this->nameRequests);
+		self::assertSame(self::NO_PROBLEM, $this->problems());
+	}
+
+	/**
+	 * The answers of a real Paperless-ngx 3.3.0 (tests/Unit/fixtures/README.md): the
+	 * excerpt is text, and what the document says in angle brackets stays without
+	 * becoming a tag.
+	 */
+	public function testTheAnswersOfPaperless330GiveTheirSublines(): void {
+		$client = $this->paperlessWithLists(self::fixture('paperless-3.3.0-search.json'), [
+			'correspondents' => self::fixture('paperless-3.3.0-correspondents.json'),
+			'document_types' => self::fixture('paperless-3.3.0-document-types.json'),
+		]);
+
+		$result = $this->provider($client, [1 => $this->file(1, 'electricity [P1].txt', mimeType: 'text/plain'), 3 => $this->file(3, 'markup [P3].txt', mimeType: 'text/plain')])
+			->search($this->user(), $this->query('invoice'))
+			->jsonSerialize();
+
+		self::assertSame([
+			'Aug 12, 2026 · ACME Energy · Invoice — Electricity invoice E-2026-0812 for August 2026. O\'Brien & Sons "Power" < GmbH> Total due 84.30 EUR by September 2',
+			'Aug 12, 2026 · Harbor & Sons < Insurance> — Plain letter number 7 about the invoice of the month. Filler line 001 of a long letter without anything special. Filler line 002 of a long letter',
+		], self::sublines($result['entries']));
+	}
+
+	/**
+	 * @return array<string, array{string, string}>
+	 */
+	public static function measuredAnswers(): array {
+		return [
+			// The text of the document says <script>alert(1)</script>, escaped by Paperless.
+			'escaped script' => ['paperless-3.3.0-search-script.json', 'Aug 12, 2026 — line 120 of a long letter without anything special. It quotes < script>alert(1)< /script> as text for the invoice'],
+			'note' => ['paperless-3.3.0-search-note.json', 'Aug 12, 2026 — Note: Paid the invoice by bank transfer, O\'Brien & < Partner'],
+			'Paperless-ngx 2' => ['paperless-2.20.13-search.json', 'Aug 12, 2026 — Electricity invoice E-2026-0812 for August 2026. O\'Brien & Sons "Power" < GmbH> Total'],
+			'API version 5' => ['paperless-2.20.13-search-api-5.json', 'Aug 12, 2026 — Electricity invoice E-2026-0812 for August 2026. O\'Brien & Sons "Power" < GmbH> Total'],
+		];
+	}
+
+	#[DataProvider('measuredAnswers')]
+	public function testAMeasuredAnswerOfPaperlessGivesItsSubline(string $fixture, string $subline): void {
+		$answer = json_decode(self::fixture($fixture), true, 512, JSON_THROW_ON_ERROR);
+		$files = [];
+		foreach ($answer['results'] as $document) {
+			$files[$document['id']] = $this->file($document['id'], $document['title'] . ' [P' . $document['id'] . '].txt', mimeType: 'text/plain');
+		}
+
+		$result = $this->provider($this->paperlessWithLists(self::fixture($fixture), ['correspondents' => '{"results":[]}']), $files)
+			->search($this->user(), $this->query('invoice'))
+			->jsonSerialize();
+
+		self::assertSame([$subline], self::sublines($result['entries']));
+		self::assertDoesNotMatchRegularExpression('/<[a-z\/!?]/i', $subline);
 	}
 
 	public function testWithoutAnArchiveAccountPaperlessIsNotAsked(): void {
@@ -1219,6 +1589,9 @@ final class PaperlessSearchProviderTest extends TestCase {
 		?ICredentialsManager $credentials = null,
 		?Folder $userFolder = null,
 		?ITimeFactory $clock = null,
+		bool $previews = false,
+		string $locale = 'en',
+		string $timeZone = 'America/New_York',
 	): PaperlessSearchProvider {
 		$config = $this->settings($archiveOwner, $syncAccount);
 
@@ -1234,21 +1607,26 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$root->method('getUserFolder')->willReturn($userFolder ?? $this->userFolder(array_values($files)));
 
 		$l10n = $this->createStub(IL10N::class);
-		$l10n->method('t')->willReturnCallback(static fn (string $text): string => $text);
+		$l10n->method('t')->willReturnCallback(static fn (string $text, array $parameters = []): string => vsprintf($text, $parameters));
 
 		$urlGenerator = $this->createStub(IURLGenerator::class);
 		$urlGenerator->method('imagePath')->willReturn('/apps/paperless_unified_search/img/app.svg');
 		$urlGenerator->method('linkToRouteAbsolute')->willReturnCallback(
-			static fn (string $route, array $parameters): string => 'https://cloud.example.com/f/' . $parameters['fileid'],
+			static fn (string $route, array $parameters): string => match ($route) {
+				'files.view.showFile' => 'https://cloud.example.com/f/' . $parameters['fileid'],
+				'core.Preview.getPreviewByFileId' => 'https://cloud.example.com/index.php/core/preview?' . http_build_query($parameters),
+			},
 		);
+		$urlGenerator->method('getAbsoluteURL')->willReturnCallback(static fn (string $url): string => 'https://cloud.example.com' . $url);
 
 		$request = $this->createStub(IRequest::class);
 		$request->method('getHeader')->willReturn('Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0');
 
 		$configService = new ConfigService($config, $credentials, $this->accounts('archive', 'sync'), $this->createStub(LoggerInterface::class));
+		$paperlessApi = new PaperlessApiService($configService, $clientService, $this->diagnostics($config), $this->clock(), $this->appManager());
 
 		return new PaperlessSearchProvider(
-			new PaperlessApiService($configService, $clientService, $this->diagnostics($config), $this->clock(), $this->appManager()),
+			$paperlessApi,
 			new NextcloudFileLocator($root, $this->createStub(LoggerInterface::class)),
 			$l10n,
 			$urlGenerator,
@@ -1257,7 +1635,62 @@ final class PaperlessSearchProviderTest extends TestCase {
 			$configService,
 			$this->diagnostics($config),
 			$clock ?? $this->clock(),
+			...$this->presentation($paperlessApi, $configService, $previews, $locale, $timeZone),
 		);
+	}
+
+	/**
+	 * The services with which the provider draws an entry: the names of correspondents
+	 * and types, with the cache of the test; previews, which Nextcloud draws of no type of
+	 * file by default, and of PDF files with $previews; the icons of the types of files;
+	 * and the dates, as Nextcloud formats them for a user in New York with the locale en
+	 * or de; and the timezone of the user dennis, New York by default, and UTC for anyone
+	 * else, with each question for it in $this->timeZoneRequests.
+	 *
+	 * @return array{PaperlessNames, IPreview, IMimeTypeDetector, IDateTimeFormatter, IDateTimeZone}
+	 */
+	private function presentation(PaperlessApiService $paperlessApi, ConfigService $configService, bool $previews = false, string $locale = 'en', string $timeZone = 'America/New_York'): array {
+		$cacheFactory = $this->createStub(ICacheFactory::class);
+		$cacheFactory->method('createDistributed')->willReturnCallback(
+			fn (): MemoryCache => $this->cache ??= new MemoryCache(static fn (): int => self::NOW),
+		);
+
+		$previewManager = $this->createStub(IPreview::class);
+		$previewManager->method('isMimeSupported')->willReturnCallback(
+			static fn (string $mimeType): bool => $previews && $mimeType === 'application/pdf',
+		);
+
+		$mimeTypeDetector = $this->createStub(IMimeTypeDetector::class);
+		$mimeTypeDetector->method('mimeTypeIcon')->willReturnCallback(
+			static fn (string $mimeType): string => $mimeType === 'application/pdf' ? '/core/img/filetypes/application-pdf.svg' : '',
+		);
+
+		$dateTimeFormatter = $this->createStub(IDateTimeFormatter::class);
+		$dateTimeFormatter->method('formatDate')->willReturnCallback(
+			static function (DateTime $date, string $format, ?DateTimeZone $timeZone = null) use ($locale): string {
+				self::assertSame('medium', $format);
+				$date = (clone $date)->setTimezone($timeZone ?? new DateTimeZone('America/New_York'));
+
+				return $date->format($locale === 'de' ? 'd.m.Y' : 'M j, Y');
+			},
+		);
+
+		$dateTimeZone = $this->createStub(IDateTimeZone::class);
+		$dateTimeZone->method('getTimeZone')->willReturnCallback(
+			function (bool|int $timestamp = false, ?string $userId = null) use ($timeZone): DateTimeZone {
+				$this->timeZoneRequests[] = [$timestamp, $userId];
+
+				return new DateTimeZone($userId === 'dennis' ? $timeZone : 'UTC');
+			},
+		);
+
+		return [
+			new PaperlessNames($paperlessApi, $configService, $cacheFactory, $this->createStub(LoggerInterface::class)),
+			$previewManager,
+			$mimeTypeDetector,
+			$dateTimeFormatter,
+			$dateTimeZone,
+		];
 	}
 
 	/**
@@ -1361,6 +1794,68 @@ final class PaperlessSearchProviderTest extends TestCase {
 	}
 
 	/**
+	 * A Paperless that answers a search with this answer and its lists of correspondents
+	 * and types as Paperless-ngx 3.3.0 does: with the names of the IDs of the parameter
+	 * id__in. A list is the names by ID, the body of an answer, the status of an answer
+	 * that refuses it, or an error of a request without answer. The list and the query of
+	 * every request for names land in $this->nameRequests.
+	 *
+	 * @param array<string, mixed>|string $answer the answer, or its body
+	 * @param array<string, array<int, string>|string|int|Throwable> $lists by path
+	 */
+	private function paperlessWithLists(array|string $answer, array $lists): IClient {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options) use ($answer, $lists): IResponse {
+			if ($url === 'https://paperless.example.com/api/documents/') {
+				return is_string($answer) ? $this->answer(200, $answer) : $this->response($answer);
+			}
+
+			$list = substr($url, strlen('https://paperless.example.com/api/'), -1);
+			$this->nameRequests[] = [$list, $options['query']];
+			self::assertSame(3, $options['timeout']);
+			$names = $lists[$list] ?? [];
+			if ($names instanceof Throwable) {
+				throw $names;
+			}
+			if (is_int($names)) {
+				return $this->answer($names, '{"detail":"You do not have permission to perform this action."}');
+			}
+			if (is_string($names)) {
+				return $this->answer(200, $names);
+			}
+
+			$results = [];
+			foreach (array_map('intval', explode(',', (string)$options['query']['id__in'])) as $id) {
+				if (isset($names[$id])) {
+					$results[] = ['id' => $id, 'slug' => 'slug-' . $id, 'name' => $names[$id], 'document_count' => 1];
+				}
+			}
+
+			return $this->response(['count' => count($results), 'next' => null, 'previous' => null, 'results' => $results]);
+		});
+
+		return $client;
+	}
+
+	/**
+	 * The body of an answer of a real Paperless-ngx in tests/Unit/fixtures.
+	 */
+	private static function fixture(string $name): string {
+		$body = file_get_contents(__DIR__ . '/../fixtures/' . $name);
+		self::assertIsString($body);
+
+		return $body;
+	}
+
+	/**
+	 * @param list<SearchResultEntry> $entries
+	 * @return list<string>
+	 */
+	private static function sublines(array $entries): array {
+		return array_map(static fn (SearchResultEntry $entry): string => $entry->jsonSerialize()['subline'], $entries);
+	}
+
+	/**
 	 * @param list<int> $ids
 	 * @return list<string>
 	 */
@@ -1376,12 +1871,13 @@ final class PaperlessSearchProviderTest extends TestCase {
 		return array_map(static fn (SearchResultEntry $entry): string => $entry->jsonSerialize()['title'], $entries);
 	}
 
-	private function file(int $documentId, string $name, string $owner = 'archive'): File {
+	private function file(int $documentId, string $name, string $owner = 'archive', string $mimeType = 'application/pdf'): File {
 		$file = $this->createStub(File::class);
 		$file->method('getName')->willReturn($name);
 		$file->method('getPath')->willReturn('/dennis/files/Paperless/' . $name);
 		$file->method('getId')->willReturn(1000 + $documentId);
 		$file->method('getOwner')->willReturn($this->account($owner));
+		$file->method('getMimetype')->willReturn($mimeType);
 
 		return $file;
 	}
@@ -1503,12 +1999,36 @@ final class PaperlessSearchProviderTest extends TestCase {
 		return $user;
 	}
 
-	private function query(string $term, int|string|null $cursor = null, int $limit = 10): ISearchQuery {
+	/**
+	 * @param array<string, mixed> $filters the values of the filters of the search by their
+	 *                                      names, such as since, as Nextcloud builds them
+	 */
+	private function query(string $term, int|string|null $cursor = null, int $limit = 10, array $filters = []): ISearchQuery {
 		$query = $this->createStub(ISearchQuery::class);
 		$query->method('getTerm')->willReturn($term);
 		$query->method('getCursor')->willReturn($cursor);
 		$query->method('getLimit')->willReturn($limit);
+		$query->method('getFilter')->willReturnCallback(function (string $name) use ($filters): ?IFilter {
+			if (!array_key_exists($name, $filters)) {
+				return null;
+			}
+
+			$filter = $this->createStub(IFilter::class);
+			$filter->method('get')->willReturn($filters[$name]);
+
+			return $filter;
+		});
 
 		return $query;
+	}
+
+	/**
+	 * The filters of a request to Paperless, without the term, the page and the fields.
+	 *
+	 * @param array<string, int|string> $request
+	 * @return array<string, int|string>
+	 */
+	private static function filtersOf(array $request): array {
+		return array_diff_key($request, array_flip(['query', 'text', 'page', 'page_size', 'fields']));
 	}
 }

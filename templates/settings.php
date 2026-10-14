@@ -6,7 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2026 Dennis Otto
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * @var array{config: \OCA\PaperlessUnifiedSearch\Model\PublicConfig, saveUrl: string, resetUrl: string, clearDiagnosticsUrl: string, history: ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, durationMs: int}>}} $_
+ * @var array{config: \OCA\PaperlessUnifiedSearch\Model\PublicConfig, saveUrl: string, resetUrl: string, clearDiagnosticsUrl: string, tryUrl: string, history: ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, durationMs: int}>}} $_
  */
 
 script('paperless_unified_search', 'settings');
@@ -24,6 +24,7 @@ $archiveAccount = $config->archiveOwner !== '' ? $config->archiveOwner : $config
 	data-save-url="<?php p($_['saveUrl']); ?>"
 	data-reset-url="<?php p($_['resetUrl']); ?>"
 	data-clear-diagnostics-url="<?php p($_['clearDiagnosticsUrl']); ?>"
+	data-try-url="<?php p($_['tryUrl']); ?>"
 	data-token-configured="<?php p($config->tokenConfigured ? 'true' : 'false'); ?>">
 	<h2><?php p($l->t('Paperless Unified Search')); ?></h2>
 
@@ -211,5 +212,49 @@ $archiveAccount = $config->archiveOwner !== '' ? $config->archiveOwner : $config
 		<p class="settings-hint">
 			<?php p($l->t('A failed search shows the users no Paperless documents and no error. When a request to Paperless gets no answer, the app sends it a second time. The history keeps the latest %s problems without the API token and the search term; Disconnect and Clear history forget it.', [(string)\OCA\PaperlessUnifiedSearch\Model\DiagnosticsHistory::SIZE])); ?>
 		</p>
+	</div>
+
+	<div class="paperless-unified-search-try">
+		<h3><?php p($l->t('Try a search')); ?></h3>
+		<p id="paperless-unified-search-try-hint" class="settings-hint">
+			<?php p($l->t('See which Paperless documents a user finds for a term, and why the others don\'t show to them. The answer lists the first %s documents that Paperless ranks for the term, by their titles, without their content. The audit log of Nextcloud records who tried a search as whom.', [(string)\OCA\PaperlessUnifiedSearch\Controller\SettingsController::TRY_LIMIT])); ?>
+		</p>
+		<form id="paperless-unified-search-try-form">
+			<p>
+				<label for="paperless-unified-search-try-term"><?php p($l->t('Search term')); ?></label>
+				<input
+					id="paperless-unified-search-try-term"
+					name="term"
+					type="search"
+					autocomplete="off"
+					aria-describedby="paperless-unified-search-try-hint"
+					required>
+			</p>
+			<p>
+				<label for="paperless-unified-search-try-user"><?php p($l->t('Search as the user')); ?></label>
+				<input
+					id="paperless-unified-search-try-user"
+					name="user"
+					type="text"
+					autocomplete="off"
+					placeholder="<?php p($l->t('User ID')); ?>"
+					required>
+			</p>
+			<div class="paperless-unified-search-actions">
+				<button id="paperless-unified-search-try" type="submit">
+					<?php p($l->t('Try a search')); ?>
+				</button>
+			</div>
+		</form>
+		<p id="paperless-unified-search-try-status" class="paperless-unified-search-status" role="status" aria-live="polite"></p>
+		<div id="paperless-unified-search-try-result"></div>
+		<div class="paperless-unified-search-note">
+			<strong><?php p($l->t('Why a document doesn\'t show')); ?></strong>
+			<ul class="paperless-unified-search-reasons">
+				<li><?php p($l->t('Not shared: the archive account has the file of the document, but hasn\'t shared it with the user. Share the file, or a folder that holds it, read-only with the user.')); ?></li>
+				<li><?php p($l->t('Not a file of the archive account: the user sees a file with the marker of the document, but only the files of the archive account stand for documents.')); ?></li>
+				<li><?php p($l->t('No file: no file of the archive account has the marker of the document, such as [P123], in its name. The synchronization hasn\'t written it yet, or names files without it.')); ?></li>
+			</ul>
+		</div>
 	</div>
 </div>

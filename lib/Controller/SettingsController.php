@@ -11,19 +11,25 @@ namespace OCA\PaperlessUnifiedSearch\Controller;
 
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Exception\InvalidSettingException;
+use OCA\PaperlessUnifiedSearch\Exception\PaperlessQueryRejected;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
-use OCA\PaperlessUnifiedSearch\Exception\RequestFailure;
-use OCA\PaperlessUnifiedSearch\Exception\SettingProblem;
+use OCA\PaperlessUnifiedSearch\Model\Explanation;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
+use OCA\PaperlessUnifiedSearch\Service\SearchExplainer;
+use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\Attribute\FrontpageRoute;
 use OCP\AppFramework\Http\Attribute\PasswordConfirmationRequired;
 use OCP\AppFramework\Http\JSONResponse;
+use OCP\EventDispatcher\IEventDispatcher;
 use OCP\IL10N;
 use OCP\IRequest;
+use OCP\IUserManager;
+use OCP\IUserSession;
+use OCP\Log\Audit\CriticalActionPerformedEvent;
 use Psr\Log\LoggerInterface;
 use SensitiveParameter;
 use Throwable;
@@ -40,6 +46,12 @@ final class SettingsController extends Controller {
 	 */
 	private const CODE_INTERNAL = 'internal';
 
+	/**
+	 * How many documents of the ranking of Paperless Try a search goes through: those
+	 * that an administrator reads in one table.
+	 */
+	public const TRY_LIMIT = 20;
+
 	/** @psalm-suppress PossiblyUnusedMethod */
 	public function __construct(
 		string $appName,
@@ -47,8 +59,13 @@ final class SettingsController extends Controller {
 		private ConfigService $configService,
 		private PaperlessApiService $paperlessApi,
 		private SearchDiagnostics $diagnostics,
+		private SettingsMessages $messages,
 		private IL10N $l10n,
 		private LoggerInterface $logger,
+		private SearchExplainer $explainer,
+		private IUserManager $userManager,
+		private IUserSession $userSession,
+		private IEventDispatcher $events,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -76,7 +93,7 @@ final class SettingsController extends Controller {
 
 			return new JSONResponse($this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner, $allowLocal, $version));
 		} catch (InvalidSettingException $exception) {
-			return $this->refusal($this->settingMessage($exception->problem, trim($archiveOwner)), $exception->problem->value);
+			return $this->refusal($this->messages->forSetting($exception->problem, trim($archiveOwner)), $exception->problem->value);
 		} catch (PaperlessRequestException $exception) {
 			$cause = $exception->getPrevious() ?? $exception;
 			$this->logger->warning('The test of the connection to Paperless failed: {reason} ({errorType}: {detail})', [
@@ -86,7 +103,7 @@ final class SettingsController extends Controller {
 				'detail' => SearchDiagnostics::describe($cause->getMessage(), [$effectiveToken]),
 			]);
 
-			return $this->refusal($this->failureMessage($exception), $exception->reason->value);
+			return $this->refusal($this->messages->forFailure($exception), $exception->reason->value);
 		} catch (Throwable $exception) {
 			$this->logger->error('The settings of Paperless Unified Search could not be saved ({errorType}: {detail})', [
 				'app' => AppConstants::APP_ID,
@@ -119,46 +136,100 @@ final class SettingsController extends Controller {
 	}
 
 	/**
+	 * Try a search: the documents that Paperless ranks first for the term, each with
+	 * whether it shows to the user and, if not, why, as occ paperless_unified_search:search
+	 * --explain finds it, for administrators without a shell. The answer names each
+	 * document by its ID and its title alone, without its content, an excerpt or its file,
+	 * and the log and the audit log record which administrator tried a search as whom, without the term.
+	 */
+	#[FrontpageRoute(verb: 'POST', url: '/settings/try')]
+	public function trySearch(string $term = '', string $user = ''): JSONResponse {
+		$term = trim($term);
+		$uid = trim($user);
+		if ($term === '') {
+			return $this->refusal($this->l10n->t('Enter a term to search for.'), 'no_term');
+		}
+		$account = $uid !== '' ? $this->userManager->get($uid) : null;
+		if ($account === null) {
+			return $this->refusal(
+				$uid === '' ? $this->l10n->t('Enter the user ID of the account to search as.') : $this->l10n->t('There is no account %s.', [$uid]),
+				'unknown_user',
+			);
+		}
+		if (!$this->configService->isConfigured()) {
+			return $this->refusal($this->l10n->t('Paperless is not connected yet. Save its URL and API token above first.'), 'not_configured');
+		}
+		$archiveOwner = $this->configService->getArchiveOwner();
+		if ($archiveOwner === '') {
+			return $this->refusal($this->l10n->t('No archive account exists, so the search shows no Paperless documents. Name the account that owns the synchronized files above.'), 'no_archive_account');
+		}
+
+		$admin = $this->userSession->getUser()?->getUID() ?? '';
+		$this->logger->info('{admin} tried a search of Paperless as {user} in the settings', [
+			'app' => AppConstants::APP_ID,
+			'admin' => $admin,
+			'user' => $account->getUID(),
+		]);
+		// The audit log of the app admin_audit records it whatever the log level.
+		$this->events->dispatchTyped(new CriticalActionPerformedEvent(
+			'Paperless Unified Search: %s tried a search as %s',
+			['admin' => $admin, 'user' => $account->getUID()],
+		));
+		try {
+			$response = $this->paperlessApi->searchDocuments($term, 1, self::TRY_LIMIT);
+		} catch (PaperlessQueryRejected) {
+			return $this->refusal($this->l10n->t('Paperless can\'t read this term in its advanced syntax, such as a range of dates that isn\'t complete like created:[2026 to. Correct the term and try again.'), 'query_rejected');
+		} catch (PaperlessRequestException $exception) {
+			return $this->refusal($this->messages->forFailure($exception), $exception->reason->value);
+		} catch (Throwable $error) {
+			$exception = PaperlessRequestException::unanswered($error);
+
+			return $this->refusal($this->messages->forFailure($exception), $exception->reason->value);
+		}
+
+		$titles = self::titlesOf($response['results']);
+		[$explanations, $fileError] = $this->explainer->explain($account, array_keys($titles), $archiveOwner);
+
+		return new JSONResponse([
+			'user' => $account->getUID(),
+			'archiveAccount' => $archiveOwner,
+			'count' => $response['count'],
+			'documents' => array_map(
+				static fn (Explanation $explanation): array => [
+					'id' => $explanation->documentId,
+					'title' => $titles[$explanation->documentId] ?? '',
+					'verdict' => $explanation->verdict->value,
+				],
+				$explanations,
+			),
+			'fileError' => $fileError !== null,
+		]);
+	}
+
+	/**
+	 * The titles of the documents that Paperless found, by their IDs, in its order: the
+	 * first ones of its ranking, each with its first title. The explainer leaves out an ID
+	 * below 1, which no document has.
+	 *
+	 * @param list<array<array-key, mixed>> $results
+	 * @return array<int, string>
+	 */
+	private static function titlesOf(array $results): array {
+		$titles = [];
+		foreach (array_slice($results, 0, self::TRY_LIMIT) as $hit) {
+			$id = filter_var($hit['id'] ?? null, FILTER_VALIDATE_INT);
+			if ($id !== false) {
+				$titles[$id] ??= isset($hit['title']) && is_string($hit['title']) ? trim($hit['title']) : '';
+			}
+		}
+
+		return $titles;
+	}
+
+	/**
 	 * @param Http::STATUS_BAD_REQUEST|Http::STATUS_INTERNAL_SERVER_ERROR $status
 	 */
 	private function refusal(string $message, string $code, int $status = Http::STATUS_BAD_REQUEST): JSONResponse {
 		return new JSONResponse(['message' => $message, 'code' => $code], $status);
-	}
-
-	/**
-	 * The message for a setting that can't be saved. Each text stands in a call of t() of
-	 * its own, where scripts/check-l10n.mjs finds it.
-	 */
-	private function settingMessage(SettingProblem $problem, string $archiveOwner): string {
-		return match ($problem) {
-			SettingProblem::InvalidUrl => $this->l10n->t('Enter a valid Paperless URL.'),
-			SettingProblem::UnsupportedScheme => $this->l10n->t('The Paperless URL must use HTTP or HTTPS.'),
-			SettingProblem::UrlWithExtras => $this->l10n->t('The Paperless URL must not contain credentials, a query, or a fragment.'),
-			SettingProblem::HostNotAscii => $this->l10n->t('Enter the host of the Paperless URL in its ASCII form (punycode), such as xn--bcher-kva.example for bücher.example.'),
-			SettingProblem::TokenRequired => $this->l10n->t('A Paperless API token is required.'),
-			SettingProblem::TokenForOtherServer => $this->l10n->t('Enter the API token again: a stored token is only sent to the Paperless server it was saved for.'),
-			SettingProblem::UnknownArchiveAccount => $this->l10n->t('The archive account %s does not exist.', [$archiveOwner]),
-		};
-	}
-
-	/**
-	 * The message for a test of the connection that failed, which says what to correct.
-	 */
-	private function failureMessage(PaperlessRequestException $exception): string {
-		$status = (string)$exception->status;
-
-		return match ($exception->reason) {
-			RequestFailure::Unauthorized => $this->l10n->t('Paperless rejected the API token (HTTP %s). Check the token, and that its account may view documents.', [$status]),
-			RequestFailure::NotFound => $this->l10n->t('This URL answers, but not with the API of Paperless (HTTP 404). Check the address and its path.'),
-			RequestFailure::Redirect => $this->l10n->t('This URL forwards to another address (HTTP %s). Enter the address that it forwards to.', [$status]),
-			RequestFailure::Http => $this->l10n->t('Paperless answered with an error (HTTP %s). Check its log, or try again later.', [$status]),
-			RequestFailure::NotPaperless => $this->l10n->t('This URL answers, but not like Paperless-ngx. Check the address and its path.'),
-			RequestFailure::LocalAddress => $this->l10n->t('Nextcloud does not connect to addresses of the local network unless you allow it. If Paperless runs in your local network or in Docker, select “Paperless runs in my local network”.'),
-			RequestFailure::Certificate => $this->l10n->t('Nextcloud does not trust the certificate of Paperless at this URL. If Paperless uses a certificate of its own, import it with occ security:certificates:import.'),
-			RequestFailure::Handshake => $this->l10n->t('Nextcloud could not set up an encrypted connection to Paperless at this URL. If Paperless answers plain HTTP at this port, enter the URL with http://.'),
-			RequestFailure::UnknownHost => $this->l10n->t('Nextcloud could not find the host of this URL. Check its spelling; the name of a Docker service only works when Nextcloud runs in the same Docker network.'),
-			RequestFailure::Timeout => $this->l10n->t('Paperless did not answer in time. Check that it runs and is not overloaded, then try again.'),
-			RequestFailure::Unreachable => $this->l10n->t('Nextcloud could not reach Paperless at this URL. Check the address and the port, and that Paperless runs.'),
-		};
 	}
 }

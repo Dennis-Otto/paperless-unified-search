@@ -28,6 +28,10 @@ class Drift:
     manual: str = ""
 
 
+class ConfigError(ValueError):
+    """A value in the settings as code that can't be right."""
+
+
 # --------------------------------------------------------------------------- repository
 
 
@@ -201,6 +205,11 @@ def main_ruleset(checks: list[str]) -> dict[str, Json]:
     }
 
 
+RELEASE_TAGS = "refs/tags/v*.*.*"
+# The rulesets that the settings as code keep, by their names.
+MANAGED_RULESETS = ("Protect main", "Release tags", "Release tag creation")
+
+
 def tag_ruleset() -> dict[str, Json]:
     """Release tags such as v1.2.3 never move; major tags such as v1 may."""
     return {
@@ -208,13 +217,62 @@ def tag_ruleset() -> dict[str, Json]:
         "target": "tag",
         "enforcement": "active",
         "bypass_actors": [],
-        "conditions": {"ref_name": {"include": ["refs/tags/v*.*.*"], "exclude": []}},
+        "conditions": {"ref_name": {"include": [RELEASE_TAGS], "exclude": []}},
         "rules": [
             {"type": "deletion"},
             {"type": "non_fast_forward"},
             {"type": "update"},
         ],
     }
+
+
+def tag_creation_ruleset(app_id: int) -> dict[str, Json]:
+    """Only the release app, whose release workflow signs them, creates release tags:
+    not the job token of a workflow, nor any other token that may push. A ruleset of
+    its own, so that the app may create release tags but, like everyone, never move or
+    delete one."""
+    return {
+        "name": "Release tag creation",
+        "target": "tag",
+        "enforcement": "active",
+        "bypass_actors": [
+            {"actor_id": app_id, "actor_type": "Integration", "bypass_mode": "always"}
+        ],
+        "conditions": {"ref_name": {"include": [RELEASE_TAGS], "exclude": []}},
+        "rules": [{"type": "creation"}],
+    }
+
+
+def release_app_id(variables: dict[str, str]) -> int | None:
+    """The ID of the release app, from the variable RELEASE_AUTOMATION_APP_ID; None
+    without it, and then anyone who may push creates release tags, as before."""
+    value = str(variables.get("RELEASE_AUTOMATION_APP_ID", "")).strip()
+    if not value:
+        return None
+    if not value.isdecimal():
+        raise ConfigError(
+            "RELEASE_AUTOMATION_APP_ID must be the number of the release app, the App ID"
+            f" on its settings page, not {value!r}"
+        )
+    return int(value)
+
+
+def own_release_app(blueprint: dict[str, str], own: dict[str, str]) -> None:
+    """A project that names a release app of its own names its App ID too: with the
+    blueprint's App ID, only the blueprint's app could create its release tags, and its
+    next release couldn't push its tag."""
+    client = "RELEASE_AUTOMATION_CLIENT_ID"
+    if (
+        "RELEASE_AUTOMATION_APP_ID" in blueprint
+        and "RELEASE_AUTOMATION_APP_ID" not in own
+        and own.get(client, blueprint.get(client)) != blueprint.get(client)
+    ):
+        raise ConfigError(
+            "repository.project.toml names a release app of its own in"
+            " RELEASE_AUTOMATION_CLIENT_ID, but not its App ID; set"
+            " RELEASE_AUTOMATION_APP_ID there too, the App ID on the settings page of"
+            " the app, so that the app may create the release tags"
+        )
 
 
 def ruleset_differences(want: dict[str, Json], have: dict[str, Json]) -> list[str]:
@@ -267,6 +325,14 @@ def check_rulesets(api: Api, repo: str, wanted: list[dict[str, Json]]) -> list[D
                     f"ruleset {want['name']}", "as configured", ", ".join(differences)
                 )
             )
+    # A ruleset of the settings as code that the configuration no longer wants, such
+    # as Release tag creation once the App ID is gone, goes; others stay.
+    names = {want["name"] for want in wanted}
+    drift += [
+        Drift(f"ruleset {name}", "absent", "present")
+        for name in existing
+        if name in MANAGED_RULESETS and name not in names
+    ]
     return drift
 
 
@@ -282,6 +348,10 @@ def apply_rulesets(
             api.put(f"repos/{repo}/rulesets/{existing[want['name']]}", want)
         else:
             api.post(f"repos/{repo}/rulesets", want)
+    unwanted = names - {want["name"] for want in wanted}
+    for name, number in existing.items():
+        if name in unwanted:
+            api.delete(f"repos/{repo}/rulesets/{number}")
 
 
 # --------------------------------------------------------------------------- variables
@@ -526,14 +596,21 @@ class Settings:
         # current: its own checks, environments, secrets and variables.
         project = path.with_name("repository.project.toml")
         if project.exists():
-            config = merge(config, tomllib.loads(project.read_text(encoding="utf-8")))
+            own = tomllib.loads(project.read_text(encoding="utf-8"))
+            own_release_app(config.get("variables", {}), own.get("variables", {}))
+            config = merge(config, own)
         checks = config.get("branch", {}).get("required_checks", [])
+        variables = config.get("variables", {})
+        rulesets = [main_ruleset(checks), tag_ruleset()]
+        app_id = release_app_id(variables)
+        if app_id is not None:
+            rulesets.append(tag_creation_ruleset(app_id))
         return cls(
             repository=config.get("repository", {}),
             security=config.get("security", {}),
             actions=config.get("actions", {}),
-            rulesets=[main_ruleset(checks), tag_ruleset()],
-            variables=config.get("variables", {}),
+            rulesets=rulesets,
+            variables=variables,
             environments=config.get("environments", {}),
             pages=config.get("pages", {}),
             # The labels of the issue assistant, next to the settings.

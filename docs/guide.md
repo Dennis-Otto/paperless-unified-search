@@ -21,6 +21,7 @@ The guide of one page is now a set of pages, each for one task. A link to a part
 | Usage, and in Talk, Text, Deck and Mail | [Search](usage.md#usage) |
 | Search like in Paperless | [Search](usage.md#search-like-in-paperless) |
 | Use it from scripts and AI assistants | [Search](usage.md#use-it-from-scripts-and-ai-assistants) |
+| Set up and check it with occ | [Reference](reference.md#set-up-and-check-it-with-occ) |
 | Security and privacy | [Reference](reference.md#security-and-privacy) |
 
 New are [Troubleshooting](troubleshooting.md), the [FAQ](faq.md) and the [Reference](reference.md) for administrators.
@@ -42,6 +43,7 @@ New are [Troubleshooting](troubleshooting.md), the [FAQ](faq.md) and the [Refere
       "in-talk-text-deck-and-mail": "usage.html",
       "search-like-in-paperless": "usage.html",
       "use-it-from-scripts-and-ai-assistants": "usage.html",
+      "set-up-and-check-it-with-occ": "reference.html",
       "security-and-privacy": "reference.html",
     }
     const part = decodeURIComponent(location.hash.slice(1))

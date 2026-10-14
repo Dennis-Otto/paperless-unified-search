@@ -13,6 +13,7 @@ use JsonException;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessQueryRejected;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
+use OCA\PaperlessUnifiedSearch\Model\PaperlessStatus;
 use OCA\PaperlessUnifiedSearch\Model\PaperlessVersion;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -31,11 +32,37 @@ final class PaperlessApiService {
 	 */
 	private const SEARCH_FIELDS = 'id,title,created,correspondent,document_type,__search_hit__';
 
+	/**
+	 * The filter of Paperless for the documents of a day and later, by the date of the
+	 * document, as Y-m-d: the same in Paperless-ngx 2, where the date has a time, and 3.
+	 */
+	public const CREATED_FROM = 'created__date__gte';
+
+	/** The filter of Paperless for the documents of a day and earlier, by their date. */
+	public const CREATED_UNTIL = 'created__date__lte';
+
+	/**
+	 * The version of the API of Paperless that every request asks for. Without one,
+	 * Paperless answers in its default version, which a new release raises, as 3.0 did from
+	 * 9 to 10, and a new version may change the type of a field, as 9 did with created.
+	 * Version 9 is the newest that both Paperless 2.16 and newer and Paperless 3 accept;
+	 * an older Paperless answers HTTP 406. tests/e2e/paperless-contract.sh checks the
+	 * fields of this version against real Paperless servers, so a change of it is a
+	 * deliberate one, with those tests.
+	 */
+	private const ACCEPT = 'application/json; version=9';
+
 	/** The seconds that a request may take to connect to Paperless. */
 	private const CONNECT_TIMEOUT = 3;
 
 	/** The seconds that a request may take in all. */
 	private const TIMEOUT = 10;
+
+	/**
+	 * The seconds that a request for the names of correspondents or types may take in
+	 * all: Paperless has just answered the search, and a result shows without the names.
+	 */
+	private const NAMES_TIMEOUT = 3;
 
 	/**
 	 * A first try that failed within this many milliseconds failed before Paperless had the
@@ -78,15 +105,45 @@ final class PaperlessApiService {
 	 *                                   name: also when the request got no answer
 	 */
 	public function testConnection(string $url, string $token, bool $allowLocal): ?PaperlessVersion {
+		return $this->probe($url, $token, $allowLocal)->version;
+	}
+
+	/**
+	 * The test of the connection to the Paperless of the settings, as occ and its checks
+	 * run it. The version that Paperless names replaces the stored one, which the overview
+	 * of the administration settings shows.
+	 *
+	 * @throws PaperlessRequestException whatever failed, also when the request got no answer
+	 */
+	public function probeTheSettings(): PaperlessStatus {
+		$status = $this->probe(
+			$this->configService->getUrl(),
+			$this->configService->getToken(),
+			$this->configService->isLocalNetworkAllowed(),
+		);
+		$this->configService->rememberPaperlessVersion($status->version);
+
+		return $status;
+	}
+
+	/**
+	 * Asks Paperless for its first document, which tells whether it answers, its version
+	 * and how many documents the account of the token may view, with their IDs in the field
+	 * all, which Paperless-ngx adds to every list for the selection of all documents.
+	 *
+	 * @throws PaperlessRequestException whatever failed, with the reason that the settings
+	 *                                   name: also when the request got no answer
+	 */
+	public function probe(string $url, string $token, bool $allowLocal): PaperlessStatus {
 		try {
 			// The test reads nothing of the document, so Paperless sends only its ID.
-			[, $version] = $this->requestDocuments($url, $token, $allowLocal, [
+			[$data, $version] = $this->requestDocuments($url, $token, $allowLocal, [
 				'page' => 1,
 				'page_size' => 1,
 				'fields' => 'id',
 			]);
 
-			return $version;
+			return new PaperlessStatus($version, self::documentsOf($data)['count'], self::idsOf($data['all'] ?? null));
 		} catch (PaperlessRequestException $exception) {
 			throw $exception;
 		} catch (Throwable $error) {
@@ -97,33 +154,54 @@ final class PaperlessApiService {
 	/**
 	 * Search Paperless through its native full-text index. A query in the advanced syntax
 	 * of Paperless 3 that it can't parse, as one that is still being typed, goes to its
-	 * simple mode instead, which takes any input. Paperless 2 never gets it: it ignores
-	 * the parameter and would list all documents.
+	 * simple mode instead, which takes any input, with only its plain words: the simple
+	 * mode looks for every word it gets, and the field still being typed would match no
+	 * document. Paperless 2 never gets it: it ignores the parameter and would list all
+	 * documents. The filters narrow the documents in either mode; none of them replaces the
+	 * term, the page or the fields.
 	 *
+	 * @param array<string, string> $filters filters of Paperless on the documents, such as
+	 *                                       CREATED_FROM => '2026-08-01'
 	 * @return array{count: int, next: ?string, results: list<array<array-key, mixed>>}
 	 * @throws PaperlessQueryRejected when Paperless refuses the term or the page, which is
 	 *                                no problem of the search
 	 * @throws PaperlessRequestException when Paperless answers, but not with documents
 	 * @throws Throwable the error of a request without answer, as the history shows it
 	 */
-	public function searchDocuments(string $term, int $page, int $pageSize): array {
+	public function searchDocuments(string $term, int $page, int $pageSize, array $filters = []): array {
 		$parameters = [
 			'page' => max(1, $page),
 			'page_size' => max(1, min(50, $pageSize)),
 			'fields' => self::SEARCH_FIELDS,
-		];
+		] + $filters;
 		try {
 			[$documents, $version] = $this->search(['query' => $term] + $parameters, $term);
 		} catch (PaperlessQueryRejected $rejection) {
-			if (!$rejection->allowsSimpleSearch() || mb_strlen($term) > self::LONGEST_TERM) {
+			$words = self::wordsOf($term);
+			if (!$rejection->allowsSimpleSearch() || $words === '' || mb_strlen($words) > self::LONGEST_TERM) {
 				throw $rejection;
 			}
 
-			[$documents, $version] = $this->search(['text' => $term] + $parameters, $term);
+			[$documents, $version] = $this->search(['text' => $words] + $parameters, $words);
 		}
 		$this->configService->rememberPaperlessVersion($version);
 
 		return $documents;
+	}
+
+	/**
+	 * The plain words of a query in the advanced syntax, for the simple mode: without its
+	 * fields, finished or not, such as created:[2026 to or tag:bills, without brackets and
+	 * quotes, and without the operators AND, OR and NOT.
+	 */
+	private static function wordsOf(string $term): string {
+		$words = preg_replace(
+			['/\S+:\s*[\[{][^\]}]*(?:[\]}]|$)/u', '/\S+:\S*/u', '/[\[\]{}()"]/u', '/(?<!\S)(?:AND|OR|NOT)(?!\S)/u', '/\s+/u'],
+			[' ', ' ', ' ', ' ', ' '],
+			$term,
+		);
+
+		return trim($words ?? '');
 	}
 
 	/**
@@ -132,13 +210,15 @@ final class PaperlessApiService {
 	 * @return array{array{count: int, next: ?string, results: list<array<array-key, mixed>>}, ?PaperlessVersion}
 	 */
 	private function search(array $query, string $term): array {
-		return $this->requestDocuments(
+		[$data, $version] = $this->requestDocuments(
 			$this->configService->getUrl(),
 			$this->configService->getToken(),
 			$this->configService->isLocalNetworkAllowed(),
 			$query,
 			$term,
 		);
+
+		return [self::documentsOf($data), $version];
 	}
 
 	/**
@@ -147,12 +227,12 @@ final class PaperlessApiService {
 	 * config.php allows it to every request of every app. With the option, Nextcloud
 	 * would also follow a redirect of Paperless to any address of the network unchecked;
 	 * so a request that allows the local network follows none, and only the address of
-	 * the settings gets the exception. Returns the documents, and the version of Paperless
-	 * that its answer names.
+	 * the settings gets the exception. Returns the answer, a list of documents, and the
+	 * version of Paperless that it names.
 	 *
 	 * @param array<string, int|string> $query
 	 * @param string $term the term of a search, which the history must not show
-	 * @return array{array{count: int, next: ?string, results: list<array<array-key, mixed>>}, ?PaperlessVersion}
+	 * @return array{array{results: array<array-key, mixed>, ...<array-key, mixed>}, ?PaperlessVersion}
 	 * @throws PaperlessRequestException when Paperless answers, but not with documents
 	 */
 	private function requestDocuments(string $url, string $token, bool $allowLocal, array $query, string $term = ''): array {
@@ -162,19 +242,7 @@ final class PaperlessApiService {
 
 		$response = $this->send(
 			rtrim($url, '/') . '/api/documents/',
-			[
-				'headers' => [
-					'Authorization' => 'Token ' . $token,
-					'Accept' => 'application/json',
-					'User-Agent' => $this->getUserAgent(),
-				],
-				'connect_timeout' => self::CONNECT_TIMEOUT,
-				'timeout' => self::TIMEOUT,
-				// Every answer of Paperless reaches the check of its status below.
-				'http_errors' => false,
-				'query' => $query,
-				'nextcloud' => ['allow_local_address' => $allowLocal],
-			] + ($allowLocal ? ['allow_redirects' => false] : []),
+			$this->options($token, $allowLocal, $query, self::TIMEOUT),
 			[$token, $term],
 		);
 
@@ -198,6 +266,17 @@ final class PaperlessApiService {
 			throw PaperlessRequestException::notPaperless('Paperless returned an invalid document response.');
 		}
 
+		return [$data, PaperlessVersion::fromResponse($response)];
+	}
+
+	/**
+	 * The documents of an answer of Paperless: their number, the link of the next page and
+	 * the documents of this page, without anything else that the list may hold.
+	 *
+	 * @param array{results: array<array-key, mixed>, ...<array-key, mixed>} $data
+	 * @return array{count: int, next: ?string, results: list<array<array-key, mixed>>}
+	 */
+	private static function documentsOf(array $data): array {
 		$results = [];
 		/** @psalm-suppress MixedAssignment JSON values are validated before use. */
 		foreach ($data['results'] as $result) {
@@ -207,13 +286,111 @@ final class PaperlessApiService {
 		}
 
 		return [
-			[
-				'count' => isset($data['count']) && is_numeric($data['count']) ? (int)$data['count'] : count($results),
-				'next' => isset($data['next']) && is_string($data['next']) ? $data['next'] : null,
-				'results' => $results,
-			],
-			PaperlessVersion::fromResponse($response),
+			'count' => isset($data['count']) && is_numeric($data['count']) ? (int)$data['count'] : count($results),
+			'next' => isset($data['next']) && is_string($data['next']) ? $data['next'] : null,
+			'results' => $results,
 		];
+	}
+
+	/**
+	 * The names of the objects with these IDs in a list of Paperless, such as its
+	 * correspondents, in one request. The names only add to results that Paperless has
+	 * just sent, so the request gets one try, a shorter time and no place in the history
+	 * of the problems of the search. An object that the account of the token may not
+	 * view, or that no longer exists, has no name.
+	 *
+	 * @param string $list the path of the list in the API of Paperless: correspondents or document_types
+	 * @param list<int> $ids
+	 * @return array<int, string> the names, by ID
+	 * @throws PaperlessRequestException when Paperless answers, but not with a list
+	 * @throws Throwable the error of a request without answer
+	 */
+	public function findNames(string $list, array $ids): array {
+		$url = $this->configService->getUrl();
+		$token = $this->configService->getToken();
+		if ($ids === [] || $url === '' || $token === '') {
+			return [];
+		}
+
+		// Paperless-ngx 2 and 3 filter their lists by id__in; they send every field of an
+		// object, also when asked for fewer, which for a correspondent is a few hundred bytes.
+		$response = $this->client->get(
+			rtrim($url, '/') . '/api/' . $list . '/',
+			$this->options($token, $this->configService->isLocalNetworkAllowed(), [
+				'id__in' => implode(',', $ids),
+				'page_size' => count($ids),
+			], self::NAMES_TIMEOUT),
+		);
+		$status = $response->getStatusCode();
+		if ($status < 200 || $status >= 300) {
+			throw PaperlessRequestException::forStatus($status);
+		}
+
+		$body = $response->getBody();
+		try {
+			$data = json_decode(is_string($body) ? $body : '', true, 512, JSON_THROW_ON_ERROR);
+		} catch (JsonException $error) {
+			throw PaperlessRequestException::notPaperless('Paperless returned no JSON: ' . $error->getMessage(), $error);
+		}
+		if (!is_array($data) || !isset($data['results']) || !is_array($data['results'])) {
+			throw PaperlessRequestException::notPaperless('Paperless returned an invalid list.');
+		}
+
+		$names = [];
+		/** @psalm-suppress MixedAssignment JSON values are validated before use. */
+		foreach ($data['results'] as $object) {
+			$id = is_array($object) ? ($object['id'] ?? null) : null;
+			$name = is_array($object) ? ($object['name'] ?? null) : null;
+			if (is_int($id) && is_string($name)) {
+				$names[$id] = $name;
+			}
+		}
+
+		return $names;
+	}
+
+	/**
+	 * The options of a request to Paperless. Every answer of Paperless reaches the check
+	 * of its status, whatever the status is.
+	 *
+	 * @param array<string, int|string> $query
+	 * @return array<string, mixed>
+	 */
+	private function options(string $token, bool $allowLocal, array $query, int $timeout): array {
+		return [
+			'headers' => [
+				'Authorization' => 'Token ' . $token,
+				'Accept' => self::ACCEPT,
+				'User-Agent' => $this->getUserAgent(),
+			],
+			'connect_timeout' => self::CONNECT_TIMEOUT,
+			'timeout' => $timeout,
+			'http_errors' => false,
+			'query' => $query,
+			'nextcloud' => ['allow_local_address' => $allowLocal],
+		] + ($allowLocal ? ['allow_redirects' => false] : []);
+	}
+
+	/**
+	 * The IDs of the field all of an answer, or null when it holds no list of IDs.
+	 *
+	 * @return ?list<int>
+	 */
+	private static function idsOf(mixed $all): ?array {
+		if (!is_array($all)) {
+			return null;
+		}
+
+		$ids = [];
+		/** @psalm-suppress MixedAssignment Every ID is checked before use. */
+		foreach ($all as $id) {
+			if (!is_int($id)) {
+				return null;
+			}
+			$ids[] = $id;
+		}
+
+		return $ids;
 	}
 
 	/**

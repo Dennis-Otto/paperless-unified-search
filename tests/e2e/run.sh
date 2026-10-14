@@ -68,6 +68,15 @@ assert_response() {
 	"${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_response.py "${mode}" "$@" < "${file}"
 }
 
+# Checks what a command of occ wrote as JSON into the file $2, in the mode $1 of
+# assert_occ.py, with the rest as the arguments of the mode.
+assert_occ() {
+	mode="$1"
+	file="$2"
+	shift 2
+	"${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_occ.py "${mode}" "$@" < "${file}"
+}
+
 # Checks the history of the problems of the search on the page of the administration
 # settings in the file $2 in the mode $1 of assert_history.py, with the rest as the
 # arguments of the mode.
@@ -130,15 +139,16 @@ expect_status() {
 	fi
 }
 
-# Sets the language of e2e-admin to $1 through the provisioning API, which needs no occ,
-# as the menu of the account does.
+# Sets the language of the user $2, e2e-admin by default, to $1 through the provisioning
+# API, which needs no occ, as the menu of the account does.
 language() {
-	expect_status 200 "Setting the language of e2e-admin to $1" \
+	account="${2:-e2e-admin}"
+	expect_status 200 "Setting the language of ${account} to $1" \
 		--user "e2e-admin:${PASSWORD}" \
 		--request PUT \
 		--data-urlencode 'key=language' \
 		--data-urlencode "value=$1" \
-		"${BASE_URL}/ocs/v2.php/cloud/users/e2e-admin"
+		"${BASE_URL}/ocs/v2.php/cloud/users/${account}"
 }
 
 # Fetches the administration settings of the app as e2e-admin into the file $1.
@@ -164,13 +174,18 @@ mock_requests() {
 
 # Searches as the user $1 with the user agent $2 for the term $4, mobiletest by default,
 # from the cursor $5, 0 by default, 5 results as Nextcloud's web search asks for them.
-# The answer lands in the file $3.
+# Any further argument is a parameter of the search, such as since=2026-08-01T00:00:00Z
+# of the date filter. The answer lands in the file $3.
 search() {
 	user="$1"
 	user_agent="$2"
 	output="$3"
 	term="${4:-mobiletest}"
 	cursor="${5:-0}"
+	parameters=()
+	for parameter in "${@:6}"; do
+		parameters+=(--data-urlencode "${parameter}")
+	done
 	curl --fail-with-body --silent --show-error \
 		--user "${user}:${PASSWORD}" \
 		--user-agent "${user_agent}" \
@@ -180,6 +195,7 @@ search() {
 		--data-urlencode "term=${term}" \
 		--data-urlencode 'limit=5' \
 		--data-urlencode "cursor=${cursor}" \
+		"${parameters[@]}" \
 		--output "${output}" \
 		"${BASE_URL}/ocs/v2.php/search/providers/paperless_unified_search_documents/search"
 }
@@ -255,6 +271,14 @@ for user in e2e-user e2e-other; do
 		--data-urlencode "password=${PASSWORD}" \
 		"${BASE_URL}/ocs/v2.php/cloud/users"
 done
+# Previews of PDF files, which Nextcloud draws with Imagick once enabledPreviewProviders
+# names them, so that a result links the preview of its file. The image has no
+# Ghostscript, so Nextcloud answers such a preview with the icon of PDF files. A file in
+# config/, which Nextcloud adds to config.php, costs no start of occ.
+"${COMPOSE[@]}" exec -T --user www-data nextcloud sh -c 'cat > config/previews.config.php' <<'PHP'
+<?php
+$CONFIG = ['enabledPreviewProviders' => ['OC\\Preview\\PNG', 'OC\\Preview\\JPEG', 'OC\\Preview\\PDF']];
+PHP
 phase "Restart Nextcloud"
 "${COMPOSE[@]}" restart nextcloud >/dev/null
 "${COMPOSE[@]}" up --detach --wait --wait-timeout 120 >/dev/null
@@ -338,21 +362,19 @@ expect_status 400 'Saving a host that does not resolve, without the switch for t
 expect_text '"code":"unknown_host"' "${TMP_DIR}/answer.json" \
 	"A host that does not resolve isn't named as one: $(cat "${TMP_DIR}/answer.json")"
 
-curl --fail-with-body --silent --show-error \
-	--user "e2e-admin:${PASSWORD}" \
-	--header 'Accept: application/json' \
-	--header 'OCS-APIRequest: true' \
-	--request POST \
-	--data-urlencode 'url=http://paperless-mock:8080' \
-	--data-urlencode 'allowLocal=1' \
-	--data-urlencode 'token=e2e-only-token' \
-	--data-urlencode 'alwaysSearch=0' \
-	--data-urlencode 'archiveOwner=e2e-user' \
-	--output "${TMP_DIR}/settings.json" \
-	"${SETTINGS_URL}"
-
-if grep --fixed-strings 'e2e-only-token' "${TMP_DIR}/settings.json" >/dev/null; then
-	echo "Settings response exposed the Paperless API token." >&2
+# occ sets the app up as the settings page does, for Ansible, Docker and other scripts,
+# with the token from the standard input instead of the command line (#136). It saves
+# the settings once the mock answers, and says so without the token; the test command
+# then tests them and exits with 0.
+printf '%s\n' 'e2e-only-token' \
+	| occ paperless_unified_search:setup --url=http://paperless-mock:8080 \
+		--archive-account=e2e-user --allow-local --no-always-search --token-stdin \
+		>"${TMP_DIR}/setup.txt"
+expect_text 'Paperless 3.3.0 (API 10) answers at http://paperless-mock:8080. The settings are saved.' \
+	"${TMP_DIR}/setup.txt" "occ didn't set the app up: $(cat "${TMP_DIR}/setup.txt")"
+occ paperless_unified_search:test >"${TMP_DIR}/test.txt"
+if grep --fixed-strings 'e2e-only-token' "${TMP_DIR}/setup.txt" "${TMP_DIR}/test.txt" >/dev/null; then
+	echo "occ showed the Paperless API token." >&2
 	exit 1
 fi
 
@@ -376,6 +398,11 @@ for login in e2e-user anonymous; do
 	expect_status "${expected}" "Clear history as ${login}" "${credentials[@]}" \
 		--request DELETE \
 		"${SETTINGS_URL}/diagnostics"
+	expect_status "${expected}" "Try a search as ${login}" "${credentials[@]}" \
+		--request POST \
+		--data-urlencode 'term=mobiletest' \
+		--data-urlencode 'user=e2e-admin' \
+		"${SETTINGS_URL}/try"
 done
 if [[ "$(occ config:app:get paperless_unified_search paperless_url)" != 'http://paperless-mock:8080' ]]; then
 	echo "A request of a user who isn't an administrator changed the settings." >&2
@@ -496,6 +523,24 @@ curl --fail --silent --show-error --output /dev/null "${BASE_URL}${ICON}"
 
 search e2e-user 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/browser.json"
 assert_response browser "${TMP_DIR}/browser.json"
+# The preview of the result: an image for the user, who can open its file, and nothing
+# for anyone else.
+PREVIEW="$(assert_response preview "${TMP_DIR}/browser.json")"
+PREVIEW_TYPE="$(curl --fail --silent --show-error --location \
+	--user "e2e-user:${PASSWORD}" \
+	--output /dev/null \
+	--write-out '%{content_type}' \
+	"${PREVIEW}")"
+if [[ "${PREVIEW_TYPE}" != image/* ]]; then
+	echo "The preview of the result is no image, but ${PREVIEW_TYPE}: ${PREVIEW}" >&2
+	exit 1
+fi
+expect_status 404 "The preview of the result for e2e-other" --user "e2e-other:${PASSWORD}" "${PREVIEW}"
+# The date of the result in the language of the user.
+language de e2e-user
+search e2e-user 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/german.json"
+assert_response german "${TMP_DIR}/german.json"
+language en e2e-user
 # The link that the smart picker inserts for this result, which Nextcloud renders as the
 # preview of the file for whoever can open it, and as a bare link for anyone else.
 LINK="$(assert_response link "${TMP_DIR}/browser.json")"
@@ -510,6 +555,25 @@ assert_response android "${TMP_DIR}/android.json"
 
 search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/inaccessible.json"
 assert_response no-results "${TMP_DIR}/inaccessible.json"
+# occ names the reason of each document that the search leaves out (#136): the archive
+# account hasn't shared the file of 123 with e2e-other, and no file stands for 999.
+occ paperless_unified_search:search e2e-other mobiletest --explain --json >"${TMP_DIR}/explain-unshared.json"
+assert_occ verdicts "${TMP_DIR}/explain-unshared.json" '123=not_shared=/Documents/Mobile viewer test [P123].pdf' 999=no_file
+# Try a search of the settings page gives administrators the same answer without a
+# shell, with the IDs and titles alone, and refuses an account that doesn't exist.
+try_search() {
+	expect_status "$1" "Trying a search as $2" \
+		--user "e2e-admin:${PASSWORD}" \
+		--request POST \
+		--data-urlencode 'term=mobiletest' \
+		--data-urlencode "user=$2" \
+		"${SETTINGS_URL}/try"
+}
+try_search 200 e2e-other
+assert_occ try "${TMP_DIR}/answer.json" e2e-other 123=not_shared 999=no_file
+try_search 400 nobody
+expect_text '"code":"unknown_user"' "${TMP_DIR}/answer.json" \
+	"Try a search accepted an account that doesn't exist: $(cat "${TMP_DIR}/answer.json")"
 resolve e2e-other "${LINK}" "${TMP_DIR}/link-inaccessible.json"
 assert_response no-file-link "${TMP_DIR}/link-inaccessible.json"
 
@@ -537,6 +601,15 @@ curl --fail-with-body --silent --show-error \
 	"${BASE_URL}/ocs/v2.php/apps/files_sharing/api/v1/shares"
 search e2e-other 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/shared.json"
 assert_response shared "${TMP_DIR}/shared.json"
+occ paperless_unified_search:search e2e-other mobiletest --explain --json >"${TMP_DIR}/explain-shared.json"
+assert_occ verdicts "${TMP_DIR}/explain-shared.json" '123=shown=/Mobile viewer test [P123].pdf' 999=no_file
+try_search 200 e2e-other
+assert_occ try "${TMP_DIR}/answer.json" e2e-other 123=shown 999=no_file
+# The check of occ compares the documents of Paperless with the files of the archive
+# account: the mock lists 123 and 999, and only 123 has a file.
+occ paperless_unified_search:check >"${TMP_DIR}/check.txt"
+expect_text 'Coverage: 1 of 2 Paperless document(s) have a file of the archive account. Without one: 999.' \
+	"${TMP_DIR}/check.txt" "occ checked the coverage wrongly: $(cat "${TMP_DIR}/check.txt")"
 resolve e2e-other "${LINK}" "${TMP_DIR}/link-shared.json"
 assert_response file-link "${TMP_DIR}/link-shared.json"
 
@@ -581,6 +654,23 @@ search e2e-user 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "
 assert_response browser "${TMP_DIR}/typing.json"
 search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/past-the-end.json" pagetest 100
 assert_response no-results "${TMP_DIR}/past-the-end.json"
+
+# The date filter of Nextcloud's search narrows the documents by their date in Paperless,
+# which the mock filters as Paperless does (#153). The web search sends each bound of the
+# span as a moment in UTC, whose day in the timezone of the user is the day that the user
+# picked: in Berlin, 22:00 UTC on August 26 is already August 27, after the document of
+# August 26, and 22:30 UTC on August 25 is August 26, its day. In UTC, each of the two
+# searches would get the answer of the other.
+occ user:setting e2e-user core timezone Europe/Berlin
+search e2e-user 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/since.json" mobiletest 0 'since=2026-08-26T22:00:00Z'
+assert_response no-results "${TMP_DIR}/since.json"
+search e2e-user 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/until.json" mobiletest 0 'since=2026-08-01T00:00:00Z' 'until=2026-08-25T22:30:00Z'
+assert_response browser "${TMP_DIR}/until.json"
+occ user:setting e2e-user core timezone --delete
+if ! "${COMPOSE[@]}" logs --no-color paperless-mock | grep --quiet --fixed-strings 'created__date__gte=2026-08-01&created__date__lte=2026-08-26'; then
+	echo 'The date filter of the search reached Paperless without created__date__gte=2026-08-01 and created__date__lte=2026-08-26.' >&2
+	exit 1
+fi
 
 # Paperless fails with HTTP 500 for e2e-error, and the connection of the first search
 # for e2e-drop breaks off without an answer. The first search shows no document and
@@ -649,6 +739,10 @@ expect_status 200 'Storing an archive account that does not exist' \
 	--request POST \
 	--data-urlencode 'value=e2e-gone' \
 	"${BASE_URL}/ocs/v2.php/apps/provisioning_api/api/v1/config/apps/paperless_unified_search/archive_owner"
+# The overview of the administration settings warns that the search shows no Paperless
+# documents, with a link to the settings of the app (#136).
+occ setupchecks --output=json >"${TMP_DIR}/setupchecks.json" || true
+assert_occ setupcheck "${TMP_DIR}/setupchecks.json" warning 'The archive account e2e-gone does not exist'
 browser_checks
 for setting in 'paperless_url=http://paperless-mock:8080' 'archive_owner=e2e-user'; do
 	if [[ "$(occ config:app:get paperless_unified_search "${setting%%=*}")" != "${setting#*=}" ]]; then
@@ -664,4 +758,4 @@ phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed in ${SECONDS} s: settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, pages of results filled across pages of Paperless, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."
+echo "Docker E2E passed in ${SECONDS} s: the set-up, the test, the explained search and the check of occ, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date in English and German, its correspondent and its type, pages of results filled across pages of Paperless, the date filter in the timezone of the user, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, Try a search for administrators only with the IDs, titles and verdicts alone, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."

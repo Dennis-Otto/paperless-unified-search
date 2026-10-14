@@ -63,6 +63,12 @@ Paperless Sync is the companion, not a must: [any synchronization](configure.md#
 
     By default, search terms reach Paperless only when the user switches on **Search connected services**, picks **Paperless documents** in the smart picker or asks the search API for Paperless documents. Administrators can trust their Paperless server to include it in every search.
 
+- :material-console:{ .lg .middle } **Set up and explained by occ**
+
+    ---
+
+    `occ` sets the app up for Ansible and Docker, tests it for monitoring, and says why a user doesn't see a document; the overview of the administration settings warns when the search can't show any. [How](reference.md#set-up-and-check-it-with-occ)
+
 - :material-key-chain-variant:{ .lg .middle } **The token stays on the server**
 
     ---

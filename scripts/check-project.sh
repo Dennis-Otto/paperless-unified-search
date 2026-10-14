@@ -3,10 +3,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # The checks of this app alone, which scripts/check.sh runs last: the browser and the
-# scripts of the end-to-end tests, the pictures of the README, the versions that the
-# documentation names, the descriptions of the pages of the website, the diagrams of the
-# documentation, and the JavaScript of the settings and the translations, which have no
-# build step, with their tests.
+# scripts of the end-to-end tests, the pictures of the README and the pages of the website
+# that it links, the versions that the documentation names, the descriptions of the pages
+# of the website, the diagrams of the documentation, and the JavaScript of the settings
+# and the translations, which have no build step, with their tests.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -47,6 +47,20 @@ for picture in "${pictures[@]}"; do
   fi
 done
 echo "The ${#pictures[@]} picture(s) of the README are in the repository."
+
+printf '\n== %s\n' "Pages of the website that the README links"
+# The README links pages of the website, which a pull request that adds a page links
+# before the website has it, so the link check skips them (.lycheeignore): each of them
+# must be a page of docs/, from which the website is built.
+mapfile -t site_pages < <(grep -oE 'https://dennis-otto\.github\.io/paperless-unified-search/[a-z0-9-]+\.html' README.md |
+  sed -E 's#^.*/([a-z0-9-]+)\.html$#docs/\1.md#' | sort -u)
+for site_page in "${site_pages[@]}"; do
+  if [[ ! -f "$site_page" ]]; then
+    echo "README.md links a page of the website that docs/ doesn't have: write $site_page or link another page."
+    exit 1
+  fi
+done
+echo "The ${#site_pages[@]} page(s) of the website that the README links are in docs/."
 
 printf '\n== %s\n' "Versions in the documentation"
 # appinfo/info.xml decides on which versions of Nextcloud and PHP the app installs. The

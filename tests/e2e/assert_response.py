@@ -8,9 +8,12 @@ import sys
 from urllib.parse import parse_qs, urlparse
 
 
-# The line below the title of the result for "mobiletest": the date of the document and
-# its excerpt, which Paperless sends marked up and escaped as HTML, as text.
-SUBLINE = "2026-08-26 · Synthetic OCR mobiletest result for O'Brien & \"Sons\" <GmbH>"
+# The line below the title of the result for "mobiletest": the date of the document in
+# the language of the user, its correspondent and its type, which the mock lists, and its
+# excerpt, which Paperless sends marked up and escaped as HTML, as text without a tag.
+SUBLINE = "Aug 26, 2026 · Example Mobile · Letter — Synthetic OCR mobiletest result for O'Brien & \"Sons\" < GmbH>"
+# The same for a user whose language is German.
+GERMAN_SUBLINE = SUBLINE.replace("Aug 26, 2026", "26.08.2026")
 
 
 def fail(message):
@@ -38,6 +41,12 @@ if mode in ("external", "trusted"):
     expected = mode == "external"
     if provider.get("isExternalProvider") is not expected:
         fail(f"Expected isExternalProvider={expected}, got {provider!r}")
+    # Nextcloud's web search sends its date filter only to a provider that names since
+    # and until, and lists any other one under "Partial matches", searched without it.
+    # Nextcloud names each filter with its type, such as {"since": "datetime"}.
+    filters = provider.get("filters")
+    if not isinstance(filters, (dict, list)) or not {"term", "since", "until"} <= set(filters):
+        fail(f"The provider doesn't take the term and the date filter of the search: {provider!r}")
     sys.exit(0)
 
 if mode == "picker":
@@ -110,8 +119,9 @@ if len(entries) != 1:
 entry = entries[0]
 if entry.get("title") != "Mobile viewer test":
     fail(f"Unexpected title: {entry!r}")
-if entry.get("subline") != SUBLINE:
-    fail(f"Expected the subline {SUBLINE!r}, got {entry!r}")
+subline = GERMAN_SUBLINE if mode == "german" else SUBLINE
+if entry.get("subline") != subline:
+    fail(f"Expected the subline {subline!r}, got {entry!r}")
 
 attributes = entry.get("attributes", {})
 if not str(attributes.get("fileId", "")).isdigit():
@@ -125,6 +135,23 @@ expected_path = (
 if attributes.get("path") != expected_path:
     fail(f"Unexpected user-relative path: {entry!r}")
 
+# The preview of the PDF file, which run.sh lets Nextcloud draw, as an absolute URL,
+# which the apps for phones load as well, and no icon, which the smart picker would show
+# in its place as the name of a class of CSS.
+thumbnail = urlparse(entry.get("thumbnailUrl", ""))
+if (
+    thumbnail.scheme not in ("http", "https")
+    or not thumbnail.path.endswith("/core/preview")
+    or parse_qs(thumbnail.query).get("fileId") != [str(attributes["fileId"])]
+):
+    fail(f"The result shows no preview of its file: {entry!r}")
+if entry.get("icon") != "":
+    fail(f"The result has an icon, which the smart picker shows in place of the preview: {entry!r}")
+if mode == "preview":
+    # The preview, which run.sh loads as the user and as one who can't open the file.
+    print(entry["thumbnailUrl"])
+    sys.exit(0)
+
 resource_url = entry.get("resourceUrl", "")
 if mode == "ios":
     parsed = urlparse(resource_url)
@@ -135,7 +162,7 @@ if mode == "ios":
         fail(f"iOS deep link has the wrong user: {resource_url}")
     if not params.get("link", [""])[0].endswith(f"/f/{attributes['fileId']}"):
         fail(f"iOS deep link has the wrong web fallback: {resource_url}")
-elif mode in ("browser", "android", "shared", "link"):
+elif mode in ("browser", "german", "android", "shared", "link"):
     if not resource_url.endswith(f"/f/{attributes['fileId']}"):
         fail(f"Unexpected web/native viewer link: {resource_url}")
     if mode == "link":

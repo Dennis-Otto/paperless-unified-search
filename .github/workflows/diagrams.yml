@@ -11,8 +11,9 @@ name: Diagrams
 # check passes. It runs after every change of main that touches a diagram or a page
 # of Markdown, and every week; when main is fixed otherwise, it closes the pull
 # request. Drawing runs without secrets; only the job of the pull request has the
-# release app, and runs nothing that it drew. A failed run opens an issue, which the
-# next weekly run closes once the bot passes again.
+# release app, and runs nothing that it drew; without the release app, the run warns
+# and names the command that fixes main. A failed run opens an issue, which the next
+# weekly run closes once the bot passes again.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -65,6 +66,9 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BEFORE: ${{ github.event.before }}
+          # The release app, which opens the pull request; without it, the run says
+          # what to do.
+          APP: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
         run: |
           tool=.github/blueprint.py
           [[ -f "$tool" ]] || tool=blueprint.py
@@ -87,7 +91,17 @@ jobs:
             echo "Every diagram of main is a picture of its source, as drawn." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          printf '### Diagrams\nThe pull request of the diagram bot changes these files:\n\n%s\n' "$changed" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -n "$APP" ]]; then
+            printf '### Diagrams\nThe pull request of the diagram bot changes these files:\n\n%s\n' "$changed" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::main has diagrams that not every reader sees, and without the release app no bot opens the pull request that fixes them. Run bash scripts/diagrams.sh --extract with Docker and commit what it changes, or take the files from the artifact diagrams of this run."
+            {
+              echo "### Diagrams"
+              echo "The variable \`RELEASE_AUTOMATION_CLIENT_ID\` of the release app is empty, so no bot opens the pull request with these files. Run \`bash scripts/diagrams.sh --extract\` with Docker and commit what it changes, or take the files from the artifact \`diagrams\` of this run:"
+              echo
+              echo "$changed"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "stale=true" >> "$GITHUB_OUTPUT"
       - name: Keep the diagrams for the pull request
         if: steps.draw.outputs.stale == 'true'
@@ -137,9 +151,14 @@ jobs:
         with:
           client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY }}
-          # Only what the branch and the pull request need.
+          # Only what the branch and the pull request need, workflows included: the
+          # branch of an open pull request moves from a commit on an older main to one
+          # on the newest, and GitHub refuses that move without workflows when main
+          # changed a workflow in between. The commit itself holds only what
+          # blueprint.py lets through: sources, pictures and pages of Markdown.
           permission-contents: write
           permission-pull-requests: write
+          permission-workflows: write
       - name: Open, update or close the pull request of the diagrams
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
@@ -159,7 +178,7 @@ jobs:
             exit 0
           fi
 
-          # Points a branch at a commit, new or moved.
+          # Points the branch of the pull request at a commit, new or moved.
           point() {
             if gh api "repos/$GH_REPO/git/ref/heads/$1" > /dev/null 2>&1; then
               gh api --method PATCH "repos/$GH_REPO/git/refs/heads/$1" -f sha="$2" -F force=true > /dev/null
@@ -170,9 +189,14 @@ jobs:
           # The commit starts from the commit that was drawn, so that there is one pull
           # request with one commit, however often main changed. It is made on a branch
           # of its own, and the branch of the pull request moves to it in one step: a
-          # pull request whose head is a commit of main would be closed by GitHub.
+          # pull request whose head is a commit of main would be closed by GitHub. That
+          # branch starts anew, so that one which a failed run left behind can't stop
+          # the next run.
           scratch="$BRANCH-next"
-          point "$scratch" "$SHA"
+          if gh api "repos/$GH_REPO/git/ref/heads/$scratch" > /dev/null 2>&1; then
+            gh api --method DELETE "repos/$GH_REPO/git/refs/heads/$scratch" > /dev/null
+          fi
+          gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/heads/$scratch" -f sha="$SHA" > /dev/null
           tool=.github/blueprint.py
           [[ -f "$tool" ]] || tool=blueprint.py
           kept="$RUNNER_TEMP/diagrams"

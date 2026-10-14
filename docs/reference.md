@@ -43,15 +43,18 @@ The account of Paperless Sync is `occ config:app:get paperless_sync target_user`
 
 Change the settings in the administration settings, which test the connection first. `occ config:app:set` can still turn a switch on or off, such as `occ config:app:set paperless_unified_search always_search --value=true --type=boolean`, which every user's next reload takes. Don't change `paperless_url` that way: the stored token would follow the URL to the new server, which the settings prevent by asking for the token again.
 
+--8<-- "README.md:automation"
+
 ## The routes of the settings
 
-The settings page saves through three routes of the app, which only administrators may call, each with Nextcloud's CSRF token. A script calls them with the login of an administrator and the header `OCS-APIRequest: true`, as the end-to-end tests do; `/index.php` goes before `/apps` where Nextcloud runs without pretty URLs.
+The settings page saves through four routes of the app, which only administrators may call, each with Nextcloud's CSRF token. A script calls them with the login of an administrator and the header `OCS-APIRequest: true`, as the end-to-end tests do; `/index.php` goes before `/apps` where Nextcloud runs without pretty URLs.
 
 | Route | Does |
 | --- | --- |
 | `POST /apps/paperless_unified_search/settings` | Tests the connection and saves, with the parameters `url`, `token`, `archiveOwner`, `allowLocal` and `alwaysSearch`; asks for the password like **Test connection and save** |
 | `DELETE /apps/paperless_unified_search/settings` | **Disconnect**: deletes the settings, the token and the history; asks for the password |
 | `DELETE /apps/paperless_unified_search/settings/diagnostics` | **Clear history** |
+| `POST /apps/paperless_unified_search/settings/try` | **Try a search**: searches with the parameter `term` as the account `user` and says for each document whether it shows and why not, with its ID and title alone; the log records which administrator tried a search as whom, without the term |
 
 ```sh
 curl -u admin -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
@@ -72,6 +75,7 @@ curl -u admin -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
 | `not_found` | HTTP 404: the path of the URL is wrong |
 | `redirect` | The URL forwards, and with the local network Nextcloud follows no redirect |
 | `http` | Another status, such as an error of Paperless with 5xx |
+| `unsupported_version` | HTTP 406: Paperless is older than 2.16 and doesn't speak version 9 of its API; updating Paperless-ngx fixes it |
 | `not_paperless` | The answer isn't a list of documents of Paperless-ngx |
 | `local_address` | Nextcloud refused the address of the local network |
 | `tls`, `tls_handshake` | Nextcloud doesn't trust the certificate, or couldn't set up an encrypted connection |
@@ -106,11 +110,11 @@ Every request of the app to Paperless is one `GET` of `<URL>/api/documents/`, fr
 
 | | Nextcloud 33 | Nextcloud 34 | Nextcloud 35 |
 | --- | --- | --- | --- |
-| **Paperless-ngx 3.3** (API 10) | End-to-end tests | End-to-end tests | End-to-end tests |
-| **Paperless-ngx 2.20** (API 9) | Unit tests | Unit tests | Unit tests |
+| **Paperless-ngx 3.x** (API 9) | End-to-end tests | End-to-end tests | End-to-end tests |
+| **Paperless-ngx 2.16 to 2.20** (API 9) | Unit tests | Unit tests | Unit tests |
 
 - **Nextcloud:** the end-to-end tests run the app in the current release of each version that `appinfo/info.xml` supports, in every pull request that changes the app and on every change of `main`, and every Monday also in the coming version of Nextcloud, its beta or release candidate.
-- **Paperless-ngx:** the end-to-end tests ask a stand-in of Paperless that answers as Paperless-ngx 3.3.0 does: its pages, its fields, its headers of the version, its excerpts and its refusal of a query that is still being typed. The unit tests check the answers of 2.20 and 3.3, such as that only Paperless 3 gets the simple mode of its search, which Paperless 2 doesn't know. Tests against real Paperless-ngx 2.20 and 3.x are on the [roadmap](roadmap.md).
+- **Paperless-ngx:** the end-to-end tests ask a stand-in of Paperless that answers as Paperless-ngx 3.3.0 does: its pages, its fields, its headers of the version, its excerpts and its refusal of a query that is still being typed. The unit tests check the answers of 2.20 and 3.3, such as that only Paperless 3 gets the simple mode of its search, which Paperless 2 doesn't know. Every request names version 9 of the API, which Paperless-ngx 2.16 and newer and every 3.x speak, so a new release of Paperless can't change the results unnoticed; contract tests check the app every week against real Paperless-ngx, the last release of 2.20 and the newest of 3.x. An older Paperless answers HTTP 406, and the test of the connection says so.
 - **PHP:** 8.2 or newer, as Nextcloud supports it; the unit tests run on 8.2.
 
 ## Data flows
