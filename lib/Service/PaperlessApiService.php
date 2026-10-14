@@ -13,6 +13,7 @@ use JsonException;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessQueryRejected;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
+use OCA\PaperlessUnifiedSearch\Model\PaperlessStatus;
 use OCA\PaperlessUnifiedSearch\Model\PaperlessVersion;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -78,15 +79,45 @@ final class PaperlessApiService {
 	 *                                   name: also when the request got no answer
 	 */
 	public function testConnection(string $url, string $token, bool $allowLocal): ?PaperlessVersion {
+		return $this->probe($url, $token, $allowLocal)->version;
+	}
+
+	/**
+	 * The test of the connection to the Paperless of the settings, as occ and its checks
+	 * run it. The version that Paperless names replaces the stored one, which the overview
+	 * of the administration settings shows.
+	 *
+	 * @throws PaperlessRequestException whatever failed, also when the request got no answer
+	 */
+	public function probeTheSettings(): PaperlessStatus {
+		$status = $this->probe(
+			$this->configService->getUrl(),
+			$this->configService->getToken(),
+			$this->configService->isLocalNetworkAllowed(),
+		);
+		$this->configService->rememberPaperlessVersion($status->version);
+
+		return $status;
+	}
+
+	/**
+	 * Asks Paperless for its first document, which tells whether it answers, its version
+	 * and how many documents the account of the token may view, with their IDs in the field
+	 * all, which Paperless-ngx adds to every list for the selection of all documents.
+	 *
+	 * @throws PaperlessRequestException whatever failed, with the reason that the settings
+	 *                                   name: also when the request got no answer
+	 */
+	public function probe(string $url, string $token, bool $allowLocal): PaperlessStatus {
 		try {
 			// The test reads nothing of the document, so Paperless sends only its ID.
-			[, $version] = $this->requestDocuments($url, $token, $allowLocal, [
+			[$data, $version] = $this->requestDocuments($url, $token, $allowLocal, [
 				'page' => 1,
 				'page_size' => 1,
 				'fields' => 'id',
 			]);
 
-			return $version;
+			return new PaperlessStatus($version, self::documentsOf($data)['count'], self::idsOf($data['all'] ?? null));
 		} catch (PaperlessRequestException $exception) {
 			throw $exception;
 		} catch (Throwable $error) {
@@ -132,13 +163,15 @@ final class PaperlessApiService {
 	 * @return array{array{count: int, next: ?string, results: list<array<array-key, mixed>>}, ?PaperlessVersion}
 	 */
 	private function search(array $query, string $term): array {
-		return $this->requestDocuments(
+		[$data, $version] = $this->requestDocuments(
 			$this->configService->getUrl(),
 			$this->configService->getToken(),
 			$this->configService->isLocalNetworkAllowed(),
 			$query,
 			$term,
 		);
+
+		return [self::documentsOf($data), $version];
 	}
 
 	/**
@@ -147,12 +180,12 @@ final class PaperlessApiService {
 	 * config.php allows it to every request of every app. With the option, Nextcloud
 	 * would also follow a redirect of Paperless to any address of the network unchecked;
 	 * so a request that allows the local network follows none, and only the address of
-	 * the settings gets the exception. Returns the documents, and the version of Paperless
-	 * that its answer names.
+	 * the settings gets the exception. Returns the answer, a list of documents, and the
+	 * version of Paperless that it names.
 	 *
 	 * @param array<string, int|string> $query
 	 * @param string $term the term of a search, which the history must not show
-	 * @return array{array{count: int, next: ?string, results: list<array<array-key, mixed>>}, ?PaperlessVersion}
+	 * @return array{array{results: array<array-key, mixed>, ...<array-key, mixed>}, ?PaperlessVersion}
 	 * @throws PaperlessRequestException when Paperless answers, but not with documents
 	 */
 	private function requestDocuments(string $url, string $token, bool $allowLocal, array $query, string $term = ''): array {
@@ -198,6 +231,17 @@ final class PaperlessApiService {
 			throw PaperlessRequestException::notPaperless('Paperless returned an invalid document response.');
 		}
 
+		return [$data, PaperlessVersion::fromResponse($response)];
+	}
+
+	/**
+	 * The documents of an answer of Paperless: their number, the link of the next page and
+	 * the documents of this page, without anything else that the list may hold.
+	 *
+	 * @param array{results: array<array-key, mixed>, ...<array-key, mixed>} $data
+	 * @return array{count: int, next: ?string, results: list<array<array-key, mixed>>}
+	 */
+	private static function documentsOf(array $data): array {
 		$results = [];
 		/** @psalm-suppress MixedAssignment JSON values are validated before use. */
 		foreach ($data['results'] as $result) {
@@ -207,13 +251,32 @@ final class PaperlessApiService {
 		}
 
 		return [
-			[
-				'count' => isset($data['count']) && is_numeric($data['count']) ? (int)$data['count'] : count($results),
-				'next' => isset($data['next']) && is_string($data['next']) ? $data['next'] : null,
-				'results' => $results,
-			],
-			PaperlessVersion::fromResponse($response),
+			'count' => isset($data['count']) && is_numeric($data['count']) ? (int)$data['count'] : count($results),
+			'next' => isset($data['next']) && is_string($data['next']) ? $data['next'] : null,
+			'results' => $results,
 		];
+	}
+
+	/**
+	 * The IDs of the field all of an answer, or null when it holds no list of IDs.
+	 *
+	 * @return ?list<int>
+	 */
+	private static function idsOf(mixed $all): ?array {
+		if (!is_array($all)) {
+			return null;
+		}
+
+		$ids = [];
+		/** @psalm-suppress MixedAssignment Every ID is checked before use. */
+		foreach ($all as $id) {
+			if (!is_int($id)) {
+				return null;
+			}
+			$ids[] = $id;
+		}
+
+		return $ids;
 	}
 
 	/**

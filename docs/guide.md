@@ -4,7 +4,7 @@ description: "Install Paperless Unified Search, connect Paperless-ngx, choose th
 
 # Guide
 
-How to install and set up Paperless Unified Search, how it finds documents and decides who sees them, how any synchronization can feed it, what it needs, how to use it and the search syntax of Paperless, how scripts and AI assistants use it, and how it handles security and privacy.
+How to install and set up Paperless Unified Search, how it finds documents and decides who sees them, how any synchronization can feed it, what it needs, how to use it and the search syntax of Paperless, how scripts and AI assistants use it, how occ sets it up and explains a hidden document, and how it handles security and privacy.
 
 --8<-- "README.md:quick-start-section"
 
@@ -21,5 +21,7 @@ How to install and set up Paperless Unified Search, how it finds documents and d
 --8<-- "README.md:search-syntax"
 
 --8<-- "README.md:scripts"
+
+--8<-- "README.md:automation"
 
 --8<-- "README.md:security-and-privacy"

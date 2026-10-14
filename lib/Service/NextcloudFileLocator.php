@@ -36,6 +36,9 @@ final class NextcloudFileLocator {
 		ISearchComparison::class => ['getType', 'getField', 'getExtra', 'getValue', 'getQueryHint', 'setQueryHint'],
 	];
 
+	/** How the marker of a document begins in the name of its file, as in [P412]. */
+	private const MARKER_START = '[P';
+
 	/** Whether the app's classes still implement every method of their interfaces, once known. */
 	private ?bool $queryable = null;
 
@@ -66,14 +69,76 @@ final class NextcloudFileLocator {
 	 *                    such file, and the error of the first file that failed to answer
 	 */
 	public function findAllForUser(IUser $user, array $documentIds, string $archiveOwner): FoundFiles {
+		if ($archiveOwner === '') {
+			return new FoundFiles([]);
+		}
+
+		return $this->find($user, $documentIds, $archiveOwner);
+	}
+
+	/**
+	 * The files with the markers of the documents among those that the user can see,
+	 * whoever owns them, so that occ can tell a file of another account from none. The
+	 * search never uses them: such a file stands for no document.
+	 *
+	 * @param list<int> $documentIds
+	 * @return FoundFiles as findAllForUser() returns them, of any owner
+	 */
+	public function findAnyForUser(IUser $user, array $documentIds): FoundFiles {
+		return $this->find($user, $documentIds, null);
+	}
+
+	/**
+	 * The IDs of the documents that a file of the archive account stands for, among the
+	 * files in its own folders, smallest first: for occ, which compares them with the
+	 * documents of Paperless. Files that fail to answer are left out, as in the search.
+	 *
+	 * @return list<int>
+	 */
+	public function findArchivedDocumentIds(IUser $archiveAccount): array {
+		$userFolder = $this->rootFolder->getUserFolder($archiveAccount->getUID());
+		$nodes = $this->canQueryTheFileCache()
+			? $userFolder->search(new SearchQuery(new SearchComparison(ISearchComparison::COMPARE_LIKE, 'name', '%' . self::MARKER_START . '%'), $archiveAccount))
+			: $userFolder->search(self::MARKER_START);
+
+		$documentIds = [];
+		$skipped = 0;
+		$firstError = null;
+		foreach ($nodes as $node) {
+			try {
+				if ($node instanceof File && $node->getOwner()?->getUID() === $archiveAccount->getUID()) {
+					foreach (self::documentIdsIn($node->getName()) as $documentId) {
+						$documentIds[$documentId] = true;
+					}
+				}
+			} catch (Throwable $error) {
+				$skipped++;
+				$firstError ??= $error;
+			}
+		}
+		$this->logSkipped($skipped, $firstError);
+
+		$documentIds = array_keys($documentIds);
+		sort($documentIds);
+
+		return $documentIds;
+	}
+
+	/**
+	 * The files with the markers of the documents among those that the user can see, of the
+	 * owner, or of any owner for null.
+	 *
+	 * @param list<int> $documentIds
+	 */
+	private function find(IUser $user, array $documentIds, ?string $owner): FoundFiles {
 		/** @var array<int, string> $markers by document ID */
 		$markers = [];
 		foreach ($documentIds as $documentId) {
 			if ($documentId > 0) {
-				$markers[$documentId] = '[P' . $documentId . ']';
+				$markers[$documentId] = self::MARKER_START . $documentId . ']';
 			}
 		}
-		if ($markers === [] || $archiveOwner === '') {
+		if ($markers === []) {
 			return new FoundFiles([]);
 		}
 
@@ -90,17 +155,17 @@ final class NextcloudFileLocator {
 			try {
 				// The file cache compares the names regardless of their case, and a name may
 				// carry the markers of several documents, so each marker counts on its own.
-				if (!$node instanceof File
-					|| preg_match_all('/\[P(\d+)\]/', $node->getName(), $matches) < 1
-					|| $node->getOwner()?->getUID() !== $archiveOwner) {
+				if (!$node instanceof File) {
+					continue;
+				}
+				$documentIdsOfTheName = self::documentIdsIn($node->getName());
+				if ($documentIdsOfTheName === [] || ($owner !== null && $node->getOwner()?->getUID() !== $owner)) {
 					continue;
 				}
 
 				$path = $node->getPath();
-				foreach ($matches[1] as $digits) {
-					$documentId = (int)$digits;
-					// Only the exact marker: [P012] is none of document 12.
-					if ((string)$documentId === $digits && isset($markers[$documentId])
+				foreach ($documentIdsOfTheName as $documentId) {
+					if (isset($markers[$documentId])
 						&& (!isset($found[$documentId]) || strcmp($path, $found[$documentId][0]) < 0)) {
 						$found[$documentId] = [$path, $node];
 					}
@@ -111,14 +176,7 @@ final class NextcloudFileLocator {
 				$firstError ??= $error;
 			}
 		}
-
-		if ($firstError !== null) {
-			$this->logger->warning('Paperless unified search skipped {count} file(s) it could not read ({errorType})', [
-				'app' => AppConstants::APP_ID,
-				'count' => $skipped,
-				'errorType' => $firstError::class,
-			]);
-		}
+		$this->logSkipped($skipped, $firstError);
 
 		$files = [];
 		foreach (array_keys($markers) as $documentId) {
@@ -128,6 +186,40 @@ final class NextcloudFileLocator {
 		}
 
 		return new FoundFiles($files, $firstError);
+	}
+
+	/**
+	 * The IDs of the documents whose markers a name carries, each once: only the exact
+	 * marker, so [P012] is none of document 12, and [p12] none either.
+	 *
+	 * @return list<int>
+	 */
+	private static function documentIdsIn(string $name): array {
+		if (preg_match_all('/\[P(\d+)\]/', $name, $matches) < 1) {
+			return [];
+		}
+
+		$documentIds = [];
+		foreach ($matches[1] as $digits) {
+			$documentId = (int)$digits;
+			if ((string)$documentId === $digits) {
+				$documentIds[$documentId] = $documentId;
+			}
+		}
+
+		return array_values($documentIds);
+	}
+
+	private function logSkipped(int $skipped, ?Throwable $firstError): void {
+		if ($firstError === null) {
+			return;
+		}
+
+		$this->logger->warning('Paperless unified search skipped {count} file(s) it could not read ({errorType})', [
+			'app' => AppConstants::APP_ID,
+			'count' => $skipped,
+			'errorType' => $firstError::class,
+		]);
 	}
 
 	/**
