@@ -306,6 +306,73 @@ final class NextcloudFileLocatorTest extends TestCase {
 	}
 
 	/**
+	 * occ tells a file of another account from none: such a file stands for no document,
+	 * but the user sees its marker.
+	 */
+	public function testFindsTheFilesWithTheMarkersOfAnyOwnerForOcc(): void {
+		$forged = $this->file('Copy [P123].txt', '/dennis/files/Copy [P123].txt', 'mallory');
+		$ownerless = $this->file('Letter [P7].pdf', '/dennis/files/Letter [P7].pdf', null);
+		$later = $this->file('Copy [P123].txt', '/dennis/files/Zzz/Copy [P123].txt', 'dennis');
+
+		$found = $this->locator([$later, $forged, $ownerless])->findAnyForUser($this->user(), [123, 7, 8]);
+
+		self::assertSame([123 => $forged, 7 => $ownerless], $found->files);
+		self::assertNull($found->error);
+		self::assertCount(1, $this->searches);
+	}
+
+	/**
+	 * occ compares the documents of Paperless with the files of the archive account: only
+	 * those in its own folders count, as for the search, in one search of the file cache.
+	 */
+	public function testFindsTheDocumentsOfTheFilesOfTheArchiveAccount(): void {
+		$broken = $this->createStub(File::class);
+		$broken->method('getName')->willReturn('Broken [P9].pdf');
+		$broken->method('getOwner')->willThrowException(new RuntimeException('Storage unavailable'));
+		$folder = $this->createStub(Folder::class);
+		$folder->method('getName')->willReturn('Scans [P5]');
+		$nodes = [
+			$this->file('Invoice [P12].pdf', '/dennis/files/Invoice [P12].pdf', 'dennis'),
+			$this->file('Two [P3] [P1].pdf', '/dennis/files/Two [P3] [P1].pdf', 'dennis'),
+			$this->file('Again [P3].pdf', '/dennis/files/Again [P3].pdf', 'dennis'),
+			$this->file('Zero [P012].pdf', '/dennis/files/Zero [P012].pdf', 'dennis'),
+			$this->file('Shared [P7].pdf', '/dennis/files/Shared [P7].pdf', 'mallory'),
+			$this->file('Holiday.jpg', '/dennis/files/Holiday.jpg', 'dennis'),
+			$folder,
+			$broken,
+		];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())
+			->method('warning')
+			->with('Paperless unified search skipped {count} file(s) it could not read ({errorType})', [
+				'app' => AppConstants::APP_ID,
+				'count' => 1,
+				'errorType' => RuntimeException::class,
+			]);
+
+		self::assertSame([1, 3, 12], $this->locator($nodes, $logger)->findArchivedDocumentIds($this->user()));
+
+		self::assertCount(1, $this->searches);
+		$condition = $this->searches[0]->getSearchOperation();
+		self::assertInstanceOf(ISearchComparison::class, $condition);
+		self::assertSame(['name', ISearchComparison::COMPARE_LIKE, '%[P%'], [$condition->getField(), $condition->getType(), $condition->getValue()]);
+	}
+
+	public function testFindsTheDocumentsOfTheArchiveAccountByTextWhenNextcloudAsksForMore(): void {
+		$invoice = $this->file('Invoice [P12].pdf', '/dennis/files/Invoice [P12].pdf', 'dennis');
+		$userFolder = $this->createMock(Folder::class);
+		$userFolder->expects(self::once())->method('search')->with('[P')->willReturn([$invoice]);
+		$root = $this->createStub(IRootFolder::class);
+		$root->method('getUserFolder')->willReturn($userFolder);
+		$methods = NextcloudFileLocator::IMPLEMENTED_METHODS;
+		$methods[ISearchQuery::class] = array_values(array_diff($methods[ISearchQuery::class], ['getSelectFields']));
+
+		$locator = new NextcloudFileLocator($root, $this->createStub(LoggerInterface::class), $methods);
+
+		self::assertSame([12], $locator->findArchivedDocumentIds($this->user()));
+	}
+
+	/**
 	 * A search for each document on its own finds the files of every document.
 	 */
 	public function testASearchForEachDocumentFindsTheFilesOfEveryDocument(): void {

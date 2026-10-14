@@ -14,7 +14,7 @@ The app does what it was built for: the full-text search of Paperless-ngx in the
 
 - **Nextcloud's date filter.** The filter of Nextcloud's search by date narrows the Paperless results as well.
 - **A dashboard widget.** The latest Paperless documents that the user can open, on Nextcloud's dashboard.
-- **Help for administrators.** `occ` commands that set up, test and explain the search, a setup check in the overview of the administration settings, and **Try a search** in the settings, which shows why a document is hidden from a user.
+- **Help for administrators.** **Try a search** in the settings, which shows why a document is hidden from a user, as [`occ paperless_unified_search:search --explain`](guide.md#explain-a-hidden-document) does on the command line.
 - **A demo in one command.** Real Paperless-ngx and Nextcloud with sample documents, to try the app before installing it.
 - **Documentation for everyone.** Pages on installation, configuration and troubleshooting with a FAQ, and the README and the website in German.
 

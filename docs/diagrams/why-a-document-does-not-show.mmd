@@ -1,0 +1,22 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: Why a document does not show
+    accDescr: Paperless finds document 389 when jamie searches, and occ paperless_unified_search:search jamie invoice --explain asks three questions in turn. Does jamie see a file of the archive account with [P389] in its name? Then the document shows. Otherwise, does the archive account have such a file in its own folders? Then it is not shared with jamie, and sharing the file or its folder read-only with jamie shows it. Otherwise, does jamie see a file with the marker of another account? Then it is not owned, since only files of the archive account stand for documents. Otherwise there is no file, and the synchronization has yet to write one with the marker in its name.
+
+    hit["Paperless finds document 389<br>when jamie searches"] --> visible{"Does jamie see a file of<br>the archive account<br>with [P389] in its name?"}
+    visible -- "yes" --> shown["shown"]
+    visible -- "no" --> archived{"Does the archive account<br>have such a file in its<br>own folders?"}
+    archived -- "yes" --> unshared["not shared: share the<br>file or its folder<br>read-only with jamie"]
+    archived -- "no" --> other{"Does jamie see a file<br>with [P389] of another<br>account?"}
+    other -- "yes" --> unowned["not owned: only files<br>of the archive account<br>stand for documents"]
+    other -- "no" --> missing["no file: let the<br>synchronization write<br>one with the marker"]
+
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class shown yes
+    class unshared,unowned,missing no
