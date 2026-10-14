@@ -144,9 +144,14 @@ final class NextcloudFileLocatorTest extends TestCase {
 	public function testIgnoresFilesThatTheArchiveAccountDoesNotOwn(?string $owner): void {
 		$forged = $this->file('Copy [P123].txt', '/dennis/files/Copy [P123].txt', $owner);
 		$archived = $this->file('Invoice [P123].pdf', '/dennis/files/Shared/Invoice [P123].pdf');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::never())->method(self::anything());
 
-		self::assertSame([123 => $archived], $this->locator([$forged, $archived])->findAllForUser($this->user(), [123], self::ARCHIVE)->files);
-		self::assertSame([], $this->locator([$forged])->findAllForUser($this->user(), [123], self::ARCHIVE)->files);
+		self::assertSame([123 => $archived], $this->locator([$forged, $archived], $logger)->findAllForUser($this->user(), [123], self::ARCHIVE)->files);
+		$found = $this->locator([$forged], $logger)->findAllForUser($this->user(), [123], self::ARCHIVE);
+		self::assertSame([], $found->files);
+		// A file of no account, as on some external storages, is no file that failed.
+		self::assertNull($found->error);
 	}
 
 	public function testIgnoresFoldersWithTheMarker(): void {
@@ -191,7 +196,7 @@ final class NextcloudFileLocatorTest extends TestCase {
 		$broken->method('getOwner')->willThrowException(new RuntimeException('Storage unavailable'));
 		$alsoBroken = $this->createStub(File::class);
 		$alsoBroken->method('getName')->willReturn('Receipt [P8].pdf');
-		$alsoBroken->method('getOwner')->willThrowException(new RuntimeException('Storage unavailable'));
+		$alsoBroken->method('getOwner')->willThrowException(new RuntimeException('Another storage unavailable'));
 		$invoice = $this->file('Invoice [P123].pdf', '/dennis/files/Paperless/Invoice [P123].pdf');
 
 		$logger = $this->createMock(LoggerInterface::class);
@@ -236,7 +241,7 @@ final class NextcloudFileLocatorTest extends TestCase {
 
 		self::assertSame(array_keys($classes), array_keys(NextcloudFileLocator::IMPLEMENTED_METHODS));
 		foreach ($classes as $interface => $class) {
-			$methods = array_diff(get_class_methods($class), ['__construct', '__toString']);
+			$methods = array_values(array_diff(get_class_methods($class), ['__construct', '__toString']));
 			self::assertEqualsCanonicalizing($methods, NextcloudFileLocator::IMPLEMENTED_METHODS[$interface], $class);
 			self::assertSame([], array_diff(get_class_methods($interface), $methods), $interface);
 		}
@@ -256,6 +261,10 @@ final class NextcloudFileLocatorTest extends TestCase {
 			'a new interface' => [
 				[...$methods, 'OCP\\Files\\Search\\ISearchNothing' => []],
 				'OCP\\Files\\Search\\ISearchNothing',
+			],
+			'a new interface and a new method' => [
+				['OCP\\Files\\Search\\ISearchNothing' => [], ...$methods, ISearchQuery::class => array_values(array_diff($methods[ISearchQuery::class], ['getSelectFields']))],
+				'OCP\\Files\\Search\\ISearchNothing, ' . ISearchQuery::class . '::getSelectFields',
 			],
 		];
 	}
@@ -297,6 +306,36 @@ final class NextcloudFileLocatorTest extends TestCase {
 	}
 
 	/**
+	 * A search for each document on its own finds the files of every document.
+	 */
+	public function testASearchForEachDocumentFindsTheFilesOfEveryDocument(): void {
+		$receipt = $this->file('Receipt [P8].pdf', '/dennis/files/Paperless/Receipt [P8].pdf');
+		$invoice = $this->file('Invoice [P123].pdf', '/dennis/files/Paperless/Invoice [P123].pdf');
+		$letter = $this->file('Letter [P7].pdf', '/dennis/files/Paperless/Letter [P7].pdf');
+		$userFolder = $this->createStub(Folder::class);
+		$userFolder->method('search')->willReturnCallback(static function (string $text) use ($receipt, $invoice, $letter): array {
+			// The file cache may answer with the nodes by their IDs.
+			$found = [];
+			foreach ([4711 => $receipt, 4712 => $invoice, 4713 => $letter] as $id => $file) {
+				if (str_contains($file->getName(), $text)) {
+					$found[$id] = $file;
+				}
+			}
+
+			return $found;
+		});
+		$root = $this->createStub(IRootFolder::class);
+		$root->method('getUserFolder')->willReturn($userFolder);
+		$implementedMethods = [...NextcloudFileLocator::IMPLEMENTED_METHODS, 'OCP\\Files\\Search\\ISearchNothing' => []];
+		$locator = new NextcloudFileLocator($root, $this->createStub(LoggerInterface::class), $implementedMethods);
+
+		$found = $locator->findAllForUser($this->user(), [8, 123, 7], self::ARCHIVE);
+
+		self::assertSame([8 => $receipt, 123 => $invoice, 7 => $letter], $found->files);
+		self::assertNull($found->error);
+	}
+
+	/**
 	 * @return array<string, array{?string, string}>
 	 */
 	public static function relativePaths(): array {
@@ -317,7 +356,7 @@ final class NextcloudFileLocatorTest extends TestCase {
 			->willReturn($relativePath);
 
 		$root = $this->createMock(IRootFolder::class);
-		$root->method('getUserFolder')->with('dennis')->willReturn($userFolder);
+		$root->expects(self::once())->method('getUserFolder')->with('dennis')->willReturn($userFolder);
 
 		$file = $this->file('Invoice [P123].pdf', '/dennis/files/Paperless/Invoice [P123].pdf');
 
@@ -330,8 +369,12 @@ final class NextcloudFileLocatorTest extends TestCase {
 	 * @param list<Node> $nodes
 	 */
 	private function locator(array $nodes, ?LoggerInterface $logger = null): NextcloudFileLocator {
-		$root = $this->createMock(IRootFolder::class);
-		$root->method('getUserFolder')->with('dennis')->willReturn($this->userFolder($nodes));
+		$root = $this->createStub(IRootFolder::class);
+		$root->method('getUserFolder')->willReturnCallback(function (string $uid) use ($nodes): Folder {
+			self::assertSame('dennis', $uid);
+
+			return $this->userFolder($nodes);
+		});
 
 		return new NextcloudFileLocator($root, $logger ?? $this->createStub(LoggerInterface::class));
 	}

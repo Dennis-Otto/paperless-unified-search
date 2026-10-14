@@ -9,18 +9,18 @@ declare(strict_types=1);
 
 namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Service;
 
-use ArrayObject;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Exception\InvalidSettingException;
 use OCA\PaperlessUnifiedSearch\Exception\SettingProblem;
 use OCA\PaperlessUnifiedSearch\Model\PaperlessVersion;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryAppConfig;
 use OCP\IAppConfig;
+use OCP\IUserManager;
 use OCP\Security\ICredentialsManager;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\RequiresFunction;
-use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use RuntimeException;
@@ -38,13 +38,12 @@ final class ConfigServiceTest extends TestCase {
 			AppConstants::APP_ID . '.archive_owner' => 'archive',
 			AppConstants::APP_ID . '.paperless_version' => '3.3.0',
 			AppConstants::APP_ID . '.paperless_api_version' => '10',
+			AppConstants::APP_ID . '.always_search' => true,
+			AppConstants::APP_ID . '.allow_local' => true,
 			'paperless_sync.target_user' => 'sync',
 		]);
-		$config->method('getValueBool')->willReturnCallback(
-			static fn (string $app, string $key, bool $default): bool => $app === AppConstants::APP_ID && in_array($key, ['always_search', 'allow_local'], true) && !$default,
-		);
 
-		$credentials = $this->createMock(ICredentialsManager::class);
+		$credentials = $this->createStub(ICredentialsManager::class);
 		$credentials->method('retrieve')->willReturn('TEST_VALUE');
 
 		$service = $this->service($config, $credentials);
@@ -162,38 +161,23 @@ final class ConfigServiceTest extends TestCase {
 
 	#[DataProvider('savedArchiveAccounts')]
 	public function testSaveStoresOrForgetsTheArchiveAccount(string $archiveOwner, string $syncAccount, ?string $stored, bool $missing): void {
-		$values = [];
-		$deleted = [];
-		$config = $this->settings(['paperless_sync.target_user' => $syncAccount]);
-		$config->method('setValueString')->willReturnCallback(
-			static function (string $app, string $key, string $value) use (&$values): bool {
-				$values[$app . '.' . $key] = $value;
-
-				return true;
-			},
-		);
-		$config->method('deleteKey')->willReturnCallback(
-			static function (string $app, string $key) use (&$deleted): void {
-				$deleted[] = $app . '.' . $key;
-			},
-		);
+		$config = $this->settings([
+			AppConstants::APP_ID . '.archive_owner' => 'old',
+			'paperless_sync.target_user' => $syncAccount,
+		]);
 
 		$result = $this->service($config, $this->createStub(ICredentialsManager::class))
 			->save('https://paperless.example.com', 'TEST_VALUE', false, $archiveOwner);
 
-		self::assertSame($stored, $values[AppConstants::APP_ID . '.archive_owner'] ?? null);
-		self::assertSame($stored === null, in_array(AppConstants::APP_ID . '.archive_owner', $deleted, true));
+		self::assertSame($stored, $config->stored(AppConstants::APP_ID, 'archive_owner'));
+		self::assertSame($stored === null, in_array(AppConstants::APP_ID . '.archive_owner', $config->calls('deleteKey'), true));
 		self::assertSame($stored ?? '', $result->archiveOwner);
 		self::assertSame($syncAccount, $result->syncAccount);
 		self::assertSame($missing, $result->archiveOwnerMissing);
 	}
 
 	public function testSaveNormalizesUrlAndStoresTokenInCredentialsManager(): void {
-		$config = $this->createMock(IAppConfig::class);
-		$config->expects(self::once())
-			->method('setValueString')
-			->with(AppConstants::APP_ID, 'paperless_url', 'https://paperless.example.com');
-		$switches = $this->switches($config);
+		$config = new MemoryAppConfig();
 
 		$credentials = $this->createMock(ICredentialsManager::class);
 		$credentials->expects(self::once())
@@ -209,8 +193,45 @@ final class ConfigServiceTest extends TestCase {
 		self::assertFalse($result->tokenUnreadable);
 		self::assertTrue($result->alwaysSearch);
 		self::assertFalse($result->allowLocal);
-		self::assertSame([AppConstants::APP_ID . '.always_search' => true, AppConstants::APP_ID . '.allow_local' => false], $switches->getArrayCopy());
+		// The token goes to the credentials manager alone.
+		self::assertSame([
+			'paperless_url' => 'https://paperless.example.com',
+			'always_search' => true,
+			'allow_local' => false,
+		], $config->storedValues(AppConstants::APP_ID));
 		self::assertSame('TEST_VALUE', $service->getToken());
+	}
+
+	/**
+	 * A save that names neither switch turns both off: no search without the switch of
+	 * Nextcloud for connected services, and no address of the local network.
+	 */
+	public function testASaveWithoutTheSwitchesTurnsThemOff(): void {
+		$config = $this->settings([
+			AppConstants::APP_ID . '.always_search' => true,
+			AppConstants::APP_ID . '.allow_local' => true,
+		]);
+
+		$result = $this->service($config, $this->createStub(ICredentialsManager::class))
+			->save('https://paperless.example.com', 'TEST_VALUE');
+
+		self::assertFalse($config->stored(AppConstants::APP_ID, 'always_search'));
+		self::assertFalse($config->stored(AppConstants::APP_ID, 'allow_local'));
+		self::assertFalse($result->alwaysSearch);
+		self::assertFalse($result->allowLocal);
+	}
+
+	/**
+	 * Every search asks for the archive account: without one named, Nextcloud is asked for
+	 * no account.
+	 */
+	public function testWithoutAnArchiveAccountNoAccountIsLookedUp(): void {
+		$accounts = $this->createMock(IUserManager::class);
+		$accounts->expects(self::never())->method('get');
+		$service = new ConfigService($this->settings([]), $this->createStub(ICredentialsManager::class), $accounts, $this->createStub(LoggerInterface::class));
+
+		self::assertSame('', $service->getArchiveOwner());
+		self::assertFalse($service->getPublicConfig()->archiveOwnerMissing);
 	}
 
 	/**
@@ -230,12 +251,11 @@ final class ConfigServiceTest extends TestCase {
 	#[DataProvider('localNetwork')]
 	public function testSaveStoresWhetherTheLocalNetworkIsAllowed(bool $allowLocal): void {
 		$config = $this->settings([]);
-		$switches = $this->switches($config);
 
 		$result = $this->service($config, $this->createStub(ICredentialsManager::class))
 			->save('http://paperless_ngx:8000', 'TEST_VALUE', false, '', $allowLocal);
 
-		self::assertSame($allowLocal, $switches[AppConstants::APP_ID . '.allow_local'] ?? null);
+		self::assertSame($allowLocal, $config->stored(AppConstants::APP_ID, 'allow_local'));
 		self::assertSame($allowLocal, $result->allowLocal);
 		self::assertSame($allowLocal, $result->jsonSerialize()['allowLocal']);
 		self::assertSame('http://paperless_ngx:8000', $result->url);
@@ -243,10 +263,7 @@ final class ConfigServiceTest extends TestCase {
 
 	#[DataProvider('localNetwork')]
 	public function testThePublicConfigTellsWhetherTheLocalNetworkIsAllowed(bool $allowLocal): void {
-		$config = $this->createMock(IAppConfig::class);
-		$config->method('getValueBool')->willReturnCallback(
-			static fn (string $app, string $key, bool $default): bool => $app . '.' . $key === AppConstants::APP_ID . '.allow_local' ? $allowLocal : $default,
-		);
+		$config = $this->settings([AppConstants::APP_ID . '.allow_local' => $allowLocal]);
 
 		$service = $this->service($config, $this->createStub(ICredentialsManager::class));
 
@@ -416,7 +433,8 @@ final class ConfigServiceTest extends TestCase {
 		$config->method('getValueString')->willReturn($url);
 
 		$credentials = $this->createMock(ICredentialsManager::class);
-		$credentials->method('retrieve')
+		$credentials->expects(self::once())
+			->method('retrieve')
 			->with('', AppConstants::APP_ID . '.api-token')
 			->willReturn($token);
 
@@ -596,21 +614,15 @@ final class ConfigServiceTest extends TestCase {
 			AppConstants::APP_ID . '.paperless_version' => '3.3.0',
 			AppConstants::APP_ID . '.paperless_api_version' => '10',
 		]);
-		$written = [];
-		$config->expects(self::exactly(2))
-			->method('setValueString')
-			->willReturnCallback(static function (string $app, string $key, string $value) use (&$written): bool {
-				$written[$key] = $value;
-
-				return true;
-			});
 		$service = $this->service($config, $this->createStub(ICredentialsManager::class));
 
 		$service->rememberPaperlessVersion(PaperlessVersion::of('3.3.0', '10'));
 		$service->rememberPaperlessVersion(null);
 		$service->rememberPaperlessVersion(PaperlessVersion::of('3.4.0', '10'));
 
-		self::assertSame(['paperless_version' => '3.4.0', 'paperless_api_version' => '10'], $written);
+		self::assertSame([AppConstants::APP_ID . '.paperless_version', AppConstants::APP_ID . '.paperless_api_version'], $config->calls('setValueString'));
+		self::assertSame('3.4.0', $config->stored(AppConstants::APP_ID, 'paperless_version'));
+		self::assertSame('10', $config->stored(AppConstants::APP_ID, 'paperless_api_version'));
 	}
 
 	/**
@@ -666,6 +678,7 @@ final class ConfigServiceTest extends TestCase {
 			'an IPv4 address' => ['http://192.168.1.20:8000', 'http://192.168.1.20:8000'],
 			'an IPv6 address with a port' => ['http://[fd00::5]:8000/', 'http://[fd00::5]:8000'],
 			'an IPv6 address without a port' => ['http://[::1]', 'http://[::1]'],
+			'an IPv6 address in full' => ['http://[2001:db8:0:0:0:0:0:1]:8000', 'http://[2001:db8:0:0:0:0:0:1]:8000'],
 			'an internationalized name in punycode' => ['https://xn--bcher-kva.example', 'https://xn--bcher-kva.example'],
 			'the highest port' => ['https://paperless.example.com:65535', 'https://paperless.example.com:65535'],
 			'a path below a path' => ['https://paperless.example.com/apps/paperless/', 'https://paperless.example.com/apps/paperless'],
@@ -719,6 +732,7 @@ final class ConfigServiceTest extends TestCase {
 		yield 'an IPv6 address without brackets' => ['http://fd00::5:8000', 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
 		yield 'an IPv6 address that is none' => ['http://[fd00::zz]:8000', 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
 		yield 'empty brackets' => ['http://[]', 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
+		yield 'an IPv6 address without its closing bracket' => ['http://[::1:8000/paperless', 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
 		yield 'an IPv4 address in brackets' => ['http://[192.168.1.20]', 'Enter a valid Paperless URL.', SettingProblem::InvalidUrl];
 		// An empty label: the name has no ASCII form, with or without PHP's intl.
 		yield 'an internationalized name without an ASCII form' => ['https://bücher..example', self::PUNYCODE, SettingProblem::HostNotAscii];
@@ -788,36 +802,13 @@ final class ConfigServiceTest extends TestCase {
 	}
 
 	/**
-	 * A configuration that answers getValueString by app and key, with '' for any other.
+	 * The configuration of the apps with these values, as the settings and Paperless Sync
+	 * stored them.
 	 *
-	 * @param array<string, string> $values by "app.key"
+	 * @param array<string, string|bool> $values by "app.key"
 	 */
-	private function settings(array $values): IAppConfig&MockObject {
-		$config = $this->createMock(IAppConfig::class);
-		$config->method('getValueString')->willReturnCallback(
-			static fn (string $app, string $key): string => $values[$app . '.' . $key] ?? '',
-		);
-
-		return $config;
-	}
-
-	/**
-	 * The switches that the configuration stores, by "app.key", as it stores them.
-	 *
-	 * @return ArrayObject<string, bool>
-	 */
-	private function switches(IAppConfig&MockObject $config): ArrayObject {
-		/** @var ArrayObject<string, bool> $switches */
-		$switches = new ArrayObject();
-		$config->method('setValueBool')->willReturnCallback(
-			static function (string $app, string $key, bool $value) use ($switches): bool {
-				$switches[$app . '.' . $key] = $value;
-
-				return true;
-			},
-		);
-
-		return $switches;
+	private function settings(array $values): MemoryAppConfig {
+		return new MemoryAppConfig($values);
 	}
 
 	/**

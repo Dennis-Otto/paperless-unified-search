@@ -29,6 +29,22 @@ final class MemoryCache implements IMemcache {
 	) {
 	}
 
+	/**
+	 * The values that haven't expired, by key, in the order that they were first set.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function values(): array {
+		$values = [];
+		foreach (array_keys($this->values) as $key) {
+			if ($this->hasKey($key)) {
+				$values[$key] = $this->values[$key][0];
+			}
+		}
+
+		return $values;
+	}
+
 	public function get($key) {
 		return $this->hasKey($key) ? $this->values[$key][0] : null;
 	}
