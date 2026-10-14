@@ -423,7 +423,16 @@ fi
 # A failed test of the connection names its cause in the language of the administrator,
 # with a code that says what failed, and keeps the settings as they are (#120). An
 # account set to Deutsch (Förmlich: Sie) has the language de_DE, which the app brings as
-# well: without it, Nextcloud would show the app in English there.
+# well: without it, Nextcloud would show the app in English there. The refused save asks
+# for another archive account and the global search as well, so that a save despite the
+# failure would show in the stored settings.
+stored_settings() {
+	local key
+	for key in paperless_url archive_owner always_search; do
+		printf '%s=%s\n' "${key}" "$(occ config:app:get paperless_unified_search "${key}")"
+	done
+}
+settings_before="$(stored_settings)"
 language de
 expect_status 400 'Saving a token that Paperless refuses, in German' \
 	--user "e2e-admin:${PASSWORD}" \
@@ -431,7 +440,8 @@ expect_status 400 'Saving a token that Paperless refuses, in German' \
 	--data-urlencode 'url=http://paperless-mock:8080' \
 	--data-urlencode 'allowLocal=1' \
 	--data-urlencode 'token=e2e-wrong-token' \
-	--data-urlencode 'archiveOwner=e2e-user' \
+	--data-urlencode 'alwaysSearch=1' \
+	--data-urlencode 'archiveOwner=e2e-admin' \
 	"${SETTINGS_URL}"
 expect_text 'Paperless hat das API-Token abgelehnt (HTTP 401)' "${TMP_DIR}/answer.json" \
 	"The refused token isn't named in German: $(cat "${TMP_DIR}/answer.json")"
@@ -447,8 +457,9 @@ admin_settings "${TMP_DIR}/admin-settings-de-formal.html"
 expect_text 'Verwenden Sie ein eigenes Paperless-Konto' "${TMP_DIR}/admin-settings-de-formal.html" \
 	'The settings page of an administrator set to Deutsch (Förmlich: Sie) is not in formal German.'
 language en
-if [[ "$(occ config:app:get paperless_unified_search paperless_url)" != 'http://paperless-mock:8080' ]]; then
-	echo "The refused save changed the settings." >&2
+settings_after="$(stored_settings)"
+if [[ "${settings_after}" != "${settings_before}" ]]; then
+	printf 'The refused save changed the settings from\n%s\nto\n%s\n' "${settings_before}" "${settings_after}" >&2
 	exit 1
 fi
 

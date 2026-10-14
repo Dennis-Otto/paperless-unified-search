@@ -39,7 +39,7 @@ const sources = [
 			{ pattern: new RegExp(String.raw`->t\(\s*${literal}`, 'g'), plural: false },
 			{ pattern: new RegExp(String.raw`->n\(\s*${literalPair}`, 'g'), plural: true },
 		],
-		nonLiteral: /->[tn]\(\s*(?!['"])/g,
+		nonLiteral: /->[tn]\((?!\s*['"])/g,
 	},
 	{
 		folders: ['js'],
@@ -50,7 +50,7 @@ const sources = [
 			{ pattern: new RegExp(String.raw`\bt\(\s*['"]${appId}['"]\s*,\s*${literal}`, 'g'), plural: false },
 			{ pattern: new RegExp(String.raw`\bn\(\s*['"]${appId}['"]\s*,\s*${literalPair}`, 'g'), plural: true },
 		],
-		nonLiteral: /(?<!function\s+)\btranslate\(\s*(?!['"])/g,
+		nonLiteral: /(?<!function\s+)\btranslate\((?!\s*['"])/g,
 	},
 ]
 
