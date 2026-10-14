@@ -1,0 +1,32 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: The mutation tests
+    accDescr: Infection changes the code of lib/ in one small way at a time, a mutant, such as a comparison that includes its limit or a call that is left out, and runs the unit tests that cover the changed line. When a test fails, the mutant is killed. When every test passes, the mutant escaped. If the change makes a difference, a test is missing, and a new test or a sharper assertion kills the mutant. If it makes none, it is an equivalent mutant, which infection.json5 lists with the reason. The score counts the killed mutants among all that aren't listed, and stays at 100 %.
+
+    code["The code of lib/"]
+    mutant["Infection: one small change, a mutant,<br>such as a comparison that includes<br>its limit, or a call left out"]
+    tests["The unit tests that run<br>the changed line"]
+    fails{"Does a<br>test fail?"}
+    killed(["Killed: the tests<br>notice the change"])
+    differs{"Does the change<br>make a difference?"}
+    gap["A gap in the tests: a new test<br>or a sharper assertion kills it"]
+    equivalent["An equivalent mutant:<br>infection.json5 lists it,<br>with the reason"]
+
+    code --> mutant --> tests --> fails
+    fails -- "yes" --> killed
+    fails -- "no, it escaped" --> differs
+    differs -- "yes" --> gap
+    differs -- "no" --> equivalent
+    gap -- "the next run" --> tests
+
+    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class mutant,tests app
+    class killed,equivalent yes
+    class gap no
