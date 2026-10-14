@@ -254,6 +254,14 @@ def check_paperless(paperless, line, report):
     expect([result["created"] for result in dates.get("results", [])] == ["2026-03-14"], f"created__date__gte and __lte find {dates.get('results')!r}.")
     report.passed("A filter by date", "created__date__gte and created__date__lte")
 
+    # The app sends the dates together with the full-text query; the term alone finds the
+    # invoice and the insurance, the year 2026 keeps only the invoice.
+    within = {"created__date__gte": "2026-01-01", "created__date__lte": "2026-12-31"}
+    filtered = paperless.search("A full-text search within dates", query=TERM, **within).json("A full-text search within dates")
+    titles = [result.get("title") for result in filtered.get("results", [])]
+    expect(titles == ["Contract invoice"], f"The full-text search for {TERM!r} within 2026 finds {titles}.")
+    report.passed("A filter by date with the full-text search", f"{code('query=')} with created__date__gte and created__date__lte")
+
     answer = paperless.get("/api/documents/", page=1, page_size=25, fields=",".join(paperless.fields), query=UNFINISHED)
     if line == "2":
         # Paperless 2 parses what it can, and never gets the simple mode, which it ignores.
@@ -265,6 +273,9 @@ def check_paperless(paperless, line, report):
         simple = paperless.search("The simple mode", text=TERM).json("The simple mode")
         titles = sorted(result.get("title") for result in simple.get("results", []))
         expect(titles == ["Contract insurance", "Contract invoice"], f"The simple mode finds {titles} for {TERM!r}.")
+        simple = paperless.search("The simple mode within dates", text=TERM, **within).json("The simple mode within dates")
+        titles = [result.get("title") for result in simple.get("results", [])]
+        expect(titles == ["Contract invoice"], f"The simple mode for {TERM!r} within 2026 finds {titles}.")
         report.passed("A query that is still being typed", f"HTTP 400 with the errors of {code('query')}, and the simple mode {code('text=')} finds the documents")
     return version, api_version, shown
 
