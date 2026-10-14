@@ -392,6 +392,11 @@ for login in e2e-user anonymous; do
 	expect_status "${expected}" "Clear history as ${login}" "${credentials[@]}" \
 		--request DELETE \
 		"${SETTINGS_URL}/diagnostics"
+	expect_status "${expected}" "Try a search as ${login}" "${credentials[@]}" \
+		--request POST \
+		--data-urlencode 'term=mobiletest' \
+		--data-urlencode 'user=e2e-admin' \
+		"${SETTINGS_URL}/try"
 done
 if [[ "$(occ config:app:get paperless_unified_search paperless_url)" != 'http://paperless-mock:8080' ]]; then
 	echo "A request of a user who isn't an administrator changed the settings." >&2
@@ -548,6 +553,21 @@ assert_response no-results "${TMP_DIR}/inaccessible.json"
 # account hasn't shared the file of 123 with e2e-other, and no file stands for 999.
 occ paperless_unified_search:search e2e-other mobiletest --explain --json >"${TMP_DIR}/explain-unshared.json"
 assert_occ verdicts "${TMP_DIR}/explain-unshared.json" '123=not_shared=/Documents/Mobile viewer test [P123].pdf' 999=no_file
+# Try a search of the settings page gives administrators the same answer without a
+# shell, with the IDs and titles alone, and refuses an account that doesn't exist.
+try_search() {
+	expect_status "$1" "Trying a search as $2" \
+		--user "e2e-admin:${PASSWORD}" \
+		--request POST \
+		--data-urlencode 'term=mobiletest' \
+		--data-urlencode "user=$2" \
+		"${SETTINGS_URL}/try"
+}
+try_search 200 e2e-other
+assert_occ try "${TMP_DIR}/answer.json" e2e-other 123=not_shared 999=no_file
+try_search 400 nobody
+expect_text '"code":"unknown_user"' "${TMP_DIR}/answer.json" \
+	"Try a search accepted an account that doesn't exist: $(cat "${TMP_DIR}/answer.json")"
 resolve e2e-other "${LINK}" "${TMP_DIR}/link-inaccessible.json"
 assert_response no-file-link "${TMP_DIR}/link-inaccessible.json"
 
@@ -577,6 +597,8 @@ search e2e-other 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' 
 assert_response shared "${TMP_DIR}/shared.json"
 occ paperless_unified_search:search e2e-other mobiletest --explain --json >"${TMP_DIR}/explain-shared.json"
 assert_occ verdicts "${TMP_DIR}/explain-shared.json" '123=shown=/Mobile viewer test [P123].pdf' 999=no_file
+try_search 200 e2e-other
+assert_occ try "${TMP_DIR}/answer.json" e2e-other 123=shown 999=no_file
 # The check of occ compares the documents of Paperless with the files of the archive
 # account: the mock lists 123 and 999, and only 123 has a file.
 occ paperless_unified_search:check >"${TMP_DIR}/check.txt"
@@ -713,4 +735,4 @@ phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed in ${SECONDS} s: the set-up, the test, the explained search and the check of occ, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date in English and German, its correspondent and its type, pages of results filled across pages of Paperless, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."
+echo "Docker E2E passed in ${SECONDS} s: the set-up, the test, the explained search and the check of occ, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date in English and German, its correspondent and its type, pages of results filled across pages of Paperless, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, Try a search for administrators only with the IDs, titles and verdicts alone, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."

@@ -15,14 +15,18 @@ use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Controller\SettingsController;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
+use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
+use OCA\PaperlessUnifiedSearch\Service\SearchExplainer;
 use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryAppConfig;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Utility\ITimeFactory;
+use OCP\EventDispatcher\IEventDispatcher;
+use OCP\Files\IRootFolder;
 use OCP\Http\Client\IClient;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
@@ -31,6 +35,7 @@ use OCP\IAppConfig;
 use OCP\ICacheFactory;
 use OCP\IL10N;
 use OCP\IRequest;
+use OCP\IUserSession;
 use OCP\Security\ICredentialsManager;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -608,7 +613,8 @@ final class SettingsControllerTest extends TestCase {
 	private function controller(IAppConfig $config, ICredentialsManager $credentials, IClient $client, ?LoggerInterface $logger = null): SettingsController {
 		$clientService = $this->createStub(IClientService::class);
 		$clientService->method('newClient')->willReturn($client);
-		$configService = new ConfigService($config, $credentials, $this->accounts('archive'), $this->createStub(LoggerInterface::class));
+		$accounts = $this->accounts('archive');
+		$configService = new ConfigService($config, $credentials, $accounts, $this->createStub(LoggerInterface::class));
 		$clock = $this->createStub(ITimeFactory::class);
 		$clock->method('now')->willReturn(new DateTimeImmutable('@1791500000'));
 		$diagnostics = new SearchDiagnostics($config, $clock, $this->createStub(ICacheFactory::class));
@@ -628,6 +634,10 @@ final class SettingsControllerTest extends TestCase {
 			new SettingsMessages($l10n),
 			$l10n,
 			$logger ?? $this->createStub(LoggerInterface::class),
+			new SearchExplainer(new NextcloudFileLocator($this->createStub(IRootFolder::class), $this->createStub(LoggerInterface::class)), $accounts),
+			$accounts,
+			$this->createStub(IUserSession::class),
+			$this->createStub(IEventDispatcher::class),
 		);
 	}
 

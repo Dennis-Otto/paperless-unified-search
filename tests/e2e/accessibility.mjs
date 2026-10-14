@@ -76,13 +76,13 @@ async function saveSettings(page, expected = 'Connection successful. Settings sa
 	await expectStatus(page, expected, kind)
 }
 
-// The fields of text are as wide as each other, and each checkbox, at least 20 pixels
-// big, sits on the line of its label, in front of it.
+// The fields of text, those of Try a search among them, are as wide as each other, and
+// each checkbox, at least 20 pixels big, sits on the line of its label, in front of it.
 async function expectFormLayout(page, size) {
 	const layout = await page.locator(SETTINGS_SCOPE).evaluate((root) => {
 		const box = (element) => element.getBoundingClientRect()
 		return {
-			widths: [...root.querySelectorAll('input[type="url"], input[type="password"], input[type="text"]')]
+			widths: [...root.querySelectorAll('input[type="url"], input[type="password"], input[type="text"], input[type="search"]')]
 				.map((input) => Math.round(box(input).width)),
 			checkboxes: [...root.querySelectorAll('input[type="checkbox"]')].map((input) => {
 				const checkbox = box(input)
@@ -96,7 +96,7 @@ async function expectFormLayout(page, size) {
 			}),
 		}
 	})
-	expectEqual(layout.widths.length, 3, `Fields of text on a ${size}`)
+	expectEqual(layout.widths.length, 5, `Fields of text on a ${size}`)
 	expectEqual(
 		layout.widths.every((width) => width === layout.widths[0]),
 		true,

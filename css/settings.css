@@ -55,6 +55,7 @@
 /* Every field of text is as wide as the others, up to the width of a long URL. */
 .paperless-unified-search-settings input[type='url'],
 .paperless-unified-search-settings input[type='password'],
+.paperless-unified-search-settings input[type='search'],
 .paperless-unified-search-settings input[type='text'] {
 	box-sizing: border-box;
 	max-width: 520px;
@@ -160,15 +161,33 @@
 	margin: 4px 0 0;
 }
 
+/* The reasons why a document doesn't show, which Nextcloud would list without bullets. */
+.paperless-unified-search-settings .paperless-unified-search-reasons {
+	list-style: disc;
+	margin: 4px 0 0;
+	padding-inline-start: 20px;
+}
+
+.paperless-unified-search-reasons li + li {
+	margin-top: 4px;
+}
+
 /* The history lays out its table by its own width, which is narrow on a phone. */
 .paperless-unified-search-diagnostics {
 	container: paperless-unified-search-history / inline-size;
 	margin-top: 20px;
 }
 
-.paperless-unified-search-diagnostics h3 {
+.paperless-unified-search-diagnostics h3,
+.paperless-unified-search-try h3 {
 	font-weight: 600;
 	margin: 0 0 8px;
+}
+
+/* Try a search lays out its result by its own width, as the history does. */
+.paperless-unified-search-try {
+	container: paperless-unified-search-try / inline-size;
+	margin-top: 28px;
 }
 
 .paperless-unified-search-summary {
@@ -265,6 +284,78 @@
 	}
 
 	.paperless-unified-search-events td::before {
+		content: attr(data-label);
+		content: attr(data-label) / '';
+		font-weight: 600;
+	}
+}
+
+/* The documents of a try: the ID and the verdict keep their width, the title takes the rest. */
+.paperless-unified-search-documents {
+	border-collapse: collapse;
+	margin-bottom: 12px;
+	table-layout: fixed;
+	width: 100%;
+}
+
+.paperless-unified-search-documents th:nth-child(1) {
+	width: 12%;
+}
+
+.paperless-unified-search-documents th:nth-child(3) {
+	width: 38%;
+}
+
+.paperless-unified-search-documents caption {
+	font-weight: 600;
+	padding-bottom: 4px;
+	text-align: start;
+}
+
+.paperless-unified-search-documents th,
+.paperless-unified-search-documents td {
+	border-bottom: 1px solid var(--color-border, #ededed);
+	overflow-wrap: anywhere;
+	padding: 4px 8px 4px 0;
+	text-align: start;
+	vertical-align: top;
+	white-space: normal;
+}
+
+/* On a phone, each document is a card whose lines name their column, as each problem is. */
+@container paperless-unified-search-try (max-width: 480px) {
+	.paperless-unified-search-documents,
+	.paperless-unified-search-documents caption,
+	.paperless-unified-search-documents tbody,
+	.paperless-unified-search-documents tr {
+		display: block;
+	}
+
+	.paperless-unified-search-documents thead {
+		clip-path: inset(50%);
+		height: 1px;
+		overflow: hidden;
+		position: absolute;
+		white-space: nowrap;
+		width: 1px;
+	}
+
+	.paperless-unified-search-documents tr {
+		border: 1px solid var(--color-border, #ededed);
+		border-radius: var(--border-radius-large, 10px);
+		margin-bottom: 8px;
+		padding: 6px 12px;
+	}
+
+	.paperless-unified-search-documents td {
+		border-bottom: 0;
+		column-gap: 12px;
+		display: grid;
+		grid-template-columns: minmax(5.5em, 30%) minmax(0, 1fr);
+		padding: 2px 0;
+	}
+
+	.paperless-unified-search-documents td::before {
 		content: attr(data-label);
 		content: attr(data-label) / '';
 		font-weight: 600;

@@ -195,14 +195,18 @@
 			diagnostics.replaceChildren(message)
 		}
 
-		// The message below the buttons, in the style of its kind: pending while the server
-		// works, then success or error. The style adds an icon to each, so that the kind
-		// doesn't rest on the colour alone.
-		function showStatus(message, kind) {
-			status.textContent = message
+		// A message below the buttons of a form, in the style of its kind: pending while the
+		// server works, then success or error. The style adds an icon to each, so that the
+		// kind doesn't rest on the colour alone.
+		function showStatusIn(target, message, kind) {
+			target.textContent = message
 			for (const each of ['pending', 'success', 'error']) {
-				status.classList.toggle('paperless-unified-search-status--' + each, each === kind)
+				target.classList.toggle('paperless-unified-search-status--' + each, each === kind)
 			}
+		}
+
+		function showStatus(message, kind) {
+			showStatusIn(status, message, kind)
 		}
 
 		urlInput.addEventListener('input', updateToken)
@@ -265,5 +269,115 @@
 				}
 			})
 		}
+
+		// Try a search: the documents that Paperless ranks first for a term, each with
+		// whether it shows to the user and why not. The answer names them by their IDs and
+		// titles, which the page shows as text.
+		const tryForm = document.getElementById('paperless-unified-search-try-form')
+		const tryTerm = document.getElementById('paperless-unified-search-try-term')
+		const tryUser = document.getElementById('paperless-unified-search-try-user')
+		const tryButton = document.getElementById('paperless-unified-search-try')
+		const tryStatus = document.getElementById('paperless-unified-search-try-status')
+		const tryResult = document.getElementById('paperless-unified-search-try-result')
+
+		// The verdict on a document, in the words of the reasons below the result.
+		function verdictOf(found, user) {
+			switch (found.verdict) {
+			case 'shown':
+				return translate('Shown')
+			case 'not_shared':
+				return translate('Not shared with {user}', { user })
+			case 'not_owned':
+				return translate('Not a file of the archive account')
+			case 'no_file':
+				return translate('No file with {marker}', { marker: '[P' + found.id + ']' })
+			default:
+				return translate('Hidden')
+			}
+		}
+
+		function element(tag, text, role) {
+			const made = document.createElement(tag)
+			made.textContent = text
+			made.setAttribute('role', role)
+			return made
+		}
+
+		function row(cells) {
+			const made = element('tr', '', 'row')
+			made.append(...cells)
+			return made
+		}
+
+		// The documents as a table, which a phone shows as cards whose cells name their
+		// column, as the history of the problems does.
+		function documentsTable(documents, user) {
+			const columns = [translate('ID'), translate('Title'), translate('Shown or why not')]
+			const table = element('table', '', 'table')
+			table.classList.add('paperless-unified-search-documents')
+			const caption = document.createElement('caption')
+			caption.textContent = translate('The documents that Paperless ranks first')
+			const head = element('thead', '', 'rowgroup')
+			head.append(row(columns.map(function(column) {
+				const heading = element('th', column, 'columnheader')
+				heading.setAttribute('scope', 'col')
+				return heading
+			})))
+			const body = element('tbody', '', 'rowgroup')
+			body.append(...documents.map(function(found) {
+				return row([String(found.id), found.title, verdictOf(found, user)].map(function(text, index) {
+					const cell = element('td', text, 'cell')
+					cell.dataset.label = columns[index]
+					return cell
+				}))
+			}))
+			table.append(caption, head, body)
+			return table
+		}
+
+		function showTry(answer) {
+			if (!Array.isArray(answer.documents)) {
+				throw new Error(translate('Nextcloud gave an unexpected answer. Reload the page and try again.'))
+			}
+
+			const documents = answer.documents
+			const shown = documents.filter(function(found) { return found.verdict === 'shown' }).length
+			showStatusIn(tryStatus, documents.length === 0
+				? translate('Paperless found no document for this term.')
+				: translate('Shown to {user}: {shown} of the first {listed}. Found by Paperless: {count}.', {
+					user: answer.user,
+					shown,
+					listed: documents.length,
+					count: answer.count,
+				}), 'success')
+			const parts = []
+			if (answer.fileError) {
+				const warning = document.createElement('p')
+				warning.classList.add('paperless-unified-search-warning')
+				warning.textContent = translate('Nextcloud failed to read a file, so a document without a file below may have one.')
+				parts.push(warning)
+			}
+			if (documents.length > 0) {
+				parts.push(documentsTable(documents, answer.user))
+			}
+			tryResult.replaceChildren(...parts)
+		}
+
+		tryForm.addEventListener('submit', async function(event) {
+			event.preventDefault()
+			tryForm.setAttribute('aria-busy', 'true')
+			tryButton.disabled = true
+			tryResult.replaceChildren()
+			showStatusIn(tryStatus, translate('Searching Paperless as {user}…', { user: tryUser.value.trim() }), 'pending')
+
+			try {
+				showTry(await request(root.dataset.tryUrl, 'POST', { term: tryTerm.value, user: tryUser.value }))
+			} catch (error) {
+				showStatusIn(tryStatus, messageOf(error), 'error')
+			} finally {
+				tryForm.setAttribute('aria-busy', 'false')
+				tryButton.disabled = false
+			}
+		})
 	})
 })()

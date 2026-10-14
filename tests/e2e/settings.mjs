@@ -6,7 +6,8 @@
 // HTML page of maintenance mode, for the page of a proxy, for an expired session and for
 // a network failure, in the colour of an error; Disconnect declined and confirmed; a
 // failed first save that keeps Disconnect off, as nothing is stored to disconnect; and a
-// save after which the URL field shows the URL as Nextcloud stored it. The answers that
+// save after which the URL field shows the URL as Nextcloud stored it; and Try a search,
+// which names for each document whether it shows to a user and why not. The answers that
 // Nextcloud itself would give only in maintenance mode or after the session ended come
 // from Playwright, the rest from Nextcloud and the mock of Paperless. It runs last of the
 // checks in the browser, as it disconnects Paperless, and saves the settings again as
@@ -25,6 +26,7 @@ const SAVE_BUTTON = '#paperless-unified-search-save'
 const RESET_BUTTON = '#paperless-unified-search-reset'
 const FORM = '#paperless-unified-search-form'
 const DIAGNOSTICS = '#paperless-unified-search-diagnostics'
+const TRY_STATUS = '#paperless-unified-search-try-status'
 const MOCK_URL = 'http://paperless-mock:8080'
 const TOKEN = 'e2e-only-token'
 const REJECTED = 'Paperless rejected the API token (HTTP 401). Check the token, and that its account may view documents.'
@@ -134,6 +136,21 @@ try {
 	await page.goto(`${BASE_URL}${SETTINGS}`)
 	await page.locator(SETTINGS_SCOPE).waitFor()
 	expectForm(await form(page), CONFIGURED, 'The settings as accessibility.mjs left them')
+
+	// Try a search as the archive account e2e-user, which has the file of 123; no file
+	// stands for 999. The page shows the titles as Paperless sends them, as text.
+	await page.locator('#paperless-unified-search-try-term').fill('mobiletest')
+	await page.locator('#paperless-unified-search-try-user').fill('e2e-user')
+	await page.locator('#paperless-unified-search-try').click()
+	await page.locator(`${TRY_STATUS}.paperless-unified-search-status--success`).waitFor()
+	const tried = await page.locator('#paperless-unified-search-try-result').evaluate((result, status) => ({
+		status: document.querySelector(status).textContent,
+		rows: [...result.querySelectorAll('tbody tr')].map((row) => [...row.cells].map((cell) => cell.textContent)),
+	}), TRY_STATUS)
+	expectEqual(JSON.stringify(tried), JSON.stringify({
+		status: 'Shown to e2e-user: 1 of the first 2. Found by Paperless: 2.',
+		rows: [['123', 'Mobile viewer test', 'Shown'], ['999', 'Inaccessible document', 'No file with [P999]']],
+	}), 'The result of Try a search')
 
 	// Each answer that isn't the app's gives one short sentence, and the settings stay
 	// as they are, with Disconnect.

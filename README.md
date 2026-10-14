@@ -157,6 +157,15 @@ The end of the settings counts the failed searches and the requests that only th
 
 On a phone, the settings fit the screen, and each problem of the search is a card whose lines name what they show.
 
+### Try a search
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-try-a-search-dark.png">
+  <img alt="Try a search in the settings: the administrator searches for invoice as the account e2e-admin, and a table lists the three documents that Paperless ranks first with their IDs and titles, the electricity invoice shown, the insurance renewal and the internet invoice not shared with that account, above the reasons why a document does not show" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-try-a-search.png">
+</picture>
+
+*Try a search* at the end of the settings answers the most common question, "why don't I see this document?", without a shell: it searches Paperless as a user and names for each document whether it shows to them, and if not, why.
+
 <!-- --8<-- [start:how-it-works] -->
 
 ## How it works
@@ -244,7 +253,7 @@ Leave the token blank to keep the stored one. The stored token goes only to the 
 
 The configuration is global. Access control remains user-specific because the app discards every Paperless hit for which the searching Nextcloud user can't open a matching file of the archive account. Share the archive read-only with the users who may see its documents. Without an archive account, the search shows no Paperless documents.
 
-When Paperless documents are missing from the search, look at **Search problems** at the end of the settings, and for a document that Paperless finds but a user doesn't see, ask [`occ paperless_unified_search:search --explain`](#explain-a-hidden-document). A failed search shows the users no Paperless documents and no error, and a request that fails before it reaches Paperless, as when the connection fails, is sent a second time before the search gives up; one that waited for a Paperless that hangs is not, so that a search never waits twice. The settings count both, the failed searches and the requests that only their second try answered, and list the latest 20 with the time, the step, asking Paperless or looking for the files in Nextcloud, the kind and the message of the error and how long it took, along with since when searches work again after the last failure. A query that Paperless refuses while it is still being typed isn't a problem and doesn't show up, and during an outage, also one that comes and goes, the problems of one kind are written at most once in 30 seconds, with those in between still counted. This helps where the hoster keeps the log of Nextcloud from administrators. **Clear history** and **Disconnect** forget the history; saving the settings keeps it.
+When Paperless documents are missing from the search, look at **Search problems** at the end of the settings, and for a document that Paperless finds but a user doesn't see, use **Try a search** below it: enter the term and the user ID, and it lists the first 20 documents that Paperless ranks for the term, each with its ID, its title and whether it shows to that user, or why not: *Not shared with* the user, *Not a file of the archive account*, or *No file with* its marker, such as `[P412]`. It asks the same questions as [`occ paperless_unified_search:search --explain`](#explain-a-hidden-document), for administrators of a managed instance without a shell, and answers with the titles alone, without the content or the files of the documents. A failed search shows the users no Paperless documents and no error, and a request that fails before it reaches Paperless, as when the connection fails, is sent a second time before the search gives up; one that waited for a Paperless that hangs is not, so that a search never waits twice. The settings count both, the failed searches and the requests that only their second try answered, and list the latest 20 with the time, the step, asking Paperless or looking for the files in Nextcloud, the kind and the message of the error and how long it took, along with since when searches work again after the last failure. A query that Paperless refuses while it is still being typed isn't a problem and doesn't show up, and during an outage, also one that comes and goes, the problems of one kind are written at most once in 30 seconds, with those in between still counted. This helps where the hoster keeps the log of Nextcloud from administrators. **Clear history** and **Disconnect** forget the history; saving the settings keeps it.
 
 By default, Nextcloud's search in the browser asks Paperless only after the user enables **Search connected services**, and the smart picker only after the user picks **Paperless documents** in it. When the trusted-service option is enabled, every global search term from every Nextcloud user is sent to Paperless automatically and the connected-services switch no longer controls this provider. Reload Nextcloud after changing this option.
 
@@ -507,6 +516,7 @@ Documents without a file are no failure, as long as the search can show others: 
 - Nextcloud's protection against addresses of the local network stays on for every app. **Paperless runs in my local network** lifts it only for the requests of this app to the Paperless URL of the settings, which follow no redirect.
 - Search results are filtered through the current user's Nextcloud filesystem view.
 - The settings show administrators the history of the problems of the search without the API token, the search term or the query of any URL.
+- **Try a search** shows administrators which documents a user finds for a term, by their IDs and titles alone, without their content, an excerpt or their files; the audit log of the app *Auditing / Logging* (`admin_audit`) records which administrator tried a search as which user, whatever the log level, and so does the log of Nextcloud at level info, without the term.
 - Search terms are sent server-to-server only when connected-services search or trusted-service mode is enabled, after the user chose **Paperless documents** in the smart picker, or when a client asks this search by its ID through the API.
 - A link that the smart picker inserts is the link of the file in Nextcloud, which shows its preview only to readers who can open the file.
 - Administrators can explicitly trust the configured Paperless server to include it automatically in every user's global searches.
@@ -563,7 +573,7 @@ The unit tests run the app against fakes of Nextcloud that behave as Nextcloud d
 
 ### Docker end-to-end tests
 
-The Docker suite starts a clean Nextcloud instance with the app mounted as a Custom App and a deterministic Paperless API mock. It exercises the real OCS search endpoint, user-specific file access, trusted-service metadata, the smart picker and the links it inserts, and browser/iOS/Android result contracts. It sets the app up through occ and checks the explained search, the check of occ and the warning of the overview. It makes Paperless fail and break off a connection, and checks the history of *Search problems* that the settings then show, without the term or the token. In Chromium, it checks the accessibility of the settings on a laptop and on a phone, their message for every answer, also when Nextcloud is in maintenance mode or out of reach, and *Disconnect*, and goes through the search dialog on a laptop and on a phone, from the term to the file in the Viewer.
+The Docker suite starts a clean Nextcloud instance with the app mounted as a Custom App and a deterministic Paperless API mock. It exercises the real OCS search endpoint, user-specific file access, trusted-service metadata, the smart picker and the links it inserts, and browser/iOS/Android result contracts. It sets the app up through occ and checks the explained search, *Try a search* of the settings, which only administrators may call, the check of occ and the warning of the overview. It makes Paperless fail and break off a connection, and checks the history of *Search problems* that the settings then show, without the term or the token. In Chromium, it checks the accessibility of the settings on a laptop and on a phone, their message for every answer, also when Nextcloud is in maintenance mode or out of reach, and *Disconnect*, and goes through the search dialog on a laptop and on a phone, from the term to the file in the Viewer.
 
 ```bash
 bash tests/e2e/run.sh       # one Nextcloud version
@@ -586,7 +596,7 @@ The screenshots and the animation in `screenshots/` come from a script, so that 
 bash scripts/screenshots.sh
 ```
 
-It starts the Docker suite under a project of its own with a demo: the archive account `paperless`, whose synthetic documents are shared read-only with `jamie`, and a Paperless mock that finds three of them for "invoice". Chromium then searches, opens a result, links a document from the smart picker in a note of Text and saves the settings, light and dark, on a phone and as an animation. Set `KEEP_SCREENSHOTS=1` to look around in the demo afterwards.
+It starts the Docker suite under a project of its own with a demo: the archive account `paperless`, whose synthetic documents are shared read-only with `jamie`, and a Paperless mock that finds three of them for "invoice". Chromium then searches, opens a result, links a document from the smart picker in a note of Text, saves the settings and tries a search in them, light and dark, on a phone and as an animation. Set `KEEP_SCREENSHOTS=1` to look around in the demo afterwards.
 
 See [CONTRIBUTING.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CONTRIBUTING.md) before opening a pull request.
 

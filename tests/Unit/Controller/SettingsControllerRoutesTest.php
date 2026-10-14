@@ -57,6 +57,7 @@ final class SettingsControllerRoutesTest extends TestCase {
 			'save' => ['save', 'POST', '/settings'],
 			'reset' => ['reset', 'DELETE', '/settings'],
 			'clear the diagnostics' => ['clearDiagnostics', 'DELETE', '/settings/diagnostics'],
+			'try a search' => ['trySearch', 'POST', '/settings/try'],
 		];
 	}
 
@@ -80,7 +81,8 @@ final class SettingsControllerRoutesTest extends TestCase {
 	/**
 	 * Only administrators may change the settings, and another site must not make the
 	 * browser of one do it: every route passes Nextcloud's checks of the login, the
-	 * administrator and the CSRF token. The end-to-end tests try it as well.
+	 * administrator and the CSRF token. So does Try a search, which shows the titles of
+	 * the documents that a user finds. The end-to-end tests try it as well.
 	 */
 	public function testNoSettingsActionOptsOutOfTheChecksOfNextcloud(): void {
 		$class = new ReflectionClass(SettingsController::class);
@@ -107,6 +109,7 @@ final class SettingsControllerRoutesTest extends TestCase {
 			'save' => ['save', true],
 			'reset' => ['reset', true],
 			'clear the diagnostics' => ['clearDiagnostics', false],
+			'try a search' => ['trySearch', false],
 		];
 	}
 
