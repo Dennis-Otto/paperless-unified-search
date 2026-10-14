@@ -1,0 +1,3 @@
+### Fixed
+
+- **The checks before a push no longer commit into the repository that runs them.** `bash scripts/check.sh` tests the scripts of the end-to-end tests in throwaway Git repositories. When `GIT_DIR` was set, as Git sets it for the hook before a push in a worktree and as an agent sets it for a worktree in a container, those tests made their commits in the repository that ran them instead: `git init` rewrote its configuration, such as `core.filemode`, and its branch got a commit "The base branch" by `E2E <e2e@example.com>`. Now the tests clear these variables of Git before their first `git`, and `scripts/check-project.sh` runs them with `GIT_DIR` set to a repository of their own and fails if they change its commits, branches, configuration or checkout.

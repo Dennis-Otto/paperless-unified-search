@@ -27,6 +27,12 @@ checks=0
 # Git of these tests alone, without the configuration of the machine, such as signed
 # commits or hooks.
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+# Nor the repository that runs them: Git hands GIT_DIR to its hooks, such as the one
+# before a push in a worktree, and an agent sets GIT_DIR and GIT_WORK_TREE for a worktree
+# in a container. Every git below would follow them, so that git init rewrote the
+# configuration of that repository and the commits of the tests landed on its branch.
+# shellcheck disable=SC2046 # Git prints one name of a variable per line.
+unset $(git rev-parse --local-env-vars)
 export GIT_AUTHOR_NAME=E2E GIT_AUTHOR_EMAIL=e2e@example.com
 export GIT_COMMITTER_NAME=E2E GIT_COMMITTER_EMAIL=e2e@example.com
 # Not the variables of the run of GitHub Actions that may run these tests.
