@@ -7,14 +7,20 @@ namespace OCA\PaperlessUnifiedSearch\Tests\Unit\AppInfo;
 use OC;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\AppInfo\Application;
+use OCA\PaperlessUnifiedSearch\Command\Check;
+use OCA\PaperlessUnifiedSearch\Command\Search;
+use OCA\PaperlessUnifiedSearch\Command\Setup;
+use OCA\PaperlessUnifiedSearch\Command\Test;
 use OCA\PaperlessUnifiedSearch\Reference\PaperlessReferenceProvider;
 use OCA\PaperlessUnifiedSearch\Search\PaperlessSearchProvider;
+use OCA\PaperlessUnifiedSearch\SetupCheck\PaperlessSetupCheck;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IRegistrationContext;
 use OCP\AppFramework\IAppContainer;
 use OCP\IConfig;
 use PHPUnit\Framework\TestCase;
 use SimpleXMLElement;
+use Symfony\Component\Console\Command\Command;
 
 final class ApplicationTest extends TestCase {
 	protected function tearDown(): void {
@@ -66,6 +72,37 @@ final class ApplicationTest extends TestCase {
 			->with(PaperlessReferenceProvider::class);
 
 		$this->application()->register($context);
+	}
+
+	public function testRegistersTheSetupCheckOfTheOverview(): void {
+		$context = $this->createMock(IRegistrationContext::class);
+		$context->expects(self::once())
+			->method('registerSetupCheck')
+			->with(PaperlessSetupCheck::class);
+
+		$this->application()->register($context);
+	}
+
+	/**
+	 * occ knows only the commands that appinfo/info.xml names, with the classes of the app
+	 * that Nextcloud builds them from.
+	 */
+	public function testTheAppInfoNamesEveryCommandOfOcc(): void {
+		$declared = [];
+		foreach (self::appInfo()->commands->command as $command) {
+			$declared[] = (string)$command;
+		}
+
+		$commands = [];
+		foreach (glob(dirname(__DIR__, 3) . '/lib/Command/*.php') ?: [] as $file) {
+			$class = 'OCA\\PaperlessUnifiedSearch\\Command\\' . basename($file, '.php');
+			if (class_exists($class) && is_subclass_of($class, Command::class)) {
+				$commands[] = $class;
+			}
+		}
+
+		self::assertSame([Setup::class, Test::class, Search::class, Check::class], $declared);
+		self::assertEqualsCanonicalizing($commands, $declared);
 	}
 
 	public function testBootingNeedsNothingFromTheServer(): void {

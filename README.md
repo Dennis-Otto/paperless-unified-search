@@ -88,7 +88,7 @@ The [comparison](docs/compare.md) explains each of them, and when another one is
 
 <!-- --8<-- [end:quick-start] -->
 
-[Configuration](#configuration) and [Usage](#usage) have the details.
+[Configuration](#configuration) and [Usage](#usage) have the details, and [occ](#set-up-and-check-it-with-occ) sets the app up without a browser.
 
 <!-- --8<-- [end:quick-start-section] -->
 
@@ -243,7 +243,7 @@ Leave the token blank to keep the stored one. The stored token goes only to the 
 
 The configuration is global. Access control remains user-specific because the app discards every Paperless hit for which the searching Nextcloud user can't open a matching file of the archive account. Share the archive read-only with the users who may see its documents. Without an archive account, the search shows no Paperless documents.
 
-When Paperless documents are missing from the search, look at **Search problems** at the end of the settings. A failed search shows the users no Paperless documents and no error, and a request that fails before it reaches Paperless, as when the connection fails, is sent a second time before the search gives up; one that waited for a Paperless that hangs is not, so that a search never waits twice. The settings count both, the failed searches and the requests that only their second try answered, and list the latest 20 with the time, the step, asking Paperless or looking for the files in Nextcloud, the kind and the message of the error and how long it took, along with since when searches work again after the last failure. A query that Paperless refuses while it is still being typed isn't a problem and doesn't show up, and during an outage, also one that comes and goes, the problems of one kind are written at most once in 30 seconds, with those in between still counted. This helps where the hoster keeps the log of Nextcloud from administrators. **Clear history** and **Disconnect** forget the history; saving the settings keeps it.
+When Paperless documents are missing from the search, look at **Search problems** at the end of the settings, and for a document that Paperless finds but a user doesn't see, ask [`occ paperless_unified_search:search --explain`](#explain-a-hidden-document). A failed search shows the users no Paperless documents and no error, and a request that fails before it reaches Paperless, as when the connection fails, is sent a second time before the search gives up; one that waited for a Paperless that hangs is not, so that a search never waits twice. The settings count both, the failed searches and the requests that only their second try answered, and list the latest 20 with the time, the step, asking Paperless or looking for the files in Nextcloud, the kind and the message of the error and how long it took, along with since when searches work again after the last failure. A query that Paperless refuses while it is still being typed isn't a problem and doesn't show up, and during an outage, also one that comes and goes, the problems of one kind are written at most once in 30 seconds, with those in between still counted. This helps where the hoster keeps the log of Nextcloud from administrators. **Clear history** and **Disconnect** forget the history; saving the settings keeps it.
 
 By default, Nextcloud's search in the browser asks Paperless only after the user enables **Search connected services**, and the smart picker only after the user picks **Paperless documents** in it. When the trusted-service option is enabled, every global search term from every Nextcloud user is sent to Paperless automatically and the connected-services switch no longer controls this provider. Reload Nextcloud after changing this option.
 
@@ -377,6 +377,106 @@ Each entry names the document, a line of its text that matches, the link that op
 Give an assistant the app password of a user who sees only what it may read, and revoke the app password in the personal security settings once the assistant no longer needs it.
 
 <!-- --8<-- [end:scripts] -->
+<!-- --8<-- [start:automation] -->
+
+## Set up and check it with occ
+
+Four commands of `occ` do without a browser what the settings do, and more: they set the app up for Ansible, Docker and other scripts, test it for monitoring, and say why a user doesn't find a document.
+
+| Command | What it does | Exit code |
+| --- | --- | --- |
+| `paperless_unified_search:setup` | Tests the connection with the URL and the token, then saves the settings, as **Test connection and save** does | 0 once saved, 1 when Paperless doesn't answer or a setting is wrong, 2 for a wrong call, such as a missing `--url` or an empty token source |
+| `paperless_unified_search:test` | Tests the connection with the stored settings and names the version of Paperless | 0 when Paperless answers, 1 otherwise |
+| `paperless_unified_search:search <user> <term>` | Searches as the user and says for each document whether it shows to them, with `--explain` why not | 0 once Paperless answered |
+| `paperless_unified_search:check` | Tests the connection and the archive account, and counts the documents of Paperless that have a file | 0 when the search can show documents, 1 otherwise |
+
+### Set up the app
+
+The token never goes on the command line, where the history of the shell and the list of processes would show it to others: `setup` reads it from the standard input with `--token-stdin`, or from an environment variable with `--token-env=NAME`. An option that you leave out keeps its stored value, and without a token the stored one stays, but only for the server it was saved for, as on the settings page.
+
+| Option | Sets |
+| --- | --- |
+| `--url=URL` | The address of Paperless, such as `https://paperless.example.com`; required |
+| `--token-stdin`, `--token-env=NAME` | The API token, from the first line of the standard input or from the environment variable `NAME` |
+| `--archive-account=ID` | The account that owns the synchronized files; empty for the account of Paperless Sync |
+| `--allow-local`, `--no-allow-local` | **Paperless runs in my local network** |
+| `--always-search`, `--no-always-search` | **Always include Paperless in global search** |
+
+On a server, as the user of the web server:
+
+```sh
+printf '%s\n' "$PAPERLESS_TOKEN" | sudo -u www-data php occ paperless_unified_search:setup \
+  --url=https://paperless.example.com --archive-account=paperless --token-stdin
+```
+
+With Docker Compose and the image of Nextcloud, from a file that only you can read:
+
+```sh
+docker compose exec -T --user www-data nextcloud php occ paperless_unified_search:setup \
+  --url=http://paperless:8000 --archive-account=paperless --allow-local --token-stdin \
+  < paperless-token.txt
+```
+
+With Ansible, from its vault, and without the token in its output:
+
+```yaml
+- name: Connect Paperless Unified Search to Paperless-ngx
+  ansible.builtin.command:
+    argv: [php, occ, paperless_unified_search:setup, --url=https://paperless.example.com,
+           --archive-account=paperless, --token-stdin]
+    chdir: /var/www/nextcloud
+    stdin: "{{ vault_paperless_token }}"
+  become: true
+  become_user: www-data
+  no_log: true
+```
+
+### Explain a hidden document
+
+The search leaves out every document that has no file of the archive account that the searching user can open, without a trace: twelve documents that `jamie` may not open look exactly like none. `search` lists the documents that Paperless ranks first, 10 by default and up to 50 with `--limit`, with whether each shows to the user, and `--explain` names the reason of each one that doesn't:
+
+```console
+$ occ paperless_unified_search:search jamie invoice --limit=5 --explain
++-----+-----------------------------------+------------+--------------------------------------------------------------------------------+
+| ID  | Title                             | Verdict    | File                                                                           |
++-----+-----------------------------------+------------+--------------------------------------------------------------------------------+
+| 412 | Electricity invoice - August 2026 | shown      | /Paperless/2026/Electricity invoice - August 2026 [P412].pdf                   |
+| 389 | Home insurance renewal            | not shared | /Private/Home insurance renewal [P389].pdf of paperless, not shared with jamie |
+| 371 | Internet invoice - July 2026      | shown      | /Paperless/2026/Internet invoice - July 2026 [P371].pdf                        |
+| 356 | Water bill 2026                   | no file    |                                                                                |
+| 344 | Old invoice                       | not owned  | /Scans/Old invoice [P344].pdf of jamie                                         |
++-----+-----------------------------------+------------+--------------------------------------------------------------------------------+
+Paperless found 12 document(s) for "invoice"; 2 of the 5 above show to jamie.
+Not shared (389): the archive account paperless has the file, but hasn't shared it with jamie. Share the file, or a folder that holds it, read-only with jamie.
+Not owned (344): jamie sees a file with the marker of the document, but only the files of the archive account paperless stand for documents.
+No file (356): no file of the archive account paperless has the marker of the document, such as [P356], in its name. The synchronization hasn't written it yet, or names files without it.
+```
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/why-a-document-does-not-show.dark.svg">
+  <img src="docs/images/diagrams/why-a-document-does-not-show.svg" alt="Why a document does not show: Paperless finds document 389 when jamie searches, and occ paperless_unified_search:search jamie invoice --explain asks three questions in turn. Does jamie see a file of the archive account with [P389] in its name? Then the document shows. Otherwise, does the archive account have such a file in its own folders? Then it is not shared with jamie, and sharing the file or its folder read-only with jamie shows it. Otherwise, does jamie see a file with the marker of another account? Then it is not owned, since only files of the archive account stand for documents. Otherwise there is no file, and the synchronization has yet to write one with the marker in its name.">
+</picture>
+
+Without `--explain`, `search` decides as the search itself does, with one search of the file cache, and calls every document that doesn't show `hidden`; with it, a search of the file cache follows for each further question, for the documents that are still unexplained. `--json` writes the documents for scripts, each with its `id`, `title`, `verdict`, `path` and `owner`.
+
+### Check the whole set-up
+
+`check` tests the connection and the archive account, and compares the documents that the account of the API token sees in Paperless with the files of the archive account whose names carry their markers:
+
+```console
+$ occ paperless_unified_search:check
+✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.
+✓ The archive account is paperless, the account of Paperless Sync.
+! Coverage: 1,180 of 1,234 Paperless document(s) have a file of the archive account. Without one, among others: 17, 18, 19, 20, 23, 31, 40, 41, 42, 57.
+```
+
+Documents without a file are no failure, as long as the search can show others: the synchronization may not have written them yet, or leaves some out on purpose. When not one document has a file, as with an archive account that owns none of the synchronized files, `check` exits with 1 and says what to correct. `search --explain` with a term of such a document says why it doesn't show.
+
+### In the administration overview
+
+**Administration settings → Overview** checks the app among the other setup checks of Nextcloud, and so does `occ setupchecks`. It warns when the search shows no Paperless documents for a reason that an administrator corrects, and links to the settings of the app: a token that Nextcloud can no longer decrypt, no archive account or one that doesn't exist, or a search that failed with none working since. Otherwise it names the Paperless that the app is connected to, with the version of its last answer. It reads only what the app stored and sends no request to Paperless, so the overview opens as fast as without it.
+
+<!-- --8<-- [end:automation] -->
 <!-- --8<-- [start:security-and-privacy] -->
 
 ## Security and privacy
@@ -385,6 +485,7 @@ Give an assistant the app password of a user who sees only what it may read, and
 - The token is never returned to browser JavaScript or rendered into HTML.
 - The token is sent only to the Paperless server it was saved for; a URL with another scheme, host or port needs it entered again.
 - Saving the settings and disconnecting ask for the administrator's password when it wasn't confirmed in the last 30 minutes.
+- `occ` takes the token from its standard input or an environment variable, never from the command line, where the history of the shell and the list of processes would show it.
 - Nextcloud's protection against addresses of the local network stays on for every app. **Paperless runs in my local network** lifts it only for the requests of this app to the Paperless URL of the settings, which follow no redirect.
 - Search results are filtered through the current user's Nextcloud filesystem view.
 - The settings show administrators the history of the problems of the search without the API token, the search term or the query of any URL.
@@ -444,7 +545,7 @@ The unit tests run the app against fakes of Nextcloud that behave as Nextcloud d
 
 ### Docker end-to-end tests
 
-The Docker suite starts a clean Nextcloud instance with the app mounted as a Custom App and a deterministic Paperless API mock. It exercises the real OCS search endpoint, user-specific file access, trusted-service metadata, the smart picker and the links it inserts, and browser/iOS/Android result contracts. It makes Paperless fail and break off a connection, and checks the history of *Search problems* that the settings then show, without the term or the token. In Chromium, it checks the accessibility of the settings on a laptop and on a phone, their message for every answer, also when Nextcloud is in maintenance mode or out of reach, and *Disconnect*, and goes through the search dialog on a laptop and on a phone, from the term to the file in the Viewer.
+The Docker suite starts a clean Nextcloud instance with the app mounted as a Custom App and a deterministic Paperless API mock. It exercises the real OCS search endpoint, user-specific file access, trusted-service metadata, the smart picker and the links it inserts, and browser/iOS/Android result contracts. It sets the app up through occ and checks the explained search, the check of occ and the warning of the overview. It makes Paperless fail and break off a connection, and checks the history of *Search problems* that the settings then show, without the term or the token. In Chromium, it checks the accessibility of the settings on a laptop and on a phone, their message for every answer, also when Nextcloud is in maintenance mode or out of reach, and *Disconnect*, and goes through the search dialog on a laptop and on a phone, from the term to the file in the Viewer.
 
 ```bash
 bash tests/e2e/run.sh       # one Nextcloud version

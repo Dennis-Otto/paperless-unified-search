@@ -204,6 +204,9 @@ class Handler(BaseHTTPRequestHandler):
                 "count": len(results),
                 "next": self._link(parsed.query, page + 1) if end < len(results) else None,
                 "previous": self._link(parsed.query, page - 1) if page > 1 else None,
+                # Like Paperless-ngx, the IDs of all documents of the list, on every page,
+                # which occ paperless_unified_search:check compares with the files.
+                "all": [document["id"] for document in results],
                 "results": [
                     {key: value for key, value in document.items() if key in fields | ALWAYS_SENT}
                     for document in results[start:end]

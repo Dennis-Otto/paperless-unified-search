@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Added
+
+- **Set up and test the app with occ, see its health in the administration overview, and ask occ why a document doesn't show for a user.** Ansible, Docker and other scripts now connect the app without a browser: `occ paperless_unified_search:setup --url=… --token-stdin` tests the connection and saves the settings as *Test connection and save* does, and takes the API token from the standard input or an environment variable, never from the command line. `occ paperless_unified_search:test` tests the connection for monitoring, and `occ paperless_unified_search:check` also checks the archive account and counts how many Paperless documents have a file, such as 1,180 of 1,234. When a user doesn't find a document that Paperless finds, `occ paperless_unified_search:search jamie invoice --explain` names the reason for each one: its file isn't shared with jamie, it belongs to another account, or no file has its marker yet. And *Administration settings → Overview* now warns when the search shows no Paperless documents, for a token that can't be decrypted, a missing archive account or a search that keeps failing, with a link to the settings of the app.
+
 ## [0.5.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.5.0...v0.5.1) (2026-10-14)
 
 ### Fixed
