@@ -25,6 +25,8 @@ final class PaperlessVersionTest extends TestCase {
 			'Paperless-ngx 3.3.0' => ['3.3.0', '10', true],
 			'a prerelease of 3.0' => ['3.0.0-beta.1', '10', true],
 			'a later major version' => ['10.1', '12', true],
+			// A version of three parts is no number: compared as text, 10.0.0 came before 3.
+			'a later major version of three parts' => ['10.0.0', '12', true],
 			'blanks around' => [' 3.3.0 ', ' 10 ', true],
 		];
 	}

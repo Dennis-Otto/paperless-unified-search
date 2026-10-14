@@ -38,7 +38,7 @@ class PaperlessRequestException extends RuntimeException {
 		public readonly ?int $status = null,
 		?Throwable $previous = null,
 	) {
-		parent::__construct($message, 0, $previous);
+		parent::__construct($message, previous: $previous);
 	}
 
 	/**

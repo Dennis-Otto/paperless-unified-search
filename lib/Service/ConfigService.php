@@ -99,11 +99,11 @@ final class ConfigService {
 		return $this->accountId($owner !== '' ? $owner : $this->getSyncAccount());
 	}
 
-	public function getArchiveOwnerSetting(): string {
+	private function getArchiveOwnerSetting(): string {
 		return trim($this->config->getValueString(AppConstants::APP_ID, self::ARCHIVE_OWNER_KEY, ''));
 	}
 
-	public function getSyncAccount(): string {
+	private function getSyncAccount(): string {
 		return trim($this->config->getValueString(self::SYNC_APP_ID, self::SYNC_ACCOUNT_KEY, ''));
 	}
 

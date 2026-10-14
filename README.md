@@ -424,6 +424,24 @@ bash scripts/check.sh
 
 The production archive intentionally excludes tests, release tools, Composer development dependencies, screenshots, and repository metadata. Packaging uses [Krankerl](https://github.com/ChristophWurst/krankerl), and `scripts/check-package.sh` validates the finished archive.
 
+### Mutation tests
+
+Every line of `lib/` runs in a unit test, but a line that runs isn't checked yet. Every week, the Mutation workflow lets [Infection](https://infection.github.io/) change the code in small ways, one mutant at a time, and run the unit tests against each change. The tests notice every mutant except those that change nothing that the app does, 22 of 1,070 in October 2026, which [`infection.json5`](infection.json5) lists with the reason. So the score, the *covered code MSI*, is 100 %, and a mutant that escapes is a gap in the tests, or a change that makes no difference, to explain there.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/the-mutation-tests.dark.svg">
+  <img src="docs/images/diagrams/the-mutation-tests.svg" alt="The mutation tests: Infection changes the code of lib/ in one small way at a time, a mutant, such as a comparison that includes its limit or a call that is left out, and runs the unit tests that cover the changed line. When a test fails, the mutant is killed. When every test passes, the mutant escaped. If the change makes a difference, a test is missing, and a new test or a sharper assertion kills the mutant. If it makes none, it is an equivalent mutant, which infection.json5 lists with the reason. The score counts the killed mutants among all that aren't listed, and stays at 100 %.">
+</picture>
+
+To run them yourself, with PHP 8.3 or newer and pcov or Xdebug, and [the PHAR of Infection](https://github.com/infection/infection/releases):
+
+```bash
+composer install
+php infection.phar --threads=max
+```
+
+The unit tests run the app against fakes of Nextcloud that behave as Nextcloud does: [`MemoryAppConfig`](tests/Unit/MemoryAppConfig.php) for the configuration of the apps, which, like Nextcloud, gives the default for a lazy value that a read without the lazy flag asks for, and [`MemoryCache`](tests/Unit/MemoryCache.php) for the distributed cache.
+
 ### Docker end-to-end tests
 
 The Docker suite starts a clean Nextcloud instance with the app mounted as a Custom App and a deterministic Paperless API mock. It exercises the real OCS search endpoint, user-specific file access, trusted-service metadata, the smart picker and the links it inserts, and browser/iOS/Android result contracts. It makes Paperless fail and break off a connection, and checks the history of *Search problems* that the settings then show, without the term or the token. In Chromium, it checks the accessibility of the settings on a laptop and on a phone, their message for every answer, also when Nextcloud is in maintenance mode or out of reach, and *Disconnect*, and goes through the search dialog on a laptop and on a phone, from the term to the file in the Viewer.
