@@ -32,8 +32,44 @@ echo "The image of Playwright and playwright-core are both at version $package."
 
 printf '\n== %s\n' "Scripts of the end-to-end tests"
 # The path filter that decides whether the required check nextcloud runs the tests, and
-# the parallel run of every Nextcloud version, without Docker.
-bash tests/e2e/selftest.sh
+# the parallel run of every Nextcloud version, without Docker. They run with GIT_DIR,
+# GIT_WORK_TREE and GIT_INDEX_FILE naming a repository of their own, as Git hands them to
+# its hooks and as an agent sets them for a worktree in a container: the repositories
+# that the tests make must leave that one alone, its commits, branches, configuration
+# and checkout.
+(
+  # shellcheck disable=SC2046 # Git prints one name of a variable per line.
+  unset $(git rev-parse --local-env-vars)
+  export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+  outer="$(mktemp -d)"
+  trap 'rm -rf "$outer"' EXIT
+  state() {
+    git -C "$outer" for-each-ref --format='%(refname) %(objectname)'
+    git -C "$outer" status --porcelain=v1 --untracked-files=all
+    cat "$outer/.git/config"
+  }
+  git init --quiet "$outer"
+  echo "The repository that runs the tests." >"$outer/README.md"
+  git -C "$outer" add README.md
+  git -C "$outer" -c user.name=Check -c user.email=check@example.com \
+    commit --quiet --message "The repository that runs the tests"
+  # A change not yet committed, which a git add --all of the tests would take in.
+  echo "Not yet committed." >"$outer/notes.md"
+  before="$(state)"
+  status=0
+  GIT_DIR="$outer/.git" GIT_WORK_TREE="$outer" GIT_INDEX_FILE="$outer/.git/index" \
+    bash tests/e2e/selftest.sh || status=$?
+  after="$(state)"
+  if [[ "$after" != "$before" ]]; then
+    echo "tests/e2e/selftest.sh changed the repository that GIT_DIR names; clear the variables of Git at its start, before its first git:"
+    diff <(printf '%s\n' "$before") <(printf '%s\n' "$after") || true
+    exit 1
+  fi
+  if ((status != 0)); then
+    exit "$status"
+  fi
+  echo "The tests left the repository that GIT_DIR names alone."
+)
 
 printf '\n== %s\n' "Pictures of the README"
 # The README shows its pictures from main, so that the website shows them as well, and
