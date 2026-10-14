@@ -31,6 +31,17 @@ final class PaperlessApiService {
 	 */
 	private const SEARCH_FIELDS = 'id,title,created,correspondent,document_type,__search_hit__';
 
+	/**
+	 * The version of the API of Paperless that every request asks for. Without one,
+	 * Paperless answers in its default version, which a new release raises, as 3.0 did from
+	 * 9 to 10, and a new version may change the type of a field, as 9 did with created.
+	 * Version 9 is the newest that both Paperless 2.16 and newer and Paperless 3 accept;
+	 * an older Paperless answers HTTP 406. tests/e2e/paperless-contract.sh checks the
+	 * fields of this version against real Paperless servers, so a change of it is a
+	 * deliberate one, with those tests.
+	 */
+	private const ACCEPT = 'application/json; version=9';
+
 	/** The seconds that a request may take to connect to Paperless. */
 	private const CONNECT_TIMEOUT = 3;
 
@@ -165,7 +176,7 @@ final class PaperlessApiService {
 			[
 				'headers' => [
 					'Authorization' => 'Token ' . $token,
-					'Accept' => 'application/json',
+					'Accept' => self::ACCEPT,
 					'User-Agent' => $this->getUserAgent(),
 				],
 				'connect_timeout' => self::CONNECT_TIMEOUT,

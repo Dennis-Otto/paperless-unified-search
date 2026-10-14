@@ -1,6 +1,6 @@
 # Docker end-to-end tests
 
-The suite starts Nextcloud with this checkout mounted read-only as a Custom App: `run.sh` the image of `compose.yaml` (set `NEXTCLOUD_IMAGE` to choose another, such as `nextcloud:35-apache`), [`run-all.sh`](#every-supported-version-at-once) and the CI the current release of every version from `min-version` to `max-version` in `appinfo/info.xml` at the same time, and every week also [the coming Nextcloud](#the-coming-nextcloud). A deterministic local HTTP service emulates the small Paperless API surface used by the app. Like Paperless, it sends only the fields of the documents that a request names, and the excerpt of a search with them; unlike Paperless, it answers a request that names none with HTTP 400, so that the suite fails as soon as the app would make Paperless send the whole OCR text of every document. Like Paperless, it answers in pages, of 25 documents unless a request asks for another size, with the absolute link to the next page, and refuses a page past the last one with HTTP 404. Like Paperless-ngx 3.3.0, it names its version in the headers `X-Version` and `X-Api-Version` of every answer to the token, refuses a query of its advanced syntax with a range of dates that is still being typed, such as `created:[2026 to`, with HTTP 400 and the errors of the field `query`, and searches the words of any input in the simple mode of its search, the parameter `text`. Like Paperless, it marks up the words of the term in the excerpt with `<b>` and writes the characters of HTML as entities, such as `&#x27;` and `&quot;`, which the result has to show as text again. And as Paperless or its network sometimes does, it fails: with HTTP 500 for the term `e2e-error`, and for `e2e-drop` it breaks off the connection of the first request without an answer.
+The suite starts Nextcloud with this checkout mounted read-only as a Custom App: `run.sh` the image of `compose.yaml` (set `NEXTCLOUD_IMAGE` to choose another, such as `nextcloud:35-apache`), [`run-all.sh`](#every-supported-version-at-once) and the CI the current release of every version from `min-version` to `max-version` in `appinfo/info.xml` at the same time, and every week also [the coming Nextcloud](#the-coming-nextcloud). A deterministic local HTTP service emulates the small Paperless API surface used by the app. Like Paperless, it sends only the fields of the documents that a request names, and the excerpt of a search with them; unlike Paperless, it answers a request that names none with HTTP 400, so that the suite fails as soon as the app would make Paperless send the whole OCR text of every document. Like Paperless, it answers in pages, of 25 documents unless a request asks for another size, with the absolute link to the next page, and refuses a page past the last one with HTTP 404. Like Paperless-ngx 3.3.0, it names its version in the headers `X-Version` and `X-Api-Version` of every answer to the token, refuses a query of its advanced syntax with a range of dates that is still being typed, such as `created:[2026 to`, with HTTP 400 and the errors of the field `query`, and searches the words of any input in the simple mode of its search, the parameter `text`. Like Paperless, it marks up the words of the term in the excerpt with `<b>` and writes the characters of HTML as entities, such as `&#x27;` and `&quot;`, which the result has to show as text again. And as Paperless or its network sometimes does, it fails: with HTTP 500 for the term `e2e-error`, and for `e2e-drop` it breaks off the connection of the first request without an answer. Whether real Paperless-ngx answers as the mock does, [the contract tests](#against-a-real-paperless-ngx) check every week.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../../docs/images/diagrams/the-end-to-end-tests.dark.svg">
@@ -120,3 +120,37 @@ Optional environment variables, besides those of `run.sh`:
 
 - `CANARY_BASE_IMAGE`: the image whose code the coming Nextcloud replaces, default `nextcloud:apache`
 - `CANARY_IMAGE`: the local image the script builds, default `paperless-unified-search-e2e:coming`
+
+## Against a real Paperless-ngx
+
+The mock says what we think Paperless says. The contract tests check it against real Paperless-ngx, the last release of Paperless-ngx 2 and the newest release, in the job `paperless` of the workflow:
+
+```bash
+PAPERLESS=3 bash tests/e2e/paperless-contract.sh   # the newest Paperless-ngx, the default
+PAPERLESS=2 bash tests/e2e/paperless-contract.sh   # the last release of Paperless-ngx 2
+```
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../docs/images/diagrams/the-contract-with-paperless.dark.svg">
+  <img src="../../docs/images/diagrams/the-contract-with-paperless.svg" alt="The contract with a real Paperless-ngx: Every Monday, when started by hand, and in a pull request that changes the code that talks to Paperless, the job paperless runs paperless-contract.sh for Paperless-ngx 2 and 3. It starts that Paperless with Redis, Nextcloud with the app and the mock, and assert_contract.py gives Paperless three synthetic text files. Then it checks, with the version of the API and the fields that the app asks for, the fields, dates, excerpts, pages and errors directly, and the test of the connection and the results through Nextcloud. The summary of the job shows the versions and every check. A failed weekly run opens or updates the issue Paperless-ngx breaks the app, and a run that passes closes it.">
+</picture>
+
+`paperless-contract.sh` adds `compose.paperless.yaml` to `compose.yaml` and starts the Paperless of the line by its profile, `paperless-2` or `paperless-3`, with Redis, beside Nextcloud and the mock; Paperless answers as `paperless` in the network of the project. It generates the secret key of Paperless for the run, installs Nextcloud and enables the app, and runs `assert_contract.py` in the container of the mock. That script gets a token of the API for the synthetic administrator, gives Paperless the three text files of `contract/documents/` with a title and a date each, waits until Paperless has read and indexed them, and checks what the app relies on, with the header `Accept` and the fields of a result that the app sends, which the script reads from the constants `ACCEPT` and `SEARCH_FIELDS` of `lib/Service/PaperlessApiService.php`:
+
+- the headers `X-Version` and `X-Api-Version`, which the settings show, and the version of the line;
+- the fields of a result: only those that the app asks for, `id` a number, `title` a text, `created` a date `YYYY-MM-DD`, `correspondent` and `document_type` an ID or null, and `__search_hit__` with its `highlights` as text;
+- the pages of a search: `next` links the next page and is null on the last, and a page past it answers HTTP 404;
+- the excerpt: Paperless marks the term, with `<b>` in Paperless-ngx 3 and `<span class="match term0">` in Paperless-ngx 2, and writes the characters of HTML as entities; the text that the app makes of it keeps the term and neither markup nor an entity;
+- the filters `created__date__gte` and `created__date__lte`;
+- a query that is still being typed, `invoice created:[2026 to`: Paperless-ngx 3 refuses it with HTTP 400 and the errors of `query`, and its simple mode, `text=`, finds the documents of a term; Paperless-ngx 2 answers it;
+- through Nextcloud: the test of the connection in the settings names the same versions, the search finds the documents of the files `<title> [P<ID>].txt` of the archive account with the excerpt as text, and the unfinished query fails no search.
+
+The summary of the job shows the versions, every check and what Paperless sent, and the first check that fails names the promise that Paperless or the app breaks. A version of the API that Paperless no longer accepts, a field that Paperless leaves out or the markup of an excerpt that reaches the result fails the tests.
+
+The job runs every Monday, when started by hand, and in a pull request that changes the code that talks to Paperless or reads its answers: `lib/Service/PaperlessApiService.php`, `lib/Search/`, `lib/Model/PaperlessVersion.php`, `lib/Exception/`, the files of the contract tests or the workflow. `scope.sh` with `SCOPE=paperless` decides it, as it does for the check `nextcloud`. It is no required check and blocks nothing. A failed run on Monday opens the issue *Paperless-ngx breaks the app* with a link to the run, adds every further failed run to it, and closes it once the tests pass again. Renovate keeps the images of `compose.paperless.yaml` current by their digests, the one of Paperless-ngx 2 within version 2, so every new release of Paperless-ngx arrives as a pull request that runs the contract against it.
+
+Optional environment variables, besides `DOCKER_BIN` and `KEEP_E2E` of `run.sh`:
+
+- `PAPERLESS`: the line of Paperless-ngx, `2` or `3`, default `3`
+- `E2E_PORT`: host port for Nextcloud, default `18092` or `18093`, so that `run.sh` can run at the same time
+- `E2E_PROJECT_NAME`: Compose project name, default `paperless_unified_search_contract_<line>`

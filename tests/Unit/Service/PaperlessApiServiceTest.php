@@ -83,7 +83,7 @@ final class PaperlessApiServiceTest extends TestCase {
 			->with('https://paperless.example.com/api/documents/', [
 				'headers' => [
 					'Authorization' => 'Token TEST_VALUE',
-					'Accept' => 'application/json',
+					'Accept' => 'application/json; version=9',
 					'User-Agent' => 'Nextcloud-Paperless-Unified-Search/0.5.1',
 				],
 				'connect_timeout' => 3,
@@ -626,6 +626,28 @@ final class PaperlessApiServiceTest extends TestCase {
 			['text' => 'created:[2026 to', 'page' => 2, 'page_size' => 25, 'fields' => self::FIELDS],
 		], $queries);
 		self::assertNull($this->history());
+	}
+
+	/**
+	 * Every request names version 9 of the API, the one that Paperless 2.16 and newer and
+	 * Paperless 3 all accept, so that a new default version of Paperless can't change the
+	 * fields that the app reads; the contract tests in tests/e2e/paperless-contract.sh
+	 * check it against real Paperless servers. The advanced query and its simple mode both.
+	 */
+	public function testEveryRequestAsksForVersion9OfTheApi(): void {
+		$accepted = [];
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options) use (&$accepted): IResponse {
+			$accepted[] = $options['headers']['Accept'];
+
+			return isset($options['query']['query'])
+				? $this->response(400, self::INVALID_DATE, self::PAPERLESS_3)
+				: $this->response(200, self::NO_DOCUMENTS, self::PAPERLESS_3);
+		});
+
+		$this->service($client)->searchDocuments('created:[2026 to', 1, 5);
+
+		self::assertSame(['application/json; version=9', 'application/json; version=9'], $accepted);
 	}
 
 	/**

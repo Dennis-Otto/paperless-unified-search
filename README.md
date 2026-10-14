@@ -222,7 +222,7 @@ The search needs one thing from a synchronization: each document of Paperless-ng
 
 - Nextcloud 33 through 35
 - PHP 8.2 or newer as supported by the corresponding Nextcloud release
-- A reachable Paperless-ngx instance with API access
+- A reachable Paperless-ngx 2.16 or newer, 3.x included, with API access. The app asks for version 9 of its API, which Paperless-ngx 2.16 and newer and 3.x speak; contract tests check the app every week against real Paperless-ngx, the last release of 2.20 and the newest release of 3.x.
 - Synchronized files whose names contain `[P<ID>]`, owned by one Nextcloud account, the archive account, and shared read-only with the users who may see them, for example those of Paperless Sync or of [any other synchronization](#works-with-any-synchronization). Without them, the search shows no Paperless documents.
 
 <!-- --8<-- [end:requirements] -->
@@ -276,7 +276,7 @@ The URL may name a Docker service with an underscore, such as `http://paperless_
 | Paperless rejected the API token (HTTP 401 or 403) | Paperless doesn't know the token, or its account may not view documents | Copy the token again from the profile of the Paperless account, and give the account the permission to view documents |
 | This URL answers, but not with the API of Paperless (HTTP 404) | The path of the URL, or a proxy in front of Paperless | Enter the address that opens Paperless in the browser, with the path when Paperless runs under one, such as `https://example.com/paperless` |
 | This URL forwards to another address | The URL redirects, and with **Paperless runs in my local network** Nextcloud follows no redirect | Enter the address that it forwards to, such as the one with `https` |
-| Paperless answered with an error | Paperless itself failed, with a status of 5xx | Look into the log of Paperless, or try again later |
+| Paperless answered with an error | Paperless itself failed, with a status of 5xx; with HTTP 406, Paperless is older than 2.16 and doesn't speak version 9 of its API | Look into the log of Paperless, or try again later; at HTTP 406, update Paperless-ngx to 2.16 or newer |
 | This URL answers, but not like Paperless-ngx | Another service, or the login page of a proxy | Check the address and its path |
 | Nextcloud does not connect to addresses of the local network | Paperless runs at an address of the local network | Select **Paperless runs in my local network** ([above](#paperless-in-your-local-network)) |
 | Nextcloud does not trust the certificate of Paperless | A certificate of your own authority, a self-signed one, or one for another name | Import the certificate of the authority with `occ security:certificates:import`, or use the name that the certificate is for |

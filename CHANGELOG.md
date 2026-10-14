@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- **The app asks Paperless for version 9 of its API, and needs Paperless-ngx 2.16 or newer.** So far, the app took whatever version of its API Paperless answered in by default, which a new release of Paperless raises, as Paperless-ngx 3 did, and a new version may change what a field holds, as version 9 did with the date of a document. Now every request names version 9, which Paperless-ngx 2.16 and newer and every Paperless-ngx 3 speak, so a new release of Paperless can no longer change the results unnoticed: tests against real Paperless-ngx 2.20 and 3.x check every week and with every new release of Paperless that the fields, dates and excerpts of the search stay as the app reads them. A Paperless older than 2.16 answers HTTP 406; *Test connection and save* then says that Paperless answered with an error (HTTP 406), and updating Paperless-ngx fixes it.
+
 ## [0.5.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.5.0...v0.5.1) (2026-10-14)
 
 ### Fixed
