@@ -9,7 +9,8 @@ name: Links
 # pull request; the weekly run keeps one issue with the broken links open until they
 # are fixed, and closes it then. lychee.toml holds the rules, .lycheeignore the
 # exceptions of this repository. The entry in the changelog that most pull requests
-# bring starts no check on its own; the weekly run checks the links of the changelog.
+# bring, in CHANGELOG.md or in a fragment of changelog.d/, starts no check on its own;
+# the weekly run checks the links of the changelog.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -18,6 +19,7 @@ on:
     paths:
       - "**/*.md"
       - "!CHANGELOG.md"
+      - "!changelog.d/**"
       - lychee.toml
       - .lycheeignore
       - .github/workflows/links.yml
@@ -25,6 +27,7 @@ on:
     paths:
       - "**/*.md"
       - "!CHANGELOG.md"
+      - "!changelog.d/**"
       - lychee.toml
       - .lycheeignore
       - .github/workflows/links.yml
@@ -69,14 +72,15 @@ jobs:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           # The documents that a pull request adds or changes, since the merge base, so
-          # none that only main changed. One that changes the rules, or moves or deletes
-          # a file that a document may link to, checks every document. lychee gets the
+          # none that only main changed, but the changelog. One that changes the rules,
+          # or moves or deletes a file that a document may link to, checks every
+          # document; no document links to a fragment of the changelog. lychee gets the
           # names through a shell, so a name with another character checks every
           # document too.
           if [[ "$EVENT" == pull_request ]] &&
             [[ -z "$(git diff --name-only "origin/$BASE_REF...HEAD" -- lychee.toml .lycheeignore .github/workflows/links.yml)" ]] &&
-            [[ -z "$(git diff --name-only --diff-filter=DR "origin/$BASE_REF...HEAD")" ]]; then
-            mapfile -t changed < <(git diff --name-only --diff-filter=AM "origin/$BASE_REF...HEAD" -- '*.md' ':!CHANGELOG.md')
+            [[ -z "$(git diff --name-only --diff-filter=DR "origin/$BASE_REF...HEAD" -- . ':!changelog.d')" ]]; then
+            mapfile -t changed < <(git diff --name-only --diff-filter=AM "origin/$BASE_REF...HEAD" -- '*.md' ':!CHANGELOG.md' ':!changelog.d')
             if ((${#changed[@]} == 0)); then
               echo "The pull request changes no document; no link to check." >> "$GITHUB_STEP_SUMMARY"
               exit 0
@@ -133,3 +137,13 @@ jobs:
           else
             gh issue create --title "$title" --label documentation --body "$body"
           fi
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.toml.
+      - name: Explain the failure
+        if: failure()
+        env:
+          CHECK: links
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" coach explain "$CHECK"
