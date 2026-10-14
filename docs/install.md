@@ -10,7 +10,7 @@ What the app needs, the three ways to install it, and how it stays up to date. O
 
 | | Needs |
 | --- | --- |
-| **Nextcloud** | 33, 34 or 35 |
+| **Nextcloud** | 33 to 35 |
 | **PHP** | 8.2 or newer, as the release of Nextcloud supports it |
 | **Paperless-ngx** | A Paperless-ngx with its REST API; [Compatibility](reference.md#compatibility) lists the versions that the tests cover |
 | **The network** | The Nextcloud server reaches Paperless over HTTP or HTTPS, connects within 3 seconds and gets every answer within 10. The browsers and the apps of the users never talk to Paperless |

@@ -90,10 +90,11 @@ The name in the URL has to be one that the certificate is for: a certificate for
 A proxy in front of Paperless, such as nginx, Traefik, Caddy or the tunnel of Cloudflare, answers for Paperless, and some of its answers fail the test:
 
 - **A path.** When Paperless runs under a path, such as `https://example.com/paperless` with `PAPERLESS_FORCE_SCRIPT_NAME=/paperless`, the URL of the settings needs that path; the app adds `/api/documents/` to it. Without it, the test fails with HTTP 404.
-- **A login in front of Paperless**, such as the forward authentication of Authelia or Authentik, or basic authentication, answers with its login page or a redirect to it: *This URL answers, but not like Paperless-ngx*, or *This URL forwards to another address*. Let the proxy pass the path `/api/` to Paperless without its login, since the token authenticates every request, or let Nextcloud reach Paperless behind the proxy, at its address in the local network, with **Paperless runs in my local network**.
+- **A login in front of Paperless**, such as the forward authentication of Authelia or Authentik, answers with its login page or a redirect to it: *This URL answers, but not like Paperless-ngx*, or, with **Paperless runs in my local network**, *This URL forwards to another address*. Let the proxy pass the path `/api/` to Paperless without its login, since the token authenticates every request, or let Nextcloud reach Paperless behind the proxy, at its address in the local network, with **Paperless runs in my local network**.
+- **Basic authentication** in the proxy, such as `auth_basic` of nginx, answers HTTP 401 to a request that carries the token in place of its own login: *Paperless rejected the API token (HTTP 401)*, with a token that works. Let the proxy pass the path `/api/` to Paperless without it.
 - **The header `Authorization`.** The token travels in it, as `Authorization: Token …`. A proxy that drops the header, or replaces it with one of its own, makes Paperless refuse a correct token with HTTP 401.
 - **A firewall or protection against bots**, such as the challenge page of Cloudflare, answers HTTP 403 or a page of its own: *Paperless rejected the API token (HTTP 403)* with a token that works in the browser, or *not like Paperless-ngx*. Let the requests of the Nextcloud server through, whose `User-Agent` starts with `Nextcloud-Paperless-Unified-Search/`.
-- **A redirect** from `http` to `https`, or to another name, works without **Paperless runs in my local network**; with it, enter the address that the proxy forwards to.
+- **A redirect** to another scheme, host or port, such as from `http` to `https` or to another name: Nextcloud follows it, but leaves the token out, so that the token never reaches a server that it wasn't entered for, and Paperless refuses the request without it: *Paperless rejected the API token*. With **Paperless runs in my local network**, Nextcloud follows no redirect, and the test says *This URL forwards to another address*. Either way, enter the address that the proxy forwards to. A redirect within the same server, such as to the path with a slash at its end, keeps the token.
 
 The log of the proxy shows each request of the app with that `User-Agent` and the version of the app.
 
@@ -125,7 +126,7 @@ The end of the settings counts the problems of the search and lists the latest 2
 | **Event** | *Search failed*: the user saw no Paperless documents. *Second try answered*: the first try failed before it reached Paperless, the second got the answer |
 | **Step** | *Asking Paperless*: the request to Paperless failed. *Looking for the files in Nextcloud*: Paperless answered, but finding the files of its documents in Nextcloud failed |
 | **Error** | The kind of the error and its message, such as `ConnectException: cURL error 6: Could not resolve host`, without the API token, the search term and the query of any URL |
-| **Duration** | How long it took until it failed: about 3,000 ms for a connection that wasn't set up in time, about 10,000 ms for a Paperless that didn't answer |
+| **Duration** | For *Search failed*, how long the search took from its start until it failed: about 6,000 ms when neither of the two tries got a connection within 3 seconds, about 10,000 ms for a Paperless that took the connection but didn't answer, and the time of the pages before when a later page of Paperless failed. For *Second try answered*, how long the first try took: about 3,000 ms for a connection that wasn't set up in time, a few milliseconds for a name that didn't resolve |
 
 A query that Paperless refuses while it is still being typed, and a page past the last result, are no problems and don't show up. During an outage, the problems of one kind are written at most once in 30 seconds, with those in between still counted. The errors of the column *Error* are the ones of [the test of the connection](#when-the-test-of-the-connection-fails); for example:
 
@@ -133,7 +134,7 @@ A query that Paperless refuses while it is still being typed, and a page past th
 | --- | --- |
 | `cURL error 6: Could not resolve host` | The name of the host of the URL doesn't resolve on the Nextcloud server |
 | `cURL error 7: Failed to connect` | Nothing accepts connections at the address and the port |
-| `cURL error 28: Connection timed out` | No connection within 3 seconds |
+| `cURL error 28: Connection timed out` | No connection within 3 seconds, on the second try as well |
 | `cURL error 28: Operation timed out` | No answer within 10 seconds: Paperless is busy, as while it consumes documents or rebuilds its index |
 | `cURL error 60: SSL certificate problem` | Nextcloud doesn't trust the certificate: [import it](#certificates-of-your-own) |
 | `Paperless returned HTTP 401` | The token is no longer valid: create one and enter it |

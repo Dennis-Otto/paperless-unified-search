@@ -42,7 +42,7 @@ Nextcloud turns it off at every reload of the page, so that a search term never 
 
 ## How much load does it put on Paperless?
 
-One request for each search, while the switch is on: Nextcloud's search waits until the typing pauses before it asks. A request asks for 25 documents and only for the fields that a result shows, not the OCR text of each document. To fill a page of results whose first documents the user can't open, the app asks for up to 3 more pages, within 3 seconds. A request that waited in vain for a Paperless that hangs isn't sent again. Without the switch, Paperless gets no request at all.
+Paperless gets requests only from the searches that ask it: with **Search connected services** switched on, from the smart picker or the API, and from every search when **Always include Paperless in global search** is on. Nextcloud's search waits until the typing pauses before it asks. For each page of results, the app asks Paperless for 25 documents, and only for the fields that a result shows, not the OCR text of each document; to fill a page whose first documents the user can't open, it asks for up to 3 more pages, within 3 seconds. Paperless 3 gets a query in its syntax that it can't parse yet, as one still being typed, once more in its simple mode. A request that couldn't connect gets a second try; one that waited in vain for a Paperless that hangs isn't sent again.
 
 ## Does it search the documents in the inbox of Paperless?
 

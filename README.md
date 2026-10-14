@@ -231,7 +231,7 @@ The search needs one thing from a synchronization: each document of Paperless-ng
 
 ## Requirements
 
-- Nextcloud 33 through 35
+- Nextcloud 33 to 35
 - PHP 8.2 or newer as supported by the corresponding Nextcloud release
 - A reachable Paperless-ngx instance with API access; the tests cover the answers of Paperless-ngx 2.20 and 3.3, as the [compatibility](https://dennis-otto.github.io/paperless-unified-search/reference.html#compatibility) says in detail
 - Synchronized files whose names contain `[P<ID>]`, owned by one Nextcloud account, the archive account, and shared read-only with the users who may see them, for example those of Paperless Sync or of [any other synchronization](#works-with-any-synchronization). Without them, the search shows no Paperless documents.
@@ -288,7 +288,7 @@ The URL may name a Docker service with an underscore, such as `http://paperless_
 
 | The message says | What failed | What to do |
 | --- | --- | --- |
-| Paperless rejected the API token (HTTP 401 or 403) | Paperless doesn't know the token, or its account may not view documents | Copy the token again from the profile of the Paperless account, and give the account the permission to view documents |
+| Paperless rejected the API token (HTTP 401 or 403) | Paperless doesn't know the token, or its account may not view documents. Or the URL redirects to another scheme, host or port, such as from `http` to `https`, and Nextcloud leaves the token out of the redirect | Copy the token again from the profile of the Paperless account, and give the account the permission to view documents. Enter the address that the URL forwards to |
 | This URL answers, but not with the API of Paperless (HTTP 404) | The path of the URL, or a proxy in front of Paperless | Enter the address that opens Paperless in the browser, with the path when Paperless runs under one, such as `https://example.com/paperless` |
 | This URL forwards to another address | The URL redirects, and with **Paperless runs in my local network** Nextcloud follows no redirect | Enter the address that it forwards to, such as the one with `https` |
 | Paperless answered with an error | Paperless itself failed, with a status of 5xx | Look into the log of Paperless, or try again later |
@@ -310,7 +310,8 @@ When Nextcloud itself can't take the request, the page says so in one sentence i
 | Nextcloud is in maintenance mode | Nextcloud is being upgraded or maintained, and answers every request with HTTP 503 and a header that says so | Try again in a few minutes |
 | Your session has expired | The session of your login ended, or its request token is no longer valid (HTTP 401 or 412) | Reload the page and try again |
 | Nextcloud could not be reached | The browser lost its connection to Nextcloud | Check your connection and try again |
-| The request failed (HTTP 502) | A proxy in front of Nextcloud answered with an error of its own, such as 502, 503 or 504, or Nextcloud found a problem with its own setup, such as a data folder it can't write to | Check that Nextcloud runs, its log and the log of the proxy |
+| The request failed (HTTP 502) | A proxy in front of Nextcloud answered with an error of its own, such as 502, 503 or 504, or Nextcloud found a problem with its own setup, such as a data folder it can't write to. Without a status, the page itself met an error | Check that Nextcloud runs, its log and the log of the proxy, and reload the page |
+| Confirm your password to change the settings | The dialog that asks for your Nextcloud password was closed, or didn't confirm the password | Select **Test connection and save** or **Disconnect** again, and confirm with your Nextcloud password |
 | Nextcloud gave an unexpected answer | Something in front of Nextcloud, such as the login page of a proxy, answered instead of the app | Reload the page and try again |
 
 <!-- --8<-- [end:connection-test] -->

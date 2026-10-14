@@ -100,7 +100,7 @@ Every request of the app to Paperless is one `GET` of `<URL>/api/documents/`, fr
 | **The test of the connection** | `page_size=1` and `fields=id` |
 | **Time** | 3 seconds to connect, 10 seconds for the answer |
 | **A second try** | Only for a request that failed within 3.5 seconds, before it had a connection, and whose address Nextcloud didn't refuse |
-| **Redirects** | None with **Paperless runs in my local network** |
+| **Redirects** | Without **Paperless runs in my local network**, up to 5, never to an address of the local network; Nextcloud leaves the token out of a redirect to another scheme, host or port, which Paperless then refuses, and keeps it for one within the same server. With the switch, none |
 
 ## Compatibility
 

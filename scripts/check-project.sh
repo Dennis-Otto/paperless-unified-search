@@ -3,9 +3,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # The checks of this app alone, which scripts/check.sh runs last: the browser and the
-# scripts of the end-to-end tests, the pictures of the README, the descriptions of the
-# pages of the website, the diagrams of the documentation, and the JavaScript of the
-# settings and the translations, which have no build step, with their tests.
+# scripts of the end-to-end tests, the pictures of the README, the versions that the
+# documentation names, the descriptions of the pages of the website, the diagrams of the
+# documentation, and the JavaScript of the settings and the translations, which have no
+# build step, with their tests.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -46,6 +47,40 @@ for picture in "${pictures[@]}"; do
   fi
 done
 echo "The ${#pictures[@]} picture(s) of the README are in the repository."
+
+printf '\n== %s\n' "Versions in the documentation"
+# appinfo/info.xml decides on which versions of Nextcloud and PHP the app installs. The
+# README and the pages of the website that name them say the same, so that a change of
+# the versions can't leave a copy behind.
+nextcloud_min="$(sed -nE 's/.*<nextcloud [^>]*min-version="([0-9]+)".*/\1/p' appinfo/info.xml)"
+nextcloud_max="$(sed -nE 's/.*<nextcloud [^>]*max-version="([0-9]+)".*/\1/p' appinfo/info.xml)"
+php_min="$(sed -nE 's/.*<php [^>]*min-version="([0-9.]+)".*/\1/p' appinfo/info.xml)"
+if [[ -z "$nextcloud_min" || -z "$nextcloud_max" || -z "$php_min" ]]; then
+  echo "appinfo/info.xml names no min-version and max-version of nextcloud, or no min-version of php."
+  exit 1
+fi
+columns="|"
+for ((version = nextcloud_min; version <= nextcloud_max; version++)); do
+  columns+=" Nextcloud $version |"
+done
+version_problems=0
+says() {
+  if ! grep -qF -- "$2" "$1"; then
+    echo "$1 doesn't say \"$2\": write the versions of appinfo/info.xml there."
+    version_problems=$((version_problems + 1))
+  fi
+}
+says README.md "Nextcloud $nextcloud_min to $nextcloud_max"
+says README.md "PHP $php_min or newer"
+says docs/install.md "| **Nextcloud** | $nextcloud_min to $nextcloud_max |"
+says docs/install.md "| **PHP** | $php_min or newer"
+says docs/faq.md "Nextcloud $nextcloud_min to $nextcloud_max"
+says docs/reference.md "| $columns"
+says docs/reference.md "**PHP:** $php_min or newer"
+if ((version_problems > 0)); then
+  exit 1
+fi
+echo "The documentation names Nextcloud $nextcloud_min to $nextcloud_max and PHP $php_min, as appinfo/info.xml does."
 
 printf '\n== %s\n' "Descriptions of the website pages"
 # Search engines and shared links show the description of a page, from its front
