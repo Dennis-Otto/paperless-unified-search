@@ -44,3 +44,13 @@ jobs:
           head-ref: ${{ inputs.head_ref || github.event.pull_request.head.sha }}
           # The rules and the accepted advisories of this repository.
           config-file: ./.github/dependency-review.yml
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.toml.
+      - name: Explain the failure
+        if: failure()
+        env:
+          CHECK: dependency-review
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" coach explain "$CHECK"

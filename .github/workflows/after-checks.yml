@@ -32,22 +32,35 @@ name: After the checks
 # more, where they stopped, instead of leaving the release and its rollout to a
 # person. The release workflow takes up a tag that it pushed already.
 #
+# The PR coach: after every run of the checks of a pull request, one comment on it
+# explains each check that failed: what it found, why that matters and how to fix
+# it, with the commands to run, from the explanations of .github/checks.toml and
+# .github/checks.project.toml. It works for a pull request from a fork as well, whose
+# own runs can't write to it. The comment follows every push and turns into a short
+# all-clear once every check passes; a pull request whose checks never failed gets
+# none. A check that was cancelled, as a job that ran out of time is, hasn't passed
+# either. It reads the check runs and their annotations from the API and shows their
+# text only as code, and waits up to three minutes for the checks of other apps, such
+# as the alerts of code scanning, which end after the last workflow. The scanners,
+# which run in the pull requests that change what they read, start it as well.
+#
 # The diagram bot: when the check diagrams of Lint finds a ```mermaid block, which
 # the GitHub app shows as code, or pictures of diagrams that differ from their sources
 # in docs/diagrams/, in a pull request from a branch of this repository, it commits
 # what scripts/diagrams.sh --extract changed in the check onto that branch, as the
 # release app, so that the checks run again, and says in a comment which blocks became
 # pictures. blueprint.py of main takes only sources, SVG pictures and pages of
-# Markdown from the artifact "diagrams". A pull request from a fork keeps the failing
-# check, with the command that fixes it.
+# Markdown from the artifact "diagrams". When the bot can't commit, it says so on the
+# pull request, with the command. A pull request from a fork keeps the failing check,
+# with the command that fixes it.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
   workflow_run:
     # The checks of this repository, its end-to-end tests if a workflow of its own named Docker E2E runs them,
     # and the workflows of its other tests that the answer test_workflows of the blueprint names.
-    # Then those of the other required checks, the same in every repository, and the release.
-    workflows: [CI (php), Docker E2E, CodeQL, Dependency review, Docs, Lint, Pull request title, Secret scan, Release]
+    # Then those of the other required checks and of the scanners, the same in every repository, and the release.
+    workflows: [CI (php), Docker E2E, CodeQL, Dependency review, Docs, Lint, Pull request title, Secret scan, Fuzzing, Links, OSV-Scanner, Workflow security, Release]
     types: [completed]
 
 permissions: {}
@@ -59,7 +72,7 @@ jobs:
     # release has a bot of its own.
     if: >-
       !github.event.repository.fork &&
-      !contains(fromJSON('["CodeQL", "Dependency review", "Docs", "Lint", "Pull request title", "Secret scan", "Release"]'), github.event.workflow_run.name) &&
+      !contains(fromJSON('["CodeQL", "Dependency review", "Docs", "Lint", "Pull request title", "Secret scan", "Fuzzing", "Links", "OSV-Scanner", "Workflow security", "Release"]'), github.event.workflow_run.name) &&
       contains(fromJSON('["failure", "cancelled"]'), github.event.workflow_run.conclusion) &&
       github.event.workflow_run.run_attempt == 1
     concurrency:
@@ -149,7 +162,7 @@ jobs:
     name: report the flaky tests
     if: >-
       !github.event.repository.fork &&
-      !contains(fromJSON('["CodeQL", "Dependency review", "Docs", "Lint", "Pull request title", "Secret scan", "Release"]'), github.event.workflow_run.name) &&
+      !contains(fromJSON('["CodeQL", "Dependency review", "Docs", "Lint", "Pull request title", "Secret scan", "Fuzzing", "Links", "OSV-Scanner", "Workflow security", "Release"]'), github.event.workflow_run.name) &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.run_attempt > 1
     concurrency:
@@ -426,6 +439,50 @@ jobs:
             gh pr comment "$number" --body-file "$RUNNER_TEMP/comment.md"
           fi
 
+  coach:
+    name: PR coach
+    # After every run of the checks of a pull request, also one from a fork, and one
+    # that was cancelled: a job that ran out of time ends so, and its check hasn't
+    # passed. For a run that a push cancelled, the coach finds that its commit is no
+    # longer the head and stops.
+    if: >-
+      !github.event.repository.fork &&
+      contains(fromJSON('["pull_request", "pull_request_target"]'), github.event.workflow_run.event)
+    # One report at a time for each commit, so that the last one sees every check.
+    concurrency:
+      group: ${{ github.workflow }}-coach-${{ github.event.workflow_run.head_sha }}
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      checks: read
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      # The default branch, for blueprint.py and the explanations; nothing of the pull
+      # request is checked out or run, its checks only come from the API.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github
+            blueprint
+      - name: Keep the one report of the PR coach up to date
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          # A pull request from a fork isn't named in the run; its commit finds it.
+          NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" --repo "$GH_REPO" coach report "$SHA" --pull "$NUMBER" >> "$GITHUB_STEP_SUMMARY"
+
   diagrams:
     name: commit the diagrams
     if: >-
@@ -446,6 +503,7 @@ jobs:
     permissions:
       actions: read # the diagrams that the check kept
       contents: read # blueprint.py of main, which checks them
+      pull-requests: write # the comment when the bot fails
     env:
       # The first line of the bot's commits.
       HEADLINE: "docs: draw the diagrams anew"
@@ -526,3 +584,15 @@ jobs:
           if [[ -s "$RUNNER_TEMP/comment.md" ]]; then
             gh pr comment "${NUMBER:-$BRANCH}" --body-file "$RUNNER_TEMP/comment.md"
           fi
+      # The failed check of the pull request promises the bot's commit; when the bot
+      # can't make it, the pull request learns so, with the command that fixes it.
+      - name: Say on the pull request that the bot failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh pr comment "${NUMBER:-$BRANCH}" --body "The diagram bot couldn't commit the diagrams of this pull request ($URL). Run \`bash scripts/diagrams.sh --extract\` with Docker and commit what it changes, or take the files from the artifact \`diagrams\` of the check *diagrams*."
