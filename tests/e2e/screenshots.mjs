@@ -391,7 +391,7 @@ async function settings(browser, session, theme) {
 // Try a search of the settings, as the administrator searches for "invoice" as
 // themselves: the archive account has shared only the file of the electricity invoice
 // with them, so the other two documents are not shared with them.
-async function trySearch(browser, session) {
+async function shareElectricityWithAdmin() {
 	const share = new URLSearchParams({
 		path: `/Paperless/${electricity.folder}/${fileName(electricity)}`,
 		shareType: '0',
@@ -399,7 +399,11 @@ async function trySearch(browser, session) {
 		permissions: '1',
 	})
 	await request(ARCHIVE, 'POST', `/ocs/v2.php/apps/files_sharing/api/v1/shares?${share}`)
-	const page = await newPage(browser, session, { viewport: { width: 1600, height: 1000 } })
+}
+
+async function trySearch(browser, session, theme) {
+	const suffix = theme === 'dark' ? '-dark' : ''
+	const page = await newPage(browser, session, { viewport: { width: 1600, height: 1000 }, colorScheme: theme })
 	await page.goto(`${BASE_URL}${SETTINGS}`)
 	await page.locator(SETTINGS_SCOPE).waitFor()
 	await page.locator('#paperless-unified-search-try-term').fill(TERM)
@@ -411,8 +415,8 @@ async function trySearch(browser, session) {
 	// Away from the table, whose rows light up under the pointer.
 	await page.mouse.move(0, 0)
 	await settle(page)
-	await block.screenshot({ path: join(OUT, '10-try-a-search.png'), animations: 'disabled' })
-	console.log('Took 10-try-a-search.png.')
+	await block.screenshot({ path: join(OUT, `10-try-a-search${suffix}.png`), animations: 'disabled' })
+	console.log(`Took 10-try-a-search${suffix}.png.`)
 	await page.context().close()
 }
 
@@ -618,12 +622,13 @@ try {
 	await createArchive(browser)
 	const reader = await signIn(browser, READER)
 	const admin = await signIn(browser, ADMIN)
+	await shareElectricityWithAdmin()
 	for (const theme of ['light', 'dark']) {
 		await searchAndOpen(browser, reader, theme)
 		await smartPicker(browser, reader, theme)
 		await settings(browser, admin, theme)
+		await trySearch(browser, admin, theme)
 	}
-	await trySearch(browser, admin)
 	await phone(browser, reader)
 	await phoneSettings(browser, admin)
 	await animation(browser, reader)

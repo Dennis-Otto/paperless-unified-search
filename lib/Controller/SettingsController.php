@@ -24,10 +24,12 @@ use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\Attribute\FrontpageRoute;
 use OCP\AppFramework\Http\Attribute\PasswordConfirmationRequired;
 use OCP\AppFramework\Http\JSONResponse;
+use OCP\EventDispatcher\IEventDispatcher;
 use OCP\IL10N;
 use OCP\IRequest;
 use OCP\IUserManager;
 use OCP\IUserSession;
+use OCP\Log\Audit\CriticalActionPerformedEvent;
 use Psr\Log\LoggerInterface;
 use SensitiveParameter;
 use Throwable;
@@ -63,6 +65,7 @@ final class SettingsController extends Controller {
 		private SearchExplainer $explainer,
 		private IUserManager $userManager,
 		private IUserSession $userSession,
+		private IEventDispatcher $events,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -137,7 +140,7 @@ final class SettingsController extends Controller {
 	 * whether it shows to the user and, if not, why, as occ paperless_unified_search:search
 	 * --explain finds it, for administrators without a shell. The answer names each
 	 * document by its ID and its title alone, without its content, an excerpt or its file,
-	 * and the log records which administrator tried a search as whom, without the term.
+	 * and the log and the audit log record which administrator tried a search as whom, without the term.
 	 */
 	#[FrontpageRoute(verb: 'POST', url: '/settings/try')]
 	public function trySearch(string $term = '', string $user = ''): JSONResponse {
@@ -161,11 +164,17 @@ final class SettingsController extends Controller {
 			return $this->refusal($this->l10n->t('No archive account exists, so the search shows no Paperless documents. Name the account that owns the synchronized files above.'), 'no_archive_account');
 		}
 
+		$admin = $this->userSession->getUser()?->getUID() ?? '';
 		$this->logger->info('{admin} tried a search of Paperless as {user} in the settings', [
 			'app' => AppConstants::APP_ID,
-			'admin' => $this->userSession->getUser()?->getUID() ?? '',
+			'admin' => $admin,
 			'user' => $account->getUID(),
 		]);
+		// The audit log of the app admin_audit records it whatever the log level.
+		$this->events->dispatchTyped(new CriticalActionPerformedEvent(
+			'Paperless Unified Search: %s tried a search as %s',
+			['admin' => $admin, 'user' => $account->getUID()],
+		));
 		try {
 			$response = $this->paperlessApi->searchDocuments($term, 1, self::TRY_LIMIT);
 		} catch (PaperlessQueryRejected) {

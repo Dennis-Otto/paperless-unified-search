@@ -130,7 +130,7 @@ final class SettingsTemplateTest extends TestCase {
 
 	/**
 	 * Try a search sits at the end of the page, with its route, a field for the term and
-	 * one for the user, and says that the log records who tried a search as whom.
+	 * one for the user, and says that the audit log records who tried a search as whom.
 	 */
 	public function testTrySearchAsksForATermAndAUser(): void {
 		[, $page] = $this->render(new PublicConfig(self::STORED, true, false));
@@ -142,7 +142,7 @@ final class SettingsTemplateTest extends TestCase {
 			self::assertTrue($input->hasAttribute('required'), "The {$field} of Try a search is not required.");
 		}
 		self::assertStringContainsString('The answer lists the first 20 documents', $this->text($this->element($page, 'paperless-unified-search-try-hint')));
-		self::assertStringContainsString('The log of Nextcloud records who tried a search as whom.', $this->text($this->element($page, 'paperless-unified-search-try-hint')));
+		self::assertStringContainsString('The audit log of Nextcloud records who tried a search as whom.', $this->text($this->element($page, 'paperless-unified-search-try-hint')));
 		self::assertSame('', $this->text($this->element($page, 'paperless-unified-search-try-result')));
 		self::assertSame('status', $this->element($page, 'paperless-unified-search-try-status')->getAttribute('role'));
 	}

@@ -159,9 +159,10 @@ On a phone, the settings fit the screen, and each problem of the search is a car
 
 ### Try a search
 
-<p>
-  <img alt="Try a search in the settings: the administrator searches for invoice as e2e-admin, and a table lists the three documents that Paperless ranks first with their IDs and titles, the electricity invoice shown, the insurance renewal and the internet invoice not shared with e2e-admin, above the reasons why a document does not show" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-try-a-search.png">
-</p>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-try-a-search-dark.png">
+  <img alt="Try a search in the settings: the administrator searches for invoice as the account e2e-admin, and a table lists the three documents that Paperless ranks first with their IDs and titles, the electricity invoice shown, the insurance renewal and the internet invoice not shared with that account, above the reasons why a document does not show" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-try-a-search.png">
+</picture>
 
 *Try a search* at the end of the settings answers the most common question, "why don't I see this document?", without a shell: it searches Paperless as a user and names for each document whether it shows to them, and if not, why.
 
@@ -515,7 +516,7 @@ Documents without a file are no failure, as long as the search can show others: 
 - Nextcloud's protection against addresses of the local network stays on for every app. **Paperless runs in my local network** lifts it only for the requests of this app to the Paperless URL of the settings, which follow no redirect.
 - Search results are filtered through the current user's Nextcloud filesystem view.
 - The settings show administrators the history of the problems of the search without the API token, the search term or the query of any URL.
-- **Try a search** shows administrators which documents a user finds for a term, by their IDs and titles alone, without their content, an excerpt or their files; the log of Nextcloud records at level info which administrator tried a search as which user, without the term.
+- **Try a search** shows administrators which documents a user finds for a term, by their IDs and titles alone, without their content, an excerpt or their files; the audit log of the app *Auditing / Logging* (`admin_audit`) records which administrator tried a search as which user, whatever the log level, and so does the log of Nextcloud at level info, without the term.
 - Search terms are sent server-to-server only when connected-services search or trusted-service mode is enabled, after the user chose **Paperless documents** in the smart picker, or when a client asks this search by its ID through the API.
 - A link that the smart picker inserts is the link of the file in Nextcloud, which shows its preview only to readers who can open the file.
 - Administrators can explicitly trust the configured Paperless server to include it automatically in every user's global searches.
@@ -595,7 +596,7 @@ The screenshots and the animation in `screenshots/` come from a script, so that 
 bash scripts/screenshots.sh
 ```
 
-It starts the Docker suite under a project of its own with a demo: the archive account `paperless`, whose synthetic documents are shared read-only with `jamie`, and a Paperless mock that finds three of them for "invoice". Chromium then searches, opens a result, links a document from the smart picker in a note of Text and saves the settings, light and dark, on a phone and as an animation. Set `KEEP_SCREENSHOTS=1` to look around in the demo afterwards.
+It starts the Docker suite under a project of its own with a demo: the archive account `paperless`, whose synthetic documents are shared read-only with `jamie`, and a Paperless mock that finds three of them for "invoice". Chromium then searches, opens a result, links a document from the smart picker in a note of Text, saves the settings and tries a search in them, light and dark, on a phone and as an animation. Set `KEEP_SCREENSHOTS=1` to look around in the demo afterwards.
 
 See [CONTRIBUTING.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CONTRIBUTING.md) before opening a pull request.
 

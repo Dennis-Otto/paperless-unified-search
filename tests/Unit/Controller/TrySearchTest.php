@@ -18,11 +18,13 @@ use OCA\PaperlessUnifiedSearch\Tests\Unit\AppServices;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Files;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\JSONResponse;
+use OCP\EventDispatcher\IEventDispatcher;
 use OCP\Files\File;
 use OCP\Http\Client\IResponse;
 use OCP\IL10N;
 use OCP\IRequest;
 use OCP\IUserSession;
+use OCP\Log\Audit\CriticalActionPerformedEvent;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -50,6 +52,9 @@ final class TrySearchTest extends TestCase {
 		['id' => 371, 'title' => 'Internet invoice'] + self::CONTENT,
 		['id' => 360, 'title' => ' Letter '] + self::CONTENT,
 	];
+
+	/** The event dispatcher of the controller, a stub unless a test expects an event. */
+	private ?IEventDispatcher $events = null;
 
 	protected function setUp(): void {
 		$this->connected();
@@ -136,6 +141,30 @@ final class TrySearchTest extends TestCase {
 			->with('{admin} tried a search of Paperless as {user} in the settings', ['app' => AppConstants::APP_ID, 'admin' => 'alex', 'user' => 'jamie']);
 
 		$this->controller($this->documents(self::HITS, 12), $logger)->trySearch('invoice', 'JAMIE');
+	}
+
+	/**
+	 * The app admin_audit writes the event to the audit log whatever the log level, where
+	 * the entry at level info is missing on a default installation.
+	 */
+	public function testTellsTheAuditLogWhoTriedASearchAsWhomWithoutTheTerm(): void {
+		$events = $this->createMock(IEventDispatcher::class);
+		$events->expects(self::once())
+			->method('dispatchTyped')
+			->with(self::callback(static fn (CriticalActionPerformedEvent $event): bool => $event->getLogMessage() === 'Paperless Unified Search: %s tried a search as %s'
+				&& $event->getParameters() === ['admin' => 'alex', 'user' => 'jamie']
+				&& !$event->getObfuscateParameters()));
+		$this->events = $events;
+
+		$this->controller($this->documents(self::HITS, 12))->trySearch('invoice', 'JAMIE');
+	}
+
+	public function testTellsTheAuditLogNothingOfARefusedTry(): void {
+		$events = $this->createMock(IEventDispatcher::class);
+		$events->expects(self::never())->method('dispatchTyped');
+		$this->events = $events;
+
+		$this->controller($this->documents(self::HITS, 12))->trySearch('invoice', 'nobody');
 	}
 
 	public function testLogsAnAdministratorWithoutASession(): void {
@@ -255,6 +284,7 @@ final class TrySearchTest extends TestCase {
 			new SearchExplainer($locator, $accounts),
 			$accounts,
 			$session,
+			$this->events ?? $this->createStub(IEventDispatcher::class),
 		);
 	}
 

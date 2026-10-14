@@ -217,7 +217,7 @@ $archiveAccount = $config->archiveOwner !== '' ? $config->archiveOwner : $config
 	<div class="paperless-unified-search-try">
 		<h3><?php p($l->t('Try a search')); ?></h3>
 		<p id="paperless-unified-search-try-hint" class="settings-hint">
-			<?php p($l->t('See which Paperless documents a user finds for a term, and why the others don\'t show to them. The answer lists the first %s documents that Paperless ranks for the term, by their titles, without their content. The log of Nextcloud records who tried a search as whom.', [(string)\OCA\PaperlessUnifiedSearch\Controller\SettingsController::TRY_LIMIT])); ?>
+			<?php p($l->t('See which Paperless documents a user finds for a term, and why the others don\'t show to them. The answer lists the first %s documents that Paperless ranks for the term, by their titles, without their content. The audit log of Nextcloud records who tried a search as whom.', [(string)\OCA\PaperlessUnifiedSearch\Controller\SettingsController::TRY_LIMIT])); ?>
 		</p>
 		<form id="paperless-unified-search-try-form">
 			<p>

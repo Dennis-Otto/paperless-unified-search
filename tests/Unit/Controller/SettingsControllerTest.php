@@ -25,6 +25,7 @@ use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryAppConfig;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Utility\ITimeFactory;
+use OCP\EventDispatcher\IEventDispatcher;
 use OCP\Files\IRootFolder;
 use OCP\Http\Client\IClient;
 use OCP\Http\Client\IClientService;
@@ -636,6 +637,7 @@ final class SettingsControllerTest extends TestCase {
 			new SearchExplainer(new NextcloudFileLocator($this->createStub(IRootFolder::class), $this->createStub(LoggerInterface::class)), $accounts),
 			$accounts,
 			$this->createStub(IUserSession::class),
+			$this->createStub(IEventDispatcher::class),
 		);
 	}
 
