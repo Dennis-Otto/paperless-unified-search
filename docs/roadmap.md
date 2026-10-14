@@ -21,7 +21,7 @@ The app does what it was built for: the full-text search of Paperless-ngx in the
 And, as every year, keeping it working and safe:
 
 - **Every new major version of Nextcloud.** The upstream bot raises `max-version` in `appinfo/info.xml` once the end-to-end tests pass against the new version, and the app follows the changes of Nextcloud's search, of its smart picker and of its mobile apps.
-- **Changes of the Paperless-ngx API.** Contract tests against real Paperless-ngx 2.20 and 3.x, planned as well, catch a change that breaks the search, which is fixed first, with a test that keeps it fixed.
+- **Changes of the Paperless-ngx API.** Contract tests against real Paperless-ngx 2.20 and 3.x run every week and with every new release of Paperless-ngx, and catch a change that breaks the search, which is fixed first, with a test that keeps it fixed. The app asks Paperless for version 9 of its API, so that a new default version of Paperless can't change what the app reads; a newer version is a deliberate step, with these tests.
 - **Fixes and security.** Reported bugs and vulnerabilities come before anything new; [SECURITY.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/SECURITY.md) has the times.
 - **Current dependencies and tooling,** through the update bots and the [repository blueprint](https://github.com/Dennis-Otto/repo-blueprint).
 

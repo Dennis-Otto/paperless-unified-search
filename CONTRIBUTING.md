@@ -59,6 +59,13 @@ The end-to-end tests run the app in Docker against every supported Nextcloud ver
 bash tests/e2e/run-all.sh
 ```
 
+A change of `lib/Service/PaperlessApiService.php`, `lib/Search/` or another file that talks to Paperless or reads its answers also runs the [contract tests against a real Paperless-ngx](tests/e2e/README.md#against-a-real-paperless-ngx) in the pull request. They are no required check, so run them yourself for both lines of Paperless-ngx:
+
+```sh
+PAPERLESS=3 bash tests/e2e/paperless-contract.sh
+PAPERLESS=2 bash tests/e2e/paperless-contract.sh
+```
+
 To run them before every push on its own, turn on the hook of the repository once:
 
 ```sh

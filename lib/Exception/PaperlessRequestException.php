@@ -48,6 +48,7 @@ class PaperlessRequestException extends RuntimeException {
 		$reason = match (true) {
 			$status === 401, $status === 403 => RequestFailure::Unauthorized,
 			$status === 404 => RequestFailure::NotFound,
+			$status === 406 => RequestFailure::UnsupportedVersion,
 			$status >= 300 && $status < 400 => RequestFailure::Redirect,
 			default => RequestFailure::Http,
 		};

@@ -32,6 +32,17 @@ final class PaperlessApiService {
 	 */
 	private const SEARCH_FIELDS = 'id,title,created,correspondent,document_type,__search_hit__';
 
+	/**
+	 * The version of the API of Paperless that every request asks for. Without one,
+	 * Paperless answers in its default version, which a new release raises, as 3.0 did from
+	 * 9 to 10, and a new version may change the type of a field, as 9 did with created.
+	 * Version 9 is the newest that both Paperless 2.16 and newer and Paperless 3 accept;
+	 * an older Paperless answers HTTP 406. tests/e2e/paperless-contract.sh checks the
+	 * fields of this version against real Paperless servers, so a change of it is a
+	 * deliberate one, with those tests.
+	 */
+	private const ACCEPT = 'application/json; version=9';
+
 	/** The seconds that a request may take to connect to Paperless. */
 	private const CONNECT_TIMEOUT = 3;
 
@@ -134,8 +145,10 @@ final class PaperlessApiService {
 	/**
 	 * Search Paperless through its native full-text index. A query in the advanced syntax
 	 * of Paperless 3 that it can't parse, as one that is still being typed, goes to its
-	 * simple mode instead, which takes any input. Paperless 2 never gets it: it ignores
-	 * the parameter and would list all documents.
+	 * simple mode instead, which takes any input, with only its plain words: the simple
+	 * mode looks for every word it gets, and the field still being typed would match no
+	 * document. Paperless 2 never gets it: it ignores the parameter and would list all
+	 * documents.
 	 *
 	 * @return array{count: int, next: ?string, results: list<array<array-key, mixed>>}
 	 * @throws PaperlessQueryRejected when Paperless refuses the term or the page, which is
@@ -152,15 +165,31 @@ final class PaperlessApiService {
 		try {
 			[$documents, $version] = $this->search(['query' => $term] + $parameters, $term);
 		} catch (PaperlessQueryRejected $rejection) {
-			if (!$rejection->allowsSimpleSearch() || mb_strlen($term) > self::LONGEST_TERM) {
+			$words = self::wordsOf($term);
+			if (!$rejection->allowsSimpleSearch() || $words === '' || mb_strlen($words) > self::LONGEST_TERM) {
 				throw $rejection;
 			}
 
-			[$documents, $version] = $this->search(['text' => $term] + $parameters, $term);
+			[$documents, $version] = $this->search(['text' => $words] + $parameters, $words);
 		}
 		$this->configService->rememberPaperlessVersion($version);
 
 		return $documents;
+	}
+
+	/**
+	 * The plain words of a query in the advanced syntax, for the simple mode: without its
+	 * fields, finished or not, such as created:[2026 to or tag:bills, without brackets and
+	 * quotes, and without the operators AND, OR and NOT.
+	 */
+	private static function wordsOf(string $term): string {
+		$words = preg_replace(
+			['/\S+:\s*[\[{][^\]}]*(?:[\]}]|$)/u', '/\S+:\S*/u', '/[\[\]{}()"]/u', '/(?<!\S)(?:AND|OR|NOT)(?!\S)/u', '/\s+/u'],
+			[' ', ' ', ' ', ' ', ' '],
+			$term,
+		);
+
+		return trim($words ?? '');
 	}
 
 	/**
@@ -319,7 +348,7 @@ final class PaperlessApiService {
 		return [
 			'headers' => [
 				'Authorization' => 'Token ' . $token,
-				'Accept' => 'application/json',
+				'Accept' => self::ACCEPT,
 				'User-Agent' => $this->getUserAgent(),
 			],
 			'connect_timeout' => self::CONNECT_TIMEOUT,

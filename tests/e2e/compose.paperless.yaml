@@ -1,0 +1,59 @@
+# SPDX-FileCopyrightText: 2026 Dennis Otto
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# A real Paperless-ngx beside Nextcloud and the mock of compose.yaml, for the contract
+# tests of paperless-contract.sh: it adds this file to compose.yaml and starts one line
+# of Paperless by its profile, paperless-2 for the last release of Paperless-ngx 2 or
+# paperless-3 for the newest release, each in a Compose project of its own. Either one
+# answers by the name paperless in the network of the project, where Nextcloud and the
+# assertions in the container of the mock reach it. Renovate keeps both images current
+# by their digests, and the one of Paperless-ngx 2 within version 2
+# (.github/renovate.json5).
+#
+# The administrator is one of the tests alone, and paperless-contract.sh generates the
+# secret key anew for every run; the documents are the text files of contract/documents/.
+
+x-paperless: &paperless
+  environment:
+    PAPERLESS_REDIS: redis://redis:6379
+    PAPERLESS_SECRET_KEY: ${PAPERLESS_SECRET_KEY:?paperless-contract.sh generates the secret key of Paperless}
+    PAPERLESS_ADMIN_USER: contract-admin
+    PAPERLESS_ADMIN_PASSWORD: contract-only-password
+    PAPERLESS_TIME_ZONE: UTC
+    # One worker of each kind is plenty for three text files, and starts sooner.
+    PAPERLESS_TASK_WORKERS: "1"
+    PAPERLESS_THREADS_PER_WORKER: "1"
+    PAPERLESS_WEBSERVER_WORKERS: "1"
+    PAPERLESS_ENABLE_NLTK: "false"
+  depends_on:
+    redis:
+      condition: service_healthy
+  networks:
+    default:
+      aliases:
+        - paperless
+  healthcheck:
+    test: ["CMD", "curl", "--fail", "--silent", "--output", "/dev/null", "http://127.0.0.1:8000/"]
+    interval: 3s
+    timeout: 3s
+    retries: 100
+
+services:
+  redis:
+    image: redis:8.10.2-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
+    profiles: [paperless-2, paperless-3]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  paperless-2:
+    <<: *paperless
+    image: ghcr.io/paperless-ngx/paperless-ngx:2.20.15@sha256:6c86cad803970ea782683a8e80e7403444c5bf3cf70de63b4d3c8e87500db92f
+    profiles: [paperless-2]
+
+  paperless-3:
+    <<: *paperless
+    image: ghcr.io/paperless-ngx/paperless-ngx:3.3.1@sha256:cb91bfb468e63025a9d10c01b54c33665113668eee61b490db96de19b860b9c4
+    profiles: [paperless-3]

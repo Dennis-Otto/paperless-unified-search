@@ -1,0 +1,31 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+---
+flowchart TB
+    accTitle: The contract with a real Paperless-ngx
+    accDescr: Every Monday, when started by hand, and in a pull request that changes the code that talks to Paperless, the job paperless runs paperless-contract.sh for Paperless-ngx 2 and 3. It starts that Paperless with Redis, Nextcloud with the app and the mock, and assert_contract.py gives Paperless three synthetic text files. Then it checks, with the version of the API and the fields that the app asks for, the fields, dates, excerpts, pages and errors directly, and the test of the connection and the results through Nextcloud. The summary of the job shows the versions and every check. A failed weekly run opens or updates the issue Paperless-ngx breaks the app, and a run that passes closes it.
+
+    trigger["Weekly run, a start by hand,<br>or a pull request of the code<br>that talks to Paperless"]
+    script["paperless-contract.sh<br>for Paperless-ngx 2 and 3"]
+    start["Paperless-ngx and Redis,<br>Nextcloud with the app,<br>the mock"]
+    seed["assert_contract.py gives Paperless<br>three synthetic text files"]
+    direct["`Directly: fields, dates, excerpts,<br>pages and errors, with *version=9*`"]
+    through["Through Nextcloud: the test<br>of the connection and the results"]
+    holds{"The contract<br>holds?"}
+    passed["The summary shows<br>the versions and every check;<br>the issue closes"]
+    failed["The summary names the broken promise;<br>the weekly run opens or updates<br>Paperless-ngx breaks the app"]
+
+    trigger --> script --> start --> seed --> direct --> through --> holds
+    holds -- "yes" --> passed
+    holds -- "no" --> failed
+
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef bot fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef fail fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class trigger person
+    class script,start,seed,direct,through bot
+    class passed done
+    class failed fail
