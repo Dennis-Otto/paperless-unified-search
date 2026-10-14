@@ -3,13 +3,21 @@
   SPDX-FileCopyrightText: 2026 Dennis Otto
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
+<!--
+  The icon of the app as one dark shape, as Nextcloud expects the icons of the sections of
+  the settings and of the list of apps: it turns them white on the colour of the active
+  section and in its dark theme. app.svg keeps the colours for the results of the search.
+-->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72" role="img" aria-label="Paperless Unified Search">
-  <rect x="12" y="6" width="39" height="52" rx="5" fill="#1f6f5f"/>
-  <path d="M41 6v13h10" fill="#75c8b7"/>
-  <path d="M20 29h23M20 37h17M20 45h12" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="4"/>
-  <!-- A white edge keeps the dark magnifier visible on a dark background. -->
-  <circle cx="47" cy="48" r="13" fill="none" stroke="#fff" stroke-width="9"/>
-  <path d="m57 58 9 9" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="10"/>
-  <circle cx="47" cy="48" r="13" fill="#fff" stroke="#0f172a" stroke-width="5"/>
-  <path d="m57 58 9 9" fill="none" stroke="#0f172a" stroke-linecap="round" stroke-width="6"/>
+  <mask id="cut">
+    <rect width="72" height="72" fill="#fff"/>
+    <!-- The fold, the lines of text and the room around the magnifier. -->
+    <path d="M40 4v14h14" fill="none" stroke="#000" stroke-linejoin="round" stroke-width="3"/>
+    <path d="M20 29h23M20 37h17M20 45h12" fill="none" stroke="#000" stroke-linecap="round" stroke-width="4"/>
+    <circle cx="47" cy="48" r="18" fill="#000"/>
+    <path d="m57 58 9 9" fill="none" stroke="#000" stroke-linecap="round" stroke-width="11"/>
+  </mask>
+  <path d="M17 6h23l11 12v35a5 5 0 0 1-5 5H17a5 5 0 0 1-5-5V11a5 5 0 0 1 5-5z" fill="#222" mask="url(#cut)"/>
+  <circle cx="47" cy="48" r="13" fill="none" stroke="#222" stroke-width="5"/>
+  <path d="m57 58 9 9" fill="none" stroke="#222" stroke-linecap="round" stroke-width="6"/>
 </svg>

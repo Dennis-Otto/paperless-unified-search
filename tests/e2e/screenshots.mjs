@@ -7,9 +7,9 @@
 // of Paperless run. It writes the synthetic documents of the demo as PDF files into
 // the folder Paperless of the archive account, shares the folder read-only with
 // jamie, and goes through the app in Chromium as a person does: the search, the
-// opened file, the smart picker in a note of Text with the link that it inserts, and the
-// settings, light and dark, on a phone, and as an animation. The images go to the
-// folder of SCREENSHOTS_OUT.
+// opened file, the smart picker in a note of Text with the link that it inserts, the
+// settings, light and dark, the search and the settings on a phone, and the search as
+// an animation. The images go to the folder of SCREENSHOTS_OUT.
 
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -19,6 +19,8 @@ import { chromium } from 'playwright-core'
 import {
 	BASE_URL,
 	PASSWORD,
+	SETTINGS,
+	SETTINGS_SCOPE,
 	connectedServices,
 	paperlessResult,
 	resultGroup,
@@ -357,11 +359,12 @@ async function smartPicker(browser, session, theme) {
 	await page.context().close()
 }
 
+// The settings after a save, down to the message of success below the buttons.
 async function settings(browser, session, theme) {
 	const suffix = theme === 'dark' ? '-dark' : ''
-	const page = await newPage(browser, session, { viewport: { width: 1600, height: 900 }, colorScheme: theme })
-	await page.goto(`${BASE_URL}/index.php/settings/admin/paperless_unified_search`)
-	await page.locator('#paperless-unified-search-settings').waitFor()
+	const page = await newPage(browser, session, { viewport: { width: 1600, height: 1000 }, colorScheme: theme })
+	await page.goto(`${BASE_URL}${SETTINGS}`)
+	await page.locator(SETTINGS_SCOPE).waitFor()
 	await page.locator('#paperless-unified-search-save').click()
 	await page.getByText('Connection successful. Settings saved.').waitFor()
 	// The demo talks to the mock in the network of Docker, with the switch for the local
@@ -382,6 +385,34 @@ async function settings(browser, session, theme) {
 	await settle(page)
 	await problems.screenshot({ path: join(OUT, `06-search-problems${suffix}.png`), animations: 'disabled' })
 	console.log(`Took 06-search-problems${suffix}.png.`)
+	await page.context().close()
+}
+
+// The settings on a phone at the problems of the search, each of them a card whose
+// lines name their column.
+async function phoneSettings(browser, session) {
+	const page = await newPage(browser, session, {
+		viewport: { width: 390, height: 844 },
+		deviceScaleFactor: 2,
+		isMobile: true,
+		hasTouch: true,
+	})
+	await page.goto(`${BASE_URL}${SETTINGS}`)
+	await page.locator(SETTINGS_SCOPE).waitFor()
+	await page.locator('.paperless-unified-search-diagnostics h3').evaluate((heading) => {
+		heading.scrollIntoView({ block: 'start' })
+		// Back up to the end of the text of the box above, so that the button of the
+		// navigation, which stays in the top left corner of a phone, covers nothing.
+		const note = document.querySelector('.paperless-unified-search-note')
+		const gap = heading.getBoundingClientRect().top - note.getBoundingClientRect().bottom
+			+ parseFloat(getComputedStyle(note).paddingBottom)
+		let box = heading.parentElement
+		while (box !== document.scrollingElement && !['auto', 'scroll'].includes(getComputedStyle(box).overflowY)) {
+			box = box.parentElement
+		}
+		box.scrollBy(0, -gap)
+	})
+	await save(page, '09-admin-settings-mobile.png')
 	await page.context().close()
 }
 
@@ -565,6 +596,7 @@ try {
 		await settings(browser, admin, theme)
 	}
 	await phone(browser, reader)
+	await phoneSettings(browser, admin)
 	await animation(browser, reader)
 } finally {
 	await browser.close()

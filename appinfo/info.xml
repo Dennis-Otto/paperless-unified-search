@@ -44,9 +44,9 @@ The independent [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) 
 Documentation: <https://dennis-otto.github.io/paperless-unified-search/>
 ]]></description>
 	<description lang="de"><![CDATA[
-Volltextsuche in deinem Paperless-ngx-Archiv direkt in der Suchleiste von Nextcloud, ohne Elasticsearch, zweiten Index oder weiteren Container: Paperless antwortet, Nextcloud entscheidet, wer die Datei sieht.
+Volltextsuche im Paperless-ngx-Archiv direkt in der Suchleiste von Nextcloud, ohne Elasticsearch, zweiten Index oder weiteren Container: Paperless antwortet, Nextcloud entscheidet, wer die Datei sieht.
 
-Finde Rechnungen, Verträge, Briefe, Bescheide und beliebige Inhalte aus deinen Dokumenten und öffne die synchronisierte Datei im Viewer von Nextcloud — ohne Nextcloud zu verlassen.
+Rechnungen, Verträge, Briefe, Bescheide und beliebige Inhalte der Dokumente finden und die synchronisierte Datei im Viewer von Nextcloud öffnen — ohne Nextcloud zu verlassen.
 
 ### In Paperless suchen. In Nextcloud weiterarbeiten.
 

@@ -3,7 +3,14 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
+/*
+ * Rules that colour a paragraph start with the class of the settings: Nextcloud greys
+ * every paragraph of a section with `.section p`, which a single class doesn't outweigh.
+ */
 .paperless-unified-search-settings {
+	/* The icons of the messages, drawn in the colour of their text. */
+	--paperless-unified-search-icon-success: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='none' stroke='%23000' stroke-width='1.6'/%3E%3Cpath d='m4.8 8.3 2.2 2.2 4.3-4.6' fill='none' stroke='%23000' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.8'/%3E%3C/svg%3E");
+	--paperless-unified-search-icon-error: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='none' stroke='%23000' stroke-width='1.6'/%3E%3Cpath d='M8 4.4v4.4' stroke='%23000' stroke-linecap='round' stroke-width='1.8'/%3E%3Ccircle cx='8' cy='11.4' r='1.1'/%3E%3C/svg%3E");
 	max-width: 720px;
 }
 
@@ -13,22 +20,42 @@
 	margin-bottom: 4px;
 }
 
-/* A checkbox with its label on one line and its hint below, such as the local network. */
+/*
+ * A checkbox with its label on one line and its hint below the label, such as the
+ * local network: the long label wraps next to the box instead of below it.
+ */
 .paperless-unified-search-option {
-	margin-top: 20px;
+	align-items: center;
+	column-gap: 8px;
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	margin-block: 20px;
 }
 
-.paperless-unified-search-option input[type='checkbox'],
-.paperless-unified-search-option label {
-	display: inline-block;
+.paperless-unified-search-settings .paperless-unified-search-option input[type='checkbox'] {
+	accent-color: var(--color-primary-element, #00679e);
+	cursor: pointer;
+	height: 20px;
+	margin: 0;
+	min-height: 0;
+	padding: 0;
+	width: 20px;
 }
 
-.paperless-unified-search-option label {
-	margin-inline-start: 4px;
+.paperless-unified-search-settings .paperless-unified-search-option label {
+	cursor: pointer;
+	margin: 0;
 }
 
+.paperless-unified-search-settings .paperless-unified-search-option .settings-hint {
+	grid-column: 2;
+	margin: 4px 0 0;
+}
+
+/* Every field of text is as wide as the others, up to the width of a long URL. */
 .paperless-unified-search-settings input[type='url'],
-.paperless-unified-search-settings input[type='password'] {
+.paperless-unified-search-settings input[type='password'],
+.paperless-unified-search-settings input[type='text'] {
 	box-sizing: border-box;
 	max-width: 520px;
 	width: 100%;
@@ -38,12 +65,14 @@
  * A warning about a field, such as a token that can't be decrypted. It stays in the page
  * as the description of its field, empty and out of sight while all is well.
  */
-.paperless-unified-search-warning {
+.paperless-unified-search-settings .paperless-unified-search-warning {
 	color: var(--color-error-text, #b00020);
+	display: flex;
 	font-weight: 600;
+	gap: 6px;
 }
 
-.paperless-unified-search-warning:empty {
+.paperless-unified-search-settings .paperless-unified-search-warning:empty {
 	display: none;
 }
 
@@ -54,18 +83,70 @@
 	margin-top: 16px;
 }
 
+/*
+ * The message after an action: its icon in front and the text, which wraps next to it.
+ * Without a kind, it is empty and has no icon.
+ */
 .paperless-unified-search-status {
+	display: flex;
 	font-weight: 600;
+	gap: 6px;
 	min-height: 24px;
 	padding-top: 8px;
 }
 
-.paperless-unified-search-status--success {
+.paperless-unified-search-settings .paperless-unified-search-status--pending {
+	color: var(--color-main-text, #222);
+}
+
+.paperless-unified-search-settings .paperless-unified-search-status--success {
 	color: var(--color-success-text, #1b5e20);
 }
 
-.paperless-unified-search-status--error {
+.paperless-unified-search-settings .paperless-unified-search-status--error {
 	color: var(--color-error-text, #b00020);
+}
+
+.paperless-unified-search-settings .paperless-unified-search-status--success::before,
+.paperless-unified-search-settings .paperless-unified-search-status--error::before,
+.paperless-unified-search-settings .paperless-unified-search-warning::before {
+	background-color: currentColor;
+	content: '';
+	flex: none;
+	height: 16px;
+	margin-top: 0.2em;
+	mask: var(--paperless-unified-search-icon-error) center / contain no-repeat;
+	width: 16px;
+}
+
+.paperless-unified-search-settings .paperless-unified-search-status--success::before {
+	mask-image: var(--paperless-unified-search-icon-success);
+}
+
+/* A ring that turns while the server works, and stands still for reduced motion. */
+.paperless-unified-search-settings .paperless-unified-search-status--pending::before {
+	animation: paperless-unified-search-turn 0.9s linear infinite;
+	border: 2px solid currentColor;
+	border-inline-end-color: transparent;
+	border-radius: 50%;
+	box-sizing: border-box;
+	content: '';
+	flex: none;
+	height: 16px;
+	margin-top: 0.2em;
+	width: 16px;
+}
+
+@keyframes paperless-unified-search-turn {
+	to {
+		transform: rotate(1turn);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.paperless-unified-search-settings .paperless-unified-search-status--pending::before {
+		animation: none;
+	}
 }
 
 .paperless-unified-search-note {
@@ -79,7 +160,9 @@
 	margin: 4px 0 0;
 }
 
+/* The history lays out its table by its own width, which is narrow on a phone. */
 .paperless-unified-search-diagnostics {
+	container: paperless-unified-search-history / inline-size;
 	margin-top: 20px;
 }
 
@@ -95,6 +178,7 @@
 
 .paperless-unified-search-summary th,
 .paperless-unified-search-summary td {
+	overflow-wrap: anywhere;
 	padding: 2px 16px 2px 0;
 	text-align: start;
 	vertical-align: top;
@@ -105,7 +189,7 @@
 	font-weight: 600;
 }
 
-/* A fixed layout keeps the table within the section; the error takes the rest and wraps. */
+/* A fixed layout keeps the table within the section; the error takes the rest. */
 .paperless-unified-search-events {
 	border-collapse: collapse;
 	margin-bottom: 12px;
@@ -132,15 +216,57 @@
 	text-align: start;
 }
 
+/* A long word, such as the name of a host in an error, wraps in every cell. */
 .paperless-unified-search-events th,
 .paperless-unified-search-events td {
 	border-bottom: 1px solid var(--color-border, #ededed);
+	overflow-wrap: anywhere;
 	padding: 4px 8px 4px 0;
 	text-align: start;
 	vertical-align: top;
 	white-space: normal;
 }
 
-.paperless-unified-search-events td:nth-child(4) {
-	overflow-wrap: anywhere;
+/*
+ * Too narrow for five columns, such as on a phone, each problem is a card of its own and
+ * each cell names its column. The headings of the columns stay for screen readers, which
+ * the roles of the template keep reading the cards as a table, so they skip the names.
+ */
+@container paperless-unified-search-history (max-width: 600px) {
+	.paperless-unified-search-events,
+	.paperless-unified-search-events caption,
+	.paperless-unified-search-events tbody,
+	.paperless-unified-search-events tr {
+		display: block;
+	}
+
+	.paperless-unified-search-events thead {
+		clip-path: inset(50%);
+		height: 1px;
+		overflow: hidden;
+		position: absolute;
+		white-space: nowrap;
+		width: 1px;
+	}
+
+	.paperless-unified-search-events tr {
+		border: 1px solid var(--color-border, #ededed);
+		border-radius: var(--border-radius-large, 10px);
+		margin-bottom: 8px;
+		padding: 6px 12px;
+	}
+
+	.paperless-unified-search-events td {
+		border-bottom: 0;
+		column-gap: 12px;
+		display: grid;
+		grid-template-columns: minmax(5.5em, 30%) minmax(0, 1fr);
+		padding: 2px 0;
+	}
+
+	.paperless-unified-search-events td::before {
+		content: attr(data-label);
+		content: attr(data-label) / '';
+		font-weight: 600;
+	}
 }
