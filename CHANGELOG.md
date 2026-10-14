@@ -17,6 +17,26 @@ All notable changes to this project are documented in this file.
 
 - **A search that is still being typed in Paperless's advanced syntax finds the documents of its words in Paperless 3.** Since 0.5.1, Paperless 3 gets such a search, such as `invoice created:[2026 to`, in its simple mode, but with the unfinished range of dates, which no document matches, so it found nothing, as tests against a real Paperless-ngx 3.3 showed. Now the simple mode gets only the plain words, such as `invoice`, and finds their documents while you finish typing the range.
 
+## [1.0.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.5.1...v1.0.0) (2026-10-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* ask Paperless for version 9 of its API and test against real Paperless-ngx 2.20 and 3.x ([#147](https://github.com/Dennis-Otto/paperless-unified-search/issues/147))
+
+### Features
+
+* ask Paperless for version 9 of its API and test against real Paperless-ngx 2.20 and 3.x ([#147](https://github.com/Dennis-Otto/paperless-unified-search/issues/147)) ([ce8798e](https://github.com/Dennis-Otto/paperless-unified-search/commit/ce8798e0bf09af53a48af44b4aac98bd0bddee1f))
+* occ commands to set up, test and explain the search, and a setup check in the overview ([#138](https://github.com/Dennis-Otto/paperless-unified-search/issues/138)) ([4c135ed](https://github.com/Dennis-Otto/paperless-unified-search/commit/4c135ed5eef27cd9cd0a5c1468191dee6083bcc7))
+* **search:** let Nextcloud's date filter narrow Paperless results ([#154](https://github.com/Dennis-Otto/paperless-unified-search/issues/154)) ([ca9c1e6](https://github.com/Dennis-Otto/paperless-unified-search/commit/ca9c1e69d11ca1b6b8cf523651d01269b27cd3e4))
+* **search:** show a preview, the date in the user's language, the correspondent and the type of each document ([#143](https://github.com/Dennis-Otto/paperless-unified-search/issues/143)) ([6225a8a](https://github.com/Dennis-Otto/paperless-unified-search/commit/6225a8a1aa2c7131f267d7a3045edac866aadb25))
+* **settings:** 'Try a search' shows administrators why a document is hidden from a user ([#152](https://github.com/Dennis-Otto/paperless-unified-search/issues/152)) ([6f62d38](https://github.com/Dennis-Otto/paperless-unified-search/commit/6f62d38e20ef68023503b10daf4c34f60a83754e))
+
+
+### Documentation
+
+* release the app as 1.0.0, its first stable version ([#156](https://github.com/Dennis-Otto/paperless-unified-search/issues/156)) ([7de8969](https://github.com/Dennis-Otto/paperless-unified-search/commit/7de896971b0f63e510a1fb263bc3c5ed9a764aa1))
+
 ## [0.5.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.5.0...v0.5.1) (2026-10-14)
 
 ### Fixed
