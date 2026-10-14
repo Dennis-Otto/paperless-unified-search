@@ -33,6 +33,15 @@ final class PaperlessApiService {
 	private const SEARCH_FIELDS = 'id,title,created,correspondent,document_type,__search_hit__';
 
 	/**
+	 * The filter of Paperless for the documents of a day and later, by the date of the
+	 * document, as Y-m-d: the same in Paperless-ngx 2, where the date has a time, and 3.
+	 */
+	public const CREATED_FROM = 'created__date__gte';
+
+	/** The filter of Paperless for the documents of a day and earlier, by their date. */
+	public const CREATED_UNTIL = 'created__date__lte';
+
+	/**
 	 * The version of the API of Paperless that every request asks for. Without one,
 	 * Paperless answers in its default version, which a new release raises, as 3.0 did from
 	 * 9 to 10, and a new version may change the type of a field, as 9 did with created.
@@ -148,20 +157,23 @@ final class PaperlessApiService {
 	 * simple mode instead, which takes any input, with only its plain words: the simple
 	 * mode looks for every word it gets, and the field still being typed would match no
 	 * document. Paperless 2 never gets it: it ignores the parameter and would list all
-	 * documents.
+	 * documents. The filters narrow the documents in either mode; none of them replaces the
+	 * term, the page or the fields.
 	 *
+	 * @param array<string, string> $filters filters of Paperless on the documents, such as
+	 *                                       CREATED_FROM => '2026-08-01'
 	 * @return array{count: int, next: ?string, results: list<array<array-key, mixed>>}
 	 * @throws PaperlessQueryRejected when Paperless refuses the term or the page, which is
 	 *                                no problem of the search
 	 * @throws PaperlessRequestException when Paperless answers, but not with documents
 	 * @throws Throwable the error of a request without answer, as the history shows it
 	 */
-	public function searchDocuments(string $term, int $page, int $pageSize): array {
+	public function searchDocuments(string $term, int $page, int $pageSize, array $filters = []): array {
 		$parameters = [
 			'page' => max(1, $page),
 			'page_size' => max(1, min(50, $pageSize)),
 			'fields' => self::SEARCH_FIELDS,
-		];
+		] + $filters;
 		try {
 			[$documents, $version] = $this->search(['query' => $term] + $parameters, $term);
 		} catch (PaperlessQueryRejected $rejection) {

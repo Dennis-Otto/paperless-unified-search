@@ -630,6 +630,56 @@ final class PaperlessApiServiceTest extends TestCase {
 	}
 
 	/**
+	 * The filters of a search, such as the dates of Nextcloud's date filter, narrow the
+	 * documents of the advanced syntax and of the simple mode alike.
+	 */
+	public function testTheFiltersNarrowTheDocumentsInEitherModeOfTheSearch(): void {
+		$queries = [];
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options) use (&$queries): IResponse {
+			$queries[] = $options['query'];
+
+			return isset($options['query']['query'])
+				? $this->response(400, self::INVALID_DATE, self::PAPERLESS_3)
+				: $this->response(200, self::NO_DOCUMENTS, self::PAPERLESS_3);
+		});
+		$filters = [PaperlessApiService::CREATED_FROM => '2026-08-01', PaperlessApiService::CREATED_UNTIL => '2026-08-31'];
+
+		$this->service($client)->searchDocuments('invoice created:[2026 to', 3, 25, $filters);
+
+		self::assertSame([
+			['query' => 'invoice created:[2026 to', 'page' => 3, 'page_size' => 25, 'fields' => self::FIELDS, 'created__date__gte' => '2026-08-01', 'created__date__lte' => '2026-08-31'],
+			['text' => 'invoice', 'page' => 3, 'page_size' => 25, 'fields' => self::FIELDS, 'created__date__gte' => '2026-08-01', 'created__date__lte' => '2026-08-31'],
+		], $queries);
+	}
+
+	/**
+	 * A filter can neither replace the term nor the page, the size of a page or the fields,
+	 * which keep the answer small.
+	 */
+	public function testAFilterReplacesNoParameterOfTheSearch(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with('https://paperless.example.com/api/documents/', self::callback(static fn (array $options): bool => $options['query'] === [
+				'query' => 'invoice',
+				'page' => 2,
+				'page_size' => 25,
+				'fields' => self::FIELDS,
+				'created__date__gte' => '2026-08-01',
+			]))
+			->willReturn($this->response(200, self::NO_DOCUMENTS));
+
+		$this->service($client)->searchDocuments('invoice', 2, 25, [
+			'query' => 'everything',
+			'page' => '1',
+			'page_size' => '50',
+			'fields' => 'content',
+			'created__date__gte' => '2026-08-01',
+		]);
+	}
+
+	/**
 	 * @return array<string, array{string, string}>
 	 */
 	public static function wordsOfQueries(): array {

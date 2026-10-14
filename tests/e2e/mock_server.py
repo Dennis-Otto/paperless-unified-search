@@ -4,8 +4,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import json
+import operator
 import re
 import threading
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -30,6 +32,11 @@ VERSION_HEADERS = {"X-Version": "3.3.0", "X-Api-Version": "10"}
 # A range of dates whose end is still being typed, such as created:[2026 to, which
 # Paperless 3 refuses in its advanced syntax with HTTP 400 and the errors of the query.
 UNFINISHED_RANGE = re.compile(r"(\w+):\[([^\]\s]*)[^\]]*$")
+
+# Like Paperless, the mock narrows the documents by their date with these filters, each a
+# day as YYYY-MM-DD, which the app sends for the date filter of Nextcloud's search, and
+# refuses another value with HTTP 400.
+DATE_FILTERS = {"created__date__gte": operator.ge, "created__date__lte": operator.le}
 
 # Like Paperless, the mock sends only the fields of the documents that a request names,
 # and the excerpt of a search with them. Unlike Paperless, it refuses a request that names
@@ -210,6 +217,20 @@ class Handler(BaseHTTPRequestHandler):
             # documents of the first word that names some.
             words = parameters["text"][0].lower().split()
             results = next((documents_of(word) for word in words if documents_of(word)), [])
+
+        for name, keeps in DATE_FILTERS.items():
+            if name not in parameters:
+                continue
+            try:
+                day = datetime.strptime(parameters[name][0], "%Y-%m-%d").date()
+            except ValueError:
+                self._json(400, {name: ["Enter a valid date."]})
+                return
+            results = [
+                document
+                for document in results
+                if keeps(datetime.strptime(document["created"], "%Y-%m-%d").date(), day)
+            ]
 
         page = number(parameters, "page", 1)
         page_size = number(parameters, "page_size", DEFAULT_PAGE_SIZE)

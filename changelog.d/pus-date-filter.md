@@ -1,0 +1,3 @@
+### Added
+
+- **The date filter of Nextcloud's search now narrows Paperless results by document date.** Picking a span such as *Last 30 days* or a custom range in Nextcloud's search left the Paperless results out of the filtered list, under *Partial matches* and searched without the dates, so an invoice of last month could not be told from all the others. Now Paperless finds only the documents whose date lies within the span, counted in whole days in your timezone, and the results stay in the filtered list. Scripts and AI assistants that use Nextcloud's search API narrow the results the same way with `since` and `until`.
