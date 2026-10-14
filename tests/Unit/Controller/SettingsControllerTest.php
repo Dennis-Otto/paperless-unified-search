@@ -19,6 +19,7 @@ use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryAppConfig;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -569,11 +570,12 @@ final class SettingsControllerTest extends TestCase {
 	}
 
 	public function testClearDiagnosticsForgetsTheHistoryOnly(): void {
-		$deleted = [];
-		$config = $this->createMock(IAppConfig::class);
-		$config->method('deleteKey')->willReturnCallback(static function (string $app, string $key) use (&$deleted): void {
-			$deleted[] = $app . '.' . $key;
-		});
+		$config = new MemoryAppConfig([
+			AppConstants::APP_ID . '.paperless_url' => self::STORED_URL,
+			AppConstants::APP_ID . '.always_search' => true,
+			AppConstants::APP_ID . '.last_failure' => '{"time":1791500000}',
+		]);
+		$config->seed(AppConstants::APP_ID, 'diagnostics', ['since' => 1791500000, 'failed' => 1, 'retried' => 0, 'lastFailureAt' => 1791500000, 'recoveredAt' => null, 'events' => []], true);
 		$credentials = $this->createMock(ICredentialsManager::class);
 		$credentials->expects(self::never())->method('delete');
 
@@ -585,7 +587,13 @@ final class SettingsControllerTest extends TestCase {
 			AppConstants::APP_ID . '.diagnostics',
 			AppConstants::APP_ID . '.last_failure',
 			AppConstants::APP_ID . '.last_recovery',
-		], $deleted);
+		], $config->calls('deleteKey'));
+		// The settings stay; no failure waits for a search that works any more.
+		self::assertSame([
+			'paperless_url' => self::STORED_URL,
+			'always_search' => true,
+			'diagnostics_pending' => false,
+		], $config->storedValues(AppConstants::APP_ID));
 	}
 
 	/**

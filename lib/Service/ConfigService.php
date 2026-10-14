@@ -99,10 +99,17 @@ final class ConfigService {
 		return $this->accountId($owner !== '' ? $owner : $this->getSyncAccount());
 	}
 
+	/**
+	 * The archive account as the settings store it, '' for the account of Paperless Sync,
+	 * which occ and the setup check name when that account doesn't exist.
+	 */
 	public function getArchiveOwnerSetting(): string {
 		return trim($this->config->getValueString(AppConstants::APP_ID, self::ARCHIVE_OWNER_KEY, ''));
 	}
 
+	/**
+	 * The account that Paperless Sync writes the archive with, as it stores the ID.
+	 */
 	public function getSyncAccount(): string {
 		return trim($this->config->getValueString(self::SYNC_APP_ID, self::SYNC_ACCOUNT_KEY, ''));
 	}

@@ -58,6 +58,8 @@ trait FileCache {
 	private function finds(ISearchOperator $operator, string $name): bool {
 		if ($operator instanceof ISearchBinaryOperator) {
 			self::assertSame(ISearchBinaryOperator::OPERATOR_OR, $operator->getType());
+			// Nextcloud's own operators hold their conditions as a list.
+			self::assertTrue(array_is_list($operator->getArguments()), 'The conditions of the search are no list.');
 			foreach ($operator->getArguments() as $argument) {
 				if ($this->finds($argument, $name)) {
 					return true;

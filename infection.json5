@@ -1,0 +1,127 @@
+// The mutation tests of the app: Infection changes the code of lib/ in small ways, one
+// mutant at a time, and runs the unit tests against each. A mutant that no test notices
+// is a gap in the tests, or a change that makes no difference, an equivalent mutant,
+// which this file lists. The weekly Mutation workflow runs them with this file; locally,
+// with PHP 8.3 or newer and pcov or Xdebug:  php infection.phar --threads=max
+// See "Mutation tests" in README.md.
+{
+  "$schema": "https://raw.githubusercontent.com/infection/infection/0.35.6/resources/schema.json",
+  // The classes of Nextcloud that the app uses come from the bootstrap of the unit tests.
+  "bootstrap": "tests/bootstrap.php",
+  "source": {"directories": ["lib"]},
+  "timeout": 30,
+  "logs": {
+    "text": "build/infection.log",
+    "summary": "build/infection-summary.log",
+    "json": "build/infection.json"
+  },
+  // Every mutant of the code that the tests run is noticed, or listed below.
+  "minCoveredMsi": 100,
+  "mutators": {
+    "@default": true,
+    // The equivalent mutants, each ignored by the line of code that it changes: a change
+    // of that line brings it back for review. A regex matches the whole line.
+    "Break_": {
+      "ignoreSourceCodeByRegex": [
+        // Once the page is full, continue skips each hit that is left as break does: the
+        // condition stays true, and the count of the hits gone through comes after it.
+        "break;"
+      ]
+    },
+    "CastFloat": {
+      "ignoreSourceCodeByRegex": [
+        // PHP subtracts the numeric strings of format('U.u') as floats, with a cast or without.
+        "\\$seconds = \\(float\\)\\$this->timeFactory->now\\(\\)->format\\('U\\.u'\\) - \\(float\\)\\$since->format\\('U\\.u'\\);"
+      ]
+    },
+    "CastInt": {
+      "ignoreSourceCodeByRegex": [
+        // The digits of a marker are the same key of an array as their number.
+        "\\$documentId = \\(int\\)\\$digits;",
+        // A count from the cache is numeric there, and compares with 0 as a number either way.
+        "if \\(\\$cache === null \\|\\| !is_numeric\\(\\$count\\) \\|\\| \\(int\\)\\$count <= 0\\) \\{"
+      ]
+    },
+    "CastString": {
+      "ignoreSourceCodeByRegex": [
+        // The status goes into the translated text as %s, which writes a number the same way.
+        "\\$status = \\(string\\)\\$exception->status;"
+      ]
+    },
+    "DecrementInteger": {
+      // A count below 0 adds nothing to the history, which adds max(0, count).
+      "ignore": ["OCA\\PaperlessUnifiedSearch\\Service\\SearchDiagnostics::takeCount"],
+      "ignoreSourceCodeByRegex": [
+        // Every search sends its page, so the default for a missing one never counts.
+        "\\$page = \\$query\\['page'\\] \\?\\? 1;"
+      ]
+    },
+    "FalseValue": {
+      "ignoreSourceCodeByRegex": [
+        // Every way out of the loop sets $more before it is read.
+        "\\$more = false;",
+        // true is no array either, and fails the URL as false does.
+        "\\$parts = .* \\? parse_url\\(\\$normalizedUrl\\) : false;"
+      ]
+    },
+    "IncrementInteger": {
+      "ignoreSourceCodeByRegex": [
+        // Every search sends its page, so the default for a missing one never counts.
+        "\\$page = \\$query\\['page'\\] \\?\\? 1;"
+      ]
+    },
+    "LessThan": {
+      "ignoreSourceCodeByRegex": [
+        // Two nodes of the same path are the same file.
+        "&& \\(!isset\\(\\$found\\[\\$documentId\\]\\) \\|\\| strcmp\\(\\$path, \\$found\\[\\$documentId\\]\\[0\\]\\) < 0\\)\\) \\{"
+      ]
+    },
+    "LessThanOrEqualTo": {
+      "ignoreSourceCodeByRegex": [
+        // A count of 0 takes 0 from the cache and adds 0 to the history, as no count does.
+        "if \\(\\$cache === null \\|\\| !is_numeric\\(\\$count\\) \\|\\| \\(int\\)\\$count <= 0\\) \\{"
+      ]
+    },
+    "LogicalOr": {
+      "ignoreSourceCodeByRegex": [
+        // Without a cache the count is null, and a count that isn't numeric is 0 as a
+        // number: each condition alone gives 0 for every value that inc() leaves.
+        "if \\(\\$cache === null \\|\\| !is_numeric\\(\\$count\\) \\|\\| \\(int\\)\\$count <= 0\\) \\{"
+      ]
+    },
+    "MBString": {
+      "ignoreSourceCodeByRegex": [
+        // A secret that holds another one has more letters and more bytes than it, so both
+        // orders put it first; of secrets that only overlap, either order leaves a part of one.
+        "usort\\(\\$cleaned, static fn \\(string \\$first, string \\$second\\): int => mb_strlen\\(\\$second\\) <=> mb_strlen\\(\\$first\\)\\);"
+      ]
+    },
+    "MethodCallRemoval": {
+      "ignoreSourceCodeByRegex": [
+        // Nextcloud's base class keeps the name of the app and the request for its
+        // dispatcher, which the unit tests don't run; the controller reads neither.
+        "parent::__construct\\(\\$appName, \\$request\\);"
+      ]
+    },
+    "NullSafePropertyCall": {
+      "ignoreSourceCodeByRegex": [
+        // ?? reads a property of null as null, without a warning.
+        "'paperless(Api)?Version' => \\$this->paperlessVersion\\?->(version|apiVersion) \\?\\? '',"
+      ]
+    },
+    "UnwrapArrayValues": {
+      "ignoreSourceCodeByRegex": [
+        // The search for each marker goes through them in a loop, whatever their keys.
+        ": \\$this->searchEach\\(\\$userFolder, array_values\\(\\$markers\\)\\);",
+        // Spreading an array with keys of numbers numbers them anew.
+        "\\$nodes = \\[\\.\\.\\.\\$nodes, \\.\\.\\.array_values\\(\\$userFolder->search\\(\\$marker\\)\\)\\];"
+      ]
+    },
+    "UnwrapLtrim": {
+      "ignoreSourceCodeByRegex": [
+        // The name of a file holds no slash.
+        "return '/' \\. ltrim\\(\\$file->getName\\(\\), '/'\\);"
+      ]
+    }
+  }
+}

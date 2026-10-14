@@ -144,13 +144,13 @@ final class PaperlessApiService {
 			'fields' => self::SEARCH_FIELDS,
 		];
 		try {
-			[$documents, $version] = $this->search(['query' => $term] + $parameters);
+			[$documents, $version] = $this->search(['query' => $term] + $parameters, $term);
 		} catch (PaperlessQueryRejected $rejection) {
 			if (!$rejection->allowsSimpleSearch() || mb_strlen($term) > self::LONGEST_TERM) {
 				throw $rejection;
 			}
 
-			[$documents, $version] = $this->search(['text' => $term] + $parameters);
+			[$documents, $version] = $this->search(['text' => $term] + $parameters, $term);
 		}
 		$this->configService->rememberPaperlessVersion($version);
 
@@ -159,14 +159,16 @@ final class PaperlessApiService {
 
 	/**
 	 * @param array<string, int|string> $query
+	 * @param string $term the term of the query, which the history must not show
 	 * @return array{array{count: int, next: ?string, results: list<array<array-key, mixed>>}, ?PaperlessVersion}
 	 */
-	private function search(array $query): array {
+	private function search(array $query, string $term): array {
 		[$data, $version] = $this->requestDocuments(
 			$this->configService->getUrl(),
 			$this->configService->getToken(),
 			$this->configService->isLocalNetworkAllowed(),
 			$query,
+			$term,
 		);
 
 		return [self::documentsOf($data), $version];
@@ -182,10 +184,11 @@ final class PaperlessApiService {
 	 * version of Paperless that it names.
 	 *
 	 * @param array<string, int|string> $query
+	 * @param string $term the term of a search, which the history must not show
 	 * @return array{array{results: array<array-key, mixed>, ...<array-key, mixed>}, ?PaperlessVersion}
 	 * @throws PaperlessRequestException when Paperless answers, but not with documents
 	 */
-	private function requestDocuments(string $url, string $token, bool $allowLocal, array $query): array {
+	private function requestDocuments(string $url, string $token, bool $allowLocal, array $query, string $term = ''): array {
 		if ($url === '' || $token === '') {
 			throw new UnexpectedValueException('Paperless is not configured.');
 		}
@@ -205,7 +208,7 @@ final class PaperlessApiService {
 				'query' => $query,
 				'nextcloud' => ['allow_local_address' => $allowLocal],
 			] + ($allowLocal ? ['allow_redirects' => false] : []),
-			[$token, (string)($query['query'] ?? $query['text'] ?? '')],
+			[$token, $term],
 		);
 
 		$statusCode = $response->getStatusCode();
@@ -219,7 +222,7 @@ final class PaperlessApiService {
 		}
 
 		try {
-			$data = json_decode($body, true, 512, JSON_THROW_ON_ERROR);
+			$data = json_decode($body, true, flags: JSON_THROW_ON_ERROR);
 		} catch (JsonException $error) {
 			// A page of HTML, such as the login page of a proxy or another service.
 			throw PaperlessRequestException::notPaperless('Paperless returned no JSON: ' . $error->getMessage(), $error);
@@ -293,7 +296,8 @@ final class PaperlessApiService {
 			return new PaperlessQueryRejected($status, PaperlessVersion::fromResponse($response));
 		}
 
-		if ($searches && $status === 404 && (int)($query['page'] ?? 1) > 1) {
+		$page = $query['page'] ?? 1;
+		if ($searches && $status === 404 && $page > 1) {
 			return new PaperlessQueryRejected($status);
 		}
 
@@ -308,7 +312,7 @@ final class PaperlessApiService {
 		$body = $response->getBody();
 		try {
 			/** @psalm-suppress MixedAssignment Only its shape counts, which is checked below. */
-			$data = is_string($body) ? json_decode($body, true, 512, JSON_THROW_ON_ERROR) : null;
+			$data = is_string($body) ? json_decode($body, true, flags: JSON_THROW_ON_ERROR) : null;
 		} catch (JsonException) {
 			return false;
 		}

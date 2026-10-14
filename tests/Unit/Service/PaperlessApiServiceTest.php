@@ -18,13 +18,13 @@ use OCA\PaperlessUnifiedSearch\Exception\RequestFailure;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryAppConfig;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Http\Client\IClient;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
 use OCP\Http\Client\LocalServerException;
-use OCP\IAppConfig;
 use OCP\ICacheFactory;
 use OCP\IUserManager;
 use OCP\Security\ICredentialsManager;
@@ -42,17 +42,20 @@ final class PaperlessApiServiceTest extends TestCase {
 	/** The headers of an answer of Paperless 3.3.0, as it names its version. */
 	private const PAPERLESS_3 = ['X-Version' => '3.3.0', 'X-Api-Version' => '10'];
 	private const PAPERLESS_2 = ['X-Version' => '2.20.13', 'X-Api-Version' => '9'];
+	/** The keys of the version of Paperless and of its API, as the app stores them. */
+	private const VERSION_KEYS = [AppConstants::APP_ID . '.paperless_version', AppConstants::APP_ID . '.paperless_api_version'];
 	/** How Paperless 3.3.0 refuses the query created:[2026 to, measured. */
 	private const INVALID_DATE = '{"query":["Invalid date value \'[2026\' for field \'created\'."]}';
 
-	/** @var array<string, mixed> the values of the app, by key */
-	private array $stored = [];
-
-	/** @var list<string> the keys of the strings that the app wrote, in their order */
-	private array $written = [];
+	/** The configuration of the apps, with the settings and what the app stores. */
+	private MemoryAppConfig $config;
 
 	/** @var list<float> the seconds that the clock reads one after the other, before it stands still at NOW */
 	private array $readings = [];
+
+	protected function setUp(): void {
+		$this->config = new MemoryAppConfig();
+	}
 
 	/**
 	 * @return array<string, array{string, ?string, bool}>
@@ -172,7 +175,7 @@ final class PaperlessApiServiceTest extends TestCase {
 		} catch (Throwable $exception) {
 			self::assertSame($error, $exception);
 		}
-		self::assertArrayNotHasKey('diagnostics', $this->stored);
+		self::assertNull($this->history());
 	}
 
 	/**
@@ -252,6 +255,24 @@ final class PaperlessApiServiceTest extends TestCase {
 	}
 
 	/**
+	 * @return array<string, array{int}>
+	 */
+	public static function successfulStatuses(): array {
+		return [
+			'OK' => [200],
+			'the last status of success' => [299],
+		];
+	}
+
+	#[DataProvider('successfulStatuses')]
+	public function testEveryStatusOfSuccessBringsTheDocuments(int $status): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response($status, '{"count":1,"next":null,"results":[{"id":7}]}'));
+
+		self::assertSame(['count' => 1, 'next' => null, 'results' => [['id' => 7]]], $this->service($client)->searchDocuments('invoice', 1, 10));
+	}
+
+	/**
 	 * @return array<string, array{string, ?string}>
 	 */
 	public static function missingSettings(): array {
@@ -278,6 +299,7 @@ final class PaperlessApiServiceTest extends TestCase {
 	public static function failures(): array {
 		return [
 			'informational status' => [100, self::NO_DOCUMENTS, RequestFailure::Http, 100, 'Paperless returned HTTP 100.'],
+			'multiple choices' => [300, self::NO_DOCUMENTS, RequestFailure::Redirect, 300, 'Paperless returned HTTP 300.'],
 			'redirect' => [302, '', RequestFailure::Redirect, 302, 'Paperless returned HTTP 302.'],
 			'permanent redirect' => [301, '', RequestFailure::Redirect, 301, 'Paperless returned HTTP 301.'],
 			'refused token' => [401, '{"detail":"Invalid token."}', RequestFailure::Unauthorized, 401, 'Paperless returned HTTP 401.'],
@@ -422,7 +444,7 @@ final class PaperlessApiServiceTest extends TestCase {
 			['count' => 1, 'next' => null, 'results' => [['id' => 7]]],
 			$this->service($client)->searchDocuments('invoice', 1, 10),
 		);
-		self::assertSame(1, $this->stored['diagnostics']['retried'] ?? null);
+		self::assertSame(1, $this->history()['retried'] ?? null);
 	}
 
 	public function testARequestWithoutAnswerGetsASecondTry(): void {
@@ -443,10 +465,10 @@ final class PaperlessApiServiceTest extends TestCase {
 			['count' => 1, 'next' => null, 'results' => [['id' => 7]]],
 			$this->service($client)->searchDocuments('invoice', 1, 10),
 		);
-		self::assertSame(1, $this->stored['diagnostics']['retried'] ?? null);
+		self::assertSame(1, $this->history()['retried'] ?? null);
 		self::assertSame(
 			'cURL error 28: Connection timed out after 3001 milliseconds for https://paperless.example.com/api/documents/',
-			$this->stored['diagnostics']['events'][0]['message'] ?? null,
+			$this->history()['events'][0]['message'] ?? null,
 		);
 	}
 
@@ -466,7 +488,7 @@ final class PaperlessApiServiceTest extends TestCase {
 			self::assertSame('cURL error 7: Failed to connect', $exception->getMessage());
 		}
 		// The search that fails records the failure, not the request.
-		self::assertArrayNotHasKey('diagnostics', $this->stored);
+		self::assertNull($this->history());
 	}
 
 	public function testAnAnswerOfPaperlessGetsNoSecondTry(): void {
@@ -498,15 +520,27 @@ final class PaperlessApiServiceTest extends TestCase {
 		} catch (RuntimeException $exception) {
 			self::assertSame($error, $exception);
 		}
-		self::assertArrayNotHasKey('diagnostics', $this->stored);
+		self::assertNull($this->history());
+	}
+
+	/**
+	 * @return array<string, array{float}>
+	 */
+	public static function failuresWithinTheTimeToConnect(): array {
+		return [
+			'3498.7 milliseconds' => [3.4987],
+			'3499.2 milliseconds' => [3.4992],
+		];
 	}
 
 	/**
 	 * A request that fails within the time to connect, and half a second to spare, never
-	 * reached Paperless, and gets its second try (#128).
+	 * reached Paperless, and gets its second try (#128). Its duration counts to the
+	 * nearest millisecond, as the history notes it.
 	 */
-	public function testARequestThatFailsWithinTheTimeToConnectGetsASecondTry(): void {
-		$this->readings = [self::NOW, self::NOW + 3.499];
+	#[DataProvider('failuresWithinTheTimeToConnect')]
+	public function testARequestThatFailsWithinTheTimeToConnectGetsASecondTry(float $seconds): void {
+		$this->readings = [self::NOW, self::NOW + $seconds];
 		$calls = 0;
 		$client = $this->createMock(IClient::class);
 		$client->expects(self::exactly(2))
@@ -521,8 +555,8 @@ final class PaperlessApiServiceTest extends TestCase {
 
 		$this->service($client)->searchDocuments('invoice', 1, 10);
 
-		self::assertSame(1, $this->stored['diagnostics']['retried'] ?? null);
-		self::assertSame(3499, $this->stored['diagnostics']['events'][0]['durationMs'] ?? null);
+		self::assertSame(1, $this->history()['retried'] ?? null);
+		self::assertSame(3499, $this->history()['events'][0]['durationMs'] ?? null);
 	}
 
 	/**
@@ -542,7 +576,7 @@ final class PaperlessApiServiceTest extends TestCase {
 
 		$this->service($client)->searchDocuments('invoice', 1, 10);
 
-		self::assertSame('Token … refused for … at host', $this->stored['diagnostics']['events'][0]['message'] ?? null);
+		self::assertSame('Token … refused for … at host', $this->history()['events'][0]['message'] ?? null);
 	}
 
 	/**
@@ -591,7 +625,7 @@ final class PaperlessApiServiceTest extends TestCase {
 			['query' => 'created:[2026 to', 'page' => 2, 'page_size' => 25, 'fields' => self::FIELDS],
 			['text' => 'created:[2026 to', 'page' => 2, 'page_size' => 25, 'fields' => self::FIELDS],
 		], $queries);
-		self::assertArrayNotHasKey('diagnostics', $this->stored);
+		self::assertNull($this->history());
 	}
 
 	/**
@@ -610,7 +644,7 @@ final class PaperlessApiServiceTest extends TestCase {
 
 		$this->service($client)->searchDocuments('created:[2026 to', 1, 25);
 
-		self::assertSame('cURL error 7: Failed to connect for …', $this->stored['diagnostics']['events'][0]['message'] ?? null);
+		self::assertSame('cURL error 7: Failed to connect for …', $this->history()['events'][0]['message'] ?? null);
 	}
 
 	/**
@@ -792,8 +826,8 @@ final class PaperlessApiServiceTest extends TestCase {
 		$status = $this->service($client, 'http://paperless:8000', 'TEST_VALUE', true)->probeTheSettings();
 
 		self::assertSame(0, $status->documents);
-		self::assertSame(['paperless_version', 'paperless_api_version'], $this->written);
-		self::assertSame('3.3.0', $this->stored['paperless_version']);
+		self::assertSame(self::VERSION_KEYS, $this->config->calls('setValueString'));
+		self::assertSame('3.3.0', $this->config->stored(AppConstants::APP_ID, 'paperless_version'));
 	}
 
 	/**
@@ -810,17 +844,17 @@ final class PaperlessApiServiceTest extends TestCase {
 
 		$service->searchDocuments('invoice', 1, 10);
 		$service->searchDocuments('invoice', 1, 10);
-		self::assertSame(['paperless_version', 'paperless_api_version'], $this->written);
-		self::assertSame('2.20.13', $this->stored['paperless_version']);
+		self::assertSame(self::VERSION_KEYS, $this->config->calls('setValueString'));
+		self::assertSame('2.20.13', $this->config->stored(AppConstants::APP_ID, 'paperless_version'));
 
 		$headers = self::PAPERLESS_3;
 		$service->searchDocuments('invoice', 1, 10);
 		$headers = [];
 		$service->searchDocuments('invoice', 1, 10);
 
-		self::assertCount(4, $this->written);
-		self::assertSame('3.3.0', $this->stored['paperless_version']);
-		self::assertSame('10', $this->stored['paperless_api_version']);
+		self::assertSame([...self::VERSION_KEYS, ...self::VERSION_KEYS], $this->config->calls('setValueString'));
+		self::assertSame('3.3.0', $this->config->stored(AppConstants::APP_ID, 'paperless_version'));
+		self::assertSame('10', $this->config->stored(AppConstants::APP_ID, 'paperless_api_version'));
 	}
 
 	/**
@@ -856,30 +890,9 @@ final class PaperlessApiServiceTest extends TestCase {
 		bool $allowLocal = false,
 		?IAppManager $appManager = null,
 	): PaperlessApiService {
-		$this->stored['paperless_url'] = $url;
-		$config = $this->createStub(IAppConfig::class);
-		$config->method('getValueString')->willReturnCallback(function (string $app, string $key, string $default = ''): string {
-			$value = $this->stored[$key] ?? $default;
-
-			return is_string($value) ? $value : $default;
-		});
-		$config->method('setValueString')->willReturnCallback(function (string $app, string $key, string $value): bool {
-			$this->stored[$key] = $value;
-			$this->written[] = $key;
-
-			return true;
-		});
-		$config->method('getValueBool')->willReturn($allowLocal);
-		$config->method('setValueArray')->willReturnCallback(function (string $app, string $key, array $value): bool {
-			$this->stored[$key] = $value;
-
-			return true;
-		});
-		$config->method('getValueArray')->willReturnCallback(function (string $app, string $key, array $default): array {
-			$value = $this->stored[$key] ?? $default;
-
-			return is_array($value) ? $value : $default;
-		});
+		$config = $this->config
+			->seed(AppConstants::APP_ID, 'paperless_url', $url)
+			->seed(AppConstants::APP_ID, 'allow_local', $allowLocal);
 
 		$credentials = $this->createStub(ICredentialsManager::class);
 		$credentials->method('retrieve')->willReturn($token);
@@ -908,6 +921,17 @@ final class PaperlessApiServiceTest extends TestCase {
 			$clock,
 			$appManager,
 		);
+	}
+
+	/**
+	 * The history of the diagnostics as the app stored it, or null while it stored none.
+	 *
+	 * @return ?array<array-key, mixed>
+	 */
+	private function history(): ?array {
+		$history = $this->config->stored(AppConstants::APP_ID, 'diagnostics');
+
+		return is_array($history) ? $history : null;
 	}
 
 	/**
