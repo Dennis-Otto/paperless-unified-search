@@ -94,20 +94,37 @@ MOBILE_DOCUMENTS = [
         "id": 123,
         "title": "Mobile viewer test",
         "created": "2026-08-26",
+        "correspondent": 7,
+        "document_type": 3,
         "content": "Synthetic OCR mobiletest result. " * 1000,
         "notes": [],
         "__search_hit__": {
-            "highlights": "Synthetic OCR <b>mobiletest</b> result for O&#x27;Brien &amp; &quot;Sons&quot; &lt;GmbH&gt;"
+            "highlights": "Synthetic OCR <b>mobiletest</b> result for O&#x27;Brien &amp; &quot;Sons&quot; &lt;GmbH&gt;",
+            "note_highlights": None,
         },
     },
     {
         "id": 999,
         "title": "Inaccessible document",
         "created": "2026-08-25",
+        "correspondent": 9,
         "content": "Synthetic OCR text of a document no file stands for. " * 1000,
         "notes": [],
     },
 ]
+
+# The names of the correspondents and the types of the documents above, which the app
+# asks for by their IDs, as Paperless lists them: /api/correspondents/?id__in=3,5.
+LISTS = {
+    "/api/correspondents/": {
+        3: "Northstar Energy",
+        4: "Fiberlink",
+        5: "Harbor Mutual",
+        7: "Example Mobile",
+        9: "Hidden correspondent",
+    },
+    "/api/document_types/": {1: "Bill", 2: "Insurance", 3: "Letter"},
+}
 
 API_PATH = "/api/documents/"
 
@@ -153,7 +170,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"status": "ok"})
             return
 
-        if parsed.path != API_PATH:
+        if parsed.path != API_PATH and parsed.path not in LISTS:
             self._json(404, {"detail": "Not found"})
             return
 
@@ -163,6 +180,10 @@ class Handler(BaseHTTPRequestHandler):
 
         self.versioned = True
         parameters = parse_qs(parsed.query)
+        if parsed.path in LISTS:
+            self._list(LISTS[parsed.path], parameters)
+            return
+
         fields = set(parameters.get("fields", [""])[0].split(",")) - {""}
         if not fields:
             self._json(400, {"detail": "Name the fields of the documents to send."})
@@ -210,6 +231,27 @@ class Handler(BaseHTTPRequestHandler):
                 ],
             },
         )
+
+    def _list(self, names, parameters):
+        """A page of a list of Paperless, such as its correspondents, with every field of an
+        object as Paperless sends them, filtered by the IDs of id__in."""
+        wanted = {int(value) for value in parameters.get("id__in", [""])[0].split(",") if value.isdigit()}
+        results = [
+            {
+                "id": object_id,
+                "slug": name.lower().replace(" ", "-"),
+                "name": name,
+                "match": "",
+                "matching_algorithm": 1,
+                "is_insensitive": True,
+                "document_count": 1,
+                "owner": 2,
+                "user_can_change": True,
+            }
+            for object_id, name in sorted(names.items())
+            if object_id in wanted
+        ]
+        self._json(200, {"count": len(results), "next": None, "previous": None, "results": results})
 
     def _link(self, query, page):
         """The link of another page of this search, as Paperless writes it: the absolute URL

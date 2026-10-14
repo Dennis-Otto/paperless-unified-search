@@ -23,9 +23,10 @@ import {
 const USER = process.env.E2E_SEARCH_USER ?? 'e2e-user'
 const TERM = 'mobiletest'
 const TITLE = 'Mobile viewer test'
-// The date of the document and its excerpt, which Paperless sends marked up and escaped
-// as HTML, as text.
-const SUBLINE = '2026-08-26 · Synthetic OCR mobiletest result for O\'Brien & "Sons" <GmbH>'
+// The date of the document in the language of the user, its correspondent and its type,
+// and its excerpt, which Paperless sends marked up and escaped as HTML, as text without
+// a tag.
+const SUBLINE = 'Aug 26, 2026 · Example Mobile · Letter — Synthetic OCR mobiletest result for O\'Brien & "Sons" < GmbH>'
 // The name of the result, as a screen reader reads it.
 const RESULT = `${TITLE} ${SUBLINE}`
 const FILE = 'Mobile viewer test [P123].pdf'

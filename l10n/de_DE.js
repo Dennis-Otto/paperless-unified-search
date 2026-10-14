@@ -3,6 +3,7 @@ OC.L10N.register(
 	{
 		'Paperless Unified Search': 'Paperless Unified Search',
 		'Paperless documents': 'Paperless-Dokumente',
+		'Note: %s': 'Notiz: %s',
 		'Use Paperless-ngx OCR and full-text search from Nextcloud. Results open the matching synchronized file in Nextcloud.': 'Nutzen Sie die OCR- und Volltextsuche von Paperless-ngx direkt in Nextcloud. Treffer öffnen die passende synchronisierte Datei in Nextcloud.',
 		'Paperless URL': 'Paperless-URL',
 		'Paperless runs in my local network': 'Paperless läuft in meinem lokalen Netzwerk',

@@ -171,7 +171,8 @@ On a phone, the settings fit the screen, and each problem of the search is a car
 3. The app maps each Paperless document ID to a synchronized file of the archive account whose name contains the unique marker `[P<ID>]`, for example `[P123]`, with one search of Nextcloud's file cache for all documents of a page. The archive account is the one that owns the synchronized files: the account of Paperless Sync, or the one of the settings.
 4. A result is returned only if the current Nextcloud user can access that file: the archive account itself, or a user it shared the file with. A file with the marker in its name that belongs to another account stands for no document.
 5. A page of results holds as many results as Nextcloud asks for while Paperless has more: when documents that the user can't open rank first, the app asks Paperless for its next pages, up to four pages of 25 hits per search, so that Paperless results still show and **Load more results** keeps working.
-6. Selecting a result opens the synchronized file in Nextcloud, not Paperless. Browsers use Nextcloud's
+6. Each result shows the preview of its file, or the icon of its type, and below its title the date of the document in the language of the user, its correspondent, its type and the words around the term, as [What a result shows](#what-a-result-shows) describes.
+7. Selecting a result opens the synchronized file in Nextcloud, not Paperless. Browsers use Nextcloud's
    `/f/{fileId}` viewer route. The official iOS app receives its native `nextcloud://open-file` deep link,
    while Android receives the file ID and user-relative path required by its in-app viewer.
 
@@ -230,7 +231,7 @@ The search needs one thing from a synchronization: each document of Paperless-ng
 
 ## Configuration
 
-1. Create a dedicated Paperless account with the minimum read permissions required for document search.
+1. Create a dedicated Paperless account with the minimum read permissions required for document search: to view the documents, and to view the correspondents and the document types, whose names the results show.
 2. Create an API token for that account.
 3. In Nextcloud, open **Administration settings → Paperless Unified Search**.
 4. Enter the Paperless base URL and API token.
@@ -311,6 +312,19 @@ Open Nextcloud's global search, enable **Search connected services**, and select
 
 Documents without a synchronized `[P<ID>]` file of the archive account are intentionally omitted. This also keeps Inbox-only documents out of Nextcloud search when the synchronization process does not export them.
 
+### What a result shows
+
+Each result shows the preview of its file, as the results of *Files* do, or else the icon of the type of the file. Below its title, a line names the date of the document in your language, such as *Aug 12, 2026* in English and *12.08.2026* in German, its correspondent and its type, and then the words around the term that Paperless found. When only a note of the document matched, as for `notes:transfer`, the line shows *Note:* and the words of the note.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/what-a-result-shows.dark.svg">
+  <img src="docs/images/diagrams/what-a-result-shows.svg" alt="What a result shows: The search of Paperless-ngx sends the title of document 412, its date 2026-08-12, the IDs of its correspondent and its type, 3 and 1, and the words around the term. Paperless names correspondent 3 Northstar Energy and type 1 Bill, with one request per kind for all documents of the page, which the app keeps for ten minutes. The file of the document in Nextcloud gives the preview, when Nextcloud draws previews of its type, or else the icon of the type, as the search of files shows them. The result shows that picture, the title Electricity invoice - August 2026, and below it Aug 12, 2026 · Northstar Energy · Bill — Invoice E-2026-0812. Total due 84.30 EUR by September 2, with the date in the language of the user, such as 12.08.2026 in German.">
+</picture>
+
+- **Preview.** Nextcloud draws previews of images and office documents, but of PDF files only once an administrator turns them on, as its [documentation of previews](https://docs.nextcloud.com/server/latest/admin_manual/configuration_files/previews_configuration.html) describes. Until then a result shows the icon of PDF files, as the results of *Files* do.
+- **Correspondent and type.** Paperless sends them as numbers. The app asks Paperless for their names with one request for all correspondents and one for all types of a page, and keeps the names for ten minutes, so a name changed in Paperless shows in the results within ten minutes. When the account of the API token may not view correspondents or types, or Paperless doesn't answer in time, the results show without them, and the search works as before.
+- **Text.** The words around the term come as Paperless marks them up, and the result shows them as plain text. Text of a document in angle brackets, such as `<GmbH>`, shows with a space after `<`, as `< GmbH>`, so that no part of a result can ever act as HTML.
+
 ### In Talk, Text, Deck and Mail
 
 Nextcloud's smart picker finds Paperless documents too, wherever you write: type `/` in Text or Collectives, or open the smart picker in a conversation of Talk, a card of Deck or a message of Mail. Choose **Paperless documents**, search, and pick a result: the picker inserts the link to its file. Everyone who can open that file sees its preview; anyone else sees only the link.
@@ -360,9 +374,11 @@ curl asks for the app password, which keeps it out of the history of the shell; 
       "isPaginated": false,
       "entries": [
         {
+          "thumbnailUrl": "https://cloud.example.com/core/preview?x=64&y=64&fileId=1234&mimeFallback=1",
           "title": "Home insurance renewal",
-          "subline": "2026-03-02 · … the premium is due with this invoice …",
+          "subline": "Mar 2, 2026 · Harbor Mutual · Insurance — … the premium is due with this invoice …",
           "resourceUrl": "https://cloud.example.com/f/1234",
+          "icon": "https://cloud.example.com/core/img/filetypes/application-pdf.svg",
           "attributes": { "fileId": "1234", "path": "/Archive/2026/Home insurance renewal [P412].pdf" }
         }
       ],
@@ -372,7 +388,7 @@ curl asks for the app password, which keeps it out of the history of the shell; 
 }
 ```
 
-Each entry names the document, a line of its text that matches, the link that opens its file and the file's ID and path for that user. `limit` sets how many results a page holds, 5 by default and up to 50. To fill a page, the app goes through up to 4 pages of 25 documents that Paperless finds, for at most 3 seconds. A page can still hold fewer results, even none, when the user can open the files of only a few of the documents that Paperless finds, so keep asking with `cursor` set to the `cursor` of the answer while `isPaginated` is `true`. Send the `cursor` back as you got it: it counts the documents of Paperless that the pages before went through. The switch **Search connected services** belongs to the search in the browser; the API asks Paperless without it.
+Each entry names the document, its date in the language of the user, its correspondent and its type with a line of its text that matches, the preview of its file, empty when Nextcloud draws none of its type, and the icon of that type, the link that opens its file and the file's ID and path for that user. `limit` sets how many results a page holds, 5 by default and up to 50. To fill a page, the app goes through up to 4 pages of 25 documents that Paperless finds, for at most 3 seconds. A page can still hold fewer results, even none, when the user can open the files of only a few of the documents that Paperless finds, so keep asking with `cursor` set to the `cursor` of the answer while `isPaginated` is `true`. Send the `cursor` back as you got it: it counts the documents of Paperless that the pages before went through. The switch **Search connected services** belongs to the search in the browser; the API asks Paperless without it.
 
 Give an assistant the app password of a user who sees only what it may read, and revoke the app password in the personal security settings once the assistant no longer needs it.
 

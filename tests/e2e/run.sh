@@ -130,15 +130,16 @@ expect_status() {
 	fi
 }
 
-# Sets the language of e2e-admin to $1 through the provisioning API, which needs no occ,
-# as the menu of the account does.
+# Sets the language of the user $2, e2e-admin by default, to $1 through the provisioning
+# API, which needs no occ, as the menu of the account does.
 language() {
-	expect_status 200 "Setting the language of e2e-admin to $1" \
+	account="${2:-e2e-admin}"
+	expect_status 200 "Setting the language of ${account} to $1" \
 		--user "e2e-admin:${PASSWORD}" \
 		--request PUT \
 		--data-urlencode 'key=language' \
 		--data-urlencode "value=$1" \
-		"${BASE_URL}/ocs/v2.php/cloud/users/e2e-admin"
+		"${BASE_URL}/ocs/v2.php/cloud/users/${account}"
 }
 
 # Fetches the administration settings of the app as e2e-admin into the file $1.
@@ -255,6 +256,14 @@ for user in e2e-user e2e-other; do
 		--data-urlencode "password=${PASSWORD}" \
 		"${BASE_URL}/ocs/v2.php/cloud/users"
 done
+# Previews of PDF files, which Nextcloud draws with Imagick once enabledPreviewProviders
+# names them, so that a result links the preview of its file. The image has no
+# Ghostscript, so Nextcloud answers such a preview with the icon of PDF files. A file in
+# config/, which Nextcloud adds to config.php, costs no start of occ.
+"${COMPOSE[@]}" exec -T --user www-data nextcloud sh -c 'cat > config/previews.config.php' <<'PHP'
+<?php
+$CONFIG = ['enabledPreviewProviders' => ['OC\\Preview\\PNG', 'OC\\Preview\\JPEG', 'OC\\Preview\\PDF']];
+PHP
 phase "Restart Nextcloud"
 "${COMPOSE[@]}" restart nextcloud >/dev/null
 "${COMPOSE[@]}" up --detach --wait --wait-timeout 120 >/dev/null
@@ -496,6 +505,24 @@ curl --fail --silent --show-error --output /dev/null "${BASE_URL}${ICON}"
 
 search e2e-user 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/browser.json"
 assert_response browser "${TMP_DIR}/browser.json"
+# The preview of the result: an image for the user, who can open its file, and nothing
+# for anyone else.
+PREVIEW="$(assert_response preview "${TMP_DIR}/browser.json")"
+PREVIEW_TYPE="$(curl --fail --silent --show-error --location \
+	--user "e2e-user:${PASSWORD}" \
+	--output /dev/null \
+	--write-out '%{content_type}' \
+	"${PREVIEW}")"
+if [[ "${PREVIEW_TYPE}" != image/* ]]; then
+	echo "The preview of the result is no image, but ${PREVIEW_TYPE}: ${PREVIEW}" >&2
+	exit 1
+fi
+expect_status 404 "The preview of the result for e2e-other" --user "e2e-other:${PASSWORD}" "${PREVIEW}"
+# The date of the result in the language of the user.
+language de e2e-user
+search e2e-user 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/german.json"
+assert_response german "${TMP_DIR}/german.json"
+language en e2e-user
 # The link that the smart picker inserts for this result, which Nextcloud renders as the
 # preview of the file for whoever can open it, and as a bare link for anyone else.
 LINK="$(assert_response link "${TMP_DIR}/browser.json")"
@@ -664,4 +691,4 @@ phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed in ${SECONDS} s: settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, pages of results filled across pages of Paperless, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."
+echo "Docker E2E passed in ${SECONDS} s: settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date in English and German, its correspondent and its type, pages of results filled across pages of Paperless, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."
