@@ -3,6 +3,12 @@
 
 blank_issues_enabled: false
 contact_links:
+  - name: Troubleshooting guide
+    url: https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html
+    about: No Paperless documents in the search, or a test of the connection that fails? Find the cause step by step, with every message explained.
+  - name: Questions and answers
+    url: https://dennis-otto.github.io/paperless-unified-search/faq.html
+    about: Without Paperless Sync, what the app stores, who sees which document, the mobile apps and more.
   - name: Report a security vulnerability
     url: https://github.com/Dennis-Otto/paperless-unified-search/security/advisories/new
     about: Report vulnerabilities privately, never in a public issue.

@@ -33,11 +33,11 @@ Two apps, one archive: [Paperless Sync](https://github.com/Dennis-Otto/paperless
 
 Paperless Sync is the companion, not a must: [any synchronization](#works-with-any-synchronization) that writes the files with their marker into the archive account works as well, Paperless-ngx's own file names included.
 
-The [documentation website](https://dennis-otto.github.io/paperless-unified-search/) has this documentation as a guide, together with a comparison with the alternatives, the architecture, the security design and the roadmap.
+The [documentation website](https://dennis-otto.github.io/paperless-unified-search/) has this documentation on pages to install, configure and use the app, with a troubleshooting guide, a FAQ and a reference for administrators, and a comparison with the alternatives, the architecture, the security design and the roadmap.
 
 <sub>💛 Like it? [Rate it in the App Store](https://apps.nextcloud.com/apps/paperless_unified_search) or [support its development](https://github.com/sponsors/Dennis-Otto).</sub>
 
-[Why](#why-paperless-unified-search) · [Quick start](#quick-start) · [Compare](docs/compare.md) · [Architecture](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/architecture.md) · [Security design](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/security.md) · [Roadmap](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/roadmap.md) · [Releases](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/releases.md) · [Changelog](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CHANGELOG.md)
+[Why](#why-paperless-unified-search) · [Quick start](#quick-start) · [Troubleshooting](https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html) · [FAQ](https://dennis-otto.github.io/paperless-unified-search/faq.html) · [Reference](https://dennis-otto.github.io/paperless-unified-search/reference.html) · [Compare](docs/compare.md) · [Architecture](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/architecture.md) · [Security design](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/security.md) · [Roadmap](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/roadmap.md) · [Releases](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/releases.md) · [Changelog](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CHANGELOG.md)
 
 ## Why Paperless Unified Search
 
@@ -92,6 +92,8 @@ The [comparison](docs/compare.md) explains each of them, and when another one is
 
 <!-- --8<-- [end:quick-start-section] -->
 
+No Paperless documents in the search, or a test of the connection that fails? The [troubleshooting guide](https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html) finds the cause step by step, and the [FAQ](https://dennis-otto.github.io/paperless-unified-search/faq.html) answers the common questions.
+
 ## Screenshots
 
 Each screenshot below but those of the phone has a dark version, which a dark theme shows; the animation at the top is light only.
@@ -132,6 +134,15 @@ Nextcloud in the browser of a phone. The Nextcloud apps for iOS and Android open
 </picture>
 
 Type `/` in a note of Text and choose *Paperless documents*: the picker finds the documents by their text and inserts the link to the file you pick, which Text shows as the file itself to everyone who can open it.
+
+### The archive, shared read-only
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-share-read-only-dark.png">
+  <img alt="The tab Sharing of the folder Paperless of the archive account in Files: the folder is shared with Jamie Example, View only" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-share-read-only.png">
+</picture>
+
+The archive account shares its folder *Paperless* with *View only*, and Jamie finds its documents. The shares decide who sees which document: nobody needs an account in Paperless.
 
 ### Secure server-side administration
 
@@ -213,7 +224,7 @@ The search needs one thing from a synchronization: each document of Paperless-ng
     - **The Nextcloud desktop client**, signed in as the archive account, on a copy of the folder rather than the folder itself: it syncs both ways, and Paperless loses track of a file that is moved or deleted in its media folder.
     - **An external storage** with the files, mounted for the archive account alone and shared from there. A mount can't be shared until **Enable sharing** is switched on in its options, behind the gear of the storage under *External storage* in the administration settings. Nextcloud's search finds only the files it has scanned, so let a timer run `occ files:scan` for the storage. On a storage mounted for every user, each user owns the files they see there, and such a file stands for no document.
 
-3. **Share the archive read-only** with the users who may find its documents, and enter the archive account in the settings, as in the [quick start](#quick-start).
+3. **Share the archive read-only** with the users who may find its documents, and enter the archive account in the settings, as in the [configuration](#configuration).
 
 <!-- --8<-- [end:any-sync] -->
 <!-- --8<-- [start:requirements] -->
@@ -222,7 +233,7 @@ The search needs one thing from a synchronization: each document of Paperless-ng
 
 - Nextcloud 33 through 35
 - PHP 8.2 or newer as supported by the corresponding Nextcloud release
-- A reachable Paperless-ngx instance with API access
+- A reachable Paperless-ngx instance with API access; the tests cover the answers of Paperless-ngx 2.20 and 3.3, as the [compatibility](https://dennis-otto.github.io/paperless-unified-search/reference.html#compatibility) says in detail
 - Synchronized files whose names contain `[P<ID>]`, owned by one Nextcloud account, the archive account, and shared read-only with the users who may see them, for example those of Paperless Sync or of [any other synchronization](#works-with-any-synchronization). Without them, the search shows no Paperless documents.
 
 <!-- --8<-- [end:requirements] -->
@@ -262,7 +273,11 @@ If you set `allow_local_remote_servers` in `config.php` for Paperless before, fi
 
 The URL may name a Docker service with an underscore, such as `http://paperless_ngx:8000`, an IPv6 address in brackets, such as `http://[fd00::5]:8000`, or an internationalized name, which the settings store in the ASCII form that DNS knows, such as `https://xn--bcher-kva.example` for `https://bücher.example`.
 
+<!-- --8<-- [end:configuration] -->
+
 ### When the test of the connection fails
+
+<!-- --8<-- [start:connection-test] -->
 
 **Test connection and save** saves nothing until Paperless answers with a list of documents, and when it doesn't, the message says what failed and what to correct, in the language of your account. The log of Nextcloud gets a warning with the error itself, such as `cURL error 6: Could not resolve host`, without the token and without the query of the URL.
 
@@ -278,7 +293,7 @@ The URL may name a Docker service with an underscore, such as `http://paperless_
 | This URL forwards to another address | The URL redirects, and with **Paperless runs in my local network** Nextcloud follows no redirect | Enter the address that it forwards to, such as the one with `https` |
 | Paperless answered with an error | Paperless itself failed, with a status of 5xx | Look into the log of Paperless, or try again later |
 | This URL answers, but not like Paperless-ngx | Another service, or the login page of a proxy | Check the address and its path |
-| Nextcloud does not connect to addresses of the local network | Paperless runs at an address of the local network | Select **Paperless runs in my local network** ([above](#paperless-in-your-local-network)) |
+| Nextcloud does not connect to addresses of the local network | Paperless runs at an address of the local network | Select **Paperless runs in my local network**, as [Paperless in your local network](#paperless-in-your-local-network) describes |
 | Nextcloud does not trust the certificate of Paperless | A certificate of your own authority, a self-signed one, or one for another name | Import the certificate of the authority with `occ security:certificates:import`, or use the name that the certificate is for |
 | Nextcloud could not set up an encrypted connection | Mostly `https` at a port that speaks plain HTTP | Enter the URL with `http`, or the port of HTTPS |
 | Nextcloud could not find the host of this URL | The name doesn't resolve, as a Docker service outside the network of Nextcloud doesn't | Check its spelling, and put Nextcloud and Paperless into one Docker network |
@@ -298,11 +313,14 @@ When Nextcloud itself can't take the request, the page says so in one sentence i
 | The request failed (HTTP 502) | A proxy in front of Nextcloud answered with an error of its own, such as 502, 503 or 504, or Nextcloud found a problem with its own setup, such as a data folder it can't write to | Check that Nextcloud runs, its log and the log of the proxy |
 | Nextcloud gave an unexpected answer | Something in front of Nextcloud, such as the login page of a proxy, answered instead of the app | Reload the page and try again |
 
+<!-- --8<-- [end:connection-test] -->
+<!-- --8<-- [start:languages] -->
+
 ### Languages
 
 The settings speak English and German: German with *du* for accounts set to *Deutsch (Persönlich: Du)*, and with *Sie* for accounts set to *Deutsch (Förmlich: Sie)*.
 
-<!-- --8<-- [end:configuration] -->
+<!-- --8<-- [end:languages] -->
 <!-- --8<-- [start:usage] -->
 
 ## Usage
@@ -443,7 +461,7 @@ The screenshots and the animation in `screenshots/` come from a script, so that 
 bash scripts/screenshots.sh
 ```
 
-It starts the Docker suite under a project of its own with a demo: the archive account `paperless`, whose synthetic documents are shared read-only with `jamie`, and a Paperless mock that finds three of them for "invoice". Chromium then searches, opens a result, links a document from the smart picker in a note of Text and saves the settings, light and dark, on a phone and as an animation. Set `KEEP_SCREENSHOTS=1` to look around in the demo afterwards.
+It starts the Docker suite under a project of its own with a demo: the archive account `paperless`, whose synthetic documents are shared read-only with `jamie`, and a Paperless mock that finds three of them for "invoice". Chromium then searches, opens a result, links a document from the smart picker in a note of Text, saves the settings and shows the share of the archive, light and dark, on a phone and as an animation. Set `KEEP_SCREENSHOTS=1` to look around in the demo afterwards.
 
 See [CONTRIBUTING.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CONTRIBUTING.md) before opening a pull request.
 

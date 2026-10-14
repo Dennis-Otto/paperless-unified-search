@@ -85,8 +85,8 @@ Dokumentation (auf Englisch): <https://dennis-otto.github.io/paperless-unified-s
 	<author homepage="https://github.com/Dennis-Otto">Dennis Otto</author>
 	<namespace>PaperlessUnifiedSearch</namespace>
 	<documentation>
-		<user>https://dennis-otto.github.io/paperless-unified-search/guide.html#usage</user>
-		<admin>https://dennis-otto.github.io/paperless-unified-search/guide.html#configuration</admin>
+		<user>https://dennis-otto.github.io/paperless-unified-search/usage.html</user>
+		<admin>https://dennis-otto.github.io/paperless-unified-search/configure.html</admin>
 		<developer>https://github.com/Dennis-Otto/paperless-unified-search#development</developer>
 	</documentation>
 	<category>integration</category>

@@ -1,0 +1,46 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: Why the search shows no Paperless documents
+    accDescr: jamie searches for invoice and doesn't see document 412 under Paperless documents. Six questions, one after the other, find the cause. Is Search connected services switched on, or is Paperless trusted in the settings? If not, switch it on, again after every reload of the page. Is there an archive account in the settings? If not, enter the account that owns the synchronized files. Does Search problems in the settings list failed searches? If so, fix the error that it names. Does Paperless find document 412 for the term, signed in as the account of the API token? If not, let that account view the document, or rebuild the index of Paperless with document_index reindex. Does the archive account have a file with [P412] in its name? If not, let the synchronization write it, and scan an external storage with occ files:scan. Can jamie open that file? If not, share the file or its folder read-only with jamie. Then document 412 shows under Paperless documents.
+
+    start(["jamie searches for invoice<br>and doesn't see document 412"])
+    switch{"Search connected services<br>on, or Paperless trusted?"}
+    archive{"An archive account<br>in the settings?"}
+    problems{"Search problems lists<br>failed searches?"}
+    paperless{"Does Paperless find 412<br>for the term, as the account<br>of the token?"}
+    marker{"Does the archive account<br>have a file with [P412]<br>in its name?"}
+    shared{"Can jamie open<br>that file?"}
+    shows(["Document 412 shows under<br>Paperless documents"])
+
+    fixSwitch["Switch it on: Nextcloud<br>turns it off at every reload"]
+    fixArchive["Enter the account that<br>owns the synchronized files"]
+    fixProblems["Fix the error that it names,<br>as the tables below say"]
+    fixPaperless["Let that account view the<br>document, or rebuild the index:<br>document_index reindex"]
+    fixMarker["Let the synchronization<br>write it; scan an external<br>storage: occ files:scan"]
+    fixShare["Share the file or its folder<br>read-only with jamie"]
+
+    start --> switch
+    switch -- "yes" --> archive
+    switch -- "no" --> fixSwitch
+    archive -- "yes" --> problems
+    archive -- "no" --> fixArchive
+    problems -- "no" --> paperless
+    problems -- "yes" --> fixProblems
+    paperless -- "yes" --> marker
+    paperless -- "no" --> fixPaperless
+    marker -- "yes" --> shared
+    marker -- "no" --> fixMarker
+    shared -- "yes" --> shows
+    shared -- "no" --> fixShare
+    %% The fixes in one column beside the questions, so that the questions stay in one.
+    fixSwitch ~~~ fixArchive ~~~ fixProblems ~~~ fixPaperless ~~~ fixMarker ~~~ fixShare
+
+    classDef you fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    class fixSwitch,fixArchive,fixProblems,fixPaperless,fixMarker,fixShare you
+    class shows done
