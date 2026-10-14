@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [0.5.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.5.0...v0.5.1) (2026-10-14)
+
 ### Fixed
 
 - **A search that is still being typed in Paperless's advanced syntax no longer shows as a failed search, and a Paperless that hangs no longer makes every search wait twice.** Paperless 3 refuses a query that it can't parse yet, such as `created:[2026 to` while you type the range of dates, and the search showed nothing for it while *Search problems* in the settings filled up with failed searches that were none, pushing real problems out of the list. Now such a search finds the documents of its words in the simple search of Paperless 3, and neither it nor a page past the last result shows up as a problem. A request that waited in vain for a Paperless that accepts connections but doesn't answer, as while it consumes documents or rebuilds its index, was sent a second time, so every keystroke waited 20 seconds and Paperless got every request twice; now only a request that never reached Paperless is tried again. During an outage, also one that comes and goes, *Search problems* notes a failure at most once in 30 seconds, with every problem still counted; a search term with letters such as *ä* is now left out of its messages also where they are capitals, such as *Ä*; and the requests tell Paperless and its proxies the real version of the app instead of 0.1.
