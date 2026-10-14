@@ -1,0 +1,28 @@
+# The explanations of the checks of this project alone, on top of .github/checks.toml,
+# which the blueprint keeps current. When one of them fails, the PR coach shows its
+# explanation in the summary of the check, as its annotation and in its comment on the
+# pull request, also on a pull request from a fork; scripts/check.sh shows those of its
+# steps on your machine too. Explain every check that you add to the required checks
+# of .github/repository.project.toml, so that the next person sees how to fix it. The
+# comment follows a workflow of this project alone, such as one of visual tests, once
+# the answer test_workflows of .copier-answers.yml names it.
+# https://github.com/Dennis-Otto/repo-blueprint#the-pr-coach
+
+# A check by the name that GitHub shows, where a * stands for any text. Each has a
+# title, problem, why and fix, and may have commands, one per line, and docs, a link or
+# a file of the repository with its anchor:
+# [check."e2e (*)"]
+# title = "The end-to-end tests"
+# problem = """A test of the whole app in a real browser failed; the summary of the
+# check names the test, and its trace shows each step."""
+# why = """These tests use the app as its users do, in a real browser."""
+# fix = """Run the test that failed on your machine, fix what it shows, and push."""
+# commands = ["bash tests/e2e/run.sh"]
+# docs = "CONTRIBUTING.md#checks"
+
+# A step of scripts/check.sh by the name that it prints, such as the step that runs
+# scripts/check-project.sh, to explain the checks of this project there:
+# [step."Checks of this project"]
+# problem = """..."""
+# why = """..."""
+# fix = """..."""

@@ -3,10 +3,11 @@ name: Upstream
 # The upstream bot of a Nextcloud app. Every week it compares the newest release of
 # Nextcloud with the max-version of appinfo/info.xml. When Nextcloud has a new major
 # version, it opens a pull request as the release app that raises max-version to it
-# and says so under Unreleased in CHANGELOG.md, so that every check, the end-to-end
-# tests of the newest version included, runs against it. It merges itself once they
-# pass, unless the repository variable UPSTREAM_AUTOMERGE is off. Started by hand as a
-# dry run, it only shows the pull request it would open, and changes nothing.
+# and says so in a fragment of the changelog, changelog.d/nextcloud-<version>.md, so
+# that every check, the end-to-end tests of the newest version included, runs against
+# it. It merges itself once they pass, unless the repository variable
+# UPSTREAM_AUTOMERGE is off. Started by hand as a dry run, it only shows the pull
+# request it would open, and changes nothing.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -76,11 +77,14 @@ jobs:
           fi
 
           sed -i -E "s/(<nextcloud [^>]*max-version=\")[0-9]+(\")/\1$newest\2/" appinfo/info.xml
-          script=.github/blueprint.py
-          [[ -f "$script" ]] || script=blueprint.py
-          python3 "$script" unreleased Changed "- Supports Nextcloud $newest."
+          # The entry of the release notes in a fragment of the changelog of its own, so
+          # that neither a release nor another pull request conflicts with it.
+          fragment="changelog.d/nextcloud-$newest.md"
+          mkdir -p changelog.d
+          printf '### Changed\n\n- Supports Nextcloud %s.\n' "$newest" > "$fragment"
           if [[ "$DRY_RUN" == true ]]; then
             echo "A dry run: the pull request \"feat: support Nextcloud $newest\" from the branch $branch would make this change."
+            git add --intent-to-add "$fragment"
             git --no-pager diff
             exit 0
           fi
@@ -96,7 +100,7 @@ jobs:
           jq --null-input --arg repo "$GH_REPO" --arg branch "$branch" --arg head "$base" \
             --arg headline "feat: support Nextcloud $newest" \
             --rawfile info <(base64 --wrap=0 appinfo/info.xml) \
-            --rawfile changelog <(base64 --wrap=0 CHANGELOG.md) \
+            --arg fragment "$fragment" --rawfile entry <(base64 --wrap=0 "$fragment") \
             '{query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
               variables: {input: {
                 branch: {repositoryNameWithOwner: $repo, branchName: $branch},
@@ -104,7 +108,7 @@ jobs:
                 message: {headline: $headline},
                 fileChanges: {additions: [
                   {path: "appinfo/info.xml", contents: $info},
-                  {path: "CHANGELOG.md", contents: $changelog}]}}}}' |
+                  {path: $fragment, contents: $entry}]}}}}' |
             gh api graphql --input - --jq .data.createCommitOnBranch.commit.oid
           gh pr create --base main --head "$branch" --title "feat: support Nextcloud $newest" \
             --body "Nextcloud $latest is out. This raises \`max-version\` in \`appinfo/info.xml\` from $current to $newest, so that the checks and the end-to-end tests run against Nextcloud $newest, and the release notes say that the app supports it."

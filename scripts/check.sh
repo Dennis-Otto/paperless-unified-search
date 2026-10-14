@@ -9,8 +9,25 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 step() {
+  current="$1"
   printf '\n== %s\n' "$1"
 }
+
+# When a step fails, the PR coach says what it found and how to fix it, from
+# .github/checks.toml: here, and in the CI also in the summary of the check, as its
+# annotation and on the pull request. It needs a Python 3.11 or newer, if there is one.
+coach() {
+  local status=$? script=.github/blueprint.py python
+  [[ -f "$script" ]] || script=blueprint.py
+  if ((status != 0)) && [[ -n "${current:-}" && -f "$script" ]]; then
+    for python in python3 python py; do
+      if "$python" "$script" coach explain --step "$current" 2>/dev/null; then
+        break
+      fi
+    done
+  fi
+}
+trap coach EXIT
 
 files() {
   git ls-files -z --cached --others --exclude-standard "$@"
@@ -18,6 +35,37 @@ files() {
 
 step "Text files"
 problems=0
+# A problem of a file: in the log, and in the CI also as an annotation at the first
+# line that matches the pattern, or at the end of the file, which the files of a pull
+# request show at their place.
+problem() {
+  local line name shown
+  # The name on one line of the log, where no name can start a command of the runner:
+  # its line breaks as \r and \n, and ./ before a name that starts with a blank, a
+  # colon or another sign.
+  shown="${1//$'\r'/\\r}"
+  shown="${shown//$'\n'/\\n}"
+  if [[ "$shown" != [[:alnum:]._-]* ]]; then
+    shown="./$shown"
+  fi
+  printf '%s: %s\n' "$shown" "$2"
+  problems=$((problems + 1))
+  if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
+    if [[ -n "${3:-}" ]]; then
+      line="$(grep -nU -m 1 -E -- "$3" "$1")"
+      line="${line%%:*}"
+    else
+      line="$(($(wc -l <"$1") + 1))"
+    fi
+    # The name as a property of a command of the runner, which no name can end.
+    name="${1//%/%25}"
+    name="${name//$'\r'/%0D}"
+    name="${name//$'\n'/%0A}"
+    name="${name//:/%3A}"
+    name="${name//,/%2C}"
+    echo "::error file=$name,line=$line,title=Text files::$2"
+  fi
+}
 while IFS= read -r -d '' file; do
   case "$file" in
     LICENSE | LICENSES/*) continue ;;
@@ -26,17 +74,16 @@ while IFS= read -r -d '' file; do
   if [[ ! -s "$file" ]] || ! grep -Iq . "$file"; then
     continue
   fi
-  if grep -q $'\r' "$file"; then
-    echo "$file: has CRLF line endings"
-    problems=$((problems + 1))
+  # -U reads the bytes as they are: the grep of Git for Windows drops the CR at the
+  # end of a line otherwise, and found no CRLF line endings there.
+  if grep -qU $'\r' "$file"; then
+    problem "$file" "has CRLF line endings" $'\r'
   fi
-  if grep -qE '[[:blank:]]$' "$file"; then
-    echo "$file: has trailing whitespace"
-    problems=$((problems + 1))
+  if grep -qUE '[[:blank:]]$' "$file"; then
+    problem "$file" "has trailing whitespace" '[[:blank:]]$'
   fi
   if [[ -n "$(tail -c 1 "$file")" ]]; then
-    echo "$file: lacks the line break at its end"
-    problems=$((problems + 1))
+    problem "$file" "lacks the line break at its end"
   fi
 done < <(files)
 if ((problems > 0)); then
@@ -49,6 +96,28 @@ step "Diagrams"
 # Pictures drawn from the sources in docs/diagrams/, which the GitHub app shows too;
 # scripts/diagrams.sh draws them, with Docker.
 bash scripts/diagrams.sh --check
+
+step "Pages in one column"
+# The READMEs, CONTRIBUTING.md and the pages of docs/ without columns side by side,
+# which the GitHub app and phones squeeze: no <table> that sets a picture beside text,
+# no cell with a width. Each finding says how to fix it; pages --fix fixes what it can.
+tool=.github/blueprint.py
+[[ -f "$tool" ]] || tool=blueprint.py
+python=""
+for candidate in python3 python py; do
+  if "$candidate" -c 'import sys; sys.exit(sys.version_info < (3, 12))' >/dev/null 2>&1; then
+    python="$candidate"
+    break
+  fi
+done
+if [[ -n "$python" ]]; then
+  "$python" "$tool" pages
+elif [[ -n "${CI:-}" ]]; then
+  echo "Checking the pages needs Python 3.12 or newer, which this runner lacks."
+  exit 1
+else
+  echo "Python 3.12 or newer is not installed here; the CI checks the pages."
+fi
 
 step "Version"
 # The release bot writes the version of each release into these files.
