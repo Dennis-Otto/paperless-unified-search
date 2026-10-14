@@ -203,6 +203,42 @@ final class PaperlessNamesTest extends TestCase {
 	}
 
 	/**
+	 * A list that doesn't answer, as one slower than the timeout, rests for a minute: the
+	 * searches of every keystroke in between don't wait for it again, and still name the
+	 * other kind.
+	 */
+	public function testAListWithoutAnswerIsNotAskedForAgainForAMinute(): void {
+		$paperless = $this->paperless([
+			'correspondents' => new RuntimeException('cURL error 28: Operation timed out'),
+			'document_types' => [1 => 'Invoice'],
+		]);
+		$documents = [['id' => 7, 'correspondent' => 3, 'document_type' => 1]];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::exactly(2))
+			->method('info')
+			->with('Paperless gave no names of the {list} of search results ({errorType})', [
+				'app' => AppConstants::APP_ID,
+				'list' => 'correspondents',
+				'errorType' => RuntimeException::class,
+			]);
+
+		$first = $this->names($paperless, logger: $logger)->of($documents);
+		$this->time += 59;
+		$second = $this->names($paperless, logger: $logger)->of($documents);
+		$this->time += 1;
+		$third = $this->names($paperless, logger: $logger)->of($documents);
+
+		self::assertSame(['correspondent' => [], 'document_type' => []], $first);
+		self::assertSame(['correspondent' => [], 'document_type' => [1 => 'Invoice']], $second);
+		self::assertSame($second, $third);
+		self::assertSame([
+			'https://paperless.example.com/api/correspondents/?id__in=3&page_size=1',
+			'https://paperless.example.com/api/document_types/?id__in=1&page_size=1',
+			'https://paperless.example.com/api/correspondents/?id__in=3&page_size=1',
+		], $this->requests);
+	}
+
+	/**
 	 * Nothing that fails in the lookup fails the search, a cache that fails neither.
 	 */
 	public function testACacheThatFailsLeavesOutTheNames(): void {

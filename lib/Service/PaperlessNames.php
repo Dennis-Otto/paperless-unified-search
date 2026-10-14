@@ -22,7 +22,8 @@ use Throwable;
  * next to its date: Paperless sends only their IDs with the documents of a search.
  * Names come from the distributed cache of Nextcloud for ten minutes, and the others
  * with one request per kind. They only add to a result: a lookup that fails leaves
- * them out, without a problem in the history of the search.
+ * them out, without a problem in the history of the search, and a list that Paperless
+ * refuses or doesn't answer rests for a while, so that every search doesn't wait for it.
  */
 final class PaperlessNames {
 	/** The fields of a document that name an object of Paperless, with the path of its list in the API. */
@@ -33,6 +34,12 @@ final class PaperlessNames {
 
 	/** The seconds that the cache keeps a name, and a list that Paperless refused. */
 	private const TTL = 600;
+
+	/**
+	 * The seconds that a list rests after a request without answer, such as a list that
+	 * takes longer than the timeout: a search, as every keystroke, would wait for it again.
+	 */
+	private const UNANSWERED_TTL = 60;
 
 	private ?ICache $cache = null;
 
@@ -89,8 +96,8 @@ final class PaperlessNames {
 			}
 
 			// After a request without answer, Paperless isn't asked for the other kind: its
-			// names aren't worth a second wait.
-			if ($missing !== [] && $answers && $this->getCache()->get(self::refusedKey($server, $field)) !== true) {
+			// names aren't worth a second wait. A list that rests isn't asked for either.
+			if ($missing !== [] && $answers && $this->getCache()->get(self::restingKey($server, $field)) !== true) {
 				[$found, $answers] = $this->lookUp($server, $field, $list, $missing);
 				$names[$field] += $found;
 			}
@@ -112,8 +119,8 @@ final class PaperlessNames {
 	/**
 	 * The names of these IDs in a list of Paperless, which the cache keeps: an ID without
 	 * a name as well, as an empty name, so that it costs no request either. A list that
-	 * Paperless refuses to the token, which may not view it, isn't asked for again while
-	 * the cache keeps that.
+	 * Paperless refuses to the token, which may not view it, rests for ten minutes, and a
+	 * list without answer for a minute: no search asks for it while it rests.
 	 *
 	 * @param list<int> $ids
 	 * @return array{array<int, string>, bool} the names by ID, and whether Paperless answered
@@ -123,7 +130,7 @@ final class PaperlessNames {
 			$found = $this->paperlessApi->findNames($list, $ids);
 		} catch (PaperlessRequestException $failure) {
 			if ($failure->reason === RequestFailure::Unauthorized) {
-				$this->getCache()->set(self::refusedKey($server, $field), true, self::TTL);
+				$this->getCache()->set(self::restingKey($server, $field), true, self::TTL);
 			}
 			$this->logger->info('Paperless answered the request for the names of the {list} of search results without them ({error})', [
 				'app' => AppConstants::APP_ID,
@@ -133,6 +140,7 @@ final class PaperlessNames {
 
 			return [[], true];
 		} catch (Throwable $error) {
+			$this->getCache()->set(self::restingKey($server, $field), true, self::UNANSWERED_TTL);
 			$this->logger->info('Paperless gave no names of the {list} of search results ({errorType})', [
 				'app' => AppConstants::APP_ID,
 				'list' => $list,
@@ -177,7 +185,7 @@ final class PaperlessNames {
 		return 'name-' . $field . '-' . $server . '-' . $id;
 	}
 
-	private static function refusedKey(string $server, string $field): string {
-		return 'names-refused-' . $field . '-' . $server;
+	private static function restingKey(string $server, string $field): string {
+		return 'names-resting-' . $field . '-' . $server;
 	}
 }

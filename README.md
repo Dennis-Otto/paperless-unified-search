@@ -378,7 +378,8 @@ curl asks for the app password, which keeps it out of the history of the shell; 
           "title": "Home insurance renewal",
           "subline": "Mar 2, 2026 · Harbor Mutual · Insurance — … the premium is due with this invoice …",
           "resourceUrl": "https://cloud.example.com/f/1234",
-          "icon": "https://cloud.example.com/core/img/filetypes/application-pdf.svg",
+          "icon": "",
+          "rounded": false,
           "attributes": { "fileId": "1234", "path": "/Archive/2026/Home insurance renewal [P412].pdf" }
         }
       ],
@@ -388,7 +389,7 @@ curl asks for the app password, which keeps it out of the history of the shell; 
 }
 ```
 
-Each entry names the document, its date in the language of the user, its correspondent and its type with a line of its text that matches, the preview of its file, empty when Nextcloud draws none of its type, and the icon of that type, the link that opens its file and the file's ID and path for that user. `limit` sets how many results a page holds, 5 by default and up to 50. To fill a page, the app goes through up to 4 pages of 25 documents that Paperless finds, for at most 3 seconds. A page can still hold fewer results, even none, when the user can open the files of only a few of the documents that Paperless finds, so keep asking with `cursor` set to the `cursor` of the answer while `isPaginated` is `true`. Send the `cursor` back as you got it: it counts the documents of Paperless that the pages before went through. The switch **Search connected services** belongs to the search in the browser; the API asks Paperless without it.
+Each entry names the document, its date in the language of the user, its correspondent and its type with a line of its text that matches, the picture of its file in `thumbnailUrl` as an absolute URL, which is its preview when Nextcloud draws previews of its type and otherwise the icon of that type, the link that opens its file and the file's ID and path for that user. `icon` stays empty: Nextcloud's smart picker would show it in place of the picture, as the name of a CSS class. `limit` sets how many results a page holds, 5 by default and up to 50. To fill a page, the app goes through up to 4 pages of 25 documents that Paperless finds, for at most 3 seconds. A page can still hold fewer results, even none, when the user can open the files of only a few of the documents that Paperless finds, so keep asking with `cursor` set to the `cursor` of the answer while `isPaginated` is `true`. Send the `cursor` back as you got it: it counts the documents of Paperless that the pages before went through. The switch **Search connected services** belongs to the search in the browser; the API asks Paperless without it.
 
 Give an assistant the app password of a user who sees only what it may read, and revoke the app password in the personal security settings once the assistant no longer needs it.
 
