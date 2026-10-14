@@ -1,0 +1,3 @@
+### Changed
+
+- **The first stable version, 1.0.0.** The app now does what it was built for: the full-text search of Paperless-ngx in the search of Nextcloud and in its smart picker, narrowed by the date filter, with a preview, the date, the correspondent and the type of each document, set up and explained with occ and with *Try a search* in the settings, and documented for administrators from the installation to the troubleshooting. From now on, a release that asks more of your server, such as a newer Nextcloud, PHP or Paperless-ngx, or that changes the occ commands of the app in a way that breaks a script, is a new major version, so that an update within 1.x never needs more than the update itself.
