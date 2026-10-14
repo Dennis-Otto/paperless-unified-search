@@ -12,7 +12,7 @@ Find invoices, contracts, letters, statements, and any text recognized inside yo
 ### Search in Paperless. Work in Nextcloud.
 
 - Uses Paperless-ngx's native OCR and full-text search, with no index of its own to build or keep current
-- Shows results directly in Nextcloud's global search
+- Shows results directly in Nextcloud's global search, each with a preview of the document, its date in your language, its correspondent and its type
 - Finds documents from the smart picker in Talk, Text, Deck, and Mail, and inserts a link to their file
 - Opens the synchronized file in Nextcloud's built-in viewer on web, iOS, and Android
 - Matches documents through stable markers such as `[P123]`
@@ -51,7 +51,7 @@ Rechnungen, Verträge, Briefe, Bescheide und beliebige Inhalte der Dokumente fin
 ### In Paperless suchen. In Nextcloud weiterarbeiten.
 
 - Verwendet die native OCR- und Volltextsuche von Paperless-ngx, ohne eigenen Index, der aufgebaut oder aktuell gehalten werden muss
-- Zeigt Treffer direkt in der globalen Nextcloud-Suche
+- Zeigt Treffer direkt in der globalen Nextcloud-Suche, jeden mit einer Vorschau des Dokuments, seinem Datum in der Sprache des Benutzers, seinem Korrespondenten und seinem Dokumenttyp
 - Findet Dokumente auch über den Smart Picker in Talk, Text, Deck und Mail und fügt einen Link auf ihre Datei ein
 - Öffnet die synchronisierte Datei im integrierten Nextcloud-Viewer in Web, iOS und Android
 - Ordnet Dokumente über stabile Kennzeichnungen wie `[P123]` zu

@@ -39,6 +39,12 @@ final class PaperlessApiService {
 	private const TIMEOUT = 10;
 
 	/**
+	 * The seconds that a request for the names of correspondents or types may take in
+	 * all: Paperless has just answered the search, and a result shows without the names.
+	 */
+	private const NAMES_TIMEOUT = 3;
+
+	/**
 	 * A first try that failed within this many milliseconds failed before Paperless had the
 	 * request: within the time to connect, with half a second to spare. One that failed
 	 * later had a connection, and Paperless took too long to answer, as while it consumes
@@ -195,19 +201,7 @@ final class PaperlessApiService {
 
 		$response = $this->send(
 			rtrim($url, '/') . '/api/documents/',
-			[
-				'headers' => [
-					'Authorization' => 'Token ' . $token,
-					'Accept' => 'application/json',
-					'User-Agent' => $this->getUserAgent(),
-				],
-				'connect_timeout' => self::CONNECT_TIMEOUT,
-				'timeout' => self::TIMEOUT,
-				// Every answer of Paperless reaches the check of its status below.
-				'http_errors' => false,
-				'query' => $query,
-				'nextcloud' => ['allow_local_address' => $allowLocal],
-			] + ($allowLocal ? ['allow_redirects' => false] : []),
+			$this->options($token, $allowLocal, $query, self::TIMEOUT),
 			[$token, $term],
 		);
 
@@ -255,6 +249,85 @@ final class PaperlessApiService {
 			'next' => isset($data['next']) && is_string($data['next']) ? $data['next'] : null,
 			'results' => $results,
 		];
+	}
+
+	/**
+	 * The names of the objects with these IDs in a list of Paperless, such as its
+	 * correspondents, in one request. The names only add to results that Paperless has
+	 * just sent, so the request gets one try, a shorter time and no place in the history
+	 * of the problems of the search. An object that the account of the token may not
+	 * view, or that no longer exists, has no name.
+	 *
+	 * @param string $list the path of the list in the API of Paperless: correspondents or document_types
+	 * @param list<int> $ids
+	 * @return array<int, string> the names, by ID
+	 * @throws PaperlessRequestException when Paperless answers, but not with a list
+	 * @throws Throwable the error of a request without answer
+	 */
+	public function findNames(string $list, array $ids): array {
+		$url = $this->configService->getUrl();
+		$token = $this->configService->getToken();
+		if ($ids === [] || $url === '' || $token === '') {
+			return [];
+		}
+
+		// Paperless-ngx 2 and 3 filter their lists by id__in; they send every field of an
+		// object, also when asked for fewer, which for a correspondent is a few hundred bytes.
+		$response = $this->client->get(
+			rtrim($url, '/') . '/api/' . $list . '/',
+			$this->options($token, $this->configService->isLocalNetworkAllowed(), [
+				'id__in' => implode(',', $ids),
+				'page_size' => count($ids),
+			], self::NAMES_TIMEOUT),
+		);
+		$status = $response->getStatusCode();
+		if ($status < 200 || $status >= 300) {
+			throw PaperlessRequestException::forStatus($status);
+		}
+
+		$body = $response->getBody();
+		try {
+			$data = json_decode(is_string($body) ? $body : '', true, 512, JSON_THROW_ON_ERROR);
+		} catch (JsonException $error) {
+			throw PaperlessRequestException::notPaperless('Paperless returned no JSON: ' . $error->getMessage(), $error);
+		}
+		if (!is_array($data) || !isset($data['results']) || !is_array($data['results'])) {
+			throw PaperlessRequestException::notPaperless('Paperless returned an invalid list.');
+		}
+
+		$names = [];
+		/** @psalm-suppress MixedAssignment JSON values are validated before use. */
+		foreach ($data['results'] as $object) {
+			$id = is_array($object) ? ($object['id'] ?? null) : null;
+			$name = is_array($object) ? ($object['name'] ?? null) : null;
+			if (is_int($id) && is_string($name)) {
+				$names[$id] = $name;
+			}
+		}
+
+		return $names;
+	}
+
+	/**
+	 * The options of a request to Paperless. Every answer of Paperless reaches the check
+	 * of its status, whatever the status is.
+	 *
+	 * @param array<string, int|string> $query
+	 * @return array<string, mixed>
+	 */
+	private function options(string $token, bool $allowLocal, array $query, int $timeout): array {
+		return [
+			'headers' => [
+				'Authorization' => 'Token ' . $token,
+				'Accept' => 'application/json',
+				'User-Agent' => $this->getUserAgent(),
+			],
+			'connect_timeout' => self::CONNECT_TIMEOUT,
+			'timeout' => $timeout,
+			'http_errors' => false,
+			'query' => $query,
+			'nextcloud' => ['allow_local_address' => $allowLocal],
+		] + ($allowLocal ? ['allow_redirects' => false] : []);
 	}
 
 	/**

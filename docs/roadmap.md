@@ -1,5 +1,5 @@
 ---
-description: "What Paperless Unified Search intends to do until October 2027, such as richer results, the date filter of the search and a dashboard widget, and what it will not do."
+description: "What Paperless Unified Search intends to do until October 2027, such as the date filter of the search, a dashboard widget and help for administrators, and what it will not do."
 ---
 
 # Roadmap
@@ -10,9 +10,8 @@ What Paperless Unified Search intends to do in the next twelve months, until Oct
 
 ## The next twelve months
 
-The app does what it was built for: the full-text search of Paperless-ngx in the search of Nextcloud, with results that open the synchronized files, and in the smart picker of Talk, Text, Deck and Mail, which inserts the link to such a file. The year builds on that, with these features planned:
+The app does what it was built for: the full-text search of Paperless-ngx in the search of Nextcloud, with results that show the preview, the date, the correspondent and the type of each document and open the synchronized files, and in the smart picker of Talk, Text, Deck and Mail, which inserts the link to such a file. The year builds on that, with these features planned:
 
-- **Richer results.** A preview of the document, its date in the language of the user, its correspondent and its type in each result.
 - **Nextcloud's date filter.** The filter of Nextcloud's search by date narrows the Paperless results as well.
 - **A dashboard widget.** The latest Paperless documents that the user can open, on Nextcloud's dashboard.
 - **Help for administrators.** **Try a search** in the settings, which shows why a document is hidden from a user, as [`occ paperless_unified_search:search --explain`](guide.md#explain-a-hidden-document) does on the command line.

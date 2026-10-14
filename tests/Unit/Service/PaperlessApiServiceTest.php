@@ -858,6 +858,145 @@ final class PaperlessApiServiceTest extends TestCase {
 	}
 
 	/**
+	 * The names of correspondents and types come in one request for all IDs, as
+	 * Paperless-ngx 3.3.0 answered it (tests/Unit/fixtures/README.md), with every field of
+	 * each object and without the ID that it doesn't have.
+	 */
+	public function testTheNamesOfAListComeInOneRequest(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with('https://paperless.example.com/api/correspondents/', self::callback(
+				static fn (array $options): bool => $options['query'] === ['id__in' => '1,2,99', 'page_size' => 3]
+					&& $options['headers'] === [
+						'Authorization' => 'Token TEST_VALUE',
+						'Accept' => 'application/json',
+						'User-Agent' => 'Nextcloud-Paperless-Unified-Search/0.5.1',
+					]
+					&& $options['connect_timeout'] === 3
+					&& $options['timeout'] === 3
+					&& $options['http_errors'] === false,
+			))
+			->willReturn($this->response(200, self::fixture('paperless-3.3.0-correspondents.json')));
+
+		self::assertSame(
+			[1 => 'ACME Energy', 2 => 'Harbor & Sons <Insurance>'],
+			$this->service($client)->findNames('correspondents', [1, 2, 99]),
+		);
+	}
+
+	/**
+	 * @param array<string, mixed> $options
+	 */
+	#[DataProvider('localNetwork')]
+	public function testTheNamesAllowTheLocalNetworkAsTheSettingsSay(bool $allowLocal, array $options): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with('https://paperless.example.com/api/document_types/', self::callback(
+				static fn (array $sent): bool => array_intersect_key($sent, ['nextcloud' => true, 'allow_redirects' => true]) === $options,
+			))
+			->willReturn($this->response(200, self::fixture('paperless-3.3.0-document-types.json')));
+
+		self::assertSame([1 => 'Invoice'], $this->service($client, allowLocal: $allowLocal)->findNames('document_types', [1]));
+	}
+
+	public function testOnlyObjectsWithANumberAndANameHaveANameInTheList(): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response(200, json_encode(['results' => [
+			['id' => '1', 'name' => 'ID as text'],
+			['id' => 2],
+			['name' => 'No ID'],
+			'no object',
+			['id' => 3, 'name' => null],
+			['id' => 4, 'name' => 'Four'],
+		]], JSON_THROW_ON_ERROR)));
+
+		self::assertSame([4 => 'Four'], $this->service($client)->findNames('correspondents', [1, 2, 3, 4]));
+	}
+
+	/**
+	 * @return array<string, array{list<int>, string, ?string}>
+	 */
+	public static function lookupsWithoutRequest(): array {
+		return [
+			'no IDs' => [[], 'https://paperless.example.com', 'TEST_VALUE'],
+			'no URL' => [[1], '', 'TEST_VALUE'],
+			'no token' => [[1], 'https://paperless.example.com', null],
+		];
+	}
+
+	/**
+	 * @param list<int> $ids
+	 */
+	#[DataProvider('lookupsWithoutRequest')]
+	public function testNamesNeedIdsAndTheSettings(array $ids, string $url, ?string $token): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::never())->method('get');
+
+		self::assertSame([], $this->service($client, $url, $token)->findNames('correspondents', $ids));
+	}
+
+	/**
+	 * @return array<string, array{int, ?string, RequestFailure, string}>
+	 */
+	public static function failedLookups(): array {
+		return [
+			'informational status' => [100, '{"results":[]}', RequestFailure::Http, 'Paperless returned HTTP 100.'],
+			'no permission' => [403, '{"detail":"You do not have permission to perform this action."}', RequestFailure::Unauthorized, 'Paperless returned HTTP 403.'],
+			'server error' => [500, '', RequestFailure::Http, 'Paperless returned HTTP 500.'],
+			'no body' => [200, null, RequestFailure::NotPaperless, 'Paperless returned no JSON: Syntax error'],
+			'no JSON' => [200, '<html>', RequestFailure::NotPaperless, 'Paperless returned no JSON: Syntax error'],
+			'no object' => [200, '"ok"', RequestFailure::NotPaperless, 'Paperless returned an invalid list.'],
+			'no results' => [200, '{"count":0}', RequestFailure::NotPaperless, 'Paperless returned an invalid list.'],
+			'results that are no list' => [200, '{"results":"none"}', RequestFailure::NotPaperless, 'Paperless returned an invalid list.'],
+		];
+	}
+
+	#[DataProvider('failedLookups')]
+	public function testAWrongAnswerFailsTheLookupWithItsReason(int $status, ?string $body, RequestFailure $reason, string $message): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response($status, $body));
+
+		try {
+			$this->service($client)->findNames('correspondents', [1]);
+			self::fail('The lookup did not fail.');
+		} catch (PaperlessRequestException $exception) {
+			self::assertSame($reason, $exception->reason);
+			self::assertSame($message, $exception->getMessage());
+		}
+	}
+
+	/**
+	 * Names only add to results that Paperless has just sent: a request without answer
+	 * gets no second try and leaves the history of the problems of the search alone.
+	 */
+	public function testALookupWithoutAnswerGetsNoSecondTry(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->willThrowException(new RuntimeException('cURL error 7: Failed to connect'));
+
+		try {
+			$this->service($client)->findNames('correspondents', [1]);
+			self::fail('The lookup did not fail.');
+		} catch (RuntimeException $error) {
+			self::assertSame('cURL error 7: Failed to connect', $error->getMessage());
+		}
+		self::assertArrayNotHasKey('diagnostics', $this->config->storedValues(AppConstants::APP_ID));
+	}
+
+	/**
+	 * The body of an answer of a real Paperless-ngx in tests/Unit/fixtures.
+	 */
+	private static function fixture(string $name): string {
+		$body = file_get_contents(__DIR__ . '/../fixtures/' . $name);
+		self::assertIsString($body);
+
+		return $body;
+	}
+
+	/**
 	 * The rejection of a search that Paperless refused.
 	 */
 	private function rejectedSearch(IClient $client, string $term, int $page = 1): PaperlessQueryRejected {
