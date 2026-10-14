@@ -169,7 +169,9 @@ final class AdminSettingsTest extends TestCase {
 		self::assertSame(AppConstants::APP_ID, $section->getID());
 		self::assertSame($section->getID(), $settings->getSection());
 		self::assertSame('Paperless-Suche', $section->getName());
-		self::assertSame('/apps/paperless_unified_search/img/app.svg', $section->getIcon());
+		// The monochrome icon, which Nextcloud turns white on the active section and in
+		// its dark theme; the coloured one turned pink there.
+		self::assertSame('/apps/paperless_unified_search/img/app-dark.svg', $section->getIcon());
 		self::assertSame(55, $section->getPriority());
 		self::assertSame(50, $settings->getPriority());
 	}

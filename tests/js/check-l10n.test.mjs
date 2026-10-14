@@ -129,6 +129,25 @@ test('fails on a call that translates no literal string', function() {
 	assert.match(result.output, /lib\/Controller\/SettingsController\.php:1 translates a text that isn't a literal string/)
 })
 
+test('accepts a call that wraps its text onto the next line', function() {
+	const root = written(app({
+		'lib/Controller/SettingsController.php': "<?php $this->l10n->t(\n\t'Paperless rejected the API token (HTTP %s).',\n\t[$status],\n);\n$l->n( '%n problem', '%n problems', $count);",
+		'js/settings.js': "function translate(text, vars) {}\ntranslate(\n\t'The archive account {account} does not exist.',\n\t{ account },\n)",
+	}, {
+		de: {
+			'Paperless URL': 'Paperless-URL',
+			'Paperless rejected the API token (HTTP %s).': 'Paperless hat das API-Token abgelehnt (HTTP %s).',
+			'_%n problem_::_%n problems_': ['%n Problem', '%n Probleme'],
+			'The archive account {account} does not exist.': 'Das Archiv-Konto {account} existiert nicht.',
+		},
+	}))
+
+	const result = check(root)
+
+	assert.equal(result.status, 0, result.output)
+	assert.match(result.output, /Each of the 4 texts of the code has a translation in de/)
+})
+
 test('checks plurals form by form', function() {
 	const root = written(app({ 'lib/Settings/AdminSettings.php': '<?php $l->n(\'%n problem\', \'%n problems\', $count);' }, {
 		de: { 'Paperless URL': 'Paperless-URL', '_%n problem_::_%n problems_': ['%n Problem', 'Probleme'] },

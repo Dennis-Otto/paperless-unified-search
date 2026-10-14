@@ -5,7 +5,7 @@
 # The checks of this app alone, which scripts/check.sh runs last: the browser and the
 # scripts of the end-to-end tests, the pictures of the README, the descriptions of the
 # pages of the website, the diagrams of the documentation, and the JavaScript of the
-# settings and the translations, which have no build step, with the tests of their check.
+# settings and the translations, which have no build step, with their tests.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -125,14 +125,22 @@ if ! command -v node >/dev/null 2>&1; then
   echo "Node.js is not installed here; the CI checks the JavaScript and the translations."
   exit 0
 fi
+# The test runner of Node.js measures the coverage against a minimum since version 22.8.
+if ! node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 8) ? 0 : 1)'; then
+  echo "Node.js $(node --version) can't hold the tests of js/settings.js to their coverage; install Node.js 22.8 or newer, as the dev container has it."
+  exit 1
+fi
 mapfile -t scripts < <(git ls-files 'js/*.js' 'l10n/*.js' 'tests/e2e/*.mjs')
 for script in "${scripts[@]}"; do
   node --check "$script"
 done
 echo "${#scripts[@]} JavaScript file(s) parse."
-# Every text that the code translates has a translation in each catalog of l10n/, with
-# its placeholders, and the JavaScript catalogs match the JSON ones; the tests of the
-# check make sure that it notices each kind of mismatch.
+# The tests of the settings page run js/settings.js against a stand-in for the page and
+# every answer of Nextcloud, and each line and branch of it runs in one of them. Every
+# text that the code translates has a translation in each catalog of l10n/, with its
+# placeholders, and the JavaScript catalogs match the JSON ones; the tests of the check
+# make sure that it notices each kind of mismatch.
 mapfile -t tests < <(git ls-files --cached --others --exclude-standard 'tests/js/*.test.mjs' | sort -u)
-node --test "${tests[@]}"
+node --test --experimental-test-coverage --test-coverage-include=js/settings.js \
+  --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 "${tests[@]}"
 node scripts/check-l10n.mjs

@@ -40,7 +40,12 @@ final class AdminSection implements IIconSection {
 		return 55;
 	}
 
+	/**
+	 * The icon as one dark shape, as Nextcloud expects it of a section: it inverts the icon
+	 * of the active section and every icon in its dark theme, which turned the coloured
+	 * icon of the app pink.
+	 */
 	public function getIcon(): string {
-		return $this->urlGenerator->imagePath(AppConstants::APP_ID, 'app.svg');
+		return $this->urlGenerator->imagePath(AppConstants::APP_ID, 'app-dark.svg');
 	}
 }
