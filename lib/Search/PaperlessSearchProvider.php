@@ -11,6 +11,7 @@ namespace OCA\PaperlessUnifiedSearch\Search;
 
 use DateTime;
 use DateTimeImmutable;
+use DateTimeInterface;
 use DateTimeZone;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessQueryRejected;
@@ -24,19 +25,23 @@ use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Files\File;
 use OCP\Files\IMimeTypeDetector;
 use OCP\IDateTimeFormatter;
+use OCP\IDateTimeZone;
 use OCP\IL10N;
 use OCP\IPreview;
 use OCP\IRequest;
 use OCP\IURLGenerator;
 use OCP\IUser;
+use OCP\Search\FilterDefinition;
 use OCP\Search\IExternalProvider;
+use OCP\Search\IFilter;
+use OCP\Search\IFilteringProvider;
 use OCP\Search\ISearchQuery;
 use OCP\Search\SearchResult;
 use OCP\Search\SearchResultEntry;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
-final class PaperlessSearchProvider implements IExternalProvider {
+final class PaperlessSearchProvider implements IExternalProvider, IFilteringProvider {
 	/** The ID in the routes of Nextcloud's search, through which the smart picker searches too. */
 	public const ID = AppConstants::APP_ID . '_documents';
 
@@ -45,6 +50,15 @@ final class PaperlessSearchProvider implements IExternalProvider {
 
 	/** After this many milliseconds, a search asks Paperless for no further page. */
 	private const TIME_BUDGET_MS = 3000;
+
+	/**
+	 * The filters of Nextcloud's search for a span of time, each with the filter of
+	 * Paperless for the date of a document that it becomes.
+	 */
+	private const DATE_FILTERS = [
+		IFilter::BUILTIN_SINCE => PaperlessApiService::CREATED_FROM,
+		IFilter::BUILTIN_UNTIL => PaperlessApiService::CREATED_UNTIL,
+	];
 
 	/** The most characters of the excerpt of a document. */
 	private const EXCERPT_LENGTH = 180;
@@ -82,6 +96,7 @@ final class PaperlessSearchProvider implements IExternalProvider {
 		private IPreview $previewManager,
 		private IMimeTypeDetector $mimeTypeDetector,
 		private IDateTimeFormatter $dateTimeFormatter,
+		private IDateTimeZone $dateTimeZone,
 	) {
 	}
 
@@ -95,6 +110,32 @@ final class PaperlessSearchProvider implements IExternalProvider {
 
 	public function getOrder(string $route, array $routeParameters): ?int {
 		return 40;
+	}
+
+	/**
+	 * The filters of Nextcloud's search that the provider takes: the term, and the span of
+	 * time of the date filter. Nextcloud's web search sends the date filter only to the
+	 * providers that name since and until, and lists any other one under "Partial
+	 * matches", searched without it.
+	 *
+	 * @return list<string>
+	 */
+	public function getSupportedFilters(): array {
+		return [IFilter::BUILTIN_TERM, ...array_keys(self::DATE_FILTERS)];
+	}
+
+	/**
+	 * @return list<string>
+	 */
+	public function getAlternateIds(): array {
+		return [];
+	}
+
+	/**
+	 * @return list<FilterDefinition>
+	 */
+	public function getCustomFilters(): array {
+		return [];
 	}
 
 	/**
@@ -122,6 +163,7 @@ final class PaperlessSearchProvider implements IExternalProvider {
 			return SearchResult::complete($this->getName(), []);
 		}
 
+		$filters = $this->getDateFilters($user, $query);
 		$started = $this->timeFactory->now();
 		$entries = [];
 		$pages = 0;
@@ -134,7 +176,7 @@ final class PaperlessSearchProvider implements IExternalProvider {
 		try {
 			do {
 				$step = SearchEvent::STEP_PAPERLESS;
-				$response = $this->paperlessApi->searchDocuments($term, $pager->getPage(), PaperlessPager::PAGE_SIZE);
+				$response = $this->paperlessApi->searchDocuments($term, $pager->getPage(), PaperlessPager::PAGE_SIZE, $filters);
 				$hits = $pager->getHitsFromOffset($response['results']);
 				$step = SearchEvent::STEP_FILES;
 				// The files of all documents of the page, in one search of the file cache.
@@ -213,6 +255,28 @@ final class PaperlessSearchProvider implements IExternalProvider {
 		}
 
 		return SearchResult::complete($this->getName(), $entries);
+	}
+
+	/**
+	 * The span of time of the date filter as filters of Paperless for the date of a
+	 * document, each bound that the search has. Nextcloud's web search sends a bound as
+	 * a moment in UTC, such as midnight in the timezone of the browser for the first day
+	 * of the span; its day in the timezone of the user is the day that the user picked.
+	 *
+	 * @return array<string, string>
+	 */
+	private function getDateFilters(IUser $user, ISearchQuery $query): array {
+		$filters = [];
+		foreach (self::DATE_FILTERS as $name => $parameter) {
+			/** @psalm-suppress MixedAssignment The value of a filter is checked before use. */
+			$moment = $query->getFilter($name)?->get();
+			if ($moment instanceof DateTimeInterface) {
+				$timeZone = $this->dateTimeZone->getTimeZone($moment->getTimestamp(), $user->getUID());
+				$filters[$parameter] = DateTimeImmutable::createFromInterface($moment)->setTimezone($timeZone)->format('Y-m-d');
+			}
+		}
+
+		return $filters;
 	}
 
 	private function recordFailure(string $step, Throwable $error, DateTimeImmutable $started, string $term): void {

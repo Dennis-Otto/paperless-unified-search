@@ -174,13 +174,18 @@ mock_requests() {
 
 # Searches as the user $1 with the user agent $2 for the term $4, mobiletest by default,
 # from the cursor $5, 0 by default, 5 results as Nextcloud's web search asks for them.
-# The answer lands in the file $3.
+# Any further argument is a parameter of the search, such as since=2026-08-01T00:00:00Z
+# of the date filter. The answer lands in the file $3.
 search() {
 	user="$1"
 	user_agent="$2"
 	output="$3"
 	term="${4:-mobiletest}"
 	cursor="${5:-0}"
+	parameters=()
+	for parameter in "${@:6}"; do
+		parameters+=(--data-urlencode "${parameter}")
+	done
 	curl --fail-with-body --silent --show-error \
 		--user "${user}:${PASSWORD}" \
 		--user-agent "${user_agent}" \
@@ -190,6 +195,7 @@ search() {
 		--data-urlencode "term=${term}" \
 		--data-urlencode 'limit=5' \
 		--data-urlencode "cursor=${cursor}" \
+		"${parameters[@]}" \
 		--output "${output}" \
 		"${BASE_URL}/ocs/v2.php/search/providers/paperless_unified_search_documents/search"
 }
@@ -649,6 +655,23 @@ assert_response browser "${TMP_DIR}/typing.json"
 search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/past-the-end.json" pagetest 100
 assert_response no-results "${TMP_DIR}/past-the-end.json"
 
+# The date filter of Nextcloud's search narrows the documents by their date in Paperless,
+# which the mock filters as Paperless does (#153). The web search sends each bound of the
+# span as a moment in UTC, whose day in the timezone of the user is the day that the user
+# picked: in Berlin, 22:00 UTC on August 26 is already August 27, after the document of
+# August 26, and 22:30 UTC on August 25 is August 26, its day. In UTC, each of the two
+# searches would get the answer of the other.
+occ user:setting e2e-user core timezone Europe/Berlin
+search e2e-user 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/since.json" mobiletest 0 'since=2026-08-26T22:00:00Z'
+assert_response no-results "${TMP_DIR}/since.json"
+search e2e-user 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/until.json" mobiletest 0 'since=2026-08-01T00:00:00Z' 'until=2026-08-25T22:30:00Z'
+assert_response browser "${TMP_DIR}/until.json"
+occ user:setting e2e-user core timezone --delete
+if ! "${COMPOSE[@]}" logs --no-color paperless-mock | grep --quiet --fixed-strings 'created__date__gte=2026-08-01&created__date__lte=2026-08-26'; then
+	echo 'The date filter of the search reached Paperless without created__date__gte=2026-08-01 and created__date__lte=2026-08-26.' >&2
+	exit 1
+fi
+
 # Paperless fails with HTTP 500 for e2e-error, and the connection of the first search
 # for e2e-drop breaks off without an answer. The first search shows no document and
 # goes into the history of the problems of the search; the second shows its document,
@@ -735,4 +758,4 @@ phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed in ${SECONDS} s: the set-up, the test, the explained search and the check of occ, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date in English and German, its correspondent and its type, pages of results filled across pages of Paperless, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, Try a search for administrators only with the IDs, titles and verdicts alone, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."
+echo "Docker E2E passed in ${SECONDS} s: the set-up, the test, the explained search and the check of occ, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date in English and German, its correspondent and its type, pages of results filled across pages of Paperless, the date filter in the timezone of the user, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, Try a search for administrators only with the IDs, titles and verdicts alone, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."

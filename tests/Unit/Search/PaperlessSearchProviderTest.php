@@ -37,11 +37,14 @@ use OCP\Http\Client\IResponse;
 use OCP\IAppConfig;
 use OCP\ICacheFactory;
 use OCP\IDateTimeFormatter;
+use OCP\IDateTimeZone;
 use OCP\IL10N;
 use OCP\IPreview;
 use OCP\IRequest;
 use OCP\IURLGenerator;
 use OCP\IUser;
+use OCP\Search\IFilter;
+use OCP\Search\IFilteringProvider;
 use OCP\Search\ISearchQuery;
 use OCP\Search\SearchResultEntry;
 use OCP\Security\ICredentialsManager;
@@ -70,6 +73,9 @@ final class PaperlessSearchProviderTest extends TestCase {
 
 	/** @var list<array{string, array<string, int|string>}> the list and the query of each request for names, oldest first */
 	private array $nameRequests = [];
+
+	/** @var list<array{bool|int, ?string}> the timestamp and the user of each question for a timezone, oldest first */
+	private array $timeZoneRequests = [];
 
 	/** The distributed cache of Nextcloud, once the app uses it. */
 	private ?MemoryCache $cache = null;
@@ -246,6 +252,111 @@ final class PaperlessSearchProviderTest extends TestCase {
 		self::assertSame(PaperlessSearchProvider::ID, $provider->getId());
 		self::assertSame('Paperless documents', $provider->getName());
 		self::assertSame(40, $provider->getOrder('files.view.index', []));
+	}
+
+	/**
+	 * Nextcloud's web search sends its date filter only to a provider that names since and
+	 * until, and lists any other one under "Partial matches", searched without it.
+	 */
+	public function testTakesTheTermAndTheDateFilterOfTheSearch(): void {
+		$provider = $this->provider($this->createStub(IClient::class));
+
+		self::assertInstanceOf(IFilteringProvider::class, $provider);
+		self::assertSame([IFilter::BUILTIN_TERM, IFilter::BUILTIN_SINCE, IFilter::BUILTIN_UNTIL], $provider->getSupportedFilters());
+		self::assertSame([], $provider->getAlternateIds());
+		self::assertSame([], $provider->getCustomFilters());
+	}
+
+	/**
+	 * @return array<string, array{array<string, mixed>, string, array<string, string>}>
+	 */
+	public static function dateFilters(): array {
+		return [
+			'no date filter' => [[], 'America/New_York', []],
+			'since alone' => [
+				['since' => new DateTimeImmutable('2026-08-01T04:00:00Z')],
+				'America/New_York',
+				['created__date__gte' => '2026-08-01'],
+			],
+			'until alone' => [
+				['until' => new DateTimeImmutable('2026-09-01T03:59:59.999Z')],
+				'America/New_York',
+				['created__date__lte' => '2026-08-31'],
+			],
+			'since and until' => [
+				['since' => new DateTimeImmutable('2026-08-01T04:00:00Z'), 'until' => new DateTimeImmutable('2026-09-01T03:59:59.999Z')],
+				'America/New_York',
+				['created__date__gte' => '2026-08-01', 'created__date__lte' => '2026-08-31'],
+			],
+			// Midnight in Berlin is the evening before in UTC.
+			'the day in the timezone of the user' => [
+				['since' => new DateTimeImmutable('2026-07-31T22:00:00Z'), 'until' => new DateTimeImmutable('2026-08-31T21:59:59.999Z')],
+				'Europe/Berlin',
+				['created__date__gte' => '2026-08-01', 'created__date__lte' => '2026-08-31'],
+			],
+			'a day of the winter' => [
+				['since' => new DateTimeImmutable('2026-12-31T23:00:00Z')],
+				'Europe/Berlin',
+				['created__date__gte' => '2027-01-01'],
+			],
+			'a mutable moment with an offset of its own' => [
+				['since' => new DateTime('2026-08-01T00:30:00+02:00')],
+				'UTC',
+				['created__date__gte' => '2026-07-31'],
+			],
+			'filters whose values are no dates' => [['since' => '2026-08-01', 'until' => null], 'UTC', []],
+		];
+	}
+
+	/**
+	 * The date filter of Nextcloud's search becomes the filter of Paperless for the date of
+	 * a document: each bound that the search has, as the day in the timezone of the user.
+	 *
+	 * @param array<string, mixed> $filters
+	 * @param array<string, string> $expected
+	 */
+	#[DataProvider('dateFilters')]
+	public function testTheDateFilterNarrowsTheDocumentsByTheirDate(array $filters, string $timeZone, array $expected): void {
+		$this->provider($this->ranking(self::documentsWithIds([1, 2])), $this->files([1, 2]), timeZone: $timeZone)
+			->search($this->user(), $this->query('invoice', null, 5, $filters));
+
+		self::assertCount(1, $this->requests);
+		self::assertSame($expected, self::filtersOf($this->requests[0]));
+	}
+
+	/**
+	 * The timezone is the one of the user who searches, at the moment of the bound: where
+	 * Nextcloud knows only the offset of the browser, the zone may differ in summer and in
+	 * winter.
+	 */
+	public function testTheTimezoneIsTheOneOfTheUserAtTheMomentOfTheBound(): void {
+		$since = new DateTimeImmutable('2026-01-01T05:00:00Z');
+		$until = new DateTimeImmutable('2026-08-01T03:59:59Z');
+
+		$this->provider($this->ranking(self::documentsWithIds([1])), $this->files([1]))
+			->search($this->user(), $this->query('invoice', null, 5, ['since' => $since, 'until' => $until]));
+
+		self::assertSame([[$since->getTimestamp(), 'dennis'], [$until->getTimestamp(), 'dennis']], $this->timeZoneRequests);
+		self::assertSame(['created__date__gte' => '2026-01-01', 'created__date__lte' => '2026-07-31'], self::filtersOf($this->requests[0]));
+	}
+
+	/**
+	 * Every page of Paperless that fills a page of results is asked with the date filter,
+	 * so that a later page finds no document outside of the span either.
+	 */
+	public function testEveryPageOfPaperlessIsAskedWithTheDateFilter(): void {
+		$result = $this->provider($this->ranking(self::documentsWithIds(range(1, 60))), $this->files([3, 26, 27, 51]))
+			->search($this->user(), $this->query('invoice', null, 5, [
+				'since' => new DateTimeImmutable('2026-08-01T04:00:00Z'),
+				'until' => new DateTimeImmutable('2026-09-01T03:59:59Z'),
+			]))
+			->jsonSerialize();
+
+		self::assertSame(self::titlesOf([3, 26, 27, 51]), self::titles($result['entries']));
+		self::assertSame([1, 2, 3], array_column($this->requests, 'page'));
+		foreach ($this->requests as $request) {
+			self::assertSame(['created__date__gte' => '2026-08-01', 'created__date__lte' => '2026-08-31'], self::filtersOf($request));
+		}
 	}
 
 	/**
@@ -1480,6 +1591,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		?ITimeFactory $clock = null,
 		bool $previews = false,
 		string $locale = 'en',
+		string $timeZone = 'America/New_York',
 	): PaperlessSearchProvider {
 		$config = $this->settings($archiveOwner, $syncAccount);
 
@@ -1523,7 +1635,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			$configService,
 			$this->diagnostics($config),
 			$clock ?? $this->clock(),
-			...$this->presentation($paperlessApi, $configService, $previews, $locale),
+			...$this->presentation($paperlessApi, $configService, $previews, $locale, $timeZone),
 		);
 	}
 
@@ -1532,11 +1644,12 @@ final class PaperlessSearchProviderTest extends TestCase {
 	 * and types, with the cache of the test; previews, which Nextcloud draws of no type of
 	 * file by default, and of PDF files with $previews; the icons of the types of files;
 	 * and the dates, as Nextcloud formats them for a user in New York with the locale en
-	 * or de.
+	 * or de; and the timezone of the user dennis, New York by default, and UTC for anyone
+	 * else, with each question for it in $this->timeZoneRequests.
 	 *
-	 * @return array{PaperlessNames, IPreview, IMimeTypeDetector, IDateTimeFormatter}
+	 * @return array{PaperlessNames, IPreview, IMimeTypeDetector, IDateTimeFormatter, IDateTimeZone}
 	 */
-	private function presentation(PaperlessApiService $paperlessApi, ConfigService $configService, bool $previews = false, string $locale = 'en'): array {
+	private function presentation(PaperlessApiService $paperlessApi, ConfigService $configService, bool $previews = false, string $locale = 'en', string $timeZone = 'America/New_York'): array {
 		$cacheFactory = $this->createStub(ICacheFactory::class);
 		$cacheFactory->method('createDistributed')->willReturnCallback(
 			fn (): MemoryCache => $this->cache ??= new MemoryCache(static fn (): int => self::NOW),
@@ -1562,11 +1675,21 @@ final class PaperlessSearchProviderTest extends TestCase {
 			},
 		);
 
+		$dateTimeZone = $this->createStub(IDateTimeZone::class);
+		$dateTimeZone->method('getTimeZone')->willReturnCallback(
+			function (bool|int $timestamp = false, ?string $userId = null) use ($timeZone): DateTimeZone {
+				$this->timeZoneRequests[] = [$timestamp, $userId];
+
+				return new DateTimeZone($userId === 'dennis' ? $timeZone : 'UTC');
+			},
+		);
+
 		return [
 			new PaperlessNames($paperlessApi, $configService, $cacheFactory, $this->createStub(LoggerInterface::class)),
 			$previewManager,
 			$mimeTypeDetector,
 			$dateTimeFormatter,
+			$dateTimeZone,
 		];
 	}
 
@@ -1876,12 +1999,36 @@ final class PaperlessSearchProviderTest extends TestCase {
 		return $user;
 	}
 
-	private function query(string $term, int|string|null $cursor = null, int $limit = 10): ISearchQuery {
+	/**
+	 * @param array<string, mixed> $filters the values of the filters of the search by their
+	 *                                      names, such as since, as Nextcloud builds them
+	 */
+	private function query(string $term, int|string|null $cursor = null, int $limit = 10, array $filters = []): ISearchQuery {
 		$query = $this->createStub(ISearchQuery::class);
 		$query->method('getTerm')->willReturn($term);
 		$query->method('getCursor')->willReturn($cursor);
 		$query->method('getLimit')->willReturn($limit);
+		$query->method('getFilter')->willReturnCallback(function (string $name) use ($filters): ?IFilter {
+			if (!array_key_exists($name, $filters)) {
+				return null;
+			}
+
+			$filter = $this->createStub(IFilter::class);
+			$filter->method('get')->willReturn($filters[$name]);
+
+			return $filter;
+		});
 
 		return $query;
+	}
+
+	/**
+	 * The filters of a request to Paperless, without the term, the page and the fields.
+	 *
+	 * @param array<string, int|string> $request
+	 * @return array<string, int|string>
+	 */
+	private static function filtersOf(array $request): array {
+		return array_diff_key($request, array_flip(['query', 'text', 'page', 'page_size', 'fields']));
 	}
 }

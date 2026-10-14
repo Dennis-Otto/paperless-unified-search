@@ -41,6 +41,12 @@ if mode in ("external", "trusted"):
     expected = mode == "external"
     if provider.get("isExternalProvider") is not expected:
         fail(f"Expected isExternalProvider={expected}, got {provider!r}")
+    # Nextcloud's web search sends its date filter only to a provider that names since
+    # and until, and lists any other one under "Partial matches", searched without it.
+    # Nextcloud names each filter with its type, such as {"since": "datetime"}.
+    filters = provider.get("filters")
+    if not isinstance(filters, (dict, list)) or not {"term", "since", "until"} <= set(filters):
+        fail(f"The provider doesn't take the term and the date filter of the search: {provider!r}")
     sys.exit(0)
 
 if mode == "picker":

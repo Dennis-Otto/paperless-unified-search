@@ -7,7 +7,7 @@ config:
 ---
 sequenceDiagram
     accTitle: The data flow of a search
-    accDescr: A user searches for invoice. The unified search passes the term, the cursor, the limit and the user to the search provider. Without a term, an archive account or a connection, the provider answers with no results and doesn't ask Paperless. Otherwise, until the page of results is full, the Paperless client asks Paperless-ngx with the token for the page of 25 hits that holds the next hit, and only for the fields that a result shows, and Paperless answers with the ID, the title, the date, the IDs of the correspondent and the type and the excerpt of documents 412, 389, 371 and more, and whether a next page exists. One call of the file locator covers all documents of that page and returns for each a file of the archive account with its marker, or none. For the documents with a file, the names ask Paperless, through the client, for the correspondents and the types that the cache doesn't hold, with one request per kind, and keep their names for ten minutes. This repeats for at most 4 pages of Paperless or 3 seconds. The provider answers with an entry for every document with a file, up to the limit, with the preview of the file or the icon of its type, the title, the date in the language of the user, the correspondent, the type and the excerpt, and the cursor of the first hit that it didn't go through.
+    accDescr: A user searches for invoice. The unified search passes the term, the cursor, the limit, the date filter and the user to the search provider. Without a term, an archive account or a connection, the provider answers with no results and doesn't ask Paperless. Otherwise, until the page of results is full, the Paperless client asks Paperless-ngx with the token for the page of 25 hits that holds the next hit, within the days of the date filter, and only for the fields that a result shows, and Paperless answers with the ID, the title, the date, the IDs of the correspondent and the type and the excerpt of documents 412, 389, 371 and more, and whether a next page exists. One call of the file locator covers all documents of that page and returns for each a file of the archive account with its marker, or none. For the documents with a file, the names ask Paperless, through the client, for the correspondents and the types that the cache doesn't hold, with one request per kind, and keep their names for ten minutes. This repeats for at most 4 pages of Paperless or 3 seconds. The provider answers with an entry for every document with a file, up to the limit, with the preview of the file or the icon of its type, the title, the date in the language of the user, the correspondent, the type and the excerpt, and the cursor of the first hit that it didn't go through.
 
     actor User
     participant Search as Unified search
@@ -17,13 +17,13 @@ sequenceDiagram
     participant Locator as File locator
     participant Names as Names
     User->>Search: invoice
-    Search->>Provider: term, cursor, limit and user
+    Search->>Provider: term, cursor, limit,<br>date filter and user
     alt no term, no archive account or no connection
         Provider-->>Search: no results, without asking Paperless
     else
         loop until the page of results is full, for at most 4 pages of Paperless or 3 seconds
-            Provider->>Client: term, the page of 25 hits with the next hit
-            Client->>Paperless: GET /api/documents/<br>?query=invoice&page=1<br>&page_size=25&fields=…,<br>with the token
+            Provider->>Client: term, the days of the date filter,<br>the page of 25 hits with the next hit
+            Client->>Paperless: GET /api/documents/<br>?query=invoice&page=1<br>&page_size=25&fields=…<br>&created__date__gte=…,<br>with the token
             Paperless-->>Client: ID, title, date, correspondent,<br>type and excerpt of documents<br>412, 389, 371, …, and whether<br>a next page exists
             Provider->>Locator: the documents of the page,<br>user, archive account
             Locator-->>Provider: per document a file of the<br>archive account with its marker,<br>or none
