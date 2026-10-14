@@ -15,6 +15,7 @@
 .php-cs-fixer.dist.php
 .release-please-manifest.json
 /build
+/changelog.d
 /composer.json
 /composer.lock
 /docs
@@ -33,6 +34,8 @@
 /vendor
 /.vale.ini
 /version.txt
+AGENTS.md
+CLAUDE.md
 CODE_OF_CONDUCT.md
 CONTRIBUTING.md
 GOVERNANCE.md

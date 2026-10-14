@@ -3,9 +3,10 @@ name: Release
 # The release bot. release-please keeps a pull request for the next release, up to
 # date with main. Its version follows from the Conventional Commit titles merged
 # since the last release (fix: a patch, feat: a minor, ! or BREAKING CHANGE: a major
-# version) and is decided anew with every merge. What the pull requests wrote under
-# "## Unreleased" of CHANGELOG.md becomes the section of the release; without it,
-# the section lists the pull requests. Merging the pull request creates the release
+# version) and is decided anew with every merge. What the pull requests wrote in the
+# fragments of changelog.d/ and under "## Unreleased" of CHANGELOG.md becomes the
+# section of the release, and the fragments leave with it; without such text, the
+# section lists the pull requests. Merging the pull request creates the release
 # as a draft, on a tag that this workflow signs first, and the build checks the tag
 # before anything else. The jobs below attach the package, its SBOMs (SPDX and
 # CycloneDX), the licenses of its third-party components, the advisories that don't
@@ -180,7 +181,7 @@ jobs:
             echo "major=${version%%.*}"
           } >> "$GITHUB_OUTPUT"
           echo "The draft of v$version is built and published now." >> "$GITHUB_STEP_SUMMARY"
-      - name: Write the text of Unreleased into the release pull request
+      - name: Write the text of Unreleased and of the fragments into the release pull request
         if: steps.app.outputs.token != ''
         env:
           # The commit goes through GitHub's API as the release app: GitHub signs it,
@@ -203,21 +204,42 @@ jobs:
               head="$(gh api "repos/$GH_REPO/git/ref/heads/$branch" --jq .object.sha)"
               version="$(gh api "${raw[@]}" "repos/$GH_REPO/contents/.release-please-manifest.json?ref=$head" | jq -r '.["."]')"
               gh api "${raw[@]}" "repos/$GH_REPO/contents/CHANGELOG.md?ref=$head" > "$RUNNER_TEMP/branch.md"
-              python3 "$script" changelog release "$version" CHANGELOG.md "$RUNNER_TEMP/branch.md" > "$RUNNER_TEMP/release.md"
-              if cmp -s "$RUNNER_TEMP/release.md" "$RUNNER_TEMP/branch.md"; then
+              # The section of the release takes in the text of Unreleased and the
+              # fragments in changelog.d/ of main; the same commit deletes the fragments.
+              python3 "$script" changelog release "$version" CHANGELOG.md "$RUNNER_TEMP/branch.md" \
+                --taken "$RUNNER_TEMP/taken" > "$RUNNER_TEMP/release.md"
+              # Only those that the branch still has: an earlier run deleted them already,
+              # and the next run takes in one that reached main after this checkout.
+              listed='[]'
+              if [[ -s "$RUNNER_TEMP/taken" ]] &&
+                ! listed="$(gh api "repos/$GH_REPO/contents/changelog.d?ref=$head" --jq '[.[].path]' 2> "$RUNNER_TEMP/error")"; then
+                # A branch without the folder has no fragment to delete.
+                if ! grep -q "HTTP 404" "$RUNNER_TEMP/error"; then
+                  cat "$RUNNER_TEMP/error" >&2
+                  exit 1
+                fi
+                listed='[]'
+              fi
+              # Without a line end (-j), which the jq.exe of Git Bash writes as CRLF.
+              deletions="$(jq -R . "$RUNNER_TEMP/taken" | jq -scj --argjson listed "$listed" 'map(select(IN($listed[])) | {path: .})')"
+              if cmp -s "$RUNNER_TEMP/release.md" "$RUNNER_TEMP/branch.md" && [[ "$deletions" == '[]' ]]; then
                 echo "The changelog of $version is up to date."
                 continue
               fi
               echo "Writing the changelog of $version into $branch."
+              # A file, not a process substitution, which the jq.exe of Git Bash can't open.
+              base64 --wrap=0 "$RUNNER_TEMP/release.md" > "$RUNNER_TEMP/release.b64"
               jq --null-input --arg repo "$GH_REPO" --arg branch "$branch" --arg head "$head" \
                 --arg headline "chore: write the changelog of $version" \
-                --rawfile contents <(base64 --wrap=0 "$RUNNER_TEMP/release.md") \
+                --rawfile contents "$RUNNER_TEMP/release.b64" \
+                --argjson deletions "$deletions" \
                 '{query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
                   variables: {input: {
                     branch: {repositoryNameWithOwner: $repo, branchName: $branch},
                     expectedHeadOid: $head,
                     message: {headline: $headline},
-                    fileChanges: {additions: [{path: "CHANGELOG.md", contents: $contents}]}}}}' |
+                    fileChanges: ({additions: [{path: "CHANGELOG.md", contents: $contents}]}
+                      + if $deletions == [] then {} else {deletions: $deletions} end)}}}' |
                 gh api graphql --input - --jq .data.createCommitOnBranch.commit.oid
             done
       - name: Merge a release of dependency updates once its checks pass

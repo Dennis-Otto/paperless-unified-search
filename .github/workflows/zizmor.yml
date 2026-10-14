@@ -50,3 +50,13 @@ jobs:
           persist-credentials: false
       - name: Check the workflows
         uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.toml.
+      - name: Explain the failure
+        if: failure()
+        env:
+          CHECK: zizmor
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" coach explain "$CHECK"

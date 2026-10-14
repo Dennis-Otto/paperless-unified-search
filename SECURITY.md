@@ -72,9 +72,9 @@ An attacker would most likely try to bring malicious code into `main`, through a
 ### Trust boundaries
 
 1. **Outside contributors → pull requests.** Their code is untrusted. The workflows of their pull requests run only after the maintainer approves them, with a read-only token and without secrets.
-2. **Pull requests → `main`.** A change reaches `main` only through a pull request that passes every required check, squashed into one signed commit. The rules of `main` and of the release tags have no exceptions, not even for administrators.
+2. **Pull requests → `main`.** A change reaches `main` only through a pull request that passes every required check, squashed into one signed commit. The rules of `main` and of the release tags have no exceptions, not even for administrators, but one: only the release app may create a release tag, which the release workflow signs.
 3. **`main` → secrets.** Every secret lives in an environment that only workflows on `main` can use, and the jobs that use one run no code of a pull request.
-4. **Third-party code → the build.** Dependencies are pinned by version and hash, actions by commit hash and images by digest. An update waits a week after its release, unless it fixes a vulnerability, and passes the same checks as every other change.
+4. **Third-party code → the build.** Dependencies are pinned by version and hash, actions by commit hash and images by digest. An update waits a week after its release, unless it fixes a vulnerability, and passes the same checks as every other change. Updates of the [blueprint](https://github.com/Dennis-Otto/repo-blueprint) come only from a release that is immutable, on the blueprint's `main` and signed by its release workflow, which the blueprint bot verifies first.
 5. **The release → its users.** The release workflow builds every release from its tagged commit, once it has checked that it signed the tag itself, at the commit of the release; GitHub keeps it immutable, and its signatures let users check it, as [Verify a release](#verify-a-release) shows.
 6. **Issues → the issue assistant.** Anyone can write an issue, so its text is data for an AI that only reads; a job without the AI checks the answer before anything is posted.
 
@@ -82,7 +82,7 @@ An attacker would most likely try to bring malicious code into `main`, through a
 
 - **Least privilege:** tokens are read-only unless a job needs more, and then get only what it needs; each secret is in the one environment that needs it.
 - **Fail-safe defaults:** a failed check, a missing secret or an open finding stops a merge or a release instead of being skipped; workflows of outside contributors wait for approval.
-- **Complete mediation:** every change of `main` passes the same required checks, and nobody can bypass the rules of `main` and of the release tags.
+- **Complete mediation:** every change of `main` passes the same required checks, nobody can bypass the rules of `main`, and nobody can move or delete a release tag; only the release app creates one.
 - **Separation of privilege:** the job in which the AI reads untrusted text, such as an issue, holds no token that writes, and the job that writes runs no AI; only the release workflow on `main` publishes releases.
 - **Least common mechanism:** the secrets of the releases and those of the issue assistant are in separate environments, so a job that needs one never holds the other.
 - **Economy of mechanism:** one script, `scripts/check.sh`, runs the checks locally and in the CI; one workflow builds, signs and publishes every release.
@@ -95,7 +95,7 @@ How the [OWASP Top 10 CI/CD security risks](https://owasp.org/www-project-top-10
 
 | Risk | Countermeasure |
 | --- | --- |
-| Insufficient flow control mechanisms | pull requests only, every required check, a linear history, release tags that never move |
+| Insufficient flow control mechanisms | pull requests only, every required check, a linear history, release tags that never move and that only the release app creates |
 | Inadequate identity and access management | administrator access only for the maintainers; bots act as GitHub Apps or with the token of their workflow |
 | Dependency chain abuse | lock files with hashes, pins by commit hash and digest, updates only a week after their release, a weekly refresh of the lock files that waits for the maintainer, the dependency review and OSV-Scanner |
 | Poisoned pipeline execution | no code of a pull request runs with a secret; actionlint and zizmor audit every workflow |
@@ -103,7 +103,7 @@ How the [OWASP Top 10 CI/CD security risks](https://owasp.org/www-project-top-10
 | Insufficient credential hygiene | the secret scan and push protection, tokens of the release app that expire after an hour, no secret printed or committed |
 | Insecure system configuration | the settings as code, which the settings bot applies after every change and every week, and OpenSSF Scorecard every week |
 | Ungoverned usage of third-party services | only the services of the workflows in this repository, each in the jobs that need it, with the least permissions |
-| Improper artifact integrity validation | immutable releases with signed provenance, verified after every release and every week |
+| Improper artifact integrity validation | immutable releases with signed provenance, verified after every release and every week; updates only to a verified release of the blueprint |
 | Insufficient logging and visibility | the logs of every run, and Harden-Runner, which records the network traffic of every job |
 
 In the code, CodeQL looks for the weaknesses of the [CWE Top 25](https://cwe.mitre.org/top25/) with its extended security queries, on every pull request and every push to `main`. CodeQL has no PHP; Psalm checks the types of the PHP code at its strictest level. How the code counters the weaknesses that matter for it is part of [docs/security.md](docs/security.md).
