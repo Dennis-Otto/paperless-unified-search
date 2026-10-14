@@ -4,38 +4,23 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [1.0.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.5.1...v1.0.0) (2026-10-14)
+
 ### Added
 
 - **Search results show a preview of the document, its date in your language, its correspondent and its type.** Every Paperless result had the same icon of the app and its date as Paperless writes it, such as 2026-08-12, so documents were hard to tell apart at a glance. Now each result shows the preview of its file, or the icon of its type, as the results of *Files* do, and below its title the date in your language, such as *Aug 12, 2026* or *12.08.2026*, the correspondent and the type of the document, and the words around your term. A search that found the term only in a note, such as `notes:transfer`, shows the words of the note. The names of correspondents and types cost one request to Paperless per kind and are kept for ten minutes; the account of the API token needs the permission to view them, and without it the results show without the names. Text of a document in angle brackets, such as `<GmbH>`, now shows as `< GmbH>`, so that no part of a result can act as HTML.
 - **Set up and test the app with occ, see its health in the administration overview, and ask occ why a document doesn't show for a user.** Ansible, Docker and other scripts now connect the app without a browser: `occ paperless_unified_search:setup --url=… --token-stdin` tests the connection and saves the settings as *Test connection and save* does, and takes the API token from the standard input or an environment variable, never from the command line. `occ paperless_unified_search:test` tests the connection for monitoring, and `occ paperless_unified_search:check` also checks the archive account and counts how many Paperless documents have a file, such as 1,180 of 1,234. When a user doesn't find a document that Paperless finds, `occ paperless_unified_search:search jamie invoice --explain` names the reason for each one: its file isn't shared with jamie, it belongs to another account, or no file has its marker yet. And *Administration settings → Overview* now warns when the search shows no Paperless documents, for a token that can't be decrypted, a missing archive account or a search that keeps failing, with a link to the settings of the app.
+- **The date filter of Nextcloud's search now narrows Paperless results by document date.** Picking a span such as *Last 30 days* or a custom range in Nextcloud's search left the Paperless results out of the filtered list, under *Partial matches* and searched without the dates, so an invoice of last month could not be told from all the others. Now Paperless finds only the documents whose date lies within the span, counted in whole days in your timezone, and the results stay in the filtered list. Scripts and AI assistants that use Nextcloud's search API narrow the results the same way with `since` and `until`.
+- **Try a search in the settings shows why a Paperless document is or isn't shown to a user.** Administrators of a managed Nextcloud without a shell could not answer the most common question, "why don't I see this document?": the search leaves out a document without a file that the user can open, without a trace. Now *Try a search* at the end of *Administration settings → Paperless Unified Search* searches Paperless as the user you name and lists the first 20 documents with their IDs and titles, each shown or with its reason: not shared with the user, not a file of the archive account, or no file with its marker such as `[P412]`, the same answers as `occ paperless_unified_search:search --explain`. It shows the titles alone, never the content or the files of the documents, and the audit log of the app *Auditing / Logging* (`admin_audit`) records which administrator tried a search as which user, whatever the log level.
 
 ### Changed
 
 - **The app asks Paperless for version 9 of its API, and needs Paperless-ngx 2.16 or newer.** So far, the app took whatever version of its API Paperless answered in by default, which a new release of Paperless raises, as Paperless-ngx 3 did, and a new version may change what a field holds, as version 9 did with the date of a document. Now every request names version 9, which Paperless-ngx 2.16 and newer and every Paperless-ngx 3 speak, so a new release of Paperless can no longer change the results unnoticed: tests against real Paperless-ngx 2.20 and 3.x check every week and with every new release of Paperless that the fields, dates and excerpts of the search stay as the app reads them. A Paperless older than 2.16 answers HTTP 406; *Test connection and save* and `occ paperless_unified_search:test` then say that Paperless is older than 2.16 and that updating Paperless-ngx fixes it.
+- **The first stable version, 1.0.0.** The app now does what it was built for: the full-text search of Paperless-ngx in the search of Nextcloud and in its smart picker, narrowed by the date filter, with a preview, the date, the correspondent and the type of each document, set up and explained with occ and with *Try a search* in the settings, and documented for administrators from the installation to the troubleshooting. From now on, a release that asks more of your server, such as a newer Nextcloud, PHP or Paperless-ngx, or that changes the occ commands of the app in a way that breaks a script, is a new major version, so that an update within 1.x never needs more than the update itself.
 
 ### Fixed
 
 - **A search that is still being typed in Paperless's advanced syntax finds the documents of its words in Paperless 3.** Since 0.5.1, Paperless 3 gets such a search, such as `invoice created:[2026 to`, in its simple mode, but with the unfinished range of dates, which no document matches, so it found nothing, as tests against a real Paperless-ngx 3.3 showed. Now the simple mode gets only the plain words, such as `invoice`, and finds their documents while you finish typing the range.
-
-## [1.0.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.5.1...v1.0.0) (2026-10-14)
-
-
-### ⚠ BREAKING CHANGES
-
-* ask Paperless for version 9 of its API and test against real Paperless-ngx 2.20 and 3.x ([#147](https://github.com/Dennis-Otto/paperless-unified-search/issues/147))
-
-### Features
-
-* ask Paperless for version 9 of its API and test against real Paperless-ngx 2.20 and 3.x ([#147](https://github.com/Dennis-Otto/paperless-unified-search/issues/147)) ([ce8798e](https://github.com/Dennis-Otto/paperless-unified-search/commit/ce8798e0bf09af53a48af44b4aac98bd0bddee1f))
-* occ commands to set up, test and explain the search, and a setup check in the overview ([#138](https://github.com/Dennis-Otto/paperless-unified-search/issues/138)) ([4c135ed](https://github.com/Dennis-Otto/paperless-unified-search/commit/4c135ed5eef27cd9cd0a5c1468191dee6083bcc7))
-* **search:** let Nextcloud's date filter narrow Paperless results ([#154](https://github.com/Dennis-Otto/paperless-unified-search/issues/154)) ([ca9c1e6](https://github.com/Dennis-Otto/paperless-unified-search/commit/ca9c1e69d11ca1b6b8cf523651d01269b27cd3e4))
-* **search:** show a preview, the date in the user's language, the correspondent and the type of each document ([#143](https://github.com/Dennis-Otto/paperless-unified-search/issues/143)) ([6225a8a](https://github.com/Dennis-Otto/paperless-unified-search/commit/6225a8a1aa2c7131f267d7a3045edac866aadb25))
-* **settings:** 'Try a search' shows administrators why a document is hidden from a user ([#152](https://github.com/Dennis-Otto/paperless-unified-search/issues/152)) ([6f62d38](https://github.com/Dennis-Otto/paperless-unified-search/commit/6f62d38e20ef68023503b10daf4c34f60a83754e))
-
-
-### Documentation
-
-* release the app as 1.0.0, its first stable version ([#156](https://github.com/Dennis-Otto/paperless-unified-search/issues/156)) ([7de8969](https://github.com/Dennis-Otto/paperless-unified-search/commit/7de896971b0f63e510a1fb263bc3c5ed9a764aa1))
 
 ## [0.5.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.5.0...v0.5.1) (2026-10-14)
 
