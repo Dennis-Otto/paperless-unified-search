@@ -409,6 +409,11 @@ final class SettingsControllerTest extends TestCase {
 				'This URL forwards to another address (HTTP 301). Enter the address that it forwards to.',
 				PaperlessRequestException::class, 'Paperless returned HTTP 301.',
 			],
+			'a Paperless older than 2.16' => [
+				self::answer(406, '{"detail":"Invalid version in \\"Accept\\" header."}'), 'unsupported_version',
+				'Paperless is older than 2.16 and does not speak version 9 of its API (HTTP 406). Update Paperless-ngx.',
+				PaperlessRequestException::class, 'Paperless returned HTTP 406.',
+			],
 			'an error of the server' => [
 				self::answer(502, '<html>Bad gateway</html>'), 'http',
 				'Paperless answered with an error (HTTP 502). Check its log, or try again later.',

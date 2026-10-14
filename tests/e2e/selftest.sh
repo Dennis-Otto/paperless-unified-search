@@ -104,6 +104,21 @@ expect "a pull request of a path that only looks like the app" false "$(pull_req
 expect "a pull request that moves a file out of the app" true "$(pull_request 'git mv lib/Search.php docs/Search.php')"
 expect "a pull request of the README and the roadmap" false "$(pull_request 'echo second >README.md && echo second >docs/roadmap.md')"
 
+# The contract tests against a real Paperless-ngx cover only the code that talks to
+# Paperless and reads its answers, and their own files.
+export SCOPE=paperless
+expect "a contract run for the requests to Paperless" true "$(pull_request 'mkdir -p lib/Service && echo new >lib/Service/PaperlessApiService.php')"
+expect "a contract run for the search" true "$(pull_request 'mkdir -p lib/Search && echo new >lib/Search/Provider.php')"
+expect "a contract run for a document of the contract" true "$(pull_request 'mkdir -p tests/e2e/contract && echo new >tests/e2e/contract/letter.txt')"
+expect "a contract run for the workflow of the tests" true "$(pull_request 'echo second >.github/workflows/e2e.yml')"
+expect "no contract run for another file of the app" false "$(pull_request 'echo second >lib/Search.php')"
+expect_in "the notice of a skipped contract run" "::notice title=Contract tests skipped::" "${WORK}/log"
+expect "no contract run for the other end-to-end tests" false "$(pull_request 'echo second >tests/e2e/README.md')"
+expect "no contract run for composer.json" false "$(pull_request 'echo second >composer.json')"
+export SCOPE=unknown
+expect "an unknown scope" error "$(pull_request 'echo second >lib/Search.php')"
+unset SCOPE
+
 # A push to main: the commit before it is one the remote has.
 git -C "${clone}" checkout --quiet --detach "${main}"
 echo second >"${clone}/docs/roadmap.md"
