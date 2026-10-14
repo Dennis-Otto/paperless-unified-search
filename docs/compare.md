@@ -4,7 +4,7 @@ description: "How Paperless Unified Search compares with Full text search and El
 
 # Compare
 
-[← README](https://github.com/Dennis-Otto/paperless-unified-search) · [Guide](guide.md) · [Architecture](architecture.md) · [Roadmap](roadmap.md)
+[← README](https://github.com/Dennis-Otto/paperless-unified-search) · [Configure](configure.md) · [Architecture](architecture.md) · [Roadmap](roadmap.md)
 
 Paperless-ngx recognizes the text of every document and keeps an index of its words. Two ways bring that into Nextcloud's search: ask the index of Paperless, as Paperless Unified Search does, or let Nextcloud build a second index of the synchronized files. This page compares the two, and every app that does one of them, as of October 2026, after the descriptions of the apps in the Nextcloud App Store and their documentation. A correction is welcome as an [issue](https://github.com/Dennis-Otto/paperless-unified-search/issues).
 
@@ -15,7 +15,7 @@ Paperless-ngx recognizes the text of every document and keeps an index of its wo
   <img src="images/diagrams/one-index-or-two.svg" alt="One index or two: With Paperless Unified Search there is one index. Nextcloud's search asks Paperless-ngx, whose OCR and full-text index already holds the words of every document, and each document that matches opens its synchronized file in Nextcloud. With a search of its own in Nextcloud, such as Full text search with Elasticsearch, Context Chat or Findling, there are two. The synchronized files are read again, scans are recognized again, and their words are stored a second time, in an index with a server or a container of its own, which Nextcloud's search asks instead.">
 </picture>
 
-One index means nothing more to run, back up or keep current, no second copy of the text of the documents, and no delay: a document is found in Nextcloud as soon as Paperless has it and its file has arrived. It also means the search of Paperless itself, with its ranking, its highlights and its [syntax](guide.md#search-like-in-paperless), which knows the correspondent, the type, the tags and the dates of a document, not only its words.
+One index means nothing more to run, back up or keep current, no second copy of the text of the documents, and no delay: a document is found in Nextcloud as soon as Paperless has it and its file has arrived. It also means the search of Paperless itself, with its ranking, its highlights and its [syntax](usage.md#search-like-in-paperless), which knows the correspondent, the type, the tags and the dates of a document, not only its words.
 
 ## At a glance
 
@@ -60,4 +60,4 @@ The web UI of Paperless has the same search and much more: tags, notes, workflow
 
 ## Use them together
 
-Paperless Unified Search adds one more provider to Nextcloud's search, **Paperless documents**, and gets along with the others: with Findling or Full text search for the files that aren't in Paperless, and with the web UI of Paperless for its administration. The [guide](guide.md#works-with-any-synchronization) shows how any synchronization brings the files of Paperless into Nextcloud.
+Paperless Unified Search adds one more provider to Nextcloud's search, **Paperless documents**, and gets along with the others: with Findling or Full text search for the files that aren't in Paperless, and with the web UI of Paperless for its administration. [Configure](configure.md#works-with-any-synchronization) shows how any synchronization brings the files of Paperless into Nextcloud.

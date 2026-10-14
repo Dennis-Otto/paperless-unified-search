@@ -2,3 +2,6 @@
 # know: names, terms and words of its trade, one per line.
 Tesseract
 pagetest
+Authelia
+Authentik
+nginx

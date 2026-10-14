@@ -18,14 +18,28 @@ copyright: "© 2026 Dennis Otto"
 extra_css:
   - stylesheets/extra.css
 
-# The menu. A tab in the header for each section.
+# The menu. A tab in the header for each section: the pages for administrators who set
+# the app up, for its users, for when something fails, and those of the project.
 nav:
   - Home: index.md
-  - Guide: guide.md
-  - Compare: compare.md
-  - Architecture: architecture.md
-  - Security design: security.md
-  - Roadmap: roadmap.md
-  - Decisions: decisions/README.md
-  - Releases: releases.md
-  - Changelog: changelog.md
+  - Get started:
+      - Install: install.md
+      - Configure: configure.md
+  - Use:
+      - Search: usage.md
+  - Troubleshooting: troubleshooting.md
+  - FAQ: faq.md
+  - Reference: reference.md
+  - Project:
+      - Compare: compare.md
+      - Architecture: architecture.md
+      - Security design: security.md
+      - Roadmap: roadmap.md
+      - Decisions: decisions/README.md
+      - Releases: releases.md
+      - Changelog: changelog.md
+
+# The guide of one page of earlier versions, which the App Store still links to: it
+# leads each of its parts to the page that has the part now, outside the menu.
+not_in_nav: |
+  /guide.md

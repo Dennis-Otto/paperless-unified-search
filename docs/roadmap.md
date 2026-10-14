@@ -14,7 +14,7 @@ The app does what it was built for: the full-text search of Paperless-ngx in the
 
 - **A dashboard widget.** The latest Paperless documents that the user can open, on Nextcloud's dashboard.
 - **A demo in one command.** Real Paperless-ngx and Nextcloud with sample documents, to try the app before installing it.
-- **Documentation for everyone.** Pages on installation, configuration and troubleshooting with a FAQ, and the README and the website in German.
+- **Documentation in German.** The README and the website in German, beside the pages to [install](install.md), [configure](configure.md) and [troubleshoot](troubleshooting.md) the app, the [FAQ](faq.md) and the [reference](reference.md) that it has in English.
 
 And, as every year, keeping it working and safe:
 

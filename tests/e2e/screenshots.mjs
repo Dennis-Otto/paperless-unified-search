@@ -8,8 +8,9 @@
 // the folder Paperless of the archive account, shares the folder read-only with
 // jamie, and goes through the app in Chromium as a person does: the search, the
 // opened file, the smart picker in a note of Text with the link that it inserts, the
-// settings, light and dark, Try a search of the settings, the search and the settings
-// on a phone, and the search as an animation. The images go to the folder of SCREENSHOTS_OUT.
+// settings and the share of the archive, light and dark, Try a search of the settings,
+// the search and the settings on a phone, and the search as an animation. The images
+// go to the folder of SCREENSHOTS_OUT.
 
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -359,6 +360,24 @@ async function smartPicker(browser, session, theme) {
 	await page.context().close()
 }
 
+// The tab Sharing of the folder Paperless of the archive account, which shares it
+// read-only with jamie: what the configuration asks an administrator to do.
+async function share(browser, session, theme) {
+	const suffix = theme === 'dark' ? '-dark' : ''
+	const page = await newPage(browser, session, { viewport: { width: 1600, height: 900 }, colorScheme: theme })
+	await openArchive(page)
+	// The menu of the folder in the path above the list, as an administrator shares it.
+	await page.getByRole('navigation', { name: 'Current directory path' }).getByRole('button', { name: 'Paperless' }).click()
+	await page.getByRole('menuitem', { name: 'Share' }).click()
+	const sidebar = page.locator('#app-sidebar-vue')
+	await sidebar.getByText('Jamie Example').first().waitFor()
+	await sidebar.getByText('View only').first().waitFor()
+	// Away from the list of files, whose rows light up under the pointer.
+	await page.mouse.move(0, 0)
+	await save(page, `10-share-read-only${suffix}.png`)
+	await page.context().close()
+}
+
 // The settings after a save, down to the message of success below the buttons.
 async function settings(browser, session, theme) {
 	const suffix = theme === 'dark' ? '-dark' : ''
@@ -622,11 +641,13 @@ try {
 	await createArchive(browser)
 	const reader = await signIn(browser, READER)
 	const admin = await signIn(browser, ADMIN)
+	const archive = await signIn(browser, ARCHIVE)
 	await shareElectricityWithAdmin()
 	for (const theme of ['light', 'dark']) {
 		await searchAndOpen(browser, reader, theme)
 		await smartPicker(browser, reader, theme)
 		await settings(browser, admin, theme)
+		await share(browser, archive, theme)
 		await trySearch(browser, admin, theme)
 	}
 	await phone(browser, reader)

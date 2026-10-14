@@ -12,6 +12,8 @@ body:
       value: |
         Thanks for taking the time to report a problem. Within a few minutes, an AI issue assistant posts a first analysis and may ask questions; the maintainer reads every issue as well ([what happens with your issue](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/SUPPORT.md#what-happens-with-your-issue)).
 
+        No Paperless documents in the search, or a test of the connection that fails? The [troubleshooting guide](https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html) finds most causes in a few steps; if it doesn't, say here which of its steps failed.
+
         **Never post** the Paperless API token, credentials, private URLs, document contents or other personal data. Report a vulnerability privately, as described in [SECURITY.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/SECURITY.md).
   - type: textarea
     id: problem

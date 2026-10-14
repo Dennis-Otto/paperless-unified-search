@@ -33,11 +33,11 @@ Two apps, one archive: [Paperless Sync](https://github.com/Dennis-Otto/paperless
 
 Paperless Sync is the companion, not a must: [any synchronization](#works-with-any-synchronization) that writes the files with their marker into the archive account works as well, Paperless-ngx's own file names included.
 
-The [documentation website](https://dennis-otto.github.io/paperless-unified-search/) has this documentation as a guide, together with a comparison with the alternatives, the architecture, the security design and the roadmap.
+The [documentation website](https://dennis-otto.github.io/paperless-unified-search/) has this documentation on pages to install, configure and use the app, with a troubleshooting guide, a FAQ and a reference for administrators, and a comparison with the alternatives, the architecture, the security design and the roadmap.
 
 <sub>💛 Like it? [Rate it in the App Store](https://apps.nextcloud.com/apps/paperless_unified_search) or [support its development](https://github.com/sponsors/Dennis-Otto).</sub>
 
-[Why](#why-paperless-unified-search) · [Quick start](#quick-start) · [Compare](docs/compare.md) · [Architecture](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/architecture.md) · [Security design](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/security.md) · [Roadmap](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/roadmap.md) · [Releases](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/releases.md) · [Changelog](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CHANGELOG.md)
+[Why](#why-paperless-unified-search) · [Quick start](#quick-start) · [Troubleshooting](https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html) · [FAQ](https://dennis-otto.github.io/paperless-unified-search/faq.html) · [Reference](https://dennis-otto.github.io/paperless-unified-search/reference.html) · [Compare](docs/compare.md) · [Architecture](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/architecture.md) · [Security design](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/security.md) · [Roadmap](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/roadmap.md) · [Releases](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/releases.md) · [Changelog](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CHANGELOG.md)
 
 ## Why Paperless Unified Search
 
@@ -92,6 +92,8 @@ The [comparison](docs/compare.md) explains each of them, and when another one is
 
 <!-- --8<-- [end:quick-start-section] -->
 
+No Paperless documents in the search, or a test of the connection that fails? The [troubleshooting guide](https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html) finds the cause step by step, and the [FAQ](https://dennis-otto.github.io/paperless-unified-search/faq.html) answers the common questions.
+
 ## Screenshots
 
 Each screenshot below but those of the phone has a dark version, which a dark theme shows; the animation at the top is light only.
@@ -132,6 +134,15 @@ Nextcloud in the browser of a phone. The Nextcloud apps for iOS and Android open
 </picture>
 
 Type `/` in a note of Text and choose *Paperless documents*: the picker finds the documents by their text and inserts the link to the file you pick, which Text shows as the file itself to everyone who can open it.
+
+### The archive, shared read-only
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-share-read-only-dark.png">
+  <img alt="The tab Sharing of the folder Paperless of the archive account in Files: the folder is shared with Jamie Example, View only" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-share-read-only.png">
+</picture>
+
+The archive account shares its folder *Paperless* with *View only*, and Jamie finds its documents. The shares decide who sees which document: nobody needs an account in Paperless.
 
 ### Secure server-side administration
 
@@ -180,7 +191,7 @@ On a phone, the settings fit the screen, and each problem of the search is a car
 3. The app maps each Paperless document ID to a synchronized file of the archive account whose name contains the unique marker `[P<ID>]`, for example `[P123]`, with one search of Nextcloud's file cache for all documents of a page. The archive account is the one that owns the synchronized files: the account of Paperless Sync, or the one of the settings.
 4. A result is returned only if the current Nextcloud user can access that file: the archive account itself, or a user it shared the file with. A file with the marker in its name that belongs to another account stands for no document.
 5. A page of results holds as many results as Nextcloud asks for while Paperless has more: when documents that the user can't open rank first, the app asks Paperless for its next pages, up to four pages of 25 hits per search, so that Paperless results still show and **Load more results** keeps working.
-6. Each result shows the preview of its file, or the icon of its type, and below its title the date of the document in the language of the user, its correspondent, its type and the words around the term, as [What a result shows](#what-a-result-shows) describes.
+6. Each result shows the preview of its file, or the icon of its type, and below its title the date of the document in the language of the user, its correspondent, its type and the words around the term, as [What a result shows](https://dennis-otto.github.io/paperless-unified-search/usage.html#what-a-result-shows) describes.
 7. Selecting a result opens the synchronized file in Nextcloud, not Paperless. Browsers use Nextcloud's
    `/f/{fileId}` viewer route. The official iOS app receives its native `nextcloud://open-file` deep link,
    while Android receives the file ID and user-relative path required by its in-app viewer.
@@ -223,16 +234,16 @@ The search needs one thing from a synchronization: each document of Paperless-ng
     - **The Nextcloud desktop client**, signed in as the archive account, on a copy of the folder rather than the folder itself: it syncs both ways, and Paperless loses track of a file that is moved or deleted in its media folder.
     - **An external storage** with the files, mounted for the archive account alone and shared from there. A mount can't be shared until **Enable sharing** is switched on in its options, behind the gear of the storage under *External storage* in the administration settings. Nextcloud's search finds only the files it has scanned, so let a timer run `occ files:scan` for the storage. On a storage mounted for every user, each user owns the files they see there, and such a file stands for no document.
 
-3. **Share the archive read-only** with the users who may find its documents, and enter the archive account in the settings, as in the [quick start](#quick-start).
+3. **Share the archive read-only** with the users who may find its documents, and enter the archive account in the settings, as in the [configuration](#configuration).
 
 <!-- --8<-- [end:any-sync] -->
 <!-- --8<-- [start:requirements] -->
 
 ## Requirements
 
-- Nextcloud 33 through 35
+- Nextcloud 33 to 35
 - PHP 8.2 or newer as supported by the corresponding Nextcloud release
-- A reachable Paperless-ngx 2.16 or newer, 3.x included, with API access. The app asks for version 9 of its API, which Paperless-ngx 2.16 and newer and 3.x speak; contract tests check the app every week against real Paperless-ngx, the last release of 2.20 and the newest release of 3.x.
+- A reachable Paperless-ngx 2.16 or newer, 3.x included, with API access. The app asks for version 9 of its API, which Paperless-ngx 2.16 and newer and 3.x speak; contract tests check the app every week against real Paperless-ngx, the last release of 2.20 and the newest release of 3.x; the [compatibility](https://dennis-otto.github.io/paperless-unified-search/reference.html#compatibility) says it in detail.
 - Synchronized files whose names contain `[P<ID>]`, owned by one Nextcloud account, the archive account, and shared read-only with the users who may see them, for example those of Paperless Sync or of [any other synchronization](#works-with-any-synchronization). Without them, the search shows no Paperless documents.
 
 <!-- --8<-- [end:requirements] -->
@@ -253,7 +264,7 @@ Leave the token blank to keep the stored one. The stored token goes only to the 
 
 The configuration is global. Access control remains user-specific because the app discards every Paperless hit for which the searching Nextcloud user can't open a matching file of the archive account. Share the archive read-only with the users who may see its documents. Without an archive account, the search shows no Paperless documents.
 
-When Paperless documents are missing from the search, look at **Search problems** at the end of the settings, and for a document that Paperless finds but a user doesn't see, use **Try a search** below it: enter the term and the user ID, and it lists the first 20 documents that Paperless ranks for the term, each with its ID, its title and whether it shows to that user, or why not: *Not shared with* the user, *Not a file of the archive account*, or *No file with* its marker, such as `[P412]`. It asks the same questions as [`occ paperless_unified_search:search --explain`](#explain-a-hidden-document), for administrators of a managed instance without a shell, and answers with the titles alone, without the content or the files of the documents. A failed search shows the users no Paperless documents and no error, and a request that fails before it reaches Paperless, as when the connection fails, is sent a second time before the search gives up; one that waited for a Paperless that hangs is not, so that a search never waits twice. The settings count both, the failed searches and the requests that only their second try answered, and list the latest 20 with the time, the step, asking Paperless or looking for the files in Nextcloud, the kind and the message of the error and how long it took, along with since when searches work again after the last failure. A query that Paperless refuses while it is still being typed isn't a problem and doesn't show up, and during an outage, also one that comes and goes, the problems of one kind are written at most once in 30 seconds, with those in between still counted. This helps where the hoster keeps the log of Nextcloud from administrators. **Clear history** and **Disconnect** forget the history; saving the settings keeps it.
+When Paperless documents are missing from the search, look at **Search problems** at the end of the settings, and for a document that Paperless finds but a user doesn't see, use **Try a search** below it: enter the term and the user ID, and it lists the first 20 documents that Paperless ranks for the term, each with its ID, its title and whether it shows to that user, or why not: *Not shared with* the user, *Not a file of the archive account*, or *No file with* its marker, such as `[P412]`. It asks the same questions as [`occ paperless_unified_search:search --explain`](https://dennis-otto.github.io/paperless-unified-search/reference.html#explain-a-hidden-document), for administrators of a managed instance without a shell, and answers with the titles alone, without the content or the files of the documents. A failed search shows the users no Paperless documents and no error, and a request that fails before it reaches Paperless, as when the connection fails, is sent a second time before the search gives up; one that waited for a Paperless that hangs is not, so that a search never waits twice. The settings count both, the failed searches and the requests that only their second try answered, and list the latest 20 with the time, the step, asking Paperless or looking for the files in Nextcloud, the kind and the message of the error and how long it took, along with since when searches work again after the last failure. A query that Paperless refuses while it is still being typed isn't a problem and doesn't show up, and during an outage, also one that comes and goes, the problems of one kind are written at most once in 30 seconds, with those in between still counted. This helps where the hoster keeps the log of Nextcloud from administrators. **Clear history** and **Disconnect** forget the history; saving the settings keeps it.
 
 By default, Nextcloud's search in the browser asks Paperless only after the user enables **Search connected services**, and the smart picker only after the user picks **Paperless documents** in it. When the trusted-service option is enabled, every global search term from every Nextcloud user is sent to Paperless automatically and the connected-services switch no longer controls this provider. Reload Nextcloud after changing this option.
 
@@ -272,7 +283,11 @@ If you set `allow_local_remote_servers` in `config.php` for Paperless before, fi
 
 The URL may name a Docker service with an underscore, such as `http://paperless_ngx:8000`, an IPv6 address in brackets, such as `http://[fd00::5]:8000`, or an internationalized name, which the settings store in the ASCII form that DNS knows, such as `https://xn--bcher-kva.example` for `https://bücher.example`.
 
+<!-- --8<-- [end:configuration] -->
+
 ### When the test of the connection fails
+
+<!-- --8<-- [start:connection-test] -->
 
 **Test connection and save** saves nothing until Paperless answers with a list of documents, and when it doesn't, the message says what failed and what to correct, in the language of your account. The log of Nextcloud gets a warning with the error itself, such as `cURL error 6: Could not resolve host`, without the token and without the query of the URL.
 
@@ -283,13 +298,13 @@ The URL may name a Docker service with an underscore, such as `http://paperless_
 
 | The message says | What failed | What to do |
 | --- | --- | --- |
-| Paperless rejected the API token (HTTP 401 or 403) | Paperless doesn't know the token, or its account may not view documents | Copy the token again from the profile of the Paperless account, and give the account the permission to view documents |
+| Paperless rejected the API token (HTTP 401 or 403) | Paperless doesn't know the token, or its account may not view documents. Or the URL redirects to another scheme, host or port, such as from `http` to `https`, and Nextcloud leaves the token out of the redirect | Copy the token again from the profile of the Paperless account, and give the account the permission to view documents. Enter the address that the URL forwards to |
 | This URL answers, but not with the API of Paperless (HTTP 404) | The path of the URL, or a proxy in front of Paperless | Enter the address that opens Paperless in the browser, with the path when Paperless runs under one, such as `https://example.com/paperless` |
 | This URL forwards to another address | The URL redirects, and with **Paperless runs in my local network** Nextcloud follows no redirect | Enter the address that it forwards to, such as the one with `https` |
 | Paperless is older than 2.16 | Paperless answered HTTP 406: it doesn't speak version 9 of its API, which the app asks for | Update Paperless-ngx to 2.16 or newer |
 | Paperless answered with an error | Paperless itself failed, with a status of 5xx | Look into the log of Paperless, or try again later |
 | This URL answers, but not like Paperless-ngx | Another service, or the login page of a proxy | Check the address and its path |
-| Nextcloud does not connect to addresses of the local network | Paperless runs at an address of the local network | Select **Paperless runs in my local network** ([above](#paperless-in-your-local-network)) |
+| Nextcloud does not connect to addresses of the local network | Paperless runs at an address of the local network | Select **Paperless runs in my local network**, as [Paperless in your local network](#paperless-in-your-local-network) describes |
 | Nextcloud does not trust the certificate of Paperless | A certificate of your own authority, a self-signed one, or one for another name | Import the certificate of the authority with `occ security:certificates:import`, or use the name that the certificate is for |
 | Nextcloud could not set up an encrypted connection | Mostly `https` at a port that speaks plain HTTP | Enter the URL with `http`, or the port of HTTPS |
 | Nextcloud could not find the host of this URL | The name doesn't resolve, as a Docker service outside the network of Nextcloud doesn't | Check its spelling, and put Nextcloud and Paperless into one Docker network |
@@ -306,14 +321,18 @@ When Nextcloud itself can't take the request, the page says so in one sentence i
 | Nextcloud is in maintenance mode | Nextcloud is being upgraded or maintained, and answers every request with HTTP 503 and a header that says so | Try again in a few minutes |
 | Your session has expired | The session of your login ended, or its request token is no longer valid (HTTP 401 or 412) | Reload the page and try again |
 | Nextcloud could not be reached | The browser lost its connection to Nextcloud | Check your connection and try again |
-| The request failed (HTTP 502) | A proxy in front of Nextcloud answered with an error of its own, such as 502, 503 or 504, or Nextcloud found a problem with its own setup, such as a data folder it can't write to | Check that Nextcloud runs, its log and the log of the proxy |
+| The request failed (HTTP 502) | A proxy in front of Nextcloud answered with an error of its own, such as 502, 503 or 504, or Nextcloud found a problem with its own setup, such as a data folder it can't write to. Without a status, the page itself met an error | Check that Nextcloud runs, its log and the log of the proxy, and reload the page |
+| Confirm your password to change the settings | The dialog that asks for your Nextcloud password was closed, or didn't confirm the password | Select **Test connection and save** or **Disconnect** again, and confirm with your Nextcloud password |
 | Nextcloud gave an unexpected answer | Something in front of Nextcloud, such as the login page of a proxy, answered instead of the app | Reload the page and try again |
+
+<!-- --8<-- [end:connection-test] -->
+<!-- --8<-- [start:languages] -->
 
 ### Languages
 
 The settings speak English and German: German with *du* for accounts set to *Deutsch (Persönlich: Du)*, and with *Sie* for accounts set to *Deutsch (Förmlich: Sie)*.
 
-<!-- --8<-- [end:configuration] -->
+<!-- --8<-- [end:languages] -->
 <!-- --8<-- [start:usage] -->
 
 ## Usage

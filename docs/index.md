@@ -21,7 +21,7 @@ The search of files finds the two invoices by their names. Paperless also finds 
 
 --8<-- "README.md:two-apps"
 
-Paperless Sync is the companion, not a must: [any synchronization](guide.md#works-with-any-synchronization) that writes the files with their marker into the archive account works as well, Paperless-ngx's own file names included.
+Paperless Sync is the companion, not a must: [any synchronization](configure.md#works-with-any-synchronization) that writes the files with their marker into the archive account works as well, Paperless-ngx's own file names included.
 
 ## What it does
 
@@ -67,7 +67,7 @@ Paperless Sync is the companion, not a must: [any synchronization](guide.md#work
 
     ---
 
-    `occ` sets the app up for Ansible and Docker, tests it for monitoring, and says why a user doesn't see a document; the overview of the administration settings warns when the search can't show any. [How](guide.md#set-up-and-check-it-with-occ)
+    `occ` sets the app up for Ansible and Docker, tests it for monitoring, and says why a user doesn't see a document; the overview of the administration settings warns when the search can't show any. [How](reference.md#set-up-and-check-it-with-occ)
 
 - :material-key-chain-variant:{ .lg .middle } **The token stays on the server**
 
@@ -125,19 +125,43 @@ Each picture follows the light or dark theme of this website. Select one to enla
 
 --8<-- "README.md:quick-start"
 
-The [guide](guide.md) describes the configuration, the usage and the security and privacy of the app in detail.
+[Install](install.md) and [Configure](configure.md) describe each step in detail, [Troubleshooting](troubleshooting.md) helps when no Paperless documents show, and the [FAQ](faq.md) answers the common questions.
 
 ## Learn more
 
 <div class="grid cards" markdown>
 
-- :material-book-open-variant:{ .lg .middle } **Guide**
+- :material-download-outline:{ .lg .middle } **Get started**
 
     ---
 
-    Installation, how the search works, any synchronization, requirements, configuration, usage and the search syntax, scripts and AI assistants, occ, and security and privacy.
+    What the app needs, its installation from the App Store or a signed release, the Paperless account and its token, the settings, the local network, and the archive shared read-only.
 
-    [:octicons-arrow-right-24: Read the guide](guide.md)
+    [:octicons-arrow-right-24: Install](install.md) · [Configure](configure.md)
+
+- :material-magnify:{ .lg .middle } **Search**
+
+    ---
+
+    The search in the browser and on a phone, the smart picker of Talk, Text, Deck and Mail, the search syntax of Paperless, and the API for scripts and AI assistants.
+
+    [:octicons-arrow-right-24: Search](usage.md)
+
+- :material-lifebuoy:{ .lg .middle } **Troubleshooting and FAQ**
+
+    ---
+
+    Why Paperless documents don't show, step by step, every message of the test of the connection, certificates, proxies, the index of Paperless, and the common questions.
+
+    [:octicons-arrow-right-24: Troubleshooting](troubleshooting.md) · [FAQ](faq.md)
+
+- :material-book-open-variant:{ .lg .middle } **Reference**
+
+    ---
+
+    Every setting and its key, occ, the routes, the versions that the tests cover, the data flows, the log, and how to uninstall the app.
+
+    [:octicons-arrow-right-24: Reference](reference.md)
 
 - :material-compare-horizontal:{ .lg .middle } **Compare**
 
