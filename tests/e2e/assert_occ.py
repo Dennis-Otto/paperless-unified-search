@@ -9,6 +9,9 @@ argument:
   verdicts ID=VERDICT[=PATH] ...  the JSON of paperless_unified_search:search --explain
                                   --json: exactly these documents, in this order, each
                                   with its verdict and, where given, the path of its file
+  try USER ID=VERDICT ...         the answer of Try a search of the settings page: the
+                                  documents of USER with these verdicts, in this order,
+                                  each with its ID, title and verdict and nothing more
   setupcheck SEVERITY TEXT        the JSON of occ setupchecks: the check of the app has
                                   this severity, and its description holds the text
 """
@@ -42,6 +45,16 @@ if mode == "verdicts":
     for (document, _, path), item in zip(expected, documents):
         if path is not None and item.get("path") != path:
             fail(f"Expected the file {path!r} for document {document}, got {item!r}")
+    sys.exit(0)
+
+if mode == "try":
+    user, expected = sys.argv[2], [tuple(argument.split("=", 1)) for argument in sys.argv[3:]]
+    documents = payload.get("documents", [])
+    if payload.get("user") != user or [(str(item.get("id")), item.get("verdict")) for item in documents] != expected:
+        fail(f"Expected the verdicts {expected!r} for {user}, got {payload!r}")
+    for item in documents:
+        if sorted(item) != ["id", "title", "verdict"]:
+            fail(f"Try a search tells more of a document than its ID, title and verdict: {item!r}")
     sys.exit(0)
 
 if mode == "setupcheck":

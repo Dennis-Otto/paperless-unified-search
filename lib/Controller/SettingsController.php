@@ -11,10 +11,13 @@ namespace OCA\PaperlessUnifiedSearch\Controller;
 
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Exception\InvalidSettingException;
+use OCA\PaperlessUnifiedSearch\Exception\PaperlessQueryRejected;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
+use OCA\PaperlessUnifiedSearch\Model\Explanation;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
+use OCA\PaperlessUnifiedSearch\Service\SearchExplainer;
 use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http;
@@ -23,6 +26,8 @@ use OCP\AppFramework\Http\Attribute\PasswordConfirmationRequired;
 use OCP\AppFramework\Http\JSONResponse;
 use OCP\IL10N;
 use OCP\IRequest;
+use OCP\IUserManager;
+use OCP\IUserSession;
 use Psr\Log\LoggerInterface;
 use SensitiveParameter;
 use Throwable;
@@ -39,6 +44,12 @@ final class SettingsController extends Controller {
 	 */
 	private const CODE_INTERNAL = 'internal';
 
+	/**
+	 * How many documents of the ranking of Paperless Try a search goes through: those
+	 * that an administrator reads in one table.
+	 */
+	public const TRY_LIMIT = 20;
+
 	/** @psalm-suppress PossiblyUnusedMethod */
 	public function __construct(
 		string $appName,
@@ -49,6 +60,9 @@ final class SettingsController extends Controller {
 		private SettingsMessages $messages,
 		private IL10N $l10n,
 		private LoggerInterface $logger,
+		private SearchExplainer $explainer,
+		private IUserManager $userManager,
+		private IUserSession $userSession,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -116,6 +130,91 @@ final class SettingsController extends Controller {
 		$this->diagnostics->clear();
 
 		return new JSONResponse([]);
+	}
+
+	/**
+	 * Try a search: the documents that Paperless ranks first for the term, each with
+	 * whether it shows to the user and, if not, why, as occ paperless_unified_search:search
+	 * --explain finds it, for administrators without a shell. The answer names each
+	 * document by its ID and its title alone, without its content, an excerpt or its file,
+	 * and the log records which administrator tried a search as whom, without the term.
+	 */
+	#[FrontpageRoute(verb: 'POST', url: '/settings/try')]
+	public function trySearch(string $term = '', string $user = ''): JSONResponse {
+		$term = trim($term);
+		$uid = trim($user);
+		if ($term === '') {
+			return $this->refusal($this->l10n->t('Enter a term to search for.'), 'no_term');
+		}
+		$account = $uid !== '' ? $this->userManager->get($uid) : null;
+		if ($account === null) {
+			return $this->refusal(
+				$uid === '' ? $this->l10n->t('Enter the user ID of the account to search as.') : $this->l10n->t('There is no account %s.', [$uid]),
+				'unknown_user',
+			);
+		}
+		if (!$this->configService->isConfigured()) {
+			return $this->refusal($this->l10n->t('Paperless is not connected yet. Save its URL and API token above first.'), 'not_configured');
+		}
+		$archiveOwner = $this->configService->getArchiveOwner();
+		if ($archiveOwner === '') {
+			return $this->refusal($this->l10n->t('No archive account exists, so the search shows no Paperless documents. Name the account that owns the synchronized files above.'), 'no_archive_account');
+		}
+
+		$this->logger->info('{admin} tried a search of Paperless as {user} in the settings', [
+			'app' => AppConstants::APP_ID,
+			'admin' => $this->userSession->getUser()?->getUID() ?? '',
+			'user' => $account->getUID(),
+		]);
+		try {
+			$response = $this->paperlessApi->searchDocuments($term, 1, self::TRY_LIMIT);
+		} catch (PaperlessQueryRejected) {
+			return $this->refusal($this->l10n->t('Paperless can\'t read this term in its advanced syntax, such as a range of dates that isn\'t complete like created:[2026 to. Correct the term and try again.'), 'query_rejected');
+		} catch (PaperlessRequestException $exception) {
+			return $this->refusal($this->messages->forFailure($exception), $exception->reason->value);
+		} catch (Throwable $error) {
+			$exception = PaperlessRequestException::unanswered($error);
+
+			return $this->refusal($this->messages->forFailure($exception), $exception->reason->value);
+		}
+
+		$titles = self::titlesOf($response['results']);
+		[$explanations, $fileError] = $this->explainer->explain($account, array_keys($titles), $archiveOwner);
+
+		return new JSONResponse([
+			'user' => $account->getUID(),
+			'archiveAccount' => $archiveOwner,
+			'count' => $response['count'],
+			'documents' => array_map(
+				static fn (Explanation $explanation): array => [
+					'id' => $explanation->documentId,
+					'title' => $titles[$explanation->documentId] ?? '',
+					'verdict' => $explanation->verdict->value,
+				],
+				$explanations,
+			),
+			'fileError' => $fileError !== null,
+		]);
+	}
+
+	/**
+	 * The titles of the documents that Paperless found, by their IDs, in its order: the
+	 * first ones of its ranking, each with its first title. The explainer leaves out an ID
+	 * below 1, which no document has.
+	 *
+	 * @param list<array<array-key, mixed>> $results
+	 * @return array<int, string>
+	 */
+	private static function titlesOf(array $results): array {
+		$titles = [];
+		foreach (array_slice($results, 0, self::TRY_LIMIT) as $hit) {
+			$id = filter_var($hit['id'] ?? null, FILTER_VALIDATE_INT);
+			if ($id !== false) {
+				$titles[$id] ??= isset($hit['title']) && is_string($hit['title']) ? trim($hit['title']) : '';
+			}
+		}
+
+		return $titles;
 	}
 
 	/**

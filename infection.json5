@@ -53,7 +53,9 @@
       "ignore": ["OCA\\PaperlessUnifiedSearch\\Service\\SearchDiagnostics::takeCount"],
       "ignoreSourceCodeByRegex": [
         // Every search sends its page, so the default for a missing one never counts.
-        "\\$page = \\$query\\['page'\\] \\?\\? 1;"
+        "\\$page = \\$query\\['page'\\] \\?\\? 1;",
+        // The client asks Paperless for page max(1, page), so page 0 is page 1 as well.
+        "\\$response = \\$this->paperlessApi->searchDocuments\\(\\$term, 1, .*\\);"
       ]
     },
     "FalseValue": {

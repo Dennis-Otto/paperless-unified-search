@@ -8,8 +8,8 @@
 // the folder Paperless of the archive account, shares the folder read-only with
 // jamie, and goes through the app in Chromium as a person does: the search, the
 // opened file, the smart picker in a note of Text with the link that it inserts, the
-// settings, light and dark, the search and the settings on a phone, and the search as
-// an animation. The images go to the folder of SCREENSHOTS_OUT.
+// settings, light and dark, Try a search of the settings, the search and the settings
+// on a phone, and the search as an animation. The images go to the folder of SCREENSHOTS_OUT.
 
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -388,6 +388,34 @@ async function settings(browser, session, theme) {
 	await page.context().close()
 }
 
+// Try a search of the settings, as the administrator searches for "invoice" as
+// themselves: the archive account has shared only the file of the electricity invoice
+// with them, so the other two documents are not shared with them.
+async function trySearch(browser, session) {
+	const share = new URLSearchParams({
+		path: `/Paperless/${electricity.folder}/${fileName(electricity)}`,
+		shareType: '0',
+		shareWith: ADMIN,
+		permissions: '1',
+	})
+	await request(ARCHIVE, 'POST', `/ocs/v2.php/apps/files_sharing/api/v1/shares?${share}`)
+	const page = await newPage(browser, session, { viewport: { width: 1600, height: 1000 } })
+	await page.goto(`${BASE_URL}${SETTINGS}`)
+	await page.locator(SETTINGS_SCOPE).waitFor()
+	await page.locator('#paperless-unified-search-try-term').fill(TERM)
+	await page.locator('#paperless-unified-search-try-user').fill(ADMIN)
+	await page.locator('#paperless-unified-search-try').click()
+	await page.locator('.paperless-unified-search-documents').waitFor()
+	const block = page.locator('.paperless-unified-search-try')
+	await block.scrollIntoViewIfNeeded()
+	// Away from the table, whose rows light up under the pointer.
+	await page.mouse.move(0, 0)
+	await settle(page)
+	await block.screenshot({ path: join(OUT, '10-try-a-search.png'), animations: 'disabled' })
+	console.log('Took 10-try-a-search.png.')
+	await page.context().close()
+}
+
 // The settings on a phone at the problems of the search, each of them a card whose
 // lines name their column.
 async function phoneSettings(browser, session) {
@@ -595,6 +623,7 @@ try {
 		await smartPicker(browser, reader, theme)
 		await settings(browser, admin, theme)
 	}
+	await trySearch(browser, admin)
 	await phone(browser, reader)
 	await phoneSettings(browser, admin)
 	await animation(browser, reader)

@@ -19,6 +19,7 @@ const script = new Script(readFileSync(url, 'utf8'), { filename: url.href })
 
 const SAVE_URL = '/apps/paperless_unified_search/settings'
 const CLEAR_URL = '/apps/paperless_unified_search/settings/diagnostics'
+const TRY_URL = '/apps/paperless_unified_search/settings/try'
 const STORED = 'https://paperless.example.com'
 const SUCCESS = 'paperless-unified-search-status--success'
 const ERROR = 'paperless-unified-search-status--error'
@@ -26,6 +27,10 @@ const PENDING = 'paperless-unified-search-status--pending'
 
 class ClassList {
 	#names = new Set()
+
+	add(name) {
+		this.#names.add(name)
+	}
 
 	toggle(name, force) {
 		if (force) {
@@ -79,6 +84,10 @@ class Element {
 		this.children = children
 	}
 
+	append(...children) {
+		this.children.push(...children)
+	}
+
 	// Runs the listeners of the event and waits for them, as the page would until the
 	// server has answered.
 	async dispatch(type) {
@@ -94,6 +103,7 @@ function page({ url = '', tokenConfigured = false, history = true } = {}) {
 	const ids = [
 		'form', 'url', 'allow-local', 'token', 'token-unreadable', 'always-search', 'archive-owner',
 		'archive-owner-missing', 'save', 'reset', 'status', 'diagnostics',
+		'try-form', 'try-term', 'try-user', 'try', 'try-status', 'try-result',
 	]
 	const elements = new Map(ids.map((id) => [`paperless-unified-search-${id}`, new Element(id)]))
 	const root = new Element('settings')
@@ -101,6 +111,7 @@ function page({ url = '', tokenConfigured = false, history = true } = {}) {
 		saveUrl: SAVE_URL,
 		resetUrl: SAVE_URL,
 		clearDiagnosticsUrl: CLEAR_URL,
+		tryUrl: TRY_URL,
 		tokenConfigured: tokenConfigured ? 'true' : 'false',
 	}
 	elements.set('paperless-unified-search-settings', root)
@@ -150,6 +161,7 @@ const EMPTY = { ...CONFIG, url: '', tokenConfigured: false, syncAccount: '' }
 function load(elements, { answers = [], t, confirm = true, password } = {}) {
 	const requests = []
 	const statuses = []
+	const tries = []
 	const listeners = []
 	const window = {
 		OC: { requestToken: 'request-token', PasswordConfirmation: password },
@@ -162,6 +174,14 @@ function load(elements, { answers = [], t, confirm = true, password } = {}) {
 			const status = elements.get('paperless-unified-search-status')
 			// What the page shows while it waits for the answer.
 			statuses.push({ text: status.textContent, kind: status.classList.toString() })
+			const tryStatus = elements.get('paperless-unified-search-try-status')
+			tries.push({
+				text: tryStatus.textContent,
+				kind: tryStatus.classList.toString(),
+				busy: elements.get('paperless-unified-search-try-form').getAttribute('aria-busy'),
+				button: elements.get('paperless-unified-search-try').disabled ? 'disabled' : 'enabled',
+				result: elements.get('paperless-unified-search-try-result').children.length,
+			})
 			// A copy in the realm of the test, which compares it with its own objects.
 			requests.push({ url: target, ...structuredClone(options), body: options.body === undefined ? undefined : JSON.parse(options.body) })
 			const answer = answers.shift()
@@ -181,7 +201,7 @@ function load(elements, { answers = [], t, confirm = true, password } = {}) {
 		listener()
 	}
 	const get = (id) => elements.get(`paperless-unified-search-${id}`)
-	return { window, requests, statuses, get }
+	return { window, requests, statuses, tries, get }
 }
 
 function state(get) {
@@ -503,4 +523,132 @@ test('a failed Clear history keeps the history and its button', async function()
 test('a page without problems has no button of the history', function() {
 	const { get } = load(page({ history: false }))
 	assert.equal(get('clear-diagnostics'), undefined)
+})
+
+// What Try a search answers for jamie and "invoice", as SettingsController::trySearch
+// sends it: the IDs, the titles and the verdicts of the documents, nothing more.
+const TRIED = {
+	user: 'jamie',
+	archiveAccount: 'archive',
+	count: 12,
+	documents: [
+		{ id: 412, title: 'Electricity invoice', verdict: 'shown' },
+		{ id: 389, title: 'Home insurance', verdict: 'not_shared' },
+		{ id: 371, title: '<b>Internet</b> invoice', verdict: 'not_owned' },
+		{ id: 360, title: 'Letter', verdict: 'no_file' },
+		{ id: 7, title: 'Old', verdict: 'hidden' },
+	],
+	fileError: false,
+}
+
+// The rows of the table of a try: the texts of the headings, then of each row's cells,
+// with the column that each cell names on a phone.
+function rowsOf(table) {
+	const [caption, head, body] = table.children
+	return {
+		caption: caption.textContent,
+		roles: [table, head, body].map((part) => part.getAttribute('role')),
+		headings: head.children[0].children.map((cell) => [cell.textContent, cell.getAttribute('scope'), cell.getAttribute('role')]),
+		rows: body.children.map((row) => row.children.map((cell) => `${cell.dataset.label}: ${cell.textContent}`)),
+	}
+}
+
+test('Try a search sends the term and the user, and shows why each document shows or not', async function() {
+	const { get, requests, tries, statuses } = load(page({ url: STORED, tokenConfigured: true }), { answers: [json(TRIED)] })
+	get('try-term').value = ' invoice '
+	get('try-user').value = ' jamie '
+	get('try-result').children = ['an earlier result']
+
+	const event = await get('try-form').dispatch('submit')
+
+	assert.equal(event.defaultPrevented, true)
+	assert.deepEqual(requests, [{
+		url: TRY_URL,
+		method: 'POST',
+		credentials: 'same-origin',
+		headers: { Accept: 'application/json', 'Content-Type': 'application/json', requesttoken: 'request-token' },
+		body: { term: ' invoice ', user: ' jamie ' },
+	}])
+	// While the server works, the form is busy and the earlier result gone.
+	assert.deepEqual(tries, [{ text: 'Searching Paperless as jamie…', kind: PENDING, busy: 'true', button: 'disabled', result: 0 }])
+	assert.equal(get('try-status').textContent, 'Shown to jamie: 1 of the first 5. Found by Paperless: 12.')
+	assert.equal(get('try-status').classList.toString(), SUCCESS)
+	assert.equal(get('try-form').getAttribute('aria-busy'), 'false')
+	assert.equal(get('try').disabled, false)
+	// The message of the settings above stays as it was.
+	assert.deepEqual(statuses, [{ text: '', kind: '' }])
+	assert.equal(get('status').textContent, '')
+
+	const [table] = get('try-result').children
+	assert.equal(table.tagName, 'TABLE')
+	assert.equal(table.classList.toString(), 'paperless-unified-search-documents')
+	assert.deepEqual(rowsOf(table), {
+		caption: 'The documents that Paperless ranks first',
+		roles: ['table', 'rowgroup', 'rowgroup'],
+		headings: [['ID', 'col', 'columnheader'], ['Title', 'col', 'columnheader'], ['Shown or why not', 'col', 'columnheader']],
+		rows: [
+			['ID: 412', 'Title: Electricity invoice', 'Shown or why not: Shown'],
+			['ID: 389', 'Title: Home insurance', 'Shown or why not: Not shared with jamie'],
+			// A title is text, never markup.
+			['ID: 371', 'Title: <b>Internet</b> invoice', 'Shown or why not: Not a file of the archive account'],
+			['ID: 360', 'Title: Letter', 'Shown or why not: No file with [P360]'],
+			['ID: 7', 'Title: Old', 'Shown or why not: Hidden'],
+		],
+	})
+})
+
+test('Try a search says when Paperless finds nothing', async function() {
+	const { get } = load(page(), { answers: [json({ ...TRIED, count: 0, documents: [] })] })
+
+	await get('try-form').dispatch('submit')
+
+	assert.equal(get('try-status').textContent, 'Paperless found no document for this term.')
+	assert.equal(get('try-status').classList.toString(), SUCCESS)
+	assert.deepEqual(get('try-result').children, [])
+})
+
+test('Try a search warns when Nextcloud failed to read a file', async function() {
+	const { get } = load(page(), { answers: [json({ ...TRIED, documents: TRIED.documents.slice(0, 1), fileError: true })] })
+
+	await get('try-form').dispatch('submit')
+
+	const [warning, table] = get('try-result').children
+	assert.equal(warning.tagName, 'P')
+	assert.equal(warning.classList.toString(), 'paperless-unified-search-warning')
+	assert.equal(warning.textContent, 'Nextcloud failed to read a file, so a document without a file below may have one.')
+	assert.deepEqual(rowsOf(table).rows, [['ID: 412', 'Title: Electricity invoice', 'Shown or why not: Shown']])
+	assert.equal(get('try-status').textContent, 'Shown to jamie: 1 of the first 1. Found by Paperless: 12.')
+})
+
+test('a refused try shows the reason and no result', async function() {
+	const { get } = load(page(), { answers: [json({ message: 'There is no account nobody.', code: 'unknown_user' }, 400)] })
+	get('try-user').value = 'nobody'
+
+	await get('try-form').dispatch('submit')
+
+	assert.equal(get('try-status').textContent, 'There is no account nobody.')
+	assert.equal(get('try-status').classList.toString(), ERROR)
+	assert.deepEqual(get('try-result').children, [])
+	assert.equal(get('try-form').getAttribute('aria-busy'), 'false')
+	assert.equal(get('try').disabled, false)
+})
+
+test('a try that gets no list of documents says that the answer was unexpected', async function() {
+	const { get } = load(page(), { answers: [json({ user: 'jamie' })] })
+
+	await get('try-form').dispatch('submit')
+
+	assert.equal(get('try-status').textContent, 'Nextcloud gave an unexpected answer. Reload the page and try again.')
+	assert.equal(get('try-status').classList.toString(), ERROR)
+	assert.deepEqual(get('try-result').children, [])
+})
+
+test('the verdicts of a try go through the translation of Nextcloud', async function() {
+	const t = (app, text, vars) => `DE:${text.replace(/{(\w+)}/g, (placeholder, name) => vars?.[name] ?? placeholder)}`
+	const { get } = load(page(), { answers: [json(TRIED)], t })
+
+	await get('try-form').dispatch('submit')
+
+	assert.equal(get('try-status').textContent, 'DE:Shown to jamie: 1 of the first 5. Found by Paperless: 12.')
+	assert.deepEqual(rowsOf(get('try-result').children[0]).rows[1], ['DE:ID: 389', 'DE:Title: Home insurance', 'DE:Shown or why not: DE:Not shared with jamie'])
 })

@@ -34,6 +34,7 @@ final class AdminSettings implements ISettings {
 			'saveUrl' => $this->urlGenerator->linkToRoute(AppConstants::APP_ID . '.settings.save'),
 			'resetUrl' => $this->urlGenerator->linkToRoute(AppConstants::APP_ID . '.settings.reset'),
 			'clearDiagnosticsUrl' => $this->urlGenerator->linkToRoute(AppConstants::APP_ID . '.settings.clearDiagnostics'),
+			'tryUrl' => $this->urlGenerator->linkToRoute(AppConstants::APP_ID . '.settings.trySearch'),
 			'history' => $this->getHistory(),
 		]);
 	}
