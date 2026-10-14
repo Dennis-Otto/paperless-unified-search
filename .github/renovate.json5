@@ -15,9 +15,16 @@
     },
     {
       // The contract tests of tests/e2e/compose.paperless.yaml run against the last
-      // release of Paperless-ngx 2 and the newest release: the image of version 2 stays
-      // within version 2, and every new release reaches a pull request of its own, which
-      // runs the contract against it.
+      // release of Paperless-ngx 2 and the newest release. Every new release reaches a
+      // pull request of its own, apart from the other images, which runs the contract
+      // against it. GitHub's auto-merge would wait only for the required checks, which
+      // the contract isn't one of; Renovate merges it itself, once every check passed.
+      matchPackageNames: ["ghcr.io/paperless-ngx/paperless-ngx"],
+      groupName: "Paperless-ngx",
+      platformAutomerge: false,
+    },
+    {
+      // The image of version 2 stays within version 2.
       matchPackageNames: ["ghcr.io/paperless-ngx/paperless-ngx"],
       matchCurrentVersion: "/^2\\./",
       allowedVersions: "/^2\\./",

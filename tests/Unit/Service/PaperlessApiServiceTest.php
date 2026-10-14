@@ -305,6 +305,7 @@ final class PaperlessApiServiceTest extends TestCase {
 			'refused token' => [401, '{"detail":"Invalid token."}', RequestFailure::Unauthorized, 401, 'Paperless returned HTTP 401.'],
 			'no permission' => [403, '{"detail":"You do not have permission to perform this action."}', RequestFailure::Unauthorized, 403, 'Paperless returned HTTP 403.'],
 			'wrong path' => [404, '<html>Not found</html>', RequestFailure::NotFound, 404, 'Paperless returned HTTP 404.'],
+			'an older Paperless' => [406, '', RequestFailure::UnsupportedVersion, 406, 'Paperless returned HTTP 406.'],
 			'wrong request' => [400, '{"query":["Invalid."]}', RequestFailure::Http, 400, 'Paperless returned HTTP 400.'],
 			'server error' => [500, '', RequestFailure::Http, 500, 'Paperless returned HTTP 500.'],
 			'no body' => [200, null, RequestFailure::NotPaperless, null, 'Paperless returned an invalid response body.'],
@@ -603,8 +604,8 @@ final class PaperlessApiServiceTest extends TestCase {
 
 	/**
 	 * Paperless 3 refuses a query of its advanced syntax that it can't parse, such as the
-	 * range of dates that a user is still typing; its simple mode takes the same term and
-	 * finds the documents of its words. Neither answer is a problem of the search (#128).
+	 * range of dates that a user is still typing; its simple mode gets the plain words of
+	 * the term and finds their documents. Neither answer is a problem of the search (#128).
 	 */
 	public function testAnUnfinishedQueryOfPaperless3GoesToItsSimpleMode(): void {
 		$queries = [];
@@ -619,12 +620,68 @@ final class PaperlessApiServiceTest extends TestCase {
 
 		self::assertSame(
 			['count' => 1, 'next' => null, 'results' => [['id' => 7]]],
-			$this->service($client)->searchDocuments('created:[2026 to', 2, 25),
+			$this->service($client)->searchDocuments('invoice created:[2026 to', 2, 25),
 		);
 		self::assertSame([
-			['query' => 'created:[2026 to', 'page' => 2, 'page_size' => 25, 'fields' => self::FIELDS],
-			['text' => 'created:[2026 to', 'page' => 2, 'page_size' => 25, 'fields' => self::FIELDS],
+			['query' => 'invoice created:[2026 to', 'page' => 2, 'page_size' => 25, 'fields' => self::FIELDS],
+			['text' => 'invoice', 'page' => 2, 'page_size' => 25, 'fields' => self::FIELDS],
 		], $queries);
+		self::assertNull($this->history());
+	}
+
+	/**
+	 * @return array<string, array{string, string}>
+	 */
+	public static function wordsOfQueries(): array {
+		return [
+			'a range still being typed' => ['invoice created:[2026 to', 'invoice'],
+			'a finished range between words' => ['tax created:[2025 to 2026] receipt', 'tax receipt'],
+			'a range in braces' => ['bill added:{2026-01-01 TO', 'bill'],
+			'a field and its value' => ['tag:bills  insurance', 'insurance'],
+			'a field and a quote still being typed' => ['contract title:"car', 'contract'],
+			'operators, brackets and quotes' => ['(invoice OR "receipt") AND NOT draft', 'invoice receipt draft'],
+			'words with umlauts' => ['Bürgschaft Rechnung created:[2026', 'Bürgschaft Rechnung'],
+		];
+	}
+
+	/**
+	 * The simple mode of Paperless 3 looks for every word that it gets, so a field that is
+	 * still being typed, and every other part of the advanced syntax, would match no
+	 * document: it gets only the plain words of the term.
+	 */
+	#[DataProvider('wordsOfQueries')]
+	public function testTheSimpleModeGetsThePlainWordsOfTheTerm(string $term, string $words): void {
+		$texts = [];
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options) use (&$texts): IResponse {
+			if (isset($options['query']['query'])) {
+				return $this->response(400, self::INVALID_DATE, self::PAPERLESS_3);
+			}
+			$texts[] = $options['query']['text'];
+
+			return $this->response(200, self::NO_DOCUMENTS, self::PAPERLESS_3);
+		});
+
+		$this->service($client)->searchDocuments($term, 1, 5);
+
+		self::assertSame([$words], $texts);
+	}
+
+	/**
+	 * A term that is nothing but a field still being typed has no words for the simple
+	 * mode, which would find nothing: the refusal of Paperless stands, which is no problem
+	 * of the search either.
+	 */
+	public function testATermWithoutPlainWordsGoesToNoOtherMode(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->willReturn($this->response(400, self::INVALID_DATE, self::PAPERLESS_3));
+
+		$rejection = $this->rejectedSearch($client, 'created:[2026 to');
+
+		self::assertSame(400, $rejection->status);
+		self::assertTrue($rejection->allowsSimpleSearch());
 		self::assertNull($this->history());
 	}
 
@@ -645,7 +702,7 @@ final class PaperlessApiServiceTest extends TestCase {
 				: $this->response(200, self::NO_DOCUMENTS, self::PAPERLESS_3);
 		});
 
-		$this->service($client)->searchDocuments('created:[2026 to', 1, 5);
+		$this->service($client)->searchDocuments('invoice created:[2026 to', 1, 5);
 
 		self::assertSame(['application/json; version=9', 'application/json; version=9'], $accepted);
 	}
@@ -659,12 +716,12 @@ final class PaperlessApiServiceTest extends TestCase {
 		$client->method('get')->willReturnCallback(function () use (&$calls): IResponse {
 			return match (++$calls) {
 				1 => $this->response(400, self::INVALID_DATE, self::PAPERLESS_3),
-				2 => throw new RuntimeException('cURL error 7: Failed to connect for created:[2026 to'),
+				2 => throw new RuntimeException('cURL error 7: Failed to connect for invoice'),
 				default => $this->response(200, self::NO_DOCUMENTS, self::PAPERLESS_3),
 			};
 		});
 
-		$this->service($client)->searchDocuments('created:[2026 to', 1, 25);
+		$this->service($client)->searchDocuments('invoice created:[2026 to', 1, 25);
 
 		self::assertSame('cURL error 7: Failed to connect for …', $this->history()['events'][0]['message'] ?? null);
 	}
@@ -794,6 +851,62 @@ final class PaperlessApiServiceTest extends TestCase {
 		$client->method('get')->willReturn($this->response(200, self::NO_DOCUMENTS));
 
 		self::assertNull($this->service($client)->testConnection('https://paperless.example.com', 'TEST_VALUE', false));
+	}
+
+	/**
+	 * @return array<string, array{string, int, ?list<int>}>
+	 */
+	public static function probes(): array {
+		return [
+			'the IDs of all documents' => ['{"count":3,"next":null,"all":[3,2,1],"results":[{"id":3}]}', 3, [3, 2, 1]],
+			'no documents' => ['{"count":0,"next":null,"all":[],"results":[]}', 0, []],
+			'no field all' => ['{"count":1180,"next":null,"results":[{"id":3}]}', 1180, null],
+			'no list in all' => ['{"count":3,"all":"3,2,1","results":[{"id":3}]}', 3, null],
+			'an ID that is no number' => ['{"count":2,"all":[2,"1"],"results":[{"id":2}]}', 2, null],
+			'no count' => ['{"results":[{"id":3}]}', 1, null],
+		];
+	}
+
+	/**
+	 * The test of the connection also says how many documents the account of the token may
+	 * view, and which, when Paperless lists their IDs in the field all, as Paperless-ngx
+	 * does for the selection of all documents.
+	 *
+	 * @param ?list<int> $documentIds
+	 */
+	#[DataProvider('probes')]
+	public function testTheProbeCountsTheDocumentsOfPaperless(string $body, int $documents, ?array $documentIds): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response(200, $body, self::PAPERLESS_3));
+
+		$status = $this->service($client)->probe('https://paperless.example.com', 'TEST_VALUE', false);
+
+		self::assertSame('3.3.0', $status->version?->version);
+		self::assertSame($documents, $status->documents);
+		self::assertSame($documentIds, $status->documentIds);
+	}
+
+	/**
+	 * occ tests the stored settings, and the overview of the administration settings then
+	 * shows the version of the answer.
+	 */
+	public function testProbingTheSettingsUsesThemAndRemembersTheVersion(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with(
+				'http://paperless:8000/api/documents/',
+				self::callback(static fn (array $options): bool => $options['headers']['Authorization'] === 'Token TEST_VALUE'
+					&& $options['query'] === ['page' => 1, 'page_size' => 1, 'fields' => 'id']
+					&& $options['nextcloud'] === ['allow_local_address' => true]),
+			)
+			->willReturn($this->response(200, self::NO_DOCUMENTS, self::PAPERLESS_3));
+
+		$status = $this->service($client, 'http://paperless:8000', 'TEST_VALUE', true)->probeTheSettings();
+
+		self::assertSame(0, $status->documents);
+		self::assertSame(self::VERSION_KEYS, $this->config->calls('setValueString'));
+		self::assertSame('3.3.0', $this->config->stored(AppConstants::APP_ID, 'paperless_version'));
 	}
 
 	/**

@@ -20,6 +20,8 @@ enum RequestFailure: string {
 	case NotFound = 'not_found';
 	/** The URL answers with a redirect that the request doesn't follow. */
 	case Redirect = 'redirect';
+	/** Paperless doesn't speak version 9 of its API, as before 2.16, with HTTP 406. */
+	case UnsupportedVersion = 'unsupported_version';
 	/** Any other status outside 2xx, such as 500 or 502. */
 	case Http = 'http';
 	/** An answer of 2xx that isn't a list of documents of Paperless, such as a page of HTML. */

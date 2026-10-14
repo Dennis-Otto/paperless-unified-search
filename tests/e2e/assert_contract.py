@@ -287,7 +287,7 @@ def search_nextcloud(term):
     return entries
 
 
-def check_nextcloud(paperless, ids, version, api_version, shown, report):
+def check_nextcloud(paperless, line, ids, version, api_version, shown, report):
     """The same Paperless through the app in Nextcloud."""
     answer = nextcloud(
         "/apps/paperless_unified_search/settings",
@@ -321,8 +321,14 @@ def check_nextcloud(paperless, ids, version, api_version, shown, report):
     expect(not MARKUP.search(subline), f"The result shows markup or an entity of HTML: {subline!r}")
     report.passed("Results in Nextcloud's search", f"{code(subline[:120])}")
 
-    entries = search_nextcloud(UNFINISHED)
-    report.passed("A query that is still being typed, in Nextcloud", f"no error, {len(entries)} result(s)")
+    titles = [entry.get("title") for entry in search_nextcloud(UNFINISHED)]
+    if line == "2":
+        # Paperless 2 parses what it can of the query; the app only must not fail.
+        report.passed("A query that is still being typed, in Nextcloud", f"no error, {len(titles)} result(s)")
+    else:
+        # Paperless 3 refuses it, and the app finds the documents of its plain words in the simple mode.
+        expect("Contract invoice" in titles, f"Nextcloud's search for {UNFINISHED!r} shows {titles}, not the documents of its words in the simple mode of Paperless.")
+        report.passed("A query that is still being typed, in Nextcloud", f"the simple mode finds {code(', '.join(titles))}")
 
 
 def main():
@@ -343,7 +349,7 @@ def main():
         report.passed("Documents", f"{len(ids)} synthetic text files, read and indexed")
         version, api_version, shown = check_paperless(paperless, line, report)
         heading = f"### The contract with Paperless-ngx {version} (newest API version {api_version})"
-        check_nextcloud(paperless, ids, version, api_version, shown, report)
+        check_nextcloud(paperless, line, ids, version, api_version, shown, report)
     except Broken as broken:
         status = 1
         report.failed(broken)
