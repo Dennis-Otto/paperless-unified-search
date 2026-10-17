@@ -397,7 +397,7 @@ The picker searches through the same provider as Nextcloud's search, so it lists
 
 ### On the dashboard
 
-Add **New in Paperless** to your dashboard with **Customize** at the end of the dashboard. The widget lists the newest seven documents that Paperless added and that you can open, newest first, without a search: each with the preview of its file, and below its title the day that Paperless added it in your language, its correspondent and its type, such as *Sep 3, 2026 · Example Motors · Receipt*. Selecting one opens its file in Files, and **Files shared with you** below the list opens all the files that others share with you; the archive account, which owns them, gets no such link. Nextcloud's dashboard API serves the widget to other clients as well, such as the widgets of the Android app on the home screen of a phone.
+Add **New in Paperless** to your dashboard with **Customize** at the end of the dashboard. The widget lists the newest documents that Paperless added and that you can open, newest first, without a search: each with the preview of its file, and below its title the day that Paperless added it in your language, its correspondent and its type, such as *Sep 3, 2026 · Example Motors · Receipt*. Selecting one opens its file in Files. Once the list is full, Nextcloud's dashboard shows six documents and **Files shared with you** below them, which opens all the files that others share with you; with fewer documents it shows them all and no link, and the archive account, which owns the files, gets no such link at all. The apps and the other clients of the dashboard's API get up to seven documents and the link. Nextcloud's dashboard API serves the widget to other clients as well, such as the widgets of the Android app on the home screen of a phone.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/the-newest-documents-on-the-dashboard.dark.svg">
@@ -405,7 +405,7 @@ Add **New in Paperless** to your dashboard with **Customize** at the end of the 
 </picture>
 
 - **Who sees what.** The same rule as in the search: a document shows to whoever can open its file of the archive account. The widget looks at the 25 documents that Paperless added last; when you can open none of them, it says so.
-- **How new.** The newest documents are the same for every user, since every request to Paperless carries the token of the settings, so the app asks Paperless for them at most once a minute, for all users together, and keeps them in Nextcloud's distributed cache meanwhile. A document that Paperless adds shows within a minute, and a file shared with you at once.
+- **How new.** The newest documents are the same for every user, since every request to Paperless carries the token of the settings, so the app asks Paperless for them at most once a minute, for all users together, and keeps them in Nextcloud's distributed cache meanwhile. That needs a memory cache, as Nextcloud recommends: without one, every dashboard that shows the widget asks Paperless, and waits for it during an outage. A document that Paperless adds shows within a minute, and a file shared with you at once.
 - **When Paperless doesn't answer** within five seconds, the widget says *Paperless can't be reached right now.*, and the app asks again a minute later. Such a failure goes into the log of Nextcloud, not into the history of the problems of the search.
 - **Only where the search works.** The dashboard offers the widget once the settings name a Paperless and an archive account that exists.
 

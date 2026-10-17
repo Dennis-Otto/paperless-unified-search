@@ -101,8 +101,8 @@ curl -u admin -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
 | --- | --- |
 | **ID** | `paperless_unified_search-recent`, *New in Paperless*, offered once the settings name a Paperless and an archive account that exists |
 | **Items** | `GET /ocs/v2.php/apps/dashboard/api/v2/widget-items?widgets[]=paperless_unified_search-recent` with `limit` (7 by default, up to 30), as Nextcloud's dashboard and its apps ask for them: the newest documents that the user can open, each with its title, a line with the day that Paperless added it, its correspondent and its type, the link and the preview of its file, and as `sinceId` the moment that Paperless added it; `sinceIds[paperless_unified_search-recent]` with such a moment lists only the documents added after it |
-| **The link below the list** | *Files shared with you*, the view of Files with the files that others share with the user; none for the archive account |
-| **Paperless** | One request for the 25 documents that it added last, at most once a minute for all users together, which Nextcloud's distributed cache keeps meanwhile; a Paperless that doesn't answer rests for a minute as well, and the widget says *Paperless can't be reached right now.* |
+| **The link below the list** | *Files shared with you*, the view of Files with the files that others share with the user; Nextcloud's web dashboard shows it, and six documents, only once the list is full; none for the archive account |
+| **Paperless** | One request for the 25 documents that it added last, at most once a minute for all users together, which Nextcloud's distributed cache keeps meanwhile (with a memory cache, as Nextcloud recommends; without one, every dashboard asks Paperless); a Paperless that doesn't answer rests for a minute as well, and the widget says *Paperless can't be reached right now.* |
 
 ## Requests to Paperless
 
