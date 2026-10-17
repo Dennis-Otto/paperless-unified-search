@@ -84,6 +84,21 @@ for picture in "${pictures[@]}"; do
 done
 echo "The ${#pictures[@]} picture(s) of the README are in the repository."
 
+printf '\n== %s\n' "Files that the documentation links on main"
+# The README and the pages of the website link files and folders of the repository on
+# GitHub, from main, as the website can't link them otherwise. A pull request that adds
+# one, such as the guide of the demo, links it before main has it, so the link check
+# skips the demo (.lycheeignore): each of them must be in the checkout.
+mapfile -t linked < <(grep -ohE 'https://github\.com/Dennis-Otto/paperless-unified-search/(blob|tree)/main/[^")#?[:space:]]+' README.md docs/*.md |
+  sed -E 's#^https://github\.com/Dennis-Otto/paperless-unified-search/(blob|tree)/main/##' | sort -u)
+for path in "${linked[@]}"; do
+  if [[ ! -e "$path" ]]; then
+    echo "The documentation links $path on main, which isn't in the repository."
+    exit 1
+  fi
+done
+echo "The ${#linked[@]} file(s) and folder(s) that the documentation links on main are in the repository."
+
 printf '\n== %s\n' "Pages of the website that the README links"
 # The README links pages of the website, which a pull request that adds a page links
 # before the website has it, so the link check skips them (.lycheeignore): each of them

@@ -1,0 +1,126 @@
+# SPDX-FileCopyrightText: 2026 Dennis Otto
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# The demo of Paperless Unified Search: a real Paperless-ngx with Redis, and a real
+# Nextcloud on PostgreSQL with its background jobs, this app from the checkout and
+# Paperless Sync from the App Store. seed.sh starts it and fills it; README.md says what to try. Both web
+# interfaces listen on 127.0.0.1 alone, so nobody else on the network reaches them.
+#
+#   bash demo/seed.sh                                     # start it, and fill it once
+#   docker compose -f demo/compose.yaml down --volumes    # remove it with all its data
+#
+# The secret key of Paperless and every password come from demo/.env, which seed.sh
+# generates on its first run and git ignores; without it, Compose refuses to start.
+# Renovate keeps the images current by their digests, Paperless-ngx in the same pull
+# request as the image of the contract tests (.github/renovate.json5).
+
+name: paperless-unified-search-demo
+
+x-nextcloud: &nextcloud
+  image: nextcloud:33.0.9-apache@sha256:a97666d6ae931bde78a80cfba8abdf46d436d7b540f31895803f6fb0a012d689
+  restart: unless-stopped
+  volumes:
+    - nextcloud_html:/var/www/html
+    # This app as it is in the checkout, which Nextcloud may run but not change.
+    - ../:/var/www/html/custom_apps/paperless_unified_search:ro
+
+services:
+  # The database of Nextcloud. SQLite would lock up whenever the background jobs and a
+  # request write at the same time, as at the first run of the jobs after the install.
+  postgres:
+    image: postgres:17.11-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nextcloud
+      POSTGRES_USER: nextcloud
+      POSTGRES_PASSWORD: ${NEXTCLOUD_DATABASE_PASSWORD:?run bash demo/seed.sh, which generates demo/.env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "--username=nextcloud", "--dbname=nextcloud"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+
+  redis:
+    image: redis:8.10.2-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  paperless:
+    image: ghcr.io/paperless-ngx/paperless-ngx:3.3.1@sha256:cb91bfb468e63025a9d10c01b54c33665113668eee61b490db96de19b860b9c4
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      PAPERLESS_REDIS: redis://redis:6379
+      PAPERLESS_SECRET_KEY: ${PAPERLESS_SECRET_KEY:?run bash demo/seed.sh, which generates demo/.env}
+      PAPERLESS_ADMIN_USER: admin
+      PAPERLESS_ADMIN_PASSWORD: ${PAPERLESS_ADMIN_PASSWORD:?run bash demo/seed.sh, which generates demo/.env}
+      PAPERLESS_TIME_ZONE: UTC
+      PAPERLESS_OCR_LANGUAGE: eng
+      # One worker of each kind is plenty for a few documents, and starts sooner.
+      PAPERLESS_TASK_WORKERS: "1"
+      PAPERLESS_THREADS_PER_WORKER: "1"
+      PAPERLESS_WEBSERVER_WORKERS: "1"
+      PAPERLESS_ENABLE_NLTK: "false"
+    ports:
+      - "127.0.0.1:${PAPERLESS_PORT:-8100}:8000"
+    volumes:
+      - paperless_data:/usr/src/paperless/data
+      - paperless_media:/usr/src/paperless/media
+      # The documents of the demo and the script that hands them to Paperless, which
+      # seed.sh runs in this container for its Python.
+      - ./documents:/demo/documents:ro
+      - ./seed.py:/demo/seed.py:ro
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--output", "/dev/null", "http://127.0.0.1:8000/"]
+      interval: 3s
+      timeout: 3s
+      retries: 200
+
+  nextcloud:
+    <<: *nextcloud
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # The image installs Nextcloud on its first start.
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: nextcloud
+      POSTGRES_USER: nextcloud
+      POSTGRES_PASSWORD: ${NEXTCLOUD_DATABASE_PASSWORD:?run bash demo/seed.sh, which generates demo/.env}
+      NEXTCLOUD_ADMIN_USER: admin
+      NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD:?run bash demo/seed.sh, which generates demo/.env}
+      # localhost for the browser, nextcloud for seed.py in the network of the demo.
+      NEXTCLOUD_TRUSTED_DOMAINS: localhost 127.0.0.1 nextcloud
+    ports:
+      - "127.0.0.1:${NEXTCLOUD_PORT:-8180}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1/status.php | grep -q '\"installed\":true'"]
+      interval: 3s
+      timeout: 3s
+      retries: 200
+
+  # The background jobs of Nextcloud every five minutes, among them the run of Paperless
+  # Sync, which brings a document that you add to Paperless into Nextcloud.
+  cron:
+    <<: *nextcloud
+    entrypoint: /cron.sh
+    depends_on:
+      nextcloud:
+        condition: service_healthy
+
+volumes:
+  nextcloud_html:
+  postgres_data:
+  paperless_data:
+  paperless_media:
+  redis_data:

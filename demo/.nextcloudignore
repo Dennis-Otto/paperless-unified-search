@@ -1,0 +1,5 @@
+# The demo stays out of the app package of a release. krankerl reads a .nextcloudignore
+# in every folder, as git reads a .gitignore, so this one leaves out everything in this
+# folder, itself included; scripts/check-package.sh fails on any file of it that the
+# package would still hold.
+*

@@ -1,0 +1,18 @@
+Title: Dentist appointment reminder
+Correspondent: Smile Dental Practice
+Type: Letter
+Created: 2026-09-15
+Tags: Health
+
+Smile Dental Practice
+5 Molar Street, Exampletown
+
+Reminder of your appointment
+
+Dear Jamie Example,
+
+we look forward to seeing you for your annual check-up and cleaning on
+Tuesday, 6 October 2026, at 9:30. Please bring your health insurance
+card. If you can't come, tell us at least one day before.
+
+Your Smile Dental Practice team
