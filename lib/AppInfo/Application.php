@@ -18,11 +18,9 @@ use OCP\AppFramework\Bootstrap\IBootstrap;
 use OCP\AppFramework\Bootstrap\IRegistrationContext;
 
 final class Application extends App implements IBootstrap {
-	public const APP_ID = 'paperless_unified_search';
-
 	/** @psalm-suppress PossiblyUnusedMethod */
 	public function __construct() {
-		parent::__construct(self::APP_ID);
+		parent::__construct(AppConstants::APP_ID);
 	}
 
 	public function register(IRegistrationContext $context): void {
