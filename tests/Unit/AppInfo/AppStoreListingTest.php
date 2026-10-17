@@ -72,6 +72,7 @@ final class AppStoreListingTest extends TestCase {
 			'screenshots/01-unified-search.png',
 			'screenshots/02-nextcloud-pdf-viewer.png',
 			'screenshots/07-smart-picker.png',
+			'screenshots/11-dashboard.png',
 			'screenshots/03-admin-settings.png',
 			'screenshots/04-mobile-search.png',
 			'screenshots/06-search-problems.png',

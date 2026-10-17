@@ -1014,6 +1014,20 @@ final class PaperlessApiServiceTest extends TestCase {
 		self::assertSame([1 => 'Invoice'], $this->service($client, allowLocal: $allowLocal)->findNames('document_types', [1]));
 	}
 
+	/**
+	 * A URL of the settings with a slash at its end, as an administrator may type it,
+	 * still names the list.
+	 */
+	public function testTheNamesOfAListTakeTheUrlWithASlashAtItsEnd(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with('https://paperless.example.com/api/document_types/')
+			->willReturn($this->response(200, self::fixture('paperless-3.3.0-document-types.json')));
+
+		self::assertSame([1 => 'Invoice'], $this->service($client, 'https://paperless.example.com/')->findNames('document_types', [1]));
+	}
+
 	public function testOnlyObjectsWithANumberAndANameHaveANameInTheList(): void {
 		$client = $this->createStub(IClient::class);
 		$client->method('get')->willReturn($this->response(200, json_encode(['results' => [
@@ -1056,6 +1070,7 @@ final class PaperlessApiServiceTest extends TestCase {
 	public static function failedLookups(): array {
 		return [
 			'informational status' => [100, '{"results":[]}', RequestFailure::Http, 'Paperless returned HTTP 100.'],
+			'a redirect' => [300, '{"results":[]}', RequestFailure::Redirect, 'Paperless returned HTTP 300.'],
 			'no permission' => [403, '{"detail":"You do not have permission to perform this action."}', RequestFailure::Unauthorized, 'Paperless returned HTTP 403.'],
 			'server error' => [500, '', RequestFailure::Http, 'Paperless returned HTTP 500.'],
 			'no body' => [200, null, RequestFailure::NotPaperless, 'Paperless returned no JSON: Syntax error'],
@@ -1097,6 +1112,136 @@ final class PaperlessApiServiceTest extends TestCase {
 			self::assertSame('cURL error 7: Failed to connect', $error->getMessage());
 		}
 		self::assertArrayNotHasKey('diagnostics', $this->config->storedValues(AppConstants::APP_ID));
+	}
+
+	/**
+	 * The dashboard lists the documents that Paperless added last: one page of them, newest
+	 * first, with the fields that it shows and the moment that Paperless added each.
+	 */
+	public function testTheNewestDocumentsComeInOneRequestWithTheFieldsOfTheDashboard(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with('https://paperless.example.com/api/documents/', self::callback(
+				static fn (array $options): bool => $options['query'] === [
+					'ordering' => '-added',
+					'page' => 1,
+					'page_size' => 25,
+					'fields' => 'id,title,added,correspondent,document_type',
+				]
+					&& $options['headers'] === [
+						'Authorization' => 'Token TEST_VALUE',
+						'Accept' => 'application/json; version=9',
+						'User-Agent' => 'Nextcloud-Paperless-Unified-Search/0.5.1',
+					]
+					&& $options['connect_timeout'] === 3
+					&& $options['timeout'] === 5
+					&& $options['http_errors'] === false,
+			))
+			->willReturn($this->response(200, (string)json_encode(['count' => 2, 'next' => null, 'results' => [
+				['id' => 412, 'title' => 'Electricity invoice', 'added' => '2026-08-13T09:12:45.118731+02:00', 'correspondent' => 3, 'document_type' => 1],
+				'no document',
+				['id' => 389, 'title' => 'Home insurance renewal', 'added' => '2026-07-22T10:00:00+02:00', 'correspondent' => null, 'document_type' => null],
+			]]), self::PAPERLESS_3));
+
+		self::assertSame([
+			['id' => 412, 'title' => 'Electricity invoice', 'added' => '2026-08-13T09:12:45.118731+02:00', 'correspondent' => 3, 'document_type' => 1],
+			['id' => 389, 'title' => 'Home insurance renewal', 'added' => '2026-07-22T10:00:00+02:00', 'correspondent' => null, 'document_type' => null],
+		], $this->service($client)->findRecentDocuments(25));
+		// The answer names the version of Paperless, which the overview shows.
+		self::assertSame('3.3.0', $this->config->stored(AppConstants::APP_ID, 'paperless_version'));
+	}
+
+	/**
+	 * @return array<string, array{int, int}>
+	 */
+	public static function recentCounts(): array {
+		return [
+			'none' => [0, 1],
+			'a few' => [7, 7],
+			'more than Paperless sends on one page' => [500, 100],
+		];
+	}
+
+	#[DataProvider('recentCounts')]
+	public function testTheNewestDocumentsAreOnePageOfPaperless(int $count, int $pageSize): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with(self::anything(), self::callback(static fn (array $options): bool => $options['query']['page_size'] === $pageSize))
+			->willReturn($this->response(200, self::NO_DOCUMENTS));
+
+		self::assertSame([], $this->service($client)->findRecentDocuments($count));
+	}
+
+	/**
+	 * @param array<string, mixed> $options
+	 */
+	#[DataProvider('localNetwork')]
+	public function testTheNewestDocumentsAllowTheLocalNetworkAsTheSettingsSay(bool $allowLocal, array $options): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with(self::anything(), self::callback(
+				static fn (array $sent): bool => array_intersect_key($sent, ['nextcloud' => true, 'allow_redirects' => true]) === $options,
+			))
+			->willReturn($this->response(200, self::NO_DOCUMENTS));
+
+		self::assertSame([], $this->service($client, allowLocal: $allowLocal)->findRecentDocuments(25));
+	}
+
+	/**
+	 * The dashboard waits for the answer: a request without answer gets no second try and
+	 * leaves the history of the problems of the search alone.
+	 */
+	public function testTheNewestDocumentsWithoutAnswerGetNoSecondTry(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->willThrowException(new RuntimeException('cURL error 7: Failed to connect'));
+
+		try {
+			$this->service($client)->findRecentDocuments(25);
+			self::fail('The request did not fail.');
+		} catch (RuntimeException $error) {
+			self::assertSame('cURL error 7: Failed to connect', $error->getMessage());
+		}
+		self::assertNull($this->history());
+	}
+
+	/**
+	 * @return array<string, array{int, ?string, RequestFailure, string}>
+	 */
+	public static function failedRecentDocuments(): array {
+		return [
+			'a refused token' => [401, '{"detail":"Invalid token."}', RequestFailure::Unauthorized, 'Paperless returned HTTP 401.'],
+			// Without a search, HTTP 400 and 404 are failures as well.
+			'a refused request' => [400, '{"query":["Invalid."]}', RequestFailure::Http, 'Paperless returned HTTP 400.'],
+			'no such page' => [404, '{"detail":"Not found."}', RequestFailure::NotFound, 'Paperless returned HTTP 404.'],
+			'a page of a proxy' => [200, '<html>', RequestFailure::NotPaperless, 'Paperless returned no JSON: Syntax error'],
+		];
+	}
+
+	#[DataProvider('failedRecentDocuments')]
+	public function testAWrongAnswerFailsTheNewestDocumentsWithItsReason(int $status, ?string $body, RequestFailure $reason, string $message): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response($status, $body));
+
+		try {
+			$this->service($client)->findRecentDocuments(25);
+			self::fail('The request did not fail.');
+		} catch (PaperlessRequestException $exception) {
+			self::assertSame($reason, $exception->reason);
+			self::assertSame($message, $exception->getMessage());
+		}
+	}
+
+	public function testTheNewestDocumentsNeedTheSettings(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::never())->method('get');
+
+		$this->expectException(UnexpectedValueException::class);
+		$this->service($client, token: null)->findRecentDocuments(25);
 	}
 
 	/**

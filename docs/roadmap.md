@@ -1,5 +1,5 @@
 ---
-description: "What Paperless Unified Search intends to do until October 2027, such as a dashboard widget and a demo in one command, and what it will not do."
+description: "What Paperless Unified Search intends to do until October 2027, such as following every new major version of Nextcloud and the API of Paperless-ngx, and what it will not do."
 ---
 
 # Roadmap
@@ -10,12 +10,7 @@ What Paperless Unified Search intends to do in the next twelve months, until Oct
 
 ## The next twelve months
 
-The app does what it was built for: the full-text search of Paperless-ngx in the search of Nextcloud, narrowed by its date filter, with results that show the preview, the date, the correspondent and the type of each document and open the synchronized files, and in the smart picker of Talk, Text, Deck and Mail, which inserts the link to such a file, and for administrators **Try a search** in the settings, which shows why a document is hidden from a user, documented in English and German. The year builds on that, with these features planned:
-
-- **A dashboard widget.** The latest Paperless documents that the user can open, on Nextcloud's dashboard.
-- **A demo in one command.** Real Paperless-ngx and Nextcloud with sample documents, to try the app before installing it.
-
-And, as every year, keeping it working and safe:
+The app does what it was built for: the full-text search of Paperless-ngx in the search of Nextcloud, narrowed by its date filter, with results that show the preview, the date, the correspondent and the type of each document and open the synchronized files, in the smart picker of Talk, Text, Deck and Mail, which inserts the link to such a file, and on the dashboard, which lists the newest documents that a user can open, and for administrators **Try a search** in the settings, which shows why a document is hidden from a user. A demo in one command, with real Paperless-ngx and Nextcloud and sample documents, lets anyone try it before installing it, and the README and the website explain it all in English and German. The year builds on that and, as every year, keeps it working and safe:
 
 - **Every new major version of Nextcloud.** The upstream bot raises `max-version` in `appinfo/info.xml` once the end-to-end tests pass against the new version, and the app follows the changes of Nextcloud's search, of its smart picker and of its mobile apps.
 - **Changes of the Paperless-ngx API.** Contract tests against real Paperless-ngx 2.20 and 3.x run every week and with every new release of Paperless-ngx, and catch a change that breaks the search, which is fixed first, with a test that keeps it fixed. The app asks Paperless for version 9 of its API, so that a new default version of Paperless can't change what the app reads; a newer version is a deliberate step, with these tests.
