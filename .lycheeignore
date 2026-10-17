@@ -12,3 +12,6 @@
 # moves a file of it links it before main has it. scripts/check-project.sh checks that
 # every file that the documentation links on main is in the repository.
 ^https://github\.com/Dennis-Otto/paperless-unified-search/(blob|tree)/main/demo/
+# lychee.toml asks raw.githubusercontent.com for each blob link, so the blob links of the
+# demo reach the check by this address.
+^https://raw\.githubusercontent\.com/Dennis-Otto/paperless-unified-search/main/demo/
