@@ -12,6 +12,8 @@
 [![CI](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/ci.yml/badge.svg)](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/ci.yml)
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE)
 
+**English** · [Deutsch](README.de.md)
+
 </div>
 
 Paperless Unified Search brings Paperless-ngx OCR and full-text search into Nextcloud's global search, without Elasticsearch, a second index or another container: Paperless answers, Nextcloud decides who sees the file. Search results open the matching synchronized file directly in Nextcloud's viewer.
@@ -33,7 +35,7 @@ Two apps, one archive: [Paperless Sync](https://github.com/Dennis-Otto/paperless
 
 Paperless Sync is the companion, not a must: [any synchronization](#works-with-any-synchronization) that writes the files with their marker into the archive account works as well, Paperless-ngx's own file names included.
 
-The [documentation website](https://dennis-otto.github.io/paperless-unified-search/) has this documentation on pages to install, configure and use the app, with a troubleshooting guide, a FAQ and a reference for administrators, and a comparison with the alternatives, the architecture, the security design and the roadmap.
+The [documentation website](https://dennis-otto.github.io/paperless-unified-search/) has this documentation on pages to install, configure and use the app, with a troubleshooting guide, a FAQ and a reference for administrators, and a comparison with the alternatives, the architecture, the security design and the roadmap, in English and in [German](https://dennis-otto.github.io/paperless-unified-search/de/index.html), where the architecture, the security design, the decisions, the releases and the changelog stay in English.
 
 <sub>💛 Like it? [Rate it in the App Store](https://apps.nextcloud.com/apps/paperless_unified_search) or [support its development](https://github.com/sponsors/Dennis-Otto).</sub>
 
@@ -618,7 +620,7 @@ composer install
 bash scripts/check.sh
 ```
 
-`scripts/check.sh` checks Composer, `appinfo/info.xml` against the schema of the App Store, PHP syntax, the coding standard, Psalm, PHPUnit, the package that krankerl builds with `scripts/check-package.sh`, and, with `scripts/check-project.sh`, the JavaScript with the tests of the settings page, each line and branch of it, the translations, the pictures of the README, a description of its own for every page of the website, and that every diagram runs from top to bottom with a title and a description for screen readers.
+`scripts/check.sh` checks Composer, `appinfo/info.xml` against the schema of the App Store, PHP syntax, the coding standard, Psalm, PHPUnit, the package that krankerl builds with `scripts/check-package.sh`, and, with `scripts/check-project.sh`, the JavaScript with the tests of the settings page, each line and branch of it, the translations, the pictures of the READMEs, a description of its own for every page of the website, and that every diagram runs from top to bottom with a title and a description for screen readers.
 
 The production archive intentionally excludes tests, release tools, Composer development dependencies, screenshots, and repository metadata. Packaging uses [Krankerl](https://github.com/ChristophWurst/krankerl), and `scripts/check-package.sh` validates the finished archive.
 

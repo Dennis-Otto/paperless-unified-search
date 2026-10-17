@@ -1,0 +1,36 @@
+---
+config:
+  sequence:
+    wrap: true
+    width: 120
+    actorMargin: 10
+---
+sequenceDiagram
+    accTitle: Der Datenfluss einer Suche
+    accDescr: Ein Benutzer sucht nach invoice. Die globale Suche gibt den Begriff, den Cursor, das Limit, den Datumsfilter und den Benutzer an den Suchanbieter. Ohne Begriff, Archiv-Konto oder Verbindung antwortet der Anbieter ohne Treffer und fragt Paperless nicht. Sonst fragt der Paperless-Client, bis die Seite mit Treffern voll ist, Paperless-ngx mit dem Token nach der Seite mit 25 Treffern, die den nächsten Treffer enthält, innerhalb der Tage des Datumsfilters und nur nach den Feldern, die ein Treffer zeigt, und Paperless antwortet mit der ID, dem Titel, dem Datum, den IDs des Korrespondenten und des Typs und dem Ausschnitt der Dokumente 412, 389, 371 und weiterer und damit, ob es eine nächste Seite gibt. Ein Aufruf des Dateisuchers deckt alle Dokumente dieser Seite ab und liefert für jedes eine Datei des Archiv-Kontos mit seiner Kennung oder keine. Für die Dokumente mit Datei fragen die Namen Paperless über den Client nach den Korrespondenten und den Typen, die der Cache nicht enthält, mit einer Anfrage je Art, und behalten ihre Namen zehn Minuten lang. Das wiederholt sich für höchstens 4 Seiten von Paperless oder 3 Sekunden. Der Anbieter antwortet mit einem Eintrag für jedes Dokument mit Datei, bis zum Limit, mit der Vorschau der Datei oder dem Symbol ihres Typs, dem Titel, dem Datum in der Sprache des Benutzers, dem Korrespondenten, dem Typ und dem Ausschnitt, und mit dem Cursor des ersten Treffers, den er nicht durchgegangen ist.
+
+    actor User as Benutzer
+    participant Search as Globale Suche
+    participant Provider as Suchanbieter
+    participant Client as Paperless-Client
+    participant Paperless as Paperless-ngx
+    participant Locator as Dateisucher
+    participant Names as Namen
+    User->>Search: invoice
+    Search->>Provider: Begriff, Cursor, Limit,<br>Datumsfilter und Benutzer
+    alt kein Begriff, kein Archiv-Konto oder keine Verbindung
+        Provider-->>Search: keine Treffer, ohne Paperless zu fragen
+    else
+        loop bis die Seite mit Treffern voll ist, für höchstens 4 Seiten von Paperless oder 3 Sekunden
+            Provider->>Client: Begriff, die Tage des Datumsfilters,<br>die Seite mit 25 Treffern mit dem nächsten
+            Client->>Paperless: GET /api/documents/<br>?query=invoice&page=1<br>&page_size=25&fields=…<br>&created__date__gte=…,<br>mit dem Token
+            Paperless-->>Client: ID, Titel, Datum, Korrespondent,<br>Typ und Ausschnitt der Dokumente<br>412, 389, 371, … und ob es<br>eine nächste Seite gibt
+            Provider->>Locator: die Dokumente der Seite,<br>Benutzer, Archiv-Konto
+            Locator-->>Provider: je Dokument eine Datei des<br>Archiv-Kontos mit seiner Kennung<br>oder keine
+            Provider->>Names: die Korrespondenten und Typen<br>der Dokumente mit Datei
+            Names->>Paperless: über den Client, für die IDs,<br>die dem Cache fehlen: GET<br>/api/correspondents/?id__in=3,5<br>und /api/document_types/?id__in=1,2
+            Paperless-->>Names: ihre Namen, die der Cache<br>zehn Minuten lang behält
+            Names-->>Provider: die Namen
+        end
+        Provider-->>Search: ein Eintrag für jedes Dokument mit Datei, bis zum Limit: Vorschau oder Symbol, Titel, Datum, Korrespondent, Typ und Ausschnitt, und der Cursor des nächsten Treffers
+    end

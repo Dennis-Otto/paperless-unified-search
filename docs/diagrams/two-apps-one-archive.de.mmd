@@ -1,0 +1,29 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: Zwei Apps, ein Archiv
+    accDescr: Paperless Sync schreibt jedes Dokument von Paperless-ngx als Datei des Archiv-Kontos paperless, mit der Kennung des Dokuments im Namen, etwa Rechnung [P412].pdf. Das Archiv-Konto teilt sein Archiv nur lesend mit jamie. Sucht jamie, fragt Paperless Unified Search Paperless-ngx, findet die Datei von Dokument 412 an ihrer Kennung und zeigt jamie das Dokument, weil jamie diese Datei öffnen kann; der Treffer öffnet die Datei in Nextcloud.
+
+    paperless[("Paperless-ngx<br>OCR- und Volltextindex")]
+    sync(["Paperless Sync"])
+    search(["Paperless<br>Unified Search"])
+    subgraph archive ["paperless, das Archiv-Konto"]
+        file["… Rechnung [P412].pdf"]
+    end
+    jamie(["jamie"])
+
+    paperless -- "jedes Dokument" --> sync
+    paperless -- "die passenden<br>Dokumente" --> search
+    sync -- "schreibt es als Datei<br>mit seiner Kennung" --> file
+    search -. "findet die Datei<br>an ihrer Kennung" .-> file
+    file -- "nur lesend geteilt" --> jamie
+    search -- "Dokument 412,<br>öffnet seine Datei" --> jamie
+
+    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    class sync,search app
+    class jamie,archive person
