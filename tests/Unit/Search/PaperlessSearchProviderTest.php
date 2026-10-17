@@ -17,6 +17,7 @@ use OCA\PaperlessUnifiedSearch\Model\DiagnosticsHistory;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCA\PaperlessUnifiedSearch\Search\PaperlessSearchProvider;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
+use OCA\PaperlessUnifiedSearch\Service\FilePictures;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
@@ -177,7 +178,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			$configService,
 			$this->diagnostics($config),
 			$this->clock(),
-			...$this->presentation($paperlessApi, $configService),
+			...$this->presentation($paperlessApi, $configService, $urlGenerator),
 		);
 
 		self::assertTrue($provider->isExternalProvider());
@@ -1635,21 +1636,22 @@ final class PaperlessSearchProviderTest extends TestCase {
 			$configService,
 			$this->diagnostics($config),
 			$clock ?? $this->clock(),
-			...$this->presentation($paperlessApi, $configService, $previews, $locale, $timeZone),
+			...$this->presentation($paperlessApi, $configService, $urlGenerator, $previews, $locale, $timeZone),
 		);
 	}
 
 	/**
 	 * The services with which the provider draws an entry: the names of correspondents
-	 * and types, with the cache of the test; previews, which Nextcloud draws of no type of
-	 * file by default, and of PDF files with $previews; the icons of the types of files;
+	 * and types, with the cache of the test; the pictures of the files, with the URLs of
+	 * $urlGenerator, by default a stub: previews, which Nextcloud draws of no type of
+	 * file by default, and of PDF files with $previews, and the icons of the types of files;
 	 * and the dates, as Nextcloud formats them for a user in New York with the locale en
 	 * or de; and the timezone of the user dennis, New York by default, and UTC for anyone
 	 * else, with each question for it in $this->timeZoneRequests.
 	 *
-	 * @return array{PaperlessNames, IPreview, IMimeTypeDetector, IDateTimeFormatter, IDateTimeZone}
+	 * @return array{PaperlessNames, FilePictures, IDateTimeFormatter, IDateTimeZone}
 	 */
-	private function presentation(PaperlessApiService $paperlessApi, ConfigService $configService, bool $previews = false, string $locale = 'en', string $timeZone = 'America/New_York'): array {
+	private function presentation(PaperlessApiService $paperlessApi, ConfigService $configService, ?IURLGenerator $urlGenerator = null, bool $previews = false, string $locale = 'en', string $timeZone = 'America/New_York'): array {
 		$cacheFactory = $this->createStub(ICacheFactory::class);
 		$cacheFactory->method('createDistributed')->willReturnCallback(
 			fn (): MemoryCache => $this->cache ??= new MemoryCache(static fn (): int => self::NOW),
@@ -1686,8 +1688,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 
 		return [
 			new PaperlessNames($paperlessApi, $configService, $cacheFactory, $this->createStub(LoggerInterface::class)),
-			$previewManager,
-			$mimeTypeDetector,
+			new FilePictures($previewManager, $mimeTypeDetector, $urlGenerator ?? $this->createStub(IURLGenerator::class)),
 			$dateTimeFormatter,
 			$dateTimeZone,
 		];

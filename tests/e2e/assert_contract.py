@@ -14,10 +14,10 @@ with the app set up for this Paperless. It prints a report in Markdown, which
 paperless-contract.sh adds to the summary of the job, and fails with the first broken
 promise.
 
-    ACCEPT='application/json; version=9' FIELDS=id,title,… LINE=3 python assert_contract.py
+    ACCEPT='application/json; version=9' FIELDS=id,title,… RECENT_FIELDS=id,title,added,… LINE=3 python assert_contract.py
 
-ACCEPT and FIELDS come from lib/Service/PaperlessApiService.php, so that the contract
-checks what the app sends; LINE is the line of Paperless-ngx, 2 or 3.
+ACCEPT, FIELDS and RECENT_FIELDS come from lib/Service/PaperlessApiService.php, so that
+the contract checks what the app sends; LINE is the line of Paperless-ngx, 2 or 3.
 """
 
 import base64
@@ -28,6 +28,7 @@ import re
 import sys
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import quote, urlencode
@@ -39,6 +40,7 @@ NEXTCLOUD = "http://nextcloud"
 PAPERLESS_USER = ("contract-admin", "contract-only-password")
 NEXTCLOUD_USER = ("e2e-admin", "e2e-only-password")
 SEARCH_PROVIDER = "paperless_unified_search_documents"
+DASHBOARD_WIDGET = "paperless_unified_search-recent"
 
 DOCUMENTS = Path(__file__).resolve().parent / "contract" / "documents"
 # The title and the date of each synthetic document, by its file.
@@ -59,6 +61,10 @@ DEADLINE = 240
 # The fields of a document that a result of the app shows.
 SHOWN = {"id", "title", "created", "__search_hit__"}
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+# The fields of a document that the dashboard shows, and the moment that Paperless added
+# it as RecentDocumentsWidget reads it, such as 2026-08-27T14:00:00.123456+02:00.
+RECENT = {"id", "title", "added"}
+MOMENT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?")
 # What the app makes of an excerpt of Paperless: its text without the markup, entities
 # decoded, on one line (PaperlessSearchProvider).
 TAG = re.compile(r"<[^>]*>")
@@ -126,9 +132,10 @@ def excerpt(highlights):
 
 
 class Paperless:
-    def __init__(self, accept, fields):
+    def __init__(self, accept, fields, recent_fields):
         self.accept = accept
         self.fields = fields
+        self.recent_fields = recent_fields
         self.token = ""
 
     def get(self, path, *, accept=None, **query):
@@ -145,6 +152,10 @@ class Paperless:
     def search(self, what, **query):
         """The page of a search with the fields of the app."""
         return self.documents(what, page=1, page_size=25, fields=",".join(self.fields), **query)
+
+    def newest(self, what):
+        """The newest documents, as the dashboard of the app asks for them."""
+        return self.documents(what, ordering="-added", page=1, page_size=25, fields=",".join(self.recent_fields))
 
     def log_in(self):
         answer = request(
@@ -262,6 +273,18 @@ def check_paperless(paperless, line, report):
     expect(titles == ["Contract invoice"], f"The full-text search for {TERM!r} within 2026 finds {titles}.")
     report.passed("A filter by date with the full-text search", f"{code('query=')} with created__date__gte and created__date__lte")
 
+    missing = sorted(RECENT - set(paperless.recent_fields))
+    expect(not missing, f"The app doesn't ask Paperless for the fields {missing}, which the dashboard shows.")
+    newest = paperless.newest("The newest documents").json("The newest documents").get("results")
+    expect(isinstance(newest, list) and len(newest) == len(SEED), f"The newest documents are {newest!r}, not the {len(SEED)} of the contract.")
+    for result in newest:
+        expect(set(result) == set(paperless.recent_fields), f"Paperless ignored the fields {paperless.recent_fields}: a document has {sorted(result)}.")
+        expect(isinstance(result["id"], int) and isinstance(result["title"], str), f"A newest document has no ID or title: {result!r}")
+        expect(isinstance(result["added"], str) and MOMENT.fullmatch(result["added"]), f"added isn't a moment with its time: {result['added']!r}")
+    moments = [datetime.fromisoformat(result["added"]) for result in newest]
+    expect(moments == sorted(moments, reverse=True), f"ordering=-added doesn't list the newest first: {[result['added'] for result in newest]}")
+    report.passed(f"The newest documents of the dashboard ({code('ordering=-added')}, {code(','.join(paperless.recent_fields))})", f"newest first, added as {code(newest[0]['added'])}")
+
     answer = paperless.get("/api/documents/", page=1, page_size=25, fields=",".join(paperless.fields), query=UNFINISHED)
     if line == "2":
         # Paperless 2 parses what it can, and never gets the simple mode, which it ignores.
@@ -332,6 +355,17 @@ def check_nextcloud(paperless, line, ids, version, api_version, shown, report):
     expect(not MARKUP.search(subline), f"The result shows markup or an entity of HTML: {subline!r}")
     report.passed("Results in Nextcloud's search", f"{code(subline[:120])}")
 
+    # The dashboard lists the same documents, newest first, each with the file that the
+    # archive account has of it.
+    newest = [result["title"] for result in paperless.newest("The newest documents").json("The newest documents")["results"]]
+    answer = nextcloud(f"/ocs/v2.php/apps/dashboard/api/v2/widget-items?{urlencode({'widgets[]': DASHBOARD_WIDGET})}")
+    expect(answer.status == 200, f"Nextcloud's dashboard answered HTTP {answer.status}: {answer.body[:300]!r}")
+    items = answer.json("Nextcloud's dashboard").get("ocs", {}).get("data", {}).get(DASHBOARD_WIDGET, {}).get("items")
+    titles = [item.get("title") for item in items] if isinstance(items, list) else items
+    expect(titles == newest, f"The widget of the dashboard shows {titles!r}, not the newest documents {newest!r}.")
+    expect(all(item.get("subtitle") for item in items), f"An item of the dashboard has no line with its date: {items!r}")
+    report.passed("The widget of Nextcloud's dashboard", f"{code(' / '.join(titles))}, the first {code(items[0]['subtitle'])}")
+
     titles = [entry.get("title") for entry in search_nextcloud(UNFINISHED)]
     if line == "2":
         # Paperless 2 parses what it can of the query; the app only must not fail.
@@ -345,13 +379,14 @@ def check_nextcloud(paperless, line, ids, version, api_version, shown, report):
 def main():
     accept = os.environ.get("ACCEPT", "")
     fields = [field for field in os.environ.get("FIELDS", "").split(",") if field]
+    recent_fields = [field for field in os.environ.get("RECENT_FIELDS", "").split(",") if field]
     line = os.environ.get("LINE", "")
-    if not accept or not fields or line not in ("2", "3"):
-        print("ACCEPT, FIELDS and LINE (2 or 3) are missing; paperless-contract.sh sets them.", file=sys.stderr)
+    if not accept or not fields or not recent_fields or line not in ("2", "3"):
+        print("ACCEPT, FIELDS, RECENT_FIELDS and LINE (2 or 3) are missing; paperless-contract.sh sets them.", file=sys.stderr)
         return 2
 
     report = Report()
-    paperless = Paperless(accept, fields)
+    paperless = Paperless(accept, fields, recent_fields)
     status = 0
     heading = f"### The contract with Paperless-ngx {line}"
     try:

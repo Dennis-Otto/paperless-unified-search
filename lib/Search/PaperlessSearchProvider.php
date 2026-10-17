@@ -17,17 +17,17 @@ use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessQueryRejected;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
+use OCA\PaperlessUnifiedSearch\Service\FilePictures;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
+use OCA\PaperlessUnifiedSearch\Service\PlainText;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Files\File;
-use OCP\Files\IMimeTypeDetector;
 use OCP\IDateTimeFormatter;
 use OCP\IDateTimeZone;
 use OCP\IL10N;
-use OCP\IPreview;
 use OCP\IRequest;
 use OCP\IURLGenerator;
 use OCP\IUser;
@@ -64,22 +64,10 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 	private const EXCERPT_LENGTH = 180;
 
 	/**
-	 * The size of the preview of a file in pixels: twice the size at which Nextcloud's
-	 * search shows it, for screens of twice the density.
-	 */
-	private const PREVIEW_SIZE = 64;
-
-	/**
 	 * A date as Paperless sends it: the day, and a time with it from API versions before
 	 * 9 and from Paperless-ngx 1, such as 2026-08-12T00:00:00+02:00.
 	 */
 	private const CREATED_PATTERN = '/^(\d{4}-\d{2}-\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/';
-
-	/**
-	 * The start of a tag of HTML: < before a letter, /, ! or ?. Before anything else, a
-	 * browser shows < as text.
-	 */
-	private const TAG_START = '/<(?=[a-z\/!?])/i';
 
 	/** @psalm-suppress PossiblyUnusedMethod */
 	public function __construct(
@@ -93,8 +81,7 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 		private SearchDiagnostics $diagnostics,
 		private ITimeFactory $timeFactory,
 		private PaperlessNames $names,
-		private IPreview $previewManager,
-		private IMimeTypeDetector $mimeTypeDetector,
+		private FilePictures $pictures,
 		private IDateTimeFormatter $dateTimeFormatter,
 		private IDateTimeZone $dateTimeZone,
 	) {
@@ -329,11 +316,15 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 	 * @return list<array<array-key, mixed>>
 	 */
 	private static function withFiles(array $hits, array $files): array {
-		return array_values(array_filter($hits, static function (array $hit) use ($files): bool {
+		$withFiles = [];
+		foreach ($hits as $hit) {
 			$documentId = self::getDocumentId($hit);
+			if ($documentId !== null && isset($files[$documentId])) {
+				$withFiles[] = $hit;
+			}
+		}
 
-			return $documentId !== null && isset($files[$documentId]);
-		}));
+		return $withFiles;
 	}
 
 	/**
@@ -393,7 +384,7 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 		// icon: the smart picker shows an icon in place of the thumbnail, as the name of a
 		// class of CSS, which a URL isn't.
 		$entry = new SearchResultEntry(
-			$this->getPictureUrl($file),
+			$this->pictures->urlOf($file),
 			$title,
 			$this->getSubline($document, $file, $names),
 			$this->getResourceUrl($user, $file),
@@ -404,31 +395,6 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 		$entry->addAttribute('path', $this->fileLocator->getPathForUser($user, $file));
 
 		return $entry;
-	}
-
-	/**
-	 * The picture of a file, as an absolute URL, which the apps for phones load as well:
-	 * its preview, for a type of file of which Nextcloud draws previews, as its search of
-	 * files shows it, or else the icon of the type; the icon of the app only when Nextcloud
-	 * has none. Should a preview fail, Nextcloud answers with the icon of the type.
-	 */
-	private function getPictureUrl(File $file): string {
-		$mimeType = $file->getMimetype();
-		if ($this->previewManager->isMimeSupported($mimeType)) {
-			return $this->urlGenerator->linkToRouteAbsolute('core.Preview.getPreviewByFileId', [
-				'x' => self::PREVIEW_SIZE,
-				'y' => self::PREVIEW_SIZE,
-				'fileId' => $file->getId(),
-				'mimeFallback' => true,
-			]);
-		}
-
-		$icon = $this->mimeTypeDetector->mimeTypeIcon($mimeType);
-		if ($icon === '') {
-			$icon = $this->urlGenerator->imagePath(AppConstants::APP_ID, 'app.svg');
-		}
-
-		return $this->urlGenerator->getAbsoluteURL($icon);
 	}
 
 	private function getResourceUrl(IUser $user, File $file): string {
@@ -465,7 +431,7 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 		}
 		foreach (array_keys(PaperlessNames::FIELDS) as $field) {
 			$id = PaperlessNames::idOf($document, $field);
-			$name = $id === null ? '' : self::oneLine($names[$field][$id] ?? '');
+			$name = $id === null ? '' : PlainText::oneLine($names[$field][$id] ?? '');
 			if ($name !== '') {
 				$facts[] = $name;
 			}
@@ -478,7 +444,7 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 
 		$subline = $facts === [] ? $text : implode(' · ', $facts) . ' — ' . $text;
 
-		return preg_replace(self::TAG_START, '< ', $subline) ?? '';
+		return PlainText::withoutMarkup($subline);
 	}
 
 	/**
@@ -510,11 +476,8 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 	 */
 	private function getExcerpt(array $document): string {
 		/** @psalm-suppress MixedAssignment JSON value is validated before use. */
-		$searchHit = $document['__search_hit__'] ?? null;
-		if (!is_array($searchHit)) {
-			return '';
-		}
-
+		$searchHit = $document['__search_hit__'] ?? [];
+		$searchHit = is_array($searchHit) ? $searchHit : [];
 		$excerpt = self::plainText($searchHit['highlights'] ?? null);
 		if ($excerpt !== '') {
 			return $excerpt;
@@ -540,16 +503,8 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 			return '';
 		}
 
-		$text = self::oneLine(html_entity_decode(strip_tags($highlights), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+		$text = PlainText::oneLine(html_entity_decode(strip_tags($highlights), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
 
 		return mb_strimwidth($text, 0, self::EXCERPT_LENGTH, '…', 'UTF-8');
-	}
-
-	/**
-	 * The text with every run of white space, line breaks too, as one space, and none at
-	 * either end.
-	 */
-	private static function oneLine(string $text): string {
-		return trim(preg_replace('/\s+/u', ' ', $text) ?? '');
 	}
 }

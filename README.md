@@ -48,6 +48,7 @@ Paperless-ngx has already recognized the text of every document and keeps an ind
 - **No second index, no second OCR.** No Elasticsearch, no extra container and no copy of the text in Nextcloud. What Paperless finds, Nextcloud's search finds, as soon as the file of the document is in Nextcloud.
 - **Nextcloud decides who sees what.** A result appears only for someone who can open its file in Nextcloud, so the shares you already have are the permissions. Nobody needs an account in Paperless.
 - **Results open where people work.** In Nextcloud's viewer in the browser and in the Nextcloud apps for iOS and Android, ready to share, download or comment on.
+- **New documents come to you.** The dashboard lists the documents that Paperless added last, for everyone who can open them, without a search.
 - **The search of Paperless, not a copy of its words.** Its ranking, its highlights and its query syntax, such as `correspondent:acme` or `created:[2024 to 2025]`, which also look at the correspondent, the type and the tags of a document.
 
 <!-- --8<-- [start:comparison] -->
@@ -155,6 +156,15 @@ Nextcloud in the browser of a phone. The Nextcloud apps for iOS and Android open
 </picture>
 
 Type `/` in a note of Text and choose *Paperless documents*: the picker finds the documents by their text and inserts the link to the file you pick, which Text shows as the file itself to everyone who can open it.
+
+### The newest documents on the dashboard
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/11-dashboard-dark.png">
+  <img alt="The dashboard of Jamie with the widget New in Paperless: the car service, the electricity invoice, the home insurance renewal, the internet invoice and the property tax notice, newest first, each with the icon of its PDF file and a line with the day that Paperless added it, its correspondent and its type, such as Sep 3, 2026 · Example Motors · Receipt" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/11-dashboard.png">
+</picture>
+
+*New in Paperless* on Nextcloud's dashboard lists the documents that Paperless added last and that you can open, without a search.
 
 ### The archive, shared read-only
 
@@ -385,6 +395,20 @@ Nextcloud's smart picker finds Paperless documents too, wherever you write: type
 
 The picker searches through the same provider as Nextcloud's search, so it lists the same documents. It asks Paperless once you have chosen **Paperless documents** and typed a term, without the switch **Search connected services**: choosing it is the same consent.
 
+### On the dashboard
+
+Add **New in Paperless** to your dashboard with **Customize** at the end of the dashboard. The widget lists the newest seven documents that Paperless added and that you can open, newest first, without a search: each with the preview of its file, and below its title the day that Paperless added it in your language, its correspondent and its type, such as *Sep 3, 2026 · Example Motors · Receipt*. Selecting one opens its file in Files, and **Files shared with you** below the list opens all the files that others share with you; the archive account, which owns them, gets no such link. Nextcloud's dashboard API serves the widget to other clients as well, such as the widgets of the Android app on the home screen of a phone.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/the-newest-documents-on-the-dashboard.dark.svg">
+  <img src="docs/images/diagrams/the-newest-documents-on-the-dashboard.svg" alt="The newest documents on the dashboard: The dashboard of jamie asks the widget New in Paperless for its items. The app takes the 25 documents that Paperless-ngx added last from Nextcloud's distributed cache, or else asks Paperless for them, newest first, and keeps them for a minute for every user, since every request carries the token of the settings. Of these, jamie sees the documents whose file of the archive account jamie can open, found by their markers in one search of the file cache, at most seven, with the names of their correspondents and types. Each item shows the preview of its file, its title, and the day that Paperless added it, its correspondent and its type, such as Sep 3, 2026 · Example Motors · Receipt, and opens the file in Files.">
+</picture>
+
+- **Who sees what.** The same rule as in the search: a document shows to whoever can open its file of the archive account. The widget looks at the 25 documents that Paperless added last; when you can open none of them, it says so.
+- **How new.** The newest documents are the same for every user, since every request to Paperless carries the token of the settings, so the app asks Paperless for them at most once a minute, for all users together, and keeps them in Nextcloud's distributed cache meanwhile. A document that Paperless adds shows within a minute, and a file shared with you at once.
+- **When Paperless doesn't answer** within five seconds, the widget says *Paperless can't be reached right now.*, and the app asks again a minute later. Such a failure goes into the log of Nextcloud, not into the history of the problems of the search.
+- **Only where the search works.** The dashboard offers the widget once the settings name a Paperless and an archive account that exists.
+
 <!-- --8<-- [end:usage] -->
 <!-- --8<-- [start:search-syntax] -->
 
@@ -563,6 +587,7 @@ Documents without a file are no failure, as long as the search can show others: 
 - **Try a search** shows administrators which documents a user finds for a term, by their IDs and titles alone, without their content, an excerpt or their files; the audit log of the app *Auditing / Logging* (`admin_audit`) records which administrator tried a search as which user, whatever the log level, and so does the log of Nextcloud at level info, without the term.
 - Search terms are sent server-to-server only when connected-services search or trusted-service mode is enabled, after the user chose **Paperless documents** in the smart picker, or when a client asks this search by its ID through the API.
 - A link that the smart picker inserts is the link of the file in Nextcloud, which shows its preview only to readers who can open the file.
+- The dashboard widget shows a user only the newest documents whose files they can open. Nextcloud's distributed cache keeps the IDs, titles, correspondents and types of the 25 newest documents for a minute, which are the same for every user, and never their text.
 - Administrators can explicitly trust the configured Paperless server to include it automatically in every user's global searches.
 - No deployment credentials, private hostnames, internal addresses, or instance configuration belong in this repository.
 - Gitleaks scans every push and pull request.
