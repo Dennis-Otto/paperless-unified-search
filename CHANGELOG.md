@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [1.1.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.0.1...v1.1.0) (2026-10-17)
+
+### Features
+
+- **Dashboard:** the widget *New in Paperless* lists the newest Paperless documents that you can open, each with the preview of its file, the day that Paperless added it, its correspondent and its type, and opens a document's file in Files. Paperless gets one request a minute for the dashboards of all users.
+- **Try it in three minutes:** `bash demo/seed.sh` starts a real Paperless-ngx and a real Nextcloud in Docker on your own machine, gives Paperless five synthetic documents, sets up Paperless Sync and this app, and ends with a search that finds the documents, so you can see the app at work without touching your own servers. `demo/README.md` says what to try.
+
 ## [1.0.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.0.0...v1.0.1) (2026-10-17)
 
 ### Fixed
