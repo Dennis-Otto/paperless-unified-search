@@ -253,8 +253,9 @@ occ router:list \
 	| grep --fixed-strings '/apps/paperless_unified_search/settings' >/dev/null
 # Every update of the app runs its repair step, and so does maintenance:repair, which
 # removes the last failed search that version 0.3.0 kept and the history replaced.
-occ config:app:set paperless_unified_search last_failure --value='{"time":1791500000}' >/dev/null
-occ config:app:set paperless_unified_search last_recovery --value=1791500060 >/dev/null
+# 0.3.0 stored both keys as lazy values, which a plain read of the app config skips.
+occ config:app:set paperless_unified_search last_failure --value='{"time":1791500000}' --type=array --lazy >/dev/null
+occ config:app:set paperless_unified_search last_recovery --value=1791500060 --type=integer --lazy >/dev/null
 occ maintenance:repair >"${TMP_DIR}/repair.log"
 if ! grep --fixed-strings 'Remove the last failed search that Paperless Unified Search 0.3.0 kept' \
 	"${TMP_DIR}/repair.log" >/dev/null; then
