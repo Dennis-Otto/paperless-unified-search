@@ -58,22 +58,6 @@ final class PaperlessApiServiceTest extends TestCase {
 	}
 
 	/**
-	 * @return array<string, array{string, ?string, bool}>
-	 */
-	public static function configurations(): array {
-		return [
-			'URL and token' => ['https://paperless.example.com', 'TEST_VALUE', true],
-			'no URL' => ['', 'TEST_VALUE', false],
-			'no token' => ['https://paperless.example.com', null, false],
-		];
-	}
-
-	#[DataProvider('configurations')]
-	public function testIsConfiguredWithAUrlAndAToken(string $url, ?string $token, bool $configured): void {
-		self::assertSame($configured, $this->service($this->createStub(IClient::class), $url, $token)->isConfigured());
-	}
-
-	/**
 	 * The connection test needs no field of the document, so Paperless sends none but its ID.
 	 */
 	public function testTheConnectionTestAsksForOneDocumentWithTheGivenSettings(): void {

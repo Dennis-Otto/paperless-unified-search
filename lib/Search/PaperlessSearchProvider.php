@@ -159,7 +159,7 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 		// Without an archive account no file can stand for a document, so Paperless
 		// isn't even asked, and neither is it for a cursor past the end.
 		$archiveOwner = $this->configService->getArchiveOwner();
-		if ($term === '' || $archiveOwner === '' || $pager->isPastTheEnd() || !$this->paperlessApi->isConfigured()) {
+		if ($term === '' || $archiveOwner === '' || $pager->isPastTheEnd() || !$this->configService->isConfigured()) {
 			return SearchResult::complete($this->getName(), []);
 		}
 

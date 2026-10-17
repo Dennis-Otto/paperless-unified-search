@@ -93,10 +93,6 @@ final class PaperlessApiService {
 		$this->client = $clientService->newClient();
 	}
 
-	public function isConfigured(): bool {
-		return $this->configService->isConfigured();
-	}
-
 	/**
 	 * @param bool $allowLocal whether Nextcloud may reach this Paperless at an address of
 	 *                         the local network

@@ -109,6 +109,11 @@ Dokumentation (auf Englisch): <https://dennis-otto.github.io/paperless-unified-s
 		<php min-version="8.2"/>
 		<nextcloud min-version="33" max-version="35"/>
 	</dependencies>
+	<repair-steps>
+		<post-migration>
+			<step>OCA\PaperlessUnifiedSearch\Migration\RemoveLegacyDiagnostics</step>
+		</post-migration>
+	</repair-steps>
 	<commands>
 		<command>OCA\PaperlessUnifiedSearch\Command\Setup</command>
 		<command>OCA\PaperlessUnifiedSearch\Command\Test</command>

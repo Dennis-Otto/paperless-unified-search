@@ -41,6 +41,8 @@ occ config:app:get paperless_unified_search paperless_url
 
 The account of Paperless Sync is `occ config:app:get paperless_sync target_user`.
 
+Keys that an older version left and this one no longer reads go with the next update: Nextcloud runs the repair step *Remove the last failed search that Paperless Unified Search 0.3.0 kept* after every update of the app and on `occ maintenance:repair`, and it deletes `last_failure` and `last_recovery`, which the history of the problems replaced in 0.4.0.
+
 Change the settings in the administration settings, which test the connection first. `occ config:app:set` can still turn a switch on or off, such as `occ config:app:set paperless_unified_search always_search --value=true --type=boolean`, which every user's next reload takes. Don't change `paperless_url` that way: the stored token would follow the URL to the new server, which the settings prevent by asking for the token again.
 
 --8<-- "README.md:automation"

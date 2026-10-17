@@ -35,8 +35,6 @@ final class SearchDiagnostics {
 	 * reads the history only while a failure may wait.
 	 */
 	private const PENDING_KEY = 'diagnostics_pending';
-	/** The keys of the last failure of version 0.3.0, which the history replaces. */
-	private const LEGACY_KEYS = ['last_failure', 'last_recovery'];
 	private const MESSAGE_LENGTH = 300;
 	// Shorter terms would blank out the letters of the message instead of the term.
 	private const SHORTEST_SECRET = 3;
@@ -100,9 +98,7 @@ final class SearchDiagnostics {
 	}
 
 	public function clear(): void {
-		foreach ([self::HISTORY_KEY, ...self::LEGACY_KEYS] as $key) {
-			$this->config->deleteKey(AppConstants::APP_ID, $key);
-		}
+		$this->config->deleteKey(AppConstants::APP_ID, self::HISTORY_KEY);
 		$this->config->setValueBool(AppConstants::APP_ID, self::PENDING_KEY, false);
 
 		$cache = $this->getMemcache();

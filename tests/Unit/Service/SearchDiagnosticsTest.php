@@ -492,19 +492,16 @@ final class SearchDiagnosticsTest extends TestCase {
 		self::assertSame(2, $diagnostics->getHistory()?->failed);
 	}
 
-	public function testClearForgetsTheHistoryAndTheLastFailureOfVersion030(): void {
-		$this->config
-			->seed(AppConstants::APP_ID, 'diagnostics', ['since' => self::NOW, 'failed' => 1, 'retried' => 0, 'lastFailureAt' => self::NOW, 'recoveredAt' => null, 'events' => []], true)
-			->seed(AppConstants::APP_ID, 'last_failure', '{"time":1791500000}')
-			->seed(AppConstants::APP_ID, 'last_recovery', '{"time":1791500060}');
+	/**
+	 * Clearing forgets the history alone: the last failure that version 0.3.0 kept is gone
+	 * after the update, which runs the repair step RemoveLegacyDiagnostics.
+	 */
+	public function testClearForgetsTheHistory(): void {
+		$this->config->seed(AppConstants::APP_ID, 'diagnostics', ['since' => self::NOW, 'failed' => 1, 'retried' => 0, 'lastFailureAt' => self::NOW, 'recoveredAt' => null, 'events' => []], true);
 
 		$this->diagnostics()->clear();
 
-		self::assertSame([
-			AppConstants::APP_ID . '.diagnostics',
-			AppConstants::APP_ID . '.last_failure',
-			AppConstants::APP_ID . '.last_recovery',
-		], $this->config->calls('deleteKey'));
+		self::assertSame([AppConstants::APP_ID . '.diagnostics'], $this->config->calls('deleteKey'));
 		// No failure waits any more, which a search that works then reads without the history.
 		self::assertSame(['diagnostics_pending' => false], $this->config->storedValues(AppConstants::APP_ID));
 	}

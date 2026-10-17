@@ -251,6 +251,23 @@ occ app:enable "${enable_options[@]}" paperless_unified_search >/dev/null
 occ router:list \
 	| grep --fixed-strings 'paperless_unified_search.settings.save' \
 	| grep --fixed-strings '/apps/paperless_unified_search/settings' >/dev/null
+# Every update of the app runs its repair step, and so does maintenance:repair, which
+# removes the last failed search that version 0.3.0 kept and the history replaced.
+# 0.3.0 stored both keys as lazy values, which a plain read of the app config skips.
+occ config:app:set paperless_unified_search last_failure --value='{"time":1791500000}' --type=array --lazy >/dev/null
+occ config:app:set paperless_unified_search last_recovery --value=1791500060 --type=integer --lazy >/dev/null
+occ maintenance:repair >"${TMP_DIR}/repair.log"
+if ! grep --fixed-strings 'Remove the last failed search that Paperless Unified Search 0.3.0 kept' \
+	"${TMP_DIR}/repair.log" >/dev/null; then
+	echo "occ maintenance:repair didn't run the repair step of the app." >&2
+	exit 1
+fi
+for key in last_failure last_recovery; do
+	if occ config:app:get paperless_unified_search "${key}" >/dev/null; then
+		echo "The repair step left ${key} of version 0.3.0." >&2
+		exit 1
+	fi
+done
 
 # The password policy would check every new password against the public list of
 # Have I Been Pwned, and no test may depend on a service outside the runner. The
@@ -758,4 +775,4 @@ phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed in ${SECONDS} s: the set-up, the test, the explained search and the check of occ, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date in English and German, its correspondent and its type, pages of results filled across pages of Paperless, the date filter in the timezone of the user, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, Try a search for administrators only with the IDs, titles and verdicts alone, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."
+echo "Docker E2E passed in ${SECONDS} s: the set-up, the repair step that removes the last failure of version 0.3.0, the test, the explained search and the check of occ, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date in English and German, its correspondent and its type, pages of results filled across pages of Paperless, the date filter in the timezone of the user, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, Try a search for administrators only with the IDs, titles and verdicts alone, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."
