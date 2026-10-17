@@ -1,0 +1,36 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: Ein Index oder zwei
+    accDescr: Mit Paperless Unified Search gibt es einen Index. Die Suche von Nextcloud fragt Paperless-ngx, dessen OCR- und Volltextindex die Wörter jedes Dokuments schon enthält, und jedes passende Dokument öffnet seine synchronisierte Datei in Nextcloud. Mit einer eigenen Suche in Nextcloud, etwa Full text search mit Elasticsearch, Context Chat oder Findling, gibt es zwei. Die synchronisierten Dateien werden noch einmal gelesen, Scans noch einmal erkannt, und ihre Wörter ein zweites Mal gespeichert, in einem Index mit eigenem Server oder Container, den die Suche von Nextcloud stattdessen fragt.
+
+    subgraph one ["Paperless Unified Search: ein Index"]
+        direction TB
+        search1(["Die Suche von Nextcloud"])
+        paperless1[("Paperless-ngx<br>OCR- und Volltextindex")]
+        files1["Die synchronisierten Dateien,<br>geöffnet in Nextcloud"]
+        search1 -- "fragt" --> paperless1
+        paperless1 -- "die passenden<br>Dokumente" --> files1
+    end
+    subgraph two ["Eine eigene Suche: zwei Indizes"]
+        direction TB
+        paperless2[("Paperless-ngx<br>OCR- und Volltextindex")]
+        files2["Die synchronisierten Dateien"]
+        index2[("Ein zweiter Index,<br>in einem eigenen Server<br>oder Container")]
+        search2(["Die Suche von Nextcloud"])
+        paperless2 -- "synchronisiert" --> files2
+        files2 -- "noch einmal gelesen,<br>Scans noch einmal erkannt" --> index2
+        search2 -- "fragt" --> index2
+    end
+    one ~~~ two
+
+    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class search1,search2 app
+    class one yes
+    class index2 no

@@ -80,7 +80,7 @@ Die App integriert ausschließlich die Suche. Sie synchronisiert selbst keine Do
 
 Die unabhängige Nextcloud-App [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) schreibt diese Dateien in das Archiv-Konto. Beide Apps verwenden dieselbe stabile Dokumentkennung wie `[P123]` und lassen sich getrennt warten und aktualisieren.
 
-Dokumentation (auf Englisch): <https://dennis-otto.github.io/paperless-unified-search/>
+Dokumentation: <https://dennis-otto.github.io/paperless-unified-search/de/index.html>
 ]]></description>
 	<version>1.0.1</version>
 	<licence>AGPL-3.0-or-later</licence>

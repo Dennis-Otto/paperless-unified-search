@@ -1,0 +1,25 @@
+flowchart TB
+    accTitle: Was der Test der Verbindung prüft
+    accDescr: Verbindung testen und speichern fragt Paperless nach einem Dokument. Zuerst muss Nextcloud Paperless unter der URL erreichen: seinen Host finden, sich mit seiner Adresse verbinden dürfen, sich innerhalb von 3 Sekunden verbinden, seinem Zertifikat vertrauen und innerhalb von 10 Sekunden eine Antwort bekommen; sonst nennt die Meldung, was davon fehlgeschlagen ist. Dann muss Paperless mit einem Status 2xx antworten; ein abgelehntes Token, ein falscher Pfad, eine Weiterleitung oder ein Fehler des Servers haben je eine eigene Meldung. Zuletzt muss die Antwort eine Liste von Dokumenten von Paperless-ngx sein. Erst dann werden die Einstellungen gespeichert.
+
+    test(["`**Verbindung testen und speichern**`"])
+    reach{"Erreicht Nextcloud<br>Paperless unter der URL?"}
+    status{"Antwortet Paperless<br>mit 2xx?"}
+    list{"Ist die Antwort eine Liste<br>von Dokumenten?"}
+    saved["Gespeichert"]
+    network["Host nicht gefunden, lokale Adresse,<br>nicht erreicht, Zertifikat,<br>Verschlüsselung oder keine rechtzeitige Antwort"]
+    refused["Token abgelehnt, falscher Pfad,<br>Weiterleitung oder Fehler des Servers"]
+    other["Nicht wie Paperless-ngx"]
+
+    test --> reach
+    reach -- "ja" --> status
+    reach -- "nein" --> network
+    status -- "ja" --> list
+    status -- "nein" --> refused
+    list -- "ja" --> saved
+    list -- "nein" --> other
+
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class saved yes
+    class network,refused,other no

@@ -1,0 +1,36 @@
+---
+description: "Paperless-Dokumente in Nextcloud suchen: im Browser, auf dem Smartphone, im Smart Picker von Talk, Text, Deck und Mail, mit der Suchsyntax von Paperless und aus Skripten über die API."
+---
+
+# Suchen
+
+Paperless-Dokumente erscheinen in der globalen Suche von Nextcloud für jeden Benutzer, der ihre Dateien öffnen kann: unter **Paperless-Dokumente**, nach den Dateien, jedes mit seinem Titel, seinem Datum und den Wörtern um den Begriff. Ein Klick auf eines öffnet seine Datei in Nextcloud.
+
+<figure markdown="span">
+  ![Paperless-Treffer in der globalen Suche von Nextcloud](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/01-unified-search.png#only-light)
+  ![Paperless-Treffer in der globalen Suche von Nextcloud](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/01-unified-search-dark.png#only-dark)
+  <figcaption>Paperless-Dokumente in der Suche, nach den Dateien</figcaption>
+</figure>
+
+--8<-- "README.de.md:usage"
+
+## Warum der Schalter nach dem Neuladen aus ist
+
+**Verbundene Dienste durchsuchen** entscheidet, ob eine Suche Nextcloud verlässt. Nextcloud zählt jede Suche, die den Begriff an einen anderen Server schickt, als eine eines verbundenen Dienstes, auch Paperless, und fragt sie nur, solange der Schalter an ist. Es schaltet den Schalter aus, sobald die Seite neu lädt, damit kein Begriff ohne die Wahl des Benutzers an einen anderen Server geht, immer wieder.
+
+Ein Administrator, der seinem Paperless-Server vertraut, als dem, der die Dokumente ohnehin hält, kann in den Einstellungen **Paperless immer in die globale Suche einbeziehen** wählen. Paperless gehört dann zu jeder Suche jedes Benutzers, ohne den Schalter, der es nicht mehr steuert. Jeder Benutzer lädt Nextcloud nach der Änderung einmal neu.
+
+## Auf dem Smartphone
+
+- **Im Browser** eines Smartphones funktioniert die Suche wie auf einem Computer, und ein Treffer öffnet sich im Viewer von Nextcloud.
+- **Die Nextcloud-Apps für iOS und Android** zeigen Paperless-Dokumente ebenfalls in ihrer Suche. Ein Treffer öffnet die Datei im Viewer der App, ohne sie zu verlassen: Die iOS-App bekommt einen Link `nextcloud://open-file`, die Android-App die ID und den Pfad der Datei.
+
+<figure markdown="span">
+  ![Paperless-Treffer in der globalen Suche von Nextcloud auf einem Smartphone](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/04-mobile-search.png){ width="180" }
+  ![Die Stromrechnung, geöffnet im Viewer von Nextcloud auf einem Smartphone](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/05-mobile-viewer.png){ width="180" }
+  <figcaption>Auf einem Smartphone, im Browser</figcaption>
+</figure>
+
+--8<-- "README.de.md:search-syntax"
+
+--8<-- "README.de.md:scripts"

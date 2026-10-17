@@ -1,0 +1,29 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: Was ein Treffer zeigt
+    accDescr: Die Suche von Paperless-ngx schickt den Titel von Dokument 412, sein Datum 2026-08-12, die IDs seines Korrespondenten und seines Typs, 3 und 1, und die Wörter um den Begriff. Paperless nennt Korrespondent 3 Northstar Energy und Typ 1 Bill, mit einer Anfrage je Art für alle Dokumente der Seite, die die App zehn Minuten lang behält. Die Datei des Dokuments in Nextcloud liefert die Vorschau, wenn Nextcloud Vorschauen ihres Typs zeichnet, sonst das Symbol des Typs, wie die Suche nach Dateien sie zeigt. Der Treffer zeigt dieses Bild, den Titel Electricity invoice - August 2026 und darunter 12.08.2026 · Northstar Energy · Bill — Invoice E-2026-0812. Total due 84.30 EUR by September 2, mit dem Datum in der Sprache des Benutzers, etwa Aug 12, 2026 auf Englisch.
+
+    paperless[("Paperless-ngx")]
+    search["Die Suche: der Titel, das Datum 2026-08-12,<br>Korrespondent 3, Typ 1<br>und die Wörter um den Begriff"]
+    names["Die Namen: Korrespondent 3 ist Northstar Energy,<br>Typ 1 ist Bill, mit einer Anfrage je Art<br>für die Seite, zehn Minuten lang behalten"]
+    file["Die Datei in Nextcloud: ihre Vorschau,<br>wenn Nextcloud Vorschauen ihres Typs zeichnet,<br>sonst das Symbol ihres Typs"]
+    result(["`**Electricity invoice - August 2026**
+    12.08.2026 · Northstar Energy · Bill —
+    Invoice E-2026-0812. Total due 84.30 EUR by September 2
+    *das Datum in der Sprache des Benutzers: Aug 12, 2026 auf Englisch*`"])
+
+    paperless --> search
+    paperless --> names
+    search --> result
+    names --> result
+    file --> result
+
+    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    class names app
+    class result yes

@@ -1,0 +1,32 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: Die Mutationstests
+    accDescr: Infection ändert den Code von lib/ jedes Mal an einer kleinen Stelle, ein Mutant, etwa ein Vergleich, der seine Grenze einschließt, oder ein Aufruf, der wegfällt, und führt die Unit-Tests aus, die die geänderte Zeile abdecken. Schlägt ein Test fehl, ist der Mutant getötet. Bestehen alle Tests, ist der Mutant entkommen. Macht die Änderung einen Unterschied, fehlt ein Test, und ein neuer Test oder eine schärfere Zusicherung tötet den Mutanten. Macht sie keinen, ist es ein äquivalenter Mutant, den infection.json5 mit dem Grund aufführt. Die Punktzahl zählt die getöteten Mutanten unter allen, die nicht aufgeführt sind, und bleibt bei 100 %.
+
+    code["Der Code von lib/"]
+    mutant["Infection: eine kleine Änderung, ein Mutant,<br>etwa ein Vergleich, der seine Grenze<br>einschließt, oder ein Aufruf, der wegfällt"]
+    tests["Die Unit-Tests, die die<br>geänderte Zeile ausführen"]
+    fails{"Schlägt ein<br>Test fehl?"}
+    killed(["Getötet: die Tests<br>bemerken die Änderung"])
+    differs{"Macht die Änderung<br>einen Unterschied?"}
+    gap["Eine Lücke in den Tests: ein neuer Test<br>oder eine schärfere Zusicherung tötet ihn"]
+    equivalent["Ein äquivalenter Mutant:<br>infection.json5 führt ihn auf,<br>mit dem Grund"]
+
+    code --> mutant --> tests --> fails
+    fails -- "ja" --> killed
+    fails -- "nein, er ist entkommen" --> differs
+    differs -- "ja" --> gap
+    differs -- "nein" --> equivalent
+    gap -- "der nächste Lauf" --> tests
+
+    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class mutant,tests app
+    class killed,equivalent yes
+    class gap no

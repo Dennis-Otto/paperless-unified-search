@@ -1,0 +1,22 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: Warum ein Dokument nicht angezeigt wird
+    accDescr: Paperless findet Dokument 389, wenn jamie sucht, und occ paperless_unified_search:search jamie invoice --explain stellt nacheinander drei Fragen. Sieht jamie eine Datei des Archiv-Kontos mit [P389] im Namen? Dann wird das Dokument angezeigt. Sonst: Hat das Archiv-Konto eine solche Datei in seinen eigenen Ordnern? Dann ist sie nicht mit jamie geteilt, und die Datei oder ihren Ordner nur lesend mit jamie zu teilen, zeigt sie an. Sonst: Sieht jamie eine Datei mit der Kennung eines anderen Kontos? Dann gehört sie nicht dem Archiv-Konto, denn nur Dateien des Archiv-Kontos stehen für Dokumente. Sonst gibt es keine Datei, und die Synchronisierung muss erst eine mit der Kennung im Namen schreiben.
+
+    hit["Paperless findet Dokument 389,<br>wenn jamie sucht"] --> visible{"Sieht jamie eine Datei<br>des Archiv-Kontos<br>mit [P389] im Namen?"}
+    visible -- "ja" --> shown["angezeigt"]
+    visible -- "nein" --> archived{"Hat das Archiv-Konto<br>eine solche Datei in seinen<br>eigenen Ordnern?"}
+    archived -- "ja" --> unshared["nicht geteilt: die Datei<br>oder ihren Ordner nur<br>lesend mit jamie teilen"]
+    archived -- "nein" --> other{"Sieht jamie eine Datei<br>mit [P389] eines anderen<br>Kontos?"}
+    other -- "ja" --> unowned["nicht im Besitz: nur Dateien<br>des Archiv-Kontos<br>stehen für Dokumente"]
+    other -- "nein" --> missing["keine Datei: die<br>Synchronisierung eine mit<br>der Kennung schreiben lassen"]
+
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class shown yes
+    class unshared,unowned,missing no
