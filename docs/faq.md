@@ -40,9 +40,13 @@ Because there, everyone who finds the document can open it: Nextcloud's shares d
 
 Nextcloud turns it off at every reload of the page, so that a search term never goes to another server without the choice of the user. [Why the switch is off after a reload](usage.md#why-the-switch-is-off-after-a-reload) has the details, and how an administrator can include Paperless in every search instead.
 
+## Can I see new documents without searching?
+
+Yes: add **New in Paperless** to your dashboard. It lists the documents that Paperless added last and that you can open, newest first, each with the day that Paperless added it, its correspondent and its type, and opens a document's file in Files. [On the dashboard](usage.md#on-the-dashboard) has the details.
+
 ## How much load does it put on Paperless?
 
-Paperless gets requests only from the searches that ask it: with **Search connected services** switched on, from the smart picker or the API, and from every search when **Always include Paperless in global search** is on. Nextcloud's search waits until the typing pauses before it asks. For each page of results, the app asks Paperless for 25 documents, and only for the fields that a result shows, not the OCR text of each document; to fill a page whose first documents the user can't open, it asks for up to 3 more pages, within 3 seconds. Paperless 3 gets a query in its syntax that it can't parse yet, as one still being typed, once more in its simple mode. A request that couldn't connect gets a second try; one that waited in vain for a Paperless that hangs isn't sent again.
+The dashboard widget asks Paperless for its newest documents at most once a minute, for all users together, given a memory cache, as Nextcloud recommends. Beyond that, Paperless gets requests only from the searches that ask it: with **Search connected services** switched on, from the smart picker or the API, and from every search when **Always include Paperless in global search** is on. Nextcloud's search waits until the typing pauses before it asks. For each page of results, the app asks Paperless for 25 documents, and only for the fields that a result shows, not the OCR text of each document; to fill a page whose first documents the user can't open, it asks for up to 3 more pages, within 3 seconds. Paperless 3 gets a query in its syntax that it can't parse yet, as one still being typed, once more in its simple mode. A request that couldn't connect gets a second try; one that waited in vain for a Paperless that hangs isn't sent again.
 
 ## Does it search the documents in the inbox of Paperless?
 

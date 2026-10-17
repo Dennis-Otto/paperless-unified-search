@@ -43,13 +43,15 @@ export PAPERLESS_SECRET_KEY
 # Git Bash on Windows: keep the paths in the container of the mock as they are.
 export MSYS2_ARG_CONV_EXCL="/mock/${MSYS2_ARG_CONV_EXCL:+;${MSYS2_ARG_CONV_EXCL}}"
 
-# The version of the API and the fields of a result that the app asks for, from its
-# code, so that the contract checks what the app sends.
+# The version of the API, the fields of a result and those of the newest documents of
+# the dashboard that the app asks for, from its code, so that the contract checks what
+# the app sends.
 SERVICE="${REPOSITORY_ROOT}/lib/Service/PaperlessApiService.php"
 ACCEPT="$(sed -n "s/^[[:space:]]*private const ACCEPT = '\([^']*\)';.*/\1/p" "${SERVICE}")"
 FIELDS="$(sed -n "s/^[[:space:]]*private const SEARCH_FIELDS = '\([^']*\)';.*/\1/p" "${SERVICE}")"
-if [[ -z "${ACCEPT}" || -z "${FIELDS}" ]]; then
-	echo "${SERVICE} has no constant ACCEPT or SEARCH_FIELDS, which the contract reads." >&2
+RECENT_FIELDS="$(sed -n "s/^[[:space:]]*private const RECENT_FIELDS = '\([^']*\)';.*/\1/p" "${SERVICE}")"
+if [[ -z "${ACCEPT}" || -z "${FIELDS}" || -z "${RECENT_FIELDS}" ]]; then
+	echo "${SERVICE} has no constant ACCEPT, SEARCH_FIELDS or RECENT_FIELDS, which the contract reads." >&2
 	exit 1
 fi
 
@@ -96,6 +98,7 @@ phase "Check the contract with Paperless-ngx ${PAPERLESS}"
 "${COMPOSE[@]}" exec -T \
 	--env "ACCEPT=${ACCEPT}" \
 	--env "FIELDS=${FIELDS}" \
+	--env "RECENT_FIELDS=${RECENT_FIELDS}" \
 	--env "LINE=${PAPERLESS}" \
 	paperless-mock python /mock/assert_contract.py | tee -a "${SUMMARY}"
 phase "The contract holds"

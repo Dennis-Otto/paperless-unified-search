@@ -1,5 +1,5 @@
 ---
-description: "Search Paperless documents in Nextcloud: in the browser, on a phone, in the smart picker of Talk, Text, Deck and Mail, with the search syntax of Paperless, and from scripts through the API."
+description: "Search Paperless documents in Nextcloud: in the browser, on a phone, in the smart picker of Talk, Text, Deck and Mail, with the search syntax of Paperless, and from scripts through the API, and see the newest ones on the dashboard."
 ---
 
 # Search
