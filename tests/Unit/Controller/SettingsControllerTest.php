@@ -583,7 +583,6 @@ final class SettingsControllerTest extends TestCase {
 		$config = new MemoryAppConfig([
 			AppConstants::APP_ID . '.paperless_url' => self::STORED_URL,
 			AppConstants::APP_ID . '.always_search' => true,
-			AppConstants::APP_ID . '.last_failure' => '{"time":1791500000}',
 		]);
 		$config->seed(AppConstants::APP_ID, 'diagnostics', ['since' => 1791500000, 'failed' => 1, 'retried' => 0, 'lastFailureAt' => 1791500000, 'recoveredAt' => null, 'events' => []], true);
 		$credentials = $this->createMock(ICredentialsManager::class);
@@ -593,11 +592,7 @@ final class SettingsControllerTest extends TestCase {
 
 		self::assertSame(Http::STATUS_OK, $response->getStatus());
 		self::assertSame([], $response->getData());
-		self::assertSame([
-			AppConstants::APP_ID . '.diagnostics',
-			AppConstants::APP_ID . '.last_failure',
-			AppConstants::APP_ID . '.last_recovery',
-		], $config->calls('deleteKey'));
+		self::assertSame([AppConstants::APP_ID . '.diagnostics'], $config->calls('deleteKey'));
 		// The settings stay; no failure waits for a search that works any more.
 		self::assertSame([
 			'paperless_url' => self::STORED_URL,

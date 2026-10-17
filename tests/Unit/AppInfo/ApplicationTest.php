@@ -35,8 +35,7 @@ final class ApplicationTest extends TestCase {
 	}
 
 	public function testTheAppIdIsTheOneOfTheAppInfo(): void {
-		self::assertSame((string)self::appInfo()->id, Application::APP_ID);
-		self::assertSame(Application::APP_ID, AppConstants::APP_ID);
+		self::assertSame((string)self::appInfo()->id, AppConstants::APP_ID);
 	}
 
 	public function testTheNamespaceIsTheOneOfTheAppInfo(): void {
@@ -53,7 +52,7 @@ final class ApplicationTest extends TestCase {
 		$application = new Application();
 
 		self::assertSame($container, $application->getContainer());
-		self::assertSame([Application::APP_ID], $server->requestedApps);
+		self::assertSame([AppConstants::APP_ID], $server->requestedApps);
 	}
 
 	public function testRegistersTheSearchProvider(): void {
