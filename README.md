@@ -35,7 +35,7 @@ Two apps, one archive: [Paperless Sync](https://github.com/Dennis-Otto/paperless
 
 Paperless Sync is the companion, not a must: [any synchronization](#works-with-any-synchronization) that writes the files with their marker into the archive account works as well, Paperless-ngx's own file names included.
 
-The [documentation website](https://dennis-otto.github.io/paperless-unified-search/) has this documentation on pages to install, configure and use the app, with a troubleshooting guide, a FAQ and a reference for administrators, and a comparison with the alternatives, the architecture, the security design and the roadmap, in English and, but for the pages of the project, in [German](https://dennis-otto.github.io/paperless-unified-search/de/index.html).
+The [documentation website](https://dennis-otto.github.io/paperless-unified-search/) has this documentation on pages to install, configure and use the app, with a troubleshooting guide, a FAQ and a reference for administrators, and a comparison with the alternatives, the architecture, the security design and the roadmap, in English and in [German](https://dennis-otto.github.io/paperless-unified-search/de/index.html), where the architecture, the security design, the decisions, the releases and the changelog stay in English.
 
 <sub>💛 Like it? [Rate it in the App Store](https://apps.nextcloud.com/apps/paperless_unified_search) or [support its development](https://github.com/sponsors/Dennis-Otto).</sub>
 
