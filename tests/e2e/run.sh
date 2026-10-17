@@ -395,6 +395,17 @@ if grep --fixed-strings 'e2e-only-token' "${TMP_DIR}/setup.txt" "${TMP_DIR}/test
 	exit 1
 fi
 
+# Without an archive account of its own, the app takes the one of Paperless Sync, which
+# stores it as a lazy value since its version 0.3.0 (#166). Then back to e2e-user, which
+# the tests below expect, without Paperless Sync.
+occ config:app:set paperless_sync target_user --value=e2e-user --lazy >/dev/null
+occ paperless_unified_search:setup --url=http://paperless-mock:8080 --archive-account= \
+	>"${TMP_DIR}/setup-sync.txt"
+expect_text 'Archive account: e2e-user, the account of Paperless Sync' "${TMP_DIR}/setup-sync.txt" \
+	"occ didn't take the archive account of Paperless Sync: $(cat "${TMP_DIR}/setup-sync.txt")"
+occ paperless_unified_search:setup --url=http://paperless-mock:8080 --archive-account=e2e-user >/dev/null
+occ config:app:delete paperless_sync target_user >/dev/null
+
 # Only administrators may change the settings (#99). Nextcloud answers a user who isn't
 # one with 403 and a request without a login with 401, and the settings stay as they are.
 for login in e2e-user anonymous; do

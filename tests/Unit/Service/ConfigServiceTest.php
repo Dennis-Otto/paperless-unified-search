@@ -96,6 +96,32 @@ final class ConfigServiceTest extends TestCase {
 	}
 
 	/**
+	 * Paperless Sync stores its settings as lazy values since its version 0.3.0, and as
+	 * values that aren't lazy before. Nextcloud answers a read of a lazy value that isn't
+	 * lazy itself with the default, so the archive account was empty, and the search
+	 * showed no Paperless documents at all (#166).
+	 *
+	 * @return array<string, array{bool}>
+	 */
+	public static function storesOfPaperlessSync(): array {
+		return [
+			'Paperless Sync 0.3.0 and later, lazy' => [true],
+			'earlier versions, not lazy' => [false],
+		];
+	}
+
+	#[DataProvider('storesOfPaperlessSync')]
+	public function testTheArchiveAccountIsThatOfPaperlessSyncHoweverItStoresIt(bool $lazy): void {
+		$config = $this->settings([])->seed('paperless_sync', 'target_user', 'sync', $lazy);
+
+		$service = $this->service($config, $this->createStub(ICredentialsManager::class));
+
+		self::assertSame('sync', $service->getSyncAccount());
+		self::assertSame('sync', $service->getArchiveOwner());
+		self::assertSame('sync', $service->getPublicConfig()->syncAccount);
+	}
+
+	/**
 	 * @return array<string, array{string, string, bool}>
 	 */
 	public static function missingArchiveAccounts(): array {
