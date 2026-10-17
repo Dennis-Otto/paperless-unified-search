@@ -6,10 +6,9 @@ All notable changes to this project are documented in this file.
 
 ## [1.0.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.0.0...v1.0.1) (2026-10-17)
 
+### Fixed
 
-### Bug fixes
-
-* **test:** keep the selftest of the end-to-end scripts out of the repository that runs it ([#159](https://github.com/Dennis-Otto/paperless-unified-search/issues/159)) ([a3138fc](https://github.com/Dennis-Otto/paperless-unified-search/commit/a3138fcc1fcff1ddbad42df80af43424db61344d))
+- **The checks before a push no longer commit into the repository that runs them.** `bash scripts/check.sh` tests the scripts of the end-to-end tests in throwaway Git repositories. When `GIT_DIR` was set, as Git sets it for the hook before a push in a worktree and as an agent sets it for a worktree in a container, those tests made their commits in the repository that ran them instead: `git init` rewrote its configuration, such as `core.filemode`, and its branch got a commit "The base branch" by `E2E <e2e@example.com>`. Now the tests clear these variables of Git before their first `git`, and `scripts/check-project.sh` runs them with `GIT_DIR` set to a repository of their own and fails if they change its commits, branches, configuration or checkout.
 
 ## [1.0.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.5.1...v1.0.0) (2026-10-14)
 
