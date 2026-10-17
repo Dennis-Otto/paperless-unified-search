@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [1.0.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.0.0...v1.0.1) (2026-10-17)
+
+
+### Bug fixes
+
+* **test:** keep the selftest of the end-to-end scripts out of the repository that runs it ([#159](https://github.com/Dennis-Otto/paperless-unified-search/issues/159)) ([a3138fc](https://github.com/Dennis-Otto/paperless-unified-search/commit/a3138fcc1fcff1ddbad42df80af43424db61344d))
+
 ## [1.0.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v0.5.1...v1.0.0) (2026-10-14)
 
 ### Added
