@@ -91,13 +91,17 @@ final class AppStoreListingTest extends TestCase {
 		}
 	}
 
-	public function testEveryDescriptionLinksTheDocumentation(): void {
+	public function testEveryDescriptionLinksTheDocumentationInItsLanguage(): void {
 		$info = self::appInfo();
 		$website = (string)$info->website;
+		// The website in English, and its German pages in de/.
+		$documentation = ['en' => $website, 'de' => $website . 'de/index.html'];
 
 		self::assertCount(2, $info->description);
 		foreach ($info->description as $description) {
-			self::assertStringContainsString('<' . $website . '>', (string)$description);
+			$language = (string)($description['lang'] ?? 'en');
+			self::assertArrayHasKey($language, $documentation);
+			self::assertStringContainsString('<' . $documentation[$language] . '>', (string)$description);
 		}
 	}
 }
