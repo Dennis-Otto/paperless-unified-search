@@ -108,10 +108,12 @@ final class ConfigService {
 	}
 
 	/**
-	 * The account that Paperless Sync writes the archive with, as it stores the ID.
+	 * The account that Paperless Sync writes the archive with, as it stores the ID. Since
+	 * its version 0.3.0, Paperless Sync stores it as a lazy value, which only a lazy read
+	 * finds; a lazy read finds the value of the earlier versions, which isn't lazy, too.
 	 */
 	public function getSyncAccount(): string {
-		return trim($this->config->getValueString(self::SYNC_APP_ID, self::SYNC_ACCOUNT_KEY, ''));
+		return trim($this->config->getValueString(self::SYNC_APP_ID, self::SYNC_ACCOUNT_KEY, '', lazy: true));
 	}
 
 	/**
