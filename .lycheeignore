@@ -12,4 +12,3 @@
 # moves a file of it links it before main has it. scripts/check-project.sh checks that
 # every file that the documentation links on main is in the repository.
 ^https://github\.com/Dennis-Otto/paperless-unified-search/(blob|tree)/main/demo/
-^https://raw\.githubusercontent\.com/Dennis-Otto/paperless-unified-search/main/demo/

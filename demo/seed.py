@@ -301,7 +301,11 @@ def archive():
     admin.call("/apps/paperless_sync/settings", method="POST", form=form)
     report = admin.call("/apps/paperless_sync/sync/run", method="POST", form={"dryRun": "false"})
     if report.get("errors"):
-        raise Failed(f"Paperless Sync reported errors: {report.get('actions')}")
+        # The texts of the errors, and the actions of the run only when it has none.
+        raise Failed(
+            f"Paperless Sync reported {report['errors']} error(s): "
+            f"{report.get('errorMessages') or report.get('actions')}"
+        )
     print(f"Paperless Sync wrote {report.get('exported', 0)} new document(s) into the files of {archive_user}.")
 
     # The archive, shared read-only with the demo user, as an administrator shares it

@@ -93,7 +93,7 @@ mapfile -t linked < <(grep -ohE 'https://github\.com/Dennis-Otto/paperless-unifi
   sed -E 's#^https://github\.com/Dennis-Otto/paperless-unified-search/(blob|tree)/main/##' | sort -u)
 for path in "${linked[@]}"; do
   if [[ ! -e "$path" ]]; then
-    echo "The documentation links $path on main, which isn't in the repository."
+    echo "The documentation links $path on main, which isn't in the repository, and the link check skips it (.lycheeignore): correct the path of the link, or add the file."
     exit 1
   fi
 done

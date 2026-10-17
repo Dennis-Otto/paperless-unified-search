@@ -10,7 +10,7 @@ bash demo/seed.sh
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../docs/images/diagrams/what-the-demo-sets-up.dark.svg">
-  <img src="../docs/images/diagrams/what-the-demo-sets-up.svg" alt="What the demo sets up: You run bash demo/seed.sh. It generates the secret key of Paperless and the passwords of the demo into demo/.env, and starts Paperless-ngx with Redis and Nextcloud with its background jobs in Docker, on 127.0.0.1 alone. Paperless reads five synthetic letters. Paperless Sync, from the App Store, writes each one into the files of the archive account paperless, which shares the archive read-only with jamie. occ paperless_unified_search:setup connects the app to Paperless, with the API token through a pipe. A search as jamie for invoice shows three Paperless documents, and the script prints the addresses and the accounts to sign in with.">
+  <img src="../docs/images/diagrams/what-the-demo-sets-up.svg" alt="What the demo sets up: You run bash demo/seed.sh. It generates the secret key of Paperless and the passwords of the demo into demo/.env, and starts Paperless-ngx with Redis and Nextcloud with its background jobs in Docker, on 127.0.0.1 alone. Paperless reads five synthetic letters. Paperless Sync, a pinned signed release, writes each one into the files of the archive account paperless, which shares the archive read-only with jamie. occ paperless_unified_search:setup connects the app to Paperless, with the API token through a pipe. A search as jamie for invoice shows three Paperless documents, and the script prints the addresses and the accounts to sign in with.">
 </picture>
 
 ## What it needs
@@ -18,7 +18,7 @@ bash demo/seed.sh
 - **Docker with Compose**, such as Docker Desktop on Windows and macOS or Docker Engine on Linux, and about 3 GB of disk for the images of Nextcloud and Paperless-ngx.
 - **Bash**: the shell of Linux and macOS, or Git Bash on Windows.
 - **The ports 8180 and 8100** free on 127.0.0.1, for Nextcloud and Paperless. Other ones go into the environment before the first run, such as `NEXTCLOUD_PORT=9180 PAPERLESS_PORT=9100 bash demo/seed.sh`, and stay in `demo/.env`.
-- **The internet**, for the images and for Paperless Sync from the Nextcloud App Store.
+- **The internet**, for the images and for the release of Paperless Sync on GitHub.
 
 The first run downloads the images, a few minutes on most connections; after that, the demo is ready in less than three minutes, most of them the first start of Paperless and Nextcloud.
 
@@ -28,7 +28,7 @@ The first run downloads the images, a few minutes on most connections; after tha
 
 1. It generates the secret key of Paperless and the passwords of the demo into `demo/.env`, which git ignores, and keeps them for later runs.
 2. It starts Paperless-ngx 3 with Redis, and Nextcloud 33 with PostgreSQL and its background jobs, from [`compose.yaml`](compose.yaml). Both listen on 127.0.0.1 alone, so nobody else on your network reaches them.
-3. It creates the archive account `paperless` and the user `jamie` in Nextcloud, installs Paperless Sync from the App Store, and enables this app from your checkout.
+3. It creates the archive account `paperless` and the user `jamie` in Nextcloud, installs a pinned release of Paperless Sync, whose SHA-256 it checks, and enables this app from your checkout.
 4. It gives Paperless the five synthetic letters of [`documents/`](documents) as PDF files, each with its correspondent, type and tags, and waits until Paperless has read and indexed them.
 5. It sets up Paperless Sync, which writes every document into `Documents/Paperless/Archive` of `paperless`, and shares that folder read-only with `jamie`.
 6. It connects this app to Paperless with `occ paperless_unified_search:setup`, as a script on a server would: the API token goes through a pipe, never on a command line.
@@ -65,7 +65,7 @@ The passwords are in `demo/.env`, and the script prints them at its end.
 
 1. **Search as jamie.** Open <http://localhost:8180>, sign in as `jamie`, select the search at the top and type *invoice*. Below the files, **Paperless documents** shows three letters: the two invoices, and the home insurance renewal, whose text says "invoice" while its title doesn't. Select one, and it opens in Nextcloud's viewer.
 2. **Search like in Paperless.** The query syntax of Paperless works in Nextcloud's search: `correspondent:fiberlink`, `type:receipt`, `tag:household` or `created:[2026-07-01 to 2026-07-31]`, and Nextcloud's own filter of dates narrows the results too.
-3. **Link a document.** In a text of Nextcloud Text, or a message of Talk, type `/` and choose **Paperless documents**: the smart picker finds them by their text as well.
+3. **Link a document.** In a text of Nextcloud Text, type `/` and choose **Paperless documents**: the smart picker finds them by their text as well.
 4. **See who sees what.** Sign in as `admin`: the search shows no Paperless documents, because `paperless` shares its archive with `jamie` alone. `occ` says why, document by document:
 
     ```sh
@@ -93,14 +93,14 @@ The demo shows the app at work with the least that it takes, and leaves out what
 
 - **One account of Paperless for both apps.** Paperless Sync and this app use the API token of the administrator of Paperless. On a server, give the search [an account that may only read](../docs/configure.md#a-paperless-account-for-the-search), and Paperless Sync one of its own.
 - **HTTP on 127.0.0.1, without TLS,** which suits one person trying it on their own machine. [Install](../docs/install.md) sets the app up on a server.
-- **The app from your checkout.** Nextcloud runs the code of the working copy, read-only, so a change of the code shows at the next request. To try a release, check out its tag first, such as `git checkout v1.0.1`.
+- **The app from your checkout.** Nextcloud runs the code of the working copy, read-only, so a change of the code shows at the next request. To try a release, check out its tag first, such as `git checkout v<version>`, and run `bash demo/seed.sh` again, which upgrades the app in Nextcloud. Only the releases that include `demo/` have the demo, and Nextcloud doesn't go back to an older version of an app: before an older release, remove the demo with `docker compose -f demo/compose.yaml down --volumes`.
 
 The secrets of the demo come from your machine alone: `seed.sh` generates them into `demo/.env`, and git ignores that file. The five documents are synthetic letters of invented companies, and `seed.py` turns the text files of [`documents/`](documents) into their PDF files.
 
 ## When it doesn't start
 
 - **A port is taken:** another program listens on 8180 or 8100. Set other ports in `demo/.env`, `NEXTCLOUD_PORT` and `PAPERLESS_PORT`, and run `bash demo/seed.sh` again.
-- **"An earlier demo left its data":** `demo/.env` is gone, but the data of a demo with other passwords is still there. `docker compose -f demo/compose.yaml down --volumes` removes it, and the next run starts anew.
+- **"An earlier demo left its data":** `demo/.env` is gone, but the data of a demo with other passwords is still there. `docker compose --project-name paperless-unified-search-demo down --volumes` removes it without `demo/.env`, and the next run starts anew.
 - **It stops at a step:** the script shows the end of the logs of the containers and stops; run it again to continue. `docker compose -f demo/compose.yaml logs paperless` and `… logs nextcloud` show the whole logs.
 
 The [troubleshooting guide](https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html) explains every message of the app, and the [discussions](https://github.com/Dennis-Otto/paperless-unified-search/discussions) answer questions.

@@ -34,6 +34,12 @@ DEMO_USER="jamie"
 # The search that the end of the script shows, and the documents that it finds.
 TERM_OF_SEARCH="invoice"
 EXPECTED_RESULTS=3
+# Paperless Sync, a signed release of it, checked by its SHA-256: Renovate brings a new
+# release as a pull request, which runs the demo (.github/workflows/demo.yml), so that
+# a release that breaks the demo never reaches it unseen.
+# renovate: datasource=github-release-attachments depName=Dennis-Otto/paperless-sync
+PAPERLESS_SYNC_VERSION="v0.3.0"
+PAPERLESS_SYNC_SHA256="91320e44fada6cd431b47e084ac273a70d015824e0194cfccb62fe358e0034fd"
 # Git Bash on Windows: keep the paths in the containers as they are.
 export MSYS2_ARG_CONV_EXCL="/demo/${MSYS2_ARG_CONV_EXCL:+;${MSYS2_ARG_CONV_EXCL}}"
 
@@ -53,6 +59,14 @@ setting() {
 
 occ() {
 	"${COMPOSE[@]}" exec -T --user www-data nextcloud php occ "$@"
+}
+
+# Another version of this app, after a git pull or a checkout of a release, or of
+# Paperless Sync, needs occ upgrade, before occ offers its other commands again.
+upgrade() {
+	if occ status --output=json 2>/dev/null | grep -qE '"needsDbUpgrade": ?true'; then
+		occ upgrade --no-interaction
+	fi
 }
 
 # seed.py in the container of Paperless, in the network of the demo.
@@ -83,6 +97,15 @@ fi
 trap failed EXIT
 
 if [[ ! -f "${ENV_FILE}" ]]; then
+	# The passwords in demo/.env will be those of new accounts: the data of an earlier
+	# demo has accounts with other passwords. So this check comes before demo/.env, and
+	# every run without it stops here, until the data is gone.
+	if [[ -n "$("${DOCKER_BIN}" volume ls --quiet --filter "label=com.docker.compose.project=${PROJECT_NAME}")" ]]; then
+		trap - EXIT
+		echo "An earlier demo left its data, but not its passwords in demo/.env. Remove its data first:" >&2
+		echo "  docker compose --project-name ${PROJECT_NAME} down --volumes && bash demo/seed.sh" >&2
+		exit 1
+	fi
 	phase "Generate the secret key and the passwords of the demo into demo/.env"
 	(
 		umask 077
@@ -100,13 +123,6 @@ if [[ ! -f "${ENV_FILE}" ]]; then
 			PAPERLESS_PORT=${PAPERLESS_PORT:-8100}
 		ENV
 	)
-	# The passwords in demo/.env are those of new accounts: the data of an earlier demo
-	# has accounts with other passwords.
-	if [[ -n "$("${DOCKER_BIN}" volume ls --quiet --filter "label=com.docker.compose.project=${PROJECT_NAME}")" ]]; then
-		echo "An earlier demo left its data, but not its passwords in demo/.env. Remove its data first:" >&2
-		echo "  docker compose -f demo/compose.yaml down --volumes && bash demo/seed.sh" >&2
-		exit 1
-	fi
 fi
 
 NEXTCLOUD_ADMIN_PASSWORD="$(setting NEXTCLOUD_ADMIN_PASSWORD)"
@@ -117,7 +133,7 @@ NEXTCLOUD_PORT="$(setting NEXTCLOUD_PORT)"
 PAPERLESS_PORT="$(setting PAPERLESS_PORT)"
 # Docker hands these to the commands in the containers that name them with --env, and
 # to no other.
-export NEXTCLOUD_ADMIN_USER NEXTCLOUD_ADMIN_PASSWORD ARCHIVE_USER ARCHIVE_PASSWORD DEMO_USER
+export NEXTCLOUD_ADMIN_USER NEXTCLOUD_ADMIN_PASSWORD ARCHIVE_USER ARCHIVE_PASSWORD DEMO_USER 	PAPERLESS_SYNC_VERSION PAPERLESS_SYNC_SHA256
 if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
 	for password in "${NEXTCLOUD_ADMIN_PASSWORD}" "${ARCHIVE_PASSWORD}" "${DEMO_PASSWORD}" "${PAPERLESS_ADMIN_PASSWORD}"; do
 		echo "::add-mask::${password}"
@@ -126,6 +142,7 @@ fi
 
 phase "Start Paperless-ngx, Redis and Nextcloud; the first start downloads their images"
 "${COMPOSE[@]}" up --detach --wait --wait-timeout 900
+upgrade
 
 phase "Set up the accounts, the apps and the background jobs of Nextcloud"
 for account in "${ARCHIVE_USER}:Paperless archive:${ARCHIVE_PASSWORD}" "${DEMO_USER}:Jamie Example:${DEMO_PASSWORD}"; do
@@ -140,9 +157,23 @@ restart=0
 # Docker made custom_apps, the folder of the apps from the App Store, as the mount point of
 # this app, so it belongs to root, and the web server couldn't install an app there.
 "${COMPOSE[@]}" exec -T nextcloud chown www-data:www-data custom_apps
-if ! occ app:getpath paperless_sync >/dev/null 2>&1; then
-	# Paperless Sync from the App Store, as an administrator installs it.
-	occ app:install paperless_sync
+if [[ "$(occ config:app:get paperless_sync installed_version 2>/dev/null || true)" != "${PAPERLESS_SYNC_VERSION#v}" ]]; then
+	# The package of the release, as an administrator installs it without the App Store:
+	# downloaded and checked in the container of Nextcloud, then unpacked in place of an
+	# older version. PHP, not the shell, reads the variables of the script.
+	# shellcheck disable=SC2016
+	"${COMPOSE[@]}" exec -T --user www-data 		--env PAPERLESS_SYNC_VERSION --env PAPERLESS_SYNC_SHA256 nextcloud php -r '
+			$url = "https://github.com/Dennis-Otto/paperless-sync/releases/download/"
+				. getenv("PAPERLESS_SYNC_VERSION") . "/paperless_sync.tar.gz";
+			$package = file_get_contents($url);
+			if ($package === false || hash("sha256", $package) !== getenv("PAPERLESS_SYNC_SHA256")) {
+				fwrite(STDERR, "The package of Paperless Sync at $url is not the one with the SHA-256 in demo/seed.sh.
+");
+				exit(1);
+			}
+			file_put_contents("/tmp/paperless_sync.tar.gz", $package);'
+	"${COMPOSE[@]}" exec -T --user www-data nextcloud 		sh -c 'rm -rf custom_apps/paperless_sync && tar -xzf /tmp/paperless_sync.tar.gz -C custom_apps && rm /tmp/paperless_sync.tar.gz'
+	upgrade
 	restart=1
 fi
 for app in paperless_sync paperless_unified_search; do

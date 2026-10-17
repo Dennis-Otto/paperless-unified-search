@@ -20,6 +20,6 @@ project_type: nextcloud-app
 sample_code: false
 sponsor: Dennis-Otto
 successor: true
-test_workflows: ''
+test_workflows: Demo
 topics: document-management, full-text-search, nextcloud, ocr, paperless-ngx, php,
     search
