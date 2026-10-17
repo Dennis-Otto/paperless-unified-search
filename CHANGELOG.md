@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [1.1.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.0.1...v1.1.0) (2026-10-17)
+
+
+### Features
+
+* a dashboard widget with the latest Paperless documents ([#172](https://github.com/Dennis-Otto/paperless-unified-search/issues/172)) ([b463f15](https://github.com/Dennis-Otto/paperless-unified-search/commit/b463f1572ecb83116b5ea2294f54587957d38513))
+* a one-command demo with real Paperless-ngx and Nextcloud ([#165](https://github.com/Dennis-Otto/paperless-unified-search/issues/165)) ([882652e](https://github.com/Dennis-Otto/paperless-unified-search/commit/882652e9f36601007c7012fbd886f54ac2ad12be))
+
 ## [1.0.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.0.0...v1.0.1) (2026-10-17)
 
 ### Fixed
