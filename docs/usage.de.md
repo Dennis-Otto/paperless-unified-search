@@ -1,5 +1,5 @@
 ---
-description: "Paperless-Dokumente in Nextcloud suchen: im Browser, auf dem Smartphone, im Smart Picker von Talk, Text, Deck und Mail, mit der Suchsyntax von Paperless und aus Skripten über die API."
+description: "Paperless-Dokumente in Nextcloud suchen: im Browser, auf dem Smartphone, im Smart Picker von Talk, Text, Deck und Mail, mit der Suchsyntax von Paperless und aus Skripten über die API, und die neuesten auf dem Dashboard sehen."
 ---
 
 # Suchen

@@ -36,13 +36,17 @@ Ja. Die Apps zeigen Paperless-Dokumente in ihrer Suche, und ein Treffer öffnet 
 
 Weil dort jeder, der das Dokument findet, es öffnen kann: Die Freigaben von Nextcloud entscheiden, wer die Datei sieht, und niemand braucht ein Konto in Paperless. Die Datei öffnet sich im Viewer von Nextcloud und in den Mobil-Apps, bereit zum Teilen, Herunterladen oder Kommentieren, und der Link des Smart Pickers zeigt die Datei jedem Leser, der sie öffnen kann.
 
+## Kann ich neue Dokumente sehen, ohne zu suchen?
+
+Ja: Füge **Neu in Paperless** zu deinem Dashboard hinzu. Es listet die Dokumente, die Paperless zuletzt hinzugefügt hat und die du öffnen kannst, die neuesten zuerst, jedes mit dem Tag, an dem Paperless es hinzugefügt hat, seinem Korrespondenten und seinem Typ, und öffnet die Datei eines Dokuments in Dateien. [Auf dem Dashboard](usage.de.md#auf-dem-dashboard) hat die Details.
+
 ## Warum schaltet sich der Schalter Verbundene Dienste durchsuchen von selbst aus?
 
 Nextcloud schaltet ihn bei jedem Neuladen der Seite aus, damit ein Suchbegriff nie ohne die Wahl des Benutzers an einen anderen Server geht. [Warum der Schalter nach dem Neuladen aus ist](usage.de.md#warum-der-schalter-nach-dem-neuladen-aus-ist) hat die Details und sagt, wie ein Administrator Paperless stattdessen in jede Suche einbezieht.
 
 ## Wie viel Last bringt es auf Paperless?
 
-Paperless bekommt nur Anfragen von den Suchen, die es fragen: mit eingeschaltetem **Verbundene Dienste durchsuchen**, aus dem Smart Picker oder der API, und von jeder Suche, wenn **Paperless immer in die globale Suche einbeziehen** an ist. Die Suche von Nextcloud wartet, bis das Tippen pausiert, bevor sie fragt. Für jede Seite mit Treffern fragt die App Paperless nach 25 Dokumenten und nur nach den Feldern, die ein Treffer zeigt, nicht nach dem OCR-Text jedes Dokuments; um eine Seite zu füllen, deren erste Dokumente der Benutzer nicht öffnen kann, fragt sie innerhalb von 3 Sekunden nach bis zu 3 weiteren Seiten. Eine Anfrage in seiner Syntax, die Paperless 3 noch nicht verarbeiten kann, etwa eine, die noch getippt wird, bekommt es noch einmal in seinem einfachen Modus. Eine Anfrage, die sich nicht verbinden konnte, bekommt einen zweiten Versuch; eine, die vergeblich auf ein hängendes Paperless gewartet hat, wird nicht erneut gesendet.
+Das Widget des Dashboards fragt Paperless höchstens einmal in der Minute nach seinen neuesten Dokumenten, für alle Benutzer gemeinsam, sofern es einen Memory-Cache gibt, wie Nextcloud ihn empfiehlt. Darüber hinaus bekommt Paperless nur Anfragen von den Suchen, die es fragen: mit eingeschaltetem **Verbundene Dienste durchsuchen**, aus dem Smart Picker oder der API, und von jeder Suche, wenn **Paperless immer in die globale Suche einbeziehen** an ist. Die Suche von Nextcloud wartet, bis das Tippen pausiert, bevor sie fragt. Für jede Seite mit Treffern fragt die App Paperless nach 25 Dokumenten und nur nach den Feldern, die ein Treffer zeigt, nicht nach dem OCR-Text jedes Dokuments; um eine Seite zu füllen, deren erste Dokumente der Benutzer nicht öffnen kann, fragt sie innerhalb von 3 Sekunden nach bis zu 3 weiteren Seiten. Eine Anfrage in seiner Syntax, die Paperless 3 noch nicht verarbeiten kann, etwa eine, die noch getippt wird, bekommt es noch einmal in seinem einfachen Modus. Eine Anfrage, die sich nicht verbinden konnte, bekommt einen zweiten Versuch; eine, die vergeblich auf ein hängendes Paperless gewartet hat, wird nicht erneut gesendet.
 
 ## Durchsucht es die Dokumente im Posteingang von Paperless?
 

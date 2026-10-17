@@ -50,6 +50,7 @@ Paperless-ngx hat den Text jedes Dokuments bereits erkannt und führt einen Inde
 - **Kein zweiter Index, keine zweite OCR.** Kein Elasticsearch, kein zusätzlicher Container und keine Kopie des Textes in Nextcloud. Was Paperless findet, findet die Suche von Nextcloud, sobald die Datei des Dokuments in Nextcloud liegt.
 - **Nextcloud entscheidet, wer was sieht.** Ein Treffer erscheint nur für jemanden, der seine Datei in Nextcloud öffnen kann, also sind die Freigaben, die du schon hast, die Berechtigungen. Niemand braucht ein Konto in Paperless.
 - **Treffer öffnen sich dort, wo gearbeitet wird.** Im Viewer von Nextcloud im Browser und in den Nextcloud-Apps für iOS und Android, bereit zum Teilen, Herunterladen oder Kommentieren.
+- **Neue Dokumente kommen zu dir.** Das Dashboard listet die Dokumente, die Paperless zuletzt hinzugefügt hat, für alle, die sie öffnen können, ohne Suche.
 - **Die Suche von Paperless, keine Kopie ihrer Wörter.** Ihre Rangfolge, ihre Hervorhebungen und ihre Suchsyntax, etwa `correspondent:acme` oder `created:[2024 to 2025]`, die auch den Korrespondenten, den Typ und die Tags eines Dokuments betrachten.
 
 <!-- --8<-- [start:comparison] -->
@@ -157,6 +158,15 @@ Nextcloud im Browser eines Smartphones. Die Nextcloud-Apps für iOS und Android 
 </picture>
 
 Tippe `/` in einer Notiz von Text und wähle *Paperless-Dokumente*: Der Picker findet die Dokumente an ihrem Text und fügt den Link auf die gewählte Datei ein, den Text allen, die sie öffnen können, als die Datei selbst zeigt.
+
+### Die neuesten Dokumente auf dem Dashboard
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/11-dashboard-dark.png">
+  <img alt="Das Dashboard von Jamie mit dem Widget Neu in Paperless: die Inspektion des Autos, die Stromrechnung, die Verlängerung der Hausratversicherung, die Internetrechnung und der Grundsteuerbescheid, die neuesten zuerst, jedes mit dem Symbol seiner PDF-Datei und einer Zeile mit dem Tag, an dem Paperless es hinzugefügt hat, seinem Korrespondenten und seinem Typ, etwa Sep 3, 2026 · Example Motors · Receipt" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/11-dashboard.png">
+</picture>
+
+*Neu in Paperless* auf dem Dashboard von Nextcloud listet die Dokumente, die Paperless zuletzt hinzugefügt hat und die du öffnen kannst, ohne Suche.
 
 ### Das Archiv, nur lesend geteilt
 
@@ -387,6 +397,20 @@ Der Smart Picker von Nextcloud findet Paperless-Dokumente ebenfalls, wo immer du
 
 Der Picker sucht über denselben Anbieter wie die Suche von Nextcloud, also listet er dieselben Dokumente. Er fragt Paperless, sobald du **Paperless-Dokumente** gewählt und einen Begriff getippt hast, ohne den Schalter **Verbundene Dienste durchsuchen**: Die Wahl ist dieselbe Zustimmung.
 
+### Auf dem Dashboard
+
+Füge **Neu in Paperless** mit **Anpassen** am Ende des Dashboards zu deinem Dashboard hinzu. Das Widget listet die neuesten Dokumente, die Paperless hinzugefügt hat und die du öffnen kannst, die neuesten zuerst, ohne Suche: jedes mit der Vorschau seiner Datei und unter seinem Titel dem Tag, an dem Paperless es hinzugefügt hat, in deiner Sprache, seinem Korrespondenten und seinem Typ, etwa *03.09.2026 · Example Motors · Receipt*. Ein Klick auf eines öffnet seine Datei in Dateien. Sobald die Liste voll ist, zeigt das Dashboard von Nextcloud sechs Dokumente und darunter **Mit dir geteilte Dateien**, das alle Dateien öffnet, die andere mit dir teilen; mit weniger Dokumenten zeigt es alle und keinen Link, und das Archiv-Konto, dem die Dateien gehören, bekommt gar keinen solchen Link. Die Apps und die anderen Clients der API des Dashboards bekommen bis zu sieben Dokumente und den Link. Die Dashboard-API von Nextcloud stellt das Widget auch anderen Clients bereit, etwa den Widgets der Android-App auf dem Startbildschirm eines Smartphones.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/the-newest-documents-on-the-dashboard.de.dark.svg">
+  <img src="docs/images/diagrams/the-newest-documents-on-the-dashboard.de.svg" alt="Die neuesten Dokumente auf dem Dashboard: Das Dashboard von jamie fragt das Widget Neu in Paperless nach seinen Einträgen. Die App nimmt die 25 Dokumente, die Paperless-ngx zuletzt hinzugefügt hat, aus dem verteilten Cache von Nextcloud, oder fragt sonst Paperless danach, die neuesten zuerst, und behält sie eine Minute lang für jeden Benutzer, denn jede Anfrage trägt das Token der Einstellungen. Davon sieht jamie die Dokumente, deren Datei des Archiv-Kontos jamie öffnen kann, gefunden an ihren Kennungen mit einer Suche im Datei-Cache, höchstens sieben, mit den Namen ihrer Korrespondenten und Typen. Jeder Eintrag zeigt die Vorschau seiner Datei, seinen Titel und den Tag, an dem Paperless ihn hinzugefügt hat, seinen Korrespondenten und seinen Typ, etwa 03.09.2026 · Example Motors · Receipt, und öffnet die Datei in Dateien.">
+</picture>
+
+- **Wer was sieht.** Dieselbe Regel wie in der Suche: Ein Dokument erscheint für alle, die seine Datei des Archiv-Kontos öffnen können. Das Widget betrachtet die 25 Dokumente, die Paperless zuletzt hinzugefügt hat; kannst du keines davon öffnen, sagt es das.
+- **Wie neu.** Die neuesten Dokumente sind für jeden Benutzer dieselben, denn jede Anfrage an Paperless trägt das Token der Einstellungen, also fragt die App Paperless höchstens einmal in der Minute danach, für alle Benutzer gemeinsam, und behält sie solange im verteilten Cache von Nextcloud. Das braucht einen Memory-Cache, wie Nextcloud ihn empfiehlt: Ohne einen fragt jedes Dashboard, das das Widget zeigt, Paperless und wartet während eines Ausfalls darauf. Ein Dokument, das Paperless hinzufügt, erscheint innerhalb einer Minute, eine Datei, die mit dir geteilt wird, sofort.
+- **Wenn Paperless nicht antwortet**, innerhalb von fünf Sekunden, sagt das Widget *Paperless ist gerade nicht erreichbar.*, und die App fragt eine Minute später erneut. Ein solcher Fehler kommt in das Protokoll von Nextcloud, nicht in den Verlauf der Probleme der Suche.
+- **Nur wo die Suche funktioniert.** Das Dashboard bietet das Widget an, sobald die Einstellungen ein Paperless und ein Archiv-Konto nennen, das existiert.
+
 <!-- --8<-- [end:usage] -->
 <!-- --8<-- [start:search-syntax] -->
 
@@ -565,6 +589,7 @@ Dokumente ohne Datei sind kein Fehler, solange die Suche andere zeigen kann: Die
 - **Suche ausprobieren** zeigt Administratoren, welche Dokumente ein Benutzer zu einem Begriff findet, nur mit ihren IDs und Titeln, ohne ihren Inhalt, einen Ausschnitt oder ihre Dateien; das Audit-Protokoll der App *Auditing / Logging* (`admin_audit`) hält fest, welcher Administrator als welcher Benutzer gesucht hat, gleich bei welcher Protokollstufe, ebenso das Protokoll von Nextcloud auf der Stufe info, ohne den Begriff.
 - Suchbegriffe werden nur von Server zu Server gesendet, wenn die Suche in verbundenen Diensten oder der Modus für den vertrauenswürdigen Dienst eingeschaltet ist, nachdem der Benutzer im Smart Picker **Paperless-Dokumente** gewählt hat, oder wenn ein Client diese Suche über ihre ID in der API anfragt.
 - Ein Link, den der Smart Picker einfügt, ist der Link der Datei in Nextcloud, der seine Vorschau nur Lesern zeigt, die die Datei öffnen können.
+- Das Widget des Dashboards zeigt einem Benutzer nur die neuesten Dokumente, deren Dateien er öffnen kann. Der verteilte Cache von Nextcloud behält die IDs, Titel, Korrespondenten und Typen der 25 neuesten Dokumente eine Minute lang, die für jeden Benutzer dieselben sind, und nie ihren Text.
 - Administratoren können dem eingerichteten Paperless-Server ausdrücklich vertrauen, um ihn automatisch in die globalen Suchen jedes Benutzers einzubeziehen.
 - Keine Zugangsdaten für den Betrieb, privaten Hostnamen, internen Adressen oder Konfiguration einer Instanz gehören in dieses Repository.
 - Gitleaks durchsucht jeden Push und jeden Pull Request.

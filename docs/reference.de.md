@@ -95,15 +95,25 @@ Die [Fehlerbehebung](troubleshooting.de.md#wenn-der-test-der-verbindung-fehlschl
 
 [Aus Skripten und KI-Assistenten nutzen](usage.de.md#aus-skripten-und-ki-assistenten-nutzen) zeigt die Antwort der API.
 
+## Das Widget des Dashboards
+
+| | |
+| --- | --- |
+| **ID** | `paperless_unified_search-recent`, *Neu in Paperless*, angeboten, sobald die Einstellungen ein Paperless und ein Archiv-Konto nennen, das existiert |
+| **Einträge** | `GET /ocs/v2.php/apps/dashboard/api/v2/widget-items?widgets[]=paperless_unified_search-recent` mit `limit` (standardmäßig 7, bis zu 30), wie das Dashboard von Nextcloud und seine Apps sie anfragen: die neuesten Dokumente, die der Benutzer öffnen kann, jedes mit seinem Titel, einer Zeile mit dem Tag, an dem Paperless es hinzugefügt hat, seinem Korrespondenten und seinem Typ, dem Link und der Vorschau seiner Datei und als `sinceId` dem Moment, an dem Paperless es hinzugefügt hat; `sinceIds[paperless_unified_search-recent]` mit einem solchen Moment listet nur die Dokumente, die danach hinzugekommen sind |
+| **Der Link unter der Liste** | *Mit dir geteilte Dateien*, die Ansicht von Dateien mit den Dateien, die andere mit dem Benutzer teilen; das Web-Dashboard von Nextcloud zeigt ihn, und sechs Dokumente, erst wenn die Liste voll ist; keiner für das Archiv-Konto |
+| **Paperless** | Eine Anfrage nach den 25 Dokumenten, die es zuletzt hinzugefügt hat, höchstens einmal in der Minute für alle Benutzer gemeinsam, die der verteilte Cache von Nextcloud solange behält (mit einem Memory-Cache, wie Nextcloud ihn empfiehlt; ohne einen fragt jedes Dashboard Paperless); ein Paperless, das nicht antwortet, ruht ebenfalls eine Minute, und das Widget sagt *Paperless ist gerade nicht erreichbar.* |
+
 ## Anfragen an Paperless
 
-Jede Anfrage der App an Paperless ist ein `GET` von `<URL>/api/documents/`, vom Nextcloud-Server aus:
+Jede Anfrage der App an Paperless ist ein `GET` von `<URL>/api/documents/`, oder von `/api/correspondents/` und `/api/document_types/` für die Namen der Korrespondenten und Typen einer Seite, vom Nextcloud-Server aus:
 
 | | |
 | --- | --- |
 | **Header** | `Authorization: Token …`, `Accept: application/json` und `User-Agent: Nextcloud-Paperless-Unified-Search/<version>` |
 | **Eine Suche** | `query` mit dem Begriff, `page`, `page_size=25` und `fields=id,title,created,correspondent,document_type,__search_hit__`; bei Paperless 3 eine Anfrage, die es noch nicht verarbeiten kann, noch einmal mit `text` statt `query` |
 | **Der Test der Verbindung** | `page_size=1` und `fields=id` |
+| **Die neuesten Dokumente des Dashboards** | `ordering=-added`, `page=1`, `page_size=25` und `fields=id,title,added,correspondent,document_type`, höchstens einmal in der Minute für alle Benutzer, mit 5 Sekunden für die Antwort und ohne zweiten Versuch |
 | **Zeit** | 3 Sekunden zum Verbinden, 10 Sekunden für die Antwort |
 | **Ein zweiter Versuch** | Nur für eine Anfrage, die innerhalb von 3,5 Sekunden fehlgeschlagen ist, bevor sie eine Verbindung hatte, und deren Adresse Nextcloud nicht verweigert hat |
 | **Weiterleitungen** | Ohne **Paperless läuft in meinem lokalen Netzwerk** bis zu 5, nie an eine Adresse des lokalen Netzwerks; Nextcloud lässt das Token bei einer Weiterleitung auf ein anderes Schema, einen anderen Host oder Port weg, was Paperless dann ablehnt, und behält es bei einer innerhalb desselben Servers. Mit dem Schalter keine |
@@ -127,6 +137,9 @@ Jede Anfrage der App an Paperless ist ein `GET` von `<URL>/api/documents/`, vom 
 | Nextcloud | Paperless | Der Begriff, die Seite und die Felder, mit denen zu antworten ist, und das API-Token | Mit eingeschaltetem **Verbundene Dienste durchsuchen**, nach der Wahl von **Paperless-Dokumente** im Smart Picker, über die API oder immer, wenn Paperless vertraut wird |
 | Paperless | Nextcloud | Von jedem Dokument, das das Konto des Tokens ansehen darf: seine ID, sein Titel, sein Datum, die IDs seines Korrespondenten und seines Typs und der Ausschnitt um den Begriff; die Versionen von Paperless und seiner API | In jeder Antwort |
 | Nextcloud | Der Browser oder eine App des Benutzers | Von jedem Dokument, dessen Datei der Benutzer öffnen kann: sein Titel, sein Datum und sein Ausschnitt und der Link, die ID und der Pfad seiner Datei | In jeder Antwort |
+| Nextcloud | Paperless | Die Anfrage nach den 25 Dokumenten, die Paperless zuletzt hinzugefügt hat, mit den Feldern, die das Dashboard zeigt, und das API-Token | Höchstens einmal in der Minute, wenn das Dashboard eines Benutzers das Widget zeigt |
+| Paperless | Nextcloud | Von jedem dieser Dokumente, das das Konto des Tokens ansehen darf: seine ID, sein Titel, der Moment, an dem Paperless es hinzugefügt hat, und die IDs seines Korrespondenten und seines Typs | In jeder Antwort |
+| Nextcloud | Der Browser oder eine App des Benutzers | Von jedem der neuesten Dokumente, dessen Datei der Benutzer öffnen kann: sein Titel, der Tag, an dem Paperless es hinzugefügt hat, sein Korrespondent und sein Typ und der Link und die Vorschau seiner Datei | Immer, wenn das Dashboard das Widget zeigt |
 
 <div class="diagram-wide" markdown tabindex="0" role="region" aria-label="Diagramm des Datenflusses einer Suche">
 
@@ -137,7 +150,7 @@ Jede Anfrage der App an Paperless ist ein `GET` von `<URL>/api/documents/`, vom 
 
 </div>
 
-Nextcloud speichert die Einstellungen in seiner App-Konfiguration, das Token verschlüsselt in seinem Zugangsdatenmanager und den Verlauf der letzten 20 Probleme, ohne den Begriff, das Token und die Abfrage einer URL. Von den Dokumenten wird nichts gespeichert. Die [Architecture](architecture.md#data-flow) erklärt jeden Schritt und das [Sicherheitsdesign](security.md), was jeden davon schützt.
+Nextcloud speichert die Einstellungen in seiner App-Konfiguration, das Token verschlüsselt in seinem Zugangsdatenmanager und den Verlauf der letzten 20 Probleme, ohne den Begriff, das Token und die Abfrage einer URL. Sein verteilter Cache behält die Namen der Korrespondenten und Typen zehn Minuten lang und von den 25 neuesten Dokumenten ihre IDs, Titel, die Momente, an denen Paperless sie hinzugefügt hat, und die IDs ihrer Korrespondenten und Typen eine Minute lang, für alle Benutzer; vom Text der Dokumente wird nichts gespeichert. Die [Architecture](architecture.md#data-flow) erklärt jeden Schritt und das [Sicherheitsdesign](security.md), was jeden davon schützt.
 
 --8<-- "README.de.md:security-and-privacy"
 
