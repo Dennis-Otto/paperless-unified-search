@@ -5,6 +5,18 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["local>Dennis-Otto/paperless-unified-search//.github/renovate-blueprint.json5"],
+  customManagers: [
+    {
+      // The release of Paperless Sync that the demo installs, with the SHA-256 of its
+      // package, which Renovate updates with the version; the pull request runs the
+      // demo against it (.github/workflows/demo.yml).
+      customType: "regex",
+      managerFilePatterns: ["/^demo/seed\\.sh$/"],
+      matchStrings: [
+        "# renovate: datasource=(?<datasource>github-release-attachments) depName=(?<depName>\\S+)\\n[A-Z_]+_VERSION=\"(?<currentValue>[^\"]+)\"\\n[A-Z_]+_SHA256=\"(?<currentDigest>[a-f0-9]{64})\"",
+      ],
+    },
+  ],
   packageRules: [
     {
       // The image of Playwright in tests/e2e/run.sh drives only the browsers of the

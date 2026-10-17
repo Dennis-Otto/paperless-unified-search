@@ -1,10 +1,14 @@
 ---
-description: "Install Paperless Unified Search from the Nextcloud App Store, with occ, or by hand from a signed release, check what it needs, and keep it up to date."
+description: "Try Paperless Unified Search in a one-command demo, then install it from the Nextcloud App Store, with occ or from a signed release, and keep it up to date."
 ---
 
 # Install
 
-What the app needs, the three ways to install it, and how it stays up to date. Once it is installed, [Configure](configure.md) connects it to Paperless-ngx.
+What the app needs, the three ways to install it, and how it stays up to date. Once it is installed, [Configure](configure.md) connects it to Paperless-ngx. To see it at work first, without touching your own servers, try the demo.
+
+## Try it in three minutes
+
+--8<-- "README.md:try-it"
 
 ## What it needs
 

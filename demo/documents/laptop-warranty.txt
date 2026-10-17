@@ -1,0 +1,17 @@
+Title: Laptop receipt and warranty
+Correspondent: Example Electronics
+Type: Receipt
+Created: 2026-05-30
+Tags: Warranty
+
+Example Electronics
+48 Circuit Avenue, Exampletown
+
+Receipt 2026-05-30-0117
+
+Notebook Pro 14, serial number EXN-14-7730-2291    1,249.00 EUR
+Extended warranty, 3 years                           149.00 EUR
+Total, paid by card                                1,398.00 EUR
+
+Your warranty covers the notebook until 30 May 2029. Keep this receipt:
+it is your warranty certificate.

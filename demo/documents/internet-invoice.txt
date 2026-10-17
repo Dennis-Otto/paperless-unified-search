@@ -1,0 +1,18 @@
+Title: Internet invoice - July 2026
+Correspondent: Fiberlink
+Type: Bill
+Created: 2026-07-03
+Tags: Household
+
+Fiberlink
+22 Glass Lane, Exampletown
+
+Monthly fiber internet invoice, July 2026
+
+Customer reference: EX-2048
+Plan: Fiber 500, 500 Mbit/s down and 100 Mbit/s up
+
+Fiber 500, 1 July to 31 July 2026              39.90 EUR
+Total, collected by direct debit on 10 July    39.90 EUR
+
+Questions? Our support team answers every day from 8:00 to 20:00.

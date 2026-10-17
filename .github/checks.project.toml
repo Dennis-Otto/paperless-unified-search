@@ -26,3 +26,32 @@
 # problem = """..."""
 # why = """..."""
 # fix = """..."""
+
+[step."Checks of this project"]
+problem = """A check of this app alone, in `scripts/check-project.sh`, failed; the last
+line of its output names it and what is wrong. One of them, *Files that the
+documentation links on main*, finds a link of the README or of `docs/` to a file or
+folder of the repository on GitHub, under `blob/main/` or `tree/main/`, whose path isn't
+in the checkout."""
+why = """These checks keep what only this app has working: the browser of the end-to-end
+tests, the pictures and links of the documentation, its versions and the JavaScript of
+the settings. The link check skips the links into `demo/` on main (`.lycheeignore`),
+because a pull request links them before main has them, so this check is the only one
+that finds a broken one."""
+fix = """Fix what the last line of the output names: for a link on main, correct the
+path of the link, or add the file that it links. Then run the checks again:"""
+commands = ["bash scripts/check-project.sh"]
+docs = "CONTRIBUTING.md#checks"
+
+[check."demo"]
+title = "The demo"
+problem = """`bash demo/seed.sh`, the demo with a real Paperless-ngx and a real Nextcloud,
+stopped at a step; the log of the job shows the step and the end of the logs of its
+containers."""
+why = """The README and the install guide offer the demo as the first thing to try, so it
+must keep working with every change of the app, of its images and of Paperless Sync.
+It is no required check and blocks no merge."""
+fix = """Run the demo on your machine with Docker, fix what the step that stopped shows,
+and push. Remove it afterwards with its data:"""
+commands = ["bash demo/seed.sh", "docker compose -f demo/compose.yaml down --volumes"]
+docs = "demo/README.md#when-it-doesnt-start"

@@ -125,7 +125,7 @@ Each picture follows the light or dark theme of this website. Select one to enla
 
 --8<-- "README.md:quick-start"
 
-[Install](install.md) and [Configure](configure.md) describe each step in detail, [Troubleshooting](troubleshooting.md) helps when no Paperless documents show, and the [FAQ](faq.md) answers the common questions.
+To see it at work first, [the demo](install.md#try-it-in-three-minutes) starts a real Paperless-ngx and a real Nextcloud with the app in Docker on your machine, in one command. [Install](install.md) and [Configure](configure.md) describe each step in detail, [Troubleshooting](troubleshooting.md) helps when no Paperless documents show, and the [FAQ](faq.md) answers the common questions.
 
 ## Learn more
 

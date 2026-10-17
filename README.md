@@ -37,7 +37,7 @@ The [documentation website](https://dennis-otto.github.io/paperless-unified-sear
 
 <sub>💛 Like it? [Rate it in the App Store](https://apps.nextcloud.com/apps/paperless_unified_search) or [support its development](https://github.com/sponsors/Dennis-Otto).</sub>
 
-[Why](#why-paperless-unified-search) · [Quick start](#quick-start) · [Troubleshooting](https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html) · [FAQ](https://dennis-otto.github.io/paperless-unified-search/faq.html) · [Reference](https://dennis-otto.github.io/paperless-unified-search/reference.html) · [Compare](docs/compare.md) · [Architecture](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/architecture.md) · [Security design](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/security.md) · [Roadmap](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/roadmap.md) · [Releases](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/releases.md) · [Changelog](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CHANGELOG.md)
+[Why](#why-paperless-unified-search) · [Try it](#try-it-in-three-minutes) · [Quick start](#quick-start) · [Troubleshooting](https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html) · [FAQ](https://dennis-otto.github.io/paperless-unified-search/faq.html) · [Reference](https://dennis-otto.github.io/paperless-unified-search/reference.html) · [Compare](docs/compare.md) · [Architecture](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/architecture.md) · [Security design](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/security.md) · [Roadmap](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/roadmap.md) · [Releases](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/releases.md) · [Changelog](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CHANGELOG.md)
 
 ## Why Paperless Unified Search
 
@@ -68,6 +68,27 @@ The table sets it beside the other ways to find Paperless documents from Nextclo
 <!-- --8<-- [end:why] -->
 
 The [comparison](docs/compare.md) explains each of them, and when another one is the better choice.
+
+## Try it in three minutes
+
+<!-- --8<-- [start:try-it] -->
+
+One command starts a real Paperless-ngx and a real Nextcloud in Docker on your own machine, with five synthetic documents, [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) and this app set up, and ends with a search that finds the documents. Your own Nextcloud and Paperless stay untouched:
+
+```sh
+git clone https://github.com/Dennis-Otto/paperless-unified-search.git
+cd paperless-unified-search
+bash demo/seed.sh
+```
+
+It needs Docker with Compose and Bash, Git Bash on Windows, and generates the passwords of the demo on your machine. Both web interfaces listen on 127.0.0.1 alone. Once the script prints the accounts, sign in as `jamie` at <http://localhost:8180> and search for *invoice*: the home insurance renewal is among the results, because its text says "invoice", while its title doesn't. [The guide of the demo](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/demo/README.md) says what else to try, and how to remove it again.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/what-the-demo-sets-up.dark.svg">
+  <img src="docs/images/diagrams/what-the-demo-sets-up.svg" alt="What the demo sets up: You run bash demo/seed.sh. It generates the secret key of Paperless and the passwords of the demo into demo/.env, and starts Paperless-ngx with Redis and Nextcloud with its background jobs in Docker, on 127.0.0.1 alone. Paperless reads five synthetic letters. Paperless Sync, a pinned signed release, writes each one into the files of the archive account paperless, which shares the archive read-only with jamie. occ paperless_unified_search:setup connects the app to Paperless, with the API token through a pipe. A search as jamie for invoice shows three Paperless documents, and the script prints the addresses and the accounts to sign in with.">
+</picture>
+
+<!-- --8<-- [end:try-it] -->
 
 <!-- --8<-- [start:quick-start-section] -->
 
