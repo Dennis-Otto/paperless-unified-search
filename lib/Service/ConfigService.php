@@ -313,6 +313,14 @@ final class ConfigService {
 	 * a name of the internet, or an internationalized one, such as bücher.example, which
 	 * is stored in the ASCII form that DNS knows, xn--bcher-kva.example.
 	 *
+	 * Psalm's taint analysis ends here the paths from a request to the HTTP client of
+	 * Nextcloud: the server that Nextcloud talks to is the one an administrator chose.
+	 * Only an administrator reaches the settings, after confirming the password; this
+	 * allows http and https only, and no credentials, query or fragment; a stored token is
+	 * only sent to the origin that it was saved for (resolveToken); and Nextcloud refuses an
+	 * address of the local network unless the administrator allowed it.
+	 *
+	 * @psalm-taint-escape ssrf
 	 * @throws InvalidSettingException when the URL is none of these, or carries
 	 *                                 credentials, a query or a fragment
 	 */
