@@ -32,6 +32,13 @@ final class ConfigServiceTest extends TestCase {
 	private const ENTER_AGAIN = 'Enter the API token again: a stored token is only sent to the Paperless server it was saved for.';
 	private const PUNYCODE = 'Enter the host of the Paperless URL in its ASCII form (punycode), such as xn--bcher-kva.example for bücher.example.';
 
+	public function testTheUrlCheckEndsTheTaintOfAServerAddress(): void {
+		// The taint analysis trusts the check of the URL only while it says so.
+		$comment = (new \ReflectionMethod(ConfigService::class, 'normalizeUrl'))->getDocComment();
+		self::assertIsString($comment);
+		self::assertStringContainsString('@psalm-taint-escape ssrf', $comment);
+	}
+
 	public function testPublicConfigNeverContainsToken(): void {
 		$config = $this->settings([
 			AppConstants::APP_ID . '.paperless_url' => 'https://paperless.example.com',
