@@ -46,8 +46,8 @@ jobs:
       KRANKERL_VERSION: 0.14.0
       KRANKERL_SHA256: 9bee5a756a83c5a6b1f040e9a2ade9e902e4a57211afc174cd8ac5c4f913958f
       # renovate: datasource=github-releases depName=nextcloud/server extractVersion=^v(?<version>.+)$
-      NEXTCLOUD_VERSION: 33.0.9
-      NEXTCLOUD_SHA256: fa8ec03b2ccd3261c127b36fbf85d13b13b474051f7787b90239f0fcf2bf9e70
+      NEXTCLOUD_VERSION: 35.0.1
+      NEXTCLOUD_SHA256: 3c5c1798002167b70421898f820f709a40b0393de463a0f32f023b0c74e5a45d
       # The syft that writes the SBOMs.
       # renovate: datasource=github-releases depName=anchore/syft extractVersion=^v(?<version>.+)$
       SBOM_SYFT_VERSION: 1.54.1
@@ -109,11 +109,14 @@ jobs:
           npm run build --if-present
           npm pack --pack-destination "$ASSETS"
 
+      # The occ of NEXTCLOUD_VERSION signs the app and stops on a PHP that this
+      # Nextcloud doesn't run on, as its lib/versioncheck.php says: Nextcloud 35 runs
+      # on PHP 8.3 to 8.5. The PHP of the app itself is that of appinfo/info.xml.
       - name: Set up PHP for the signing of the Nextcloud app
         if: env.PUBLISH_TO == 'nextcloud-appstore'
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
-          php-version: "8.2"
+          php-version: "8.4"
           extensions: dom, libxml, mbstring, xml, zip
           coverage: none
       - name: Build and sign the Nextcloud app
