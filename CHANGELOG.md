@@ -6,10 +6,9 @@ All notable changes to this project are documented in this file.
 
 ## [1.1.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.1.0...v1.1.1) (2026-10-19)
 
-
 ### Bug fixes
 
-* find the archive account of Paperless Sync 0.3, which stores it lazily ([#168](https://github.com/Dennis-Otto/paperless-unified-search/issues/168)) ([b279db2](https://github.com/Dennis-Otto/paperless-unified-search/commit/b279db2bd9e6c36e5a170f5c8e434403cdc03012))
+- **The archive account of Paperless Sync 0.3:** with no archive account of its own, the app takes the account that Paperless Sync writes the archive with again. Paperless Sync 0.3.0 stores it in a way that the app didn't read, so the search showed no Paperless documents at all, and the settings, `occ` and the overview said that Paperless Sync names no account.
 
 ## [1.1.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.0.1...v1.1.0) (2026-10-17)
 
