@@ -17,6 +17,10 @@
 # - the job of .github/workflows/e2e.yml that writes the issue about the supported
 #   Nextcloud versions, with a fake gh: it opens the issue with the versions that
 #   broke, adds a further failed run to it and closes it once the tests pass again.
+# - mock_server.py, with requests of its own, when Python is installed: its journal
+#   holds each request right after its answer, and run.sh reads that journal.
+# - that no script here pipes a command into grep --quiet, which fails the pipe now
+#   and then under set -o pipefail.
 #
 #   bash tests/e2e/selftest.sh
 
@@ -308,8 +312,85 @@ expect "the issue closed by a run that passes" \
 expect "a run that passes without an open issue" 0 "$(report env RESULT=success)"
 expect "the calls of gh of a run that passes without an open issue" 1 "$(wc -l <"${WORK}/gh.log" | tr -d ' ')"
 
+## The journal of the mock
+
+# run.sh checks which requests reached the mock right after the answer of Nextcloud,
+# such as the date filter of a search. Docker copies the output of a container into its
+# log a moment later, and the mock writes each request into its journal before its
+# answer leaves, so the journal already holds the request that the answer is for (#94).
+python=""
+for candidate in python3 python py; do
+	if "${candidate}" -c 'import sys; sys.exit(sys.version_info < (3, 9))' >/dev/null 2>&1; then
+		python="${candidate}"
+		break
+	fi
+done
+if [[ -n "${python}" ]]; then
+	# Prints the file that the mock writes its journal to, and then the journal right
+	# after each answer: one with documents and one to a wrong token. Python on Windows
+	# ends its lines with CR LF. -B leaves the checkout without a cache of bytecode.
+	"${python}" -B - "${SCRIPT_DIR}" "${WORK}/requests.log" 2>&1 <<'PYTHON' | tr -d '\r' >"${WORK}/journal" || true
+import sys
+import threading
+import urllib.error
+import urllib.request
+from http.server import ThreadingHTTPServer
+
+sys.path.insert(0, sys.argv[1])
+import mock_server  # noqa: E402
+
+print(mock_server.REQUESTS)
+mock_server.REQUESTS = sys.argv[2]
+open(mock_server.REQUESTS, "w").close()
+
+
+class Quiet(mock_server.Handler):
+    def log_message(self, message, *args):
+        pass
+
+
+server = ThreadingHTTPServer(("127.0.0.1", 0), Quiet)
+threading.Thread(target=server.serve_forever, daemon=True).start()
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+for path, token in (
+    ("/api/documents/?query=mobiletest&fields=id&created__date__gte=2026-08-01", mock_server.TOKEN),
+    ("/api/documents/?query=mobiletest&fields=id", "wrong"),
+):
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{server.server_port}{path}", headers={"Authorization": f"Token {token}"}
+    )
+    try:
+        opener.open(request).read()
+    except urllib.error.HTTPError as error:
+        error.read()
+    with open(mock_server.REQUESTS, encoding="utf-8") as journal:
+        print(journal.read(), end="")
+server.shutdown()
+PYTHON
+	journal="$(head -n 1 "${WORK}/journal")"
+	expect "the journal of the mock in its tmpfs" /tmp/requests.log "${journal}"
+	expect "run.sh reads the journal of the mock" 1 "$(grep --count --fixed-strings "cat ${journal}" "${SCRIPT_DIR}/run.sh")"
+	expect "the journal of the mock right after each answer" \
+		"GET /api/documents/?query=mobiletest&fields=id&created__date__gte=2026-08-01 HTTP/1.1 200|GET /api/documents/?query=mobiletest&fields=id&created__date__gte=2026-08-01 HTTP/1.1 200|GET /api/documents/?query=mobiletest&fields=id HTTP/1.1 401" \
+		"$(tail -n +2 "${WORK}/journal" | paste -s -d "|")"
+else
+	echo "Python 3.9 or newer is not installed here; the CI tests the journal of the mock."
+fi
+
+## Pipes into grep --quiet
+
+# grep --quiet stops reading at its first match, and the command that writes into the
+# pipe dies of SIGPIPE when it writes the rest. With set -o pipefail, as in each of these
+# scripts, the pipe then fails although grep found the text: the logs of Docker piped so
+# into grep failed the check of the date filter now and then (#94). Read the output into
+# a variable first and search that, as with grep --quiet ... <<<"${output}".
+grep --line-number --extended-regexp \
+	'\|[[:space:]]*grep[^|]*[[:space:]](--quiet|--silent|-[[:alpha:]]*q[[:alpha:]]*)([[:space:]]|$)' \
+	"${SCRIPT_DIR}"/*.sh | grep --invert-match --extended-regexp '^[^:]+:[0-9]+:[[:space:]]*#' >"${WORK}/pipes" || true
+expect "the pipes into grep --quiet in the scripts of the end-to-end tests" "" "$(cat "${WORK}/pipes")"
+
 if ((failures > 0)); then
 	echo "${failures} of ${checks} checks of the scripts of the end-to-end tests failed." >&2
 	exit 1
 fi
-echo "The ${checks} checks of scope.sh, run-all.sh and the issue of the weekly run pass."
+echo "The ${checks} checks of scope.sh, run-all.sh, the issue of the weekly run, the journal of the mock and the pipes of the scripts pass."

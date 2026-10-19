@@ -179,6 +179,15 @@ API_PATH = "/api/documents/"
 # The page that Django answers with when Paperless fails.
 SERVER_ERROR_PAGE = b"<!doctype html><html lang=\"en\"><head><title>Server Error (500)</title></head><body><h1>Server Error (500)</h1><p></p></body></html>"
 
+# The journal of the requests that the mock answers, one line each with the status of
+# its answer, such as GET /api/documents/?query=mobiletest&page=1 HTTP/1.1 200, in the
+# tmpfs of compose.yaml. run.sh reads it to check what reached Paperless, such as the
+# date filter of a search. The mock writes the line before its answer leaves, so the
+# journal holds the request of every answer that Nextcloud got, which the log of Docker
+# gets only a moment later (#94).
+REQUESTS = "/tmp/requests.log"
+_requests_lock = threading.Lock()
+
 _dropped_terms = set()
 _dropped_terms_lock = threading.Lock()
 
@@ -339,6 +348,13 @@ class Handler(BaseHTTPRequestHandler):
         encoded = urlencode(sorted(parameters.items()), doseq=True)
         return f"http://{self.headers.get('Host')}{API_PATH}" + (f"?{encoded}" if encoded else "")
 
+    def log_request(self, code="-", size="-"):
+        """Writes the request into the journal, before send_response sends its status
+        line, and logs it then as every server of http.server does."""
+        with _requests_lock, open(REQUESTS, "a", encoding="utf-8") as journal:
+            journal.write(f"{self.requestline} {code}\n")
+        super().log_request(code, size)
+
     def log_message(self, message, *args):
         print(f"paperless-mock: {message % args}", flush=True)
 
@@ -357,4 +373,6 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    # An empty journal from the start, which run.sh can read before the first request.
+    open(REQUESTS, "w", encoding="utf-8").close()
     ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()

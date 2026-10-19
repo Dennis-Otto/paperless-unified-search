@@ -12,3 +12,5 @@ PHAR
 Viewern
 benutzerbezogen
 benutzerbezogenen
+SIGPIPE
+pipefail
