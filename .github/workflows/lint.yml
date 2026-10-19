@@ -56,32 +56,11 @@ jobs:
         # an action too, and the allowed actions in .github/repository.toml can't
         # name an image.
         env:
-<<<<<<< before updating
-          CHECK: workflow-lint
-        run: |
-          script=.github/blueprint.py
-          [[ -f "$script" ]] || script=blueprint.py
-          python3 "$script" coach explain "$CHECK"
-
-  reuse:
-    name: reuse
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Record the network traffic of the job
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-=======
           ACTIONLINT: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         run: docker run --rm --volume "$PWD:/repo" --workdir /repo "$ACTIONLINT"
       # The image of the REUSE tool as it is, without the action, which builds an image
       # of its own in every run. Git, which the tool asks for the ignored files, works
       # in the folder of another user only when it is named safe.
->>>>>>> after updating
       - name: Check that every file names its license
         id: reuse
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
@@ -89,28 +68,9 @@ jobs:
         env:
           REUSE: fsfe/reuse:6.2.0@sha256:85462a75c0f8efda09ddd190b92816b70e7662577c8427429e11e1b9f25a992e
         run: |
-<<<<<<< before updating
-          script=.github/blueprint.py
-          [[ -f "$script" ]] || script=blueprint.py
-          python3 "$script" coach explain "$CHECK"
-
-  markdown:
-    name: markdown
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Record the network traffic of the job
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-=======
           docker run --rm --volume "$PWD:/data" --workdir /data \
             --env GIT_CONFIG_COUNT=1 --env GIT_CONFIG_KEY_0=safe.directory --env GIT_CONFIG_VALUE_0=/data \
             "$REUSE" lint
->>>>>>> after updating
       # The files are in .markdownlint-cli2.jsonc, the rules in .markdownlint.jsonc.
       # Locally: npx markdownlint-cli2@0.23.2
       - name: Lint the Markdown of every document
@@ -419,21 +379,6 @@ jobs:
         env:
           CHECK: workflow-lint
         run: |
-<<<<<<< before updating
-          # The changes since the merge base: those of the pull request alone.
-          git diff -z --name-only --diff-filter=AMR "origin/$BASE_REF...HEAD" -- '*.md' ':!CHANGELOG.md' \
-            > "$RUNNER_TEMP/documents"
-          if [[ ! -s "$RUNNER_TEMP/documents" ]]; then
-            echo "No document changes." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-      # npm keeps the packages of the spelling check in its cache, under a key of their
-      # lock file, and installs them from there. Only with changed documents, the only
-      # runs that install them, so that there is always a cache to save.
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        if: steps.documents.outputs.changed == 'true'
-=======
           script=.github/blueprint.py
           [[ -f "$script" ]] || script=blueprint.py
           python3 "$script" coach explain "$CHECK"
@@ -445,7 +390,6 @@ jobs:
     steps:
       - name: Record the network traffic of the job
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
->>>>>>> after updating
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

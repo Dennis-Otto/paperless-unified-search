@@ -86,44 +86,6 @@ jobs:
             if [[ "$want" == false && "$has" == true ]]; then gh pr edit "$NUMBER" --remove-label "$label"; fi
           done
           echo "Labels: ${wanted[*]}" >> "$GITHUB_STEP_SUMMARY"
-<<<<<<< before updating
-      # The PR coach needs blueprint.py and .github/checks.toml of the default branch;
-      # nothing of the pull request is checked out.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: failure()
-        with:
-          persist-credentials: false
-          sparse-checkout: |
-            .github
-            blueprint
-      # The PR coach: what failed, why it matters and how to fix it, in the summary
-      # of the check and as its annotation, from .github/checks.toml.
-      - name: Explain the failure
-        if: failure()
-        env:
-          CHECK: "conventional title"
-        run: |
-          script=.github/blueprint.py
-          [[ -f "$script" ]] || script=blueprint.py
-          python3 "$script" coach explain "$CHECK"
-
-  changelog:
-    name: changelog
-    if: ${{ !github.event.repository.fork }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      # The fragments of the pull request, and blueprint.py and the explanations of
-      # the PR coach of the default branch.
-      contents: read
-      pull-requests: read
-    steps:
-      - name: Record the network traffic of the job
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
-        with:
-          egress-policy: audit
-=======
->>>>>>> after updating
       # The files of the pull request come from the API.
       - name: Require an entry in the changelog for a change for users
         id: entry

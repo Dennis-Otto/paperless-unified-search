@@ -58,33 +58,6 @@ jobs:
       # file gets the category that the analysis of its language always had.
       - name: File the results of each language under its own category
         run: |
-<<<<<<< before updating
-          script=.github/blueprint.py
-          [[ -f "$script" ]] || script=blueprint.py
-          python3 "$script" coach explain "$CHECK"
-
-  # The protected branch requires one check named "codeql".
-  codeql:
-    name: codeql
-    if: always()
-    needs: analyze
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Record the network traffic of the job
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
-        with:
-          egress-policy: audit
-      - name: Require every language to pass
-        env:
-          RESULT: ${{ needs.analyze.result }}
-        run: |
-          echo "CodeQL analysis: $RESULT"
-          test "$RESULT" = "success"
-      # The PR coach needs blueprint.py and .github/checks.toml, nothing else.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: failure()
-=======
           shopt -s nullglob
           files=("$RUNNER_TEMP"/codeql/*.sarif)
           if ((${#files[@]} == 0)); then
@@ -108,7 +81,6 @@ jobs:
           done
       - name: Upload the results
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
->>>>>>> after updating
         with:
           sarif_file: ${{ runner.temp }}/codeql
       # The PR coach: what failed, why it matters and how to fix it, in the summary

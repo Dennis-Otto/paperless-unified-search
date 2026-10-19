@@ -181,43 +181,6 @@ jobs:
           PATTERNS: ${{ matrix.patterns }}
         run: |
           mutmut results --all true > "$RUNNER_TEMP/results.txt" 2>/dev/null || true
-<<<<<<< before updating
-          killed="$(grep -c ': killed$' "$RUNNER_TEMP/results.txt" || true)"
-          survived="$(grep -c ': survived$' "$RUNNER_TEMP/results.txt" || true)"
-          other="$(grep -v -c -E ': (killed|survived)$' "$RUNNER_TEMP/results.txt" || true)"
-          total=$((killed + survived))
-          {
-            echo "### Mutation tests (mutmut)"
-            if ((total)); then
-              echo "**$((100 * killed / total)) %** of the mutants were noticed by a test: $killed killed, $survived survived, $other other."
-            else
-              # Its last words, such as "failed to collect stats".
-              echo "No mutant ran. The end of the output of mutmut:"
-              echo
-              echo '```text'
-              sed 's/.*\r//' "$RUNNER_TEMP/run.txt" | tail -n 20
-              echo '```'
-            fi
-            if [[ "${status:-0}" == 124 ]]; then
-              echo "The run stopped at its time limit; these are the mutants it reached."
-            fi
-            if ((survived)); then
-              echo
-              echo "The first surviving mutants; \`mutmut show <name>\` shows one:"
-              echo
-              grep -m 30 ': survived$' "$RUNNER_TEMP/results.txt" | sed 's/: survived$//; s/^ */- /'
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-          # A run that measures nothing, not a low score, fails: an error of the tool
-          # or of its configuration.
-          if ((total == 0)); then
-            sed 's/.*\r//' "$RUNNER_TEMP/run.txt" | tail -n 40
-            exit 1
-          fi
-      - name: Keep the results
-        if: always() && steps.kind.outputs.kind == 'python'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-=======
           mkdir -p "$RUNNER_TEMP/part"
           # The whole output of mutmut, without its spinner, for a look at a failure.
           sed 's/.*\r//' "$RUNNER_TEMP/run.txt" > "$RUNNER_TEMP/part/run-$PART.txt" 2>/dev/null || true
@@ -230,17 +193,12 @@ jobs:
       - name: Hand the results to the report
         if: always() && needs.plan.outputs.kind == 'python'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
->>>>>>> after updating
         with:
           name: mutation-part-${{ matrix.part }}
           path: ${{ runner.temp }}/part/
           retention-days: 7
           if-no-files-found: ignore
 
-<<<<<<< before updating
-      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
-        if: steps.kind.outputs.kind == 'php'
-=======
       # Infection needs PHP 8.3 or newer. The tools run on the PHP of
       # config.platform.php in composer.json, for which Composer locks them, so the
       # mutants run on that PHP, and on PHP 8.3 for an app whose tools are older.
@@ -261,7 +219,6 @@ jobs:
         if: needs.plan.outputs.kind == 'php'
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         timeout-minutes: 5
->>>>>>> after updating
         with:
           php-version: ${{ steps.php.outputs.version }}
           extensions: dom, libxml, mbstring, xml
@@ -340,13 +297,8 @@ jobs:
             exit 1
           fi
       - name: Keep the results
-<<<<<<< before updating
-        if: always() && steps.kind.outputs.kind == 'php'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-=======
         if: always() && needs.plan.outputs.kind == 'php'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
->>>>>>> after updating
         with:
           name: mutation
           path: build/infection*.log
