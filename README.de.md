@@ -136,6 +136,15 @@ Jeder Screenshot unten außer denen des Smartphones hat eine dunkle Fassung, die
   <img alt="Ein synchronisiertes Paperless-Dokument, geöffnet im PDF-Viewer von Nextcloud" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/02-nextcloud-pdf-viewer.png">
 </picture>
 
+### Paperless-Treffer nach Datum eingegrenzt
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/12-date-filter-dark.png">
+  <img alt="Die Suche nach invoice mit eingeschaltetem Schalter Verbundene Dienste durchsuchen und dem Datumsfilter auf dem eigenen Bereich vom 7/1/2026 bis zum 7/31/2026: Paperless-Dokumente listet die Verlängerung der Hausratversicherung vom Jul 21, 2026 und die Internetrechnung vom Jul 3, 2026, aber nicht die Stromrechnung vom August, und Dateien findet keine der Dateien, die später hinzugefügt wurden" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/12-date-filter.png">
+</picture>
+
+Ein eigener Bereich im Datumsfilter behält die Dokumente, die Paperless darin datiert, hier Juli 2026, in der gefilterten Liste von Nextcloud. *Dateien* filtert nach dem Tag, an dem sich eine Datei zuletzt geändert hat, und findet darum keine der Dateien der Demo, die später hinzugefügt wurden. [Treffer nach Datum eingrenzen](#treffer-nach-datum-eingrenzen) erklärt den Filter.
+
 ### Auf dem Smartphone
 
 <p>
@@ -378,6 +387,9 @@ Dokumente ohne synchronisierte Datei `[P<ID>]` des Archiv-Kontos bleiben absicht
 
 Wähle im Datumsfilter der Suche von Nextcloud einen Zeitraum, etwa **Letzte 30 Tage**, **Dieses Jahr** oder einen eigenen Bereich, und die Paperless-Treffer zeigen nur Dokumente, deren Datum in Paperless darin liegt, das Datum, das Paperless für das Dokument zeigt, nicht den Tag, an dem es hinzugefügt oder synchronisiert wurde. Der Zeitraum zählt in ganzen Tagen in deiner Zeitzone: *Letzte 30 Tage*, am 30. September in Berlin gewählt, findet die Dokumente vom 1. bis zum 30. September. Paperless filtert die Dokumente selbst, also findet auch ein enger Zeitraum die passenden Dokumente weiter unten in der Rangfolge, und die Treffer bleiben in der gefilterten Liste von Nextcloud statt unter den teilweisen Treffern.
 
+<!-- --8<-- [end:usage] -->
+<!-- --8<-- [start:what-a-result-shows] -->
+
 ### Was ein Treffer zeigt
 
 Jeder Treffer zeigt die Vorschau seiner Datei, wie es die Treffer von *Dateien* tun, sonst das Symbol des Dateityps. Unter seinem Titel nennt eine Zeile das Datum des Dokuments in deiner Sprache, etwa *Aug 12, 2026* auf Englisch und *12.08.2026* auf Deutsch, seinen Korrespondenten und seinen Typ und dann die Wörter um den Begriff, die Paperless gefunden hat. Hat nur eine Notiz des Dokuments gepasst, wie bei `notes:transfer`, zeigt die Zeile *Notiz:* und die Wörter der Notiz.
@@ -391,7 +403,7 @@ Jeder Treffer zeigt die Vorschau seiner Datei, wie es die Treffer von *Dateien* 
 - **Korrespondent und Typ.** Paperless schickt sie als Zahlen. Die App fragt Paperless mit einer Anfrage für alle Korrespondenten und einer für alle Typen einer Seite nach ihren Namen und behält die Namen zehn Minuten lang, also erscheint ein in Paperless geänderter Name innerhalb von zehn Minuten in den Treffern. Darf das Konto des API-Tokens keine Korrespondenten oder Typen ansehen, oder antwortet Paperless nicht rechtzeitig, erscheinen die Treffer ohne sie, und die Suche funktioniert wie zuvor.
 - **Text.** Die Wörter um den Begriff kommen so, wie Paperless sie auszeichnet, und der Treffer zeigt sie als einfachen Text. Text eines Dokuments in spitzen Klammern, etwa `<GmbH>`, erscheint mit einem Leerzeichen nach `<`, als `< GmbH>`, damit kein Teil eines Treffers je als HTML wirken kann.
 
-<!-- --8<-- [end:usage] -->
+<!-- --8<-- [end:what-a-result-shows] -->
 <!-- --8<-- [start:smart-picker] -->
 
 ### In Talk, Text, Deck und Mail
@@ -680,7 +692,7 @@ Die Screenshots und die Animation in `screenshots/` kommen aus einem Skript, dam
 bash scripts/screenshots.sh
 ```
 
-Es startet die Docker-Suite unter einem eigenen Projekt mit einer Demo: dem Archiv-Konto `paperless`, dessen synthetische Dokumente nur lesend mit `jamie` geteilt sind, und einem Mock von Paperless, der drei davon für „invoice“ findet. Chromium sucht dann, öffnet einen Treffer, verlinkt ein Dokument aus dem Smart Picker in einer Notiz von Text, speichert die Einstellungen und probiert darin eine Suche aus, hell und dunkel, auf einem Smartphone und als Animation. Setze `KEEP_SCREENSHOTS=1`, um dich danach in der Demo umzusehen.
+Es startet die Docker-Suite unter einem eigenen Projekt mit einer Demo: dem Archiv-Konto `paperless`, dessen synthetische Dokumente nur lesend mit `jamie` geteilt sind, und einem Mock von Paperless, der drei davon für „invoice“ findet. Chromium sucht dann, öffnet einen Treffer, grenzt die Suche mit dem Datumsfilter auf Juli 2026 ein, verlinkt ein Dokument aus dem Smart Picker in einer Notiz von Text, speichert die Einstellungen und probiert darin eine Suche aus, hell und dunkel, auf einem Smartphone und als Animation. Jeder Schritt prüft, was sein Bild zeigt: Die nach Datum eingegrenzte Suche schlägt etwa fehl, wenn ein Paperless-Treffer außerhalb des Juli erscheint oder die Treffer unter *Teilübereinstimmungen* landen. Setze `KEEP_SCREENSHOTS=1`, um dich danach in der Demo umzusehen.
 
 Lies [CONTRIBUTING.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CONTRIBUTING.md), bevor du einen Pull Request öffnest.
 

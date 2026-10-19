@@ -14,6 +14,14 @@ Paperless-Dokumente erscheinen in der globalen Suche von Nextcloud für jeden Be
 
 --8<-- "README.de.md:usage"
 
+<figure markdown="span">
+  ![Die Suche nach invoice mit eingeschaltetem Schalter Verbundene Dienste durchsuchen und dem Datumsfilter auf dem eigenen Bereich vom 7/1/2026 bis zum 7/31/2026: Paperless-Dokumente listet die Verlängerung der Hausratversicherung vom Jul 21, 2026 und die Internetrechnung vom Jul 3, 2026, aber nicht die Stromrechnung vom August, und Dateien findet keine der Dateien, die später hinzugefügt wurden](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/12-date-filter.png#only-light)
+  ![Die Suche nach invoice mit eingeschaltetem Schalter Verbundene Dienste durchsuchen und dem Datumsfilter auf dem eigenen Bereich vom 7/1/2026 bis zum 7/31/2026: Paperless-Dokumente listet die Verlängerung der Hausratversicherung vom Jul 21, 2026 und die Internetrechnung vom Jul 3, 2026, aber nicht die Stromrechnung vom August, und Dateien findet keine der Dateien, die später hinzugefügt wurden](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/12-date-filter-dark.png#only-dark)
+  <figcaption>Die Suche, mit einem eigenen Bereich auf Juli 2026 eingegrenzt</figcaption>
+</figure>
+
+--8<-- "README.de.md:what-a-result-shows"
+
 --8<-- "README.de.md:smart-picker"
 
 <figure markdown="span">
