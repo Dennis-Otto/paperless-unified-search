@@ -4,6 +4,14 @@
 # The AI engine that writes the analysis; its secret belongs to the environment
 # issue-assistant. Leave out model for the engine's default.
 name = "claude"
+# The most AI runs that people who don't maintain the repository start: analyses
+# of new issues, follow-ups and replies after a release in 24 hours, analyses of
+# one reporter's new issues in 24 hours, and comments of a reporter after a release
+# closed their issue that the AI reads. Over a limit, the issue gets its labels and
+# waits for the maintainer; 0 lets only maintainers start the AI, by hand.
+max_per_day = 20
+max_per_author_per_day = 3
+release_replies = 2
 
 [links]
 # Hosts that links in the assistant's comments may lead to, besides this repository.
@@ -16,7 +24,8 @@ area_field = "Area"
 unmapped_options = ["Other"]
 
 [transparency]
-# Files that tell reporters which AI reads their issue.
+# Files that tell reporters which AI reads their issue; the check command makes sure
+# they name the engine.
 files = ["SUPPORT.md"]
 
 [releases]

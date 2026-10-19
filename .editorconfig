@@ -8,7 +8,7 @@ trim_trailing_whitespace = true
 indent_style = space
 indent_size = 4
 
-[*.{json,toml,yml,yaml,ts,js,mjs}]
+[*.{json,jsonc,toml,yml,yaml,ts,js,mjs}]
 indent_size = 2
 
 # Nextcloud's style: tabs in PHP, in the app's XML and in composer.json.

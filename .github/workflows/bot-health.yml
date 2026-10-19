@@ -17,7 +17,7 @@ name: Bot health
 on:
   workflow_run:
     # The bots and the scheduled workflows of every repository; the daily look covers those of the project.
-    workflows: [Blueprint update, Clean-up, Findings, Fuzzing, Issue lifecycle, Labels, Links, Mutation, OSV-Scanner, OpenSSF Scorecard, Property tests, Release, Release verification, SBOM, Settings, Update branches, Upstream, Workflow security]
+    workflows: [Blueprint update, Clean-up, Findings, Fuzzing, Issue lifecycle, Labels, Links, Mutation, OSV-Scanner, OpenSSF Scorecard, Property tests, Release, Release verification, SBOM, Screenshots, Settings, Update branches, Upstream, Workflow security]
     types: [completed]
   schedule:
     - cron: "47 1 * * *"

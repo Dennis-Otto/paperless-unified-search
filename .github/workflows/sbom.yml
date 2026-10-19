@@ -1,8 +1,10 @@
 name: SBOM
 
-# A software bill of materials of the repository in SPDX, every week; the release
-# workflow attaches one to each release. Not for every change: no pull request reads
-# it, and the dependency review checks what a pull request brings in.
+# A software bill of materials of the whole repository in SPDX, every week, with the
+# tools of its checks, its website and its workflows, as an artifact of the run. A
+# release carries the SBOMs of what it ships instead (build-release.yml), which its
+# users' scanners read. Not for every change: no pull request reads it, and the
+# dependency review checks what a pull request brings in.
 
 on:
   schedule:
@@ -27,6 +29,10 @@ jobs:
           persist-credentials: false
       - name: Generate the SPDX SBOM
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        # The repository at its commit, by name, rather than the folder ".".
+        env:
+          SYFT_SOURCE_NAME: ${{ github.event.repository.name }}
+          SYFT_SOURCE_VERSION: ${{ github.sha }}
         with:
           path: .
           format: spdx-json

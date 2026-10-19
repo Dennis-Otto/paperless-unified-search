@@ -1,10 +1,11 @@
 name: Findings
 
-# Without AI, every morning, after code scanning on main and when the accepted
-# findings change: dismisses the code scanning alerts that .github/findings.toml
-# accepts, with its reason, and fails while any other alert is open. The run names
-# an open alert by its number and link only, which only maintainers can follow;
-# nothing becomes a public issue. https://github.com/Dennis-Otto/issue-assistant
+# Without AI, every morning, after each scan of code scanning on main and when the
+# accepted findings change: dismisses the code scanning alerts that
+# .github/findings.toml accepts, with its reason, and fails while any other alert is
+# open. The run names an open alert by its number and link only, which only
+# maintainers can follow; nothing becomes a public issue. The job blocks every host
+# but GitHub's with Harden-Runner. https://github.com/Dennis-Otto/issue-assistant
 
 on:
   schedule:
@@ -12,8 +13,9 @@ on:
   push:
     branches: [main]
     paths: [.github/findings.toml]
+  # The workflows of the repository blueprint that report to code scanning.
   workflow_run:
-    workflows: [CodeQL, OpenSSF Scorecard]
+    workflows: [CodeQL, OpenSSF Scorecard, Workflow security, OSV-Scanner]
     types: [completed]
   workflow_dispatch:
     inputs:
@@ -24,10 +26,6 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: findings
-  cancel-in-progress: false
-
 jobs:
   findings:
     name: Accept or report findings
@@ -36,17 +34,30 @@ jobs:
       (github.event_name != 'workflow_run' ||
         (github.event.workflow_run.head_repository.full_name == github.repository &&
          github.event.workflow_run.head_branch == github.event.repository.default_branch))
-    runs-on: ubuntu-latest
+    # The job waits for the group, not the run: a run whose job is skipped, after
+    # the scan of a pull request, never takes the place of one that waits.
+    concurrency:
+      group: findings
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
       security-events: write
     steps:
+      - name: Block every host but GitHub's
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Dismiss accepted findings and report the others
-        uses: Dennis-Otto/issue-assistant@a12fb7227ff7d966809cad4e043e159977fccfcd # v1.2.2
+        uses: Dennis-Otto/issue-assistant@1f39474ecec19a599e6e7a6ab53357b36d0ea99f # v1.5.0
         with:
           command: findings
           dry-run: ${{ inputs.dry_run || false }}

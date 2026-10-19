@@ -20,33 +20,43 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  workflow-lint:
-    name: workflow-lint
+  # Every linter in one job, which takes one runner instead of one each: the workflows,
+  # the license of every file, the Markdown, the set-up of the issue assistant, the
+  # sign-off of every commit and the hints at the prose. Each step runs also when one
+  # before it failed, so that the check reports every linter at once, and the PR coach
+  # explains each one that failed.
+  lint:
+    name: lint
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Record the network traffic of the job
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        id: checkout
         with:
+          # The commits of the pull request for the sign-off and the changed documents,
+          # and its head, the second parent of its merge, onto which the fix bot commits.
+          fetch-depth: 0
           persist-credentials: false
       # actionlint's problem matcher, as its documentation has it, shows each error as
       # an annotation at its line, in the files of the pull request too.
-      - name: Show each error at its line
+      - name: Show each error of the workflows at its line
         run: |
           cat > "$RUNNER_TEMP/actionlint.json" <<'EOF'
           {"problemMatcher": [{"owner": "actionlint", "pattern": [{"regexp": "^(.+?):(\\d+):(\\d+): (.+) \\[(.+)\\]$", "file": 1, "line": 2, "column": 3, "message": 4, "code": 5}]}]}
           EOF
           echo "::add-matcher::$RUNNER_TEMP/actionlint.json"
       - name: Lint the workflows
-        uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
-      # The PR coach: what failed, why it matters and how to fix it, in the summary
-      # of the check and as its annotation, from .github/checks.toml.
-      - name: Explain the failure
-        if: failure()
+        id: workflow-lint
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        # The image itself, as for REUSE: a step that names a docker:// image is
+        # an action too, and the allowed actions in .github/repository.toml can't
+        # name an image.
         env:
+<<<<<<< before updating
           CHECK: workflow-lint
         run: |
           script=.github/blueprint.py
@@ -65,15 +75,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+=======
+          ACTIONLINT: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        run: docker run --rm --volume "$PWD:/repo" --workdir /repo "$ACTIONLINT"
+      # The image of the REUSE tool as it is, without the action, which builds an image
+      # of its own in every run. Git, which the tool asks for the ignored files, works
+      # in the folder of another user only when it is named safe.
+>>>>>>> after updating
       - name: Check that every file names its license
-        uses: fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5 # v6.0.0
-      # The PR coach: what failed, why it matters and how to fix it, in the summary
-      # of the check and as its annotation, from .github/checks.toml.
-      - name: Explain the failure
-        if: failure()
+        id: reuse
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        timeout-minutes: 5
         env:
-          CHECK: reuse
+          REUSE: fsfe/reuse:6.2.0@sha256:85462a75c0f8efda09ddd190b92816b70e7662577c8427429e11e1b9f25a992e
         run: |
+<<<<<<< before updating
           script=.github/blueprint.py
           [[ -f "$script" ]] || script=blueprint.py
           python3 "$script" coach explain "$CHECK"
@@ -90,22 +106,172 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+=======
+          docker run --rm --volume "$PWD:/data" --workdir /data \
+            --env GIT_CONFIG_COUNT=1 --env GIT_CONFIG_KEY_0=safe.directory --env GIT_CONFIG_VALUE_0=/data \
+            "$REUSE" lint
+>>>>>>> after updating
       # The files are in .markdownlint-cli2.jsonc, the rules in .markdownlint.jsonc.
       # Locally: npx markdownlint-cli2@0.23.2
       - name: Lint the Markdown of every document
+        id: markdown
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
         with:
           globs: "**/*.md"
-      # The PR coach: what failed, why it matters and how to fix it, in the summary
-      # of the check and as its annotation, from .github/checks.toml.
-      - name: Explain the failure
-        if: failure()
+      # The labels, issue forms, workflows and notice of the issue assistant fit the
+      # templates of its release: https://github.com/Dennis-Otto/issue-assistant
+      - name: Check the issue assistant's set-up
+        id: issue-assistant
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        uses: Dennis-Otto/issue-assistant@1f39474ecec19a599e6e7a6ab53357b36d0ea99f # v1.5.0
+        with:
+          command: check
+      - name: Check the sign-off of every commit
+        id: dco
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && github.event_name == 'pull_request' }}
         env:
-          CHECK: markdown
+          # The base branch as it is now, not the base that the event names: that one
+          # can be older than the commit of main that the branch was built on, and
+          # would bring commits of main into the check, such as squash commits that
+          # GitHub authors with another address than their sign-off names.
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # Bots can't sign the Developer Certificate of Origin. A pull request of a
+          # bot, such as Dependabot or the release app, may carry its unsigned commits.
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          count=0
+          while IFS= read -r commit; do
+            author="$(git show --no-patch --format='%an <%ae>' "$commit")"
+            name="$(git show --no-patch --format='%an' "$commit")"
+            if git show --no-patch --format='%B' "$commit" | git interpret-trailers --parse |
+              grep --fixed-strings --line-regexp --quiet "Signed-off-by: $author"; then
+              count=$((count + 1))
+              continue
+            fi
+            if [[ "$PR_AUTHOR" == *"[bot]" && "$name" == "$PR_AUTHOR" ]]; then
+              echo "Accepted commit $commit of $PR_AUTHOR without a sign-off."
+              count=$((count + 1))
+              continue
+            fi
+            echo "::error::Commit $commit lacks the sign-off 'Signed-off-by: $author'. Commit with git commit -s."
+            exit 1
+          # The commits of the pull request that the base branch doesn't have. Merge
+          # commits only bring main into the branch, such as those of the branch bot.
+          done < <(git rev-list --reverse --no-merges "origin/$BASE_REF..$HEAD_SHA")
+          echo "Checked the sign-off of $count commit(s)."
+      # Hints at the spelling (cspell, English and German) and the style of the English
+      # (Vale) of the documents that a pull request changes. A hint, never a failure.
+      # Not in the release pull request, the branch of the release bot in this
+      # repository, which changes no document but the changelog.
+      - name: Find the changed documents
+        id: documents
+        if: >-
+          !cancelled() && steps.checkout.outcome == 'success' &&
+          github.event_name == 'pull_request' &&
+          (!startsWith(github.head_ref, 'release-please--') ||
+          github.event.pull_request.head.repo.full_name != github.repository)
+        continue-on-error: true
+        env:
+          # The base branch as it is now, not the base that the event names: that one
+          # can be older than the commit of main that the branch was built on.
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          # The changes since the merge base: those of the pull request alone.
+          git diff -z --name-only --diff-filter=AMR "origin/$BASE_REF...HEAD" -- '*.md' ':!CHANGELOG.md' \
+            > "$RUNNER_TEMP/documents"
+          if [[ ! -s "$RUNNER_TEMP/documents" ]]; then
+            echo "No document changes." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+      # npm keeps the packages of the spelling check in its cache, under a key of their
+      # lock file, and installs them from there. Only with changed documents, the only
+      # runs that install them, so that there is always a cache to save.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: ${{ !cancelled() && steps.documents.outputs.changed == 'true' }}
+        continue-on-error: true
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: .github/prose/package-lock.json
+      - name: Hint at the spelling and the style of the changed documents
+        if: ${{ !cancelled() && steps.documents.outputs.changed == 'true' }}
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          VALE: jdkato/vale:v3.24.0@sha256:f5a09410093936d4919d868120786da9789e2652ac321c66a895403eca020ae4
+        run: |
+          mapfile -d '' -t files < "$RUNNER_TEMP/documents"
+          npm ci --prefix .github/prose --ignore-scripts --no-audit --no-fund
+          .github/prose/node_modules/.bin/cspell lint --config .github/prose/cspell.json --no-progress \
+            --no-summary --no-color --no-must-find-files "${files[@]}" > "$RUNNER_TEMP/spelling.txt" || true
+          docker run --rm --volume "$PWD:/docs" --workdir /docs --entrypoint sh "$VALE" \
+            -c 'vale sync >/dev/null && vale --output=line --no-exit "$@"' sh "${files[@]}" \
+            > "$RUNNER_TEMP/style.txt" || true
+          sed -nE 's#^(.+):([0-9]+):([0-9]+) - (.*)$#::warning file=\1,line=\2,col=\3,title=Spelling::\4#p' \
+            "$RUNNER_TEMP/spelling.txt"
+          sed -nE 's#^([^:]+):([0-9]+):([0-9]+):([^:]+):(.*)$#::warning file=\1,line=\2,col=\3,title=\4::\5#p' \
+            "$RUNNER_TEMP/style.txt"
+          {
+            echo "### Prose"
+            echo "$(grep -c ' - ' "$RUNNER_TEMP/spelling.txt" || true) hints at the spelling and $(grep -c . "$RUNNER_TEMP/style.txt" || true) at the style, in ${#files[@]} changed document(s)."
+            echo "A word of the project goes into \`.github/cspell-words.txt\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+      # The fix bot: markdownlint fixes what it can of what it found, on the head of
+      # the pull request, after every other linter, and after the checks the bot
+      # commits the files that it changed onto a branch of this repository, or
+      # suggests them on a pull request from a fork; the command of autofix in
+      # .github/checks.toml does the same.
+      - name: Check out the head of the pull request for the fixes
+        id: head
+        if: ${{ !cancelled() && steps.markdown.outcome == 'failure' && github.event_name == 'pull_request' }}
+        # Onto which the bot commits, not its merge into main.
+        run: git checkout --quiet --force --detach HEAD^2
+      - name: Fix what markdownlint can fix
+        if: ${{ !cancelled() && steps.head.outcome == 'success' }}
+        # Findings that no command fixes stay for a person; the check failed already.
+        continue-on-error: true
+        uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
+        with:
+          globs: "**/*.md"
+          fix: true
+      - name: Keep the files that markdownlint fixed
+        id: fix
+        if: ${{ !cancelled() && steps.head.outcome == 'success' }}
         run: |
           script=.github/blueprint.py
           [[ -f "$script" ]] || script=blueprint.py
-          python3 "$script" coach explain "$CHECK"
+          python3 "$script" fix keep "$RUNNER_TEMP/fixes" >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the fixes for the fix bot
+        if: ${{ !cancelled() && steps.fix.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fixes-lint
+          path: ${{ runner.temp }}/fixes/
+          # Fixes of files in .github/ as well.
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 3
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.toml: each check
+      # of the job that failed, or the job itself when none of them did.
+      - name: Explain the failure
+        if: failure()
+        env:
+          CHECK: lint
+          FAILED: |
+            ${{ steps.workflow-lint.outcome == 'failure' && 'workflow-lint' || '' }}
+            ${{ steps.reuse.outcome == 'failure' && 'reuse' || '' }}
+            ${{ steps.markdown.outcome == 'failure' && 'markdown' || '' }}
+            ${{ steps.issue-assistant.outcome == 'failure' && 'issue-assistant' || '' }}
+            ${{ steps.dco.outcome == 'failure' && 'dco' || '' }}
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          mapfile -t parts < <(grep . <<<"$FAILED" || true)
+          python3 "$script" coach explain "$CHECK" --parts "${parts[@]}"
 
   # The diagrams as pictures that every reader sees: the GitHub app shows a ```mermaid
   # block as code. Drawn anew when a pull request changes a source, a picture or the
@@ -133,9 +299,13 @@ jobs:
         id: draw
         env:
           EVENT: ${{ github.event_name }}
+          # The diagram bot commits onto a branch of this repository as the release app.
+          APP: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
           paths=(docs/diagrams docs/images/diagrams scripts/diagrams.sh)
-          fence='^\+[[:space:]]*(```+|~~~+)[[:space:]]*mermaid([[:space:]]|$)'
+          # A new block, also in a quote, or a changed picture, such as its alt.
+          fence='^\+[[:space:]>]*(```+|~~~+)[[:space:]]*mermaid([[:space:]]|$)|^\+.*images/diagrams/'
           if [[ "$EVENT" == pull_request ]]; then
             added="$(git diff HEAD^1 HEAD -- '*.md' | grep -E "$fence" || true)"
             if [[ -z "$added" ]] && git diff --quiet HEAD^1 HEAD -- "${paths[@]}"; then
@@ -163,15 +333,27 @@ jobs:
             echo "Every diagram is a picture of its source, as drawn." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
+          # The diagram bot commits only onto a branch of this repository, and only
+          # with the release app.
+          if [[ "$EVENT" != pull_request || "$HEAD_REPOSITORY" != "$GITHUB_REPOSITORY" ]]; then
+            fix="The artifact \`diagrams\` of this run holds the files."
+          elif [[ -n "$APP" ]]; then
+            fix="The diagram bot commits it onto this branch in a minute; the artifact \`diagrams\` of this run holds the files as well."
+          else
+            fix="No bot commits it here, because this repository has no release app (the variable RELEASE_AUTOMATION_CLIENT_ID); the artifact \`diagrams\` of this run holds the files."
+          fi
           {
             echo "### Diagrams"
             echo "The GitHub app shows a \`mermaid\` block as code, and a picture that differs from its source shows something else than the source says. \`bash scripts/diagrams.sh --extract\` changes these files:"
             echo
             echo "$changed"
             echo
-            echo "Run it with Docker and commit what it changes. On a branch of this repository, the diagram bot commits it for you in a minute; the artifact \`diagrams\` of this run holds the files as well."
+            echo "Run it with Docker and commit what it changes. $fix"
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "stale=true" >> "$GITHUB_OUTPUT"
+          {
+            echo "stale=true"
+            echo "fix=$fix"
+          } >> "$GITHUB_OUTPUT"
       - name: Keep the diagrams for the diagram bot
         if: steps.draw.outputs.stale == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -184,8 +366,10 @@ jobs:
           retention-days: 3
       - name: Report the diagrams that differ
         if: steps.draw.outputs.stale == 'true'
+        env:
+          FIX: ${{ steps.draw.outputs.fix }}
         run: |
-          echo "::error::Diagrams that not every reader sees: a \`\`\`mermaid block, which the GitHub app shows as code, or pictures that differ from their sources in docs/diagrams/. bash scripts/diagrams.sh --extract fixes them, with Docker; for a branch of this repository, the diagram bot commits the fix in a minute. The summary of this run lists the files."
+          echo "::error::Diagrams that not every reader sees: a \`\`\`mermaid block, which the GitHub app shows as code, or pictures that differ from their sources in docs/diagrams/. bash scripts/diagrams.sh --extract fixes them, with Docker. $FIX The summary of this run lists the files."
           exit 1
       # The PR coach: what failed, why it matters and how to fix it, in the summary
       # of the check and as its annotation, from .github/checks.toml.
@@ -198,18 +382,13 @@ jobs:
           [[ -f "$script" ]] || script=blueprint.py
           python3 "$script" coach explain "$CHECK"
 
-  # Hints at the spelling (cspell, English and German) and the style of the English
-  # (Vale) of the documents that a pull request changes. A hint, never a failure.
-  # Not in the release pull request, the branch of the release bot in this
-  # repository, which changes no document but the changelog.
-  prose:
-    name: prose
-    if: >-
-      github.event_name == 'pull_request' &&
-      (!startsWith(github.head_ref, 'release-please--') ||
-      github.event.pull_request.head.repo.full_name != github.repository)
+  # The linters one job each, as the rulesets of the repositories require them until
+  # the settings bot applies the required checks of this release, which take the job
+  # lint instead; the next release of the blueprint removes these jobs.
+  workflow-lint:
+    name: workflow-lint
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       - name: Record the network traffic of the job
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -217,15 +396,30 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
-      - name: Find the changed documents
-        id: documents
-        env:
-          # The base branch as it is now, not the base that the event names: that one
-          # can be older than the commit of main that the branch was built on.
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
+      # actionlint's problem matcher, as its documentation has it, shows each error as
+      # an annotation at its line, in the files of the pull request too.
+      - name: Show each error at its line
         run: |
+          cat > "$RUNNER_TEMP/actionlint.json" <<'EOF'
+          {"problemMatcher": [{"owner": "actionlint", "pattern": [{"regexp": "^(.+?):(\\d+):(\\d+): (.+) \\[(.+)\\]$", "file": 1, "line": 2, "column": 3, "message": 4, "code": 5}]}]}
+          EOF
+          echo "::add-matcher::$RUNNER_TEMP/actionlint.json"
+      - name: Lint the workflows
+        # The image itself, as for REUSE: a step that names a docker:// image is
+        # an action too, and the allowed actions in .github/repository.toml can't
+        # name an image.
+        env:
+          ACTIONLINT: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        run: docker run --rm --volume "$PWD:/repo" --workdir /repo "$ACTIONLINT"
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.toml.
+      - name: Explain the failure
+        if: failure()
+        env:
+          CHECK: workflow-lint
+        run: |
+<<<<<<< before updating
           # The changes since the merge base: those of the pull request alone.
           git diff -z --name-only --diff-filter=AMR "origin/$BASE_REF...HEAD" -- '*.md' ':!CHANGELOG.md' \
             > "$RUNNER_TEMP/documents"
@@ -239,31 +433,102 @@ jobs:
       # runs that install them, so that there is always a cache to save.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: steps.documents.outputs.changed == 'true'
+=======
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" coach explain "$CHECK"
+
+  reuse:
+    name: reuse
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+>>>>>>> after updating
         with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: .github/prose/package-lock.json
-      - name: Hint at the spelling and the style of the changed documents
-        if: steps.documents.outputs.changed == 'true'
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check that every file names its license
+        uses: fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5 # v6.0.0
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.toml.
+      - name: Explain the failure
+        if: failure()
         env:
-          VALE: jdkato/vale:v3.24.0@sha256:f5a09410093936d4919d868120786da9789e2652ac321c66a895403eca020ae4
+          CHECK: reuse
         run: |
-          mapfile -d '' -t files < "$RUNNER_TEMP/documents"
-          npm ci --prefix .github/prose --ignore-scripts --no-audit --no-fund
-          .github/prose/node_modules/.bin/cspell lint --config .github/prose/cspell.json --no-progress \
-            --no-summary --no-color --no-must-find-files "${files[@]}" > "$RUNNER_TEMP/spelling.txt" || true
-          docker run --rm --volume "$PWD:/docs" --workdir /docs --entrypoint sh "$VALE" \
-            -c 'vale sync >/dev/null && vale --output=line --no-exit "$@"' sh "${files[@]}" \
-            > "$RUNNER_TEMP/style.txt" || true
-          sed -nE 's#^(.+):([0-9]+):([0-9]+) - (.*)$#::warning file=\1,line=\2,col=\3,title=Spelling::\4#p' \
-            "$RUNNER_TEMP/spelling.txt"
-          sed -nE 's#^([^:]+):([0-9]+):([0-9]+):([^:]+):(.*)$#::warning file=\1,line=\2,col=\3,title=\4::\5#p' \
-            "$RUNNER_TEMP/style.txt"
-          {
-            echo "### Prose"
-            echo "$(grep -c ' - ' "$RUNNER_TEMP/spelling.txt" || true) hints at the spelling and $(grep -c . "$RUNNER_TEMP/style.txt" || true) at the style, in ${#files[@]} changed document(s)."
-            echo "A word of the project goes into \`.github/cspell-words.txt\`."
-          } >> "$GITHUB_STEP_SUMMARY"
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" coach explain "$CHECK"
+
+  markdown:
+    name: markdown
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The merge of a pull request into main, and its head as the second
+          # parent, onto which the fix bot commits.
+          fetch-depth: 2
+          persist-credentials: false
+      # The files are in .markdownlint-cli2.jsonc, the rules in .markdownlint.jsonc.
+      # Locally: npx markdownlint-cli2@0.23.2
+      - name: Lint the Markdown of every document
+        uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
+        with:
+          globs: "**/*.md"
+      # The fix bot: markdownlint fixes what it can of what it found, on the head of
+      # the pull request, and after the checks the bot commits the files that it
+      # changed onto a branch of this repository, or suggests them on a pull request
+      # from a fork; the command of autofix in .github/checks.toml does the same.
+      - name: Check out the head of the pull request for the fixes
+        id: head
+        if: failure() && github.event_name == 'pull_request'
+        # Onto which the bot commits, not its merge into main.
+        run: git checkout --quiet --force --detach HEAD^2
+      - name: Fix what markdownlint can fix
+        if: failure() && steps.head.outcome == 'success'
+        # Findings that no command fixes stay for a person; the check failed already.
+        continue-on-error: true
+        uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
+        with:
+          globs: "**/*.md"
+          fix: true
+      - name: Keep the files that markdownlint fixed
+        id: fix
+        if: failure() && steps.head.outcome == 'success'
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" fix keep "$RUNNER_TEMP/fixes" >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the fixes for the fix bot
+        if: failure() && steps.fix.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fixes-markdown
+          path: ${{ runner.temp }}/fixes/
+          # Fixes of files in .github/ as well.
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 3
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.toml.
+      - name: Explain the failure
+        if: failure()
+        env:
+          CHECK: markdown
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" coach explain "$CHECK"
 
   dco:
     name: dco
@@ -337,7 +602,7 @@ jobs:
       # The labels, issue forms, workflows and notice of the issue assistant fit the
       # templates of its release: https://github.com/Dennis-Otto/issue-assistant
       - name: Check the issue assistant's set-up
-        uses: Dennis-Otto/issue-assistant@a12fb7227ff7d966809cad4e043e159977fccfcd # v1.2.2
+        uses: Dennis-Otto/issue-assistant@1f39474ecec19a599e6e7a6ab53357b36d0ea99f # v1.5.0
         with:
           command: check
       # The PR coach: what failed, why it matters and how to fix it, in the summary

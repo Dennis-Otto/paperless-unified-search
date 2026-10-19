@@ -1,5 +1,11 @@
 name: Dependency review
 
+# The review of the dependencies that a pull request adds or changes: one with a
+# known vulnerability of moderate severity or more, or with a license outside the
+# list of .github/dependency-review.yml, fails it. An advisory that the repository
+# accepts goes into allow-ghsas there, with its reason. Started by hand, it compares
+# two commits. https://github.com/Dennis-Otto/repo-blueprint
+
 on:
   pull_request:
   workflow_dispatch:

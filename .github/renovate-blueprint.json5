@@ -6,18 +6,30 @@
 // the new commit of a branch that an action follows. Routine updates merge on their
 // own once every check passes; the weekly refresh of the lock files and a major
 // update wait for the maintainer. Updates of what the users run are committed as
-// fix(deps) and lead to a patch release, updates of the tools as chore(deps).
+// fix(deps) and lead to a patch release, updates of the tools as chore(deps). The
+// issue "Dependency dashboard" lists every update that waits or failed.
 // https://github.com/Dennis-Otto/repo-blueprint
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
-  extends: ["config:recommended", ":semanticCommits", ":disableDependencyDashboard"],
+  extends: ["config:recommended", ":semanticCommits"],
   timezone: "Europe/Berlin",
-  // Once a week, so that the release bot sums the updates up in one release.
-  schedule: ["* 0-6 * * 1"],
+  // One issue lists every update: those that wait for their week, their window or
+  // the maintainer, those that failed and why, and the known vulnerabilities. Its
+  // checkboxes open, retry or rebase an update with the next run of the bot,
+  // also from a phone.
+  dependencyDashboard: true,
+  dependencyDashboardTitle: "Dependency dashboard",
+  dependencyDashboardLabels: ["dependencies"],
+  dependencyDashboardOSVVulnerabilitySummary: "all",
+  // Once a week, so that the release bot sums the updates up in one release: the
+  // whole Monday, since GitHub starts the runs of the bot every two hours only
+  // roughly and now and then skips one, so that a window of a few hours could
+  // pass without a run and hold the updates back for another week.
+  schedule: ["* * * * 1"],
   minimumReleaseAge: "7 days",
   // In the same window, the lock files of every package manager are refreshed:
   // their indirect dependencies move to their newest versions.
-  lockFileMaintenance: { enabled: true, schedule: ["* 0-6 * * 1"] },
+  lockFileMaintenance: { enabled: true, schedule: ["* * * * 1"] },
   internalChecksFilter: "strict",
   // GitHub merges a routine update once every required check passes.
   platformAutomerge: true,
@@ -70,14 +82,16 @@
       datasourceTemplate: "docker",
     },
     {
-      // A version below a line "# renovate: datasource=… depName=…".
+      // A version below a line "# renovate: datasource=… depName=…", in YAML
+      // (NAME: 1.2.3) or in the shell (name=1.2.3). extractVersion= takes the
+      // version out of the tag of a release, such as v1.2.3.
       customType: "regex",
       managerFilePatterns: [
         "/^\\.github/workflows/[^/]+\\.ya?ml$/",
         "/(^|/)[^/]+\\.sh$/",
       ],
       matchStrings: [
-        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s*[\\w-]+: \"?(?<currentValue>[^\"\\s@]+)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?\"?",
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\n\\s*[\\w-]+(?:: |=)\"?(?<currentValue>[^\"\\s@]+)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?\"?",
       ],
     },
   ],
@@ -124,6 +138,15 @@
       groupName: "the actions that follow a branch",
     },
     {
+      // The issue assistant comes with its templates, with which its check compares
+      // the workflows: a pin that moved alone would fail the check issue-assistant.
+      // The sync bot of the blueprint takes over each verified release, workflows and
+      // pins together, and the blueprint bot brings it to every repository.
+      matchManagers: ["github-actions"],
+      matchDepNames: ["Dennis-Otto/issue-assistant"],
+      enabled: false,
+    },
+    {
       // The versions of Python, Node and PHP that the workflows set up, and the
       // runners, follow the blueprint.
       matchDepTypes: ["uses-with"],
@@ -134,8 +157,29 @@
       enabled: false,
     },
     {
+      // So does the uv that they set up, on its line "# renovate:".
+      matchManagers: ["custom.regex"],
+      matchDepNames: ["uv"],
+      matchFileNames: [".github/workflows/**"],
+      enabled: false,
+    },
+    {
+      // And the tools that they and .github/sign-tag.sh download and check by
+      // their sha256, each on its line "# renovate:": the blueprint writes the
+      // checksum of each new version beside it.
+      matchManagers: ["custom.regex"],
+      matchDepNames: ["sigstore/gitsign", "infection/infection", "ChristophWurst/krankerl", "nextcloud/server", "anchore/syft"],
+      matchFileNames: [".github/workflows/**", ".github/sign-tag.sh"],
+      enabled: false,
+    },
+    {
       // The tools of the prose check belong to the blueprint, which keeps them current.
       matchFileNames: [".github/prose/**"],
+      enabled: false,
+    },
+    {
+      // So do the tools of the accessibility check of the website.
+      matchFileNames: [".github/a11y/**"],
       enabled: false,
     },
     {
@@ -169,12 +213,25 @@
       enabled: false,
     },
     {
-      // Only releases that run on that PHP, the platform of composer.json: a tool
-      // that needs a newer one waits until the app raises it. A project with a
-      // newer PHP sets it in .github/renovate.json5.
+      // Only releases that run on the PHP of the tools, config.platform.php of
+      // composer.json: a tool that needs a newer one waits until the app raises it.
+      // A project with a newer PHP sets it in .github/renovate.json5. Each major
+      // version in a pull request of its own, so that one that needs a newer PHP
+      // holds back none that the app can take.
       matchManagers: ["composer"],
-      constraints: { php: "8.2.*" },
+      constraints: { php: "8.3.*" },
       constraintsFiltering: "strict",
+      separateMultipleMajor: true,
+    },
+    {
+      // The filter above let PHPUnit 13, which needs PHP 8.4, through to the apps
+      // (Dennis-Otto/paperless-sync#80), whose checks could never pass: PHPUnit 12
+      // is the newest that runs on PHP 8.3. A project whose tools run on PHP 8.4
+      // lifts this limit in .github/renovate.json5 with its own allowedVersions for
+      // phpunit/phpunit, beside its newer PHP.
+      matchManagers: ["composer"],
+      matchDepNames: ["phpunit/phpunit"],
+      allowedVersions: "<13",
     },
     {
       // The public API of Nextcloud follows the min-version of appinfo/info.xml.

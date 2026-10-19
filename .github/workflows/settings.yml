@@ -1,20 +1,37 @@
 name: Settings
 
-# The settings bot. Every week, and after each change of the settings as code, it
-# brings the settings of the repository on GitHub in line with .github/repository.toml,
-# .github/repository.project.toml and .github/labels.toml, as the release app, which may
-# write the administration of the repository. What the API can't set, such as the value
-# of a secret, fails the run and shows in its summary with the command that sets it.
+# The settings bot. Every week, and after each change of the settings as code or of its
+# own code, it brings the settings of the repository on GitHub in line with
+# .github/repository.toml, .github/repository.project.toml and .github/labels.toml, as
+# the release app, which may write the administration of the repository. What the API
+# can't set, such as the value of a secret, and what GitHub refused fail the run and show
+# in its summary, with the command that sets it or the permission that the app lacks.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
   push:
     branches: [main]
+    # Not .github/labels.toml: the Labels workflow applies a change of the labels, and
+    # two workflows that create the same label at once would fail one of them.
     paths:
       - .github/repository.toml
       - .github/repository.project.toml
-      - .github/labels.toml
-      - .github/workflows/settings.yml
+      # Every workflow and action: one that runs a new action, also in turn, gets the
+      # check of the allowed actions with its merge, not a week later.
+      - .github/workflows/**
+      - .github/actions/**
+      - action.yml
+      - action.yaml
+      # Its code, so that an update of the blueprint that changes how a setting is
+      # applied takes effect with its merge: in a repository the copy of the blueprint,
+      # in the blueprint the modules that settings apply runs.
+      - .github/blueprint.py
+      - .github/blueprint/**
+      - blueprint.py
+      - blueprint/__init__.py
+      - blueprint/cli.py
+      - blueprint/github.py
+      - blueprint/settings.py
   schedule:
     - cron: "5 6 * * 4"
   workflow_dispatch:

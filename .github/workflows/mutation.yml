@@ -3,11 +3,16 @@ name: Mutation
 # The mutation tests. Every week they change the code in thousands of small ways
 # (mutants) and run the tests against each: a mutant that no test notices shows a
 # line that the tests run but don't check. mutmut does it for Python, Infection for
-# the PHP of a Nextcloud app. The run reports the score and the surviving mutants in
-# its summary and keeps the details as an artifact; a low score fails nothing, a run
-# that measures nothing fails. A pull request that changes how the mutants run tries
-# them and shows a defect as a red check. That check isn't required: a pull request
-# that merges itself, such as an update of mutmut, doesn't wait for it.
+# the PHP of a Nextcloud app. The plan splits the Python into parts of about the same
+# number of mutants, each a job of its own, so that a large project finishes within
+# the limits of GitHub; the report puts the parts together into one score, lists
+# first the survivors that change the logic, with their changes, and keeps the
+# details as an artifact. A low score fails nothing, a run that measures nothing
+# fails, with the tests that failed without any mutant; a score of the default branch
+# that drops below that of the run before opens one issue, which closes once a run is
+# back. A pull request that changes how the mutants run tries them and shows a
+# defect as a red check. That check isn't required: a pull request that merges
+# itself, such as an update of mutmut, doesn't wait for it.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -27,20 +32,61 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  mutation:
-    name: mutation
+  plan:
+    name: mutation plan
     if: ${{ !github.event.repository.fork }}
     runs-on: ubuntu-24.04
-    timeout-minutes: ${{ github.event_name == 'pull_request' && 30 || 350 }}
+    timeout-minutes: 5
     permissions:
       contents: read
+    outputs:
+      kind: ${{ steps.plan.outputs.kind }}
+      parts: ${{ steps.plan.outputs.parts }}
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Split the code into parts of about the same number of mutants
+        id: plan
+        env:
+          # A number of parts in place of the estimate, from a variable of the repository.
+          PARTS: ${{ vars.MUTATION_PARTS }}
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          plan="$(python3 "$script" mutation plan --parts "${PARTS:-auto}")"
+          echo "$plan" >> "$GITHUB_OUTPUT"
+          if grep -qx 'kind=' <<< "$plan"; then
+            echo "No mutation tool for this kind of project yet." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  mutation:
+    name: mutation ${{ matrix.part }}/${{ matrix.parts }}
+    needs: plan
+    if: needs.plan.outputs.kind != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 40 || 350 }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      # The runners of the account serve the other repositories as well.
+      max-parallel: 4
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.parts) }}
     env:
+      # renovate: datasource=github-releases depName=infection/infection
       INFECTION_VERSION: 0.35.6
       INFECTION_SHA256: 3fd4216875260b8e47c48ec1a92473f500d88bd36d8ffec21cc0d24e18d7f0ea
       # The time of mutmut, which keeps the mutants it reached: a pull request tries
-      # them for a quarter of an hour. Infection, which reports at its end only, takes
-      # the time of the job.
-      MUTMUT_LIMIT: ${{ github.event_name == 'pull_request' && '15m' || '320m' }}
+      # them for 25 minutes, of which the copy of the code and the first run of the
+      # tests take about 13 in each part of the blueprint. Infection, which reports at
+      # its end only, takes the time of the job.
+      MUTMUT_LIMIT: ${{ github.event_name == 'pull_request' && '25m' || '320m' }}
     steps:
       - name: Record the network traffic of the job
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -49,34 +95,46 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Find the code that the mutants change
-        id: kind
-        run: |
-          if [[ -f appinfo/info.xml ]]; then
-            echo "kind=php" >> "$GITHUB_OUTPUT"
-          elif [[ -f .python-version ]] && [[ -f .github/mutation-requirements.txt || -f stacks/mutation/requirements.txt ]]; then
-            echo "kind=python" >> "$GITHUB_OUTPUT"
-          else
-            echo "No mutation tool for this kind of project yet." >> "$GITHUB_STEP_SUMMARY"
-          fi
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        if: steps.kind.outputs.kind == 'python'
+        if: needs.plan.outputs.kind == 'python'
+        timeout-minutes: 5
         with:
           python-version-file: .python-version
+      # uv installs the hash-pinned tools in seconds and checks the hash of each
+      # package. Its cache keeps only the wheels that it built from source, under a
+      # key of the lock file: pre-built ones download faster than a cache restores
+      # them.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        if: needs.plan.outputs.kind == 'python'
+        timeout-minutes: 5
+        with:
+          # renovate: datasource=pypi depName=uv
+          version: "0.13.0"
+          enable-cache: true
+          prune-cache: true
+          cache-dependency-glob: |
+            requirements-dev.txt
+            requirements-test.txt
+            .github/mutation-requirements.txt
+            stacks/mutation/requirements.txt
       - name: Install the tools of the tests and mutmut
-        if: steps.kind.outputs.kind == 'python'
+        if: needs.plan.outputs.kind == 'python'
+        timeout-minutes: 5
         run: |
           requirements="requirements-dev.txt"
           if [[ -f requirements-test.txt ]]; then
             requirements="requirements-test.txt"
           fi
-          pip install --require-hashes -r "$requirements"
+          uv pip install --system --require-hashes -r "$requirements"
           # mutmut uses the pytest and coverage of the project.
           mutation=.github/mutation-requirements.txt
           [[ -f "$mutation" ]] || mutation=stacks/mutation/requirements.txt
-          pip install --require-hashes --no-deps -r "$mutation"
+          uv pip install --system --require-hashes --no-deps -r "$mutation"
       - name: Run the mutants against the tests
-        if: steps.kind.outputs.kind == 'python'
+        if: needs.plan.outputs.kind == 'python'
+        env:
+          # The names of the mutants of this part, one on each line; none for every one.
+          PATTERNS: ${{ matrix.patterns }}
         run: |
           if ! grep -qs '^\[mutmut\]' setup.cfg && ! grep -qs '^\[tool\.mutmut\]' pyproject.toml; then
             if [[ -d custom_components ]]; then
@@ -105,15 +163,25 @@ jobs:
             } > "$RUNNER_TEMP/mutmut.cfg"
             cat "$RUNNER_TEMP/mutmut.cfg" >> setup.cfg
           fi
+          patterns=()
+          if [[ -n "$PATTERNS" ]]; then
+            mapfile -t patterns <<< "$PATTERNS"
+          fi
           status=0
-          timeout "$MUTMUT_LIMIT" mutmut run --max-children "$(nproc)" > "$RUNNER_TEMP/run.txt" 2>&1 || status=$?
+          timeout "$MUTMUT_LIMIT" mutmut run --max-children "$(nproc)" "${patterns[@]}" > "$RUNNER_TEMP/run.txt" 2>&1 || status=$?
           echo "status=$status" >> "$GITHUB_ENV"
           # Without the spinner, which redraws its line thousands of times.
           sed 's/.*\r//' "$RUNNER_TEMP/run.txt" | tail -n 5
-      - name: Report the score and the surviving mutants
-        if: always() && steps.kind.outputs.kind == 'python'
+      # mutmut shows the change of a mutant only where its copy, mutants/, is.
+      - name: Keep the results of this part and the change of each survivor
+        if: always() && needs.plan.outputs.kind == 'python'
+        env:
+          PART: ${{ matrix.part }}
+          PARTS: ${{ matrix.parts }}
+          PATTERNS: ${{ matrix.patterns }}
         run: |
           mutmut results --all true > "$RUNNER_TEMP/results.txt" 2>/dev/null || true
+<<<<<<< before updating
           killed="$(grep -c ': killed$' "$RUNNER_TEMP/results.txt" || true)"
           survived="$(grep -c ': survived$' "$RUNNER_TEMP/results.txt" || true)"
           other="$(grep -v -c -E ': (killed|survived)$' "$RUNNER_TEMP/results.txt" || true)"
@@ -149,22 +217,60 @@ jobs:
       - name: Keep the results
         if: always() && steps.kind.outputs.kind == 'python'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+=======
+          mkdir -p "$RUNNER_TEMP/part"
+          # The whole output of mutmut, without its spinner, for a look at a failure.
+          sed 's/.*\r//' "$RUNNER_TEMP/run.txt" > "$RUNNER_TEMP/part/run-$PART.txt" 2>/dev/null || true
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          # Why no mutant ran, such as the tests that fail without any, fails the step.
+          python3 "$script" mutation collect "$RUNNER_TEMP/results.txt" "$RUNNER_TEMP/run.txt" \
+            --part "$PART/$PARTS" --patterns "$PATTERNS" --status "${status:-0}" \
+            --out "$RUNNER_TEMP/part/part-$PART.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Hand the results to the report
+        if: always() && needs.plan.outputs.kind == 'python'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+>>>>>>> after updating
         with:
-          name: mutation
-          path: ${{ runner.temp }}/results.txt
-          retention-days: 30
+          name: mutation-part-${{ matrix.part }}
+          path: ${{ runner.temp }}/part/
+          retention-days: 7
+          if-no-files-found: ignore
 
+<<<<<<< before updating
       - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         if: steps.kind.outputs.kind == 'php'
+=======
+      # Infection needs PHP 8.3 or newer. The tools run on the PHP of
+      # config.platform.php in composer.json, for which Composer locks them, so the
+      # mutants run on that PHP, and on PHP 8.3 for an app whose tools are older.
+      - name: Find the PHP of the tools
+        if: needs.plan.outputs.kind == 'php'
+        id: php
+        run: |
+          python3 - >> "$GITHUB_OUTPUT" <<'EOF'
+          import json
+
+          with open("composer.json", encoding="utf-8") as manifest:
+              platform = json.load(manifest).get("config", {}).get("platform", {})
+          tools = tuple(int(part) for part in platform.get("php", "0.0").split(".")[:2])
+          major, minor = max(tools, (8, 3))
+          print(f"version={major}.{minor}")
+          EOF
+      - name: Set up the PHP of the tools
+        if: needs.plan.outputs.kind == 'php'
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        timeout-minutes: 5
+>>>>>>> after updating
         with:
-          # Infection needs PHP 8.3 or newer. The app's locked dependencies stay those
-          # of its oldest PHP, which config.platform.php of composer.json sets.
-          php-version: "8.3"
+          php-version: ${{ steps.php.outputs.version }}
           extensions: dom, libxml, mbstring, xml
           coverage: pcov
           tools: composer:v2
       - name: Install the locked tools and Infection
-        if: steps.kind.outputs.kind == 'php'
+        if: needs.plan.outputs.kind == 'php'
+        # Room for one more try of a download of Infection that hung.
+        timeout-minutes: 10
         run: |
           composer install --no-interaction --prefer-dist --no-progress
           curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
@@ -172,7 +278,7 @@ jobs:
             "https://github.com/infection/infection/releases/download/$INFECTION_VERSION/infection.phar"
           echo "$INFECTION_SHA256  $RUNNER_TEMP/infection.phar" | sha256sum --check --strict
       - name: Run the mutants against the tests
-        if: steps.kind.outputs.kind == 'php'
+        if: needs.plan.outputs.kind == 'php'
         run: |
           if ! compgen -G "infection.json*" >/dev/null; then
             {
@@ -201,7 +307,7 @@ jobs:
             --no-progress --no-interaction --no-ansi --logger-github=false 2>&1 |
             tee build/infection-output.log | tail -n 20
       - name: Report the score
-        if: always() && steps.kind.outputs.kind == 'php'
+        if: always() && needs.plan.outputs.kind == 'php'
         run: |
           # "40 mutations were generated:", in the output of Infection with any configuration.
           generated="$(sed -nE '/^ *[0-9]+ mutations were generated/{s/^ *([0-9]+).*/\1/p;q;}' build/infection-output.log 2>/dev/null || true)"
@@ -234,10 +340,119 @@ jobs:
             exit 1
           fi
       - name: Keep the results
+<<<<<<< before updating
         if: always() && steps.kind.outputs.kind == 'php'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+=======
+        if: always() && needs.plan.outputs.kind == 'php'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+>>>>>>> after updating
         with:
           name: mutation
           path: build/infection*.log
           retention-days: 30
           if-no-files-found: ignore
+
+  report:
+    name: mutation report
+    needs: [plan, mutation]
+    if: ${{ !cancelled() && needs.plan.outputs.kind == 'python' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      # The score of the run before, in its artifact.
+      actions: read
+      contents: read
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github
+            blueprint
+      - name: Fetch the results of every part
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        # A part whose job failed before its end kept none; the report names it.
+        continue-on-error: true
+        with:
+          pattern: mutation-part-*
+          path: ${{ runner.temp }}/parts
+          merge-multiple: true
+      - name: Fetch the score of the run before
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          previous="$(gh run list --workflow mutation.yml --branch "$BRANCH" --status success --limit 20 \
+            --json databaseId,event --jq '[.[] | select(.event != "pull_request")][0].databaseId // empty')"
+          if [[ -n "$previous" ]]; then
+            gh run download "$previous" --name mutation --dir "$RUNNER_TEMP/previous" || true
+          fi
+      - name: Report the score and the surviving mutants
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          status=0
+          python3 "$script" mutation report "$RUNNER_TEMP/parts" \
+            --out "$RUNNER_TEMP/mutation" --previous "$RUNNER_TEMP/previous/mutation.json" \
+            --run "$RUN_URL" > "$RUNNER_TEMP/summary.md" || status=$?
+          cat "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          # A run that measures nothing, not a low score, fails: an error of the tool,
+          # of its configuration or of a test.
+          exit "$status"
+      # The score, the results that the dashboard reads, and every survivor with its
+      # change; the next weekly run compares with mutation.json.
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutation
+          path: ${{ runner.temp }}/mutation/
+          retention-days: 90
+          if-no-files-found: ignore
+
+  # The one issue of a score of the default branch that dropped, which a schedule always
+  # runs on: a job of its own, so that only it may write issues, and never on a pull
+  # request.
+  issue:
+    name: mutation issue
+    needs: report
+    if: ${{ needs.report.result == 'success' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref_name == github.event.repository.default_branch)) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github
+            blueprint
+      - name: Fetch the report of this run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: mutation
+          path: ${{ runner.temp }}/mutation
+      - name: Open, keep or close the issue of a dropped score
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -o pipefail
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" --repo "$GITHUB_REPOSITORY" mutation issue "$RUNNER_TEMP/mutation" \
+            | tee -a "$GITHUB_STEP_SUMMARY"

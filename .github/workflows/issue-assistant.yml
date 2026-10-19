@@ -3,11 +3,13 @@ name: Issue assistant
 # A first analysis of new issues, the labels of the issue forms and the answers that
 # the assistant or the maintainer waits for: https://github.com/Dennis-Otto/issue-assistant
 #
-# event    no AI: labels and the next task
+# event    no AI: labels, the /assistant commands of a comment and the next task
 # analyze  the AI engine of .github/issue-assistant/config.toml reads the checkout and
 #          a context folder and answers with JSON; read-only token, read-only tools,
 #          egress-firewall runner (.github/egress-firewall.yaml)
 # apply    no AI: checks the engine's answer and is the only job that writes
+#
+# event and apply block every host but GitHub's with Harden-Runner.
 #
 # Without the engine's secret in the environment issue-assistant, or with the
 # repository variable ISSUE_ASSISTANT_AI set to "off", only labels and the lifecycle
@@ -27,7 +29,7 @@ on:
       mode:
         description: Task of the assistant
         type: choice
-        options: [triage, follow-up, maintainer-reply, release-reply]
+        options: [triage, follow-up, maintainer-reply, release-reply, maintainer-question]
         default: triage
       dry_run:
         description: Only show what the assistant would do
@@ -36,9 +38,12 @@ on:
 
 permissions: {}
 
+# The runs of one issue run one after the other. Up to 100 wait their turn, first
+# in, first out, so an answer written while an analysis runs is never dropped.
 concurrency:
   group: issue-assistant-${{ github.event.issue.number || inputs.issue }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   event:
@@ -50,7 +55,7 @@ jobs:
          github.event.sender.type != 'Bot' &&
          (github.event.action != 'edited' ||
           github.event.sender.login == github.event.issue.user.login)))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -59,13 +64,21 @@ jobs:
       issue: ${{ steps.event.outputs.issue }}
       mode: ${{ steps.event.outputs.mode }}
     steps:
+      - name: Block every host but GitHub's
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
       # Issue events always run the workflow and the settings of the default branch.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Set labels and choose the next task
         id: event
-        uses: Dennis-Otto/issue-assistant@a12fb7227ff7d966809cad4e043e159977fccfcd # v1.2.2
+        uses: Dennis-Otto/issue-assistant@1f39474ecec19a599e6e7a6ab53357b36d0ea99f # v1.5.0
         with:
           command: event
           dry-run: ${{ inputs.dry_run || false }}
@@ -96,24 +109,27 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The engine and what a run of the task may use: its model, turns, dollars and
+      # effort, from config.toml.
       - name: Choose the engine and check its secret
         id: engine
-        uses: Dennis-Otto/issue-assistant@a12fb7227ff7d966809cad4e043e159977fccfcd # v1.2.2
+        uses: Dennis-Otto/issue-assistant@1f39474ecec19a599e6e7a6ab53357b36d0ea99f # v1.5.0
         with:
           command: engine
+          mode: ${{ needs.event.outputs.mode }}
           # One entry per engine: its key when its secret exists.
           ready-engines: ${{ (secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '') && 'claude' || '' }}
       - name: Collect the issue, earlier issues and discussions
         id: context
         if: steps.engine.outputs.ready == 'true'
-        uses: Dennis-Otto/issue-assistant@a12fb7227ff7d966809cad4e043e159977fccfcd # v1.2.2
+        uses: Dennis-Otto/issue-assistant@1f39474ecec19a599e6e7a6ab53357b36d0ea99f # v1.5.0
         with:
           command: context
           issue: ${{ needs.event.outputs.issue }}
           mode: ${{ needs.event.outputs.mode }}
 
-      # The engines. Each one gets the prompt and the JSON schema, may only read
-      # files of the checkout and returns the JSON answer.
+      # The engines. Each one gets the rules as its system prompt, the task and the
+      # JSON schema, may only read files of the checkout and returns the JSON answer.
 
       - name: Analyze with Claude
         id: claude
@@ -130,34 +146,58 @@ jobs:
           # read-only GITHUB_TOKEN, and Claude can only read files of the checkout.
           github_token: ${{ github.token }}
           allowed_non_write_users: "*"
-          prompt: ${{ steps.context.outputs.prompt }}
+          prompt: ${{ steps.context.outputs.task }}
           # --restricted removes every tool that runs code or reaches the network,
           # ignores settings files and confines the file tools to the checkout;
-          # --tools leaves only the reading tools, and nothing ever prompts.
+          # --tools leaves only the reading tools, and nothing ever prompts. The
+          # rules come first, as the system prompt, and the task stops at its turns
+          # and dollars.
           claude_args: |
             --restricted
             --tools "Read,Grep,Glob"
             --permission-prompts none
+            --append-system-prompt-file .issue-assistant/rules.md
             --model ${{ steps.engine.outputs.model }}
-            --max-turns 40
+            --max-turns ${{ steps.engine.outputs.turns }}
+            --max-budget-usd ${{ steps.engine.outputs.budget }}
+            ${{ steps.engine.outputs.effort && format('--effort {0}', steps.engine.outputs.effort) || '' }}
             --json-schema '${{ steps.context.outputs.schema }}'
+      # Numbers alone, also after a failure: the turns, time, cost and tokens of
+      # the run, in the summary of the job.
+      - name: Report what the analysis cost
+        id: usage
+        if: always() && steps.claude.outputs.execution_file != ''
+        uses: Dennis-Otto/issue-assistant@1f39474ecec19a599e6e7a6ab53357b36d0ea99f # v1.5.0
+        with:
+          command: usage
+          issue: ${{ needs.event.outputs.issue }}
+          mode: ${{ needs.event.outputs.mode }}
+          execution-file: ${{ steps.claude.outputs.execution_file }}
 
   apply:
     name: Check and post the analysis
     needs: [event, analyze]
     if: needs.analyze.outputs.answer != ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
       issues: write
       discussions: read
     steps:
+      - name: Block every host but GitHub's
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Check the engine's answer and post it
-        uses: Dennis-Otto/issue-assistant@a12fb7227ff7d966809cad4e043e159977fccfcd # v1.2.2
+        uses: Dennis-Otto/issue-assistant@1f39474ecec19a599e6e7a6ab53357b36d0ea99f # v1.5.0
         with:
           command: apply
           issue: ${{ needs.event.outputs.issue }}

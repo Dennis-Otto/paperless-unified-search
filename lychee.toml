@@ -9,12 +9,25 @@ retry_wait_time = 5
 timeout = 30
 accept = ["200..=299", "403", "429"]
 include_mail = false
+# A link to an anchor needs the anchor, also in the README of another repository, such
+# as the button that leads to repo-blueprint#start-a-repository.
+include_fragments = "anchor-only"
 exclude_all_private = true
 
-# GitHub answers the page of a file, github.com/<owner>/<repo>/blob/<ref>/<path>, with
-# 503 at times while its other pages work; the check asks raw.githubusercontent.com
-# for the same file instead.
-remap = ['^https://github\.com/([^/]+)/([^/]+)/blob/(.+)$ https://raw.githubusercontent.com/$1/$2/$3']
+remap = [
+  # GitHub draws #readme, the README of a repository, with a script; the check asks
+  # for the repository.
+  '^(https://github\.com/[^/]+/[^/#?]+)/?#readme$ $1',
+  # The anchors of the Markdown files of this repository: a page of docs/ that
+  # --8<-- puts together from others, such as the README, has its headings only on
+  # the website, whose build checks every anchor of its pages; the check asks for
+  # the file.
+  '^(file://[^#]+\.md)#.*$ $1',
+  # GitHub answers the page of a file, github.com/<owner>/<repo>/blob/<ref>/<path>,
+  # with 503 at times while its other pages work; the check asks
+  # raw.githubusercontent.com for the same file instead.
+  '^https://github\.com/([^/]+)/([^/]+)/blob/(.+)$ https://raw.githubusercontent.com/$1/$2/$3',
+]
 
 exclude = [
   # Pages for people who are signed in, or that a new repository only gets later.
@@ -27,8 +40,16 @@ exclude = [
   '^https://www\.bestpractices\.dev/projects/\d+/badge',
   '^https://my\.home-assistant\.io/redirect/',
   '^https://img\.shields\.io/',
+  # The website of this repository, which the Docs workflow publishes only after a run
+  # on main, so the first push and the pull requests before it can't reach it yet: the
+  # check docs checks every page of it.
+  '^https://dennis\-otto\.github\.io/paperless\-unified\-search/',
   # The badge of a workflow, which a pull request that adds the workflow can't show yet.
   '^https://github\.com/[^/]+/[^/]+/actions/workflows/[^/]+/badge\.svg',
+  # A page of HTML of this repository, such as cards.html of docs/cards.md, which
+  # only the build of the website writes: the check docs checks every link and anchor
+  # of the built website.
+  '^file://[^#?]+\.html([?#].*)?$',
 ]
 
 exclude_path = ["CHANGELOG.md", "LICENSES", "node_modules", "vendor", ".venv", "build", "dist", "template"]

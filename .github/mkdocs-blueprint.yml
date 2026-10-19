@@ -15,8 +15,14 @@ theme:
   language: en
   icon:
     repo: fontawesome/brands/github
-  # Light or dark, as the reader's system prefers, with a switch in the header.
+  # Light or dark, as the reader's system prefers, also after it changes, until the
+  # reader picks one with the switch in the header: from the system's scheme to
+  # light, to dark and back.
   palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
     - media: "(prefers-color-scheme: light)"
       scheme: default
       toggle:
@@ -26,7 +32,7 @@ theme:
       scheme: slate
       toggle:
         icon: material/weather-sunny
-        name: Switch to light mode
+        name: Switch to the scheme of the system
   # No instant loading of pages: with it, the language switch would keep leading to
   # the page that was loaded first.
   features:
@@ -50,7 +56,11 @@ theme:
 plugins:
   search: {}
   # Fonts, scripts and pictures from other servers are downloaded when the website
-  # is built and served with it, so that reading a page asks no other server.
+  # is built and served with it, so that reading a page asks no other server. The
+  # link to the repository in the header shows the version of the latest release,
+  # which the hooks read from git at the build, so the reader's browser no longer
+  # asks the API of GitHub for the numbers of the repository; the badges of a
+  # README, which would show their state at the time of the build, stay on GitHub.
   privacy: {}
   # A preview card of every page, which shows where a link to it is shared. The cards
   # are drawn with the Cairo library, which Windows doesn't have, so only the CI
@@ -58,14 +68,22 @@ plugins:
   # scripts/check.sh, build the website without them.
   social:
     enabled: !ENV [CI, false]
-  # A picture opens enlarged with a click.
-  glightbox: {}
+  # A picture opens enlarged with a click, among those of the reader's scheme: a
+  # picture for one scheme alone, NAME.png#only-light or #only-dark, is in the
+  # gallery of that scheme.
+  glightbox:
+    auto_themed: true
   # The pages of other languages, such as index.de.md beside index.md. A website in
   # more than one language turns it on with its languages in mkdocs.yml; it comes
-  # before the dates, which take the language of a page from it.
+  # before the dates, which take the language of a page from it. The hooks give the
+  # search of each language an index of its own, without the pages that a further
+  # language shows untranslated; the plugin's own removal of the entries that look
+  # like those of the default language would take a translated page out of the
+  # index and leave its sections without it.
   i18n:
     enabled: false
     docs_structure: suffix
+    reconfigure_search: false
   # The date of the last change of a page, from the history of git.
   git-revision-date-localized:
     type: date
@@ -114,8 +132,9 @@ markdown_extensions:
   pymdownx.tilde: {}
 
 # What the plugins leave to do, such as the sitemap in every folder and a second
-# try of a download that fails. A project with hooks of its own lists this file
-# there too: its list replaces this one.
+# try of a download that fails, and the pictures, the stylesheet and the script that
+# make every page accessible and quick to load. A project with hooks of its own lists
+# this file there too: its list replaces this one.
 hooks:
   - .github/mkdocs_blueprint.py
 
@@ -127,5 +146,10 @@ validation:
   unrecognized_links: warn
   anchors: warn
 
+# The footer of every page leads to the owner of the repository: the hooks give it
+# the links to their profile on GitHub, to their website with all of their projects,
+# for a website under it, and to GitHub Sponsors, when .github/FUNDING.yml names an
+# account. A list extra.social in mkdocs.yml takes the place of these, since INHERIT
+# replaces lists, and an empty one, [], shows none.
 extra:
   generator: false

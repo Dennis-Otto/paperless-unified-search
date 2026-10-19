@@ -4,7 +4,11 @@ name: Dependabot maintenance
 # merges its own updates, those of actions pinned to a commit of a branch included.
 # Routine updates merge on their own once every required check passes; a major
 # update waits for the maintainer. Updates of runtime dependencies are committed as
-# fix(deps) and so lead to a patch release (see release.yml).
+# fix(deps) and so lead to a patch release (see release.yml). Auto-merge is turned on
+# as the release app, as Renovate's is: a merge that auto-merge does with the token
+# of a workflow starts no workflow, so the release bot and the branch bot would wait
+# for their schedules, which GitHub runs as it can, often hours late. The merge of
+# the app starts them at once.
 
 on:
   pull_request_target:
@@ -25,6 +29,12 @@ jobs:
       !github.event.repository.fork &&
       github.event.pull_request.user.login == 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository
+    # The environment holds the private key of the release app; only main may use it,
+    # and pull_request_target runs on main. A repository without the app turns
+    # auto-merge on with the job's token, which the permissions below allow.
+    environment:
+      name: release
+      deployment: false
     permissions:
       contents: write
       pull-requests: write
@@ -42,12 +52,35 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # A token that can't be made, say the app isn't installed here or its key was
+      # rotated, doesn't stop the merge: the job's token still turns auto-merge on.
+      - name: Create a token of the release app
+        id: app
+        continue-on-error: true
+        if: >-
+          vars.RELEASE_AUTOMATION_CLIENT_ID != '' &&
+          (steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+            steps.metadata.outputs.update-type == 'version-update:semver-minor')
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY }}
+          # Only what turning on auto-merge and the squash merge need.
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Explain a token of the release app that failed
+        if: steps.app.outcome == 'failure'
+        run: |
+          message="The release app gave no token, so the job's token turns auto-merge on, and the merge starts no workflow; check the app's installation and the secret RELEASE_AUTOMATION_PRIVATE_KEY of the environment release."
+          echo "::warning title=Release app token failed::$message"
+          echo "$message" >> "$GITHUB_STEP_SUMMARY"
       - name: Enable automatic squash merge for patch and minor updates
         if: >-
           steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
           steps.metadata.outputs.update-type == 'version-update:semver-minor'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The app's merge starts the workflows of the push to main.
+          GH_TOKEN: ${{ steps.app.outputs.token || secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: gh pr merge --auto --squash --match-head-commit "$PR_HEAD_SHA" "$PR_URL"

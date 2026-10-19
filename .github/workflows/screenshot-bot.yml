@@ -1,0 +1,303 @@
+name: Screenshots
+
+# The screenshot bot. A repository turns it on with scripts/screenshots.sh, which
+# renders its pictures in place, wherever the documentation, the stores or the social
+# preview take them from, and lists in .github/screenshots-paths.txt the files whose
+# change can change them, as the paths of a workflow; without the script, every run
+# ends after its plan. After a change of main that touches a file of the list, after
+# every release, whose version a picture may show, every week and on demand, it runs
+# the script without secrets, with Docker and the tools of the website in .venv-docs
+# as CONTRIBUTING.md sets them up, and compares each picture that changed with the
+# one of main by its pixels: a picture whose pixels stayed the same keeps its file, so that a
+# new encoder, browser or runner changes nothing. When pixels changed, it keeps one
+# pull request from the branch bot/screenshots, as the release app, which merges
+# itself once every check passes, and closes it when main looks as rendered without
+# it. The bot commits only pictures, by plain paths, outside .git and the workflows;
+# without the release app, the run warns and keeps the pictures as an artifact. A
+# failed run keeps an issue of the bot-health bot open until a run passes again.
+# https://github.com/Dennis-Otto/repo-blueprint
+
+on:
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: "29 4 * * 5"
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  # The branch of the pull request, and the first line of its commits and its title.
+  BRANCH: bot/screenshots
+  HEADLINE: "docs: update the screenshots"
+
+jobs:
+  plan:
+    name: plan the screenshots
+    # Of the runs of the Release workflow, only one that passed for the push of the
+    # merge of a release pull request made a release; its daily, manual and restarted
+    # runs see the same release commit while main stays on it.
+    if: >-
+      !github.event.repository.fork && (
+        github.event_name != 'workflow_run' || (
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          startsWith(github.event.workflow_run.head_commit.message, 'chore: release ')
+        )
+      )
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      due: ${{ steps.plan.outputs.due }}
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      # The history without the contents of the files, to see what a push changed,
+      # and only the files of the bot.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          filter: blob:none
+          sparse-checkout: |
+            .github
+            blueprint
+            scripts
+      - name: Decide whether the bot renders the pictures
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          tool=.github/blueprint.py
+          [[ -f "$tool" ]] || tool=blueprint.py
+          # A push renders when it touches a file of the list; one whose commit before
+          # is unknown, such as a forced one, renders all the same.
+          since=""
+          if [[ "$EVENT" == push ]] && git cat-file -e "$BEFORE^{commit}" 2> /dev/null; then
+            since="$BEFORE"
+          fi
+          if python3 "$tool" screenshots due --since "$since" >> "$GITHUB_STEP_SUMMARY"; then
+            echo "due=true" >> "$GITHUB_OUTPUT"
+          elif (($? != 1)); then
+            exit 1
+          fi
+
+  render:
+    name: render the screenshots
+    needs: plan
+    if: needs.plan.outputs.due == 'true'
+    # One render at a time. Only a due run waits here, so a push that changes none
+    # of the listed files never replaces a waiting render of one that did; a newer
+    # render that replaces it renders a newer main.
+    concurrency:
+      group: ${{ github.workflow }}-render
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    # The script may start a demo of the project in containers.
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      stale: ${{ steps.keep.outputs.stale }}
+    steps:
+      # The script reaches whatever the project needs, its images and packages.
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        timeout-minutes: 5
+        with:
+          # renovate: datasource=pypi depName=uv
+          version: "0.13.0"
+          enable-cache: true
+          prune-cache: true
+          cache-dependency-glob: |
+            .github/screenshots-requirements.txt
+            .github/docs-requirements.txt
+            stacks/screenshots/requirements.txt
+            stacks/docs/requirements-docs.txt
+      - name: Install Pillow, which compares the pictures
+        timeout-minutes: 5
+        run: |
+          requirements=.github/screenshots-requirements.txt
+          [[ -f "$requirements" ]] || requirements=stacks/screenshots/requirements.txt
+          uv venv --quiet "$RUNNER_TEMP/pictures"
+          uv pip install --quiet --python "$RUNNER_TEMP/pictures" --require-hashes -r "$requirements"
+      # The tools of the website, for a script that photographs its pages: it builds
+      # them with .venv-docs/bin/mkdocs, as on your machine.
+      - name: Install the tools of the website
+        timeout-minutes: 5
+        run: |
+          requirements=.github/docs-requirements.txt
+          [[ -f "$requirements" ]] || requirements=stacks/docs/requirements-docs.txt
+          uv venv --quiet .venv-docs
+          uv pip install --quiet --python .venv-docs --require-hashes -r "$requirements"
+      - name: Render the pictures
+        run: bash scripts/screenshots.sh
+      - name: Compare the pictures with those of main
+        id: keep
+        env:
+          # The release app, which opens the pull request; without it, the run says
+          # what to do.
+          APP: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+        run: |
+          tool=.github/blueprint.py
+          [[ -f "$tool" ]] || tool=blueprint.py
+          kept="$RUNNER_TEMP/screenshots"
+          "$RUNNER_TEMP/pictures/bin/python" "$tool" screenshots keep "$kept" > "$RUNNER_TEMP/summary.md"
+          {
+            echo "### Screenshots"
+            cat "$RUNNER_TEMP/summary.md"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ ! -f "$kept/report.json" ]]; then
+            exit 0
+          fi
+          if [[ -z "$APP" ]]; then
+            echo "::warning::Pictures of main look different, and without the release app no bot opens the pull request with them. Run bash scripts/screenshots.sh, then python3 $tool screenshots restore, and commit what is left, or take the pictures from the artifact screenshots of this run."
+            echo "The variable \`RELEASE_AUTOMATION_CLIENT_ID\` of the release app is empty, so no bot opens the pull request with these pictures; take them from the artifact \`screenshots\` of this run." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "stale=true" >> "$GITHUB_OUTPUT"
+      - name: Keep the pictures for the pull request
+        if: steps.keep.outputs.stale == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: screenshots
+          path: ${{ runner.temp }}/screenshots/
+          # Pictures in .github/ as well, such as the social preview.
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
+
+  pull-request:
+    name: keep the pull request of the screenshots
+    needs: render
+    # Once main was rendered, to open, update or close the pull request.
+    if: vars.RELEASE_AUTOMATION_CLIENT_ID != '' && needs.render.result == 'success'
+    # One run at a time ends what it started with the branch and the pull request.
+    concurrency:
+      group: ${{ github.workflow }}-pull-request
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # The environment holds the private key of the release app; only main may use it.
+    environment:
+      name: release
+      deployment: false
+    permissions:
+      contents: read
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      # blueprint.py, which checks what the job render kept.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github/blueprint
+            blueprint
+      - name: Fetch the pictures that the job render kept
+        if: needs.render.outputs.stale == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: screenshots
+          path: ${{ runner.temp }}/screenshots
+      - name: Create a token of the release app
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY }}
+          # Only what the branch and the pull request need, workflows included: the
+          # branch of an open pull request moves from a commit on an older main to one
+          # on the newest, and GitHub refuses that move without workflows when main
+          # changed a workflow in between. The commits themselves hold only what
+          # blueprint.py lets through: pictures.
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
+      - name: Open, update or close the pull request of the screenshots
+        timeout-minutes: 8
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          STALE: ${{ needs.render.outputs.stale }}
+          SHA: ${{ github.sha }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # Only the app's own pull request from the branch of this repository: a fork
+          # may open one from a branch of the same name.
+          open="$(gh pr list --head "$BRANCH" --state open --json number,isCrossRepository,author \
+            --jq "map(select(.isCrossRepository == false and .author.login == \"app/$APP_SLUG\"))[0].number // empty")"
+          if [[ "$STALE" != true ]]; then
+            if [[ -n "$open" ]]; then
+              gh pr close "$open" --delete-branch \
+                --comment "\`main\` looks as rendered without this pull request: $URL"
+              echo "main looks as rendered; closed #$open." >> "$GITHUB_STEP_SUMMARY"
+            fi
+            exit 0
+          fi
+
+          # Points the branch of the pull request at a commit, new or moved.
+          point() {
+            if gh api "repos/$GH_REPO/git/ref/heads/$1" > /dev/null 2>&1; then
+              gh api --method PATCH "repos/$GH_REPO/git/refs/heads/$1" -f sha="$2" -F force=true > /dev/null
+            else
+              gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/heads/$1" -f sha="$2" > /dev/null
+            fi
+          }
+          # The commits start from the commit that was rendered, so that there is one
+          # pull request, however often main changed. They are made on a branch of
+          # their own, and the branch of the pull request moves to the last in one
+          # step: a pull request whose head is a commit of main would be closed by
+          # GitHub. That branch starts anew, so that one which a failed run left
+          # behind can't stop the next run.
+          scratch="$BRANCH-next"
+          if gh api "repos/$GH_REPO/git/ref/heads/$scratch" > /dev/null 2>&1; then
+            gh api --method DELETE "repos/$GH_REPO/git/refs/heads/$scratch" > /dev/null
+          fi
+          gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/heads/$scratch" -f sha="$SHA" > /dev/null
+          tool=.github/blueprint.py
+          [[ -f "$tool" ]] || tool=blueprint.py
+          kept="$RUNNER_TEMP/screenshots"
+          # The commits go through GitHub's API as the release app: GitHub signs them,
+          # as main requires, and they start the checks. The sign-off names the app's
+          # account, which is the author of the commits. A large set of pictures goes
+          # in several commits, each below the size of one request.
+          user_id="$(gh api "users/${APP_SLUG}[bot]" --jq .id)"
+          body="Rendered by scripts/screenshots.sh on $SHA, the pictures whose pixels changed: $URL
+
+          Signed-off-by: ${APP_SLUG}[bot] <${user_id}+${APP_SLUG}[bot]@users.noreply.github.com>"
+          head="$SHA"
+          parts="$(python3 "$tool" screenshots parts "$kept")"
+          for ((part = 1; part <= parts; part++)); do
+            python3 "$tool" --repo "$GH_REPO" screenshots commit "$kept" --branch "$scratch" \
+              --head "$head" --headline "$HEADLINE" --body "$body" --part "$part" > "$RUNNER_TEMP/commit.json"
+            head="$(gh api graphql --input "$RUNNER_TEMP/commit.json" --jq .data.createCommitOnBranch.commit.oid)"
+          done
+          point "$BRANCH" "$head"
+          gh api --method DELETE "repos/$GH_REPO/git/refs/heads/$scratch" > /dev/null
+          python3 "$tool" screenshots report "$kept" --sha "$SHA" --run "$URL" > "$RUNNER_TEMP/body.md"
+          if [[ -n "$open" ]]; then
+            gh pr edit "$open" --title "$HEADLINE" --body-file "$RUNNER_TEMP/body.md"
+          else
+            created="$(gh pr create --base main --head "$BRANCH" --title "$HEADLINE" --body-file "$RUNNER_TEMP/body.md")"
+            open="${created##*/}"
+          fi
+          gh pr merge "$open" --auto --squash
+          echo "The pull request of the screenshots, #$open from $BRANCH, has the commit $head, and merges itself once every check passes." >> "$GITHUB_STEP_SUMMARY"

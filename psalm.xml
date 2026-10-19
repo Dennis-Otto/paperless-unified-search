@@ -23,6 +23,13 @@
 	<stubs>
 		<file name="tests/stubs/Emitter.php"/>
 	</stubs>
+	<!-- What the taint analysis has to know of Nextcloud: the parameters of a request to a
+	     controller, the term of a search and the answers of other servers are untrusted
+	     input; the paths of files, the addresses of requests to other servers and of
+	     redirections are sinks. -->
+	<plugins>
+		<plugin filename=".github/psalm/NextcloudTaintPlugin.php"/>
+	</plugins>
 	<issueHandlers>
 		<!-- Nextcloud discovers these classes through the app's metadata and routes. -->
 		<UnusedClass errorLevel="suppress"/>

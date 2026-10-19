@@ -19,7 +19,7 @@ import re
 import textwrap
 import time
 import tomllib
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -36,8 +36,14 @@ STEP_SUFFIX = " (scripts/check.sh)"
 # The account of the token of the workflows, which writes the comment; a comment of
 # anyone else stays as it is, even with the marker.
 BOT = "github-actions[bot]"
+# The markers of the comments of retired bots whose place the report took, such as
+# that of the coverage bot: the coach deletes them on every pull request, also on one
+# that gets no report, as no job updates them any more.
+RETIRED = ("<!-- coverage-bot -->",)
 # The check of the title of a pull request; its section suggests a title that passes.
 TITLE_CHECK = "conventional title"
+# The first line of each commit of the fix bot, by which the report names its fixes.
+FIX_HEADLINE = "style: apply the automatic fixes"
 TYPES = (
     "feat",
     "fix",
@@ -67,6 +73,15 @@ ALIASES = {
     "deps": "build",
     "dependencies": "build",
 }
+# The types that stand for themselves without a colon, as in "fix the crash": a title
+# that starts with one of them names its type. Others, such as add or test, may be the
+# first word of a sentence.
+BARE = frozenset(
+    {"feat", "fix", "docs", "perf", "refactor", "ci", "chore", "feature", "bugfix"}
+)
+# Those of them that may also be a noun of the sentence, as in "Feature flags for the
+# API": with no colon, brackets, scope or "!", it names the type and stays in place.
+NOUNS = frozenset({"docs", "perf", "ci", "feature", "bugfix"})
 FAILED = frozenset({"failure", "timed_out", "startup_failure"})
 # A check that ended before it finished, such as a job that ran out of time, which
 # GitHub reports as cancelled, or one that waits for a person: it hasn't passed.
@@ -112,13 +127,23 @@ class Entry:
     fix: str
     commands: tuple[str, ...] = ()
     docs: str = ""
+    # The commands that fix what the check finds, which the fix bot runs, or, where
+    # no command can, the reason why not; an explanation without either has yet to
+    # answer the question.
+    autofix: tuple[str, ...] = ()
+    manual: str = ""
+
+    @property
+    def declared(self) -> bool:
+        """Whether the explanation says how the fix bot fixes it, or why it can't."""
+        return bool(self.autofix or self.manual)
 
     @classmethod
     def parse(cls, kind: str, key: str, table: Json, source: str) -> Entry:
         where = f"{source}: [{kind}.{key!r}]"
         if not isinstance(table, dict):
             raise CatalogError(f"{where} is no table")
-        unknown = sorted(set(table) - {*FIELDS, "commands", "docs"})
+        unknown = sorted(set(table) - {*FIELDS, "commands", "docs", "autofix"})
         if unknown:
             raise CatalogError(f"{where} has unknown keys: {', '.join(unknown)}")
         # A step is named by its line in scripts/check.sh, which is its title.
@@ -135,9 +160,12 @@ class Entry:
         docs = table.get("docs", "")
         if not isinstance(docs, str):
             raise CatalogError(f"{where} has docs that are no link")
+        autofix, manual = parse_autofix(table.get("autofix"), where)
         # The texts may wrap over several lines of the file.
         title, problem, why, fix = (" ".join(texts[name].split()) for name in FIELDS)
-        return cls(key, title, problem, why, fix, tuple(commands), docs)
+        return cls(
+            key, title, problem, why, fix, tuple(commands), docs, autofix, manual
+        )
 
     def within(self, repo: str | None) -> Entry:
         """The explanation for a repository: {repo} in a command becomes its name, so
@@ -145,6 +173,25 @@ class Entry:
         name = repo or "OWNER/NAME"
         commands = tuple(command.replace(REPO, name) for command in self.commands)
         return replace(self, commands=commands)
+
+
+def parse_autofix(value: Json, where: str) -> tuple[tuple[str, ...], str]:
+    """The commands of autofix, a list, or the reason why no command fixes the check,
+    a sentence; nothing when the explanation doesn't say yet."""
+    if value is None:
+        return (), ""
+    if isinstance(value, str) and value.strip():
+        return (), " ".join(value.split())
+    if (
+        isinstance(value, list)
+        and value
+        and all(isinstance(command, str) and command.strip() for command in value)
+    ):
+        return tuple(value), ""
+    raise CatalogError(
+        f"{where} has an autofix that is neither a list of commands nor the reason "
+        "why no command fixes it"
+    )
 
 
 @dataclass(frozen=True)
@@ -197,9 +244,14 @@ class Catalog:
 # ---------------------------------------------------------------- the text of the coach
 
 
-def heading(entry: Entry, step: bool) -> str:
-    """The title of the annotation and of the summary of a check or a step."""
-    return f"{PREFIX}{entry.key}{STEP_SUFFIX}" if step else f"{PREFIX}{entry.title}"
+def heading(entry: Entry, step: bool, within: str = "") -> str:
+    """The title of the annotation and of the summary of a check or a step; that of a
+    check that the job of another one runs, as lint runs markdown, names that one."""
+    if step:
+        return f"{PREFIX}{entry.key}{STEP_SUFFIX}"
+    if within and within != entry.key:
+        return f"{PREFIX}{entry.title} (in {within})"
+    return f"{PREFIX}{entry.title}"
 
 
 def link(docs: str, repo: str | None, server: str = "https://github.com") -> str:
@@ -217,6 +269,13 @@ def fence(language: str, lines: Iterable[str]) -> str:
     return f"{mark}{language}\n{text}\n{mark}"
 
 
+# What the summary and the report say of a check whose findings a command fixes.
+FIXES_ITSELF = (
+    "**It fixes itself:** after the checks, the fix bot commits the fix onto a branch "
+    "of this repository, and suggests it at its lines on a pull request from a fork."
+)
+
+
 def details(entry: Entry, url: str) -> list[str]:
     """The explanation as Markdown, for the summary of a check and for the report."""
     lines = [
@@ -224,9 +283,10 @@ def details(entry: Entry, url: str) -> list[str]:
         "",
         f"**Why it matters:** {entry.why}",
         "",
-        f"**How to fix it:** {entry.fix}",
-        "",
     ]
+    if entry.autofix:
+        lines += [FIXES_ITSELF, ""]
+    lines += [f"**How to fix it:** {entry.fix}", ""]
     if entry.commands:
         lines += [fence("sh", entry.commands), ""]
     if url:
@@ -235,12 +295,12 @@ def details(entry: Entry, url: str) -> list[str]:
     return lines
 
 
-def summary(entry: Entry, step: bool, url: str) -> str:
+def summary(entry: Entry, step: bool, url: str, within: str = "") -> str:
     """The explanation in the summary of a job that failed."""
-    return "\n".join([f"### {heading(entry, step)}", "", *details(entry, url)])
+    return "\n".join([f"### {heading(entry, step, within)}", "", *details(entry, url)])
 
 
-def plain(entry: Entry, step: bool) -> str:
+def plain(entry: Entry, step: bool, within: str = "") -> str:
     """The explanation in the log, and in the terminal of a person."""
 
     def wrap(label: str, text: str) -> str:
@@ -249,7 +309,7 @@ def plain(entry: Entry, step: bool) -> str:
         )
 
     lines = [
-        heading(entry, step),
+        heading(entry, step, within),
         wrap("What is wrong:", entry.problem),
         wrap("Why it matters:", entry.why),
         wrap("How to fix it:", entry.fix),
@@ -270,12 +330,12 @@ def escape_property(text: str) -> str:
     return escape_data(text).replace(":", "%3A").replace(",", "%2C")
 
 
-def annotation(entry: Entry, step: bool) -> str:
+def annotation(entry: Entry, step: bool, within: str = "") -> str:
     """The annotation of the check, which GitHub shows with its log and in the files of
     the pull request. That of a step of scripts/check.sh is a notice: GitHub keeps only
     the first 10 errors of a step, which the tools of the step may have written."""
     message = "\n".join([entry.problem, f"How to fix it: {entry.fix}", *entry.commands])
-    title = escape_property(heading(entry, step))
+    title = escape_property(heading(entry, step, within))
     level = "notice" if step else "error"
     return f"::{level} title={title}::{escape_data(message)}"
 
@@ -322,14 +382,17 @@ def suggest_title(title: str, branch: str) -> str:
     text = clean(title, 200)
     kind = scope = bang = ""
     match = re.match(
-        r"^\[?([A-Za-z]+)(?:\(([^)]*)\))?\]?(!)?\s*(?::|\]|-)\s*(.*)$", text
+        r"^\[?([A-Za-z]+)(?:\(([^)]*)\))?\]?(!)?(\s*(?::|\]|-)\s*|\s+)(.*)$", text
     )
-    if match and match[1].lower() in (*TYPES, *ALIASES):
-        word = match[1].lower()
+    word = match[1].lower() if match else ""
+    # A type with a colon, or one that is no word of a sentence without it.
+    typed = bool(match and match[4].strip()) and word in (*TYPES, *ALIASES)
+    if match and (typed or word in BARE):
         kind = ALIASES.get(word, word)
         scope = re.sub(r"[^a-z0-9._/-]+", "-", (match[2] or "").lower()).strip("-")
         bang = match[3] or ""
-        text = match[4]
+        if typed or scope or bang or text[:1] == "[" or word not in NOUNS:
+            text = match[5]
     if not kind:
         prefix = re.split(r"[/_-]", branch.lower(), maxsplit=1)[0]
         if prefix in (*TYPES, *ALIASES):
@@ -427,6 +490,18 @@ class Finding:
         return " ".join(part for part in ("-", code(where, 160), code(text)) if part)
 
 
+@dataclass(frozen=True)
+class Part:
+    """A part of the report about the pull request itself, after the checks, such as
+    the release that it makes: its Markdown, whether it is worth a comment on a pull
+    request whose checks pass, and the marker of an older comment of a bot that it
+    takes the place of."""
+
+    text: str
+    news: bool = False
+    replaces: str = ""
+
+
 def paged(api: Api, path: str) -> Iterator[Json]:
     """Every item of a list of the API, one page after the other."""
     page = 1
@@ -490,6 +565,17 @@ def findings(api: Api, repo: str, run: Run) -> list[Finding]:
     return [finding for finding in found if not GENERIC.fullmatch(finding.message)]
 
 
+def parts_of(found: Iterable[Finding], catalog: Catalog, check: str) -> list[Entry]:
+    """The checks that the job of a check runs and that the coach explained in its
+    annotations, such as each linter that failed in lint."""
+    titles = {finding.title for finding in found if finding.coach}
+    return [
+        entry
+        for entry in catalog.checks.values()
+        if heading(entry, False, check) in titles
+    ]
+
+
 def section(
     run: Run,
     found: list[Finding],
@@ -514,6 +600,11 @@ def section(
         for step in dict.fromkeys(finding.step for finding in found)
         if step in catalog.steps
     ]
+    # A check that runs several others, as lint runs every linter, is explained by
+    # each of them that failed, and by its own explanation only when it gave that too.
+    explained = parts_of(found, catalog, run.name)
+    parts = [part for part in explained if entry is None or part.key != entry.key]
+    itself = len(parts) < len(explained) or not parts
     # A check that runs scripts/check.sh of this repository is explained by the step
     # that stopped it. Another one that runs a scripts/check.sh, as a variant runs that
     # of the project that it made, keeps its own explanation and names the step.
@@ -528,19 +619,22 @@ def section(
             "explains each step that fails as well.",
             "",
         ]
-    if entry and not (own and steps):
+    if entry and itself and not (own and steps):
         lines += details(entry, link(entry.docs, repo))
-    if not entry and not steps:
+    if not entry and not steps and not parts:
         lines += [
             "The PR coach has no explanation of this check yet; its log says what it "
             f"found. Maintainers explain it in `{PROJECT_CATALOG.as_posix()}`.",
             "",
         ]
-    if entry and entry.key == TITLE_CHECK:
+    if entry and itself and entry.key == TITLE_CHECK:
         suggestion = suggest_title(
             str(pull.get("title") or ""), str(pull["head"]["ref"])
         )
         lines += ["**A title that passes:**", "", fence("text", [suggestion]), ""]
+    for part in parts:
+        lines += [f"**{html.escape(part.title)}** · {html_code(part.key)}", ""]
+        lines += details(part.within(repo), link(part.docs, repo))
     others = [finding for finding in found if not finding.coach]
     if others:
         lines += ["**What the check found:**", ""]
@@ -574,6 +668,18 @@ def halted(stopped: list[Run]) -> list[str]:
     return lines
 
 
+def fix_note(sha: str, fixed: Sequence[str]) -> str:
+    """What the report says of a head that is a commit of the fix bot."""
+    shown = ", ".join(code(path, NAME_LENGTH) for path in fixed[:FINDINGS])
+    more = f" and {len(fixed) - FINDINGS} more" if len(fixed) > FINDINGS else ""
+    files = f": {shown}{more}" if shown else ""
+    return (
+        f"🔧 **The fix bot committed the automatic fixes** in {sha[:7]}{files}. They "
+        "are what the commands of the checks make; pull the branch before you push "
+        "again."
+    )
+
+
 def footer(repo: str, sha: str) -> str:
     guide = link("CONTRIBUTING.md#when-a-check-fails", repo)
     return (
@@ -589,8 +695,12 @@ def render(
     runs: list[Run],
     found: dict[int, list[Finding]],
     catalog: Catalog,
+    fixed: Sequence[str] | None = None,
+    parts: Sequence[Part] = (),
 ) -> str:
-    """The comment of the PR coach on a pull request."""
+    """The comment of the PR coach on a pull request; fixed holds the files of the
+    head when the fix bot made it, and parts what the report says of the pull request
+    itself, after the checks."""
     failed = [run for run in runs if run.failed]
     stopped = [run for run in runs if run.stopped]
     pending = sum(1 for run in runs if run.pending)
@@ -614,27 +724,51 @@ def render(
         lines += [f"{running} still running.", ""]
     if stopped:
         lines += [*halted(stopped), ""]
+    if fixed is not None:
+        lines += [fix_note(sha, fixed), ""]
     body = "\n".join([*lines, ""])
+    about = "".join(f"{part.text.rstrip()}\n\n" for part in parts)
     shown = 0
     for run in failed[:SECTIONS]:
         part = section(
             run, found.get(run.id, []), catalog, pull, repo, len(failed) <= 3
         )
-        if len(body) + len(part) > BODY_LENGTH:
+        if len(body) + len(part) + len(about) > BODY_LENGTH:
             break
         body += part + "\n"
         shown += 1
     if shown < len(failed):
         body += f"… and {len(failed) - shown} more; their logs say what they found.\n\n"
-    return body + footer(repo, sha)
+    return body + about + footer(repo, sha)
 
 
-def find_comment(api: Api, repo: str, number: int) -> Json | None:
-    for comment in paged(api, f"repos/{repo}/issues/{number}/comments"):
-        user = (comment.get("user") or {}).get("login")
-        if user == BOT and str(comment.get("body") or "").startswith(MARKER):
-            return comment
-    return None
+def fixed_by_bot(api: Api, repo: str, sha: str) -> list[str] | None:
+    """The files of sha when it is a commit of the fix bot, an app with its headline."""
+    commit = api.get(f"repos/{repo}/commits/{sha}") or {}
+    message = str((commit.get("commit") or {}).get("message") or "")
+    headline = message.partition("\n")[0]
+    if (commit.get("author") or {}).get("type") != "Bot" or headline != FIX_HEADLINE:
+        return None
+    return [str(item.get("filename") or "") for item in commit.get("files") or []]
+
+
+def bot_comments(api: Api, repo: str, number: int) -> list[Json]:
+    """The comments of the bot on a pull request; those of anyone else stay as they
+    are, even with a marker."""
+    return [
+        comment
+        for comment in paged(api, f"repos/{repo}/issues/{number}/comments")
+        if (comment.get("user") or {}).get("login") == BOT
+    ]
+
+
+def marked(comments: Iterable[Json], marker: str) -> list[Json]:
+    """The comments whose body starts with marker."""
+    return [
+        comment
+        for comment in comments
+        if str(comment.get("body") or "").startswith(marker)
+    ]
 
 
 def apps_only(runs: list[Run]) -> bool:
@@ -651,10 +785,13 @@ def report(
     number: int | None,
     catalog: Catalog,
     wait: Callable[[float], None] = time.sleep,
+    about: Callable[[Json], Sequence[Part]] | None = None,
 ) -> str:
     """Keeps the one comment of the PR coach on the pull request of sha up to date,
-    and says what it did, for the summary of the job. A pull request whose checks
-    never failed gets no comment."""
+    and says what it did, for the summary of the job. about gives the parts of the
+    report about the pull request of a person, such as the release that it makes; a
+    pull request of a bot gets none. A pull request whose checks never failed gets no
+    comment, unless one of its parts is news."""
     pull = find_pull(api, repo, sha, number)
     if pull is None:
         return f"{sha[:7]} is no longer the head of an open pull request; no report.\n"
@@ -666,25 +803,43 @@ def report(
             break
         wait(WAIT)
         runs = check_runs(api, repo, sha)
-    comment = find_comment(api, repo, number)
-    if comment is None and not any(run.failed for run in runs):
+    comments = bot_comments(api, repo, number)
+    comment = next(iter(marked(comments, MARKER)), None)
+    failed = [run for run in runs if run.failed]
+    person = (pull.get("user") or {}).get("type") != "Bot"
+    parts = list(about(pull)) if about is not None and person else []
+    if comment is None and not failed and not any(part.news for part in parts):
+        retire(api, repo, comments, parts)
         return f"No check of #{number} failed; it needs no report.\n"
     # What the checks found, only of those that the report can show: each check that
     # failed has one annotation at least, and the API takes only so many requests.
-    failed = [run for run in runs if run.failed]
     found = {run.id: findings(api, repo, run) for run in failed[:SECTIONS]}
-    body = render(repo, sha, pull, runs, found, catalog)
+    fixed = fixed_by_bot(api, repo, sha)
+    body = render(repo, sha, pull, runs, found, catalog, fixed, parts)
     if comment is not None and comment.get("body") == body:
-        return f"The report of #{number} is up to date:\n\n{body}"
+        said = f"The report of #{number} is up to date:\n\n{body}"
     # A push while the coach read the checks: the report of the new head follows, and
     # this one neither overwrites it nor adds a second comment next to it.
-    if find_pull(api, repo, sha, number) is None:
+    elif find_pull(api, repo, sha, number) is None:
         return f"{sha[:7]} is no longer the head of #{number}; no report.\n"
-    if comment is None:
+    elif comment is None:
         api.post(f"repos/{repo}/issues/{number}/comments", {"body": body})
-        return f"The report of #{number}:\n\n{body}"
-    api.patch(f"repos/{repo}/issues/comments/{comment['id']}", {"body": body})
-    return f"The report of #{number}, updated:\n\n{body}"
+        said = f"The report of #{number}:\n\n{body}"
+    else:
+        api.patch(f"repos/{repo}/issues/comments/{comment['id']}", {"body": body})
+        said = f"The report of #{number}, updated:\n\n{body}"
+    retire(api, repo, comments, parts)
+    return said
+
+
+def retire(api: Api, repo: str, comments: list[Json], parts: Sequence[Part]) -> None:
+    """Deletes the comments of the bot whose place the report took: those of the
+    retired bots, and those that a part replaces, as the report says what they said."""
+    replaced = [part.replaces for part in parts if part.replaces]
+    for marker in dict.fromkeys([*RETIRED, *replaced]):
+        for old in marked(comments, marker):
+            # Someone may have deleted it a moment ago.
+            api.delete(f"repos/{repo}/issues/comments/{old['id']}", missing_ok=True)
 
 
 # ---------------------------------------------------------------- what needs explaining
@@ -706,6 +861,23 @@ def check_steps(root: Path) -> list[str]:
     path = root / "scripts/check.sh"
     text = path.read_text(encoding="utf-8") if path.is_file() else ""
     return re.findall(r'^step "([^"$`\\]+)"$', text, re.M)
+
+
+def undeclared(catalog: Catalog) -> list[str]:
+    """The explanations that say neither how the fix bot fixes their check nor why no
+    command can."""
+    return [
+        *(
+            f"the check {key}"
+            for key, entry in catalog.checks.items()
+            if not entry.declared
+        ),
+        *(
+            f"the step {key} of scripts/check.sh"
+            for key, entry in catalog.steps.items()
+            if not entry.declared
+        ),
+    ]
 
 
 def missing(catalog: Catalog, checks: Iterable[str], steps: Iterable[str]) -> list[str]:

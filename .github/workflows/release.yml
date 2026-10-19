@@ -20,10 +20,12 @@ name: Release
 on:
   push:
     branches: [main]
-  # Merges that auto-merge does with the token of a workflow, such as those of
-  # Dependabot's updates, start no workflow; so the release bot looks every hour too.
+  # Every merge into main is a push of the release app or of a person, which starts
+  # the release bot at once. The schedule is only a safety net, for a push that GitHub
+  # lost and a tag that a failed run left to sign: GitHub runs schedules as it can,
+  # often hours late, and the bot-health bot starts a run that it missed.
   schedule:
-    - cron: "25 * * * *"
+    - cron: "25 5 * * *"
   workflow_dispatch:
 
 permissions: {}
@@ -61,6 +63,20 @@ jobs:
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
+      # Without the release app of the owner, release-please still keeps its pull
+      # request, but as the token of the job, which starts none of its checks, and no
+      # run can sign a release tag: the run says what to set up.
+      - name: Explain a missing release app
+        if: vars.RELEASE_AUTOMATION_CLIENT_ID == ''
+        run: |
+          echo "::warning::This repository names no release app in the variable RELEASE_AUTOMATION_CLIENT_ID, so the release pull request starts no checks and no release can be published; python3 .github/blueprint.py checklist shows how to set one up."
+          {
+            echo "### No release app"
+            echo
+            echo "This repository names no release app in the variable \`RELEASE_AUTOMATION_CLIENT_ID\`. Release-please keeps the release pull request with the token of the job, which starts none of its checks, and only the release app may create and sign a release tag, so no release can be published."
+            echo
+            echo "\`python3 .github/blueprint.py checklist\` shows how to register the app of the owner, with a link that fills in its permissions, and how to name it in \`.github/repository.toml\`."
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Create a token of the release app
         id: app
         if: vars.RELEASE_AUTOMATION_CLIENT_ID != ''

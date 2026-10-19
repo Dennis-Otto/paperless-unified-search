@@ -2,6 +2,7 @@ name: Labels
 
 # Creates and updates the repository's labels from .github/labels.toml. It never
 # deletes a label; one that is missing from the file is reported in the summary.
+# The job blocks every host but GitHub's with Harden-Runner.
 # https://github.com/Dennis-Otto/issue-assistant
 
 on:
@@ -26,17 +27,25 @@ jobs:
   sync:
     name: Synchronize labels
     if: ${{ !github.event.repository.fork }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
       issues: write
     steps:
+      - name: Block every host but GitHub's
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Create and update the labels
-        uses: Dennis-Otto/issue-assistant@a12fb7227ff7d966809cad4e043e159977fccfcd # v1.2.2
+        uses: Dennis-Otto/issue-assistant@1f39474ecec19a599e6e7a6ab53357b36d0ea99f # v1.5.0
         with:
           command: sync-labels
           dry-run: ${{ inputs.dry_run || false }}
