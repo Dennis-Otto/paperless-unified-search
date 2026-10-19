@@ -340,7 +340,14 @@ async function expectDatedResults(page, titles) {
 	for (const title of titles) {
 		await paperlessResult(page, title).waitFor()
 	}
-	const shown = await group.getByRole('link').count()
+	// The titles show already in the unfiltered list, and Nextcloud swaps in the filtered
+	// answer only once it has parsed the body: count again until the list has narrowed.
+	const deadline = Date.now() + 10_000
+	let shown = await group.getByRole('link').count()
+	while (shown !== titles.length && Date.now() < deadline) {
+		await page.waitForTimeout(200)
+		shown = await group.getByRole('link').count()
+	}
 	const partial = await group.evaluate((list) => {
 		const label = [...list.ownerDocument.querySelectorAll('body *')]
 			.find((element) => element.childElementCount === 0 && element.textContent.trim() === 'Partial matches')
@@ -375,6 +382,7 @@ async function dateFilter(browser, session, theme) {
 	})
 	await range.getByRole('button', { name: 'Search in date range' }).click()
 	const answer = await narrowed
+	await answer.finished()
 	if (!answer.ok()) {
 		throw new Error(`The search of Paperless from ${JULY.start} to ${JULY.end} failed: HTTP ${answer.status()} ${await answer.text()}`)
 	}
