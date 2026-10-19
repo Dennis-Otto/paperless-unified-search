@@ -384,8 +384,16 @@ fi
 # scripts, the pipe then fails although grep found the text: the logs of Docker piped so
 # into grep failed the check of the date filter now and then (#94). Read the output into
 # a variable first and search that, as with grep --quiet ... <<<"${output}".
-grep --line-number --extended-regexp \
-	'\|[[:space:]]*grep[^|]*[[:space:]](--quiet|--silent|-[[:alpha:]]*q[[:alpha:]]*)([[:space:]]|$)' \
+# The samples build their pipe with printf, so that this guard does not find itself.
+# A single | only: the || of "cmd || grep --quiet ..." runs grep after cmd, not on its output.
+pipe_into_quiet_grep='(^|[^|])\|[[:space:]]*grep[^|]*[[:space:]](--quiet|--silent|-[[:alpha:]]*q[[:alpha:]]*)([[:space:]]|$)'
+expect "the guard finds a pipe into grep --quiet" 1 \
+	"$(printf 'docker compose logs %s grep --quiet x\n' '|' | grep --count --extended-regexp "${pipe_into_quiet_grep}")"
+expect "the guard finds a pipe into grep -Fq" 1 \
+	"$(printf 'cat f%sgrep -Fq x\n' '|' | grep --count --extended-regexp "${pipe_into_quiet_grep}")"
+expect "the guard ignores grep --quiet after ||" 0 \
+	"$(printf '%s\n' 'true || grep --quiet x f' '[[ -n x ]] || grep -Fxq x f' | grep --count --extended-regexp "${pipe_into_quiet_grep}" || true)"
+grep --line-number --extended-regexp "${pipe_into_quiet_grep}" \
 	"${SCRIPT_DIR}"/*.sh | grep --invert-match --extended-regexp '^[^:]+:[0-9]+:[[:space:]]*#' >"${WORK}/pipes" || true
 expect "the pipes into grep --quiet in the scripts of the end-to-end tests" "" "$(cat "${WORK}/pipes")"
 
