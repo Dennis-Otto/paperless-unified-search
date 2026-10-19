@@ -127,7 +127,7 @@ Jede Anfrage der App an Paperless ist ein `GET` von `<URL>/api/documents/`, oder
 
 - **Nextcloud:** Die End-to-End-Tests führen die App im aktuellen Release jeder Version aus, die `appinfo/info.xml` unterstützt, in jedem Pull Request, der die App ändert, und bei jeder Änderung von `main`, und jeden Montag auch in der kommenden Version von Nextcloud, ihrer Beta oder ihrem Release Candidate.
 - **Paperless-ngx:** Die End-to-End-Tests fragen eine Nachbildung von Paperless, die so antwortet wie Paperless-ngx 3.3.0: ihre Seiten, ihre Felder, ihre Header der Version, ihre Ausschnitte und ihre Ablehnung einer Anfrage, die noch getippt wird. Die Unit-Tests prüfen die Antworten von 2.20 und 3.3, etwa dass nur Paperless 3 den einfachen Modus seiner Suche bekommt, den Paperless 2 nicht kennt. Jede Anfrage nennt Version 9 der API, die Paperless-ngx 2.16 und neuer und jedes 3.x sprechen, also kann ein neues Release von Paperless die Treffer nicht unbemerkt ändern; Vertragstests prüfen die App jede Woche gegen echtes Paperless-ngx, das letzte Release von 2.20 und das neueste von 3.x. Ein älteres Paperless antwortet mit HTTP 406, und der Test der Verbindung sagt das.
-- **PHP:** 8.2 oder neuer, soweit Nextcloud es unterstützt; die Unit-Tests laufen auf 8.2.
+- **PHP:** 8.2 oder neuer, soweit Nextcloud es unterstützt; die Unit-Tests laufen auf 8.3, wie es PHPUnit 12 braucht.
 
 ## Datenflüsse
 
