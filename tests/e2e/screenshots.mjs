@@ -311,7 +311,10 @@ function pointer() {
 	}
 }
 
-async function newPage(browser, session, options, withPointer = false) {
+// A page of its own, with the session, the language, the time zone and the font of the
+// pictures, and the clock of the pictures unless clock is false; pointer adds the
+// pointer of the animation.
+async function newPage(browser, session, options, { pointer: withPointer = false, clock = true } = {}) {
 	const context = await browser.newContext({
 		storageState: session,
 		locale: 'en-US',
@@ -320,7 +323,9 @@ async function newPage(browser, session, options, withPointer = false) {
 		reducedMotion: 'reduce',
 		...options,
 	})
-	await context.clock.install({ time: NOW })
+	if (clock) {
+		await context.clock.install({ time: NOW })
+	}
 	await context.addInitScript((css) => {
 		const add = () => {
 			const style = document.createElement('style')
@@ -347,6 +352,21 @@ async function settle(page, milliseconds = 600) {
 		await Promise.all([...document.images].map((image) => image.decode().catch(() => {})))
 	})
 	await page.waitForTimeout(milliseconds)
+}
+
+// Waits until the page looks the same in three pictures in a row, 400 ms apart: the
+// viewer of PDF files draws the text of a page once more, sharper, at a moment that
+// varies from run to run.
+async function steady(page) {
+	const pictures = []
+	for (let tries = 0; tries < 40; tries++) {
+		pictures.push(await page.screenshot({ animations: 'disabled' }))
+		if (pictures.length >= 3 && pictures.slice(-3).every((picture) => picture.equals(pictures.at(-1)))) {
+			return
+		}
+		await page.waitForTimeout(400)
+	}
+	throw new Error('The page still changed after 16 seconds.')
 }
 
 async function save(page, name, milliseconds) {
@@ -480,21 +500,26 @@ async function dashboard(browser, session, theme) {
 // The note of jamie in Text, in which the smart picker finds the electricity invoice.
 const NOTE_LINE = 'The electricity bill of August, due on September 2:'
 
-// The smart picker in a note of Text, with the Paperless documents that it finds, and
-// the link that it inserts, which Text shows as the preview of the file.
 // Opens a new note in the folder and types the slash command for the smart picker on
 // a line of its own below the line of the note. Text sets up the collaboration on the
-// note after it shows the note, and then puts the cursor at the start, now and then
-// only after the command was typed, which takes the command into the heading: then
-// the note is closed and null returned, for another try with another note.
+// note after it shows the note and puts the cursor at its start, where a click on the
+// line often failed to take it away from, which took the command into the heading.
+// The keys put it at the end. Should the command land elsewhere all the same, the keys
+// are undone and typed again; after three tries, or when the note can't be undone, the
+// note is closed and null returned, for another try with another note.
 async function typeCommand(browser, session, theme, folder) {
 	for (const path of ['Notes', folder]) {
 		await request(READER, 'MKCOL', davPath(READER, path))
 	}
 	await request(READER, 'PUT', davPath(READER, `${folder}/Household.md`), `# Household\n\n${NOTE_LINE}\n`)
 	const id = await fileId(READER, `${folder}/Household.md`)
-	const page = await newPage(browser, session, { viewport: { width: 1280, height: 800 }, colorScheme: theme })
-	// The first answer of the collaboration, after which Text moves the cursor.
+	// Without the clock of the pictures: the collaboration of Text tells the sessions of a
+	// note apart by their time, and with a clock days behind the server's it shows the
+	// session of the page as another one, with the name of the user, in the heading. The
+	// note shows no time.
+	const page = await newPage(browser, session, { viewport: { width: 1280, height: 800 }, colorScheme: theme },
+		{ clock: false })
+	// The first answer of the collaboration, after which Text puts the cursor at the start.
 	const synced = page.waitForResponse((response) => /\/apps\/text\/.*\b(sync|push)\b/.test(response.url()),
 		{ timeout: 30000 }).catch(() => null)
 	await page.goto(`${BASE_URL}/index.php/f/${id}`)
@@ -502,29 +527,57 @@ async function typeCommand(browser, session, theme, folder) {
 	await editor.getByText(NOTE_LINE).waitFor()
 	await synced
 	await settle(page, 1500)
-	await editor.getByText(NOTE_LINE).click()
-	await page.keyboard.press('End')
-	await page.keyboard.press('Enter')
-	await page.keyboard.type('/Paperless')
-	// The heading, which Text shows with the anchor # in front, stays as it was.
-	const lines = await editor.locator(':scope > *').allTextContents()
-	const command = lines.indexOf('/Paperless')
-	if (lines[0]?.replace(/^#/, '') === 'Household' && command > 0 && lines[command - 1] === NOTE_LINE) {
-		return page
+	// The lines of the note, without what Text draws into it and that can't be edited,
+	// such as the anchor # of the heading.
+	const read = () => editor.evaluate((element) => [...element.children].map((child) => {
+		const copy = child.cloneNode(true)
+		copy.querySelectorAll('[contenteditable="false"]').forEach((drawn) => drawn.remove())
+		return copy.textContent.replace(/^#/, '')
+	}))
+	const empty = (lines) => lines.every((line) => line === '')
+	const unchanged = (lines) => lines[0] === 'Household' && lines[1] === NOTE_LINE && empty(lines.slice(2))
+	for (let attempt = 1; attempt <= 3; attempt++) {
+		// The keys, not a click, put the cursor at the end of the note, below whatever
+		// Text may draw over its lines: into the empty line that Text keeps at the end of
+		// a note, or into a new one.
+		await editor.focus()
+		await page.keyboard.press('Control+End')
+		if ((await read()).at(-1) !== '') {
+			await page.keyboard.press('Enter')
+		}
+		await page.keyboard.type('/Paperless')
+		// The note holds the heading, the line and the command, and nothing else but an
+		// empty line at its end.
+		const lines = await read()
+		const [heading, line, command, ...rest] = lines
+		if (heading === 'Household' && line === NOTE_LINE && command === '/Paperless' && empty(rest)) {
+			return page
+		}
+		console.log(`Text moved the cursor while the command was typed, so ${folder}/Household.md reads ${JSON.stringify(lines)}; undoing it.`)
+		// Undo what the keys did, a step at a time, until the note reads as before.
+		for (let undo = 0; undo < 10 && !unchanged(await read()); undo++) {
+			await page.keyboard.press('Control+z')
+			await page.waitForTimeout(200)
+		}
+		if (!unchanged(await read())) {
+			break
+		}
+		await settle(page, 1000)
 	}
-	console.log(`Text moved the cursor while the command was typed, so ${folder}/Household.md reads ${JSON.stringify(lines)}; trying again.`)
 	await page.context().close()
 	return null
 }
 
+// The smart picker in a note of Text, with the Paperless documents that it finds, and
+// the link that it inserts, which Text shows as the preview of the file.
 async function smartPicker(browser, session, theme) {
 	const suffix = theme === 'dark' ? '-dark' : ''
 	// A note of its own for each theme, and for each try: Text would keep the link of
 	// another one.
 	let page = null
 	for (let attempt = 1; !page; attempt++) {
-		if (attempt > 5) {
-			throw new Error(`Text moved the cursor into the heading of the note in ${attempt - 1} tries.`)
+		if (attempt > 3) {
+			throw new Error(`Text moved the cursor into the heading of ${attempt - 1} notes, each typed three times.`)
 		}
 		page = await typeCommand(browser, session, theme, attempt === 1 ? `Notes/${theme}` : `Notes/${theme}-${attempt}`)
 	}
@@ -670,7 +723,7 @@ async function phone(browser, session) {
 // services and the insurance renewal, which only Paperless finds by its text.
 async function animation(browser, session) {
 	const frames = []
-	const page = await newPage(browser, session, { viewport: { width: 1280, height: 800 } }, true)
+	const page = await newPage(browser, session, { viewport: { width: 1280, height: 800 } }, { pointer: true })
 	const frame = async (delay) => {
 		frames.push({ png: await page.screenshot({ animations: 'disabled' }), delay })
 	}
@@ -715,7 +768,8 @@ async function animation(browser, session) {
 	await frame(2600)
 	await click(paperlessResult(page, insurance.title))
 	await waitForViewer(page, fileName(insurance))
-	await settle(page, 1200)
+	await settle(page, 1500)
+	await steady(page)
 	await frame(3800)
 	await page.context().close()
 	writeGif(frames, join(OUT, 'search-and-open.gif'))
