@@ -654,7 +654,7 @@ def halted(stopped: list[Run]) -> list[str]:
     one = len(stopped) == 1
     count = "1 check" if one else f"{len(stopped)} checks"
     lines = [
-        f"⚠️ **{count} stopped before the end**, cancelled or held, and "
+        f"\u26a0\ufe0f **{count} stopped before the end**, cancelled or held, and "
         f"{'hasn' if one else 'haven'}'t passed until {'it runs' if one else 'they run'} "
         "again. A push runs every check again, and a maintainer can run one again "
         "from its log:",

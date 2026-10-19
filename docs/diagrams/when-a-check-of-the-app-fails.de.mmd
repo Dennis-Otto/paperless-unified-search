@@ -1,0 +1,32 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+---
+flowchart TB
+    accTitle: Wenn eine Prüfung der App fehlschlägt
+    accDescr: Ein Pull Request führt die Prüfungen nur dieser App aus, etwa nextcloud, die End-to-End-Tests, oder den Schritt Checks of this project von scripts/check.sh. Schlägt eine fehl, schreibt ihr letzter Schritt ihre Erklärung aus .github/checks.project.toml in die Zusammenfassung der Prüfung und als ihre Anmerkung: was sie gefunden hat, warum das wichtig ist und wie es sich beheben lässt. Nach den Prüfungen hält der PR-Coach einen Kommentar am Pull Request mit dieser Erklärung aktuell, auch an einem Pull Request aus einem Fork. Wo ein Befehl behebt, was die Prüfung gefunden hat, legt der Fix-Bot die Korrektur als Commit auf einen Branch dieses Repositorys und schlägt sie an einem Fork vor; sonst sagt die Erklärung der Person, was zu tun ist, und der nächste Push führt die Prüfungen erneut aus.
+
+    push["Ein Pull Request führt<br>die Prüfungen dieser App aus"]
+    failed["Eine Prüfung schlägt fehl, etwa nextcloud<br>oder Checks of this project"]
+    explain["Ihr letzter Schritt erklärt sie<br>in ihrer Zusammenfassung und als Anmerkung,<br>aus .github/checks.project.toml"]
+    coach["Der PR-Coach: ein Kommentar<br>am Pull Request,<br>auch an einem aus einem Fork"]
+    command{"Behebt ein Befehl<br>den Fehler?"}
+    branch["Der Fix-Bot legt die Korrektur als Commit<br>auf einen Branch dieses Repositorys"]
+    fork["An einem Fork schlägt er sie<br>an ihren Zeilen vor"]
+    person["Die Person behebt, was<br>die Erklärung sagt, und pusht"]
+    passed["Die Prüfungen laufen erneut"]
+
+    push --> failed --> explain --> coach --> command
+    command -- "ja" --> branch & fork
+    command -- "nein" --> person
+    branch & fork & person --> passed
+
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef bot fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef fail fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class push,person person
+    class explain,coach,command,branch,fork bot
+    class failed fail
+    class passed done
