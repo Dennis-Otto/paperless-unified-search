@@ -41,6 +41,12 @@ The archive account decides who finds which document: a user sees a Paperless do
 2. Open the details of the folder of the archive, such as *Paperless*, and there the tab **Sharing**.
 3. Enter the user or the group, and set the share to **View only**.
 
+<figure markdown="span">
+  ![The tab Sharing of the folder Paperless of the archive account in Files: the folder is shared with Jamie Example, View only](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-share-read-only.png#only-light)
+  ![The tab Sharing of the folder Paperless of the archive account in Files: the folder is shared with Jamie Example, View only](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-share-read-only-dark.png#only-dark)
+  <figcaption>The archive shared read-only with a user</figcaption>
+</figure>
+
 - **A group** gives every member the documents at once, also those who join it later.
 - **A subfolder**, such as `Paperless/ACME`, gives someone only the documents in it; Paperless Sync sorts the documents into folders by correspondent, type and year.
 - **The archive account** finds every document without a share. An administrator of Nextcloud finds only what is shared with them, as any user does: being an administrator opens no file.

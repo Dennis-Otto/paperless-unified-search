@@ -14,6 +14,28 @@ Paperless documents show in the global search of Nextcloud for every user who ca
 
 --8<-- "README.md:usage"
 
+--8<-- "README.md:smart-picker"
+
+<figure markdown="span">
+  ![The smart picker in a note of Text: under Paperless documents, the search for invoice lists the electricity invoice, the home insurance renewal and the internet invoice](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/07-smart-picker.png#only-light)
+  ![The smart picker in a note of Text: under Paperless documents, the search for invoice lists the electricity invoice, the home insurance renewal and the internet invoice](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/07-smart-picker-dark.png#only-dark)
+  <figcaption>The smart picker in a note of Text</figcaption>
+</figure>
+
+<figure markdown="span">
+  ![The note of Text after picking the electricity invoice: the inserted link shows the PDF of the invoice](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/08-smart-picker-link.png#only-light)
+  ![The note of Text after picking the electricity invoice: the inserted link shows the PDF of the invoice](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/08-smart-picker-link-dark.png#only-dark)
+  <figcaption>The link that it inserts shows the file</figcaption>
+</figure>
+
+--8<-- "README.md:dashboard"
+
+<figure markdown="span">
+  ![The dashboard of Jamie with the widget New in Paperless: the car service, the electricity invoice, the home insurance renewal, the internet invoice and the property tax notice, newest first, each with the icon of its PDF file and a line with the day that Paperless added it, its correspondent and its type, such as Sep 3, 2026 · Example Motors · Receipt](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/11-dashboard.png#only-light)
+  ![The dashboard of Jamie with the widget New in Paperless: the car service, the electricity invoice, the home insurance renewal, the internet invoice and the property tax notice, newest first, each with the icon of its PDF file and a line with the day that Paperless added it, its correspondent and its type, such as Sep 3, 2026 · Example Motors · Receipt](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/11-dashboard-dark.png#only-dark)
+  <figcaption>New in Paperless on the dashboard of Nextcloud</figcaption>
+</figure>
+
 ## Why the switch is off after a reload
 
 **Search connected services** decides whether a search leaves Nextcloud. Nextcloud counts every search that sends the term to another server as one of a connected service, Paperless as well, and asks it only while the switch is on. It turns the switch off whenever the page loads anew, so that no term goes to another server without the choice of the user, again and again.
@@ -25,7 +47,7 @@ An administrator who trusts their Paperless server, as the one that already hold
 - **In the browser** of a phone, the search works as on a computer, and a result opens in Nextcloud's viewer.
 - **The Nextcloud apps for iOS and Android** show Paperless documents in their search as well. A result opens the file in the viewer of the app, without leaving it: the iOS app gets a link `nextcloud://open-file`, and the Android app the ID and the path of the file.
 
-<figure markdown="span">
+<figure markdown="span" class="phones">
   ![Paperless results in the global search of Nextcloud on a phone](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/04-mobile-search.png){ width="180" }
   ![The electricity invoice opened in Nextcloud's viewer on a phone](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/05-mobile-viewer.png){ width="180" }
   <figcaption>On a phone, in the browser</figcaption>

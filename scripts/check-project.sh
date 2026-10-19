@@ -143,6 +143,30 @@ if ! grep -qF '](README.de.md)' README.md || ! grep -qF '](README.md)' README.de
 fi
 echo "README.de.md marks the $(sections README.md | wc -l | tr -d ' ') section marker(s) of README.md, and the ${#german[@]} German page(s) each have their English one."
 
+printf '\n== %s\n' "Pictures of the German pages"
+# A German page shows the pictures of its English twin, in the same order, and
+# README.de.md those of README.md: the screenshots, the GIF and the diagrams, from
+# Markdown and from HTML. A German picture of its own, such as NAME.de.svg of the diagram
+# NAME.de.mmd, takes the place of NAME.svg. So a screenshot that reaches the English
+# website, often in a pull request of its own after the one that took it, as the website
+# loads it from main, reaches the German website with it.
+pictures() {
+  { grep -oE '!\[[^]]*\]\([^)[:space:]]+|(src|srcset)="[^"]+"' "$1" || true; } |
+    sed -E 's/^!\[[^]]*\]\(//; s/^(src|srcset)="//; s/"$//; s/[?#].*$//; s/\.de((\.dark)?\.[a-z]+)$/\1/'
+}
+shown=0
+for page in README.de.md "${german[@]}"; do
+  english="${page%.de.md}.md"
+  if [[ "$(pictures "$english")" != "$(pictures "$page")" ]]; then
+    echo "$page doesn't show the pictures of $english, or in another order (< $english, > $page):"
+    diff <(pictures "$english") <(pictures "$page") || true
+    echo "Show each picture of $english in $page too, at the same place, with its alt text and caption in German."
+    exit 1
+  fi
+  shown=$((shown + $(pictures "$page" | grep -c . || true)))
+done
+echo "The $((${#german[@]} + 1)) German page(s), README.de.md among them, show the $shown picture(s) of their English twins."
+
 printf '\n== %s\n' "Versions in the documentation"
 # appinfo/info.xml decides on which versions of Nextcloud and PHP the app installs. The
 # READMEs and the pages of the website that name them, in English and German, say the
