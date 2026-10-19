@@ -5,12 +5,23 @@
 # steps on your machine too. Explain every check that you add to the required checks
 # of .github/repository.project.toml, so that the next person sees how to fix it. The
 # comment follows a workflow of this project alone, such as one of visual tests, once
-# the answer test_workflows of .copier-answers.yml names it.
+# the answer test_workflows of .copier-answers.yml names it. A job of such a workflow
+# writes its explanation into its summary and as its annotation with a last step, as
+# the jobs of e2e.yml and demo.yml do:
+#   - name: Explain the failure
+#     if: failure()
+#     env:
+#       CHECK: nextcloud
+#     run: python3 .github/blueprint.py coach explain "$CHECK"
+# scripts/check-project.sh runs `python3 .github/blueprint.py coach verify`, which
+# fails while a required check or a step of scripts/check.sh has no explanation.
 # https://github.com/Dennis-Otto/repo-blueprint#the-pr-coach
 
 # A check by the name that GitHub shows, where a * stands for any text. Each has a
 # title, problem, why and fix, and may have commands, one per line, and docs, a link or
-# a file of the repository with its anchor:
+# a file of the repository with its anchor. Each says in autofix how it fixes itself:
+# the commands that fix what it finds, which the fix bot runs in the job of a check of
+# Lint or of the CI that failed, or a sentence with the reason why no command can:
 # [check."e2e (*)"]
 # title = "The end-to-end tests"
 # problem = """A test of the whole app in a real browser failed; the summary of the
@@ -19,6 +30,7 @@
 # fix = """Run the test that failed on your machine, fix what it shows, and push."""
 # commands = ["bash tests/e2e/run.sh"]
 # docs = "CONTRIBUTING.md#checks"
+# autofix = """A test that fails needs a person, who finds out why."""
 
 # A step of scripts/check.sh by the name that it prints, such as the step that runs
 # scripts/check-project.sh, to explain the checks of this project there:
@@ -26,25 +38,80 @@
 # problem = """..."""
 # why = """..."""
 # fix = """..."""
+# autofix = ["node scripts/check-l10n.mjs --write"]
 
-[step."Checks of this project"]
-problem = """A check of this app alone, in `scripts/check-project.sh`, failed; the last
-line of its output names it and what is wrong. One of them, *Files that the
-documentation links on main*, finds a link of the README or of `docs/` to a file or
-folder of the repository on GitHub, under `blob/main/` or `tree/main/`, whose path isn't
-in the checkout. Another, *German pages*, finds a section of `README.md`, marked with
-`--8<-- [start:name]`, that `README.de.md` doesn't mark in the same place."""
-why = """These checks keep what only this app has working: the browser of the end-to-end
-tests, the pictures and links of the documentation in English and German, the sections
-of the READMEs that the pages of the website include, its versions and the JavaScript of
-the settings. The link check skips the links into `demo/` on main (`.lycheeignore`),
-because a pull request links them before main has them, so this check is the only one
-that finds a broken one."""
-fix = """Fix what the last line of the output names: for a link on main, correct the
-path of the link, or add the file that it links; for a section, mark it in both READMEs
-with the same name. Then run the checks again:"""
-commands = ["bash scripts/check-project.sh"]
-docs = "CONTRIBUTING.md#checks"
+# ---------------------------------------------------------------- the checks
+
+[check.nextcloud]
+title = "The end-to-end tests against every supported Nextcloud"
+problem = """`tests/e2e/run-all.sh` failed against a version of Nextcloud from
+`min-version` to `max-version` of `appinfo/info.xml`: a test of the app in a real
+Nextcloud, with a mock of Paperless-ngx and Chromium, found that the app no longer does
+what it promises, or the tests of a version took longer than their time, 600 seconds,
+and were stopped. The annotation of each version that failed names it; the group of
+the log named after the version, such as *Nextcloud 35 (failed, 312 s)*, shows the step
+that stopped and the logs of its containers, and the summary of the run the release of
+Nextcloud behind each image."""
+why = """Only these tests run the app in Nextcloud itself, as its users meet it: the
+search of Nextcloud with its files and shares, the settings, occ, the dashboard and the
+smart picker, in a browser on a laptop and on a phone. The check is required, so that
+`main` and every release work with each version of Nextcloud that the app supports. A
+pull request that changes no file that the tests cover passes it in seconds."""
+fix = """Run the tests with Docker against the version that failed, such as
+`E2E_VERSIONS=35`, fix what its log shows, and push. `KEEP_E2E=1` with `run.sh` leaves
+the containers running, so that you can look inside them. A version that took too long
+on a busy runner usually passes when the job runs again, which the flaky-test bot does
+once by itself."""
+commands = [
+  "bash tests/e2e/run-all.sh",
+  "NEXTCLOUD_IMAGE=nextcloud:35-apache KEEP_E2E=1 bash tests/e2e/run.sh",
+]
+docs = "tests/e2e/README.md#in-the-ci"
+autofix = """A test that fails shows either that the app broke a promise or that the
+test no longer fits a change of the app on purpose; only a person can tell which, and
+fix the code or the test."""
+
+[check."paperless (*)"]
+title = "The contract with a real Paperless-ngx"
+problem = """`tests/e2e/paperless-contract.sh` found that a real Paperless-ngx, of the
+line that the name of the check names, no longer answers as the app reads it: a field
+of another type, a date, the markup of an excerpt, a page or an error, directly or
+through Nextcloud. The summary of the check names the version of Paperless and the
+promise that it broke."""
+why = """The end-to-end tests run against a mock of Paperless-ngx, and this check
+makes sure that the mock still answers as Paperless does, so that a new release of
+Paperless can't break the search of users unnoticed. It runs in a pull request that
+changes the code that talks to Paperless or reads its answers, such as one of Renovate
+with a new release of Paperless-ngx, and every week. It is no required check and blocks
+no merge."""
+fix = """Run the contract with Docker against the same line of Paperless-ngx. When
+Paperless changed, let the app read the answers of both lines, and let the mock,
+`tests/e2e/mock_server.py`, answer as Paperless does now; when the app changed, keep it
+to the contract:"""
+commands = [
+  "PAPERLESS=3 bash tests/e2e/paperless-contract.sh",
+  "PAPERLESS=2 bash tests/e2e/paperless-contract.sh",
+]
+docs = "tests/e2e/README.md#against-a-real-paperless-ngx"
+autofix = """A broken contract needs a decision of a person: whether the app, the mock
+of Paperless or both have to change."""
+
+[check."coming Nextcloud"]
+title = "The end-to-end tests against the coming Nextcloud"
+problem = """`tests/e2e/canary.sh` failed against the beta or release candidate of the
+next major version of Nextcloud, or against the daily build of its master branch while
+there is none. The log of the job shows the step that stopped, and the issue *The
+coming Nextcloud breaks the app* links every run that failed."""
+why = """Nextcloud hasn't released that version yet, so the check runs only every
+Monday and when started by hand, and blocks nothing. It gives notice before the
+release, while there is time to adapt the app; the upstream bot raises `max-version` of
+`appinfo/info.xml` once Nextcloud releases the version."""
+fix = """Run the same tests on your machine with Docker, adapt the app to what changed
+in Nextcloud, so that it keeps working with the versions that it supports, and push:"""
+commands = ["bash tests/e2e/canary.sh"]
+docs = "tests/e2e/README.md#the-coming-nextcloud"
+autofix = """An app that breaks on the coming Nextcloud needs a change of its code that
+keeps every supported version working, which a person makes."""
 
 [check."demo"]
 title = "The demo"
@@ -58,3 +125,42 @@ fix = """Run the demo on your machine with Docker, fix what the step that stoppe
 and push. Remove it afterwards with its data:"""
 commands = ["bash demo/seed.sh", "docker compose -f demo/compose.yaml down --volumes"]
 docs = "demo/README.md#when-it-doesnt-start"
+autofix = """A demo that stops at a step needs a person, who finds out what changed: the
+app, an image or Paperless Sync."""
+
+# ---------------------------------------------------------------- the steps of scripts/check.sh
+
+[step."Checks of this project"]
+problem = """A check of this app alone, in `scripts/check-project.sh`, failed: the line
+`== …` above it names the check, and the last line of its output what is wrong. They
+check that the image of Playwright and `playwright-core` have the same version; the
+scripts of the end-to-end tests, without Docker; that the pictures of the READMEs and
+the files and folders that the documentation links on main, under `blob/main/` or
+`tree/main/`, are in the checkout; that each page of the website that a README links is
+in `docs/`; *German pages*, that `README.de.md` marks each section of `README.md`,
+`--8<-- [start:name]`, at the same place; that the documentation names the versions of
+Nextcloud and PHP of `appinfo/info.xml`; a description of its own for every page of the
+website; that every Mermaid diagram runs from top to bottom with `accTitle` and
+`accDescr`; that every required check and every step of `scripts/check.sh` has its
+explanation for the PR coach; and the JavaScript of the settings with its tests, every
+line, branch and function covered, and the translations: each text of the code has a
+translation in every catalog of `l10n/`, with its placeholders, and each JavaScript
+catalog, which the browser loads, holds the same as its JSON catalog, which PHP
+loads."""
+why = """These checks keep what only this app has working: the browser of the end-to-end
+tests, the pictures and links of the documentation in English and German, the sections
+of the READMEs that the pages of the website include, its versions, the explanations of
+the checks, and the JavaScript and the translations of the settings, which have no build
+step. The link check skips the links into `demo/` on main (`.lycheeignore`), because a
+pull request links them before main has them, so this check is the only one that finds
+a broken one."""
+fix = """Fix what the last line of the output names: for a link on main, correct the
+path of the link, or add the file that it links; for a section, mark it in both READMEs
+with the same name; for a text of the code, add its translation to each `l10n/*.json`;
+for a check without an explanation, add it to `.github/checks.project.toml`. A
+JavaScript catalog that lags its JSON catalog fixes itself: the fix bot writes it anew
+in the pull request, as the second command does on your machine. Then run the checks
+again:"""
+commands = ["bash scripts/check-project.sh", "node scripts/check-l10n.mjs --write"]
+docs = "CONTRIBUTING.md#checks"
+autofix = ["node scripts/check-l10n.mjs --write"]

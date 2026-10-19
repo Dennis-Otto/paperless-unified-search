@@ -53,6 +53,13 @@ jobs:
           if [[ -f demo/.env ]]; then
             docker compose -f demo/compose.yaml down --volumes
           fi
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.project.toml.
+      - name: Explain the failure
+        if: failure()
+        env:
+          CHECK: demo
+        run: python3 .github/blueprint.py coach explain "$CHECK"
 
   # The only job that may write issues, and it runs no code of the repository. A run
   # started by hand on another branch than main reports nothing.

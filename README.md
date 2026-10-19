@@ -622,6 +622,13 @@ bash scripts/check.sh
 
 `scripts/check.sh` checks Composer, `appinfo/info.xml` against the schema of the App Store, PHP syntax, the coding standard, Psalm, PHPUnit, the package that krankerl builds with `scripts/check-package.sh`, and, with `scripts/check-project.sh`, the JavaScript with the tests of the settings page, each line and branch of it, the translations, the pictures of the READMEs, a description of its own for every page of the website, and that every diagram runs from top to bottom with a title and a description for screen readers.
 
+When a check fails, it explains itself: what it found, why that matters and how to fix it, with the commands to run, in the summary of the check and in one comment on the pull request, also on a pull request from a fork. The explanations of the checks of this app alone are in [`.github/checks.project.toml`](.github/checks.project.toml): the end-to-end tests `nextcloud`, `paperless (2)`, `paperless (3)` and `coming Nextcloud`, the demo, and the step of `scripts/check.sh` that runs `scripts/check-project.sh`. `scripts/check-project.sh` fails while a required check or a step has no explanation. What a command can fix, a pull request fixes by itself: a JavaScript catalog of `l10n/` that lags its JSON catalog is written anew by `node scripts/check-l10n.mjs --write`, which the fix bot runs as well.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/when-a-check-of-the-app-fails.dark.svg">
+  <img src="docs/images/diagrams/when-a-check-of-the-app-fails.svg" alt="When a check of the app fails: A pull request runs the checks of this app alone, such as nextcloud, the end-to-end tests, or the step Checks of this project of scripts/check.sh. When one fails, its last step writes its explanation from .github/checks.project.toml into the summary of the check and as its annotation: what it found, why that matters and how to fix it. After the checks, the PR coach keeps one comment on the pull request with that explanation, also on a pull request from a fork. Where a command fixes what the check found, such as node scripts/check-l10n.mjs --write for a JavaScript catalog of l10n/ that lags its JSON catalog, the fix bot commits the fix onto a branch of this repository and suggests it on a fork; otherwise the explanation tells the person what to do, and the next push runs the checks again.">
+</picture>
+
 The production archive intentionally excludes tests, release tools, Composer development dependencies, screenshots, and repository metadata. Packaging uses [Krankerl](https://github.com/ChristophWurst/krankerl), and `scripts/check-package.sh` validates the finished archive.
 
 ### Mutation tests
