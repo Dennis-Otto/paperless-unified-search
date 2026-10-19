@@ -38,7 +38,7 @@
 			"composer/installers": true
 		},
 		"platform": {
-			"php": "8.2.27"
+			"php": "8.3.27"
 		},
 		"sort-packages": true
 	}
