@@ -5,7 +5,7 @@ config:
 ---
 flowchart TB
     accTitle: When a check of the app fails
-    accDescr: A pull request runs the checks of this app alone, such as nextcloud, the end-to-end tests, or the step Checks of this project of scripts/check.sh. When one fails, its last step writes its explanation from .github/checks.project.toml into the summary of the check and as its annotation: what it found, why that matters and how to fix it. After the checks, the PR coach keeps one comment on the pull request with that explanation, also on a pull request from a fork. Where a command fixes what the check found, such as node scripts/check-l10n.mjs --write for a JavaScript catalog of l10n/ that lags its JSON catalog, the fix bot commits the fix onto a branch of this repository and suggests it on a fork; otherwise the explanation tells the person what to do, and the next push runs the checks again.
+    accDescr: A pull request runs the checks of this app alone, such as nextcloud, the end-to-end tests, or the step Checks of this project of scripts/check.sh. When one fails, its last step writes its explanation from .github/checks.project.toml into the summary of the check and as its annotation: what it found, why that matters and how to fix it. After the checks, the PR coach keeps one comment on the pull request with that explanation, also on a pull request from a fork. Where a command fixes what the check found, the fix bot commits the fix onto a branch of this repository and suggests it on a fork; otherwise the explanation tells the person what to do, and the next push runs the checks again.
 
     push["A pull request<br>runs the checks of this app"]
     failed["A check fails, such as nextcloud<br>or Checks of this project"]
@@ -18,7 +18,7 @@ flowchart TB
     passed["The checks run again"]
 
     push --> failed --> explain --> coach --> command
-    command -- "yes, such as<br>check-l10n.mjs --write" --> branch & fork
+    command -- "yes" --> branch & fork
     command -- "no" --> person
     branch & fork & person --> passed
 

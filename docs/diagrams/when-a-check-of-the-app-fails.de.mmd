@@ -5,7 +5,7 @@ config:
 ---
 flowchart TB
     accTitle: Wenn eine Prüfung der App fehlschlägt
-    accDescr: Ein Pull Request führt die Prüfungen nur dieser App aus, etwa nextcloud, die End-to-End-Tests, oder den Schritt Checks of this project von scripts/check.sh. Schlägt eine fehl, schreibt ihr letzter Schritt ihre Erklärung aus .github/checks.project.toml in die Zusammenfassung der Prüfung und als ihre Anmerkung: was sie gefunden hat, warum das wichtig ist und wie es sich beheben lässt. Nach den Prüfungen hält der PR-Coach einen Kommentar am Pull Request mit dieser Erklärung aktuell, auch an einem Pull Request aus einem Fork. Wo ein Befehl behebt, was die Prüfung gefunden hat, etwa node scripts/check-l10n.mjs --write für einen JavaScript-Katalog in l10n/, der hinter seinem JSON-Katalog zurückliegt, legt der Fix-Bot die Korrektur als Commit auf einen Branch dieses Repositorys und schlägt sie an einem Fork vor; sonst sagt die Erklärung der Person, was zu tun ist, und der nächste Push führt die Prüfungen erneut aus.
+    accDescr: Ein Pull Request führt die Prüfungen nur dieser App aus, etwa nextcloud, die End-to-End-Tests, oder den Schritt Checks of this project von scripts/check.sh. Schlägt eine fehl, schreibt ihr letzter Schritt ihre Erklärung aus .github/checks.project.toml in die Zusammenfassung der Prüfung und als ihre Anmerkung: was sie gefunden hat, warum das wichtig ist und wie es sich beheben lässt. Nach den Prüfungen hält der PR-Coach einen Kommentar am Pull Request mit dieser Erklärung aktuell, auch an einem Pull Request aus einem Fork. Wo ein Befehl behebt, was die Prüfung gefunden hat, legt der Fix-Bot die Korrektur als Commit auf einen Branch dieses Repositorys und schlägt sie an einem Fork vor; sonst sagt die Erklärung der Person, was zu tun ist, und der nächste Push führt die Prüfungen erneut aus.
 
     push["Ein Pull Request führt<br>die Prüfungen dieser App aus"]
     failed["Eine Prüfung schlägt fehl, etwa nextcloud<br>oder Checks of this project"]
@@ -18,7 +18,7 @@ flowchart TB
     passed["Die Prüfungen laufen erneut"]
 
     push --> failed --> explain --> coach --> command
-    command -- "ja, etwa<br>check-l10n.mjs --write" --> branch & fork
+    command -- "ja" --> branch & fork
     command -- "nein" --> person
     branch & fork & person --> passed
 

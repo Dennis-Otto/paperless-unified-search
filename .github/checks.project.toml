@@ -158,9 +158,9 @@ fix = """Fix what the last line of the output names: for a link on main, correct
 path of the link, or add the file that it links; for a section, mark it in both READMEs
 with the same name; for a text of the code, add its translation to each `l10n/*.json`;
 for a check without an explanation, add it to `.github/checks.project.toml`. A
-JavaScript catalog that lags its JSON catalog fixes itself: the fix bot writes it anew
-in the pull request, as the second command does on your machine. Then run the checks
-again:"""
+JavaScript catalog that lags its JSON catalog is written anew by the second command;
+run it yourself for now, the fix bot runs it too once Dennis-Otto/repo-blueprint#351
+ships. Then run the checks again:"""
 commands = ["bash scripts/check-project.sh", "node scripts/check-l10n.mjs --write"]
 docs = "CONTRIBUTING.md#checks"
 autofix = ["node scripts/check-l10n.mjs --write"]
