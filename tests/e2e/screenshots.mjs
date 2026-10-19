@@ -7,10 +7,12 @@
 // of Paperless run. It writes the synthetic documents of the demo as PDF files into
 // the folder Paperless of the archive account, shares the folder read-only with
 // jamie, and goes through the app in Chromium as a person does: the search, the
-// opened file, the smart picker in a note of Text with the link that it inserts, the
-// settings and the share of the archive, light and dark, Try a search of the settings,
-// the search and the settings on a phone, and the search as an animation. The images
-// go to the folder of SCREENSHOTS_OUT.
+// opened file, the search narrowed by the date filter of Nextcloud, the smart picker in
+// a note of Text with the link that it inserts, the settings and the share of the
+// archive, light and dark, Try a search of the settings, the search and the settings on
+// a phone, and the search as an animation. The images go to the folder of
+// SCREENSHOTS_OUT. A step fails when the app doesn't show what its picture is meant to
+// show, such as a Paperless result that the date filter should have left out.
 
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -28,6 +30,7 @@ import {
 	search,
 	searchButton,
 	searchConnectedServices,
+	searchField,
 	signIn,
 	waitForViewer,
 } from './ui.mjs'
@@ -320,6 +323,72 @@ async function searchAndOpen(browser, session, theme) {
 	await paperlessResult(page, electricity.title).click()
 	await waitForViewer(page, fileName(electricity))
 	await save(page, `02-nextcloud-pdf-viewer${suffix}.png`, 1500)
+	await page.context().close()
+}
+
+// A custom range of the date filter, July 2026, and the documents of TERM that Paperless
+// dates within it: not the electricity invoice of August, and no file of the demo,
+// whose date in Files is the day that createArchive() uploaded it.
+const JULY = { start: '2026-07-01', end: '2026-07-31' }
+const DATED_IN_JULY = [insurance.title, LAST_RESULT]
+
+// Fails unless the group Paperless documents holds the results of the titles and no
+// other, in the list that the date filter narrowed: Nextcloud moves the results of a
+// provider that ignores the filter below the label Partial matches.
+async function expectDatedResults(page, titles) {
+	const group = resultGroup(page, 'Paperless documents')
+	for (const title of titles) {
+		await paperlessResult(page, title).waitFor()
+	}
+	const shown = await group.getByRole('link').count()
+	const partial = await group.evaluate((list) => {
+		const label = [...list.ownerDocument.querySelectorAll('body *')]
+			.find((element) => element.childElementCount === 0 && element.textContent.trim() === 'Partial matches')
+		return Boolean(label && label.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING)
+	})
+	if (shown !== titles.length || partial) {
+		const where = partial ? ' below Partial matches, as if the app ignored the date filter' : ''
+		throw new Error(`Paperless documents should hold only ${titles.map((title) => JSON.stringify(title)).join(' and ')} in the filtered list, but hold ${shown} result(s)${where}:\n${await page.getByRole('dialog').first().ariaSnapshot()}`)
+	}
+}
+
+// The search narrowed to July 2026 with a custom range of the date filter. Paperless
+// filters by the date of the document, so the results are the documents of July, in
+// Nextcloud's filtered list, and Files finds none of the files of the demo.
+async function dateFilter(browser, session, theme) {
+	const suffix = theme === 'dark' ? '-dark' : ''
+	const page = await newPage(browser, session, { viewport: { width: 1600, height: 900 }, colorScheme: theme })
+	await openArchive(page)
+	await searchButton(page).click()
+	await search(page, (input) => input.fill(TERM), 'Files')
+	await searchConnectedServices(page, LAST_RESULT)
+	await page.getByRole('button', { name: 'Date', exact: true }).click()
+	await page.getByRole('menuitem', { name: 'Custom date range' }).click()
+	const range = page.getByRole('dialog', { name: 'Custom date range' })
+	await range.getByLabel('Pick start date').fill(JULY.start)
+	await range.getByLabel('Pick end date').fill(JULY.end)
+	// The search of Paperless again, with the span of the filter as since and until.
+	const narrowed = page.waitForResponse((response) => {
+		const url = new URL(response.url())
+		return url.pathname.endsWith('/search/providers/paperless_unified_search_documents/search')
+			&& url.searchParams.has('since') && url.searchParams.has('until')
+	})
+	await range.getByRole('button', { name: 'Search in date range' }).click()
+	const answer = await narrowed
+	if (!answer.ok()) {
+		throw new Error(`The search of Paperless from ${JULY.start} to ${JULY.end} failed: HTTP ${answer.status()} ${await answer.text()}`)
+	}
+	await expectDatedResults(page, DATED_IN_JULY)
+	// Files filters by the day that a file last changed, the day of createArchive(), so
+	// the range leaves none of the files of the demo, as the picture says.
+	await resultGroup(page, 'Files').waitFor({ state: 'detached', timeout: 10_000 }).catch(async () => {
+		throw new Error(`Files should find no file of the demo from ${JULY.start} to ${JULY.end}:\n${await page.getByRole('dialog').first().ariaSnapshot()}`)
+	})
+	// The search selects its term again once the range closes; the picture shows it plain.
+	await searchField(page).press('End')
+	await page.mouse.move(0, 0)
+	await save(page, `12-date-filter${suffix}.png`)
+	console.log(`The date filter of July 2026 kept ${DATED_IN_JULY.join(' and ')} in the filtered list.`)
 	await page.context().close()
 }
 
@@ -668,6 +737,7 @@ try {
 	await shareElectricityWithAdmin()
 	for (const theme of ['light', 'dark']) {
 		await searchAndOpen(browser, reader, theme)
+		await dateFilter(browser, reader, theme)
 		await smartPicker(browser, reader, theme)
 		await settings(browser, admin, theme)
 		await share(browser, archive, theme)

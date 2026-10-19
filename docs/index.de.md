@@ -102,6 +102,12 @@ Jedes Bild folgt dem hellen oder dunklen Design dieser Website. Wähle eines, um
 </figure>
 
 <figure markdown="span">
+  ![Die Suche nach invoice mit eingeschaltetem Schalter Verbundene Dienste durchsuchen und dem Datumsfilter auf dem eigenen Bereich vom 7/1/2026 bis zum 7/31/2026: Paperless-Dokumente listet die Verlängerung der Hausratversicherung vom Jul 21, 2026 und die Internetrechnung vom Jul 3, 2026, aber nicht die Stromrechnung vom August, und Dateien findet keine der Dateien, die später hinzugefügt wurden](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/12-date-filter.png#only-light)
+  ![Die Suche nach invoice mit eingeschaltetem Schalter Verbundene Dienste durchsuchen und dem Datumsfilter auf dem eigenen Bereich vom 7/1/2026 bis zum 7/31/2026: Paperless-Dokumente listet die Verlängerung der Hausratversicherung vom Jul 21, 2026 und die Internetrechnung vom Jul 3, 2026, aber nicht die Stromrechnung vom August, und Dateien findet keine der Dateien, die später hinzugefügt wurden](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/12-date-filter-dark.png#only-dark)
+  <figcaption>Paperless-Treffer nach Datum eingegrenzt</figcaption>
+</figure>
+
+<figure markdown="span">
   ![Der Smart Picker in einer Notiz von Text: Unter Paperless-Dokumente listet die Suche nach invoice die Stromrechnung, die Verlängerung der Hausratversicherung und die Internetrechnung](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/07-smart-picker.png#only-light)
   ![Der Smart Picker in einer Notiz von Text: Unter Paperless-Dokumente listet die Suche nach invoice die Stromrechnung, die Verlängerung der Hausratversicherung und die Internetrechnung](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/07-smart-picker-dark.png#only-dark)
   <figcaption>Paperless-Dokumente im Smart Picker von Text</figcaption>

@@ -102,6 +102,12 @@ Each picture follows the light or dark theme of this website. Select one to enla
 </figure>
 
 <figure markdown="span">
+  ![The search for invoice with Search connected services switched on and the date filter set to the custom range from 7/1/2026 to 7/31/2026: Paperless documents lists the home insurance renewal of Jul 21, 2026 and the internet invoice of Jul 3, 2026, but not the electricity invoice of August, and Files finds none of the files, which were added later](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/12-date-filter.png#only-light)
+  ![The search for invoice with Search connected services switched on and the date filter set to the custom range from 7/1/2026 to 7/31/2026: Paperless documents lists the home insurance renewal of Jul 21, 2026 and the internet invoice of Jul 3, 2026, but not the electricity invoice of August, and Files finds none of the files, which were added later](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/12-date-filter-dark.png#only-dark)
+  <figcaption>Paperless results narrowed by date</figcaption>
+</figure>
+
+<figure markdown="span">
   ![The smart picker in a note of Text: under Paperless documents, the search for invoice lists the electricity invoice, the home insurance renewal and the internet invoice](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/07-smart-picker.png#only-light)
   ![The smart picker in a note of Text: under Paperless documents, the search for invoice lists the electricity invoice, the home insurance renewal and the internet invoice](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/07-smart-picker-dark.png#only-dark)
   <figcaption>Paperless documents in the smart picker of Text</figcaption>

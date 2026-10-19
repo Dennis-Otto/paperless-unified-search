@@ -14,6 +14,14 @@ Paperless documents show in the global search of Nextcloud for every user who ca
 
 --8<-- "README.md:usage"
 
+<figure markdown="span">
+  ![The search for invoice with Search connected services switched on and the date filter set to the custom range from 7/1/2026 to 7/31/2026: Paperless documents lists the home insurance renewal of Jul 21, 2026 and the internet invoice of Jul 3, 2026, but not the electricity invoice of August, and Files finds none of the files, which were added later](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/12-date-filter.png#only-light)
+  ![The search for invoice with Search connected services switched on and the date filter set to the custom range from 7/1/2026 to 7/31/2026: Paperless documents lists the home insurance renewal of Jul 21, 2026 and the internet invoice of Jul 3, 2026, but not the electricity invoice of August, and Files finds none of the files, which were added later](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/12-date-filter-dark.png#only-dark)
+  <figcaption>The search narrowed to July 2026 with a custom range</figcaption>
+</figure>
+
+--8<-- "README.md:what-a-result-shows"
+
 --8<-- "README.md:smart-picker"
 
 <figure markdown="span">

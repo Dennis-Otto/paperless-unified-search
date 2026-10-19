@@ -136,6 +136,15 @@ Each screenshot below but those of the phone has a dark version, which a dark th
   <img alt="A synchronized Paperless document opened in Nextcloud's PDF viewer" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/02-nextcloud-pdf-viewer.png">
 </picture>
 
+### Paperless results narrowed by date
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/12-date-filter-dark.png">
+  <img alt="The search for invoice with Search connected services switched on and the date filter set to the custom range from 7/1/2026 to 7/31/2026: Paperless documents lists the home insurance renewal of Jul 21, 2026 and the internet invoice of Jul 3, 2026, but not the electricity invoice of August, and Files finds none of the files, which were added later" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/12-date-filter.png">
+</picture>
+
+A custom range of the date filter keeps the documents that Paperless dates within it, here July 2026, in Nextcloud's filtered list. *Files* filters by the day a file last changed, so it finds none of the files of the demo, which were added later. [Narrow the results by date](#narrow-the-results-by-date) explains the filter.
+
 ### On a phone
 
 <p>
@@ -378,6 +387,9 @@ Documents without a synchronized `[P<ID>]` file of the archive account are inten
 
 Pick a span in the date filter of Nextcloud's search, such as **Last 30 days**, **This year** or a custom range, and the Paperless results show only documents whose date in Paperless lies within it, the date that Paperless shows for the document, not the day it was added or synchronized. The span counts in whole days in your timezone: *Last 30 days* picked in Berlin on September 30 finds the documents dated September 1 to September 30. Paperless filters the documents itself, so a narrow span still finds the matching documents further down the ranking, and the results stay in Nextcloud's filtered list instead of *Partial matches*.
 
+<!-- --8<-- [end:usage] -->
+<!-- --8<-- [start:what-a-result-shows] -->
+
 ### What a result shows
 
 Each result shows the preview of its file, as the results of *Files* do, or else the icon of the type of the file. Below its title, a line names the date of the document in your language, such as *Aug 12, 2026* in English and *12.08.2026* in German, its correspondent and its type, and then the words around the term that Paperless found. When only a note of the document matched, as for `notes:transfer`, the line shows *Note:* and the words of the note.
@@ -391,7 +403,7 @@ Each result shows the preview of its file, as the results of *Files* do, or else
 - **Correspondent and type.** Paperless sends them as numbers. The app asks Paperless for their names with one request for all correspondents and one for all types of a page, and keeps the names for ten minutes, so a name changed in Paperless shows in the results within ten minutes. When the account of the API token may not view correspondents or types, or Paperless doesn't answer in time, the results show without them, and the search works as before.
 - **Text.** The words around the term come as Paperless marks them up, and the result shows them as plain text. Text of a document in angle brackets, such as `<GmbH>`, shows with a space after `<`, as `< GmbH>`, so that no part of a result can ever act as HTML.
 
-<!-- --8<-- [end:usage] -->
+<!-- --8<-- [end:what-a-result-shows] -->
 <!-- --8<-- [start:smart-picker] -->
 
 ### In Talk, Text, Deck and Mail
@@ -680,7 +692,7 @@ The screenshots and the animation in `screenshots/` come from a script, so that 
 bash scripts/screenshots.sh
 ```
 
-It starts the Docker suite under a project of its own with a demo: the archive account `paperless`, whose synthetic documents are shared read-only with `jamie`, and a Paperless mock that finds three of them for "invoice". Chromium then searches, opens a result, links a document from the smart picker in a note of Text, saves the settings and tries a search in them, light and dark, on a phone and as an animation. Set `KEEP_SCREENSHOTS=1` to look around in the demo afterwards.
+It starts the Docker suite under a project of its own with a demo: the archive account `paperless`, whose synthetic documents are shared read-only with `jamie`, and a Paperless mock that finds three of them for "invoice". Chromium then searches, opens a result, narrows the search to July 2026 with the date filter, links a document from the smart picker in a note of Text, saves the settings and tries a search in them, light and dark, on a phone and as an animation. Each step checks what its picture shows: the search narrowed by date fails, for one, when a Paperless result outside July shows or the results land under *Partial matches*. Set `KEEP_SCREENSHOTS=1` to look around in the demo afterwards.
 
 See [CONTRIBUTING.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CONTRIBUTING.md) before opening a pull request.
 
