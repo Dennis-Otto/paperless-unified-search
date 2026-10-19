@@ -137,7 +137,9 @@ app, an image or Paperless Sync."""
 problem = """A check of this app alone, in `scripts/check-project.sh`, failed: the line
 `== …` above it names the check, and the last line of its output what is wrong. They
 check that the image of Playwright and `playwright-core` have the same version; the
-scripts of the end-to-end tests, without Docker; that the pictures of the READMEs and
+scripts of the end-to-end tests, without Docker, among them that the mock of Paperless
+writes each request into its journal before it answers and that no script pipes a
+command into `grep --quiet`; that the pictures of the READMEs and
 the files and folders that the documentation links on main, under `blob/main/` or
 `tree/main/`, are in the checkout; that each page of the website that a README links is
 in `docs/`; *German pages*, that `README.de.md` marks each section of `README.md`,
@@ -166,7 +168,10 @@ path of the link, or add the file that it links; for a section, mark it in both 
 with the same name; for a picture, show it on the German page too, at the same place,
 with its alt text in German; for a screenshot of `README.md`, show it on the page of
 `docs/` about its topic and on its German twin; for a text of the code, add its translation to each `l10n/*.json`;
-for a check without an explanation, add it to `.github/checks.project.toml`. A
+for a check without an explanation, add it to `.github/checks.project.toml`; for a
+pipe into `grep --quiet`, read the output into a variable first and search that,
+`grep --quiet … <<<"${output}"`, since the command before the pipe dies of SIGPIPE
+once grep stops reading at its first match. A
 JavaScript catalog that lags its JSON catalog is written anew by the second command;
 run it yourself for now, the fix bot runs it too once Dennis-Otto/repo-blueprint#351
 ships. Then run the checks again:"""

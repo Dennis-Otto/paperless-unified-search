@@ -176,9 +176,16 @@ expect_text() {
 	fi
 }
 
+# The requests that the mock of Paperless has answered so far, one line each, from the
+# journal that mock_server.py writes before each answer: it holds the request of an
+# answer that Nextcloud just got, which the log of Docker may still lack (#94).
+mock_journal() {
+	"${COMPOSE[@]}" exec -T paperless-mock sh -c 'cat /tmp/requests.log'
+}
+
 # The number of requests for documents that have reached the mock of Paperless so far.
 mock_requests() {
-	"${COMPOSE[@]}" logs --no-color paperless-mock | grep --count --fixed-strings 'GET /api/documents/' || true
+	mock_journal | grep --count --fixed-strings 'GET /api/documents/' || true
 }
 
 # Searches as the user $1 with the user agent $2 for the term $4, mobiletest by default,
@@ -754,7 +761,10 @@ assert_response no-results "${TMP_DIR}/since.json"
 search e2e-user 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/until.json" mobiletest 0 'since=2026-08-01T00:00:00Z' 'until=2026-08-25T22:30:00Z'
 assert_response browser "${TMP_DIR}/until.json"
 occ user:setting e2e-user core timezone --delete
-if ! "${COMPOSE[@]}" logs --no-color paperless-mock | grep --quiet --fixed-strings 'created__date__gte=2026-08-01&created__date__lte=2026-08-26'; then
+# Searched in a variable, not in a pipe: grep --quiet stops at the first match, and the
+# command that writes into the pipe would fail the pipe with SIGPIPE (#94).
+journal="$(mock_journal)"
+if ! grep --quiet --fixed-strings 'created__date__gte=2026-08-01&created__date__lte=2026-08-26' <<<"${journal}"; then
 	echo 'The date filter of the search reached Paperless without created__date__gte=2026-08-01 and created__date__lte=2026-08-26.' >&2
 	exit 1
 fi
