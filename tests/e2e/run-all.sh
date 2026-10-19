@@ -20,8 +20,9 @@
 #
 # In GitHub Actions, the script writes a table of the versions, with the release
 # behind each image, into the summary of the run, and the versions that broke into the
-# output "failed" of its step, such as "Nextcloud 35 (35.0.1, failed)", from which the
-# weekly run of .github/workflows/e2e.yml writes its issue.
+# output "failed" of its step, such as "Nextcloud 35 (35.0.1, failed)", and their major
+# versions into the output "versions", such as "35", from which the weekly run of
+# .github/workflows/e2e.yml writes its issue.
 # scripts/check-project.sh tests this script with tests/e2e/selftest.sh.
 
 set -euo pipefail
@@ -226,7 +227,8 @@ fi
 
 # The versions that broke, with their releases and results, on one line, for the issue
 # of the weekly run: "Nextcloud 34 (34.0.1, failed), Nextcloud 35 (35.0.1, timed out)",
-# and nothing when every version passed.
+# and nothing when every version passed; and their major versions alone, "34 35", for
+# the command in the issue that runs their tests locally.
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
 	broken=""
 	for index in "${!versions[@]}"; do
@@ -235,6 +237,7 @@ if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
 		fi
 	done
 	echo "failed=${broken}" >>"${GITHUB_OUTPUT}"
+	echo "versions=${failed[*]}" >>"${GITHUB_OUTPUT}"
 fi
 
 if ((${#failed[@]} > 0)); then

@@ -202,12 +202,12 @@ if timeout --version >/dev/null 2>&1; then
 	expect_in "the log of the version that hangs" "Log of 35: stopped" "${WORK}/log"
 	expect_in "the error of the version that hangs" "::error title=Nextcloud 35::The end-to-end tests against Nextcloud 35 took longer than 2 s" "${WORK}/log"
 	expect_in "the summary of the version that hangs" "| 35 | 35.0.1 | timed out |" "${WORK}/summary"
-	expect "the versions that broke" "failed=Nextcloud 34 (34.0.1, failed), Nextcloud 35 (35.0.1, timed out)" \
-		"$(cat "${WORK}/output")"
+	expect "the versions that broke" "failed=Nextcloud 34 (34.0.1, failed), Nextcloud 35 (35.0.1, timed out)|versions=34 35" \
+		"$(paste -s -d "|" "${WORK}/output")"
 else
 	echo "timeout of GNU coreutils is not installed here; the CI tests a version that hangs."
 	expect "run-all.sh with a version that fails" 1 "$(run_all env E2E_VERSIONS="33 34")"
-	expect "the versions that broke" "failed=Nextcloud 34 (34.0.1, failed)" "$(cat "${WORK}/output")"
+	expect "the versions that broke" "failed=Nextcloud 34 (34.0.1, failed)|versions=34" "$(paste -s -d "|" "${WORK}/output")"
 fi
 expect_in "the group of the version that passes" "::group::Nextcloud 33 (passed, " "${WORK}/log"
 expect_in "the log of the version that passes" "Log of 33 on port 18033, project pus_e2e_33" "${WORK}/log"
@@ -221,11 +221,11 @@ expect "the download of the browser after those of Nextcloud" "pull --quiet mcr.
 
 expect "run-all.sh with one version that passes" 0 "$(run_all env E2E_VERSIONS=33)"
 expect_in "the result of one version" "The end-to-end tests passed against Nextcloud 33 in " "${WORK}/log"
-expect "the versions that broke when none did" "failed=" "$(cat "${WORK}/output")"
+expect "the versions that broke when none did" "failed=|versions=" "$(paste -s -d "|" "${WORK}/output")"
 expect "run-all.sh with a version whose image is missing" 1 "$(run_all env E2E_VERSIONS="33 34" FAKE_NO_IMAGE=34)"
 expect_in "the summary of a version whose image is missing" "| 34 | unknown | failed |" "${WORK}/summary"
-expect "the version that broke, whose image is missing" "failed=Nextcloud 34 (unknown release, failed)" \
-	"$(cat "${WORK}/output")"
+expect "the version that broke, whose image is missing" "failed=Nextcloud 34 (unknown release, failed)|versions=34" \
+	"$(paste -s -d "|" "${WORK}/output")"
 expect "run-all.sh with a version that isn't one" 1 "$(run_all env E2E_VERSIONS="33,next")"
 expect_in "the message about a version that isn't one" "next is no major version of Nextcloud" "${WORK}/log"
 expect "the versions that broke when the tests didn't start" "" "$(cat "${WORK}/output")"
@@ -273,28 +273,34 @@ report() {
 	rm -f "${WORK}/runner/issue.md"
 	(PATH="${fake}/bin:${PATH}" FAKE_GH_LOG="${WORK}/gh.log" RUNNER_TEMP="${WORK}/runner" \
 		GH_TOKEN=fake GH_REPO=Dennis-Otto/paperless-unified-search \
-		TITLE="A supported Nextcloud release breaks the app" RUN_URL=https://github.com/run/7 FAILED="" \
+		TITLE="A supported Nextcloud release breaks the app" RUN_URL=https://github.com/run/7 FAILED="" VERSIONS="" \
 		"$@" bash "${WORK}/issue.sh" >"${WORK}/log" 2>&1) || status=$?
 	echo "${status}"
 }
 
 broken="Nextcloud 34 (34.0.1, failed), Nextcloud 35 (35.0.1, timed out)"
-expect "a failed run without an open issue" 0 "$(report env RESULT=failure FAILED="${broken}")"
+expect "a failed run without an open issue" 0 "$(report env RESULT=failure FAILED="${broken}" VERSIONS="34 35")"
 expect_in "the search for the open issue" \
 	"issue list --state open --search in:title \"A supported Nextcloud release breaks the app\"" "${WORK}/gh.log"
 expect_in "the new issue" "issue create --title A supported Nextcloud release breaks the app --body-file ${WORK}/runner/issue.md" \
 	"${WORK}/gh.log"
 expect_in "the run and the versions that broke in the new issue" \
 	"The weekly end-to-end tests fail against ${broken}: https://github.com/run/7" "${WORK}/runner/issue.md"
-expect_in "the command for the versions in the new issue" "E2E_VERSIONS=35 bash tests/e2e/run-all.sh" "${WORK}/runner/issue.md"
+expect_in "the command for the versions in the new issue" 'E2E_VERSIONS="34 35" bash tests/e2e/run-all.sh' "${WORK}/runner/issue.md"
+expect_in "the paragraph after the command in the new issue" "The job adds every further failed run here" "${WORK}/runner/issue.md"
 expect "a failed run with an open issue" 0 "$(report env RESULT=failure FAILED="${broken}" FAKE_ISSUE=12)"
 expect "the comment on the open issue" \
 	"issue comment 12 --body The end-to-end tests still fail against ${broken}: https://github.com/run/7" \
 	"$(tail -n 1 "${WORK}/gh.log")"
+expect "a run that ran out of time" 0 "$(report env RESULT=cancelled)"
+expect_in "the new issue about a run that ran out of time" \
+	"The weekly end-to-end tests run out of time or are cancelled before they end: https://github.com/run/7" \
+	"${WORK}/runner/issue.md"
 expect "a run that stopped before the tests" 0 "$(report env RESULT=failure)"
 expect_in "the new issue about a run that stopped before the tests" \
 	"The weekly end-to-end tests stop before they test a version of Nextcloud: https://github.com/run/7" \
 	"${WORK}/runner/issue.md"
+expect_in "the command without versions in the new issue" "\`bash tests/e2e/run-all.sh\` runs the same tests locally" "${WORK}/runner/issue.md"
 expect "a run that passes with an open issue" 0 "$(report env RESULT=success FAKE_ISSUE=12)"
 expect "the issue closed by a run that passes" \
 	"issue close 12 --reason completed --comment The end-to-end tests pass again against every supported Nextcloud version: https://github.com/run/7" \

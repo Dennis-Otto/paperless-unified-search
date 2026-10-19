@@ -60,6 +60,8 @@ jobs:
     outputs:
       # The versions that broke, for the issue of the weekly run (tests/e2e/run-all.sh).
       failed: ${{ steps.tests.outputs.failed }}
+      # Their major versions alone, such as "34 35", for the command in the issue.
+      versions: ${{ steps.tests.outputs.versions }}
     steps:
       - name: Record the network traffic of the job
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -103,7 +105,8 @@ jobs:
       always() &&
       (github.event_name == 'schedule' ||
         (github.event_name == 'workflow_dispatch' && github.ref_name == github.event.repository.default_branch)) &&
-      (needs.nextcloud.result == 'success' || needs.nextcloud.result == 'failure')
+      (needs.nextcloud.result == 'success' || needs.nextcloud.result == 'failure' ||
+        (github.event_name == 'schedule' && needs.nextcloud.result == 'cancelled'))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -120,6 +123,7 @@ jobs:
           TITLE: A supported Nextcloud release breaks the app
           RESULT: ${{ needs.nextcloud.result }}
           FAILED: ${{ needs.nextcloud.outputs.failed }}
+          VERSIONS: ${{ needs.nextcloud.outputs.versions }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -132,9 +136,13 @@ jobs:
             fi
             exit 0
           fi
-          # Empty when the job stopped before run-all.sh tested a version, such as at
-          # an appinfo/info.xml without a range of versions.
-          if [[ -n "${FAILED:-}" ]]; then
+          # GitHub cancels a job that reaches its time limit, such as at a download of
+          # an image that hangs; nothing else cancels the weekly run, whose group of
+          # concurrency is its own. FAILED is empty when the job stopped before
+          # run-all.sh tested a version, such as at an appinfo/info.xml without a range.
+          if [[ "$RESULT" == cancelled ]]; then
+            broken="run out of time or are cancelled before they end"
+          elif [[ -n "${FAILED:-}" ]]; then
             broken="fail against $FAILED"
           else
             broken="stop before they test a version of Nextcloud"
@@ -148,8 +156,15 @@ jobs:
             cat <<'TEXT'
           The required check `nextcloud` of `.github/workflows/e2e.yml` runs `tests/e2e/run-all.sh` every Monday, also in a week without a change of the app: the end-to-end tests against the current release behind each image `nextcloud:<version>-apache`, for every version from `min-version` to `max-version` of `appinfo/info.xml`. Most often a new release of Nextcloud behind one of these images broke the app or its tests; its users meet the same break, and every pull request that changes the app fails the check until it is fixed.
 
-          The annotation of each version that broke names it; the group of the log named after the version, such as *Nextcloud 35 (failed, 312 s)*, shows the step that stopped and the logs of its containers, and the summary of the run the release of Nextcloud behind each image. `E2E_VERSIONS=35 bash tests/e2e/run-all.sh` runs the same tests locally with Docker, against the version that broke.
+          The annotation of each version that broke names it; the group of the log named after the version, such as *Nextcloud 35 (failed, 312 s)*, shows the step that stopped and the logs of its containers, and the summary of the run the release of Nextcloud behind each image.
 
+          TEXT
+            if [[ -n "${VERSIONS:-}" ]]; then
+              printf "\`E2E_VERSIONS=\"%s\" bash tests/e2e/run-all.sh\` runs the same tests locally with Docker, against the versions that broke.\n\n" "$VERSIONS"
+            else
+              printf "\`bash tests/e2e/run-all.sh\` runs the same tests locally with Docker; \`E2E_VERSIONS\` picks the versions, such as \`E2E_VERSIONS=35\`.\n\n"
+            fi
+            cat <<'TEXT'
           The job adds every further failed run here and closes this issue once the tests pass again against every supported version.
           TEXT
           } > "$RUNNER_TEMP/issue.md"
