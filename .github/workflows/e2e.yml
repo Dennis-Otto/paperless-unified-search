@@ -12,7 +12,11 @@ name: Docker E2E
 # A pull request or push that changes no file the tests cover, such as one of the
 # documentation, of the CI or from the blueprint, passes the check in seconds without
 # running them. The schedule and a start by hand always run them, so that the weekly
-# run also tests the newest release behind each image nextcloud:<version>-apache.
+# run also tests the newest release behind each image nextcloud:<version>-apache. When
+# that run fails, it opens the issue "A supported Nextcloud release breaks the app",
+# with the versions that broke and the releases behind their images, or adds the run to
+# it, and the next run that passes closes it. A pull request or a push never touches
+# the issue; a version that breaks there fails the required check instead.
 #
 # Every Monday, and when started by hand, they also run against the coming Nextcloud
 # (tests/e2e/canary.sh): the beta or release candidate of the next major version, or
@@ -53,6 +57,11 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+    outputs:
+      # The versions that broke, for the issue of the weekly run (tests/e2e/run-all.sh).
+      failed: ${{ steps.tests.outputs.failed }}
+      # Their major versions alone, such as "34 35", for the command in the issue.
+      versions: ${{ steps.tests.outputs.versions }}
     steps:
       - name: Record the network traffic of the job
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -72,6 +81,7 @@ jobs:
           BEFORE: ${{ github.event.before }}
         run: bash tests/e2e/scope.sh
       - name: Run the end-to-end tests against every supported Nextcloud version
+        id: tests
         if: steps.scope.outputs.run == 'true'
         run: bash tests/e2e/run-all.sh
       # The PR coach: what failed, why it matters and how to fix it, in the summary
@@ -81,6 +91,84 @@ jobs:
         env:
           CHECK: nextcloud
         run: python3 .github/blueprint.py coach explain "$CHECK"
+
+  # Like the issue about the coming Nextcloud: it runs no code of the repository, and
+  # only the weekly run and a run started by hand on main report. The schedule and a
+  # start by hand always run the tests (tests/e2e/scope.sh), so a run that passes has
+  # tested every version. When the flaky-test bot of after-checks.yml runs a failed
+  # check once more, this job runs again with it, and closes the issue if the check
+  # passes then. tests/e2e/selftest.sh runs its script with a fake gh.
+  nextcloud-issue:
+    name: issue about the supported Nextcloud
+    needs: nextcloud
+    if: >-
+      always() &&
+      (github.event_name == 'schedule' ||
+        (github.event_name == 'workflow_dispatch' && github.ref_name == github.event.repository.default_branch)) &&
+      (needs.nextcloud.result == 'success' || needs.nextcloud.result == 'failure' ||
+        (github.event_name == 'schedule' && needs.nextcloud.result == 'cancelled'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - name: Open, update or close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TITLE: A supported Nextcloud release breaks the app
+          RESULT: ${{ needs.nextcloud.result }}
+          FAILED: ${{ needs.nextcloud.outputs.failed }}
+          VERSIONS: ${{ needs.nextcloud.outputs.versions }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          number="$(gh issue list --state open --search "in:title \"$TITLE\"" --json number,title \
+            --jq '[.[] | select(.title == env.TITLE)][0].number // empty')"
+          if [[ "$RESULT" == success ]]; then
+            if [[ -n "$number" ]]; then
+              gh issue close "$number" --reason completed \
+                --comment "The end-to-end tests pass again against every supported Nextcloud version: $RUN_URL"
+            fi
+            exit 0
+          fi
+          # GitHub cancels a job that reaches its time limit, such as at a download of
+          # an image that hangs; nothing else cancels the weekly run, whose group of
+          # concurrency is its own. FAILED is empty when the job stopped before
+          # run-all.sh tested a version, such as at an appinfo/info.xml without a range.
+          if [[ "$RESULT" == cancelled ]]; then
+            broken="run out of time or are cancelled before they end"
+          elif [[ -n "${FAILED:-}" ]]; then
+            broken="fail against $FAILED"
+          else
+            broken="stop before they test a version of Nextcloud"
+          fi
+          if [[ -n "$number" ]]; then
+            gh issue comment "$number" --body "The end-to-end tests still $broken: $RUN_URL"
+            exit 0
+          fi
+          {
+            printf 'The weekly end-to-end tests %s: %s\n\n' "$broken" "$RUN_URL"
+            cat <<'TEXT'
+          The required check `nextcloud` of `.github/workflows/e2e.yml` runs `tests/e2e/run-all.sh` every Monday, also in a week without a change of the app: the end-to-end tests against the current release behind each image `nextcloud:<version>-apache`, for every version from `min-version` to `max-version` of `appinfo/info.xml`. Most often a new release of Nextcloud behind one of these images broke the app or its tests; its users meet the same break, and every pull request that changes the app fails the check until it is fixed.
+
+          The annotation of each version that broke names it; the group of the log named after the version, such as *Nextcloud 35 (failed, 312 s)*, shows the step that stopped and the logs of its containers, and the summary of the run the release of Nextcloud behind each image.
+
+          TEXT
+            if [[ -n "${VERSIONS:-}" ]]; then
+              printf "\`E2E_VERSIONS=\"%s\" bash tests/e2e/run-all.sh\` runs the same tests locally with Docker, against the versions that broke.\n\n" "$VERSIONS"
+            else
+              printf "\`bash tests/e2e/run-all.sh\` runs the same tests locally with Docker; \`E2E_VERSIONS\` picks the versions, such as \`E2E_VERSIONS=35\`.\n\n"
+            fi
+            cat <<'TEXT'
+          The job adds every further failed run here and closes this issue once the tests pass again against every supported version.
+          TEXT
+          } > "$RUNNER_TEMP/issue.md"
+          gh issue create --title "$TITLE" --body-file "$RUNNER_TEMP/issue.md"
 
   paperless:
     name: paperless (${{ matrix.paperless }})

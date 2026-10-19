@@ -670,7 +670,7 @@ The [contract tests](tests/e2e/README.md#against-a-real-paperless-ngx) run the a
 PAPERLESS=3 bash tests/e2e/paperless-contract.sh   # or PAPERLESS=2
 ```
 
-In the CI, the required check `nextcloud` runs the tests against every supported version in one job. A pull request that changes no file the tests cover, such as one that changes only the documentation, passes it in seconds without running them. Set `KEEP_E2E=1` to leave the containers running for inspection. See [the mobile test matrix](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/tests/e2e/MANUAL_MOBILE_TESTS.md) for the final checks performed with official clients.
+In the CI, the required check `nextcloud` runs the tests against every supported version in one job. A pull request that changes no file the tests cover, such as one that changes only the documentation, passes it in seconds without running them. Every Monday the check also runs without a change of the app, against the newest release behind each image of Nextcloud; when that breaks the app, it opens the issue *A supported Nextcloud release breaks the app* with the versions that broke, and closes it once they pass again. Set `KEEP_E2E=1` to leave the containers running for inspection. See [the mobile test matrix](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/tests/e2e/MANUAL_MOBILE_TESTS.md) for the final checks performed with official clients.
 
 ### Screenshots
 
