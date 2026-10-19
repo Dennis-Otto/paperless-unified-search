@@ -18,3 +18,24 @@
   outline: 0.125rem solid var(--md-accent-fg-color);
   outline-offset: 0.125rem;
 }
+
+/* The pictures of a phone stand side by side in their figure,
+   <figure markdown="span" class="phones">, as narrow as the phone, and wrap to the next
+   line where the column has no room for them, with the caption below them all. A
+   figure of Material shows each picture as a block of its own, one below the other,
+   and shrinks to the width of its caption. */
+.md-typeset figure.phones {
+  display: flex;
+  flex-flow: row wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  width: auto;
+}
+
+.md-typeset figure.phones > br {
+  display: none;
+}
+
+.md-typeset figure.phones > figcaption {
+  flex-basis: 100%;
+}

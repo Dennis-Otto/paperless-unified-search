@@ -391,11 +391,17 @@ Each result shows the preview of its file, as the results of *Files* do, or else
 - **Correspondent and type.** Paperless sends them as numbers. The app asks Paperless for their names with one request for all correspondents and one for all types of a page, and keeps the names for ten minutes, so a name changed in Paperless shows in the results within ten minutes. When the account of the API token may not view correspondents or types, or Paperless doesn't answer in time, the results show without them, and the search works as before.
 - **Text.** The words around the term come as Paperless marks them up, and the result shows them as plain text. Text of a document in angle brackets, such as `<GmbH>`, shows with a space after `<`, as `< GmbH>`, so that no part of a result can ever act as HTML.
 
+<!-- --8<-- [end:usage] -->
+<!-- --8<-- [start:smart-picker] -->
+
 ### In Talk, Text, Deck and Mail
 
 Nextcloud's smart picker finds Paperless documents too, wherever you write: type `/` in Text or Collectives, or open the smart picker in a conversation of Talk, a card of Deck or a message of Mail. Choose **Paperless documents**, search, and pick a result: the picker inserts the link to its file. Everyone who can open that file sees its preview; anyone else sees only the link.
 
 The picker searches through the same provider as Nextcloud's search, so it lists the same documents. It asks Paperless once you have chosen **Paperless documents** and typed a term, without the switch **Search connected services**: choosing it is the same consent.
+
+<!-- --8<-- [end:smart-picker] -->
+<!-- --8<-- [start:dashboard] -->
 
 ### On the dashboard
 
@@ -411,7 +417,7 @@ Add **New in Paperless** to your dashboard with **Customize** at the end of the 
 - **When Paperless doesn't answer** within five seconds, the widget says *Paperless can't be reached right now.*, and the app asks again a minute later. Such a failure goes into the log of Nextcloud, not into the history of the problems of the search.
 - **Only where the search works.** The dashboard offers the widget once the settings name a Paperless and an archive account that exists.
 
-<!-- --8<-- [end:usage] -->
+<!-- --8<-- [end:dashboard] -->
 <!-- --8<-- [start:search-syntax] -->
 
 ## Search like in Paperless

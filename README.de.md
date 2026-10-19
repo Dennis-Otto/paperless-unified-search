@@ -391,11 +391,17 @@ Jeder Treffer zeigt die Vorschau seiner Datei, wie es die Treffer von *Dateien* 
 - **Korrespondent und Typ.** Paperless schickt sie als Zahlen. Die App fragt Paperless mit einer Anfrage für alle Korrespondenten und einer für alle Typen einer Seite nach ihren Namen und behält die Namen zehn Minuten lang, also erscheint ein in Paperless geänderter Name innerhalb von zehn Minuten in den Treffern. Darf das Konto des API-Tokens keine Korrespondenten oder Typen ansehen, oder antwortet Paperless nicht rechtzeitig, erscheinen die Treffer ohne sie, und die Suche funktioniert wie zuvor.
 - **Text.** Die Wörter um den Begriff kommen so, wie Paperless sie auszeichnet, und der Treffer zeigt sie als einfachen Text. Text eines Dokuments in spitzen Klammern, etwa `<GmbH>`, erscheint mit einem Leerzeichen nach `<`, als `< GmbH>`, damit kein Teil eines Treffers je als HTML wirken kann.
 
+<!-- --8<-- [end:usage] -->
+<!-- --8<-- [start:smart-picker] -->
+
 ### In Talk, Text, Deck und Mail
 
 Der Smart Picker von Nextcloud findet Paperless-Dokumente ebenfalls, wo immer du schreibst: Tippe `/` in Text oder Collectives, oder öffne den Smart Picker in einer Unterhaltung von Talk, einer Karte von Deck oder einer Nachricht von Mail. Wähle **Paperless-Dokumente**, suche und wähle einen Treffer: Der Picker fügt den Link auf seine Datei ein. Alle, die diese Datei öffnen können, sehen ihre Vorschau; alle anderen sehen nur den Link.
 
 Der Picker sucht über denselben Anbieter wie die Suche von Nextcloud, also listet er dieselben Dokumente. Er fragt Paperless, sobald du **Paperless-Dokumente** gewählt und einen Begriff getippt hast, ohne den Schalter **Verbundene Dienste durchsuchen**: Die Wahl ist dieselbe Zustimmung.
+
+<!-- --8<-- [end:smart-picker] -->
+<!-- --8<-- [start:dashboard] -->
 
 ### Auf dem Dashboard
 
@@ -411,7 +417,7 @@ Füge **Neu in Paperless** mit **Anpassen** am Ende des Dashboards zu deinem Das
 - **Wenn Paperless nicht antwortet**, innerhalb von fünf Sekunden, sagt das Widget *Paperless ist gerade nicht erreichbar.*, und die App fragt eine Minute später erneut. Ein solcher Fehler kommt in das Protokoll von Nextcloud, nicht in den Verlauf der Probleme der Suche.
 - **Nur wo die Suche funktioniert.** Das Dashboard bietet das Widget an, sobald die Einstellungen ein Paperless und ein Archiv-Konto nennen, das existiert.
 
-<!-- --8<-- [end:usage] -->
+<!-- --8<-- [end:dashboard] -->
 <!-- --8<-- [start:search-syntax] -->
 
 ## Suchen wie in Paperless

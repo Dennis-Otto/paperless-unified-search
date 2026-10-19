@@ -29,6 +29,14 @@ Six questions, one after the other, find why a document doesn't show for a user,
 5. **The file with the marker.** The file must belong to the archive account and carry the exact marker of the document, `[P412]`, in its name: a copy in another account, or `P412` without the brackets, stands for nothing. A file that the synchronization hasn't written yet, as for a document still in the inbox of Paperless, can't show either. Nextcloud finds only the files that its file cache knows: for an external storage, or files copied into the data folder of Nextcloud past it, let `occ files:scan --path=/paperless/files/Paperless` scan the folder of the archive.
 6. **The share.** The user needs to be able to open that file: the archive account itself, or a user or a group with whom it shared the file or a folder around it, read-only, as [Configure](configure.md#share-the-archive-read-only) shows. Sign in as the user and look for the file in *Files*: where the user can't open it, the search can't show it.
 
+**Try a search** at the end of the settings answers questions 4 to 6 without a shell: enter the term and the user ID, such as `invoice` and `jamie`, and it lists the first 20 documents that Paperless ranks for the term, each with its ID, its title and whether it shows to that user, or why not: *Not shared with* the user, *Not a file of the archive account*, or *No file with* its marker, such as `[P412]`. When document 412 isn't in the list, Paperless doesn't find it for the term among its first 20: question 4, or a more specific term. It asks the same questions as [`occ paperless_unified_search:search --explain`](reference.md#explain-a-hidden-document) and shows the titles alone.
+
+<figure markdown="span">
+  ![Try a search in the settings: the administrator searches for invoice as the account e2e-admin, and a table lists the three documents that Paperless ranks first with their IDs and titles, the electricity invoice shown, the insurance renewal and the internet invoice not shared with that account, above the reasons why a document does not show](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-try-a-search.png#only-light)
+  ![Try a search in the settings: the administrator searches for invoice as the account e2e-admin, and a table lists the three documents that Paperless ranks first with their IDs and titles, the electricity invoice shown, the insurance renewal and the internet invoice not shared with that account, above the reasons why a document does not show](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-try-a-search-dark.png#only-dark)
+  <figcaption>Try a search in the settings</figcaption>
+</figure>
+
 Still missing? [Ask for help](#ask-for-help), with what each of these steps showed.
 
 ### What you see, and why

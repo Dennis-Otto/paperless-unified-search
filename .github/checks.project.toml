@@ -141,7 +141,11 @@ scripts of the end-to-end tests, without Docker; that the pictures of the README
 the files and folders that the documentation links on main, under `blob/main/` or
 `tree/main/`, are in the checkout; that each page of the website that a README links is
 in `docs/`; *German pages*, that `README.de.md` marks each section of `README.md`,
-`--8<-- [start:name]`, at the same place; that the documentation names the versions of
+`--8<-- [start:name]`, at the same place; *Pictures of the German pages*, that each
+German page shows the pictures of its English twin in the same order, a German one,
+`NAME.de.svg`, in place of `NAME.svg`; *Screenshots of the website*, that a page of
+the website shows each screenshot of `README.md` that main has, itself or through a
+section of `README.md` that it includes; that the documentation names the versions of
 Nextcloud and PHP of `appinfo/info.xml`; a description of its own for every page of the
 website; that every Mermaid diagram runs from top to bottom with `accTitle` and
 `accDescr`; that every required check and every step of `scripts/check.sh` has its
@@ -159,7 +163,9 @@ pull request links them before main has them, so this check is the only one that
 a broken one."""
 fix = """Fix what the last line of the output names: for a link on main, correct the
 path of the link, or add the file that it links; for a section, mark it in both READMEs
-with the same name; for a text of the code, add its translation to each `l10n/*.json`;
+with the same name; for a picture, show it on the German page too, at the same place,
+with its alt text in German; for a screenshot of `README.md`, show it on the page of
+`docs/` about its topic and on its German twin; for a text of the code, add its translation to each `l10n/*.json`;
 for a check without an explanation, add it to `.github/checks.project.toml`. A
 JavaScript catalog that lags its JSON catalog is written anew by the second command;
 run it yourself for now, the fix bot runs it too once Dennis-Otto/repo-blueprint#351
