@@ -76,7 +76,15 @@ from blueprint.github import Api, GitHubError, Json, current_repo
 from blueprint.notices import third_party_notices
 from blueprint.pages import Layout, annotation, command, fixed, layouts, pages
 from blueprint.pr_report import about as pr_parts
-from blueprint.settings import CONFIG, ConfigError, Settings, apply, check, describe
+from blueprint.settings import (
+    CONFIG,
+    ConfigError,
+    Settings,
+    apply,
+    check,
+    describe,
+    kept,
+)
 from blueprint.site_check import annotation as site_annotation
 from blueprint.site_check import check as check_site
 from blueprint.update import SOURCE, Outdated, update_pull_request
@@ -628,23 +636,33 @@ def settings_command(
     api: Api, repo: str, settings: Settings, action: str, path: Path
 ) -> int:
     """settings check or apply: 0 when GitHub matches the settings, 1 when it differs,
-    2 when GitHub refused a part of them."""
+    2 when GitHub refused a part of them. What GitHub doesn't do for the repository,
+    such as a switch that its plan lacks, is named after them and fails nothing."""
     drift = check(api, repo, settings)
-    refused: list[str] = []
+    refused: dict[str, str] = {}
     if action == "apply" and drift:
         refused = apply(api, repo, settings, drift)
-        drift = check(api, repo, settings)
-    for reason in refused:
+        after = check(api, repo, settings)
+        # A refused write shows nothing about what GitHub keeps.
+        drift = after if "security" in refused else kept(repo, drift, after)
+    for reason in refused.values():
         print(f"blueprint.py: {reason}", file=sys.stderr)
     # The path as the documentation writes it, with slashes on Windows too.
     config = path.as_posix()
-    if not drift:
+    notices = [item for item in drift if item.notice]
+    drift = [item for item in drift if not item.notice]
+    if drift:
+        print(f"The settings of {repo} differ from {config}:")
+        print(describe(drift))
+        if action == "check":
+            print("python3 blueprint.py settings apply sets what the API can set.")
+    else:
         print(f"The settings of {repo} match {config}.")
+    if notices:
+        print("GitHub doesn't do this for the repository, which fails nothing:")
+        print(describe(notices))
+    if not drift:
         return 0
-    print(f"The settings of {repo} differ from {config}:")
-    print(describe(drift))
-    if action == "check":
-        print("python3 blueprint.py settings apply sets what the API can set.")
     return 2 if refused else 1
 
 

@@ -13,7 +13,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from blueprint.github import Api
-from blueprint.settings import Drift, Settings, check
+from blueprint.settings import PLAN_GATED, Drift, Settings, check
 
 # The permissions of the release app, as its settings page names them and as the link
 # that registers it does, with the access that the bots need: the settings bot,
@@ -252,6 +252,31 @@ def listed(access: str) -> str:
     return ", ".join(names[:-1]) + " and " + names[-1]
 
 
+def applied_step(drift: list[Drift]) -> Step:
+    """Whether the settings as code are applied; neutral when only a switch that
+    depends on the plan is off, which GitHub may keep off on any write."""
+    open_items = [item for item in drift if not item.manual]
+    gated = all(
+        item.setting.removeprefix("security.") in PLAN_GATED
+        and item.want is True
+        and item.have is False
+        for item in open_items
+    )
+    if open_items and gated:
+        return Step(
+            "Settings as code applied",
+            None,
+            "python3 blueprint.py settings apply; it tells whether GitHub keeps "
+            + ", ".join(item.setting for item in open_items)
+            + " off for the plan of the repository",
+        )
+    return Step(
+        "Settings as code applied",
+        not open_items,
+        "python3 blueprint.py settings apply",
+    )
+
+
 def checklist(
     api: Api,
     repo: str,
@@ -278,11 +303,7 @@ def checklist(
     registered, installed = release_app(api, repo, settings)
     steps = [
         registered,
-        Step(
-            "Settings as code applied",
-            all(item.manual for item in drift),
-            "python3 blueprint.py settings apply",
-        ),
+        applied_step(drift),
         Step(
             "Secrets of the environments set",
             not secrets_missing,
