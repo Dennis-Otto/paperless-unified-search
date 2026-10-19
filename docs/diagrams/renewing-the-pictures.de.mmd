@@ -1,0 +1,38 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+---
+flowchart TB
+    accTitle: Wie die Bilder neu entstehen
+    accDescr: Ein Pull Request, der eine Datei von screenshots-paths.txt ändert, etwa das CSS oder ein Template, startet die visuelle Prüfung. scripts/screenshots.sh nimmt jeden Screenshot und die Social Preview aus der Demo auf, mit derselben Uhr und denselben Daten in jedem Lauf, und der Vergleich des Screenshot-Bots behält jedes Bild, dessen Pixel gleich geblieben sind. Haben sich Pixel geändert, nennt ein Kommentar am Pull Request die Bilder, mit einem Artefakt, das jedes vorher und nachher zeigt und die geänderten Pixel in Rot. Nach dem Merge, nach jedem Release, jede Woche und auf Wunsch nimmt der Screenshot-Bot die Bilder ebenso auf main auf. Haben sich Pixel geändert, hält er einen Pull Request, docs: update the screenshots, der sich selbst mergt, sobald jede Prüfung besteht; ist die Social Preview darunter, bittet er, sie in den Einstellungen des Repositorys hochzuladen.
+
+    pr["Pull Request, der eine Datei<br>von screenshots-paths.txt ändert"]
+    timed["Jedes Release, jede Woche<br>oder ein Start von Hand"]
+    render["scripts/screenshots.sh<br>die Screenshots und die Social Preview,<br>gleiche Uhr, gleiche Daten"]
+    check{"Haben sich Pixel<br>eines Bildes geändert?"}
+    comment["Ein Kommentar am Pull Request:<br>die geänderten Bilder,<br>vorher, nachher und Unterschied"]
+    quiet["Kein Kommentar: jedes Bild<br>sieht aus wie eingecheckt"]
+    merge["Merge in main"]
+    bot["Der Screenshot-Bot<br>nimmt auf main auf"]
+    renew{"Haben sich Pixel<br>eines Bildes geändert?"}
+    botpr["Pull Request<br>docs: update the screenshots,<br>mergt sich selbst"]
+    same["main behält seine Bilder"]
+    upload["Die neue Social Preview hochladen,<br>unter Settings → General"]
+
+    pr --> render --> check
+    check -- "ja" --> comment
+    check -- "nein" --> quiet
+    comment & quiet --> merge --> bot
+    timed --> bot
+    bot --> renew
+    renew -- "ja" --> botpr
+    renew -- "nein" --> same
+    botpr -- "Social Preview<br>darunter" --> upload
+
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef bot fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    class pr,merge,upload person
+    class timed,render,comment,bot,botpr bot
+    class quiet,same done

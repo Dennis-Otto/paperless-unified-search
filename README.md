@@ -686,13 +686,20 @@ In the CI, the required check `nextcloud` runs the tests against every supported
 
 ### Screenshots
 
-The screenshots and the animation in `screenshots/` come from a script, so that they show what users see. After a change of the interface, take them again:
+The screenshots and the animation in `screenshots/` and the social preview `.github/social-preview.png`, which GitHub and chats show for a link to the repository, come from a script, so that they show what users see:
 
 ```bash
 bash scripts/screenshots.sh
 ```
 
-It starts the Docker suite under a project of its own with a demo: the archive account `paperless`, whose synthetic documents are shared read-only with `jamie`, and a Paperless mock that finds three of them for "invoice". Chromium then searches, opens a result, narrows the search to July 2026 with the date filter, links a document from the smart picker in a note of Text, saves the settings and tries a search in them, light and dark, on a phone and as an animation. Each step checks what its picture shows: the search narrowed by date fails, for one, when a Paperless result outside July shows or the results land under *Partial matches*. Set `KEEP_SCREENSHOTS=1` to look around in the demo afterwards.
+It starts the Docker suite under a project of its own with a demo: the archive account `paperless`, whose synthetic documents are shared read-only with `jamie`, and a Paperless mock that finds three of them for "invoice". Chromium then searches, opens a result, narrows the search to July 2026 with the date filter, links a document from the smart picker in a note of Text, saves the settings and tries a search in them, light and dark, on a phone and as an animation. Each step checks what its picture shows: the search narrowed by date fails, for one, when a Paperless result outside July shows or the results land under *Partial matches*. The clock of the browser stands at the same morning in every run and the files of the demo were changed two days before it, so two runs render the same pixels. Set `KEEP_SCREENSHOTS=1` to look around in the demo afterwards.
+
+You rarely need to run it yourself. For a pull request that changes a file of `.github/screenshots-paths.txt`, such as the CSS or a template, the visual check renders the pictures and comments with those that look different: before, after and the changed pixels in red. After the merge, after every release and every week, the screenshot bot renders them on `main` and keeps one pull request, *docs: update the screenshots*, that merges itself once every check passes.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/renewing-the-pictures.dark.svg">
+  <img src="docs/images/diagrams/renewing-the-pictures.svg" alt="Renewing the pictures: A pull request that changes a file of screenshots-paths.txt, such as the CSS or a template, runs the visual check. scripts/screenshots.sh renders every screenshot and the social preview from the demo, with the same clock and data in every run, and the comparison of the screenshot bot keeps each picture whose pixels stayed the same. When pixels changed, one comment on the pull request lists the pictures, with an artifact of each before and after and the changed pixels in red. After the merge, after each release, every week and on demand, the screenshot bot renders the pictures on main the same way. When pixels changed, it keeps one pull request, docs: update the screenshots, which merges itself once every check passes; when the social preview is among them, it asks to upload it in the settings of the repository.">
+</picture>
 
 See [CONTRIBUTING.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CONTRIBUTING.md) before opening a pull request.
 

@@ -85,7 +85,7 @@ Paperless Sync ist der Begleiter, keine Pflicht: [Jede Synchronisierung](configu
 
 ## Screenshots
 
-Jedes Bild folgt dem hellen oder dunklen Design dieser Website. Wähle eines, um es zu vergrößern. Die Screenshots zeigen Nextcloud auf Englisch.
+Jedes Bild folgt dem hellen oder dunklen Design dieser Website. Wähle eines, um es zu vergrößern. Die Screenshots zeigen Nextcloud auf Englisch. Ein Skript nimmt sie aus einer Demo der App auf, und ein Bot nimmt sie neu auf, sobald eine Änderung der App ändert, was sie zeigen, also zeigen sie die aktuelle Version.
 
 <div class="grid" markdown>
 

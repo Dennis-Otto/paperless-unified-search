@@ -1,0 +1,31 @@
+# The files whose change can change a picture of scripts/screenshots.sh, as the paths
+# of a workflow: * stays within a folder, ** goes through folders, and a line that
+# starts with ! leaves files out. After a push to main that touches one of them, the
+# screenshot bot (screenshot-bot.yml) renders the pictures; it always watches the
+# script and this list. The visual check of pull requests (visual.yml) watches the
+# same files.
+
+# The app: what it shows, in which words, and its icons.
+appinfo/**
+css/**
+img/**
+js/**
+l10n/**
+lib/**
+templates/**
+
+# The demo that the pictures show: Nextcloud, the mock of Paperless and its
+# documents, and the browser with the steps that it takes.
+tests/e2e/compose.yaml
+tests/e2e/mock_server.py
+tests/e2e/pdf.py
+tests/e2e/package.json
+tests/e2e/package-lock.json
+tests/e2e/run.sh
+tests/e2e/screenshots.mjs
+tests/e2e/ui.mjs
+
+# The social preview, which shows the first screenshot.
+.github/social-preview.html
+.github/social-preview/Dockerfile
+scripts/social-preview.sh

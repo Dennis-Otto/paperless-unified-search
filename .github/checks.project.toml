@@ -131,6 +131,35 @@ docs = "demo/README.md#when-it-doesnt-start"
 autofix = """A demo that stops at a step needs a person, who finds out what changed: the
 app, an image or Paperless Sync."""
 
+[check.visual]
+title = "The visual check of the pictures"
+problem = """`scripts/screenshots.sh` couldn't render the pictures of this pull request, or
+the comparison with the committed ones failed: the step of the check that stopped
+names the cause, and the log above it the step of `tests/e2e/screenshots.mjs` that
+failed. A step of the script fails when the app doesn't show what its picture is meant
+to show, such as a Paperless result that the date filter should have left out, or when
+Nextcloud or the mock of Paperless didn't start. A picture that merely looks different
+fails nothing: the summary of the check lists it, and the comment of the visual check
+shows it."""
+why = """The screenshots of the README, the website and the App Store and the social
+preview show the app as it is: the check renders them for a pull request that changes
+what they show, so that the change is seen before the merge, and the screenshot bot
+renews them on `main` after it. A script that no longer renders would leave every
+picture behind. The check is not required and blocks nothing."""
+fix = """Render the pictures on your machine with Docker, fix what the output of the
+script names, and push. `KEEP_SCREENSHOTS=1` leaves the demo running at
+http://127.0.0.1:18083, so that you can look at the page where a step stopped; the
+second command gives each picture whose pixels stayed the same its committed file
+back and lists the others."""
+commands = [
+  "KEEP_SCREENSHOTS=1 bash scripts/screenshots.sh",
+  "python3 .github/blueprint.py screenshots restore",
+]
+docs = "tests/e2e/README.md#screenshots-and-the-visual-check"
+autofix = """A picture that looks different needs no fix here: the screenshot bot renews it
+on `main` after the merge, through a pull request of its own. A script that stops needs
+a person, who finds out whether the app or the step of the script is wrong."""
+
 # ---------------------------------------------------------------- the steps of scripts/check.sh
 
 [step."Checks of this project"]
@@ -139,7 +168,12 @@ problem = """A check of this app alone, in `scripts/check-project.sh`, failed: t
 check that the image of Playwright and `playwright-core` have the same version; the
 scripts of the end-to-end tests, without Docker, among them that the mock of Paperless
 writes each request into its journal before it answers and that no script pipes a
-command into `grep --quiet`; that the pictures of the READMEs and
+command into `grep --quiet`; *Pictures of the READMEs and the website*, that each
+picture that a README or a page of `docs/` shows from main, under `raw/main/`, is in
+the checkout, and names the file that shows a missing one; *Social preview and the
+screenshot bot*, that `scripts/screenshots.sh` renders the social preview, that the
+screenshot it shows exists, and that the visual check runs for every file of
+`.github/screenshots-paths.txt`, among them the sources of the social preview; that
 the files and folders that the documentation links on main, under `blob/main/` or
 `tree/main/`, are in the checkout; that each page of the website that a README links is
 in `docs/`; *German pages*, that `README.de.md` marks each section of `README.md`,
@@ -165,7 +199,12 @@ pull request links them before main has them, so this check is the only one that
 a broken one."""
 fix = """Fix what the last line of the output names: for a link on main, correct the
 path of the link, or add the file that it links; for a section, mark it in both READMEs
-with the same name; for a picture, show it on the German page too, at the same place,
+with the same name; for a picture from main that is missing, correct its path in the file that the
+output names, or add it to `scripts/screenshots.sh` and run that; for the social
+preview, end `scripts/screenshots.sh` with `bash scripts/social-preview.sh`; for a file
+of `.github/screenshots-paths.txt`, add the same pattern to the paths of the pull
+requests of `.github/workflows/visual.yml`; for a picture of a German page, show it
+there too, at the same place,
 with its alt text in German; for a screenshot of `README.md`, show it on the page of
 `docs/` about its topic and on its German twin; for a text of the code, add its translation to each `l10n/*.json`;
 for a check without an explanation, add it to `.github/checks.project.toml`; for a

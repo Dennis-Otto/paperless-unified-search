@@ -3,8 +3,14 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # Takes the screenshots and the animation in screenshots/, which the README, the
-# website and the App Store show. Run it after a change of what users see:
+# website and the App Store show, and renders the social preview from the first of
+# them (scripts/social-preview.sh). Run it after a change of what users see:
 #   bash scripts/screenshots.sh
+# The screenshot bot (.github/workflows/screenshot-bot.yml) runs it on main after a
+# change of a file of .github/screenshots-paths.txt, after each release and every week,
+# and the visual check (.github/workflows/visual.yml) for a pull request; both keep a
+# picture whose pixels stayed the same, so the clock, the times of the files and the
+# data of the demo are fixed (tests/e2e/screenshots.mjs).
 #
 # It needs Docker. It starts Nextcloud and the mock of Paperless of the end-to-end
 # tests under a Compose project of its own and sets up a demo: the archive account
@@ -58,8 +64,9 @@ occ config:system:set default_language --value=en >/dev/null
 occ config:system:set default_locale --value=en_US >/dev/null
 occ app:enable paperless_unified_search >/dev/null
 # The first-run wizard would cover the pages, the announcements and the survey would
-# add notifications.
-for app in firstrunwizard nextcloud_announcements survey_client; do
+# add notifications, and the status of a user would show on the avatars only once the
+# browser has told Nextcloud that the user is online, sooner in one run than another.
+for app in firstrunwizard nextcloud_announcements survey_client user_status; do
 	occ app:disable "${app}" >/dev/null 2>&1 || true
 done
 occ user:setting e2e-admin settings display_name 'Alex Admin' >/dev/null
@@ -103,3 +110,6 @@ tar -C tests/e2e -cf - package.json package-lock.json ui.mjs screenshots.mjs \
 
 cp "${TMP_DIR}"/*.png "${TMP_DIR}"/*.gif screenshots/
 ls -l screenshots/
+
+# The social preview shows the first screenshot.
+bash scripts/social-preview.sh

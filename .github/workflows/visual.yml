@@ -1,0 +1,122 @@
+# SPDX-FileCopyrightText: 2026 Dennis Otto
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: Visual check
+
+# Renders every picture of scripts/screenshots.sh, the screenshots and the social
+# preview, for a pull request that changes what they show, and compares each with the
+# committed one by its pixels, as the screenshot bot does (`.github/blueprint.py
+# screenshots keep`), so that the check and the bot agree on what changed. It only
+# reports: the summary lists every picture that looks different with the share of its
+# pixels that changed, the artifact visual holds each one before and after with the
+# changed pixels in red (tests/e2e/visual-compare.mjs), and visual-comment.yml writes
+# the list into one comment on the pull request. An intended change reaches
+# screenshots/ through the screenshot bot after the merge. A picture that can't be
+# rendered fails the check, as the app then no longer shows what the picture is meant
+# to show. It is no required check and blocks nothing.
+#
+# The paths are those of .github/screenshots-paths.txt, which tell the screenshot bot
+# when to render, and the files of the check itself; scripts/check-project.sh keeps
+# them the same.
+
+on:
+  pull_request:
+    paths:
+      - appinfo/**
+      - css/**
+      - img/**
+      - js/**
+      - l10n/**
+      - lib/**
+      - templates/**
+      - tests/e2e/compose.yaml
+      - tests/e2e/mock_server.py
+      - tests/e2e/pdf.py
+      - tests/e2e/package.json
+      - tests/e2e/package-lock.json
+      - tests/e2e/run.sh
+      - tests/e2e/screenshots.mjs
+      - tests/e2e/ui.mjs
+      - .github/social-preview.html
+      - .github/social-preview/Dockerfile
+      - scripts/social-preview.sh
+      # The check itself.
+      - .github/screenshots-paths.txt
+      - .github/screenshots-requirements.txt
+      - .github/workflows/visual.yml
+      - scripts/screenshots.sh
+      - tests/e2e/visual-compare.mjs
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  visual:
+    name: visual
+    runs-on: ubuntu-24.04
+    # Nextcloud and the mock of Paperless start in about two minutes, the pictures take
+    # about five more.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      # The script reaches what the demo needs: the images of Nextcloud, Python and
+      # Playwright, the packages of the browser and the fonts of the pictures.
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        timeout-minutes: 5
+        with:
+          # renovate: datasource=pypi depName=uv
+          version: "0.13.0"
+          enable-cache: true
+          prune-cache: true
+          cache-dependency-glob: .github/screenshots-requirements.txt
+      - name: Install Pillow, which compares the pictures as the screenshot bot does
+        timeout-minutes: 5
+        run: |
+          uv venv --quiet "$RUNNER_TEMP/pictures"
+          uv pip install --quiet --python "$RUNNER_TEMP/pictures" --require-hashes \
+            -r .github/screenshots-requirements.txt
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tests/e2e/package-lock.json
+      - name: Render the pictures
+        run: bash scripts/screenshots.sh
+      # Each picture whose pixels stayed the same gets its committed file back; the
+      # others go into the folder kept, with their list.
+      - name: Compare the pictures with the committed ones
+        run: |
+          "$RUNNER_TEMP/pictures/bin/python" .github/blueprint.py screenshots keep "$RUNNER_TEMP/kept"
+      - name: Draw the pictures before and after, with their differences
+        run: |
+          npm ci --prefix tests/e2e --ignore-scripts --no-audit --no-fund --loglevel=error
+          node tests/e2e/visual-compare.mjs "$RUNNER_TEMP/kept" "$RUNNER_TEMP/visual"
+          cat "$RUNNER_TEMP/visual/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the pictures before and after, with their differences
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: visual
+          path: ${{ runner.temp }}/visual/
+          # Pictures in .github/ as well, such as the social preview.
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.project.toml.
+      - name: Explain the failure
+        if: failure()
+        env:
+          CHECK: visual
+        run: python3 .github/blueprint.py coach explain "$CHECK"

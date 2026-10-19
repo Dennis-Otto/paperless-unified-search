@@ -20,9 +20,11 @@ export const BASE_URL = process.env.E2E_BASE_URL ?? 'http://nextcloud'
 export const PASSWORD = process.env.E2E_PASSWORD ?? 'e2e-only-password'
 
 // Signs in through the login form, as a person does, and returns the session for the
-// contexts of the pages that follow.
-export async function signIn(browser, user) {
-	const context = await browser.newContext({ locale: 'en-US' })
+// contexts of the pages that follow. Nextcloud keeps the time zone of the browser that
+// signs in as the user's, in which the server writes times, such as those of the
+// problems of the search; options of the context, such as timezoneId, choose it.
+export async function signIn(browser, user, options = {}) {
+	const context = await browser.newContext({ locale: 'en-US', ...options })
 	try {
 		const page = await context.newPage()
 		await page.goto(`${BASE_URL}/index.php/login`)
