@@ -12,13 +12,13 @@ colorama==0.4.6 \
     --hash=sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44 \
     --hash=sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6
     # via copier
-copier==9.18.2 \
-    --hash=sha256:0f97902fee79374551c9391fb1132f5a038079f3b497f4dad673295489fc032e \
-    --hash=sha256:ef0e1b09dece031b09085f2aa637bdc3d5952b98d96b986feaa45a8f3a00d2c6
+copier==9.19.1 \
+    --hash=sha256:1779270f5082b168982a4ec356afbca24545b3cf1ebb587d1dff843bb5bc9858 \
+    --hash=sha256:3fe48c38a290c90dfa67cfc7811bc3f576c03f59d3a1e6a09a8d46c2f0403988
     # via -r requirements.in
-dunamai==1.26.2 \
-    --hash=sha256:4234be3a90c3ec13ecf75d94a2248068e5a3018e8112892fcd9f3a1f287c9c32 \
-    --hash=sha256:84ea45eddf9bb4b40df7610b1b22a03137365e6257dbf9d7b72128fdccca564c
+dunamai==1.26.3 \
+    --hash=sha256:cc486963f21ad5b5b20d95424909ff5029990241eea3e2272865e1542c5fd19f \
+    --hash=sha256:fe2f732186710ee5048044fdbef6c76c6afbb9ee7de4f6d00cf34256e9ec2e7f
     # via copier
 funcy==2.1 \
     --hash=sha256:290794186530c944f7e444d2e28b98f33a55685f2bfb9b7a61dac564decab8f8 \
@@ -197,9 +197,9 @@ pathspec==1.1.1 \
     --hash=sha256:17db5ecd524104a120e173814c90367a96a98d07c45b2e10c2f3919fff91bf5a \
     --hash=sha256:a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bbd5af0b9b20b189
     # via copier
-platformdirs==4.13.0 \
-    --hash=sha256:1aa0b0d3f224c1f07c295121e312a5a24a180d6ae5a8425ea1784b3e3863e9c0 \
-    --hash=sha256:3dbcf4cd708f21cf876c4eaa90e58412bc4f033d87143f41b1493ff77c25b7e1
+platformdirs==4.13.5 \
+    --hash=sha256:05831adf87d392760f4b5c3a0a95579ab5a10b18b9b9bd43680dcb47544788a0 \
+    --hash=sha256:53d3ec4280b815c1e0b02edad7f9ee8fda1ba9c0865dd9c2e6e63849ce82fc1e
     # via copier
 plumbum==2.0.2 \
     --hash=sha256:233751d7819c9e6743ec1c2405927eb4fa52a284c7b894bd10e28106a9309a92 \
