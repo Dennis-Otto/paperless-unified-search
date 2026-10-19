@@ -323,6 +323,29 @@ async function searchAndOpen(browser, session, theme) {
 	await page.context().close()
 }
 
+// The dashboard of jamie with the newest Paperless documents of the demo, which the
+// mock of Paperless lists by the moment that it added them, as the only widget, and
+// without the statuses above it.
+async function dashboard(browser, session, theme) {
+	const suffix = theme === 'dark' ? '-dark' : ''
+	for (const [setting, value] of [['layout', ['paperless_unified_search-recent']], ['statuses', []]]) {
+		const response = await fetch(`${BASE_URL}/ocs/v2.php/apps/dashboard/api/v3/${setting}`, {
+			method: 'POST',
+			body: JSON.stringify({ [setting]: value }),
+			headers: { Authorization: authorization(READER), 'OCS-APIRequest': 'true', Accept: 'application/json', 'Content-Type': 'application/json' },
+		})
+		if (!response.ok) {
+			throw new Error(`The dashboard didn't take the ${setting} of ${READER}: ${response.status} ${await response.text()}`)
+		}
+	}
+	const page = await newPage(browser, session, { viewport: { width: 1280, height: 720 }, colorScheme: theme })
+	await page.goto(`${BASE_URL}/index.php/apps/dashboard/`)
+	const widget = page.locator('.panel').filter({ hasText: 'New in Paperless' })
+	await widget.getByText('Property tax notice 2026').waitFor()
+	await save(page, `11-dashboard${suffix}.png`, 1200)
+	await page.context().close()
+}
+
 // The note of jamie in Text, in which the smart picker finds the electricity invoice.
 const NOTE_LINE = 'The electricity bill of August, due on September 2:'
 
@@ -649,6 +672,7 @@ try {
 		await settings(browser, admin, theme)
 		await share(browser, archive, theme)
 		await trySearch(browser, admin, theme)
+		await dashboard(browser, reader, theme)
 	}
 	await phone(browser, reader)
 	await phoneSettings(browser, admin)

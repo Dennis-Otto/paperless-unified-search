@@ -1,0 +1,115 @@
+# SPDX-FileCopyrightText: 2026 Dennis Otto
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: Demo
+
+# The demo of the README (demo/seed.sh), run as a reader runs it: a real Paperless-ngx
+# and a real Nextcloud in Docker, Paperless Sync from its pinned release and this app
+# from the checkout, up to the search as jamie that must show the documents. It runs in
+# a pull request that changes the demo or the code of the app, such as one of Renovate
+# with a new image of the demo or a new release of Paperless Sync, every Monday and when
+# started by hand. It is no required check and blocks nothing.
+#
+# A failure of the weekly run opens the issue "The demo breaks", or adds the run to it,
+# and the next run that passes closes it.
+
+on:
+  pull_request:
+    paths:
+      - demo/**
+      - appinfo/**
+      - lib/**
+      - .github/workflows/demo.yml
+  schedule:
+    - cron: "41 5 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  demo:
+    name: demo
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run the demo
+        run: bash demo/seed.sh
+      - name: Remove the demo with its data
+        if: always()
+        run: |
+          if [[ -f demo/.env ]]; then
+            docker compose -f demo/compose.yaml down --volumes
+          fi
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.project.toml.
+      - name: Explain the failure
+        if: failure()
+        env:
+          CHECK: demo
+        run: python3 .github/blueprint.py coach explain "$CHECK"
+
+  # The only job that may write issues, and it runs no code of the repository. A run
+  # started by hand on another branch than main reports nothing.
+  demo-issue:
+    name: issue about the demo
+    needs: demo
+    if: >-
+      always() &&
+      (github.event_name == 'schedule' ||
+        (github.event_name == 'workflow_dispatch' && github.ref_name == github.event.repository.default_branch)) &&
+      (needs.demo.result == 'success' || needs.demo.result == 'failure')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - name: Open, update or close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TITLE: The demo breaks
+          RESULT: ${{ needs.demo.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          number="$(gh issue list --state open --search "in:title \"$TITLE\"" --json number,title \
+            --jq '[.[] | select(.title == env.TITLE)][0].number // empty')"
+          if [[ "$RESULT" == success ]]; then
+            if [[ -n "$number" ]]; then
+              gh issue close "$number" --reason completed \
+                --comment "The demo runs again: $RUN_URL"
+            fi
+            exit 0
+          fi
+          if [[ -n "$number" ]]; then
+            gh issue comment "$number" --body "The demo still fails: $RUN_URL"
+            exit 0
+          fi
+          {
+            printf 'The weekly run of the demo fails: %s\n\n' "$RUN_URL"
+            cat <<'TEXT'
+          The job `demo` of `.github/workflows/demo.yml` runs `bash demo/seed.sh`, the demo that the README and the install guide offer as the first thing to try: a real Paperless-ngx and a real Nextcloud in Docker, Paperless Sync and this app, up to a search as jamie that must show three documents. The log of the job names the step that stopped, with the end of the logs of the containers; a new release of an image or of Nextcloud behind the same tag is the usual cause.
+
+          `bash demo/seed.sh` runs the same demo locally with Docker, and `docker compose -f demo/compose.yaml down --volumes` removes it again.
+
+          The job adds every further failed run here and closes this issue once the demo runs again.
+          TEXT
+          } > "$RUNNER_TEMP/issue.md"
+          gh issue create --title "$TITLE" --body-file "$RUNNER_TEMP/issue.md"

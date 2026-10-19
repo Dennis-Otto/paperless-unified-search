@@ -32,7 +32,7 @@ while IFS= read -r entry; do
 	fi
 
 	case "${entry}" in
-		"${APP_ID}/"|"${APP_ID}/CHANGELOG.md"|"${APP_ID}/LICENSE"|"${APP_ID}/README.md")
+		"${APP_ID}/"|"${APP_ID}/CHANGELOG.md"|"${APP_ID}/LICENSE"|"${APP_ID}/README.md"|"${APP_ID}/README.de.md")
 			;;
 		"${APP_ID}/appinfo/"*|"${APP_ID}/css/"*|"${APP_ID}/img/"*|"${APP_ID}/js/"*|"${APP_ID}/l10n/"*|"${APP_ID}/lib/"*|"${APP_ID}/templates/"*)
 			;;

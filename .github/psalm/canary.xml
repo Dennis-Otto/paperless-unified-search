@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<!-- The taint analysis of the canary in .github/psalm/canary/, with the plugin and the
+     public API of Nextcloud of psalm.xml, from the root of the repository: scripts/check.sh
+     runs it and compares what it finds with what the canary expects.
+     The blueprint keeps this file current: https://github.com/Dennis-Otto/repo-blueprint -->
+<psalm
+	errorLevel="1"
+	resolveFromConfigFile="false"
+	phpVersion="8.2"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns="https://getpsalm.org/schema/config"
+	xsi:schemaLocation="https://getpsalm.org/schema/config ../../vendor/vimeo/psalm/config.xsd">
+	<projectFiles>
+		<directory name=".github/psalm/canary"/>
+	</projectFiles>
+	<extraFiles>
+		<directory name="vendor/nextcloud/ocp"/>
+	</extraFiles>
+	<plugins>
+		<plugin filename=".github/psalm/NextcloudTaintPlugin.php"/>
+	</plugins>
+</psalm>

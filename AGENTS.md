@@ -17,23 +17,27 @@ On Windows, run them in Git Bash. While you work, the quicker steps of the check
 
 - `XDEBUG_MODE=coverage vendor/bin/phpunit --coverage-text`: the tests, with every line of `lib/` covered.
 - `vendor/bin/phpunit --filter name`: one test.
+- `vendor/bin/phpunit --random-order-seed SEED`: the tests in the order of a run that failed; they run in a new random order each time, and PHPUnit names its seed as it starts.
 - `vendor/bin/php-cs-fixer fix`: the format of the code, in the coding standard of Nextcloud.
-- `vendor/bin/psalm --threads=1 --no-cache`, and with `--taint-analysis`: the types at the strictest level, and untrusted input that reaches HTML, SQL, a shell or a file.
+- `vendor/bin/psalm --threads=1 --no-cache`, and with `--taint-analysis`: the types at the strictest level, and untrusted input, such as a parameter of a request to a controller or the answer of another server, that reaches HTML, SQL, a shell, a file, a request to another server or a header. A function that makes input safe for a sink says so with `@psalm-taint-escape` and a comment on why; `.github/psalm/` belongs to the blueprint.
+
+`python3 .github/blueprint.py fix run` makes every fix that a command makes for a step of `scripts/check.sh`, as the fix bot makes it in a pull request.
 
 Turn on the hook of the repository once with `git config core.hooksPath .githooks`, and it runs the checks before every push.
 
 ## Changes
 
 - **Tests come with every change of behavior,** in the same pull request, and a bug fix comes with a test that fails without the fix. `scripts/check.sh` fails when a line of `lib/` runs in no test.
+- **A test that makes a Git repository of its own** first clears the variables that point Git at another, such as `GIT_DIR`, which Git sets for its hooks in a worktree and an agent sets for a worktree in a container; otherwise its `git init` and its commits land in the repository that runs the tests. A shell script clears them with `unset $(git rev-parse --local-env-vars)`, a test in Python runs git with an environment without them.
 - **The coding standards** of [CONTRIBUTING.md](CONTRIBUTING.md#coding-standards) apply; an exception to a rule is rare and has its reason in a comment at its place.
 - **The documentation changes with the code:** `README.md` and the pages in `docs/`, and with an English page its German one, such as `README.de.md`, where the project has one.
 - **Diagrams** are Mermaid sources in `docs/diagrams/<name>.mmd`, from top to bottom (`flowchart TB`), with `accTitle` and `accDescr`. `bash scripts/diagrams.sh` draws each, with Docker, as `docs/images/diagrams/<name>.svg` and `<name>.dark.svg`, and the Markdown shows them with a `<picture>`, whose `alt` repeats the title and the description. Never write a `mermaid` block: the GitHub app shows it as code, and `scripts/check.sh` fails on it once a page shows a picture of a diagram. Without Docker, change the source and push, and the diagram bot draws the pictures on the branch; a German page takes `<name>.de.mmd`. [CONTRIBUTING.md](CONTRIBUTING.md#diagrams) has the rest.
-- **A change for users** (`feat`, `fix`, `perf`) gets an entry in the words of a user, in a new file `changelog.d/<branch>.md` named after the branch without its type, such as `changelog.d/dark-mode.md` for the branch `feat/dark-mode`, below the heading of its kind of change, such as `### Features` or `### Bug fixes`. The check *changelog* asks for it, and `python3 .github/blueprint.py fragments` checks it as the release takes it in. A file of its own conflicts with no other pull request, an entry under `## Unreleased` in `CHANGELOG.md` with every one that adds one at the same place, so write the fragment. The release bot moves the fragments into the section of the next release and writes the version, so leave the released sections alone.
+- **A change for users** (`feat`, `fix`, `perf`) gets an entry in the words of a user, in a new file `changelog.d/<branch>.md` named after the branch without its type, such as `changelog.d/dark-mode.md` for the branch `feat/dark-mode`, below the heading of its kind of change, such as `### Features` or `### Bug fixes`. The check of the title, *conventional title*, asks for it, and `python3 .github/blueprint.py fragments` checks it as the release takes it in. A file of its own conflicts with no other pull request, an entry under `## Unreleased` in `CHANGELOG.md` with every one that adds one at the same place, so write the fragment. The release bot moves the fragments into the section of the next release and writes the version, so leave the released sections alone.
 - **A decision that shapes the project,** such as a supported platform or the way of releasing, gets a record in [`docs/decisions/`](docs/decisions/README.md), with the next free number.
 
 ## Commits and pull requests
 
-- Sign off every commit with `git commit -s`, for the [Developer Certificate of Origin](https://developercertificate.org/); the check *DCO* fails without it.
+- Sign off every commit with `git commit -s`, for the [Developer Certificate of Origin](https://developercertificate.org/); the check *lint* fails without it.
 - The title of a pull request is a [Conventional Commit](https://www.conventionalcommits.org/), such as `feat(settings): add a dark mode`. Pull requests are squashed into one commit named after the title, and the title decides the next version: `fix` and `perf` a patch, `feat` a minor, `!` after the type, such as `feat!:`, a major version (a minor one before 1.0.0). `docs`, `test`, `refactor`, `ci`, `build` and `chore` make no release by themselves.
 - The description follows the pull request template and names the issue that it fixes with `Fixes #123`. The issue stays open until a release ships the fix, and a bot closes it then.
 - Every change reaches `main` through a pull request that passes every required check.
@@ -53,9 +57,9 @@ Paperless Unified Search is made from [Repo Blueprint](https://github.com/Dennis
 
 The project adds its own beside the files of the blueprint:
 
-- Checks of this project alone go into `scripts/check-project.sh`, which `scripts/check.sh` runs last.
-- Explanations of the checks of this project alone, which the PR coach shows when one fails, go into `.github/checks.project.toml`: what the check found, why that matters and how to fix it. `python3 .github/blueprint.py coach verify` lists each required check and each step of `scripts/check.sh` without one.
-- Settings of this repository alone, such as the required checks of its end-to-end tests or an environment with its secrets, go into `.github/repository.project.toml`, never into `.github/repository.toml`.
+- Checks of this project alone go into `scripts/check-project.sh`, which `scripts/check.sh` runs last, and those of its website into `scripts/check-site.sh`, which the check *docs* runs with the folder of the built website, `site`.
+- Explanations of the checks of this project alone, which the PR coach shows when one fails, go into `.github/checks.project.toml`: what the check found, why that matters and how to fix it, and in `autofix` the commands that fix it, which the fix bot runs, or the reason why no command can. `python3 .github/blueprint.py coach verify` lists each required check and each step of `scripts/check.sh` without one, and each explanation without its `autofix`.
+- Settings of this repository alone, such as the required checks of its end-to-end tests, an environment with its secrets or the pattern of an action that only its own workflows run, go into `.github/repository.project.toml`, never into `.github/repository.toml`.
 - Workflows of this project alone are workflow files of their own in `.github/workflows/`.
 - Notes for coding agents go into `.github/agents.project.md`, those for the issue assistant into `.github/issue-assistant/project.md`.
 
@@ -67,7 +71,7 @@ The files of this project, as `_skip_if_exists` in the `copier.yml` of the bluep
 - **Dependency manifests and lock files, which Renovate keeps current:** `/pyproject.toml`, `/requirements-dev.in`, `/requirements-dev.txt`, `/requirements-test.in`, `/requirements-test.txt`, `/requirements-fuzz.in`, `/requirements-fuzz.txt`, `/composer.json`, `/composer.lock`, `/package.json`, `/package-lock.json`
 - **Issue and discussion forms:** `.github/ISSUE_TEMPLATE/bug_report.yml`, `.github/ISSUE_TEMPLATE/feature_request.yml`, `.github/ISSUE_TEMPLATE/config.yml`, `.github/DISCUSSION_TEMPLATE/q-a.yml`, `.github/DISCUSSION_TEMPLATE/ideas.yml`
 - **Settings, labels and bots:** `.github/repository.project.toml`, `.github/checks.project.toml`, `.github/labels.toml`, `.github/labeler.yml`, `.github/renovate.json5`, `.github/findings.toml`, `.github/dependency-review.yml`, `.github/workflows/action-test.yml`, `.github/issue-assistant/project.md`, `.github/agents.project.md`
-- **Lint, links and the social preview:** `/.markdownlint.jsonc`, `.github/cspell-words.txt`, `/.lycheeignore`, `.github/social-preview.html`
+- **Lint, links and the pictures:** `/.markdownlint.jsonc`, `.github/cspell-words.txt`, `/.lycheeignore`, `.github/social-preview.html`, `/scripts/screenshots.sh`, `.github/screenshots-paths.txt`
 
 ## Project notes
 

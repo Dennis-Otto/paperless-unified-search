@@ -12,6 +12,8 @@
 [![CI](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/ci.yml/badge.svg)](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/ci.yml)
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE)
 
+**English** · [Deutsch](README.de.md)
+
 </div>
 
 Paperless Unified Search brings Paperless-ngx OCR and full-text search into Nextcloud's global search, without Elasticsearch, a second index or another container: Paperless answers, Nextcloud decides who sees the file. Search results open the matching synchronized file directly in Nextcloud's viewer.
@@ -33,11 +35,11 @@ Two apps, one archive: [Paperless Sync](https://github.com/Dennis-Otto/paperless
 
 Paperless Sync is the companion, not a must: [any synchronization](#works-with-any-synchronization) that writes the files with their marker into the archive account works as well, Paperless-ngx's own file names included.
 
-The [documentation website](https://dennis-otto.github.io/paperless-unified-search/) has this documentation on pages to install, configure and use the app, with a troubleshooting guide, a FAQ and a reference for administrators, and a comparison with the alternatives, the architecture, the security design and the roadmap.
+The [documentation website](https://dennis-otto.github.io/paperless-unified-search/) has this documentation on pages to install, configure and use the app, with a troubleshooting guide, a FAQ and a reference for administrators, and a comparison with the alternatives, the architecture, the security design and the roadmap, in English and in [German](https://dennis-otto.github.io/paperless-unified-search/de/index.html), where the architecture, the security design, the decisions, the releases and the changelog stay in English.
 
 <sub>💛 Like it? [Rate it in the App Store](https://apps.nextcloud.com/apps/paperless_unified_search) or [support its development](https://github.com/sponsors/Dennis-Otto).</sub>
 
-[Why](#why-paperless-unified-search) · [Quick start](#quick-start) · [Troubleshooting](https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html) · [FAQ](https://dennis-otto.github.io/paperless-unified-search/faq.html) · [Reference](https://dennis-otto.github.io/paperless-unified-search/reference.html) · [Compare](docs/compare.md) · [Architecture](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/architecture.md) · [Security design](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/security.md) · [Roadmap](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/roadmap.md) · [Releases](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/releases.md) · [Changelog](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CHANGELOG.md)
+[Why](#why-paperless-unified-search) · [Try it](#try-it-in-three-minutes) · [Quick start](#quick-start) · [Troubleshooting](https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html) · [FAQ](https://dennis-otto.github.io/paperless-unified-search/faq.html) · [Reference](https://dennis-otto.github.io/paperless-unified-search/reference.html) · [Compare](docs/compare.md) · [Architecture](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/architecture.md) · [Security design](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/security.md) · [Roadmap](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/roadmap.md) · [Releases](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/releases.md) · [Changelog](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CHANGELOG.md)
 
 ## Why Paperless Unified Search
 
@@ -48,6 +50,7 @@ Paperless-ngx has already recognized the text of every document and keeps an ind
 - **No second index, no second OCR.** No Elasticsearch, no extra container and no copy of the text in Nextcloud. What Paperless finds, Nextcloud's search finds, as soon as the file of the document is in Nextcloud.
 - **Nextcloud decides who sees what.** A result appears only for someone who can open its file in Nextcloud, so the shares you already have are the permissions. Nobody needs an account in Paperless.
 - **Results open where people work.** In Nextcloud's viewer in the browser and in the Nextcloud apps for iOS and Android, ready to share, download or comment on.
+- **New documents come to you.** The dashboard lists the documents that Paperless added last, for everyone who can open them, without a search.
 - **The search of Paperless, not a copy of its words.** Its ranking, its highlights and its query syntax, such as `correspondent:acme` or `created:[2024 to 2025]`, which also look at the correspondent, the type and the tags of a document.
 
 <!-- --8<-- [start:comparison] -->
@@ -68,6 +71,27 @@ The table sets it beside the other ways to find Paperless documents from Nextclo
 <!-- --8<-- [end:why] -->
 
 The [comparison](docs/compare.md) explains each of them, and when another one is the better choice.
+
+## Try it in three minutes
+
+<!-- --8<-- [start:try-it] -->
+
+One command starts a real Paperless-ngx and a real Nextcloud in Docker on your own machine, with five synthetic documents, [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) and this app set up, and ends with a search that finds the documents. Your own Nextcloud and Paperless stay untouched:
+
+```sh
+git clone https://github.com/Dennis-Otto/paperless-unified-search.git
+cd paperless-unified-search
+bash demo/seed.sh
+```
+
+It needs Docker with Compose and Bash, Git Bash on Windows, and generates the passwords of the demo on your machine. Both web interfaces listen on 127.0.0.1 alone. Once the script prints the accounts, sign in as `jamie` at <http://localhost:8180> and search for *invoice*: the home insurance renewal is among the results, because its text says "invoice", while its title doesn't. [The guide of the demo](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/demo/README.md) says what else to try, and how to remove it again.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/what-the-demo-sets-up.dark.svg">
+  <img src="docs/images/diagrams/what-the-demo-sets-up.svg" alt="What the demo sets up: You run bash demo/seed.sh. It generates the secret key of Paperless and the passwords of the demo into demo/.env, and starts Paperless-ngx with Redis and Nextcloud with its background jobs in Docker, on 127.0.0.1 alone. Paperless reads five synthetic letters. Paperless Sync, a pinned signed release, writes each one into the files of the archive account paperless, which shares the archive read-only with jamie. occ paperless_unified_search:setup connects the app to Paperless, with the API token through a pipe. A search as jamie for invoice shows three Paperless documents, and the script prints the addresses and the accounts to sign in with.">
+</picture>
+
+<!-- --8<-- [end:try-it] -->
 
 <!-- --8<-- [start:quick-start-section] -->
 
@@ -134,6 +158,15 @@ Nextcloud in the browser of a phone. The Nextcloud apps for iOS and Android open
 </picture>
 
 Type `/` in a note of Text and choose *Paperless documents*: the picker finds the documents by their text and inserts the link to the file you pick, which Text shows as the file itself to everyone who can open it.
+
+### The newest documents on the dashboard
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/11-dashboard-dark.png">
+  <img alt="The dashboard of Jamie with the widget New in Paperless: the car service, the electricity invoice, the home insurance renewal, the internet invoice and the property tax notice, newest first, each with the icon of its PDF file and a line with the day that Paperless added it, its correspondent and its type, such as Sep 3, 2026 · Example Motors · Receipt" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/11-dashboard.png">
+</picture>
+
+*New in Paperless* on Nextcloud's dashboard lists the documents that Paperless added last and that you can open, without a search.
 
 ### The archive, shared read-only
 
@@ -364,6 +397,20 @@ Nextcloud's smart picker finds Paperless documents too, wherever you write: type
 
 The picker searches through the same provider as Nextcloud's search, so it lists the same documents. It asks Paperless once you have chosen **Paperless documents** and typed a term, without the switch **Search connected services**: choosing it is the same consent.
 
+### On the dashboard
+
+Add **New in Paperless** to your dashboard with **Customize** at the end of the dashboard. The widget lists the newest documents that Paperless added and that you can open, newest first, without a search: each with the preview of its file, and below its title the day that Paperless added it in your language, its correspondent and its type, such as *Sep 3, 2026 · Example Motors · Receipt*. Selecting one opens its file in Files. Once the list is full, Nextcloud's dashboard shows six documents and **Files shared with you** below them, which opens all the files that others share with you; with fewer documents it shows them all and no link, and the archive account, which owns the files, gets no such link at all. The apps and the other clients of the dashboard's API get up to seven documents and the link. Nextcloud's dashboard API serves the widget to other clients as well, such as the widgets of the Android app on the home screen of a phone.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/the-newest-documents-on-the-dashboard.dark.svg">
+  <img src="docs/images/diagrams/the-newest-documents-on-the-dashboard.svg" alt="The newest documents on the dashboard: The dashboard of jamie asks the widget New in Paperless for its items. The app takes the 25 documents that Paperless-ngx added last from Nextcloud's distributed cache, or else asks Paperless for them, newest first, and keeps them for a minute for every user, since every request carries the token of the settings. Of these, jamie sees the documents whose file of the archive account jamie can open, found by their markers in one search of the file cache, at most seven, with the names of their correspondents and types. Each item shows the preview of its file, its title, and the day that Paperless added it, its correspondent and its type, such as Sep 3, 2026 · Example Motors · Receipt, and opens the file in Files.">
+</picture>
+
+- **Who sees what.** The same rule as in the search: a document shows to whoever can open its file of the archive account. The widget looks at the 25 documents that Paperless added last; when you can open none of them, it says so.
+- **How new.** The newest documents are the same for every user, since every request to Paperless carries the token of the settings, so the app asks Paperless for them at most once a minute, for all users together, and keeps them in Nextcloud's distributed cache meanwhile. That needs a memory cache, as Nextcloud recommends: without one, every dashboard that shows the widget asks Paperless, and waits for it during an outage. A document that Paperless adds shows within a minute, and a file shared with you at once.
+- **When Paperless doesn't answer** within five seconds, the widget says *Paperless can't be reached right now.*, and the app asks again a minute later. Such a failure goes into the log of Nextcloud, not into the history of the problems of the search.
+- **Only where the search works.** The dashboard offers the widget once the settings name a Paperless and an archive account that exists.
+
 <!-- --8<-- [end:usage] -->
 <!-- --8<-- [start:search-syntax] -->
 
@@ -542,6 +589,7 @@ Documents without a file are no failure, as long as the search can show others: 
 - **Try a search** shows administrators which documents a user finds for a term, by their IDs and titles alone, without their content, an excerpt or their files; the audit log of the app *Auditing / Logging* (`admin_audit`) records which administrator tried a search as which user, whatever the log level, and so does the log of Nextcloud at level info, without the term.
 - Search terms are sent server-to-server only when connected-services search or trusted-service mode is enabled, after the user chose **Paperless documents** in the smart picker, or when a client asks this search by its ID through the API.
 - A link that the smart picker inserts is the link of the file in Nextcloud, which shows its preview only to readers who can open the file.
+- The dashboard widget shows a user only the newest documents whose files they can open. Nextcloud's distributed cache keeps the IDs, titles, correspondents and types of the 25 newest documents for a minute, which are the same for every user, and never their text.
 - Administrators can explicitly trust the configured Paperless server to include it automatically in every user's global searches.
 - No deployment credentials, private hostnames, internal addresses, or instance configuration belong in this repository.
 - Gitleaks scans every push and pull request.
@@ -572,7 +620,14 @@ composer install
 bash scripts/check.sh
 ```
 
-`scripts/check.sh` checks Composer, `appinfo/info.xml` against the schema of the App Store, PHP syntax, the coding standard, Psalm, PHPUnit, the package that krankerl builds with `scripts/check-package.sh`, and, with `scripts/check-project.sh`, the JavaScript with the tests of the settings page, each line and branch of it, the translations, the pictures of the README, a description of its own for every page of the website, and that every diagram runs from top to bottom with a title and a description for screen readers.
+`scripts/check.sh` checks Composer, `appinfo/info.xml` against the schema of the App Store, PHP syntax, the coding standard, Psalm, PHPUnit, the package that krankerl builds with `scripts/check-package.sh`, and, with `scripts/check-project.sh`, the JavaScript with the tests of the settings page, each line and branch of it, the translations, the pictures of the READMEs, a description of its own for every page of the website, and that every diagram runs from top to bottom with a title and a description for screen readers.
+
+When a check fails, it explains itself: what it found, why that matters and how to fix it, with the commands to run, in the summary of the check and in one comment on the pull request, also on a pull request from a fork. The explanations of the checks of this app alone are in [`.github/checks.project.toml`](.github/checks.project.toml): the end-to-end tests `nextcloud`, `paperless (2)`, `paperless (3)` and `coming Nextcloud`, the demo, and the step of `scripts/check.sh` that runs `scripts/check-project.sh`. `scripts/check-project.sh` fails while a required check or a step has no explanation. What a command can fix, a pull request fixes by itself: a JavaScript catalog of `l10n/` that lags its JSON catalog is written anew by `node scripts/check-l10n.mjs --write`. Run it yourself for now: the fix bot runs it too once [repo-blueprint#351](https://github.com/Dennis-Otto/repo-blueprint/issues/351) ships.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/when-a-check-of-the-app-fails.dark.svg">
+  <img src="docs/images/diagrams/when-a-check-of-the-app-fails.svg" alt="When a check of the app fails: A pull request runs the checks of this app alone, such as nextcloud, the end-to-end tests, or the step Checks of this project of scripts/check.sh. When one fails, its last step writes its explanation from .github/checks.project.toml into the summary of the check and as its annotation: what it found, why that matters and how to fix it. After the checks, the PR coach keeps one comment on the pull request with that explanation, also on a pull request from a fork. Where a command fixes what the check found, the fix bot commits the fix onto a branch of this repository and suggests it on a fork; otherwise the explanation tells the person what to do, and the next push runs the checks again.">
+</picture>
 
 The production archive intentionally excludes tests, release tools, Composer development dependencies, screenshots, and repository metadata. Packaging uses [Krankerl](https://github.com/ChristophWurst/krankerl), and `scripts/check-package.sh` validates the finished archive.
 

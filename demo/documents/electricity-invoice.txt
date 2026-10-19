@@ -1,0 +1,20 @@
+Title: Electricity invoice - August 2026
+Correspondent: Northstar Energy
+Type: Bill
+Created: 2026-08-12
+Tags: Household
+
+Northstar Energy
+100 Example Street, Exampletown
+
+Invoice E-2026-0812
+
+Customer: Jamie Example, 7 Sample Road, Exampletown
+Electricity from 1 August to 31 August 2026
+Meter number: NE-4471-0815
+
+Consumption: 212 kWh at 0.32 EUR per kWh      67.84 EUR
+Monthly base price                            16.46 EUR
+Total due by 2 September 2026                 84.30 EUR
+
+Thank you for choosing Northstar Energy.

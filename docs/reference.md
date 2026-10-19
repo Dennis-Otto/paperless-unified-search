@@ -95,15 +95,25 @@ curl -u admin -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
 
 [Use it from scripts and AI assistants](usage.md#use-it-from-scripts-and-ai-assistants) shows the answer of the API.
 
+## The dashboard widget
+
+| | |
+| --- | --- |
+| **ID** | `paperless_unified_search-recent`, *New in Paperless*, offered once the settings name a Paperless and an archive account that exists |
+| **Items** | `GET /ocs/v2.php/apps/dashboard/api/v2/widget-items?widgets[]=paperless_unified_search-recent` with `limit` (7 by default, up to 30), as Nextcloud's dashboard and its apps ask for them: the newest documents that the user can open, each with its title, a line with the day that Paperless added it, its correspondent and its type, the link and the preview of its file, and as `sinceId` the moment that Paperless added it; `sinceIds[paperless_unified_search-recent]` with such a moment lists only the documents added after it |
+| **The link below the list** | *Files shared with you*, the view of Files with the files that others share with the user; Nextcloud's web dashboard shows it, and six documents, only once the list is full; none for the archive account |
+| **Paperless** | One request for the 25 documents that it added last, at most once a minute for all users together, which Nextcloud's distributed cache keeps meanwhile (with a memory cache, as Nextcloud recommends; without one, every dashboard asks Paperless); a Paperless that doesn't answer rests for a minute as well, and the widget says *Paperless can't be reached right now.* |
+
 ## Requests to Paperless
 
-Every request of the app to Paperless is one `GET` of `<URL>/api/documents/`, from the Nextcloud server:
+Every request of the app to Paperless is one `GET` of `<URL>/api/documents/`, or of `/api/correspondents/` and `/api/document_types/` for the names of the correspondents and types of a page, from the Nextcloud server:
 
 | | |
 | --- | --- |
 | **Headers** | `Authorization: Token …`, `Accept: application/json` and `User-Agent: Nextcloud-Paperless-Unified-Search/<version>` |
 | **A search** | `query` with the term, `page`, `page_size=25` and `fields=id,title,created,correspondent,document_type,__search_hit__`; on Paperless 3, a query that it can't parse yet once more with `text` in place of `query` |
 | **The test of the connection** | `page_size=1` and `fields=id` |
+| **The newest documents of the dashboard** | `ordering=-added`, `page=1`, `page_size=25` and `fields=id,title,added,correspondent,document_type`, at most once a minute for all users, with 5 seconds for the answer and no second try |
 | **Time** | 3 seconds to connect, 10 seconds for the answer |
 | **A second try** | Only for a request that failed within 3.5 seconds, before it had a connection, and whose address Nextcloud didn't refuse |
 | **Redirects** | Without **Paperless runs in my local network**, up to 5, never to an address of the local network; Nextcloud leaves the token out of a redirect to another scheme, host or port, which Paperless then refuses, and keeps it for one within the same server. With the switch, none |
@@ -127,17 +137,20 @@ Every request of the app to Paperless is one `GET` of `<URL>/api/documents/`, fr
 | Nextcloud | Paperless | The term, the page and the fields to answer with, and the API token | With **Search connected services** on, after choosing **Paperless documents** in the smart picker, through the API, or always when Paperless is trusted |
 | Paperless | Nextcloud | Of each document that the account of the token may view: its ID, title, date, the IDs of its correspondent and its type, and the excerpt around the term; the versions of Paperless and of its API | In every answer |
 | Nextcloud | The browser or an app of the user | Of each document whose file the user can open: its title, date and excerpt, and the link, the ID and the path of its file | In every answer |
+| Nextcloud | Paperless | The request for the 25 documents that Paperless added last, with the fields that the dashboard shows, and the API token | At most once a minute, when the dashboard of a user shows the widget |
+| Paperless | Nextcloud | Of each of these documents that the account of the token may view: its ID, title, the moment that Paperless added it and the IDs of its correspondent and its type | In every answer |
+| Nextcloud | The browser or an app of the user | Of each of the newest documents whose file the user can open: its title, the day that Paperless added it, its correspondent and its type, and the link and the preview of its file | Whenever the dashboard shows the widget |
 
 <div class="diagram-wide" markdown tabindex="0" role="region" aria-label="Diagram of the data flow of a search">
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/diagrams/the-data-flow-of-a-search.dark.svg">
-  <img src="images/diagrams/the-data-flow-of-a-search.svg" alt="The data flow of a search: A user searches for invoice. The unified search passes the term, the cursor, the limit and the user to the search provider. Without a term, an archive account or a connection, the provider answers with no results and doesn't ask Paperless. Otherwise, until the page of results is full, the Paperless client asks Paperless-ngx with the token for the page of 25 hits that holds the next hit, and only for the fields that a result shows, and Paperless answers with the ID, the title, the date and the excerpt of documents 412, 389, 371 and more, and whether a next page exists. One call of the file locator covers all documents of that page and returns for each a file of the archive account with its marker, or none. This repeats for at most 4 pages of Paperless or 3 seconds. The provider answers with an entry for every document with a file, up to the limit, and the cursor of the first hit that it didn't go through.">
+  <img src="images/diagrams/the-data-flow-of-a-search.svg" alt="The data flow of a search: A user searches for invoice. The unified search passes the term, the cursor, the limit, the date filter and the user to the search provider. Without a term, an archive account or a connection, the provider answers with no results and doesn't ask Paperless. Otherwise, until the page of results is full, the Paperless client asks Paperless-ngx with the token for the page of 25 hits that holds the next hit, within the days of the date filter, and only for the fields that a result shows, and Paperless answers with the ID, the title, the date, the IDs of the correspondent and the type and the excerpt of documents 412, 389, 371 and more, and whether a next page exists. One call of the file locator covers all documents of that page and returns for each a file of the archive account with its marker, or none. For the documents with a file, the names ask Paperless, through the client, for the correspondents and the types that the cache doesn't hold, with one request per kind, and keep their names for ten minutes. This repeats for at most 4 pages of Paperless or 3 seconds. The provider answers with an entry for every document with a file, up to the limit, with the preview of the file or the icon of its type, the title, the date in the language of the user, the correspondent, the type and the excerpt, and the cursor of the first hit that it didn't go through.">
 </picture>
 
 </div>
 
-Nextcloud stores the settings in its app configuration, the token encrypted in its credentials manager, and the history of the latest 20 problems, without the term, the token and the query of any URL. Nothing of the documents is stored. [Architecture](architecture.md#data-flow) explains every step, and the [security design](security.md) what protects each of them.
+Nextcloud stores the settings in its app configuration, the token encrypted in its credentials manager, and the history of the latest 20 problems, without the term, the token and the query of any URL. Its distributed cache keeps the names of correspondents and types for ten minutes, and of the 25 newest documents their IDs, titles, the moments that Paperless added them and the IDs of their correspondents and types for a minute, for all users; nothing of the text of the documents is stored. [Architecture](architecture.md#data-flow) explains every step, and the [security design](security.md) what protects each of them.
 
 --8<-- "README.md:security-and-privacy"
 

@@ -1,0 +1,27 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: Was die Demo einrichtet
+    accDescr: Du startest bash demo/seed.sh. Das Skript erzeugt den geheimen Schlüssel von Paperless und die Passwörter der Demo in demo/.env und startet Paperless-ngx mit Redis und Nextcloud mit seinen Hintergrundjobs in Docker, nur auf 127.0.0.1. Paperless liest fünf synthetische Briefe ein. Paperless Sync, ein festgelegtes, signiertes Release, schreibt jeden in die Dateien des Archiv-Kontos paperless, das das Archiv nur lesend mit jamie teilt. occ paperless_unified_search:setup verbindet die App mit Paperless, mit dem API-Token über eine Pipe. Eine Suche als jamie nach invoice zeigt drei Paperless-Dokumente, und das Skript nennt die Adressen und die Konten zum Anmelden.
+
+    run(["bash demo/seed.sh"])
+    secrets["demo/.env: der geheime Schlüssel<br>und die Passwörter, erzeugt"]
+    start["`Docker: **Paperless-ngx** mit Redis,<br>**Nextcloud** mit seinen Hintergrundjobs`"]
+    letters["Paperless liest fünf<br>synthetische Briefe ein"]
+    sync["`**Paperless Sync** schreibt sie<br>in die Dateien des<br>Archiv-Kontos paperless`"]
+    share["paperless teilt das Archiv<br>nur lesend mit jamie"]
+    setup["`occ **paperless_unified_search:setup**,<br>das Token über eine Pipe`"]
+    found(["jamie sucht nach invoice:<br>drei Paperless-Dokumente"])
+
+    run --> secrets --> start --> letters --> sync --> share --> setup --> found
+
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef bot fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    class run person
+    class secrets,start,letters,sync,share,setup bot
+    class found done

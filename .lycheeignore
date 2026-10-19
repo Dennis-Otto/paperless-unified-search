@@ -5,6 +5,14 @@
 # well: a pull request that adds one links it before main has it. scripts/check-project.sh
 # checks that every one of them is in the repository.
 ^https://github\.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/
-# The pages of the website that the README links: a pull request that adds a page links
-# it before the website has it. scripts/check-project.sh checks that each is a page of docs/.
-^https://dennis-otto\.github\.io/paperless-unified-search/[a-z0-9-]+\.html
+# The pages of the website that the READMEs link, English and German pages in de/: a pull
+# request that adds a page links it before the website has it. scripts/check-project.sh
+# checks that each is a page of docs/.
+^https://dennis-otto\.github\.io/paperless-unified-search/(de/)?[a-z0-9-]+\.html
+# The demo, which the README and the website link on GitHub: a pull request that adds or
+# moves a file of it links it before main has it. scripts/check-project.sh checks that
+# every file that the documentation links on main is in the repository.
+^https://github\.com/Dennis-Otto/paperless-unified-search/(blob|tree)/main/demo/
+# lychee.toml asks raw.githubusercontent.com for each blob link, so the blob links of the
+# demo reach the check by this address.
+^https://raw\.githubusercontent\.com/Dennis-Otto/paperless-unified-search/main/demo/

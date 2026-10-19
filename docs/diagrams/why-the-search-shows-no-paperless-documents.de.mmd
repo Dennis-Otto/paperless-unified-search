@@ -1,0 +1,46 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: Warum die Suche keine Paperless-Dokumente zeigt
+    accDescr: jamie sucht nach Rechnung und sieht Dokument 412 nicht unter Paperless-Dokumente. Sechs Fragen, eine nach der anderen, finden die Ursache. Ist Verbundene Dienste durchsuchen eingeschaltet, oder ist Paperless in den Einstellungen vertrauenswürdig? Wenn nicht, schalte es ein, nach jedem Neuladen der Seite erneut. Gibt es ein Archiv-Konto in den Einstellungen? Wenn nicht, gib das Konto ein, dem die synchronisierten Dateien gehören. Listet Probleme der Suche in den Einstellungen fehlgeschlagene Suchen auf? Wenn ja, behebe den Fehler, den es nennt. Findet Paperless Dokument 412 zu dem Begriff, angemeldet als das Konto des API-Tokens? Wenn nicht, lass dieses Konto das Dokument ansehen, oder baue den Index von Paperless mit document_index reindex neu auf. Hat das Archiv-Konto eine Datei mit [P412] im Namen? Wenn nicht, lass die Synchronisierung sie schreiben, und scanne einen externen Speicher mit occ files:scan. Kann jamie diese Datei öffnen? Wenn nicht, teile die Datei oder ihren Ordner nur lesend mit jamie. Dann erscheint Dokument 412 unter Paperless-Dokumente.
+
+    start(["jamie sucht nach Rechnung<br>und sieht Dokument 412 nicht"])
+    switch{"Verbundene Dienste durchsuchen<br>an, oder Paperless vertraut?"}
+    archive{"Ein Archiv-Konto<br>in den Einstellungen?"}
+    problems{"Probleme der Suche listet<br>fehlgeschlagene Suchen?"}
+    paperless{"Findet Paperless 412<br>zu dem Begriff, als das Konto<br>des Tokens?"}
+    marker{"Hat das Archiv-Konto<br>eine Datei mit [P412]<br>im Namen?"}
+    shared{"Kann jamie diese<br>Datei öffnen?"}
+    shows(["Dokument 412 erscheint unter<br>Paperless-Dokumente"])
+
+    fixSwitch["Einschalten: Nextcloud schaltet<br>es bei jedem Neuladen aus"]
+    fixArchive["Das Konto eingeben, dem die<br>synchronisierten Dateien gehören"]
+    fixProblems["Den Fehler beheben, den es nennt,<br>wie die Tabellen unten sagen"]
+    fixPaperless["Das Konto das Dokument ansehen<br>lassen, oder den Index neu aufbauen:<br>document_index reindex"]
+    fixMarker["Die Synchronisierung sie<br>schreiben lassen; einen externen<br>Speicher scannen: occ files:scan"]
+    fixShare["Die Datei oder ihren Ordner<br>nur lesend mit jamie teilen"]
+
+    start --> switch
+    switch -- "ja" --> archive
+    switch -- "nein" --> fixSwitch
+    archive -- "ja" --> problems
+    archive -- "nein" --> fixArchive
+    problems -- "nein" --> paperless
+    problems -- "ja" --> fixProblems
+    paperless -- "ja" --> marker
+    paperless -- "nein" --> fixPaperless
+    marker -- "ja" --> shared
+    marker -- "nein" --> fixMarker
+    shared -- "ja" --> shows
+    shared -- "nein" --> fixShare
+    %% Die Abhilfen in einer Spalte neben den Fragen, damit die Fragen in einer bleiben.
+    fixSwitch ~~~ fixArchive ~~~ fixProblems ~~~ fixPaperless ~~~ fixMarker ~~~ fixShare
+
+    classDef you fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    class fixSwitch,fixArchive,fixProblems,fixPaperless,fixMarker,fixShare you
+    class shows done

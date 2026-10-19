@@ -38,6 +38,12 @@ UNFINISHED_RANGE = re.compile(r"(\w+):\[([^\]\s]*)[^\]]*$")
 # refuses another value with HTTP 400.
 DATE_FILTERS = {"created__date__gte": operator.ge, "created__date__lte": operator.le}
 
+# Like Paperless, the mock orders a list by the field that ordering names, the newest
+# first with a minus, as the dashboard of the app asks for the documents that Paperless
+# added last: ordering=-added. Unlike Paperless, which ignores a field that it can't order
+# by, the mock refuses one with HTTP 400, so that the end-to-end tests notice a wrong one.
+ORDERING_FIELDS = {"added", "created", "id", "title"}
+
 # Like Paperless, the mock sends only the fields of the documents that a request names,
 # and the excerpt of a search with them. Unlike Paperless, it refuses a request that names
 # none, for which Paperless sends every field, the whole OCR text of every document among
@@ -52,6 +58,7 @@ DEMO_DOCUMENTS = [
         "id": 412,
         "title": "Electricity invoice - August 2026",
         "created": "2026-08-12",
+        "added": "2026-08-13T09:12:45.118731+02:00",
         "correspondent": 3,
         "document_type": 1,
         "content": "Invoice E-2026-0812 for the electricity of August 2026. " * 200,
@@ -61,6 +68,7 @@ DEMO_DOCUMENTS = [
         "id": 389,
         "title": "Home insurance renewal",
         "created": "2026-07-21",
+        "added": "2026-07-22T10:04:12.502311+02:00",
         "correspondent": 5,
         "document_type": 2,
         "content": "Your annual insurance invoice covers August 2026 through July 2027. " * 200,
@@ -70,10 +78,34 @@ DEMO_DOCUMENTS = [
         "id": 371,
         "title": "Internet invoice - July 2026",
         "created": "2026-07-03",
+        "added": "2026-07-04T08:41:57.990120+02:00",
         "correspondent": 4,
         "document_type": 1,
         "content": "Monthly fiber internet invoice. Customer reference EX-2048. " * 200,
         "__search_hit__": {"highlights": "Monthly fiber internet <b>invoice</b>. Customer reference EX-2048."},
+    },
+]
+
+# The other documents of the archive of the demo, which no search of the screenshots
+# finds, but the dashboard lists among the newest.
+DEMO_ARCHIVE_ONLY = [
+    {
+        "id": 402,
+        "title": "Car service",
+        "created": "2026-09-02",
+        "added": "2026-09-03T08:27:31.204417+02:00",
+        "correspondent": 6,
+        "document_type": 4,
+        "content": "Annual inspection, oil and filter, wiper blades. Total paid 218.40 EUR. " * 200,
+    },
+    {
+        "id": 356,
+        "title": "Property tax notice 2026",
+        "created": "2026-05-14",
+        "added": "2026-05-15T17:03:09.660152+02:00",
+        "correspondent": 8,
+        "document_type": 5,
+        "content": "Property tax and waste collection for 2026. Amount due 698.40 EUR. " * 200,
     },
 ]
 
@@ -101,6 +133,7 @@ MOBILE_DOCUMENTS = [
         "id": 123,
         "title": "Mobile viewer test",
         "created": "2026-08-26",
+        "added": "2026-08-27T14:00:00.000000+02:00",
         "correspondent": 7,
         "document_type": 3,
         "content": "Synthetic OCR mobiletest result. " * 1000,
@@ -114,11 +147,17 @@ MOBILE_DOCUMENTS = [
         "id": 999,
         "title": "Inaccessible document",
         "created": "2026-08-25",
+        "added": "2026-08-28T09:30:00.000000+02:00",
         "correspondent": 9,
         "content": "Synthetic OCR text of a document no file stands for. " * 1000,
         "notes": [],
     },
 ]
+
+# Every document of the mock that a list without a search holds, as Paperless lists all
+# documents that the token may view: those of the term "mobiletest" and the archive of
+# the demo. The dashboard asks for the newest of them, and occ for the IDs of them all.
+ARCHIVE = MOBILE_DOCUMENTS + DEMO_DOCUMENTS + DEMO_ARCHIVE_ONLY
 
 # The names of the correspondents and the types of the documents above, which the app
 # asks for by their IDs, as Paperless lists them: /api/correspondents/?id__in=3,5.
@@ -127,10 +166,12 @@ LISTS = {
         3: "Northstar Energy",
         4: "Fiberlink",
         5: "Harbor Mutual",
+        6: "Example Motors",
         7: "Example Mobile",
+        8: "City of Sampletown",
         9: "Hidden correspondent",
     },
-    "/api/document_types/": {1: "Bill", 2: "Insurance", 3: "Letter"},
+    "/api/document_types/": {1: "Bill", 2: "Insurance", 3: "Letter", 4: "Receipt", 5: "Tax"},
 }
 
 API_PATH = "/api/documents/"
@@ -158,8 +199,11 @@ def number(parameters, name, default):
 
 
 def documents_of(term):
-    """The documents that a search for this term ranks, as the demo has them."""
-    if term in ("", "mobiletest", DROP_TERM):
+    """The documents that a search for this term ranks, as the demo has them, and those of
+    a list without a search for no term."""
+    if term == "":
+        return ARCHIVE
+    if term in ("mobiletest", DROP_TERM):
         return MOBILE_DOCUMENTS
     if term == "invoice":
         return DEMO_DOCUMENTS
@@ -231,6 +275,14 @@ class Handler(BaseHTTPRequestHandler):
                 for document in results
                 if keeps(datetime.strptime(document["created"], "%Y-%m-%d").date(), day)
             ]
+
+        ordering = parameters.get("ordering", [""])[0]
+        if ordering:
+            field = ordering.removeprefix("-")
+            if field not in ORDERING_FIELDS:
+                self._json(400, {"ordering": [f"Unknown field to order by: {ordering}."]})
+                return
+            results = sorted(results, key=lambda document: document.get(field, ""), reverse=ordering.startswith("-"))
 
         page = number(parameters, "page", 1)
         page_size = number(parameters, "page_size", DEFAULT_PAGE_SIZE)

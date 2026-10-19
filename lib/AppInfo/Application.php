@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\PaperlessUnifiedSearch\AppInfo;
 
+use OCA\PaperlessUnifiedSearch\Dashboard\RecentDocumentsWidget;
 use OCA\PaperlessUnifiedSearch\Reference\PaperlessReferenceProvider;
 use OCA\PaperlessUnifiedSearch\Search\PaperlessSearchProvider;
 use OCA\PaperlessUnifiedSearch\SetupCheck\PaperlessSetupCheck;
@@ -29,6 +30,9 @@ final class Application extends App implements IBootstrap {
 		$context->registerReferenceProvider(PaperlessReferenceProvider::class);
 		// The state of the search in the overview of the administration settings.
 		$context->registerSetupCheck(PaperlessSetupCheck::class);
+		// "New in Paperless" on the dashboard, which offers itself only once the
+		// app is set up: Nextcloud asks the widget, as it builds the dashboard.
+		$context->registerDashboardWidget(RecentDocumentsWidget::class);
 	}
 
 	public function boot(IBootContext $context): void {

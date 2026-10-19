@@ -18,8 +18,47 @@ copyright: "© 2026 Dennis Otto"
 extra_css:
   - stylesheets/extra.css
 
+plugins:
+  search:
+    lang: [en, de]
+  # English and German. A German page sits next to its English one, named like it
+  # with .de, such as configure.de.md next to configure.md, and makes the German
+  # website in de/, with German menus, search and dates, and a switch between the
+  # languages in the header that keeps the page. A page without a German version,
+  # such as the reference, shows in English there. The German pages include the
+  # sections of README.de.md, as the English ones include those of README.md.
+  # https://ultrabug.github.io/mkdocs-static-i18n/
+  i18n:
+    enabled: true
+    languages:
+      - locale: en
+        name: English
+        default: true
+        build: true
+      - locale: de
+        name: Deutsch
+        build: true
+        site_description: "Nextcloud-App: die OCR-Volltextsuche von Paperless-ngx in der globalen Suche von Nextcloud, ohne zusätzlichen Index; Treffer öffnen sich im Viewer von Nextcloud"
+        nav_translations:
+          Home: Start
+          Get started: Erste Schritte
+          Install: Installieren
+          Configure: Einrichten
+          Use: Verwenden
+          Search: Suchen
+          Troubleshooting: Fehlerbehebung
+          Reference: Referenz
+          Project: Projekt
+          Compare: Vergleich
+          Architecture: Architektur
+          Security design: Sicherheitsdesign
+          Decisions: Entscheidungen
+          Changelog: Änderungen
+
 # The menu. A tab in the header for each section: the pages for administrators who set
-# the app up, for its users, for when something fails, and those of the project.
+# the app up, for its users, for when something fails, and those of the project. The
+# German website has the same one, with the German pages and the titles of
+# nav_translations above.
 nav:
   - Home: index.md
   - Get started:
@@ -40,6 +79,8 @@ nav:
       - Changelog: changelog.md
 
 # The guide of one page of earlier versions, which the App Store still links to: it
-# leads each of its parts to the page that has the part now, outside the menu.
+# leads each of its parts to the page that has the part now, outside the menu, in
+# English and in German.
 not_in_nav: |
   /guide.md
+  /guide.de.md

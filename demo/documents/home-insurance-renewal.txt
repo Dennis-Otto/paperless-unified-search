@@ -1,0 +1,22 @@
+Title: Home insurance renewal
+Correspondent: Harbor Mutual
+Type: Insurance
+Created: 2026-07-21
+Tags: Household, Insurance
+
+Harbor Mutual
+1 Harbor Square, Exampletown
+
+Renewal of your home insurance, policy HM-55-1203
+
+Dear Jamie Example,
+
+your home insurance renews on 1 August 2026. Your annual insurance
+invoice covers August 2026 through July 2027 and comes to 312.00 EUR.
+We collect it by direct debit on 1 August 2026.
+
+Your cover stays the same: building, contents and liability, with an
+excess of 150.00 EUR per claim.
+
+Kind regards,
+Harbor Mutual customer care

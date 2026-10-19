@@ -1,0 +1,30 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: Die Suche einrichten
+    accDescr: Installiere die App. Lege in Paperless-ngx ein Konto an, das die Dokumente lesen darf, und ein API-Token dafür. Gib in den Verwaltungseinstellungen von Nextcloud die URL, das Token und das Archiv-Konto ein, wähle Paperless läuft in meinem lokalen Netzwerk, wenn Nextcloud Paperless unter einer solchen Adresse erreicht, und wähle Verbindung testen und speichern. Antwortet Paperless, sind die Einstellungen gespeichert; sonst wird nichts gespeichert, und die Meldung sagt, was zu korrigieren ist. Das Archiv-Konto teilt sein Archiv nur lesend mit den Benutzern, die seine Dokumente finden dürfen, und sie finden sie unter Paperless-Dokumente in der Suche von Nextcloud, mit eingeschaltetem Verbundene Dienste durchsuchen.
+
+    install["1 · Die App installieren"]
+    token["2 · In Paperless-ngx: ein Konto,<br>das die Dokumente lesen darf,<br>und sein API-Token"]
+    save["`3 · In den Verwaltungs-<br>einstellungen: URL, Token,<br>Archiv-Konto und, im lokalen<br>Netzwerk, sein Schalter, dann<br>**Verbindung testen und speichern**`"]
+    answers{"Antwortet<br>Paperless?"}
+    fix["Nichts wird gespeichert;<br>die Meldung sagt,<br>was zu korrigieren ist"]
+    share["4 · Das Archiv-Konto<br>teilt sein Archiv<br>nur lesend"]
+    search["`5 · Suchen mit<br>**Verbundene Dienste<br>durchsuchen** an`"]
+    found(["Paperless-Dokumente<br>in den Treffern"])
+
+    install --> token --> save --> answers
+    answers -- "ja, gespeichert" --> share --> search --> found
+    answers -- "nein" --> fix
+    fix -.-> save
+
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class install,token,save,share,search person
+    class found done
+    class fix no

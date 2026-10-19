@@ -48,6 +48,7 @@
     "gemergt",
     "gemergten",
     "Gitleaks",
+    "Grype",
     "HACS",
     "Harden-Runner",
     "hassfest",
@@ -76,8 +77,10 @@
     "shellcheck",
     "Sigstore",
     "subfolders",
+    "syft",
     "vimeo",
     "Xdebug",
+    "xdist",
     "zizmor"
   ]
 }

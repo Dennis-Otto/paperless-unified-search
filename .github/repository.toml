@@ -1,6 +1,6 @@
 # The settings of the repository as code. `blueprint.py settings check` compares them
 # with GitHub, and `blueprint.py settings apply` sets them:
-# https://github.com/Dennis-Otto/repo-blueprint#settings
+# https://github.com/Dennis-Otto/repo-blueprint#settings-as-code
 
 [repository]
 description = "OCR-powered Paperless-ngx search, seamlessly integrated into Nextcloud"
@@ -30,6 +30,9 @@ dependabot_alerts = true
 dependabot_security_updates = false
 secret_scanning = true
 secret_scanning_push_protection = true
+# Generic secrets as well, such as private keys, connection strings and passwords
+# that no provider issued: alerts in the Security tab.
+secret_scanning_non_provider_patterns = true
 
 [actions]
 default_workflow_permissions = "read"
@@ -37,31 +40,82 @@ can_approve_pull_request_reviews = false
 sha_pinning_required = true
 # Workflows of pull requests from forks wait for the maintainer's approval.
 fork_pr_approval = "all_external_contributors"
+# Only the actions of GitHub and those of [actions.selected] may run, also in a
+# workflow that a pull request changes; those of this repository always may.
+allowed_actions = "selected"
+
+# The actions and reusable workflows that the workflows name, and those that these run
+# in turn. `blueprint.py settings check` names each one that a workflow runs and this
+# list lacks, and the settings bot only adds to the list on GitHub until it's added;
+# add those of this project alone in .github/repository.project.toml.
+[actions.selected]
+github_owned_allowed = true
+verified_allowed = false
+patterns_allowed = [
+  "anchore/sbom-action@*",
+  "anthropics/claude-code-action@*",
+  "astral-sh/setup-uv@*",
+  "DavidAnson/markdownlint-cli2-action@*",
+  "Dennis-Otto/issue-assistant@*",
+  "dependabot/fetch-metadata@*",
+  "docker/build-push-action@*",
+  "docker/login-action@*",
+  "docker/metadata-action@*",
+  "docker/setup-buildx-action@*",
+  "docker/setup-qemu-action@*",
+  "fsfe/reuse-action@*",
+  "gitleaks/gitleaks-action@*",
+  "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@*",
+  "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@*",
+  # Run by the reusable workflows of OSV-Scanner.
+  "google/osv-scanner-action/osv-reporter-action@*",
+  "google/osv-scanner-action/osv-scanner-action@*",
+  "googleapis/release-please-action@*",
+  "lycheeverse/lychee-action@*",
+  "ossf/scorecard-action@*",
+  # Run by anthropics/claude-code-action.
+  "oven-sh/setup-bun@*",
+  "pypa/gh-action-pypi-publish@*",
+  "shivammathur/setup-php@*",
+  "step-security/harden-runner@*",
+  "zizmorcore/zizmor-action@*",
+]
 
 # The checks every pull request into main must pass.
 [branch]
 required_checks = [
   "check (php)",
-  "workflow-lint",
-  "reuse",
-  "markdown",
+  # Every linter, the workflows, the licenses, the Markdown, the issue assistant
+  # and the sign-off of every commit, in one job.
+  "lint",
   "diagrams",
   "docs",
-  "dco",
-  "issue-assistant",
+  # The title of the pull request and its entry in the changelog.
   "conventional title",
-  "changelog",
   "codeql",
   "dependency-review",
   "gitleaks",
 ]
+# A new alert of a tool of code scanning in a pull request stops its merge from these
+# thresholds on; an alert that main has already doesn't. Only a tool that analyzes
+# every pull request belongs here, because a missing analysis stops the merge too.
+code_scanning_tools = [
+  { tool = "CodeQL", alerts_threshold = "errors", security_alerts_threshold = "high_or_higher" },
+]
 
 [variables]
 PUBLISH_TO = "nextcloud-appstore"
-# The GitHub App that opens the release pull requests, so that their checks run.
+# The GitHub App that opens the release pull requests, so that their checks run, by
+# the name in its address: https://github.com/apps/dennis-otto-release-automation
+RELEASE_APP = "dennis-otto-release-automation"
 RELEASE_AUTOMATION_CLIENT_ID = "Iv23liP9PIEHOV74AiIA"
 # Its App ID: only this app may create release tags, which the release workflow signs.
 RELEASE_AUTOMATION_APP_ID = "4739928"
+# Whether the issue assistant analyzes each new issue with its AI engine, by the
+# answer issue_assistant_ai of the blueprint. "off" labels the issues and answers
+# the commands without an engine, which needs no secret; the settings bot sets the
+# variable either way, so a later answer turns the AI on or off again.
+ISSUE_ASSISTANT_AI = "on"
 
 # GitHub Pages, which publishes the website that the Docs workflow builds from
 # mkdocs.yml and docs/.

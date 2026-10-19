@@ -33,6 +33,13 @@ final class PaperlessApiService {
 	private const SEARCH_FIELDS = 'id,title,created,correspondent,document_type,__search_hit__';
 
 	/**
+	 * The fields of a document that the dashboard shows, with the moment that Paperless
+	 * added it, by which the dashboard lists the newest documents, instead of the date of
+	 * the document and the excerpt of a search.
+	 */
+	private const RECENT_FIELDS = 'id,title,added,correspondent,document_type';
+
+	/**
 	 * The filter of Paperless for the documents of a day and later, by the date of the
 	 * document, as Y-m-d: the same in Paperless-ngx 2, where the date has a time, and 3.
 	 */
@@ -63,6 +70,12 @@ final class PaperlessApiService {
 	 * all: Paperless has just answered the search, and a result shows without the names.
 	 */
 	private const NAMES_TIMEOUT = 3;
+
+	/**
+	 * The seconds that the request for the newest documents may take in all: the
+	 * dashboard waits for it, and Paperless answers it from its database alone.
+	 */
+	private const RECENT_TIMEOUT = 5;
 
 	/**
 	 * A first try that failed within this many milliseconds failed before Paperless had the
@@ -186,6 +199,36 @@ final class PaperlessApiService {
 	}
 
 	/**
+	 * The documents that Paperless added last, newest first, as many as asked for, with
+	 * the fields that the dashboard shows: as far as the account of the token may view
+	 * them, also those that a user can't open. The dashboard waits for the answer, so the
+	 * request gets one try and a short time, and no place in the history of the problems
+	 * of the search, which is about searches.
+	 *
+	 * @return list<array<array-key, mixed>>
+	 * @throws PaperlessRequestException when Paperless answers, but not with documents
+	 * @throws Throwable the error of a request without answer, or without the settings
+	 */
+	public function findRecentDocuments(int $count): array {
+		[$data, $version] = $this->requestDocuments(
+			$this->configService->getUrl(),
+			$this->configService->getToken(),
+			$this->configService->isLocalNetworkAllowed(),
+			[
+				'ordering' => '-added',
+				'page' => 1,
+				'page_size' => max(1, min(100, $count)),
+				'fields' => self::RECENT_FIELDS,
+			],
+			timeout: self::RECENT_TIMEOUT,
+			retry: false,
+		);
+		$this->configService->rememberPaperlessVersion($version);
+
+		return self::documentsOf($data)['results'];
+	}
+
+	/**
 	 * The plain words of a query in the advanced syntax, for the simple mode: without its
 	 * fields, finished or not, such as created:[2026 to or tag:bills, without brackets and
 	 * quotes, and without the operators AND, OR and NOT.
@@ -228,19 +271,19 @@ final class PaperlessApiService {
 	 *
 	 * @param array<string, int|string> $query
 	 * @param string $term the term of a search, which the history must not show
+	 * @param int $timeout the seconds that the request may take in all
+	 * @param bool $retry whether a request without answer gets a second try, as send() decides
 	 * @return array{array{results: array<array-key, mixed>, ...<array-key, mixed>}, ?PaperlessVersion}
 	 * @throws PaperlessRequestException when Paperless answers, but not with documents
 	 */
-	private function requestDocuments(string $url, string $token, bool $allowLocal, array $query, string $term = ''): array {
+	private function requestDocuments(string $url, string $token, bool $allowLocal, array $query, string $term = '', int $timeout = self::TIMEOUT, bool $retry = true): array {
 		if ($url === '' || $token === '') {
 			throw new UnexpectedValueException('Paperless is not configured.');
 		}
 
-		$response = $this->send(
-			rtrim($url, '/') . '/api/documents/',
-			$this->options($token, $allowLocal, $query, self::TIMEOUT),
-			[$token, $term],
-		);
+		$documents = rtrim($url, '/') . '/api/documents/';
+		$options = $this->options($token, $allowLocal, $query, $timeout);
+		$response = $retry ? $this->send($documents, $options, [$token, $term]) : $this->client->get($documents, $options);
 
 		$statusCode = $response->getStatusCode();
 		if ($statusCode < 200 || $statusCode >= 300) {
@@ -324,7 +367,7 @@ final class PaperlessApiService {
 
 		$body = $response->getBody();
 		try {
-			$data = json_decode(is_string($body) ? $body : '', true, 512, JSON_THROW_ON_ERROR);
+			$data = json_decode(is_string($body) ? $body : '', true, flags: JSON_THROW_ON_ERROR);
 		} catch (JsonException $error) {
 			throw PaperlessRequestException::notPaperless('Paperless returned no JSON: ' . $error->getMessage(), $error);
 		}

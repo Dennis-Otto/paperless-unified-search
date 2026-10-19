@@ -68,6 +68,15 @@ assert_response() {
 	"${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_response.py "${mode}" "$@" < "${file}"
 }
 
+# Checks the answer of the API of the dashboard in the file $2 in the mode $1 of
+# assert_dashboard.py, with the rest as the arguments of the mode.
+assert_dashboard() {
+	mode="$1"
+	file="$2"
+	shift 2
+	"${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_dashboard.py "${mode}" "$@" < "${file}"
+}
+
 # Checks what a command of occ wrote as JSON into the file $2, in the mode $1 of
 # assert_occ.py, with the rest as the arguments of the mode.
 assert_occ() {
@@ -214,6 +223,24 @@ resolve() {
 		--data-urlencode "reference=${link}" \
 		--output "${output}" \
 		"${BASE_URL}/ocs/v2.php/references/resolve"
+}
+
+# Asks the API of Nextcloud's dashboard as the user $1 for the widgets that it offers,
+# for $2 widgets, as the apps for phones do, or for the items of the widget of the app,
+# for $2 items, as its web page does. The answer lands in the file $3.
+dashboard() {
+	user="$1"
+	output="$3"
+	case "$2" in
+		widgets) path='api/v1/widgets' ;;
+		items) path='api/v2/widget-items?widgets%5B%5D=paperless_unified_search-recent' ;;
+	esac
+	curl --fail-with-body --silent --show-error \
+		--user "${user}:${PASSWORD}" \
+		--header 'Accept: application/json' \
+		--header 'OCS-APIRequest: true' \
+		--output "${output}" \
+		"${BASE_URL}/ocs/v2.php/apps/dashboard/${path}"
 }
 
 cd "${REPOSITORY_ROOT}"
@@ -378,6 +405,10 @@ expect_status 400 'Saving a host that does not resolve, without the switch for t
 	"${SETTINGS_URL}"
 expect_text '"code":"unknown_host"' "${TMP_DIR}/answer.json" \
 	"A host that does not resolve isn't named as one: $(cat "${TMP_DIR}/answer.json")"
+
+# Until the app is set up, the dashboard doesn't offer its widget (#167).
+dashboard e2e-user widgets "${TMP_DIR}/widgets-unconfigured.json"
+assert_dashboard unlisted "${TMP_DIR}/widgets-unconfigured.json"
 
 # occ sets the app up as the settings page does, for Ansible, Docker and other scripts,
 # with the token from the standard input instead of the command line (#136). It saves
@@ -583,6 +614,29 @@ assert_response android "${TMP_DIR}/android.json"
 
 search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/inaccessible.json"
 assert_response no-results "${TMP_DIR}/inaccessible.json"
+
+# The dashboard lists the documents that Paperless added last, newest first, which the
+# user can open (#167): the mock added 999 after 123, but no file stands for it, and the
+# documents of the demo are no files of the archive account here. e2e-other, whom the
+# archive account shares no file with yet, sees a widget that says so, with a link to
+# the files shared with it, which the archive account doesn't get. The newest documents
+# are the same for every user: the dashboards of a minute cost Paperless one request.
+requests="$(mock_requests)"
+dashboard e2e-user widgets "${TMP_DIR}/widgets-owner.json"
+assert_dashboard listed "${TMP_DIR}/widgets-owner.json" owner
+dashboard e2e-user items "${TMP_DIR}/widget-owner.json"
+assert_dashboard items "${TMP_DIR}/widget-owner.json" 'Mobile viewer test'
+dashboard e2e-other widgets "${TMP_DIR}/widgets-reader.json"
+SHARED_WITH_YOU="$(assert_dashboard listed "${TMP_DIR}/widgets-reader.json" reader)"
+expect_status 200 'The files shared with e2e-other' --user "e2e-other:${PASSWORD}" "${SHARED_WITH_YOU}"
+dashboard e2e-other items "${TMP_DIR}/widget-unshared.json"
+assert_dashboard empty "${TMP_DIR}/widget-unshared.json" 'None of the newest Paperless documents has a file that you can open.'
+dashboard e2e-user items "${TMP_DIR}/widget-owner-again.json"
+assert_dashboard items "${TMP_DIR}/widget-owner-again.json" 'Mobile viewer test'
+if (($(mock_requests) - requests != 1)); then
+	echo "The dashboards of a minute asked Paperless $(($(mock_requests) - requests)) times for its newest documents instead of once." >&2
+	exit 1
+fi
 # occ names the reason of each document that the search leaves out (#136): the archive
 # account hasn't shared the file of 123 with e2e-other, and no file stands for 999.
 occ paperless_unified_search:search e2e-other mobiletest --explain --json >"${TMP_DIR}/explain-unshared.json"
@@ -629,14 +683,19 @@ curl --fail-with-body --silent --show-error \
 	"${BASE_URL}/ocs/v2.php/apps/files_sharing/api/v1/shares"
 search e2e-other 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/shared.json"
 assert_response shared "${TMP_DIR}/shared.json"
+# The dashboard of e2e-other shows it at once: the cache keeps only the newest documents
+# of Paperless, not what a user may open.
+dashboard e2e-other items "${TMP_DIR}/widget-shared.json"
+assert_dashboard items "${TMP_DIR}/widget-shared.json" 'Mobile viewer test'
 occ paperless_unified_search:search e2e-other mobiletest --explain --json >"${TMP_DIR}/explain-shared.json"
 assert_occ verdicts "${TMP_DIR}/explain-shared.json" '123=shown=/Mobile viewer test [P123].pdf' 999=no_file
 try_search 200 e2e-other
 assert_occ try "${TMP_DIR}/answer.json" e2e-other 123=shown 999=no_file
 # The check of occ compares the documents of Paperless with the files of the archive
-# account: the mock lists 123 and 999, and only 123 has a file.
+# account: the mock lists 123, 999 and the five documents of the demo, and only 123 has
+# a file.
 occ paperless_unified_search:check >"${TMP_DIR}/check.txt"
-expect_text 'Coverage: 1 of 2 Paperless document(s) have a file of the archive account. Without one: 999.' \
+expect_text 'Coverage: 1 of 7 Paperless document(s) have a file of the archive account. Without one: 999, 412, 389, 371, 402, 356.' \
 	"${TMP_DIR}/check.txt" "occ checked the coverage wrongly: $(cat "${TMP_DIR}/check.txt")"
 resolve e2e-other "${LINK}" "${TMP_DIR}/link-shared.json"
 assert_response file-link "${TMP_DIR}/link-shared.json"
@@ -786,4 +845,4 @@ phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed in ${SECONDS} s: the set-up, the repair step that removes the last failure of version 0.3.0, the test, the explained search and the check of occ, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, trusted mode, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date in English and German, its correspondent and its type, pages of results filled across pages of Paperless, the date filter in the timezone of the user, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, Try a search for administrators only with the IDs, titles and verdicts alone, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."
+echo "Docker E2E passed in ${SECONDS} s: the set-up, the repair step that removes the last failure of version 0.3.0, the test, the explained search and the check of occ, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, the dashboard widget with the newest documents that a user can open at one request to Paperless a minute, trusted mode, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date in English and German, its correspondent and its type, pages of results filled across pages of Paperless, the date filter in the timezone of the user, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, Try a search for administrators only with the IDs, titles and verdicts alone, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."

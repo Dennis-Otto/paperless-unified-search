@@ -1,0 +1,21 @@
+flowchart TB
+    accTitle: Welche Anfragen eine Adresse des lokalen Netzwerks erreichen
+    accDescr: Eine Anfrage dieser App an die Paperless-URL der Einstellungen erreicht eine Adresse des lokalen Netzwerks, wenn Paperless läuft in meinem lokalen Netzwerk gewählt ist, und folgt dann keiner Weiterleitung. Ohne den Schalter verweigert Nextcloud die Adresse, bevor eine Anfrage den Server verlässt, und das Speichern sagt, dass der Schalter zu wählen ist. Anfragen anderer Apps behalten den Schutz von Nextcloud, außer allow_local_remote_servers in der config.php hebt ihn für alle auf.
+
+    request(["Eine Anfrage an eine Adresse<br>des lokalen Netzwerks"])
+    ours{"Von dieser App,<br>an die Paperless-URL<br>der Einstellungen?"}
+    switch{"`**Paperless läuft in<br>meinem lokalen Netzwerk**<br>gewählt?`"}
+    allowed["Nextcloud verbindet sich,<br>ohne Weiterleitungen"]
+    refused["Nextcloud verweigert sie;<br>das Speichern nennt<br>den Schalter"]
+    others["Nextcloud verweigert sie,<br>wie immer"]
+
+    request --> ours
+    ours -- "ja" --> switch
+    ours -- "nein, eine andere App" --> others
+    switch -- "ja" --> allowed
+    switch -- "nein" --> refused
+
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class allowed yes
+    class refused,others no

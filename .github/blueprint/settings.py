@@ -3,16 +3,20 @@
 
 from __future__ import annotations
 
+import base64
 import json
+import re
 import tomllib
 import urllib.parse
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
 from blueprint.github import Api, GitHubError, Json
 
 CONFIG = Path(".github/repository.toml")
+# The branch that every workflow runs on: their triggers name main.
+BRANCH = "main"
 # The GitHub Actions app, which reports the checks of the workflows.
 ACTIONS_APP = 15368
 
@@ -46,7 +50,28 @@ def check_repository(api: Api, repo: str, want: dict[str, Json]) -> list[Drift]:
             have = have or ""
         if have != value:
             drift.append(Drift(f"repository.{key}", value, have))
-    return drift
+    return drift + check_default_branch(repo, data.get("default_branch"))
+
+
+def check_default_branch(repo: str, have: str | None) -> list[Drift]:
+    """The workflows run on pushes to main and on pull requests to it, so with another
+    default branch, such as the master of a Git without init.defaultBranch, none of
+    them runs. Renaming it is a step for a person, which apply leaves alone: GitHub
+    moves the open pull requests and the rules to the new name, but every clone needs
+    the new name too."""
+    if have in (None, BRANCH):
+        return []
+    return [
+        Drift(
+            "default branch",
+            BRANCH,
+            have,
+            manual=f"the workflows expect {BRANCH}: rename {have} to {BRANCH} at "
+            f"https://github.com/{repo}/branches, then in each clone: "
+            f"git branch --move {have} {BRANCH} && git fetch origin && "
+            f"git branch --set-upstream-to origin/{BRANCH} {BRANCH}",
+        )
+    ]
 
 
 def apply_repository(api: Api, repo: str, drift: list[Drift]) -> None:
@@ -60,32 +85,58 @@ def apply_repository(api: Api, repo: str, drift: list[Drift]) -> None:
 
 # --------------------------------------------------------------------------- security
 
-ANALYSIS = ("secret_scanning", "secret_scanning_push_protection")
+# The switches of security_and_analysis: secret scanning, its push protection and its
+# generic patterns, which find private keys, connection strings and passwords that no
+# provider issued. Validity checks have no switch for a repository in the API, only in
+# the security configurations of an organization (decision 0038).
+ANALYSIS = (
+    "secret_scanning",
+    "secret_scanning_push_protection",
+    "secret_scanning_non_provider_patterns",
+)
+# A switch that GitHub doesn't offer for a repository; it never comes on.
+UNOFFERED = "not offered"
 
 
-def read_security(api: Api, repo: str) -> dict[str, bool]:
-    analysis = (api.get(f"repos/{repo}") or {}).get("security_and_analysis") or {}
+def read_security(api: Api, repo: str) -> dict[str, bool | str]:
+    analysis = (api.get(f"repos/{repo}") or {}).get("security_and_analysis")
     reporting = api.get(f"repos/{repo}/private-vulnerability-reporting") or {}
     fixes = api.get(f"repos/{repo}/automated-security-fixes") or {}
     immutable = api.get(f"repos/{repo}/immutable-releases") or {}
-    have = {
+    have: dict[str, bool | str] = {
         "immutable_releases": bool(immutable.get("enabled")),
         "private_vulnerability_reporting": bool(reporting.get("enabled")),
         "dependabot_alerts": api.exists(f"repos/{repo}/vulnerability-alerts"),
         "dependabot_security_updates": bool(fixes.get("enabled")),
     }
     for key in ANALYSIS:
-        have[key] = (analysis.get(key) or {}).get("status") == "enabled"
+        if not isinstance(analysis, dict):
+            # A token that may not read them gets none.
+            have[key] = False
+        elif isinstance(analysis.get(key), dict):
+            have[key] = analysis[key].get("status") == "enabled"
+        else:
+            # GitHub names every switch that it offers for the repository.
+            have[key] = UNOFFERED
     return have
 
 
 def check_security(api: Api, repo: str, want: dict[str, bool]) -> list[Drift]:
     have = read_security(api, repo)
-    return [
-        Drift(f"security.{key}", value, have.get(key))
-        for key, value in want.items()
-        if have.get(key) != value
-    ]
+    drift = []
+    for key, value in want.items():
+        current = have.get(key)
+        if current == UNOFFERED and not value:
+            continue
+        if current != value:
+            manual = ""
+            if current == UNOFFERED:
+                manual = (
+                    f"GitHub doesn't offer {key} for {repo}; set {key} = false in"
+                    " .github/repository.project.toml"
+                )
+            drift.append(Drift(f"security.{key}", value, current, manual=manual))
+    return drift
 
 
 def apply_security(api: Api, repo: str, drift: list[Drift]) -> None:
@@ -101,6 +152,9 @@ def apply_security(api: Api, repo: str, drift: list[Drift]) -> None:
         drift, key=lambda item: item.setting != "security.dependabot_alerts"
     ):
         key = item.setting.removeprefix("security.")
+        if item.manual:
+            # Not offered: a request would be refused, and the others with it.
+            continue
         if key in switches:
             if item.want:
                 api.put(switches[key])
@@ -114,27 +168,222 @@ def apply_security(api: Api, repo: str, drift: list[Drift]) -> None:
 
 # --------------------------------------------------------------------------- actions
 
+# Which actions may run: all, only those of the repository, or those of GitHub and of
+# the patterns that [actions.selected] lists.
+ALLOWED_ACTIONS = ("all", "local_only", "selected")
+# The owners of the actions that GitHub makes, which github_owned_allowed allows.
+GITHUB_OWNERS = ("actions", "github")
+# A step or a job that names an action or a reusable workflow, in the characters that
+# such a name may have: the file of an action that GitHub gives is no Markdown for the
+# summary of the settings bot.
+USES = re.compile(r"""^[ \t]*(?:-[ \t]+)?uses:[ \t]*["']?([\w.:/@+-]+)""", re.MULTILINE)
 
-def check_actions(api: Api, repo: str, want: dict[str, Json]) -> list[Drift]:
+
+def references(text: str) -> list[str]:
+    """The actions and reusable workflows that a workflow or an action names: not
+    those of the repository itself, which every policy allows, nor the images of
+    Docker, which no pattern names and which are pinned by their digest instead."""
+    return [
+        reference
+        for reference in USES.findall(text)
+        if not reference.startswith(("./", "docker://"))
+    ]
+
+
+def workflow_references(root: Path) -> dict[str, str]:
+    """Every action and reusable workflow that the workflows and actions of the
+    repository at root name, with the first file that names it."""
+    files = sorted(
+        [
+            *(root / ".github/workflows").glob("*.y*ml"),
+            *(root / ".github/actions").rglob("action.y*ml"),
+            *root.glob("action.y*ml"),
+        ]
+    )
+    found: dict[str, str] = {}
+    for path in files:
+        for reference in references(path.read_text(encoding="utf-8")):
+            found.setdefault(reference, path.relative_to(root).as_posix())
+    return found
+
+
+def pattern_of(reference: str) -> str:
+    """The pattern that allows an action or a reusable workflow at every commit."""
+    return reference.partition("@")[0] + "@*"
+
+
+def matches(pattern: str, reference: str) -> bool:
+    """Whether a pattern of GitHub, in which * stands for any text, names the action;
+    GitHub ignores the case of owners and repositories."""
+    parts = pattern.casefold().split("*")
+    return (
+        re.fullmatch(".*".join(map(re.escape, parts)), reference.casefold()) is not None
+    )
+
+
+def allows(selected: dict[str, Json], reference: str) -> bool:
+    """Whether [actions.selected] lets the action or reusable workflow run. A pattern
+    with ! in front blocks what it names, also an action of GitHub."""
+    patterns = [str(pattern) for pattern in selected.get("patterns_allowed") or []]
+    if any(
+        matches(pattern[1:], reference) for pattern in patterns if pattern[:1] == "!"
+    ):
+        return False
+    owner = reference.casefold().split("/", 1)[0]
+    if selected.get("github_owned_allowed") and owner in GITHUB_OWNERS:
+        return True
+    return any(matches(pattern, reference) for pattern in patterns)
+
+
+def run_by(api: Api, reference: str) -> list[str]:
+    """The actions and reusable workflows that an action or a reusable workflow runs in
+    turn, at the commit that it is pinned to: GitHub allows or blocks them as well."""
+    name, _, ref = reference.partition("@")
+    owner, _, rest = name.partition("/")
+    repo, _, path = rest.partition("/")
+    if path.endswith((".yml", ".yaml")):
+        candidates = [path]
+    else:
+        candidates = [
+            f"{path}/{file}".lstrip("/") for file in ("action.yml", "action.yaml")
+        ]
+    for candidate in candidates:
+        data = api.get(
+            f"repos/{owner}/{repo}/contents/{urllib.parse.quote(candidate)}"
+            f"?ref={urllib.parse.quote(ref, safe='')}"
+        )
+        if isinstance(data, dict) and data.get("content"):
+            text = base64.b64decode(str(data["content"])).decode("utf-8", "replace")
+            return references(text)
+    return []
+
+
+def actions_that_run(
+    api: Api, named: dict[str, str]
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Every action and reusable workflow that the workflows run, with what names it:
+    those that the workflows name, and those that these run in turn; and those whose
+    file GitHub refused to give, with its answer."""
+    found = dict(named)
+    refused = {}
+    todo = sorted(named)
+    while todo:
+        reference = todo.pop()
+        try:
+            inner_references = run_by(api, reference)
+        except GitHubError as error:
+            refused[reference] = str(error)
+            continue
+        for inner in inner_references:
+            if inner not in found:
+                found[inner] = reference.partition("@")[0]
+                todo.append(inner)
+    return found, refused
+
+
+def check_actions(
+    api: Api, repo: str, want: dict[str, Json], named: dict[str, str] | None = None
+) -> list[Drift]:
+    permissions = api.get(f"repos/{repo}/actions/permissions") or {}
     have = dict(api.get(f"repos/{repo}/actions/permissions/workflow") or {})
-    have["sha_pinning_required"] = (
-        api.get(f"repos/{repo}/actions/permissions") or {}
-    ).get("sha_pinning_required", False)
+    have["sha_pinning_required"] = permissions.get("sha_pinning_required", False)
+    have["allowed_actions"] = permissions.get("allowed_actions", "all")
     approval = (
         api.get(f"repos/{repo}/actions/permissions/fork-pr-contributor-approval") or {}
     )
     have["fork_pr_approval"] = approval.get("approval_policy")
-    return [
+    drift = [
         Drift(f"actions.{key}", value, have.get(key))
         for key, value in want.items()
-        if have.get(key) != value
+        if key != "selected" and have.get(key) != value
     ]
+    selected = want.get("selected")
+    if want.get("allowed_actions") == "selected" and isinstance(selected, dict):
+        active = have["allowed_actions"] == "selected"
+        drift += check_selected_actions(api, repo, selected, active, named or {})
+    return drift
+
+
+def check_selected_actions(
+    api: Api, repo: str, selected: dict[str, Json], active: bool, named: dict[str, str]
+) -> list[Drift]:
+    """The list of the actions that may run, and every action that a workflow runs
+    but the list lacks: while one does, the list on GitHub never narrows, because that
+    would stop that workflow."""
+    # GitHub keeps a list only while the repository allows the selected actions.
+    path = f"repos/{repo}/actions/permissions/selected-actions"
+    current = (api.get(path) or {}) if active else {}
+    drift = []
+    for key, value in selected.items():
+        have = current.get(key)
+        same = have == value
+        if key == "patterns_allowed":
+            value, have = sorted(value or []), sorted(have or [])
+            # GitHub ignores the case of owners and repositories.
+            same = sorted(map(str.casefold, value)) == sorted(map(str.casefold, have))
+        if not same:
+            drift.append(Drift(f"actions.selected.{key}", value, have))
+    found, refused = actions_that_run(api, named)
+    lacking: dict[str, str] = {}
+    for reference, where in sorted(found.items()):
+        if not allows(selected, reference):
+            lacking.setdefault(pattern_of(reference), where)
+    drift += [
+        Drift(
+            f"actions.selected.patterns_allowed lacks {pattern}",
+            "listed",
+            "missing",
+            manual=(
+                f"{where} runs it: add {json.dumps(pattern)} to patterns_allowed of"
+                " [actions.selected] in .github/repository.project.toml; until then"
+                " the list of the allowed actions on GitHub only grows"
+            ),
+        )
+        for pattern, where in lacking.items()
+    ]
+    # What an action runs in turn that no one could read may be missing as well.
+    drift += [
+        Drift(
+            f"actions.selected.patterns_allowed unknown for {reference}",
+            "read",
+            "unreadable",
+            manual=(
+                f"GitHub refused the file of {reference}: {answer}; what it runs in"
+                " turn is unknown, so the list of the allowed actions on GitHub only"
+                " grows until the next run reads it"
+            ),
+        )
+        for reference, answer in sorted(refused.items())
+    ]
+    return drift
+
+
+def widen_selected_actions(api: Api, repo: str, selected: dict[str, Json]) -> None:
+    """While a workflow runs an action that the list lacks, a list that GitHub already
+    uses only grows by the configured patterns: that never stops a workflow, and the
+    actions of a newer release of the blueprint can still start."""
+    permissions = api.get(f"repos/{repo}/actions/permissions") or {}
+    if permissions.get("allowed_actions") != "selected":
+        return
+    path = f"repos/{repo}/actions/permissions/selected-actions"
+    current = dict(api.get(path) or {})
+    have = [str(pattern) for pattern in current.get("patterns_allowed") or []]
+    known = {pattern.casefold() for pattern in have}
+    added = [
+        str(pattern)
+        for pattern in selected.get("patterns_allowed") or []
+        if str(pattern).casefold() not in known
+    ]
+    if added:
+        api.put(path, {**current, "patterns_allowed": have + added})
 
 
 def apply_actions(
     api: Api, repo: str, want: dict[str, Json], drift: list[Drift]
 ) -> None:
     keys = {item.setting.removeprefix("actions.") for item in drift}
+    # An action that a workflow runs and the list lacks: the list would stop it.
+    lacking = any(item.manual for item in drift)
     if keys & {"default_workflow_permissions", "can_approve_pull_request_reviews"}:
         api.put(
             f"repos/{repo}/actions/permissions/workflow",
@@ -145,16 +394,31 @@ def apply_actions(
                 ],
             },
         )
-    if "sha_pinning_required" in keys:
+    switch = "allowed_actions" in keys and not lacking
+    if switch or "sha_pinning_required" in keys:
         current = api.get(f"repos/{repo}/actions/permissions") or {}
         api.put(
             f"repos/{repo}/actions/permissions",
             {
                 "enabled": True,
-                "allowed_actions": current.get("allowed_actions", "all"),
-                "sha_pinning_required": want["sha_pinning_required"],
+                "allowed_actions": (
+                    want["allowed_actions"]
+                    if switch
+                    else current.get("allowed_actions", "all")
+                ),
+                "sha_pinning_required": want.get(
+                    "sha_pinning_required", current.get("sha_pinning_required", False)
+                ),
             },
         )
+    # The list comes after the switch to the selected actions, which it needs.
+    if any(key.startswith("selected.") for key in keys):
+        if lacking:
+            widen_selected_actions(api, repo, want["selected"])
+        else:
+            api.put(
+                f"repos/{repo}/actions/permissions/selected-actions", want["selected"]
+            )
     if "fork_pr_approval" in keys:
         api.put(
             f"repos/{repo}/actions/permissions/fork-pr-contributor-approval",
@@ -162,46 +426,116 @@ def apply_actions(
         )
 
 
+def check_actions_config(actions: dict[str, Json]) -> None:
+    """Which actions may run, as GitHub knows it."""
+    allowed = actions.get("allowed_actions", "all")
+    if allowed not in ALLOWED_ACTIONS:
+        raise ConfigError(
+            f"allowed_actions of [actions] is one of {', '.join(ALLOWED_ACTIONS)},"
+            f" not {allowed!r}"
+        )
+    if allowed == "selected" and not isinstance(actions.get("selected"), dict):
+        raise ConfigError(
+            'allowed_actions = "selected" needs the table [actions.selected], with'
+            " github_owned_allowed, verified_allowed and patterns_allowed, the"
+            " actions that may run"
+        )
+
+
 # --------------------------------------------------------------------------- rulesets
 
 
-def main_ruleset(checks: list[str]) -> dict[str, Json]:
-    """Pull requests into main: squashed, linear, with every required check passing."""
+# The thresholds of a tool of code scanning: the alerts that stop a merge, by the
+# severity of a problem and by that of a security alert.
+THRESHOLDS = {
+    "alerts_threshold": ("none", "errors", "errors_and_warnings", "all"),
+    "security_alerts_threshold": (
+        "none",
+        "critical",
+        "high_or_higher",
+        "medium_or_higher",
+        "all",
+    ),
+}
+
+
+def code_scanning_tools(tools: Iterable[Json]) -> list[dict[str, Json]]:
+    """The tools of code scanning whose new alerts stop a merge, each once: a later
+    entry of a tool, such as one of repository.project.toml, replaces an earlier one."""
+    chosen: dict[str, dict[str, Json]] = {}
+    for tool in tools:
+        if not (
+            isinstance(tool, dict)
+            and set(tool) == {"tool", *THRESHOLDS}
+            and isinstance(tool["tool"], str)
+            and tool["tool"]
+            and all(tool[key] in values for key, values in THRESHOLDS.items())
+        ):
+            raise ConfigError(
+                "each entry of code_scanning_tools in [branch] names a tool and its"
+                ' thresholds, such as { tool = "CodeQL", alerts_threshold = "errors",'
+                ' security_alerts_threshold = "high_or_higher" }, with an'
+                f" alerts_threshold of {', '.join(THRESHOLDS['alerts_threshold'])}"
+                " and a security_alerts_threshold of"
+                f" {', '.join(THRESHOLDS['security_alerts_threshold'])}, not {tool!r}"
+            )
+        chosen[tool["tool"]] = {
+            "tool": tool["tool"],
+            **{key: tool[key] for key in THRESHOLDS},
+        }
+    return list(chosen.values())
+
+
+def main_ruleset(
+    checks: list[str], tools: Iterable[dict[str, Json]] = ()
+) -> dict[str, Json]:
+    """Pull requests into main: squashed, linear, with every required check passing,
+    and without a new alert of a tool of code scanning from the thresholds on."""
+    rules: list[Json] = [
+        {"type": "deletion"},
+        {"type": "non_fast_forward"},
+        {"type": "required_linear_history"},
+        # Every commit signed: the maintainer's and those that bots make through the API.
+        {"type": "required_signatures"},
+        {
+            "type": "pull_request",
+            "parameters": {
+                "allowed_merge_methods": ["squash"],
+                "dismiss_stale_reviews_on_push": True,
+                "require_code_owner_review": False,
+                "require_last_push_approval": False,
+                "required_approving_review_count": 0,
+                "required_review_thread_resolution": True,
+            },
+        },
+        {
+            "type": "required_status_checks",
+            "parameters": {
+                "do_not_enforce_on_create": True,
+                "strict_required_status_checks_policy": True,
+                "required_status_checks": [
+                    {"context": check, "integration_id": ACTIONS_APP}
+                    for check in checks
+                ],
+            },
+        },
+    ]
+    listed = list(tools)
+    if listed:
+        # GitHub compares the analysis of the pull request with that of main: an alert
+        # that main has already stops no merge, and neither does one below the
+        # thresholds. A tool that hasn't uploaded its analysis yet stops the merge, so
+        # only tools that run on every pull request belong here.
+        rules.append(
+            {"type": "code_scanning", "parameters": {"code_scanning_tools": listed}}
+        )
     return {
         "name": "Protect main",
         "target": "branch",
         "enforcement": "active",
         "bypass_actors": [],
         "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
-        "rules": [
-            {"type": "deletion"},
-            {"type": "non_fast_forward"},
-            {"type": "required_linear_history"},
-            # Every commit signed: the maintainer's and those that bots make through the API.
-            {"type": "required_signatures"},
-            {
-                "type": "pull_request",
-                "parameters": {
-                    "allowed_merge_methods": ["squash"],
-                    "dismiss_stale_reviews_on_push": True,
-                    "require_code_owner_review": False,
-                    "require_last_push_approval": False,
-                    "required_approving_review_count": 0,
-                    "required_review_thread_resolution": True,
-                },
-            },
-            {
-                "type": "required_status_checks",
-                "parameters": {
-                    "do_not_enforce_on_create": True,
-                    "strict_required_status_checks_policy": True,
-                    "required_status_checks": [
-                        {"context": check, "integration_id": ACTIONS_APP}
-                        for check in checks
-                    ],
-                },
-            },
-        ],
+        "rules": rules,
     }
 
 
@@ -298,6 +632,11 @@ def ruleset_differences(want: dict[str, Json], have: dict[str, Json]) -> list[st
             if key == "required_status_checks":
                 value = sorted(check["context"] for check in value)
                 current = sorted(check["context"] for check in current or [])
+            elif key == "code_scanning_tools":
+                value = sorted(json.dumps(tool, sort_keys=True) for tool in value)
+                current = sorted(
+                    json.dumps(tool, sort_keys=True) for tool in current or []
+                )
             if current != value:
                 differences.append(f"{rule['type']}.{key}")
     differences += [f"rule {kind} is extra" for kind in have_rules]
@@ -305,9 +644,7 @@ def ruleset_differences(want: dict[str, Json], have: dict[str, Json]) -> list[st
 
 
 def rulesets(api: Api, repo: str) -> dict[str, Json]:
-    return {
-        item["name"]: item["id"] for item in api.get(f"repos/{repo}/rulesets") or []
-    }
+    return {item["name"]: item["id"] for item in api.get_all(f"repos/{repo}/rulesets")}
 
 
 def check_rulesets(api: Api, repo: str, wanted: list[dict[str, Json]]) -> list[Drift]:
@@ -396,21 +733,15 @@ def check_environments(
             drift.append(Drift(f"environment {name}", "main only", "missing"))
         else:
             policy = environment.get("deployment_branch_policy")
-            branches = (
-                api.get(f"repos/{repo}/environments/{name}/deployment-branch-policies")
-                or {}
-            )
             names = sorted(
                 f"{item.get('type', 'branch')}:{item['name']}"
-                for item in branches.get("branch_policies", [])
+                for item in branch_policies(api, repo, name)
             )
             if policy != MAIN_ONLY or names != ["branch:main"]:
                 drift.append(Drift(f"environment {name}", "main only", names or policy))
         present = {
             item["name"]
-            for item in (
-                api.get(f"repos/{repo}/environments/{name}/secrets") or {}
-            ).get("secrets", [])
+            for item in api.get_all(f"repos/{repo}/environments/{name}/secrets")
         }
         for secret in config.get("secrets", []):
             if secret not in present:
@@ -423,24 +754,28 @@ def check_environments(
     return drift
 
 
+def branch_policies(api: Api, repo: str, environment: str) -> list[Json]:
+    """The branches and tags from which an environment may be used."""
+    return api.get_all(
+        f"repos/{repo}/environments/{environment}/deployment-branch-policies"
+    )
+
+
 def apply_environments(api: Api, repo: str, drift: list[Drift]) -> None:
     for item in drift:
         name = item.setting.removeprefix("environment ")
         api.put(
             f"repos/{repo}/environments/{name}", {"deployment_branch_policy": MAIN_ONLY}
         )
-        policies = (
-            api.get(f"repos/{repo}/environments/{name}/deployment-branch-policies")
-            or {}
-        )
-        for policy in policies.get("branch_policies", []):
+        policies = branch_policies(api, repo, name)
+        for policy in policies:
             if (policy.get("type", "branch"), policy["name"]) != ("branch", "main"):
                 api.delete(
                     f"repos/{repo}/environments/{name}/deployment-branch-policies/{policy['id']}"
                 )
         if not any(
             (policy.get("type", "branch"), policy["name"]) == ("branch", "main")
-            for policy in policies.get("branch_policies", [])
+            for policy in policies
         ):
             api.post(
                 f"repos/{repo}/environments/{name}/deployment-branch-policies",
@@ -502,38 +837,43 @@ def apply_pages(api: Api, repo: str, want: dict[str, Json], drift: list[Drift]) 
 # --------------------------------------------------------------------------- labels
 
 
+def labels(api: Api, repo: str) -> dict[str, Json]:
+    """The labels of the repository, by their names in lower case: GitHub ignores the
+    case of a name, so Bug is the label bug in another case."""
+    return {
+        item["name"].casefold(): item for item in api.get_all(f"repos/{repo}/labels")
+    }
+
+
 def check_labels(api: Api, repo: str, want: dict[str, dict[str, str]]) -> list[Drift]:
-    """Every label of .github/labels.toml, with its color and description.
+    """Every label of .github/labels.toml, with its name, color and description.
 
     The Labels workflow keeps them current later; a new repository needs them before
     its first pull request, whose title check sets one.
     """
-    have = {
-        item["name"]: item
-        for item in api.get(f"repos/{repo}/labels?per_page=100") or []
-    }
+    have = labels(api, repo)
     drift = []
     for name, label in want.items():
-        current = have.get(name)
+        current = have.get(name.casefold())
         wanted = f"#{label['color'].lower()} {label['description']}"
         if current is None:
             drift.append(Drift(f"label {name}", wanted, None))
-        elif (
-            f"#{current['color'].lower()} {current.get('description') or ''}" != wanted
-        ):
+            continue
+        found = f"#{current['color'].lower()} {current.get('description') or ''}"
+        if current["name"] != name:
+            # The name in another case: renamed, which the drift shows.
             drift.append(
-                Drift(
-                    f"label {name}",
-                    wanted,
-                    f"#{current['color']} {current.get('description') or ''}",
-                )
+                Drift(f"label {name}", f"{name} {wanted}", f"{current['name']} {found}")
             )
+        elif found != wanted:
+            drift.append(Drift(f"label {name}", wanted, found))
     return drift
 
 
 def apply_labels(
     api: Api, repo: str, want: dict[str, dict[str, str]], drift: list[Drift]
 ) -> None:
+    have = labels(api, repo)
     for item in drift:
         name = item.setting.removeprefix("label ")
         body = {
@@ -541,10 +881,21 @@ def apply_labels(
             "color": want[name]["color"].lower(),
             "description": want[name]["description"],
         }
-        if item.have is None:
-            api.post(f"repos/{repo}/labels", body)
-        else:
-            api.patch(f"repos/{repo}/labels/{urllib.parse.quote(name, safe='')}", body)
+        current = have.get(name.casefold())
+        if current is None:
+            try:
+                api.post(f"repos/{repo}/labels", body)
+                continue
+            except GitHubError as error:
+                # Created a moment ago, such as by the Labels workflow when a push
+                # starts both: then it is updated like any other.
+                if "already_exists" not in error.codes:
+                    raise
+            current = {"name": name}
+        path = urllib.parse.quote(current["name"], safe="")
+        # GitHub renames a label, such as Bug to bug, through new_name.
+        update = {"new_name": name, **{k: v for k, v in body.items() if k != "name"}}
+        api.patch(f"repos/{repo}/labels/{path}", update)
 
 
 def load_labels(path: Path) -> dict[str, dict[str, str]]:
@@ -588,9 +939,13 @@ class Settings:
     environments: dict[str, dict[str, Json]]
     pages: dict[str, Json]
     labels: dict[str, dict[str, str]]
+    # The actions and reusable workflows that the workflows name, with the file of each.
+    workflows: dict[str, str]
 
     @classmethod
-    def load(cls, path: Path) -> Settings:
+    def load(cls, path: Path, root: Path | None = None) -> Settings:
+        """The settings in path, by default .github/repository.toml of the repository
+        at root, whose workflows they let run."""
         config = tomllib.loads(path.read_text(encoding="utf-8"))
         # The settings of this project alone, on top of those the blueprint keeps
         # current: its own checks, environments, secrets and variables.
@@ -599,22 +954,27 @@ class Settings:
             own = tomllib.loads(project.read_text(encoding="utf-8"))
             own_release_app(config.get("variables", {}), own.get("variables", {}))
             config = merge(config, own)
-        checks = config.get("branch", {}).get("required_checks", [])
+        branch = config.get("branch", {})
+        checks = branch.get("required_checks", [])
+        tools = code_scanning_tools(branch.get("code_scanning_tools", []))
+        actions = config.get("actions", {})
+        check_actions_config(actions)
         variables = config.get("variables", {})
-        rulesets = [main_ruleset(checks), tag_ruleset()]
+        rulesets = [main_ruleset(checks, tools), tag_ruleset()]
         app_id = release_app_id(variables)
         if app_id is not None:
             rulesets.append(tag_creation_ruleset(app_id))
         return cls(
             repository=config.get("repository", {}),
             security=config.get("security", {}),
-            actions=config.get("actions", {}),
+            actions=actions,
             rulesets=rulesets,
             variables=variables,
             environments=config.get("environments", {}),
             pages=config.get("pages", {}),
             # The labels of the issue assistant, next to the settings.
             labels=load_labels(path.parent / "labels.toml"),
+            workflows=workflow_references(path.parent.parent if root is None else root),
         )
 
 
@@ -622,7 +982,7 @@ def check(api: Api, repo: str, settings: Settings) -> list[Drift]:
     return (
         check_repository(api, repo, settings.repository)
         + check_security(api, repo, settings.security)
-        + check_actions(api, repo, settings.actions)
+        + check_actions(api, repo, settings.actions, settings.workflows)
         + check_rulesets(api, repo, settings.rulesets)
         + check_variables(api, repo, settings.variables)
         + check_environments(api, repo, settings.environments)
@@ -676,14 +1036,22 @@ def apply(api: Api, repo: str, settings: Settings, drift: list[Drift]) -> list[s
         try:
             step()
         except GitHubError as error:
-            hint = ""
-            if error.status == 403:
-                hint = (
-                    f"; the token may lack the permission {PERMISSIONS[name]}"
-                    " (read and write)"
-                )
-            refused.append(f"the {name} could not be applied: {error}{hint}")
+            refused.append(
+                f"the {name} could not be applied: {error}{hint(name, error)}"
+            )
     return refused
+
+
+def hint(part: str, error: GitHubError) -> str:
+    """What a refusal of GitHub likely means. GitHub answers 403, and for some changes
+    404, to a token without the permission."""
+    if error.rate_limited:
+        return "; that is the rate limit of GitHub; the next run tries again"
+    if error.status in (403, 404):
+        return (
+            f"; the token may lack the permission {PERMISSIONS[part]} (read and write)"
+        )
+    return ""
 
 
 def describe(drift: list[Drift]) -> str:

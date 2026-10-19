@@ -3,10 +3,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # The checks of this app alone, which scripts/check.sh runs last: the browser and the
-# scripts of the end-to-end tests, the pictures of the README and the pages of the website
-# that it links, the versions that the documentation names, the descriptions of the pages
-# of the website, the diagrams of the documentation, and the JavaScript of the settings
-# and the translations, which have no build step, with their tests.
+# scripts of the end-to-end tests, the pictures of the READMEs and the pages of the
+# website that they link, the German pages beside the English ones, the versions that the
+# documentation names, the descriptions of the pages of the website, the diagrams of the
+# documentation, the explanations of the checks for the PR coach, and the JavaScript of
+# the settings and the translations, which have no build step, with their tests.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -71,37 +72,81 @@ printf '\n== %s\n' "Scripts of the end-to-end tests"
   echo "The tests left the repository that GIT_DIR names alone."
 )
 
-printf '\n== %s\n' "Pictures of the README"
-# The README shows its pictures from main, so that the website shows them as well, and
-# the link check skips them (.lycheeignore): each of them must be in the checkout.
-mapfile -t pictures < <(grep -oE 'https://github\.com/Dennis-Otto/paperless-unified-search/raw/main/[^")[:space:]]+' README.md |
+printf '\n== %s\n' "Pictures of the READMEs"
+# The READMEs, English and German, show their pictures from main, so that the website
+# shows them as well, and the link check skips them (.lycheeignore): each of them must be
+# in the checkout.
+mapfile -t pictures < <(grep -ohE 'https://github\.com/Dennis-Otto/paperless-unified-search/raw/main/[^")[:space:]]+' README.md README.de.md |
   sed 's#^https://github\.com/Dennis-Otto/paperless-unified-search/raw/main/##' | sort -u)
 for picture in "${pictures[@]}"; do
   if [[ ! -f "$picture" ]]; then
-    echo "README.md shows $picture, which isn't in the repository."
+    echo "A README shows $picture, which isn't in the repository."
     exit 1
   fi
 done
-echo "The ${#pictures[@]} picture(s) of the README are in the repository."
+echo "The ${#pictures[@]} picture(s) of the READMEs are in the repository."
 
-printf '\n== %s\n' "Pages of the website that the README links"
-# The README links pages of the website, which a pull request that adds a page links
+printf '\n== %s\n' "Files that the documentation links on main"
+# The README and the pages of the website link files and folders of the repository on
+# GitHub, from main, as the website can't link them otherwise. A pull request that adds
+# one, such as the guide of the demo, links it before main has it, so the link check
+# skips the demo (.lycheeignore): each of them must be in the checkout.
+mapfile -t linked < <(grep -ohE 'https://github\.com/Dennis-Otto/paperless-unified-search/(blob|tree)/main/[^")#?[:space:]]+' README.md README.de.md docs/*.md |
+  sed -E 's#^https://github\.com/Dennis-Otto/paperless-unified-search/(blob|tree)/main/##' | sort -u)
+for path in "${linked[@]}"; do
+  if [[ ! -e "$path" ]]; then
+    echo "The documentation links $path on main, which isn't in the repository, and the link check skips it (.lycheeignore): correct the path of the link, or add the file."
+    exit 1
+  fi
+done
+echo "The ${#linked[@]} file(s) and folder(s) that the documentation links on main are in the repository."
+
+printf '\n== %s\n' "Pages of the website that the READMEs link"
+# The READMEs link pages of the website, which a pull request that adds a page links
 # before the website has it, so the link check skips them (.lycheeignore): each of them
-# must be a page of docs/, from which the website is built.
-mapfile -t site_pages < <(grep -oE 'https://dennis-otto\.github\.io/paperless-unified-search/[a-z0-9-]+\.html' README.md |
-  sed -E 's#^.*/([a-z0-9-]+)\.html$#docs/\1.md#' | sort -u)
+# must be a page of docs/, from which the website is built, and a page of the German
+# website in de/, such as de/faq.html, a German page, such as docs/faq.de.md.
+mapfile -t site_pages < <(grep -ohE 'https://dennis-otto\.github\.io/paperless-unified-search/(de/)?[a-z0-9-]+\.html' README.md README.de.md |
+  sed -E 's#^.*/de/([a-z0-9-]+)\.html$#docs/\1.de.md#; s#^.*/([a-z0-9-]+)\.html$#docs/\1.md#' | sort -u)
 for site_page in "${site_pages[@]}"; do
   if [[ ! -f "$site_page" ]]; then
-    echo "README.md links a page of the website that docs/ doesn't have: write $site_page or link another page."
+    echo "A README links a page of the website that docs/ doesn't have: write $site_page or link another page."
     exit 1
   fi
 done
-echo "The ${#site_pages[@]} page(s) of the website that the README links are in docs/."
+echo "The ${#site_pages[@]} page(s) of the website that the READMEs link are in docs/."
+
+printf '\n== %s\n' "German pages"
+# The German pages of the website include the sections of README.de.md by the names of
+# those of README.md, such as --8<-- "README.de.md:usage", so both READMEs mark the same
+# sections in the same order. Each German page, such as docs/faq.de.md, is the twin of
+# an English one, and the READMEs link each other.
+sections() {
+  grep -oE -- '--8<-- \[(start|end):[a-z0-9-]+\]' "$1" || true
+}
+if [[ "$(sections README.md)" != "$(sections README.de.md)" ]]; then
+  echo "README.md and README.de.md mark other sections, or in another order:"
+  diff <(sections README.md) <(sections README.de.md) || true
+  echo "Mark each section of README.md in README.de.md too, with the same name and at the same place."
+  exit 1
+fi
+mapfile -t german < <(markdown 'docs/*.de.md')
+for page in "${german[@]}"; do
+  if [[ ! -f "${page%.de.md}.md" ]]; then
+    echo "$page has no English twin ${page%.de.md}.md, whose German version it would be."
+    exit 1
+  fi
+done
+if ! grep -qF '](README.de.md)' README.md || ! grep -qF '](README.md)' README.de.md; then
+  echo "README.md and README.de.md link each other at their top, as [Deutsch](README.de.md) and [English](README.md)."
+  exit 1
+fi
+echo "README.de.md marks the $(sections README.md | wc -l | tr -d ' ') section marker(s) of README.md, and the ${#german[@]} German page(s) each have their English one."
 
 printf '\n== %s\n' "Versions in the documentation"
 # appinfo/info.xml decides on which versions of Nextcloud and PHP the app installs. The
-# README and the pages of the website that name them say the same, so that a change of
-# the versions can't leave a copy behind.
+# READMEs and the pages of the website that name them, in English and German, say the
+# same, so that a change of the versions can't leave a copy behind.
 nextcloud_min="$(sed -nE 's/.*<nextcloud [^>]*min-version="([0-9]+)".*/\1/p' appinfo/info.xml)"
 nextcloud_max="$(sed -nE 's/.*<nextcloud [^>]*max-version="([0-9]+)".*/\1/p' appinfo/info.xml)"
 php_min="$(sed -nE 's/.*<php [^>]*min-version="([0-9.]+)".*/\1/p' appinfo/info.xml)"
@@ -127,6 +172,13 @@ says docs/install.md "| **PHP** | $php_min or newer"
 says docs/faq.md "Nextcloud $nextcloud_min to $nextcloud_max"
 says docs/reference.md "| $columns"
 says docs/reference.md "**PHP:** $php_min or newer"
+says README.de.md "Nextcloud $nextcloud_min bis $nextcloud_max"
+says README.de.md "PHP $php_min oder neuer"
+says docs/install.de.md "| **Nextcloud** | $nextcloud_min bis $nextcloud_max |"
+says docs/install.de.md "| **PHP** | $php_min oder neuer"
+says docs/faq.de.md "Nextcloud $nextcloud_min bis $nextcloud_max"
+says docs/reference.de.md "| $columns"
+says docs/reference.de.md "**PHP:** $php_min oder neuer"
 if ((version_problems > 0)); then
   exit 1
 fi
@@ -203,6 +255,33 @@ if ! awk '
 ' "${documents[@]}"; then
   echo "Let each diagram run from top to bottom (flowchart TB) and give it accTitle: and accDescr: lines, as the diagrams of README.md do."
   exit 1
+fi
+
+printf '\n== %s\n' "Explanations of the checks"
+# When a check fails, the PR coach explains it on the pull request, also on one from a
+# fork: what it found, why that matters and how to fix it. So every check that the
+# rules of main require, of the blueprint and of this app, such as nextcloud of the
+# end-to-end tests, and every step of scripts/check.sh has its explanation, in
+# .github/checks.toml or .github/checks.project.toml, and each explanation says in
+# autofix how its check fixes itself, or why no command can. blueprint.py needs Python
+# 3.12 or newer, as in the steps of scripts/check.sh that run it.
+python=""
+for candidate in python3 python py; do
+  if "$candidate" -c 'import sys; sys.exit(sys.version_info < (3, 12))' >/dev/null 2>&1; then
+    python="$candidate"
+    break
+  fi
+done
+if [[ -n "$python" ]]; then
+  if ! "$python" .github/blueprint.py coach verify; then
+    echo "Explain each check and step above in .github/checks.project.toml, with its autofix, as its other explanations do."
+    exit 1
+  fi
+elif [[ -n "${CI:-}" ]]; then
+  echo "Checking the explanations of the checks needs Python 3.12 or newer, which this runner lacks."
+  exit 1
+else
+  echo "Python 3.12 or newer is not installed here; the CI checks the explanations of the checks."
 fi
 
 printf '\n== %s\n' "JavaScript and translations"

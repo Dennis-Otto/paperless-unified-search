@@ -29,11 +29,20 @@ coach() {
 }
 trap coach EXIT
 
+# The files of git, tracked or new, each once: during a merge, git lists a file with
+# a conflict once for each side otherwise.
 files() {
-  git ls-files -z --cached --others --exclude-standard "$@"
+  git ls-files -z --cached --others --exclude-standard --deduplicate "$@"
 }
 
 step "Text files"
+# --deduplicate is new in Git 2.31; an older git would list no files, and every step
+# would pass without checking anything. The coach has nothing to add to that.
+if ! git ls-files --deduplicate >/dev/null 2>&1; then
+  echo "scripts/check.sh needs Git 2.31 or newer." >&2
+  current=""
+  exit 1
+fi
 problems=0
 # A problem of a file: in the log, and in the CI also as an annotation at the first
 # line that matches the pattern, or at the end of the file, which the files of a pull
@@ -66,28 +75,79 @@ problem() {
     echo "::error file=$name,line=$line,title=Text files::$2"
   fi
 }
+# The files of git other than the licenses, and of those the text files: the ones
+# with a character other than a line break and without the NUL of a binary file, as
+# grep -I sees them, so neither deleted, empty nor binary ones.
+names=()
 while IFS= read -r -d '' file; do
   case "$file" in
-    LICENSE | LICENSES/*) continue ;;
+    LICENSE | LICENSES/*) ;;
+    *) names+=("$file") ;;
   esac
-  # Leave out deleted, empty and binary files.
-  if [[ ! -s "$file" ]] || ! grep -Iq . "$file"; then
-    continue
-  fi
+done < <(files)
+text=()
+if ((${#names[@]} > 0)); then
+  mapfile -d '' text < <(printf '%s\0' "${names[@]}" | xargs -0 grep -Ils --null . --)
+fi
+# The text files that a command lists, each with a NUL at its end, as the keys of the
+# array named first: one command for all the files, or a few for a long list, rather
+# than a few for each file, which took half a minute on Windows.
+listed_by() {
+  local -n found="$1"
+  local file
+  shift
+  while IFS= read -r -d '' file; do
+    found["$file"]=1
+  done < <(printf '%s\0' "${text[@]}" | xargs -0 "$@" --)
+}
+declare -A crlf=() blanks=() unended=() markers=()
+# A line that git writes around a conflict that a merge leaves to a person: alone,
+# with the CR of a CRLF line ending, or before a blank and the name of a side.
+marker=$'^(<{7}|>{7})( |\r|$)'
+if ((${#text[@]} > 0)); then
   # -U reads the bytes as they are: the grep of Git for Windows drops the CR at the
   # end of a line otherwise, and found no CRLF line endings there.
-  if grep -qU $'\r' "$file"; then
+  listed_by crlf grep -lU --null $'\r'
+  listed_by blanks grep -lUE --null '[[:blank:]]$'
+  listed_by markers grep -lUE --null "$marker"
+  # The files whose last byte is no line break. Perl, which comes with Git for
+  # Windows, macOS and Linux, reads the last byte of every file; tail, without it,
+  # that of one file at a time.
+  if command -v perl >/dev/null 2>&1; then
+    # shellcheck disable=SC2016 # The variables are those of the program of Perl.
+    listed_by unended perl -e 'for my $name (@ARGV) {
+      my $last = "\n";
+      open(my $file, "<:raw", $name) or next;
+      seek($file, -1, 2) and read($file, $last, 1);
+      print "$name\0" if $last ne "\n";
+    }'
+  else
+    for file in "${text[@]}"; do
+      if [[ -n "$(tail -c 1 "$file")" ]]; then
+        unended["$file"]=1
+      fi
+    done
+  fi
+fi
+for file in "${text[@]}"; do
+  if [[ -n "${crlf[$file]:-}" ]]; then
     problem "$file" "has CRLF line endings" $'\r'
   fi
-  if grep -qUE '[[:blank:]]$' "$file"; then
+  if [[ -n "${blanks[$file]:-}" ]]; then
     problem "$file" "has trailing whitespace" '[[:blank:]]$'
   fi
-  if [[ -n "$(tail -c 1 "$file")" ]]; then
+  if [[ -n "${unended[$file]:-}" ]]; then
     problem "$file" "lacks the line break at its end"
   fi
-done < <(files)
+  if [[ -n "${markers[$file]:-}" ]]; then
+    problem "$file" "has conflict markers" "$marker"
+  fi
+done
 if ((problems > 0)); then
   echo "Fix the $problems problem(s) above; .editorconfig sets up most editors for it."
+  if ((${#markers[@]} > 0)); then
+    echo "A conflict needs a person: keep the lines that belong, and delete the markers."
+  fi
   exit 1
 fi
 echo "Every text file is clean."
@@ -119,6 +179,21 @@ else
   echo "Python 3.12 or newer is not installed here; the CI checks the pages."
 fi
 
+step "Changelog fragments"
+# Every fragment of changelog.d/ as the release takes it in, those that wait on main
+# for the next release too: rules that get stricter, in blueprint.py or in an update
+# of the blueprint, meet them here, before the release does. The check of the title
+# checks only the fragments of a pull request, with the code of main. Each problem
+# names its fragment and the fix. The Python and blueprint.py of the step before.
+if [[ -n "$python" ]]; then
+  "$python" "$tool" fragments
+elif [[ -n "${CI:-}" ]]; then
+  echo "Checking the fragments needs Python 3.12 or newer, which this runner lacks."
+  exit 1
+else
+  echo "Python 3.12 or newer is not installed here; the CI checks the fragments."
+fi
+
 step "Version"
 # The release bot writes the version of each release into these files.
 release="$(grep -oE '"\.": *"[^"]+"' .release-please-manifest.json | grep -oE '[0-9][^"]*')"
@@ -148,7 +223,14 @@ echo "Every hook in .githooks/ is executable."
 
 step "Shell scripts"
 mapfile -d '' scripts < <(files '*.sh')
+# ShellCheck, which the CI never skips: a runner without it fails here, as one whose
+# image no longer has it. The runners of Linux have it; pip installs it from the
+# package shellcheck-py.
 if ! command -v shellcheck >/dev/null 2>&1; then
+  if [[ -n "${CI:-}" ]]; then
+    echo "Checking the shell scripts needs ShellCheck, which this runner lacks."
+    exit 1
+  fi
   echo "shellcheck is not installed here; the CI runs it."
 elif ((${#scripts[@]} > 0)); then
   shellcheck "${scripts[@]}"
@@ -188,15 +270,65 @@ find "${folders[@]}" -name '*.php' -print0 |
   { grep -v '^No syntax errors detected in ' || true; }
 echo "Every PHP file parses."
 
+step "Oldest PHP"
+# The app runs on the oldest PHP of appinfo/info.xml and on every newer one, its tools on
+# the PHP of config.platform.php in composer.json, which may be newer: the code that the
+# app ships has to parse on the oldest PHP, and the packages that it ships have to
+# install there. The CI sets up that PHP beside the one of the tools, as php8.2 or the
+# like. This is PHP code, not a shell expression.
+# shellcheck disable=SC2016
+oldest="$(php -r '$php = simplexml_load_file("appinfo/info.xml")->dependencies->php;
+echo implode(".", array_slice(explode(".", (string) ($php["min-version"] ?? "")), 0, 2));')"
+tools="$(php -r 'echo PHP_MAJOR_VERSION, ".", PHP_MINOR_VERSION;')"
+if [[ -z "$oldest" || "$oldest" == "$tools" ]]; then
+  echo "The tools run on PHP $tools, the oldest PHP of the app."
+elif command -v "php$oldest" >/dev/null 2>&1; then
+  mapfile -t shipped < <(find appinfo lib templates -maxdepth 0 -type d 2>/dev/null)
+  find "${shipped[@]}" -name '*.php' -print0 |
+    xargs -0 -n 1 -P "$(getconf _NPROCESSORS_ONLN)" "php$oldest" --syntax-check |
+    { grep -v '^No syntax errors detected in ' || true; }
+  "php$oldest" "$(command -v composer)" check-platform-reqs --lock --no-dev
+  echo "The code of the app parses on PHP $oldest, and the packages that it ships install there."
+elif [[ -n "${CI:-}" ]]; then
+  echo "PHP $oldest, the oldest PHP of appinfo/info.xml, is missing: the CI needs it as php$oldest beside PHP $tools, the PHP of the tools." >&2
+  exit 1
+else
+  echo "PHP $oldest, the oldest PHP of appinfo/info.xml, is not installed here as php$oldest; the CI checks the code on it."
+fi
+
 step "Coding standard"
 vendor/bin/php-cs-fixer fix --dry-run --diff
 
 step "Psalm"
-vendor/bin/psalm --threads=1 --no-cache
+# The canary of the taint analysis runs on another processor meanwhile; its step reads
+# what it found, never the report of a run before.
+mkdir -p build
+rm -f build/psalm-canary.json
+vendor/bin/psalm --config=.github/psalm/canary.xml --taint-analysis --threads=1 --no-cache \
+  --no-progress --monochrome --report=build/psalm-canary.json >build/psalm-canary.log 2>&1 &
+canary=$!
+if ! vendor/bin/psalm --threads=1 --no-cache; then
+  # A check that stops here leaves no canary running behind it.
+  kill "$canary" 2>/dev/null || true
+  exit 1
+fi
+
+step "Psalm taint canary"
+# The controller of .github/psalm/canary/ lets the input of a request reach each kind of
+# sink: the analysis has to find every path that it expects, and no other, or it has
+# gone blind and would pass the code of every app in silence.
+wait "$canary" || true
+if ! php .github/psalm/check-canary.php build/psalm-canary.json; then
+  cat build/psalm-canary.log
+  exit 1
+fi
 
 step "Psalm taint analysis"
-# Untrusted input that reaches HTML, SQL, a shell, a file or a header unescaped.
-vendor/bin/psalm --taint-analysis --threads=1 --no-cache
+# Untrusted input that reaches HTML, SQL, a shell, a file, a request to another server
+# or a header unescaped: the parameters of a request to a controller, the term of a
+# search and the answers of other servers, as .github/psalm/NextcloudTaintPlugin.php
+# teaches Psalm. The CI shows each path in code scanning too, from the SARIF report.
+vendor/bin/psalm --taint-analysis --threads=1 --no-cache --report=build/psalm-taint.sarif
 
 step "Tests, with every line covered"
 # pcov measures the coverage in the CI, Xdebug in the dev container.
@@ -263,8 +395,14 @@ else
         echo "Tools that are out of date or incomplete install again as CONTRIBUTING.md shows."
         exit 1
       fi
+      echo "The website builds strictly."
+      # What the hooks of the website promise, as the check docs checks it after the
+      # build, with the Python and blueprint.py of the step Pages in one column.
+      if [[ -n "${python:-}" && -f "${tool:-}" ]] && ! "$python" "$tool" site-check "$site"; then
+        echo "The website breaks what its hooks promise; the lines above name each file."
+        exit 1
+      fi
     )
-    echo "The website builds strictly."
   fi
 fi
 

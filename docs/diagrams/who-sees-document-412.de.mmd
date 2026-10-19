@@ -1,0 +1,33 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: Wer Dokument 412 sieht
+    accDescr: Dem Archiv-Konto paperless gehört die Datei Rechnung [P412].pdf, und es sieht Dokument 412. Es teilt die Datei nur lesend mit jamie, und jamie sieht Dokument 412 ebenfalls. sam hat eine eigene Datei namens Kopie [P412].pdf; sie ist keine Datei des Archiv-Kontos, also sieht sam kein Dokument.
+
+    subgraph owner ["paperless, das Archiv-Konto"]
+        own["… Rechnung [P412].pdf"]
+    end
+    subgraph reader ["jamie"]
+        shared["… Rechnung [P412].pdf<br>nur lesend geteilt"]
+    end
+    subgraph other ["sam"]
+        copy["Kopie [P412].pdf<br>eine eigene Datei von sam"]
+    end
+    seen1(["✓ Dokument 412"])
+    seen2(["✓ Dokument 412"])
+    unseen(["✗ kein Dokument"])
+
+    own -- "teilt" --> shared
+    own --> seen1
+    shared --> seen2
+    seen2 ~~~ copy
+    copy --> unseen
+
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class seen1,seen2 yes
+    class unseen no

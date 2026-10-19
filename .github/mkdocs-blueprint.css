@@ -1,0 +1,86 @@
+/* The styles of every website, which the blueprint keeps current. The hook in
+   .github/mkdocs_blueprint.py serves this file as assets/stylesheets/blueprint.css,
+   before the stylesheets of the project in extra_css, whose rules win over these.
+   They make the theme Material meet WCAG 2.2 AA in both schemes, which the
+   accessibility check of the check docs, .github/a11y/check.mjs, checks on every
+   page. https://github.com/Dennis-Otto/repo-blueprint */
+
+/* A link in the text is underlined, as on GitHub: its color alone, with 2.3:1 to the
+   text around it in the light scheme and 1.9:1 in the dark one, doesn't set it apart
+   for every reader (WCAG 1.4.1). Not the buttons, the anchors of the headings or a
+   picture that opens enlarged. */
+.md-typeset a:not(.md-button, .headerlink, .glightbox) {
+  text-decoration: underline;
+  text-decoration-thickness: from-font;
+  text-underline-offset: 0.18em;
+}
+
+/* The tabs of the header have the full color of its text, 6.9:1 to the header, where
+   the theme dims those of the other sections to 4.3:1 (WCAG 1.4.3); the tab of the
+   current section is bold instead. */
+.md-tabs__link {
+  opacity: 1;
+}
+
+.md-tabs__item--active .md-tabs__link {
+  font-weight: 700;
+}
+
+/* In the dark scheme, the links of the indigo theme are lighter, 6.5:1 to the page
+   and 5.7:1 to a block of code, where the theme has 4.7:1 and 4.2:1 (WCAG 1.4.3). */
+[data-md-color-scheme="slate"][data-md-color-primary="indigo"] {
+  --md-typeset-a-color: #7aa2f7;
+}
+
+/* A button with a border alone has the color of links in the dark scheme, which
+   keeps at least 4.5:1 to the page, where the primary color has 2.3:1. Only at rest:
+   under the pointer or in focus, the theme fills the button with the accent color,
+   on which its label is white. */
+[data-md-color-scheme="slate"] .md-typeset .md-button:not(.md-button--primary, :hover, :focus) {
+  border-color: currentcolor;
+  color: var(--md-typeset-a-color);
+}
+
+/* Buttons that wrap onto a second line, as on a phone, keep a gap between them. */
+.md-typeset .md-button {
+  margin: 0 0.4rem 0.6rem 0;
+}
+
+/* The comments and the punctuation of code have at least 5:1 to its background,
+   where the theme has 4.5:1 in the light scheme and 4.6:1 in the dark one; so do
+   the other colors of code in the dark scheme, also on a marked line. */
+[data-md-color-scheme="default"] {
+  --md-code-hl-comment-color: rgb(0 0 0 / 60%);
+  --md-code-hl-generic-color: rgb(0 0 0 / 60%);
+  --md-code-hl-operator-color: rgb(0 0 0 / 60%);
+  --md-code-hl-punctuation-color: rgb(0 0 0 / 60%);
+  --md-code-hl-variable-color: rgb(0 0 0 / 60%);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-code-hl-comment-color: hsl(var(--md-hue) 15% 90% / 62%);
+  --md-code-hl-generic-color: hsl(var(--md-hue) 15% 90% / 62%);
+  --md-code-hl-operator-color: hsl(var(--md-hue) 15% 90% / 62%);
+  --md-code-hl-punctuation-color: hsl(var(--md-hue) 15% 90% / 62%);
+  --md-code-hl-variable-color: hsl(var(--md-hue) 15% 90% / 62%);
+  --md-code-hl-constant-color: #a594eb;
+  --md-code-hl-function-color: #d48de0;
+  --md-code-hl-keyword-color: #7a9cf0;
+  --md-code-hl-number-color: #ef7b6e;
+  --md-code-hl-special-color: #f37aa0;
+  --md-code-hl-string-color: #36c07c;
+}
+
+/* A picture for one scheme alone, NAME.png#only-light or #only-dark, hides with the
+   link that opens it enlarged, so that the keyboard never stops on a link that the
+   page doesn't show. */
+[data-md-color-scheme="default"] .md-typeset a.glightbox:has(> img[src$="#only-dark"]),
+[data-md-color-scheme="slate"] .md-typeset a.glightbox:has(> img[src$="#only-light"]) {
+  display: none;
+}
+
+/* A video in place of a GIF keeps the width of the column, as the GIF did. */
+.md-typeset video.blueprint-video {
+  display: block;
+  width: 100%;
+}
