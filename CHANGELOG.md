@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [1.1.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.1.0...v1.1.1) (2026-10-19)
+
+
+### Bug fixes
+
+* find the archive account of Paperless Sync 0.3, which stores it lazily ([#168](https://github.com/Dennis-Otto/paperless-unified-search/issues/168)) ([b279db2](https://github.com/Dennis-Otto/paperless-unified-search/commit/b279db2bd9e6c36e5a170f5c8e434403cdc03012))
+
 ## [1.1.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.0.1...v1.1.0) (2026-10-17)
 
 ### Features
