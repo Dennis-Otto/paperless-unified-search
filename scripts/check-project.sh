@@ -6,8 +6,8 @@
 # scripts of the end-to-end tests, the pictures of the READMEs and the pages of the
 # website that they link, the German pages beside the English ones, the versions that the
 # documentation names, the descriptions of the pages of the website, the diagrams of the
-# documentation, and the JavaScript of the settings and the translations, which have no
-# build step, with their tests.
+# documentation, the explanations of the checks for the PR coach, and the JavaScript of
+# the settings and the translations, which have no build step, with their tests.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -255,6 +255,33 @@ if ! awk '
 ' "${documents[@]}"; then
   echo "Let each diagram run from top to bottom (flowchart TB) and give it accTitle: and accDescr: lines, as the diagrams of README.md do."
   exit 1
+fi
+
+printf '\n== %s\n' "Explanations of the checks"
+# When a check fails, the PR coach explains it on the pull request, also on one from a
+# fork: what it found, why that matters and how to fix it. So every check that the
+# rules of main require, of the blueprint and of this app, such as nextcloud of the
+# end-to-end tests, and every step of scripts/check.sh has its explanation, in
+# .github/checks.toml or .github/checks.project.toml, and each explanation says in
+# autofix how its check fixes itself, or why no command can. blueprint.py needs Python
+# 3.12 or newer, as in the steps of scripts/check.sh that run it.
+python=""
+for candidate in python3 python py; do
+  if "$candidate" -c 'import sys; sys.exit(sys.version_info < (3, 12))' >/dev/null 2>&1; then
+    python="$candidate"
+    break
+  fi
+done
+if [[ -n "$python" ]]; then
+  if ! "$python" .github/blueprint.py coach verify; then
+    echo "Explain each check and step above in .github/checks.project.toml, with its autofix, as its other explanations do."
+    exit 1
+  fi
+elif [[ -n "${CI:-}" ]]; then
+  echo "Checking the explanations of the checks needs Python 3.12 or newer, which this runner lacks."
+  exit 1
+else
+  echo "Python 3.12 or newer is not installed here; the CI checks the explanations of the checks."
 fi
 
 printf '\n== %s\n' "JavaScript and translations"
