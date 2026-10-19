@@ -1,0 +1,32 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+---
+flowchart TB
+    accTitle: When a check of the app fails
+    accDescr: A pull request runs the checks of this app alone, such as nextcloud, the end-to-end tests, or the step Checks of this project of scripts/check.sh. When one fails, its last step writes its explanation from .github/checks.project.toml into the summary of the check and as its annotation: what it found, why that matters and how to fix it. After the checks, the PR coach keeps one comment on the pull request with that explanation, also on a pull request from a fork. Where a command fixes what the check found, the fix bot commits the fix onto a branch of this repository and suggests it on a fork; otherwise the explanation tells the person what to do, and the next push runs the checks again.
+
+    push["A pull request<br>runs the checks of this app"]
+    failed["A check fails, such as nextcloud<br>or Checks of this project"]
+    explain["Its last step explains it<br>in its summary and as its annotation,<br>from .github/checks.project.toml"]
+    coach["The PR coach: one comment<br>on the pull request,<br>also on one from a fork"]
+    command{"Does a command<br>fix it?"}
+    branch["The fix bot commits it<br>onto a branch of this repository"]
+    fork["On a fork, it suggests it<br>at its lines"]
+    person["The person fixes what<br>the explanation says, and pushes"]
+    passed["The checks run again"]
+
+    push --> failed --> explain --> coach --> command
+    command -- "yes" --> branch & fork
+    command -- "no" --> person
+    branch & fork & person --> passed
+
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef bot fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef fail fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class push,person person
+    class explain,coach,command,branch,fork bot
+    class failed fail
+    class passed done
