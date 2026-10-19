@@ -57,7 +57,7 @@ jobs:
       due: ${{ steps.plan.outputs.due }}
     steps:
       - name: Record the network traffic of the job
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
       # The history without the contents of the files, to see what a push changed,
@@ -111,13 +111,13 @@ jobs:
     steps:
       # The script reaches whatever the project needs, its images and packages.
       - name: Record the network traffic of the job
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         timeout-minutes: 5
         with:
           # renovate: datasource=pypi depName=uv
@@ -172,7 +172,7 @@ jobs:
           echo "stale=true" >> "$GITHUB_OUTPUT"
       - name: Keep the pictures for the pull request
         if: steps.keep.outputs.stale == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: screenshots
           path: ${{ runner.temp }}/screenshots/
@@ -200,7 +200,7 @@ jobs:
       contents: read
     steps:
       - name: Record the network traffic of the job
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
       # blueprint.py, which checks what the job render kept.
@@ -212,7 +212,7 @@ jobs:
             blueprint
       - name: Fetch the pictures that the job render kept
         if: needs.render.outputs.stale == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: screenshots
           path: ${{ runner.temp }}/screenshots
