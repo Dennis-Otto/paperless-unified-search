@@ -14,6 +14,28 @@ Paperless-Dokumente erscheinen in der globalen Suche von Nextcloud für jeden Be
 
 --8<-- "README.de.md:usage"
 
+--8<-- "README.de.md:smart-picker"
+
+<figure markdown="span">
+  ![Der Smart Picker in einer Notiz von Text: Unter Paperless-Dokumente listet die Suche nach invoice die Stromrechnung, die Verlängerung der Hausratversicherung und die Internetrechnung](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/07-smart-picker.png#only-light)
+  ![Der Smart Picker in einer Notiz von Text: Unter Paperless-Dokumente listet die Suche nach invoice die Stromrechnung, die Verlängerung der Hausratversicherung und die Internetrechnung](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/07-smart-picker-dark.png#only-dark)
+  <figcaption>Der Smart Picker in einer Notiz von Text</figcaption>
+</figure>
+
+<figure markdown="span">
+  ![Die Notiz von Text, nachdem die Stromrechnung gewählt wurde: Der eingefügte Link zeigt das PDF der Rechnung](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/08-smart-picker-link.png#only-light)
+  ![Die Notiz von Text, nachdem die Stromrechnung gewählt wurde: Der eingefügte Link zeigt das PDF der Rechnung](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/08-smart-picker-link-dark.png#only-dark)
+  <figcaption>Der eingefügte Link zeigt die Datei</figcaption>
+</figure>
+
+--8<-- "README.de.md:dashboard"
+
+<figure markdown="span">
+  ![Das Dashboard von Jamie mit dem Widget Neu in Paperless: die Inspektion des Autos, die Stromrechnung, die Verlängerung der Hausratversicherung, die Internetrechnung und der Grundsteuerbescheid, die neuesten zuerst, jedes mit dem Symbol seiner PDF-Datei und einer Zeile mit dem Tag, an dem Paperless es hinzugefügt hat, seinem Korrespondenten und seinem Typ, etwa Sep 3, 2026 · Example Motors · Receipt](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/11-dashboard.png#only-light)
+  ![Das Dashboard von Jamie mit dem Widget Neu in Paperless: die Inspektion des Autos, die Stromrechnung, die Verlängerung der Hausratversicherung, die Internetrechnung und der Grundsteuerbescheid, die neuesten zuerst, jedes mit dem Symbol seiner PDF-Datei und einer Zeile mit dem Tag, an dem Paperless es hinzugefügt hat, seinem Korrespondenten und seinem Typ, etwa Sep 3, 2026 · Example Motors · Receipt](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/11-dashboard-dark.png#only-dark)
+  <figcaption>Neu in Paperless auf dem Dashboard von Nextcloud</figcaption>
+</figure>
+
 ## Warum der Schalter nach dem Neuladen aus ist
 
 **Verbundene Dienste durchsuchen** entscheidet, ob eine Suche Nextcloud verlässt. Nextcloud zählt jede Suche, die den Begriff an einen anderen Server schickt, als eine eines verbundenen Dienstes, auch Paperless, und fragt sie nur, solange der Schalter an ist. Es schaltet den Schalter aus, sobald die Seite neu lädt, damit kein Begriff ohne die Wahl des Benutzers an einen anderen Server geht, immer wieder.
@@ -25,7 +47,7 @@ Ein Administrator, der seinem Paperless-Server vertraut, als dem, der die Dokume
 - **Im Browser** eines Smartphones funktioniert die Suche wie auf einem Computer, und ein Treffer öffnet sich im Viewer von Nextcloud.
 - **Die Nextcloud-Apps für iOS und Android** zeigen Paperless-Dokumente ebenfalls in ihrer Suche. Ein Treffer öffnet die Datei im Viewer der App, ohne sie zu verlassen: Die iOS-App bekommt einen Link `nextcloud://open-file`, die Android-App die ID und den Pfad der Datei.
 
-<figure markdown="span">
+<figure markdown="span" class="phones">
   ![Paperless-Treffer in der globalen Suche von Nextcloud auf einem Smartphone](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/04-mobile-search.png){ width="180" }
   ![Die Stromrechnung, geöffnet im Viewer von Nextcloud auf einem Smartphone](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/05-mobile-viewer.png){ width="180" }
   <figcaption>Auf einem Smartphone, im Browser</figcaption>

@@ -102,9 +102,27 @@ Jedes Bild folgt dem hellen oder dunklen Design dieser Website. Wähle eines, um
 </figure>
 
 <figure markdown="span">
+  ![Der Smart Picker in einer Notiz von Text: Unter Paperless-Dokumente listet die Suche nach invoice die Stromrechnung, die Verlängerung der Hausratversicherung und die Internetrechnung](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/07-smart-picker.png#only-light)
+  ![Der Smart Picker in einer Notiz von Text: Unter Paperless-Dokumente listet die Suche nach invoice die Stromrechnung, die Verlängerung der Hausratversicherung und die Internetrechnung](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/07-smart-picker-dark.png#only-dark)
+  <figcaption>Paperless-Dokumente im Smart Picker von Text</figcaption>
+</figure>
+
+<figure markdown="span">
+  ![Das Dashboard von Jamie mit dem Widget Neu in Paperless: die Inspektion des Autos, die Stromrechnung, die Verlängerung der Hausratversicherung, die Internetrechnung und der Grundsteuerbescheid, die neuesten zuerst, jedes mit dem Symbol seiner PDF-Datei und einer Zeile mit dem Tag, an dem Paperless es hinzugefügt hat, seinem Korrespondenten und seinem Typ, etwa Sep 3, 2026 · Example Motors · Receipt](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/11-dashboard.png#only-light)
+  ![Das Dashboard von Jamie mit dem Widget Neu in Paperless: die Inspektion des Autos, die Stromrechnung, die Verlängerung der Hausratversicherung, die Internetrechnung und der Grundsteuerbescheid, die neuesten zuerst, jedes mit dem Symbol seiner PDF-Datei und einer Zeile mit dem Tag, an dem Paperless es hinzugefügt hat, seinem Korrespondenten und seinem Typ, etwa Sep 3, 2026 · Example Motors · Receipt](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/11-dashboard-dark.png#only-dark)
+  <figcaption>Die neuesten Dokumente auf dem Dashboard</figcaption>
+</figure>
+
+<figure markdown="span">
   ![Die Verwaltungseinstellungen von Paperless Unified Search in Nextcloud](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/03-admin-settings.png#only-light)
   ![Die Verwaltungseinstellungen von Paperless Unified Search in Nextcloud](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/03-admin-settings-dark.png#only-dark)
   <figcaption>Die Einstellungen, nur für Administratoren</figcaption>
+</figure>
+
+<figure markdown="span">
+  ![Der Reiter Teilen des Ordners Paperless des Archiv-Kontos in Dateien: Der Ordner ist mit Jamie Example geteilt, nur anzeigen](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-share-read-only.png#only-light)
+  ![Der Reiter Teilen des Ordners Paperless des Archiv-Kontos in Dateien: Der Ordner ist mit Jamie Example geteilt, nur anzeigen](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-share-read-only-dark.png#only-dark)
+  <figcaption>Das Archiv, nur lesend mit einem Benutzer geteilt</figcaption>
 </figure>
 
 <figure markdown="span">
@@ -114,8 +132,15 @@ Jedes Bild folgt dem hellen oder dunklen Design dieser Website. Wähle eines, um
 </figure>
 
 <figure markdown="span">
-  ![Paperless-Treffer in der globalen Suche von Nextcloud auf einem Smartphone](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/04-mobile-search.png){ width="180" }
-  ![Die Stromrechnung, geöffnet im Viewer von Nextcloud auf einem Smartphone](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/05-mobile-viewer.png){ width="180" }
+  ![Suche ausprobieren in den Einstellungen: Der Administrator sucht als Konto e2e-admin nach invoice, und eine Tabelle listet die drei Dokumente, die Paperless zuerst einordnet, mit ihren IDs und Titeln, die Stromrechnung angezeigt, die Verlängerung der Versicherung und die Internetrechnung nicht mit diesem Konto geteilt, über den Gründen, warum ein Dokument nicht angezeigt wird](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-try-a-search.png#only-light)
+  ![Suche ausprobieren in den Einstellungen: Der Administrator sucht als Konto e2e-admin nach invoice, und eine Tabelle listet die drei Dokumente, die Paperless zuerst einordnet, mit ihren IDs und Titeln, die Stromrechnung angezeigt, die Verlängerung der Versicherung und die Internetrechnung nicht mit diesem Konto geteilt, über den Gründen, warum ein Dokument nicht angezeigt wird](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-try-a-search-dark.png#only-dark)
+  <figcaption>Suche ausprobieren: warum ein Benutzer ein Dokument nicht sieht</figcaption>
+</figure>
+
+<figure markdown="span" class="phones">
+  ![Paperless-Treffer in der globalen Suche von Nextcloud auf einem Smartphone](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/04-mobile-search.png){ width="120" }
+  ![Die Stromrechnung, geöffnet im Viewer von Nextcloud auf einem Smartphone](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/05-mobile-viewer.png){ width="120" }
+  ![Die Einstellungen auf einem Smartphone bei den Problemen der Suche: die Zahlen und darunter die letzten Probleme als Karten, jede mit der Zeit, dem Ereignis, dem Schritt, dem Fehler und der Dauer](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/09-admin-settings-mobile.png){ width="120" }
   <figcaption>Auf einem Smartphone, im Browser</figcaption>
 </figure>
 
