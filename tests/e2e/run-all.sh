@@ -17,6 +17,12 @@
 # fails the script, and so does one that takes longer than E2E_VERSION_TIMEOUT seconds
 # (default 600, more than twice what it needs): it stops, so that its log still shows
 # where it hung, long before the job of the CI times out after 20 minutes.
+#
+# In GitHub Actions, the script writes a table of the versions, with the release
+# behind each image, into the summary of the run, and the versions that broke into the
+# output "failed" of its step, such as "Nextcloud 35 (35.0.1, failed)", and their major
+# versions into the output "versions", such as "35", from which the weekly run of
+# .github/workflows/e2e.yml writes its issue.
 # scripts/check-project.sh tests this script with tests/e2e/selftest.sh.
 
 set -euo pipefail
@@ -31,6 +37,7 @@ pids=()
 downloads=()
 results=()
 durations=()
+releases=()
 
 cleanup() {
 	status=$?
@@ -196,8 +203,16 @@ for index in "${!versions[@]}"; do
 	fi
 done
 
-# A table of the versions on the summary page of the run, with the release that each
-# floating image nextcloud:<version>-apache held.
+# The release that each floating image nextcloud:<version>-apache held, empty when
+# its download failed, for the summary of the run and the output of the step.
+if [[ -n "${GITHUB_STEP_SUMMARY:-}" || -n "${GITHUB_OUTPUT:-}" ]]; then
+	for index in "${!versions[@]}"; do
+		releases[index]="$("${DOCKER_BIN}" image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' \
+			"nextcloud:${versions[index]}-apache" 2>/dev/null | sed -n 's/^NEXTCLOUD_VERSION=//p' || true)"
+	done
+fi
+
+# A table of the versions on the summary page of the run.
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
 	{
 		echo "### End-to-end tests"
@@ -205,12 +220,24 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
 		echo "| Nextcloud | Release | Result | Time |"
 		echo "| --- | --- | --- | --- |"
 		for index in "${!versions[@]}"; do
-			version="${versions[index]}"
-			release="$("${DOCKER_BIN}" image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' \
-				"nextcloud:${version}-apache" 2>/dev/null | sed -n 's/^NEXTCLOUD_VERSION=//p' || true)"
-			echo "| ${version} | ${release:-unknown} | ${results[index]} | ${durations[index]} s |"
+			echo "| ${versions[index]} | ${releases[index]:-unknown} | ${results[index]} | ${durations[index]} s |"
 		done
 	} >>"${GITHUB_STEP_SUMMARY}"
+fi
+
+# The versions that broke, with their releases and results, on one line, for the issue
+# of the weekly run: "Nextcloud 34 (34.0.1, failed), Nextcloud 35 (35.0.1, timed out)",
+# and nothing when every version passed; and their major versions alone, "34 35", for
+# the command in the issue that runs their tests locally.
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+	broken=""
+	for index in "${!versions[@]}"; do
+		if [[ "${results[index]}" != passed ]]; then
+			broken+="${broken:+, }Nextcloud ${versions[index]} (${releases[index]:-unknown release}, ${results[index]})"
+		fi
+	done
+	echo "failed=${broken}" >>"${GITHUB_OUTPUT}"
+	echo "versions=${failed[*]}" >>"${GITHUB_OUTPUT}"
 fi
 
 if ((${#failed[@]} > 0)); then
