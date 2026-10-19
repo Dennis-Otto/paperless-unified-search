@@ -7,7 +7,7 @@
   "devDependencies": {
     "axe-core": "4.14.0",
     "gifenc": "1.0.3",
-    "playwright-core": "1.63.0",
+    "playwright-core": "1.64.0",
     "pngjs": "7.0.0"
   }
 }
