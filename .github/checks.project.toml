@@ -51,7 +51,10 @@ what it promises, or the tests of a version took longer than their time, 600 sec
 and were stopped. The annotation of each version that failed names it; the group of
 the log named after the version, such as *Nextcloud 35 (failed, 312 s)*, shows the step
 that stopped and the logs of its containers, and the summary of the run the release of
-Nextcloud behind each image."""
+Nextcloud behind each image. A failure of the weekly run, which tests the newest
+release behind each image also in a week without a change of the app, opens the issue
+*A supported Nextcloud release breaks the app* with the versions that broke, or adds
+the run to it, and the next run that passes closes it."""
 why = """Only these tests run the app in Nextcloud itself, as its users meet it: the
 search of Nextcloud with its files and shares, the settings, occ, the dashboard and the
 smart picker, in a browser on a laptop and on a phone. The check is required, so that
