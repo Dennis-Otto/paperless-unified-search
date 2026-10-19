@@ -4,9 +4,9 @@
 #
 # The checks of this app alone, which scripts/check.sh runs last: the browser and the
 # scripts of the end-to-end tests, the pictures of the READMEs and the pages of the
-# website that they link, the German pages beside the English ones, the versions that the
-# documentation names, the descriptions of the pages of the website, the diagrams of the
-# documentation, the explanations of the checks for the PR coach, and the JavaScript of
+# website that they link, the German pages beside the English ones, the screenshots of the
+# website, the versions that the documentation names, the descriptions of the pages of
+# the website, the diagrams of the documentation, the explanations of the checks for the PR coach, and the JavaScript of
 # the settings and the translations, which have no build step, with their tests.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -142,6 +142,92 @@ if ! grep -qF '](README.de.md)' README.md || ! grep -qF '](README.md)' README.de
   exit 1
 fi
 echo "README.de.md marks the $(sections README.md | wc -l | tr -d ' ') section marker(s) of README.md, and the ${#german[@]} German page(s) each have their English one."
+
+printf '\n== %s\n' "Pictures of the German pages"
+# A German page shows the pictures of its English twin, in the same order, and
+# README.de.md those of README.md: the screenshots, the GIF and the diagrams, from
+# Markdown and from HTML. A German picture of its own, such as NAME.de.svg of the diagram
+# NAME.de.mmd, takes the place of NAME.svg. So a screenshot that reaches the English
+# website, often in a pull request of its own after the one that took it, as the website
+# loads it from main, reaches the German website with it.
+pictures() {
+  { grep -oE '!\[([^][]|\[[^]]*\])*\]\([^)[:space:]]+|(src|srcset)="[^"]+"' "$1" || true; } |
+    sed -E 's/^!\[([^][]|\[[^]]*\])*\]\(//; s/^(src|srcset)="//; s/"$//; s/[?#].*$//; s/\.de((\.dark)?\.[a-z]+)$/\1/'
+}
+shown=0
+for page in README.de.md "${german[@]}"; do
+  english="${page%.de.md}.md"
+  if [[ "$(pictures "$english")" != "$(pictures "$page")" ]]; then
+    echo "$page doesn't show the pictures of $english, or in another order (< $english, > $page):"
+    diff <(pictures "$english") <(pictures "$page") || true
+    echo "Show each picture of $english in $page too, at the same place, with its alt text and caption in German."
+    exit 1
+  fi
+  shown=$((shown + $(pictures "$page" | grep -c . || true)))
+done
+echo "The $((${#german[@]} + 1)) German page(s), README.de.md among them, show the $shown picture(s) of their English twins."
+
+printf '\n== %s\n' "Screenshots of the website"
+# Each screenshot of README.md is on the website too: on a page of docs/, or in a section
+# of README.md that a page includes, such as --8<-- "README.md:usage". The website loads
+# the screenshots from main, so a pull request that adds one can't show it there before
+# main has it: such a screenshot passes, and the check names the follow-up it needs.
+# Four of these follow-ups were forgotten before this check (#82, #135, #145, #174).
+raw='https://github.com/Dennis-Otto/paperless-unified-search/raw/main/'
+screenshots_of() {
+  { grep -ohE "${raw//./\\.}screenshots/[^\")?#[:space:]]+" "$@" || true; } | sed "s#^$raw##" | sort -u
+}
+# The screenshots that the English pages given as arguments show, with the sections of
+# README.md that they include.
+website_screenshots() {
+  local page
+  for page in "$@"; do
+    screenshots_of "$page"
+    { grep -oE -- '--8<-- "README\.md:[a-z0-9-]+"' "$page" || true; } | sed -E 's/.*:([a-z0-9-]+)"$/\1/' |
+      while IFS= read -r section; do
+        awk -v start="--8<-- [start:$section]" -v end="--8<-- [end:$section]" \
+          'index($0, end) { inside = 0 } inside { print } index($0, start) { inside = 1 }' README.md |
+          screenshots_of -
+      done
+  done | sort -u
+}
+# The screenshots of README.md that the pages given as arguments leave out.
+missing_screenshots() {
+  comm -23 <(screenshots_of README.md) <(website_screenshots "$@")
+}
+mapfile -t english < <(markdown 'docs/*.md' | grep -v '\.de\.md$')
+# The check itself: it finds a screenshot that a page leaves out, here the settings on a
+# phone, without the line of docs/index.md that shows them in the gallery.
+probe="$(mktemp)"
+grep -v 'screenshots/09-admin-settings-mobile\.png' docs/index.md >"$probe"
+others=()
+for page in "${english[@]}"; do
+  if [[ "$page" != docs/index.md ]]; then others+=("$page"); fi
+done
+found="$(missing_screenshots "$probe" "${others[@]}")"
+rm -f "$probe"
+if [[ "$found" != "screenshots/09-admin-settings-mobile.png" ]]; then
+  echo "Without the settings on a phone in docs/index.md, the check of the screenshots finds \"$found\" missing, not screenshots/09-admin-settings-mobile.png: fix the check."
+  exit 1
+fi
+mapfile -t missing < <(missing_screenshots "${english[@]}")
+if ((${#missing[@]} > 0)) && ! git rev-parse -q --verify origin/main >/dev/null; then
+  git fetch -q --depth=1 origin +refs/heads/main:refs/remotes/origin/main || {
+    echo "No page of the website shows ${missing[*]}, and main can't be fetched to tell whether it has them yet."
+    exit 1
+  }
+fi
+waiting=0
+for screenshot in "${missing[@]}"; do
+  if git cat-file -e "origin/main:$screenshot" 2>/dev/null; then
+    echo "README.md shows $screenshot, which main has, but no page of the website shows it."
+    echo "Show it on the page of docs/ about its topic and on the German twin of that page, or in a section of README.md that such a page includes."
+    exit 1
+  fi
+  echo "README.md shows $screenshot, which main doesn't have yet, so the website can't show it: after the merge, show it on the website in a pull request of its own, in English and German."
+  waiting=$((waiting + 1))
+done
+echo "The website shows the $(($(screenshots_of README.md | wc -l) - waiting)) screenshot(s) of README.md that main has; $waiting wait for main."
 
 printf '\n== %s\n' "Versions in the documentation"
 # appinfo/info.xml decides on which versions of Nextcloud and PHP the app installs. The
