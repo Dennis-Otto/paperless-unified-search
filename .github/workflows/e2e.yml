@@ -74,6 +74,13 @@ jobs:
       - name: Run the end-to-end tests against every supported Nextcloud version
         if: steps.scope.outputs.run == 'true'
         run: bash tests/e2e/run-all.sh
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.project.toml.
+      - name: Explain the failure
+        if: failure()
+        env:
+          CHECK: nextcloud
+        run: python3 .github/blueprint.py coach explain "$CHECK"
 
   paperless:
     name: paperless (${{ matrix.paperless }})
@@ -108,6 +115,13 @@ jobs:
         env:
           PAPERLESS: ${{ matrix.paperless }}
         run: bash tests/e2e/paperless-contract.sh
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.project.toml.
+      - name: Explain the failure
+        if: failure()
+        env:
+          CHECK: "paperless (${{ matrix.paperless }})"
+        run: python3 .github/blueprint.py coach explain "$CHECK"
 
   # Like the issue about the coming Nextcloud: it runs no code of the repository, and a
   # run started by hand on another branch than main reports nothing.
@@ -182,6 +196,13 @@ jobs:
       - name: Run the Paperless Unified Search end-to-end tests against the coming Nextcloud
         id: canary
         run: bash tests/e2e/canary.sh
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.project.toml.
+      - name: Explain the failure
+        if: failure()
+        env:
+          CHECK: coming Nextcloud
+        run: python3 .github/blueprint.py coach explain "$CHECK"
 
   # The only job that may write issues, and it runs no code of the repository. A run
   # started by hand on another branch than main reports nothing.
