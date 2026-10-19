@@ -4,17 +4,20 @@
 # renderers of Markdown show the source as code. Each diagram is Mermaid in
 # docs/diagrams/NAME.mmd, drawn as docs/images/diagrams/NAME.svg on a white card and as
 # NAME.dark.svg for a dark theme, which the Markdown shows with <picture>. The website
-# draws the source itself, with the hook in .github/mkdocs_blueprint.py.
+# draws the source itself, with the hook in .github/mkdocs_blueprint.py. A source that
+# no page shows and that has no picture yet may belong to a way of the project's own
+# to draw it, and stays as it is.
 #
-#   bash scripts/diagrams.sh            draw the picture of every source anew (Docker)
+#   bash scripts/diagrams.sh            draw the pictures of every source that a page
+#                                       shows anew (Docker)
 #   bash scripts/diagrams.sh --extract  turn every ```mermaid block of the Markdown into
 #                                       a source and its picture, then draw them
 #   bash scripts/diagrams.sh --check    without Docker, what scripts/check.sh checks: no
 #                                       ```mermaid block, both pictures of every source
-#                                       and a source for every picture
+#                                       that a page shows, a source for every picture,
+#                                       and the alt of each, which repeats its source
 #   bash scripts/diagrams.sh --adopted  whether the pages show pictures of diagrams yet;
-#                                       until then, the checks only warn of a block and
-#                                       leave the sources to a way of the project's own
+#                                       until then, the checks only warn of a block
 #
 # The blueprint keeps this file current: https://github.com/Dennis-Otto/repo-blueprint
 set -euo pipefail
@@ -24,10 +27,41 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 image="minlag/mermaid-cli:12.0.1@sha256:2c5d27365df71da06c288beebe531ea3637cf9b422b871239a3b016233591d24"
 sources=docs/diagrams
 pictures=docs/images/diagrams
-fence='^[[:space:]]*(```+|~~~+)[[:space:]]*mermaid([[:space:]]|$)'
 # The tags of HTML in labels other than <br>, as python3 blueprint.py diagrams extract
 # finds them.
 html='</?(a|b|code|em|font|i|kbd|mark|s|small|span|strong|sub|sup|tt|u)([[:space:]][^>]*)?>'
+# The lines of a page that open a ```mermaid block, also in a list or a quote, other
+# than those in another block of code, such as the example of a page, and in a comment
+# of HTML: the blocks that python3 blueprint.py diagrams extract takes out. A program
+# of awk, whose $0 is no variable of bash.
+# shellcheck disable=SC2016
+fences='
+{
+  text = $0
+  sub(/\r$/, "", text)
+  if (comment) {
+    if (index(text, "-->")) comment = 0
+    next
+  }
+  raw = text
+  sub(/^([ \t]*>)+[ \t]?/, "", text)
+  run = ""
+  if (match(text, /^[ \t]*(```+|~~~+)/)) {
+    run = substr(text, RSTART, RLENGTH)
+    info = substr(text, RSTART + RLENGTH)
+    sub(/^[ \t]*/, "", run)
+  }
+  if (fence != "") {
+    if (run != "" && index(run, fence) == 1 && info !~ /[^ \t]/) fence = ""
+    next
+  }
+  if (run != "") {
+    fence = run
+    if (info ~ /^[ \t]*mermaid([ \t]|$)/) print FNR
+    next
+  }
+  if (raw ~ /^ ? ? ?<!--/ && !index(substr(raw, index(raw, "<!--") + 4), "-->")) comment = 1
+}'
 
 usage() {
   sed -n 's/^#   //p' "${BASH_SOURCE[0]}"
@@ -41,10 +75,53 @@ markdown() {
 # A picture of a diagram, as a page shows it.
 shown='images/diagrams/[A-Za-z0-9._-]+\.svg'
 
+# The names of the sources that this script draws: those whose picture a page shows,
+# and those that have a picture already. Another source in docs/diagrams/ may belong
+# to a way of the project's own to draw it, which this script leaves alone.
+drawn_here() {
+  local file name wanted=$'\n'
+  while IFS= read -r file; do
+    name="${file##*/}"
+    name="${name%.svg}"
+    wanted+="${name%.dark}"$'\n'
+  done < <(
+    for file in "$pictures"/*.svg; do
+      [[ -f "$file" ]] && echo "$file"
+    done
+    git grep --untracked -hoE "$shown" -- '*.md' || true
+  )
+  for file in "$sources"/*.mmd; do
+    name="${file##*/}"
+    name="${name%.mmd}"
+    case "$wanted" in
+      *$'\n'"$name"$'\n'*) [[ -f "$file" ]] && echo "$name" ;;
+    esac
+  done
+}
+
+# Python 3.12 or newer, for blueprint.py, or nothing.
+python_here() {
+  local candidate
+  for candidate in python3 python py; do
+    if "$candidate" -c 'import sys; sys.exit(sys.version_info < (3, 12))' >/dev/null 2>&1; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+}
+
+# blueprint.py, in .github/ of a repository made from the blueprint.
+tool() {
+  if [[ -f .github/blueprint.py ]]; then
+    echo .github/blueprint.py
+  else
+    echo blueprint.py
+  fi
+}
+
 # Whether the repository shows its diagrams as pictures: a picture is drawn, or a page
 # shows one. Until then, a ```mermaid block is a warning, so that an update of the
-# blueprint passes before its diagrams moved, and the sources in docs/diagrams/ may
-# belong to a way of the project's own to draw them, which the checks leave alone.
+# blueprint passes before its diagrams moved.
 adopted() {
   local file
   for file in "$pictures"/*.svg; do
@@ -53,21 +130,22 @@ adopted() {
   git grep --untracked -qE "$shown" -- '*.md'
 }
 
-# The checks, which need neither Docker nor Python.
+# The checks, which need neither Docker nor Python; with Python, the alt of each
+# picture as well.
 check() {
   local -a found=() blocks=() problems=()
-  local file name picture line in_use=false
+  local file name picture line in_use=false python said others=0
   if adopted; then
     in_use=true
-    for file in "$sources"/*.mmd; do
-      [[ -f "$file" ]] && found+=("$file")
-    done
+    while IFS= read -r name; do
+      found+=("$sources/$name.mmd")
+    done < <(drawn_here)
   fi
   while IFS= read -r -d '' file; do
     [[ -f "$file" ]] || continue
-    while IFS=: read -r line _; do
+    while IFS= read -r line; do
       blocks+=("$file:$line: a \`\`\`mermaid block, which the GitHub app shows as code")
-    done < <(grep -nE "$fence" "$file" || true)
+    done < <(awk "$fences" "$file")
     while IFS=: read -r line picture; do
       if [[ ! -f "$pictures/${picture##*/}" ]]; then
         problems+=("$file:$line: shows $pictures/${picture##*/}, which doesn't exist")
@@ -93,6 +171,19 @@ check() {
       problems+=("$picture: its source $sources/${name%.dark}.mmd is missing")
     fi
   done
+  # The alt of each picture repeats the accTitle and the accDescr of its source, as
+  # blueprint.py compares them where Python is at hand, as in the CI.
+  if [[ "$in_use" == true ]]; then
+    python="$(python_here)"
+    if [[ -n "$python" && -f "$(tool)" ]]; then
+      if ! said="$("$python" "$(tool)" diagrams check)"; then
+        [[ -n "$said" ]] || said="$(tool) diagrams check failed; the error above says why."
+        while IFS= read -r line; do
+          problems+=("$line")
+        done <<<"$said"
+      fi
+    fi
+  fi
 
   local extract="bash scripts/diagrams.sh --extract turns each into a picture of a source in $sources/."
   if ((${#blocks[@]} > 0)); then
@@ -105,10 +196,16 @@ check() {
   fi
   if ((${#problems[@]} > 0)); then
     printf '%s\n' "${problems[@]}"
-    echo "bash scripts/diagrams.sh draws the pictures of every source again, with Docker."
+    echo "bash scripts/diagrams.sh --extract fixes what it can, with Docker: it takes the blocks out, writes the alt of each picture and draws the pictures anew."
     return 1
   fi
-  if ((${#found[@]} > 0)); then
+  for file in "$sources"/*.mmd; do
+    [[ -f "$file" ]] && others=$((others + 1))
+  done
+  others=$((others - ${#found[@]}))
+  if ((${#found[@]} > 0 && others > 0)); then
+    echo "Each of the ${#found[@]} diagram(s) in $sources/ that a page shows has its pictures; no page shows the other $others source(s), which are left as they are."
+  elif ((${#found[@]} > 0)); then
     echo "Each of the ${#found[@]} diagram(s) in $sources/ has its pictures."
   elif compgen -G "$sources/*.mmd" > /dev/null; then
     echo "No page shows a picture of $pictures/ yet, so the sources in $sources/ are left as they are."
@@ -117,18 +214,23 @@ check() {
   fi
 }
 
-# Draws every source in a container without network, which gets the sources and the
-# script of node through stdin and gives the pictures back through stdout, so that
-# they belong to whoever runs this.
+# Draws every source that a page shows in a container without network, which gets
+# the sources and the script of node through stdin and gives the pictures back
+# through stdout, so that they belong to whoever runs this. A picture whose source is
+# gone goes too.
 render() {
   local -a names=()
-  local file
-  for file in "$sources"/*.mmd; do
-    [[ -f "$file" ]] && names+=("${file##*/}")
-  done
+  local name
+  while IFS= read -r name; do
+    names+=("$name.mmd")
+  done < <(drawn_here)
   if ((${#names[@]} == 0)); then
     rm -f "$pictures"/*.svg
-    echo "No diagrams in $sources/."
+    if compgen -G "$sources/*.mmd" >/dev/null; then
+      echo "No page shows a picture of a source in $sources/, so there is nothing to draw."
+    else
+      echo "No diagrams in $sources/."
+    fi
     return 0
   fi
   if ! command -v docker >/dev/null 2>&1; then
@@ -263,14 +365,13 @@ JAVASCRIPT
 
 # The Markdown with a <picture> in place of each ```mermaid block, and its source.
 extract() {
-  local tool=.github/blueprint.py python
-  [[ -f "$tool" ]] || tool=blueprint.py
+  local python
   python="$(command -v python3 || command -v python || true)"
   if [[ -z "$python" ]]; then
     echo "Taking the diagrams out of the Markdown needs Python 3." >&2
     return 1
   fi
-  "$python" "$tool" diagrams extract
+  "$python" "$(tool)" diagrams extract
 }
 
 # Takes the blocks out, and draws the pictures once a page shows them.

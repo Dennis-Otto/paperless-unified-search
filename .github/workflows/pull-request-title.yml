@@ -30,8 +30,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
-      # The explanations of the PR coach, from the default branch.
+      # The fragments of the changelog of the pull request, and blueprint.py and the
+      # explanations of the PR coach of the default branch.
       contents: read
+      # The labels of the pull request, and its files.
       issues: write
       pull-requests: write
     steps:
@@ -42,6 +44,7 @@ jobs:
       # Never check out or run pull request code in this privileged workflow; the
       # title only reaches the script through an environment variable.
       - name: Check the title and set the label
+        id: title
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -83,44 +86,10 @@ jobs:
             if [[ "$want" == false && "$has" == true ]]; then gh pr edit "$NUMBER" --remove-label "$label"; fi
           done
           echo "Labels: ${wanted[*]}" >> "$GITHUB_STEP_SUMMARY"
-      # The PR coach needs blueprint.py and .github/checks.toml of the default branch;
-      # nothing of the pull request is checked out.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: failure()
-        with:
-          persist-credentials: false
-          sparse-checkout: |
-            .github
-            blueprint
-      # The PR coach: what failed, why it matters and how to fix it, in the summary
-      # of the check and as its annotation, from .github/checks.toml.
-      - name: Explain the failure
-        if: failure()
-        env:
-          CHECK: "conventional title"
-        run: |
-          script=.github/blueprint.py
-          [[ -f "$script" ]] || script=blueprint.py
-          python3 "$script" coach explain "$CHECK"
-
-  changelog:
-    name: changelog
-    if: ${{ !github.event.repository.fork }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      # The fragments of the pull request, and blueprint.py and the explanations of
-      # the PR coach of the default branch.
-      contents: read
-      pull-requests: read
-    steps:
-      - name: Record the network traffic of the job
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
-        with:
-          egress-policy: audit
       # The files of the pull request come from the API.
       - name: Require an entry in the changelog for a change for users
         id: entry
+        if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -141,10 +110,11 @@ jobs:
           fi
           # Whatever its type or author, a pull request that adds or changes a fragment
           # has it checked: the release reads every file of changelog.d/.
-          # The files of the changelog that the pull request adds or changes, each as a
-          # JSON string on a line of its own, so that no name spans two lines. A hidden
-          # file, such as changelog.d/.gitkeep, is no fragment.
-          filter='.[] | select(.status != "removed") | .filename | select(. == "CHANGELOG.md" or test("^changelog\\.d/[^.]")) | @json'
+          # The files of the changelog that the pull request adds or changes, each with
+          # its status and its name as a JSON string on a line of its own, so that no
+          # name spans two lines. A hidden file, such as changelog.d/.gitkeep, is no
+          # fragment.
+          filter='.[] | select(.status != "removed") | select(.filename == "CHANGELOG.md" or (.filename | test("^changelog\\.d/[^.]"))) | "\(.status) \(.filename | @json)"'
           # Every pull request asks, also those of bots, which need no entry; GitHub fails
           # for a moment now and then, so it asks three times before the check fails.
           for attempt in 1 2 3; do
@@ -160,16 +130,29 @@ jobs:
           fragment='^"(changelog\.d/[A-Za-z0-9][A-Za-z0-9._-]*\.md)"$'
           changelog=false
           fragments=()
+          # Only a new fragment is the entry of this pull request. One that main has
+          # already, changed or renamed here, is the entry of another pull request that
+          # waits for its release.
+          own=0
+          theirs=()
           others=()
-          while read -r name; do
+          while read -r status name; do
             if [[ "$name" == '"CHANGELOG.md"' ]]; then
               changelog=true
             elif [[ "$name" =~ $fragment ]]; then
               fragments+=("${BASH_REMATCH[1]}")
+              if [[ "$status" == added || "$status" == copied ]]; then
+                own=$((own + 1))
+              else
+                theirs+=("${BASH_REMATCH[1]}")
+              fi
             else
               others+=("$name")
             fi
           done < "$RUNNER_TEMP/changed"
+          for path in "${theirs[@]}"; do
+            echo "::warning file=$path,title=The entry of another pull request::main has $path already: the entry of another pull request that waits for its release. Leave its text to it, and describe the change of this pull request in a new fragment, such as changelog.d/<your branch without its type>.md, or the same name with -2 before .md."
+          done
           # The release reads every file of changelog.d/; one that it can't take in fails
           # here, by its name as JSON.
           for name in "${others[@]}"; do
@@ -181,11 +164,33 @@ jobs:
           fi
           # Each fragment is one question to the API in the next step.
           if ((${#fragments[@]} > 20)); then
-            echo "::error::This pull request adds ${#fragments[@]} fragments of the changelog; describe its change in one, or a few."
+            echo "::error title=Too many fragments::This pull request adds ${#fragments[@]} fragments of the changelog; describe its change in one, or a few."
+            {
+              echo "This pull request adds or changes ${#fragments[@]} fragments of the changelog; the check reads each of them, and 20 at most."
+              echo
+              echo "Put its entries into one fragment, or a few: a fragment holds every entry of a pull request, each below the heading of its kind of change."
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          if [[ "$required" == true && "$changelog" == false ]] && ((${#fragments[@]} == 0)); then
-            echo "::error::Describe what changes for users in a new file of changelog.d/, such as changelog.d/dark-mode.md, below a heading such as '### Features' or '### Bug fixes', or under '## Unreleased' in CHANGELOG.md; it becomes the notes of the next release."
+          if [[ "$required" == true && "$changelog" == false ]] && ((own == 0)); then
+            echo "::error title=No entry in the changelog::Describe what changes for users in a new file of changelog.d/, such as changelog.d/dark-mode.md, below a heading such as '### Features' or '### Bug fixes', or under '## Unreleased' in CHANGELOG.md; it becomes the notes of the next release."
+            {
+              echo "This pull request changes something for users, and the notes of the next release are the entries of the changelog; it has none of its own yet."
+              echo
+              echo "Add a new file to \`changelog.d/\`, named after the branch without its type, such as \`changelog.d/dark-mode.md\` for the branch \`feat/dark-mode\`, with the heading of its kind of change and an entry below it, in the words of a user:"
+              echo
+              echo "\`\`\`markdown"
+              echo "### Features"
+              echo
+              echo "- **Dark mode:** the settings follow the theme of the system."
+              echo "\`\`\`"
+              echo
+              echo "A line under \`## Unreleased\` in \`CHANGELOG.md\` works as well, but conflicts with each pull request that adds one at the same place."
+              if ((${#theirs[@]} > 0)); then
+                echo
+                echo "The fragments that this pull request changes are the entries of other pull requests, which main has already; they don't count as its own."
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
           if [[ "$required" == true && "$changelog" == true ]]; then
@@ -199,14 +204,15 @@ jobs:
       # they read as text, and the PR coach explains a failure with its
       # .github/checks.toml; nothing of the pull request is checked out or run.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: steps.entry.outputs.fragments == 'true' || failure()
+        if: ${{ !cancelled() && (steps.entry.outputs.fragments == 'true' || failure()) }}
         with:
           persist-credentials: false
           sparse-checkout: |
             .github
             blueprint
       - name: Check the fragments as the release takes them in
-        if: steps.entry.outputs.fragments == 'true'
+        id: fragments
+        if: ${{ !cancelled() && steps.entry.outputs.fragments == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -221,7 +227,8 @@ jobs:
             gh api -H "Accept: application/vnd.github.raw+json" \
               "repos/$GH_REPO/contents/$path?ref=$HEAD_SHA" > "$folder/${path#changelog.d/}"
           done < "$RUNNER_TEMP/fragments"
-          if python3 "$script" fragments --folder "$folder" > "$RUNNER_TEMP/report"; then
+          # The parser of the text that the pull request controls runs without the token.
+          if env -u GH_TOKEN python3 "$script" fragments --folder "$folder" > "$RUNNER_TEMP/report"; then
             cat "$RUNNER_TEMP/report" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
@@ -236,12 +243,33 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           exit 1
       # The PR coach: what failed, why it matters and how to fix it, in the summary
-      # of the check and as its annotation, from .github/checks.toml.
+      # of the check and as its annotation, from .github/checks.toml: each check
+      # of the job that failed, or the job itself when none of them did.
       - name: Explain the failure
         if: failure()
         env:
-          CHECK: changelog
+          CHECK: "conventional title"
+          FAILED: |
+            ${{ steps.title.outcome == 'failure' && 'conventional title' || '' }}
+            ${{ (steps.entry.outcome == 'failure' || steps.fragments.outcome == 'failure') && 'changelog' || '' }}
         run: |
           script=.github/blueprint.py
           [[ -f "$script" ]] || script=blueprint.py
-          python3 "$script" coach explain "$CHECK"
+          mapfile -t parts < <(grep . <<<"$FAILED" || true)
+          python3 "$script" coach explain "$CHECK" --parts "${parts[@]}"
+
+  # The entry in the changelog is a step of the check of the title since this release.
+  # The rulesets of the repositories require the check changelog until the settings
+  # bot applies the required checks of this release; the next release removes it.
+  changelog:
+    name: changelog
+    if: ${{ !github.event.repository.fork }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - name: Name the check that checks the changelog
+        run: echo "The check *conventional title* checks the entry in the changelog." >> "$GITHUB_STEP_SUMMARY"

@@ -1,9 +1,9 @@
 name: Build the release
 
 # The build of a release, called by the release workflow only: it packages the
-# release, writes its SBOMs, the licenses of its third-party components and the
-# advisories that don't affect it, attests the signed provenance of every asset and
-# attaches all of it to the draft. As a reusable workflow of its own, it is isolated
+# release, writes the SBOMs of what it ships, the licenses of its third-party
+# components and the advisories that don't affect it, attests the signed provenance
+# of every asset and attaches all of it to the draft. As a reusable workflow of its own, it is isolated
 # from the rest of the release workflow, and the provenance names it as the build,
 # as SLSA Build Level 3 asks; verify-release.yml checks that.
 # https://github.com/Dennis-Otto/repo-blueprint
@@ -42,10 +42,16 @@ jobs:
     env:
       TAG: ${{ inputs.tag }}
       PUBLISH_TO: ${{ vars.PUBLISH_TO }}
+      # renovate: datasource=github-releases depName=ChristophWurst/krankerl extractVersion=^v(?<version>.+)$
       KRANKERL_VERSION: 0.14.0
       KRANKERL_SHA256: 9bee5a756a83c5a6b1f040e9a2ade9e902e4a57211afc174cd8ac5c4f913958f
-      NEXTCLOUD_VERSION: 33.0.8
-      NEXTCLOUD_SHA256: d974bcbe446edaf87ae17113200b362495abbdb89d7900d65d930fe7a9dc9474
+      # renovate: datasource=github-releases depName=nextcloud/server extractVersion=^v(?<version>.+)$
+      NEXTCLOUD_VERSION: 33.0.9
+      NEXTCLOUD_SHA256: fa8ec03b2ccd3261c127b36fbf85d13b13b474051f7787b90239f0fcf2bf9e70
+      # The syft that writes the SBOMs.
+      # renovate: datasource=github-releases depName=anchore/syft extractVersion=^v(?<version>.+)$
+      SBOM_SYFT_VERSION: 1.52.0
+      SBOM_SYFT_SHA256: caeedb81fb0491615f1ebd1761e4145d41ee86dd2cc7bf80669f9f5ad9d6133d
     steps:
       - name: Record the network traffic of the job
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -159,36 +165,101 @@ jobs:
           openssl dgst -sha512 -verify "$RUNNER_TEMP/app.pub" -signature "$ASSETS/$app_id.tar.gz.sig" "$ASSETS/$app_id.tar.gz"
           rm -f "$RUNNER_TEMP/app.key"
 
-      - name: Generate the SBOM
-        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
-        with:
-          path: .
-          format: spdx-json
-          output-file: ${{ runner.temp }}/assets/${{ github.event.repository.name }}.spdx.json
-          upload-artifact: false
-          upload-release-assets: false
-          syft-version: v1.52.0
+      # The SBOMs describe what the release ships, which its users install and their
+      # scanners match every advisory against: not the repository with the tools of
+      # its checks, its website and its workflows, which a package doesn't hold.
+      - name: Unpack what the release ships
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          package="$RUNNER_TEMP/package"
+          mkdir -p "$package"
+          case "$PUBLISH_TO" in
+            hacs | pypi)
+              # The zip that HACS installs, and the wheel that pip installs.
+              for archive in "$ASSETS"/*.zip "$ASSETS"/*.whl; do
+                python3 -m zipfile -e "$archive" "$package"
+              done
+              ;;
+            npm | nextcloud-appstore)
+              # The package of npm, and the signed app of the App Store.
+              for archive in "$ASSETS"/*.tgz "$ASSETS"/*.tar.gz; do
+                tar --extract --gzip --file "$archive" --directory "$package"
+              done
+              ;;
+            *)
+              # An action, an image or a project without a package ships its sources:
+              # the tree of the tag, without what only checks, tests and documents it:
+              # its run time pins live in requirements.txt, every requirements-*.* is a
+              # lock file of its tools, and stacks/ holds the tool pins of the blueprint.
+              git archive --format=tar HEAD | tar --extract --directory "$package"
+              (cd "$package" && rm -rf .devcontainer .githooks .github changelog.d docs fuzz \
+                scripts stacks test tests requirements-*.*)
+              ;;
+          esac
+          if [[ -z "$(ls -A "$package")" ]]; then
+            echo "::error::The release has no package for its SBOMs to describe."
+            exit 1
+          fi
 
-      # The same components as CycloneDX, the format that many tools of companies read.
-      - name: Generate the SBOM as CycloneDX
-        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
-        with:
-          path: .
-          format: cyclonedx-json
-          output-file: ${{ runner.temp }}/assets/${{ github.event.repository.name }}.cdx.json
-          upload-artifact: false
-          upload-release-assets: false
-          syft-version: v1.52.0
+      # syft from its release, checked by its sha256 like every tool that the
+      # workflows download, in place of an action that fetches its installer and runs
+      # it in this job, which may write the release.
+      - name: Describe it in the SBOMs, as SPDX and as CycloneDX
+        env:
+          NAME: ${{ github.event.repository.name }}
+          VERSION: ${{ inputs.version }}
+          SUPPLIER: ${{ github.repository_owner }}
+          SYFT_CHECK_FOR_APP_UPDATE: "false"
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
+            --connect-timeout 15 --max-time 300 --output "$RUNNER_TEMP/syft.tar.gz" \
+            "https://github.com/anchore/syft/releases/download/v$SBOM_SYFT_VERSION/syft_${SBOM_SYFT_VERSION}_linux_amd64.tar.gz"
+          echo "$SBOM_SYFT_SHA256  $RUNNER_TEMP/syft.tar.gz" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/syft"
+          tar --extract --gzip --file "$RUNNER_TEMP/syft.tar.gz" --directory "$RUNNER_TEMP/syft" syft
+          # A package lists what it installs, as in an image; sources list what their
+          # manifests and lock files declare.
+          case "$PUBLISH_TO" in
+            hacs | pypi | npm | nextcloud-appstore) catalogers=image ;;
+            *) catalogers=directory ;;
+          esac
+          # The release is the root of both, by its name, version and supplier, as the
+          # minimum elements of an SBOM ask (NTIA), and the scanners name it.
+          "$RUNNER_TEMP/syft/syft" scan "dir:$RUNNER_TEMP/package" --quiet \
+            --override-default-catalogers "$catalogers" \
+            --source-name "$NAME" --source-version "$VERSION" --source-supplier "$SUPPLIER" \
+            --output "spdx-json=$ASSETS/$NAME.spdx.json" \
+            --output "cyclonedx-json=$ASSETS/$NAME.cdx.json"
+          # The check of verify-release.yml, before the release is immutable.
+          # The variables of the filters are jq's, not the shell's.
+          # shellcheck disable=SC2016
+          spdx='[.relationships[] | select(.spdxElementId == "SPDXRef-DOCUMENT" and .relationshipType == "DESCRIBES")
+            | .relatedSpdxElement] as $roots
+            | any(.packages[]; (.SPDXID | IN($roots[])) and .name == $name and .versionInfo == $version)'
+          # shellcheck disable=SC2016
+          cyclonedx='.metadata.component.name == $name and .metadata.component.version == $version'
+          if ! jq -e --arg name "$NAME" --arg version "$VERSION" "$spdx" "$ASSETS/$NAME.spdx.json" >/dev/null ||
+            ! jq -e --arg name "$NAME" --arg version "$VERSION" "$cyclonedx" "$ASSETS/$NAME.cdx.json" >/dev/null; then
+            echo "::error::The SBOMs don't name the release $NAME $VERSION at their root, which a new syft may write elsewhere; the release stays a draft."
+            exit 1
+          fi
 
       # Every advisory that osv-scanner.toml accepts, with its reason, as an OpenVEX
-      # statement that it does not affect the release, for the scanners of the users.
+      # statement that it does not affect the release, for the scanners of the users;
+      # the release is its product by the name and version of the SBOMs as well.
       - name: Write the advisories that don't affect the release
         env:
           NAME: ${{ github.event.repository.name }}
         run: |
           script=.github/blueprint.py
           [[ -f "$script" ]] || script=blueprint.py
-          python3 "$script" vex "$GITHUB_REPOSITORY" "$TAG" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$RUNNER_TEMP/vex.json"
+          # The version is the tag without its v, as release.yml tags it; no option for
+          # it, which the blueprint.py of an older tag rejects when its draft is finished
+          # by hand.
+          python3 "$script" vex "$GITHUB_REPOSITORY" "$TAG" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            > "$RUNNER_TEMP/vex.json"
           if [[ -s "$RUNNER_TEMP/vex.json" ]]; then
             mv "$RUNNER_TEMP/vex.json" "$ASSETS/$NAME.openvex.json"
           fi

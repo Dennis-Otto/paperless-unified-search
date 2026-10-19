@@ -1,4 +1,5 @@
 # What krankerl leaves out of the app package of a release.
+/.bestpractices.json
 .copier-answers.yml
 /.devcontainer
 .editorconfig

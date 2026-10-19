@@ -1,0 +1,10 @@
+{
+  "name": "website-a11y",
+  "private": true,
+  "description": "The accessibility check of the website, a step of the check docs: axe-core in the Chrome of the runner; Renovate keeps it current.",
+  "type": "module",
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "playwright-core": "1.63.0"
+  }
+}

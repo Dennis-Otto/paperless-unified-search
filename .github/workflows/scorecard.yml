@@ -1,5 +1,10 @@
 name: OpenSSF Scorecard
 
+# The OpenSSF Scorecard: it rates the security practices of the repository, such as
+# its branch protection, its pinned actions and its signed releases, after every
+# push to main and every week, publishes the score for the badge of the README and
+# sends each finding to code scanning. https://github.com/Dennis-Otto/repo-blueprint
+
 on:
   push:
     branches: [main]

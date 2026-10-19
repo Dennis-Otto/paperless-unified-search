@@ -20,6 +20,7 @@ import posixpath
 import re
 import subprocess
 import unicodedata
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -29,10 +30,11 @@ PICTURES = Path("docs/images/diagrams")
 # The longest name that a title gives, cut where a word ends.
 LONGEST = 72
 
-# A block of Mermaid, also indented in a list, up to its closing fence.
+# A block of Mermaid, also indented in a list or in a quote, up to its closing fence.
 FENCE = re.compile(
-    r"^(?P<indent>[ \t]*)(?P<fence>(?P<mark>[`~])(?P=mark){2,})[ \t]*mermaid"
-    r"(?:[ \t][^\n]*)?\n(?P<body>(?:[^\n]*\n)*?)[ \t]*(?P=fence)(?P=mark)*[ \t]*(?:\n|\Z)",
+    r"^(?P<indent>(?:[ \t]*>)*[ \t]*)(?P<fence>(?P<mark>[`~])(?P=mark){2,})[ \t]*"
+    r"mermaid(?:[ \t][^\n]*)?\n(?P<body>(?:[^\n]*\n)*?)[ \t>]*(?P=fence)(?P=mark)*"
+    r"[ \t]*(?:\n|\Z)",
     re.M,
 )
 # A picture of a diagram, as extract writes it.
@@ -49,7 +51,17 @@ DESCRIPTION = re.compile(
 FRONT_MATTER = re.compile(r"\A---[ \t]*\n(?:[^\n]*\n)*?---[ \t]*\n")
 # A heading of Markdown, and the fence of a block of code, in which # starts no heading.
 HEADING = re.compile(r"^ {0,3}#{1,6}[ \t]+(?P<text>.*?)(?:[ \t]+#+)?[ \t]*$")
-CODE = re.compile(r"^[ \t]*(?P<fence>`{3,}|~{3,})")
+CODE = re.compile(r"^[ \t]*(?P<fence>`{3,}|~{3,})(?P<info>[^\n]*)")
+# The marks of a quote before a line, such as "> " or "> > ".
+QUOTE = re.compile(r"^(?:[ \t]*>)+[ \t]?")
+# A comment of HTML, which starts a line and ends where a line holds -->.
+COMMENT = re.compile(r"^ {0,3}<!--")
+# An image, also with a > in the value of an attribute, and its text for those who
+# don't see it.
+IMG = re.compile(r"""<img\b(?:[^>"']|"[^"]*"|'[^']*')*>""")
+ALT = re.compile(r"(?<![\w-])alt=(?P<quote>[\"'])(?P<text>.*?)(?P=quote)", re.S)
+# A picture that a page shows, as scripts/diagrams.sh finds it.
+SHOWN = re.compile(r"images/diagrams/(?P<name>[A-Za-z0-9._-]+)\.svg")
 # The label of a node or a subgraph of a flowchart, such as a["Label"] or b(Label).
 LABEL = re.compile(
     r"\b\w+[\[({>]+[ \t]*"
@@ -98,6 +110,16 @@ class Extracted:
 
 
 @dataclass(frozen=True)
+class Followed:
+    """A file that differed from what its source says: a source whose labels held
+    HTML, without a line, or the line of a page whose picture had another alt."""
+
+    path: Path
+    source: Path
+    line: int = 0
+
+
+@dataclass(frozen=True)
 class Changes:
     """What drawing and extract changed: the files to write, by their paths, and the
     pictures to delete."""
@@ -143,7 +165,14 @@ def german(page: Path) -> bool:
 
 
 def diagrams_of(text: str) -> list[Diagram]:
-    """The blocks and the pictures of the diagrams of a page, in their order."""
+    """The blocks and the pictures of the diagrams of a page, in their order, other
+    than those in another block of code, such as the example of a page, and those in
+    a comment."""
+    spans = hidden(text)
+
+    def shown(start: int) -> bool:
+        return not any(begin <= start < end for begin, end in spans)
+
     found = [
         Diagram(
             match.start(),
@@ -152,20 +181,52 @@ def diagrams_of(text: str) -> list[Diagram]:
             dedent(match["body"], match["indent"]),
         )
         for match in FENCE.finditer(text)
+        if shown(match.start())
     ]
     found += [
         Diagram(match.start(), match.end(), name=match["name"].removesuffix(".dark"))
         for match in PICTURE.finditer(text)
+        if shown(match.start())
     ]
     return sorted(found, key=lambda diagram: diagram.start)
 
 
+def hidden(text: str) -> list[tuple[int, int]]:
+    """Where a page shows no diagram, as the start and the end of each part: the
+    blocks of code other than Mermaid, also in a quote, and the comments of HTML."""
+    spans: list[tuple[int, int]] = []
+    fence, start, mermaid, ends, offset = "", 0, False, 0, 0
+    for line in text.splitlines(keepends=True):
+        begin, offset = offset, offset + len(line)
+        if begin < ends:
+            continue
+        code = CODE.match(QUOTE.sub("", line, count=1))
+        if fence:
+            if code and code["fence"].startswith(fence) and not code["info"].strip():
+                if not mermaid:
+                    spans.append((start, offset))
+                fence = ""
+        elif code:
+            fence, start = code["fence"], begin
+            mermaid = code["info"].split()[:1] == ["mermaid"]
+        elif COMMENT.match(line):
+            end = text.find("-->", begin + line.index("<!--") + len("<!--"))
+            ends = len(text) if end < 0 else end + len("-->")
+            spans.append((begin, ends))
+    if fence and not mermaid:
+        spans.append((start, len(text)))
+    return spans
+
+
 def dedent(body: str, indent: str) -> str:
-    """The lines of a block without the indentation of its fence, as in a list."""
+    """The lines of a block without the indentation of its fence, as in a list, and
+    without the marks of its quote."""
     lines = []
     for line in body.splitlines():
         if line.startswith(indent):
             line = line[len(indent) :]
+        elif indent.strip() and line.strip() == indent.strip():
+            line = ""
         lines.append(line.rstrip() if line.strip() else "")
     return "\n".join(lines).strip("\n") + "\n"
 
@@ -221,6 +282,15 @@ def alt_text(source: str, heading: str = "") -> str:
     """The text of a picture for those who don't see it: the title and the description
     of the diagram for screen readers, accTitle and accDescr. Without them, the
     heading above the diagram and the labels of its nodes say what it shows."""
+    parts = [told(source)]
+    if not parts[0]:
+        parts = [part for part in (heading, ", ".join(labels(source))) if part]
+    return ": ".join(parts) or "A diagram"
+
+
+def told(source: str) -> str:
+    """What a diagram tells screen readers about itself, its accTitle and its accDescr,
+    or nothing."""
     title = TITLE.search(source)
     description = DESCRIPTION.search(source)
     parts = [title["text"]] if title and title["text"] else []
@@ -228,9 +298,7 @@ def alt_text(source: str, heading: str = "") -> str:
         text = description["line"] or " ".join((description["block"] or "").split())
         if text:
             parts.append(text)
-    if not parts:
-        parts = [part for part in (heading, ", ".join(labels(source))) if part]
-    return ": ".join(parts) or "A diagram"
+    return ": ".join(parts)
 
 
 def labels(source: str) -> list[str]:
@@ -297,14 +365,18 @@ def picture(name: str, page: Path, alt: str, indent: str = "") -> str:
     folder = page.parent.as_posix()
     light = posixpath.relpath((PICTURES / f"{name}.svg").as_posix(), folder)
     dark = posixpath.relpath((PICTURES / f"{name}.dark.svg").as_posix(), folder)
-    text = html.escape(alt, quote=False).replace('"', "&quot;")
     lines = [
         "<picture>",
         f'  <source media="(prefers-color-scheme: dark)" srcset="{dark}">',
-        f'  <img src="{light}" alt="{text}">',
+        f'  <img src="{light}" alt="{attribute(alt)}">',
         "</picture>",
     ]
     return "".join(f"{indent}{line}\n" for line in lines)
+
+
+def attribute(text: str) -> str:
+    """Text as the value of an attribute of HTML in double quotes."""
+    return html.escape(text, quote=False).replace('"', "&quot;")
 
 
 class Names:
@@ -388,6 +460,75 @@ def extract(root: Path, pages: list[Path] | None = None) -> list[Extracted]:
             pieces.append(text[position:])
             path.write_text("".join(pieces), encoding="utf-8", newline="\n")
     return extracted
+
+
+def drawn_here(root: Path, texts: Iterable[str]) -> list[str]:
+    """The names of the sources that scripts/diagrams.sh draws, as it finds them:
+    those whose picture a page shows, and those that have a picture already. Another
+    source in docs/diagrams/ may belong to a way of the project's own to draw it."""
+    names = {
+        match["name"].removesuffix(".dark")
+        for text in texts
+        for match in SHOWN.finditer(text)
+    }
+    names |= {
+        path.stem.removesuffix(".dark") for path in (root / PICTURES).glob("*.svg")
+    }
+    return sorted(name for name in names if (root / SOURCES / f"{name}.mmd").is_file())
+
+
+def follow(root: Path, *, write: bool = True) -> list[Followed]:
+    """Brings the sources that scripts/diagrams.sh draws and the pictures of the pages
+    in step with what the sources say: the HTML of their labels becomes what a
+    picture shows, as in extract, and the alt of each picture repeats the accTitle and
+    the accDescr of its source, where the source has them. Returns what differed, and
+    changes it only with write."""
+    texts = {
+        page: (root / page).read_text(encoding="utf-8") for page in markdown_pages(root)
+    }
+    sources: dict[str, str] = {}
+    followed: list[Followed] = []
+    for name in drawn_here(root, texts.values()):
+        path = SOURCES / f"{name}.mmd"
+        text = (root / path).read_text(encoding="utf-8")
+        sources[name] = without_html(text)
+        if sources[name] != text:
+            followed.append(Followed(path, path))
+            if write:
+                (root / path).write_text(sources[name], encoding="utf-8", newline="\n")
+    for page, text in texts.items():
+        pieces: list[str] = []
+        position = 0
+        for diagram in diagrams_of(text):
+            wanted = told(sources.get(diagram.name, ""))
+            image = next(
+                (
+                    found
+                    for found in IMG.finditer(text, diagram.start, diagram.end)
+                    if f"images/diagrams/{diagram.name}." in found[0]
+                ),
+                None,
+            )
+            if not wanted or image is None:
+                continue
+            alt = ALT.search(image[0])
+            if alt and html.unescape(alt["text"]) == wanted:
+                continue
+            value = f'alt="{attribute(wanted)}"'
+            tag = image[0]
+            tag = (
+                f"{tag[: alt.start()]}{value}{tag[alt.end() :]}"
+                if alt
+                else (f"<img {value}{tag[len('<img') :]}")
+            )
+            line = text.count("\n", 0, image.start()) + 1
+            followed.append(Followed(page, SOURCES / f"{diagram.name}.mmd", line))
+            pieces += [text[position : image.start()], tag]
+            position = image.end()
+        if pieces and write:
+            pieces.append(text[position:])
+            (root / page).write_text("".join(pieces), encoding="utf-8", newline="\n")
+    return followed
 
 
 def keep(root: Path, folder: Path) -> Changes:
@@ -508,7 +649,7 @@ def listing(found: Changes) -> str:
     lines = []
     for path in found.written:
         if path.endswith(".md"):
-            what = "its `mermaid` blocks are pictures now"
+            what = "its diagrams are pictures of their sources, alt and all"
         elif path.endswith(".mmd"):
             what = "the source of a diagram"
         else:
@@ -519,17 +660,19 @@ def listing(found: Changes) -> str:
 
 
 def report(folder: Path, kind: str) -> str:
-    """What the diagram bot says about its commit: for a pull request whose
-    `mermaid` blocks it turned into pictures, a comment, and nothing when it only drew
-    pictures anew; for main, the description of its own pull request."""
+    """What the diagram bot says about its commit: for a pull request whose pages it
+    changed, as it turned their `mermaid` blocks into pictures or wrote the alt of
+    their pictures, a comment, and nothing when it only drew pictures anew; for main,
+    the description of its own pull request."""
     found = changes(folder)
     if kind == "comment":
         if not any(path.endswith(".md") for path in found.written):
             return ""
         return (
             "The GitHub app, the stores and other renderers of Markdown show a "
-            "`mermaid` block as code, so the diagram bot turned those of this pull "
-            "request into pictures of their sources in `docs/diagrams/`:\n\n"
+            "`mermaid` block as code, so the diagram bot made the diagrams of this "
+            "pull request pictures of their sources in `docs/diagrams/`, whose alt "
+            "repeats the title and the description of the source:\n\n"
             + listing(found)
             + "\nChange a diagram in its source, and the bot draws its pictures anew. "
             "CONTRIBUTING.md describes the diagrams.\n"

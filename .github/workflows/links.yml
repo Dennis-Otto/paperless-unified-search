@@ -1,16 +1,17 @@
 name: Links
 
-# The link bot. lychee checks the links of the documentation on every change of a
-# Markdown file, and every week, since sites move without a change here. A pull
-# request checks the documents that it changes, so that a site that is down for a
+# The link bot. lychee checks the links of the documentation, and the anchors that they
+# lead to, also in the README of another repository, on every change of a Markdown file
+# or of a page of HTML in docs/, and every week, since sites move without a change here.
+# A pull request checks the documents that it changes, so that a site that is down for a
 # moment fails only the pull requests that link to it; one that changes the rules or
 # moves or deletes a file checks every document, as main and the weekly run do. The
 # answers of the sites stay in a cache for a day. A broken link fails the check of a
-# pull request; the weekly run keeps one issue with the broken links open until they
-# are fixed, and closes it then. lychee.toml holds the rules, .lycheeignore the
-# exceptions of this repository. The entry in the changelog that most pull requests
-# bring, in CHANGELOG.md or in a fragment of changelog.d/, starts no check on its own;
-# the weekly run checks the links of the changelog.
+# pull request; the weekly run keeps one issue with the broken links open until they are
+# fixed, and closes it then. lychee.toml holds the rules, .lycheeignore the exceptions
+# of this repository. The entry in the changelog that most pull requests bring, in
+# CHANGELOG.md or in a fragment of changelog.d/, starts no check on its own; the weekly
+# run checks the links of the changelog.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -18,6 +19,7 @@ on:
     branches: [main]
     paths:
       - "**/*.md"
+      - docs/**/*.html
       - "!CHANGELOG.md"
       - "!changelog.d/**"
       - lychee.toml
@@ -26,6 +28,7 @@ on:
   pull_request:
     paths:
       - "**/*.md"
+      - docs/**/*.html
       - "!CHANGELOG.md"
       - "!changelog.d/**"
       - lychee.toml
@@ -80,7 +83,7 @@ jobs:
           if [[ "$EVENT" == pull_request ]] &&
             [[ -z "$(git diff --name-only "origin/$BASE_REF...HEAD" -- lychee.toml .lycheeignore .github/workflows/links.yml)" ]] &&
             [[ -z "$(git diff --name-only --diff-filter=DR "origin/$BASE_REF...HEAD" -- . ':!changelog.d')" ]]; then
-            mapfile -t changed < <(git diff --name-only --diff-filter=AM "origin/$BASE_REF...HEAD" -- '*.md' ':!CHANGELOG.md' ':!changelog.d')
+            mapfile -t changed < <(git diff --name-only --diff-filter=AM "origin/$BASE_REF...HEAD" -- '*.md' 'docs/*.html' ':!CHANGELOG.md' ':!changelog.d')
             if ((${#changed[@]} == 0)); then
               echo "The pull request changes no document; no link to check." >> "$GITHUB_STEP_SUMMARY"
               exit 0
@@ -91,7 +94,7 @@ jobs:
               exit 0
             fi
           fi
-          echo "files='./**/*.md'" >> "$GITHUB_OUTPUT"
+          echo "files='./**/*.md' './docs/**/*.html'" >> "$GITHUB_OUTPUT"
           echo "every=true" >> "$GITHUB_OUTPUT"
       # The answers of the sites from the runs of the last day; lychee asks again for a
       # link that failed.

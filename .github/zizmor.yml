@@ -22,10 +22,13 @@ rules:
       - dependabot-automerge.yml
       # After the checks, the flaky-test bot only runs failed jobs again and writes an
       # issue, the bot for cancelled checks only runs cancelled runs again, the bot for
-      # failed releases only runs the failed jobs of a release again, the coverage bot
-      # reads the coverage reports and writes one comment, the PR coach reads the
-      # check runs from the API and writes one comment, with only the explanations of
-      # the default branch checked out, and the diagram bot checks out main alone,
+      # failed releases only runs the failed jobs of a release again, the PR coach
+      # reads the check runs, the files of the pull request and its list of artifacts
+      # from the API and, with actions: read, downloads the coverage reports of the
+      # head and of main, also those that a fork's run kept, which it parses only as
+      # data; it runs no code of the pull request, has only the explanations and
+      # blueprint.py of the default branch checked out, and writes one comment. The
+      # diagram bot checks out main alone,
       # whose blueprint.py takes only the sources, SVG pictures and pages of Markdown
       # of an artifact, and commits them onto the branch of a pull request of this
       # repository.
@@ -34,10 +37,24 @@ rules:
       # jobs of that run, the latest release, the repositories of the release app and
       # the checks of their update pull requests, and checks out nothing.
       - rollout.yml
+      # The screenshot bot, and the picture bot of the blueprint, start after a run
+      # of the Release workflow that the merge of a release pull request on main
+      # made, never for a pull request: they check out main, run its script with a
+      # token that only reads and without secrets, and the job with the release app
+      # runs nothing of it, but takes only pictures of its artifact with
+      # blueprint.py of main.
+      - screenshot-bot.yml
+      - docs-pictures.yml
       # The bot-health bot starts after the runs of the bots and acts only on those of
       # the default branch: it runs their failed jobs again, reads their jobs and
       # annotations and writes issues, and checks out only the default branch.
       - bot-health.yml
+      # The branch bot starts when auto-merge of a pull request is turned on or off and
+      # when a check of a pull request fails, also one that runs on pull_request_target
+      # such as the title's, which may be a fork's; it checks out only the default branch,
+      # whose blueprint.py reads the pull requests and their checks from the API and
+      # merges the default branch into one of them through the API.
+      - update-branches.yml
       # The issue assistant's templates, which its check keeps equal to the action's.
       - findings.yml
       - issue-lifecycle.yml

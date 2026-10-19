@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- The tests run in a new random order each time, each after the tests that it
+     depends on, so that a test that needs what another one left behind fails. PHPUnit
+     names the seed of the order as its run starts, and the section Tests of
+     CONTRIBUTING.md shows how to run that order again. A test that prints, or that
+     uses what PHPUnit deprecates, fails as well. -->
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 		 xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
 		 bootstrap="tests/bootstrap.php"
@@ -7,7 +12,11 @@
 		 failOnDeprecation="true"
 		 failOnNotice="true"
 		 failOnWarning="true"
-		 failOnRisky="true">
+		 failOnRisky="true"
+		 failOnPhpunitDeprecation="true"
+		 beStrictAboutOutputDuringTests="true"
+		 executionOrder="depends,random"
+		 resolveDependencies="true">
 	<testsuites>
 		<testsuite name="Paperless Unified Search">
 			<directory>tests/Unit</directory>

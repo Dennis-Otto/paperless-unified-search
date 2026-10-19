@@ -4,7 +4,9 @@ After `copier update` and `git add --all`, it commits what the update staged as 
 release app, through GitHub's API, so that GitHub signs the commit, and keeps one pull
 request for it open on the branch blueprint/update. A newer release moves that branch
 on to a new commit on main, so the pull request stays the same one; a branch with
-commits of anyone else stays as it is.
+commits of anyone else stays as it is. Its description shows the notes of every
+release that the update brings, the releases it skipped too, the files it changes and
+what to do about a conflict.
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from blueprint.changelog import PULL_REQUESTS
 from blueprint.github import Api, GitHubError, Json
 
 BRANCH = "blueprint/update"
@@ -36,6 +39,17 @@ REGULAR = "100644"
 EXECUTABLE = "100755"
 # Items per page of a list of GitHub.
 PAGE = 100
+# GitHub takes up to 65536 characters for the description of a pull request; the notes
+# of the releases make way for the rest, and a description longer still is cut.
+BODY_LIMIT = 65536
+BODY_LENGTH = 60000
+CUT = "\n\n…\n"
+# The files that the description lists at most; the tab *Files changed* has them all.
+FILES = 200
+# A version as a release tag names it, v1.2.0 or 1.2.0, and a prerelease of one.
+VERSION = re.compile(r"v?(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?")
+# A version as git describe names a commit past a release: v1.2.0-3-gabc1234.
+DESCRIBED = re.compile(r"-\d+-g([0-9a-f]+)$")
 CREATE_COMMIT = (
     "mutation($input: CreateCommitOnBranchInput!) "
     "{ createCommitOnBranch(input: $input) { commit { oid } } }"
@@ -138,7 +152,7 @@ class Update:
 
 
 def post(api: Api, path: str, body: Json) -> dict[str, Json]:
-    response = api.request("POST", path, body)
+    response = api.request("POST", path, body, missing_ok=True)
     if response.status == 404 or not isinstance(response.data, dict):
         raise GitHubError(response.status, f"no answer to POST {path}")
     return response.data
@@ -378,15 +392,278 @@ def move_branch(api: Api, repo: str, commit: str, exists: bool) -> None:
         )
 
 
+# --------------------------------------------------------------------------- the releases
+
+
+@dataclass(frozen=True)
+class Release:
+    """A published release of the blueprint, with its notes."""
+
+    tag: str
+    url: str
+    date: str
+    notes: str
+
+
+def version_key(tag: str) -> tuple[int, int, int, int] | None:
+    """The order of a version: a prerelease, such as v1.2.0-beta.1, comes before its
+    release. None for a tag that names no version."""
+    match = VERSION.fullmatch(tag)
+    if match is None:
+        return None
+    major, minor, patch, prerelease = match.groups()
+    return int(major), int(minor), int(patch), 0 if prerelease else 1
+
+
+def released_tag(described: str) -> str:
+    """The release that a version of git describe comes from: v1.2.0 for
+    v1.2.0-3-gabc1234, three commits past it."""
+    return DESCRIBED.sub("", described)
+
+
+def compare_ref(described: str) -> str:
+    """What GitHub compares for a version of git describe: the commit past a release,
+    or the release itself."""
+    match = DESCRIBED.search(described)
+    return match.group(1) if match else described
+
+
+def releases_between(api: Api, source: str, before: str, after: str) -> list[Release]:
+    """The published releases of the blueprint after the version before, up to and
+    with after, the newest first: an update may skip releases, whose notes count as
+    much as those of the last one. Only after itself when before names no version;
+    drafts and prereleases are no update."""
+    high = version_key(after)
+    if high is None:
+        return []
+    low = version_key(released_tag(before))
+    found: list[tuple[tuple[int, int, int, int], Release]] = []
+    for item in pages(api, f"repos/{source}/releases"):
+        tag = str(item.get("tag_name") or "")
+        key = version_key(tag)
+        published = not (item.get("draft") or item.get("prerelease"))
+        if key and key <= high and (key > low if low else key == high) and published:
+            url = f"https://github.com/{source}/releases/tag/{tag}"
+            release = Release(
+                tag=tag,
+                url=str(item.get("html_url") or url),
+                date=str(item.get("published_at") or "")[:10],
+                notes=str(item.get("body") or ""),
+            )
+            found.append((key, release))
+        # GitHub lists the newest release first, so every one after this is older.
+        if low and tag == released_tag(before):
+            break
+    found.sort(key=lambda pair: pair[0], reverse=True)
+    return [release for _, release in found]
+
+
+# A line that opens or closes a block of code, the inline code of a line, a heading,
+# and the heading of a version that release-please writes above its notes.
+FENCE = re.compile(r" {0,3}(?:`{3,}|~{3,})")
+INLINE_CODE = re.compile(r"(`+).+?\1")
+HEADING = re.compile(r" {0,3}(#{1,5}) ")
+VERSION_HEADING = re.compile(r" {0,3}#{1,3} \[?v?\d+\.\d+\.\d+")
+# A reference such as #183 means an issue of the blueprint, but would name one of this
+# repository here; a mention would notify someone of every update of every repository.
+REFERENCE = re.compile(r"(?<![\w/&#\[])#(\d+)(?![\w-])")
+MENTION = re.compile(r"(?<![\w/@])@(?=[A-Za-z0-9])")
+
+
+def foreign(text: str, source: str) -> str:
+    """Text of the blueprint as it reads in another repository: #183 as
+    OWNER/NAME#183, and a mention as a name that notifies nobody."""
+    text = REFERENCE.sub(lambda match: f"{source}#{match.group(1)}", text)
+    return MENTION.sub("@&#8203;", text)
+
+
+def outside_code(line: str, source: str) -> str:
+    """The line with the references and mentions of all of it but its inline code
+    made foreign; code shows them as they are."""
+    parts = []
+    start = 0
+    for match in INLINE_CODE.finditer(line):
+        parts += [foreign(line[start : match.start()], source), match.group(0)]
+        start = match.end()
+    return "".join([*parts, foreign(line[start:], source)])
+
+
+def curated(notes: str, source: str) -> str:
+    """The part of the notes of a release that people wrote, for the description: not
+    the list of every pull request after it, nor the heading of the version, which the
+    summary shows, and each heading a level below those of the description. Notes of
+    release-please alone stay whole."""
+    text = notes.replace("\r\n", "\n")
+    written, cut, _ = text.partition(f"\n{PULL_REQUESTS}")
+    if cut and written.strip():
+        text = written
+    lines: list[str] = []
+    fenced = False
+    for line in text.strip("\n").split("\n"):
+        if FENCE.match(line):
+            fenced = not fenced
+        elif not fenced:
+            if not lines and VERSION_HEADING.match(line):
+                continue
+            heading = HEADING.match(line)
+            if heading:
+                level = heading.start(1)
+                line = f"{line[:level]}#{line[level:]}"
+            line = outside_code(line, source)
+        lines.append(line)
+    return "\n".join(lines).strip("\n")
+
+
+def release_block(release: Release, source: str) -> str:
+    """A release that opens to its notes."""
+    summary = f"{release.tag} · {release.date}" if release.date else release.tag
+    notes = curated(release.notes, source) or "The release has no notes."
+    return "\n".join(
+        [
+            "<details>",
+            f"<summary>{summary}</summary>",
+            "",
+            notes,
+            "",
+            f"[The release {release.tag}]({release.url})",
+            "",
+            "</details>",
+        ]
+    )
+
+
+TOO_LONG = (
+    "These releases have more notes than the description of a pull request holds;"
+    " their pages show them:"
+)
+
+
+def releases_section(
+    update: Update, releases: Sequence[Release] | None, room: int
+) -> list[str]:
+    """The notes of every release that the update brings, the newest first, as many
+    as fit into room characters; a link to each of the others."""
+    heading = ["", "### What the blueprint brings", ""]
+    if releases is None:
+        return [
+            *heading,
+            f"GitHub didn't list the releases of {update.source} to the bot, so their"
+            f" notes are missing here: [its releases](https://github.com/{update.source}"
+            "/releases) show them.",
+        ]
+    if not releases:
+        return []
+    if len(releases) == 1:
+        lines = [*heading, f"The notes of {releases[0].tag}:"]
+    else:
+        lines = [
+            *heading,
+            f"The notes of the {len(releases)} releases since {update.before},"
+            " the newest first:",
+        ]
+    links = [f"- [{release.tag}]({release.url})" for release in releases]
+    # The lines so far, and the links with the line above them, should none fit.
+    left = room - sum(len(line) + 1 for line in lines) - len(TOO_LONG) - 3
+    left -= sum(len(link) + 1 for link in links)
+    rest: list[str] = []
+    for release, link in zip(releases, links, strict=True):
+        block = release_block(release, update.source)
+        cost = len(block) + 2 - len(link) - 1
+        if cost <= left:
+            lines += ["", block]
+            left -= cost
+        else:
+            rest.append(link)
+    if rest:
+        lines += ["", TOO_LONG, "", *rest]
+    return lines
+
+
+def listed_releases(api: Api, update: Update) -> list[Release] | None:
+    """The releases that the update brings, or None when GitHub didn't list them: the
+    description links them then, and the update goes on."""
+    try:
+        return releases_between(api, update.source, update.before, update.after)
+    except GitHubError as error:
+        print(
+            f"::warning::GitHub didn't list the releases of {update.source} ({error});"
+            " the description of the pull request links them instead of showing their"
+            " notes."
+        )
+        return None
+
+
 # --------------------------------------------------------------------------- the pull request
 
 
-def describe(update: Update, modes: Sequence[Change]) -> str:
-    """The description of the pull request."""
+def files_section(changes: Sequence[Change]) -> list[str]:
+    """The files that the update changes, closed: the tab *Files changed* shows how."""
+    count = len(changes)
+    lines = [
+        "",
+        "### The files it changes",
+        "",
+        "<details>",
+        f"<summary>{count} file{'' if count == 1 else 's'}</summary>",
+        "",
+    ]
+    for change in changes[:FILES]:
+        what = " (new)" if change.before == ABSENT else ""
+        lines.append(f"- `{change.path}`{' (deleted)' if change.deleted else what}")
+    if count > FILES:
+        lines.append(f"- and {count - FILES} more, in the tab *Files changed*")
+    return [*lines, "", "</details>"]
+
+
+def merge_note(update: Update, merges: bool, automerge: bool) -> str:
+    """What happens to the pull request once its checks pass."""
+    if update.conflicts:
+        return "It waits for you to merge it."
+    if merges and not automerge:
+        return (
+            "Its auto-merge is on, so it merges itself once every check passes,"
+            " although the repository variable `BLUEPRINT_AUTOMERGE` is `off`; turn"
+            " its auto-merge off to review it."
+        )
+    if merges:
+        return (
+            "It merges itself once every check passes. To review every update before"
+            " it merges, set the repository variable `BLUEPRINT_AUTOMERGE` to `off`."
+        )
+    if not automerge:
+        return (
+            "It waits for you to merge it, as the repository variable"
+            " `BLUEPRINT_AUTOMERGE` is `off`; delete the variable, and updates merge"
+            " themselves once every check passes."
+        )
+    return "Its auto-merge is off, so it waits for you to merge it."
+
+
+def describe(
+    update: Update,
+    modes: Sequence[Change],
+    releases: Sequence[Release] | None = (),
+    *,
+    merges: bool = True,
+    automerge: bool = True,
+) -> str:
+    """The description of the pull request: what it brings, with the notes of every
+    release since the version before, what to do with conflicts and lost modes, the
+    files that it changes and whether it merges itself."""
     lines = [
         f"Brings the repository from the blueprint's {update.before} to"
         f" [{update.after}]({update.release}) with `copier update`."
     ]
+    if update.before and update.before != update.after:
+        compare = (
+            f"https://github.com/{update.source}/compare/"
+            f"{compare_ref(update.before)}...{update.after}"
+        )
+        lines += [
+            "",
+            f"[Every change of the blueprint from {update.before} to {update.after}]"
+            f"({compare})",
+        ]
     if [change.path for change in update.changes] == [ANSWERS]:
         lines += [
             "",
@@ -396,10 +673,16 @@ def describe(update: Update, modes: Sequence[Change]) -> str:
     if update.conflicts:
         lines += [
             "",
-            "The update conflicts with changes of this repository in these files, so"
-            " auto-merge is off: resolve the markers on this branch, then merge.",
+            "### Conflicts",
             "",
-            *(f"- `{path}`" for path in update.conflicts),
+            "The update conflicts with changes of this repository in these files, so"
+            " auto-merge is off. In each one, keep what the repository needs of the"
+            " lines between `<<<<<<< before updating`, which this repository had, and"
+            " `>>>>>>> after updating`, which the blueprint brings, delete the three"
+            " marker lines, then commit and push to this branch and merge. Tick each"
+            " file once it is resolved:",
+            "",
+            *(f"- [ ] `{path}`" for path in update.conflicts),
         ]
     if modes:
         lines += [
@@ -411,12 +694,21 @@ def describe(update: Update, modes: Sequence[Change]) -> str:
             *(mode_command(change) for change in modes),
             "```",
         ]
-    lines += [
+    tail = [
+        *files_section(update.changes),
         "",
-        "A newer release of the blueprint moves this pull request on. Once you commit"
-        " to its branch, the bot leaves it to you.",
+        "---",
+        "",
+        f"{merge_note(update, merges, automerge)} A newer release of the blueprint"
+        " moves this pull request on. Once you commit to its branch, the bot leaves it"
+        " to you.",
     ]
-    return "\n".join(lines) + "\n"
+    room = BODY_LENGTH - len("\n".join([*lines, *tail])) - 1
+    notes = releases_section(update, releases, room)
+    body = "\n".join([*lines, *notes, *tail]) + "\n"
+    if len(body) > BODY_LIMIT:
+        body = body[: BODY_LIMIT - len(CUT)] + CUT
+    return body
 
 
 def leave_alone(api: Api, repo: str, pull: Json, update: Update) -> str:
@@ -451,10 +743,33 @@ def leave_alone(api: Api, repo: str, pull: Json, update: Update) -> str:
     )
 
 
+def merges_itself(pull: Json | None, update: Update, automerge: bool) -> bool:
+    """Whether the pull request merges itself once its checks pass: never with
+    conflicts; with the auto-merge that it has, or that the bot turns on for a new pull
+    request and for one that waited for conflicts. Whoever else turned it off decides."""
+    if update.conflicts:
+        return False
+    merging = bool(pull and pull.get("auto_merge"))
+    labels = {label["name"] for label in (pull or {}).get("labels", [])}
+    return merging or (automerge and (pull is None or LABEL in labels))
+
+
 def write_pull(
-    api: Api, repo: str, pull: Json | None, update: Update, modes: Sequence[Change]
+    api: Api,
+    repo: str,
+    pull: Json | None,
+    update: Update,
+    modes: Sequence[Change],
+    automerge: bool,
 ) -> int:
-    fields = {"title": update.title, "body": describe(update, modes)}
+    body = describe(
+        update,
+        modes,
+        listed_releases(api, update),
+        merges=merges_itself(pull, update, automerge),
+        automerge=automerge,
+    )
+    fields = {"title": update.title, "body": body}
     if pull is not None:
         api.patch(f"repos/{repo}/pulls/{pull['number']}", fields)
         return int(pull["number"])
@@ -475,9 +790,8 @@ def settle(
     api: Api, repo: str, number: int, pull: Json | None, update: Update, automerge: bool
 ) -> None:
     """Conflicts turn auto-merge off, before they label the pull request: no check
-    reads every file, and markers in one of them would merge. Without conflicts, a new
-    pull request merges itself, and an open one gets its auto-merge back only when it
-    waited for conflicts: whoever else turned it off decides."""
+    reads every file, and markers in one of them would merge. Without conflicts, the
+    pull request merges itself as merges_itself says, which its description says too."""
     merging = bool(pull and pull.get("auto_merge"))
     labels = {label["name"] for label in (pull or {}).get("labels", [])}
     if update.conflicts:
@@ -488,8 +802,9 @@ def settle(
         return
     if LABEL in labels:
         label = urllib.parse.quote(LABEL, safe="")
-        api.delete(f"repos/{repo}/issues/{number}/labels/{label}")
-    if automerge and not merging and (pull is None or LABEL in labels):
+        # Someone may have taken it off a moment ago.
+        api.delete(f"repos/{repo}/issues/{number}/labels/{label}", missing_ok=True)
+    if not merging and merges_itself(pull, update, automerge):
         gh(api, "pr", "merge", str(number), "--repo", repo, "--auto", "--squash")
 
 
@@ -541,7 +856,7 @@ def update_pull_request(
             pull = hold(api, repo, pull)
         move_branch(api, repo, commit, exists=True)
         done = "Moved on"
-    number = write_pull(api, repo, pull, update, modes)
+    number = write_pull(api, repo, pull, update, modes, automerge)
     settle(api, repo, number, pull, update, automerge)
     text = f"{done} #{number}: the blueprint's {update.before} to {update.after}"
     if update.conflicts:

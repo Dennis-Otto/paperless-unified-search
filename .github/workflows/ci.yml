@@ -21,8 +21,12 @@ jobs:
     name: check (php)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    outputs:
+      # Whether the job kept the report of the taint analysis for code scanning.
+      taint: ${{ steps.taint.outcome }}
     env:
       # The same krankerl as the release workflow's.
+      # renovate: datasource=github-releases depName=ChristophWurst/krankerl extractVersion=^v(?<version>.+)$
       KRANKERL_VERSION: 0.14.0
       KRANKERL_SHA256: 9bee5a756a83c5a6b1f040e9a2ade9e902e4a57211afc174cd8ac5c4f913958f
     steps:
@@ -32,11 +36,48 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The merge of a pull request into main, and its head as the second
+          # parent, onto which the fix bot commits.
+          fetch-depth: 2
           persist-credentials: false
-      - name: Set up the PHP of composer.json
-        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+      # The tools run on the PHP of config.platform.php in composer.json, for which
+      # Composer locks them; the app on the oldest PHP of appinfo/info.xml and every
+      # newer one, which the step Oldest PHP of the checks takes as php8.2 or the like.
+      - name: Find the PHP of the tools and the oldest PHP of the app
+        id: php
+        run: |
+          python3 - >> "$GITHUB_OUTPUT" <<'EOF'
+          import json
+          import sys
+          from xml.etree import ElementTree
+
+
+          def minor(version):
+              return ".".join(version.split(".")[:2])
+
+
+          with open("composer.json", encoding="utf-8") as manifest:
+              platform = json.load(manifest).get("config", {}).get("platform", {})
+          php = ElementTree.parse("appinfo/info.xml").find("dependencies/php")
+          oldest = minor(php.get("min-version", "")) if php is not None else ""
+          tools = minor(platform.get("php", "")) or oldest
+          if not tools:
+              sys.exit("Neither config.platform.php of composer.json nor appinfo/info.xml names a PHP.")
+          print(f"tools={tools}")
+          print(f"oldest={oldest or tools}")
+          EOF
+      - name: Set up the oldest PHP of the app
+        if: steps.php.outputs.oldest != steps.php.outputs.tools
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
-          php-version: "8.2"
+          php-version: ${{ steps.php.outputs.oldest }}
+          extensions: dom, libxml, mbstring, xml
+          coverage: none
+      # The last PHP that setup-php sets up is the one that php runs.
+      - name: Set up the PHP of the tools
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: ${{ steps.php.outputs.tools }}
           extensions: dom, libxml, mbstring, xml
           coverage: pcov
           tools: composer:v2
@@ -94,12 +135,98 @@ jobs:
           name: coverage
           path: build/coverage.xml
           retention-days: 14
+      # The paths that the taint analysis found, none when it passed, for code scanning:
+      # the job taint-report uploads them.
+      - name: Keep the report of the taint analysis
+        id: taint
+        if: always() && hashFiles('build/psalm-taint.sarif') != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: psalm-taint
+          path: build/psalm-taint.sarif
+          retention-days: 3
+      # The fix bot: the commands of autofix in .github/checks.toml fix what they
+      # can of what the checks found, on the head of the pull request or on main.
+      # After the checks, the bot commits the files that they changed onto a branch
+      # of this repository, suggests them on a pull request from a fork, or keeps one
+      # pull request with the fixes of main.
+      - name: Fix what a command can fix
+        id: fix
+        if: failure() && contains(fromJSON('["pull_request", "push"]'), github.event_name)
+        env:
+          CHECK: "check (php)"
+          EVENT: ${{ github.event_name }}
+        run: |
+          # The head of the pull request, onto which the bot commits, not its merge
+          # into main.
+          if [[ "$EVENT" == pull_request ]]; then
+            git checkout --quiet --force --detach HEAD^2
+          fi
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" fix run "$CHECK" --keep "$RUNNER_TEMP/fixes" >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the fixes for the fix bot
+        if: failure() && steps.fix.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fixes-check
+          path: ${{ runner.temp }}/fixes/
+          # Fixes of files in .github/ as well.
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 3
       # The PR coach: what failed, why it matters and how to fix it, in the summary
       # of the check and as its annotation, from .github/checks.toml.
       - name: Explain the failure
         if: failure()
         env:
           CHECK: "check (php)"
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" coach explain "$CHECK"
+
+  # The paths of the taint analysis in code scanning, with each line that they take, on
+  # the pull request and in the Security tab, as CodeQL shows those of the other
+  # languages. A job of its own, which runs no code of the app: the token that writes
+  # the alerts never meets the tools of Composer or the code of a pull request. Not for
+  # a pull request from a fork, whose token can't write them.
+  taint-report:
+    name: taint report (php)
+    needs: check
+    if: >-
+      !cancelled() && needs.check.outputs.taint == 'success' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      # Code scanning tells a finding from a new one by the lines of the code at it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Take the report of the taint analysis
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: psalm-taint
+          path: ${{ runner.temp }}/psalm-taint
+      - name: Upload the paths to code scanning
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: ${{ runner.temp }}/psalm-taint/psalm-taint.sarif
+          category: psalm-taint
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.toml.
+      - name: Explain the failure
+        if: failure()
+        env:
+          CHECK: "taint report (php)"
         run: |
           script=.github/blueprint.py
           [[ -f "$script" ]] || script=blueprint.py

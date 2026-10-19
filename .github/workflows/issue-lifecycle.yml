@@ -5,7 +5,8 @@ name: Issue lifecycle
 # 3 days after the notice unless someone objected, labels the issues that a merged
 # pull request fixes, and closes them with a link once a release ships the fix.
 # Merges and releases start it at once, and every morning catches what was missed.
-# A fixed issue that a release closes is filed under the release's milestone.
+# A fixed issue that a release closes is filed under the release's milestone. The
+# job blocks every host but GitHub's with Harden-Runner.
 # https://github.com/Dennis-Otto/issue-assistant
 
 on:
@@ -18,7 +19,9 @@ on:
     types: [published]
   # A release published with the job's GITHUB_TOKEN starts no workflow, so the end
   # of the repository's release workflow starts this one too: Release or, as in
-  # ha-autodarts, Release integration.
+  # ha-autodarts, Release integration. Not a scheduled run of it, which runs every
+  # hour as a safety net and mostly releases nothing; the morning sweep catches a
+  # release that one of them made.
   workflow_run:
     workflows: [Release, Release integration]
     types: [completed]
@@ -31,10 +34,6 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: issue-lifecycle
-  cancel-in-progress: false
-
 jobs:
   sweep:
     name: Remind and close
@@ -44,20 +43,34 @@ jobs:
         (github.event.pull_request.merged &&
          github.event.pull_request.user.login != 'dependabot[bot]')) &&
       (github.event_name != 'workflow_run' ||
-        github.event.workflow_run.conclusion == 'success')
-    runs-on: ubuntu-latest
+        (github.event.workflow_run.conclusion == 'success' &&
+         github.event.workflow_run.event != 'schedule'))
+    # The job waits for the group, not the run: a run whose job is skipped never
+    # takes the place of a sweep that waits.
+    concurrency:
+      group: issue-lifecycle
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
       issues: write
       pull-requests: read
     steps:
+      - name: Block every host but GitHub's
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
       # The default branch, also for a merged pull request.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Remind, close and mark fixed issues
-        uses: Dennis-Otto/issue-assistant@a12fb7227ff7d966809cad4e043e159977fccfcd # v1.2.2
+        uses: Dennis-Otto/issue-assistant@1f39474ecec19a599e6e7a6ab53357b36d0ea99f # v1.5.0
         with:
           command: sweep
           dry-run: ${{ inputs.dry_run || false }}

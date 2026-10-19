@@ -3,4 +3,16 @@
 #   git config core.hooksPath .githooks
 # and skip it in an emergency with git push --no-verify.
 # The blueprint keeps this file current: https://github.com/Dennis-Otto/repo-blueprint
+
+# In a worktree, Git hands the hook GIT_DIR, which every git of the checks follows: also
+# git init and the commits of a test in a throwaway repository, which then land in this
+# one. So the checks find the repository from its folder, as they do without the hook,
+# unless only the variables find it, as for a worktree in a container.
+own="$(git rev-parse --absolute-git-dir)"
+# shellcheck disable=SC2046 # Git prints one name of a variable per line.
+found="$(unset $(git rev-parse --local-env-vars) && git rev-parse --absolute-git-dir 2>/dev/null || true)"
+if [ "$found" = "$own" ]; then
+  # shellcheck disable=SC2046 # Git prints one name of a variable per line.
+  unset $(git rev-parse --local-env-vars)
+fi
 exec bash scripts/check.sh

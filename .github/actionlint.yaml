@@ -3,3 +3,11 @@ self-hosted-runner:
     # GitHub's runner with the egress firewall (technical preview), which this
     # version of actionlint does not know yet; see .github/egress-firewall.yaml.
     - ubuntu-24.04-firewall
+paths:
+  .github/workflows/issue-assistant.yml:
+    ignore:
+      # The runs of one issue wait in line, with the queue of their concurrency group,
+      # which GitHub has documented since 2026-05-07 and actionlint 1.7.12 doesn't
+      # know yet: only that message is ignored, and only in this workflow, as the
+      # set-up of the issue assistant shows.
+      - 'unexpected key "queue" for "concurrency" section'

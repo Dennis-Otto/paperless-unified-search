@@ -1,5 +1,11 @@
 name: CodeQL
 
+# The code analysis of GitHub. CodeQL reads the code of every language of this
+# repository and its workflows with the queries of security-extended, for every pull
+# request, every push to main and every week, and sends what it finds to code
+# scanning, where a new alert of a pull request stops its merge.
+# https://github.com/Dennis-Otto/repo-blueprint
+
 on:
   push:
     branches: [main]
@@ -17,17 +23,16 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  analyze:
-    name: analyze (${{ matrix.language }})
+  # One job for every language, which downloads CodeQL once and takes one runner:
+  # the analyses run one after the other, and each language keeps the category of
+  # its own analysis, /language:<name>, under which code scanning keeps its alerts.
+  codeql:
+    name: codeql
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: read
       security-events: write
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [javascript-typescript, actions]
     steps:
       - name: Record the network traffic of the job
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -39,50 +44,45 @@ jobs:
       - name: Initialize the analysis
         uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
-          languages: ${{ matrix.language }}
+          languages: javascript-typescript, actions
           build-mode: none
           queries: security-extended
       - name: Analyze
         uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
-          category: /language:${{ matrix.language }}
-      # The PR coach: what failed, why it matters and how to fix it, in the summary
-      # of the check and as its annotation, from .github/checks.toml.
-      - name: Explain the failure
-        if: failure()
-        env:
-          CHECK: "analyze (${{ matrix.language }})"
+          # The results of each language as <language>.sarif, uploaded below.
+          output: ${{ runner.temp }}/codeql
+          upload: never
+      # Without a category, the results of every language would take the one of the
+      # job, and code scanning would see new analyses, whose alerts open anew. Each
+      # file gets the category that the analysis of its language always had.
+      - name: File the results of each language under its own category
         run: |
-          script=.github/blueprint.py
-          [[ -f "$script" ]] || script=blueprint.py
-          python3 "$script" coach explain "$CHECK"
-
-  # The protected branch requires one check named "codeql".
-  codeql:
-    name: codeql
-    if: always()
-    needs: analyze
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Record the network traffic of the job
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+          shopt -s nullglob
+          files=("$RUNNER_TEMP"/codeql/*.sarif)
+          if ((${#files[@]} == 0)); then
+            echo "::error::CodeQL wrote no results."
+            exit 1
+          fi
+          echo "The categories of the analyses:" >> "$GITHUB_STEP_SUMMARY"
+          for file in "${files[@]}"; do
+            # CodeQL names each file after the extractor; the category keeps the
+            # name of the language as configured, as the analyses always had it.
+            language="$(basename "$file" .sarif)"
+            case "$language" in
+              javascript) language=javascript-typescript ;;
+              java) language=java-kotlin ;;
+              cpp) language=c-cpp ;;
+            esac
+            jq --arg id "/language:$language/" '.runs[].automationDetails = {id: $id}' \
+              "$file" > "$file.json"
+            mv "$file.json" "$file"
+            echo "- $language: \`/language:$language\`" >> "$GITHUB_STEP_SUMMARY"
+          done
+      - name: Upload the results
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
-          egress-policy: audit
-      - name: Require every language to pass
-        env:
-          RESULT: ${{ needs.analyze.result }}
-        run: |
-          echo "CodeQL analysis: $RESULT"
-          test "$RESULT" = "success"
-      # The PR coach needs blueprint.py and .github/checks.toml, nothing else.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: failure()
-        with:
-          persist-credentials: false
-          sparse-checkout: |
-            .github
-            blueprint
+          sarif_file: ${{ runner.temp }}/codeql
       # The PR coach: what failed, why it matters and how to fix it, in the summary
       # of the check and as its annotation, from .github/checks.toml.
       - name: Explain the failure
