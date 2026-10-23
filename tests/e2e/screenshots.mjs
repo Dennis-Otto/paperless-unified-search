@@ -47,11 +47,26 @@ const ADMIN = 'e2e-admin'
 const ARCHIVE = 'paperless'
 const READER = 'jamie'
 const TERM = 'invoice'
+// The moment of the pictures. The clock of every page starts there, in the time zone of
+// the pages, and the files of the archive were filed two days before, so that what
+// Nextcloud shows relative to now, such as "2 days ago" in Files or the greeting of the
+// dashboard, is the same in every run: two runs render the same pixels, and the
+// screenshot bot renews a picture only when the app changed what it shows.
+const NOW = new Date('2026-10-09T09:30:00+02:00')
+const TIME_ZONE = 'Europe/Berlin'
+const FILED = Math.floor(Date.parse('2026-10-07T16:20:00+02:00') / 1000)
 
+// Inter, which the social preview uses too, from the files of one version of Google
+// Fonts: the stylesheet that Google Fonts serves for a family may name another
+// version or another cut from one request to the next, which moves the letters by a
+// fraction of a pixel.
+const INTER = `
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 100 900; font-display: block; src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa25L7SUc.woff2) format('woff2'); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 100 900; font-display: block; src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+`
 // Nextcloud asks for system-ui, which is a Chinese font in the image of Playwright.
-// Inter, which the social preview uses too, stands in for the font of the system.
-const FONT = `
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=block');
+// Inter stands in for the font of the system.
+const FONT = `${INTER}
 * { --font-face: 'Inter', sans-serif !important; }
 html, body { font-family: 'Inter', sans-serif !important; }
 `
@@ -129,7 +144,7 @@ function documentHtml(document) {
 	const cells = (row) => row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')
 	return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=block">
+<style>${INTER}</style>
 <style>
 @page { size: A4; margin: 0; }
 * { box-sizing: border-box; margin: 0; }
@@ -176,16 +191,42 @@ function authorization(user) {
 	return `Basic ${Buffer.from(`${user}:${PASSWORD}`).toString('base64')}`
 }
 
-async function request(user, method, path, body) {
+async function request(user, method, path, body, headers = {}) {
 	const response = await fetch(`${BASE_URL}${path}`, {
 		method,
 		body,
-		headers: { Authorization: authorization(user), 'OCS-APIRequest': 'true', Accept: 'application/json' },
+		headers: { Authorization: authorization(user), 'OCS-APIRequest': 'true', Accept: 'application/json', ...headers },
 	})
 	if (!response.ok && !(method === 'MKCOL' && response.status === 405)) {
 		throw new Error(`${method} ${path} as ${user}: ${response.status} ${await response.text()}`)
 	}
 	return response
+}
+
+// The templates of Nextcloud that the search for "invoice" finds besides the archive,
+// with times of their own: Nextcloud copies them for each account at the same moment,
+// and the search of Files would list them in either order.
+const TEMPLATES = [['Templates/Invoice.ods', FILED - 3600], ['Templates/Invoice.odt', FILED - 7200]]
+
+async function fixTemplates(user) {
+	for (const [path, time] of TEMPLATES) {
+		const found = await fetch(`${BASE_URL}${davPath(user, path)}`, { method: 'HEAD', headers: { Authorization: authorization(user) } })
+		if (found.ok) {
+			await fileAt(user, path, time)
+		} else {
+			console.log(`${user} has no ${path}, which the search would find.`)
+		}
+	}
+}
+
+// Gives a file or folder the time of its last change, in seconds since 1970.
+async function fileAt(user, path, time) {
+	const response = await request(user, 'PROPPATCH', davPath(user, path),
+		`<?xml version="1.0"?><d:propertyupdate xmlns:d="DAV:"><d:set><d:prop><d:lastmodified>${time}</d:lastmodified></d:prop></d:set></d:propertyupdate>`)
+	const answer = await response.text()
+	if (!/<d:status>HTTP\/1\.1 200 OK<\/d:status>/.test(answer)) {
+		throw new Error(`${path} of ${user} kept its time of change: ${answer}`)
+	}
 }
 
 const davPath = (user, path) => `/remote.php/dav/files/${user}/${path.split('/').map(encodeURIComponent).join('/')}`
@@ -212,13 +253,20 @@ async function createArchive(browser) {
 	for (const folder of [...folders].sort()) {
 		await request(ARCHIVE, 'MKCOL', davPath(ARCHIVE, folder))
 	}
-	for (const paper of DOCUMENTS) {
+	// A minute apart, in their order, as the search of Files lists the newest first.
+	for (const [index, paper] of DOCUMENTS.entries()) {
 		await page.setContent(documentHtml(paper), { waitUntil: 'networkidle' })
 		await page.evaluate(() => document.fonts.ready)
 		const pdf = await page.pdf({ format: 'A4', printBackground: true })
-		await request(ARCHIVE, 'PUT', davPath(ARCHIVE, `Paperless/${paper.folder}/${fileName(paper)}`), pdf)
+		await request(ARCHIVE, 'PUT', davPath(ARCHIVE, `Paperless/${paper.folder}/${fileName(paper)}`), pdf,
+			{ 'X-OC-MTime': String(FILED + index * 60) })
 	}
 	await page.close()
+	// Each upload made its folders modified now; the deepest folders go first, as the
+	// time of a folder moves on to the folder around it.
+	for (const folder of [...folders].sort().reverse()) {
+		await fileAt(ARCHIVE, folder, FILED)
+	}
 	const share = new URLSearchParams({ path: '/Paperless', shareType: '0', shareWith: READER, permissions: '1' })
 	await request(ARCHIVE, 'POST', `/ocs/v2.php/apps/files_sharing/api/v1/shares?${share}`)
 }
@@ -263,15 +311,21 @@ function pointer() {
 	}
 }
 
-async function newPage(browser, session, options, withPointer = false) {
+// A page of its own, with the session, the language, the time zone and the font of the
+// pictures, and the clock of the pictures unless clock is false; pointer adds the
+// pointer of the animation.
+async function newPage(browser, session, options, { pointer: withPointer = false, clock = true } = {}) {
 	const context = await browser.newContext({
 		storageState: session,
 		locale: 'en-US',
-		timezoneId: 'Europe/Berlin',
+		timezoneId: TIME_ZONE,
 		bypassCSP: true,
 		reducedMotion: 'reduce',
 		...options,
 	})
+	if (clock) {
+		await context.clock.install({ time: NOW })
+	}
 	await context.addInitScript((css) => {
 		const add = () => {
 			const style = document.createElement('style')
@@ -290,9 +344,29 @@ async function newPage(browser, session, options, withPointer = false) {
 	return context.newPage()
 }
 
+// Waits for the fonts and the pictures of the page to be ready, so that a picture
+// draws each of them at its final quality, then for the page to come to rest.
 async function settle(page, milliseconds = 600) {
-	await page.evaluate(() => document.fonts.ready)
+	await page.evaluate(async () => {
+		await document.fonts.ready
+		await Promise.all([...document.images].map((image) => image.decode().catch(() => {})))
+	})
 	await page.waitForTimeout(milliseconds)
+}
+
+// Waits until the page looks the same in three pictures in a row, 400 ms apart: the
+// viewer of PDF files draws the text of a page once more, sharper, at a moment that
+// varies from run to run.
+async function steady(page) {
+	const pictures = []
+	for (let tries = 0; tries < 40; tries++) {
+		pictures.push(await page.screenshot({ animations: 'disabled' }))
+		if (pictures.length >= 3 && pictures.slice(-3).every((picture) => picture.equals(pictures.at(-1)))) {
+			return
+		}
+		await page.waitForTimeout(400)
+	}
+	throw new Error('The page still changed after 16 seconds.')
 }
 
 async function save(page, name, milliseconds) {
@@ -426,27 +500,87 @@ async function dashboard(browser, session, theme) {
 // The note of jamie in Text, in which the smart picker finds the electricity invoice.
 const NOTE_LINE = 'The electricity bill of August, due on September 2:'
 
-// The smart picker in a note of Text, with the Paperless documents that it finds, and
-// the link that it inserts, which Text shows as the preview of the file.
-async function smartPicker(browser, session, theme) {
-	const suffix = theme === 'dark' ? '-dark' : ''
-	// A note of its own for each theme: Text would keep the link of the other one.
-	const folder = `Notes/${theme}`
+// Opens a new note in the folder and types the slash command for the smart picker on
+// a line of its own below the line of the note. Text sets up the collaboration on the
+// note after it shows the note and puts the cursor at its start, where a click on the
+// line often failed to take it away from, which took the command into the heading.
+// The keys put it at the end. Should the command land elsewhere all the same, the keys
+// are undone and typed again; after three tries, or when the note can't be undone, the
+// note is closed and null returned, for another try with another note.
+async function typeCommand(browser, session, theme, folder) {
 	for (const path of ['Notes', folder]) {
 		await request(READER, 'MKCOL', davPath(READER, path))
 	}
 	await request(READER, 'PUT', davPath(READER, `${folder}/Household.md`), `# Household\n\n${NOTE_LINE}\n`)
 	const id = await fileId(READER, `${folder}/Household.md`)
-	const page = await newPage(browser, session, { viewport: { width: 1280, height: 800 }, colorScheme: theme })
+	// Without the clock of the pictures: the collaboration of Text tells the sessions of a
+	// note apart by their time, and with a clock days behind the server's it shows the
+	// session of the page as another one, with the name of the user, in the heading. The
+	// note shows no time.
+	const page = await newPage(browser, session, { viewport: { width: 1280, height: 800 }, colorScheme: theme },
+		{ clock: false })
+	// The first answer of the collaboration, after which Text puts the cursor at the start.
+	const synced = page.waitForResponse((response) => /\/apps\/text\/.*\b(sync|push)\b/.test(response.url()),
+		{ timeout: 30000 }).catch(() => null)
 	await page.goto(`${BASE_URL}/index.php/f/${id}`)
 	const editor = page.locator('.ProseMirror[contenteditable="true"]')
 	await editor.getByText(NOTE_LINE).waitFor()
-	// Text sets up the collaboration of the note first and would move the cursor.
+	await synced
 	await settle(page, 1500)
-	await editor.getByText(NOTE_LINE).click()
-	await page.keyboard.press('End')
-	await page.keyboard.press('Enter')
-	await page.keyboard.type('/Paperless')
+	// The lines of the note, without what Text draws into it and that can't be edited,
+	// such as the anchor # of the heading.
+	const read = () => editor.evaluate((element) => [...element.children].map((child) => {
+		const copy = child.cloneNode(true)
+		copy.querySelectorAll('[contenteditable="false"]').forEach((drawn) => drawn.remove())
+		return copy.textContent.replace(/^#/, '')
+	}))
+	const empty = (lines) => lines.every((line) => line === '')
+	const unchanged = (lines) => lines[0] === 'Household' && lines[1] === NOTE_LINE && empty(lines.slice(2))
+	for (let attempt = 1; attempt <= 3; attempt++) {
+		// The keys, not a click, put the cursor at the end of the note, below whatever
+		// Text may draw over its lines: into the empty line that Text keeps at the end of
+		// a note, or into a new one.
+		await editor.focus()
+		await page.keyboard.press('Control+End')
+		if ((await read()).at(-1) !== '') {
+			await page.keyboard.press('Enter')
+		}
+		await page.keyboard.type('/Paperless')
+		// The note holds the heading, the line and the command, and nothing else but an
+		// empty line at its end.
+		const lines = await read()
+		const [heading, line, command, ...rest] = lines
+		if (heading === 'Household' && line === NOTE_LINE && command === '/Paperless' && empty(rest)) {
+			return page
+		}
+		console.log(`Text moved the cursor while the command was typed, so ${folder}/Household.md reads ${JSON.stringify(lines)}; undoing it.`)
+		// Undo what the keys did, a step at a time, until the note reads as before.
+		for (let undo = 0; undo < 10 && !unchanged(await read()); undo++) {
+			await page.keyboard.press('Control+z')
+			await page.waitForTimeout(200)
+		}
+		if (!unchanged(await read())) {
+			break
+		}
+		await settle(page, 1000)
+	}
+	await page.context().close()
+	return null
+}
+
+// The smart picker in a note of Text, with the Paperless documents that it finds, and
+// the link that it inserts, which Text shows as the preview of the file.
+async function smartPicker(browser, session, theme) {
+	const suffix = theme === 'dark' ? '-dark' : ''
+	// A note of its own for each theme, and for each try: Text would keep the link of
+	// another one.
+	let page = null
+	for (let attempt = 1; !page; attempt++) {
+		if (attempt > 3) {
+			throw new Error(`Text moved the cursor into the heading of ${attempt - 1} notes, each typed three times.`)
+		}
+		page = await typeCommand(browser, session, theme, attempt === 1 ? `Notes/${theme}` : `Notes/${theme}-${attempt}`)
+	}
 	await page.locator('.suggestion-list').getByText('Paperless documents', { exact: true }).click()
 	const picker = page.locator('.modal-container').filter({ has: page.locator('.smart-picker-search') })
 	await picker.locator('.smart-picker-search input').fill(TERM)
@@ -589,7 +723,7 @@ async function phone(browser, session) {
 // services and the insurance renewal, which only Paperless finds by its text.
 async function animation(browser, session) {
 	const frames = []
-	const page = await newPage(browser, session, { viewport: { width: 1280, height: 800 } }, true)
+	const page = await newPage(browser, session, { viewport: { width: 1280, height: 800 } }, { pointer: true })
 	const frame = async (delay) => {
 		frames.push({ png: await page.screenshot({ animations: 'disabled' }), delay })
 	}
@@ -634,7 +768,8 @@ async function animation(browser, session) {
 	await frame(2600)
 	await click(paperlessResult(page, insurance.title))
 	await waitForViewer(page, fileName(insurance))
-	await settle(page, 1200)
+	await settle(page, 1500)
+	await steady(page)
 	await frame(3800)
 	await page.context().close()
 	writeGif(frames, join(OUT, 'search-and-open.gif'))
@@ -736,12 +871,28 @@ function writeGif(frames, path) {
 	writeFileSync(path, gif.bytes())
 }
 
-const browser = await chromium.launch()
+// Chromium draws the same pixels in every run and on every processor: Skia without
+// the code of a particular processor, every tile and every image drawn in full before
+// the picture, and the colours in sRGB.
+const browser = await chromium.launch({
+	args: [
+		'--disable-skia-runtime-opts',
+		'--disable-partial-raster',
+		'--disable-checker-imaging',
+		'--force-color-profile=srgb',
+	],
+})
 try {
 	await createArchive(browser)
-	const reader = await signIn(browser, READER)
-	const admin = await signIn(browser, ADMIN)
-	const archive = await signIn(browser, ARCHIVE)
+	// In the time zone of the pages, which Nextcloud keeps as the user's: the times that
+	// the server writes, as in Search problems, are then in the zone of the browser's.
+	const reader = await signIn(browser, READER, { timezoneId: TIME_ZONE })
+	const admin = await signIn(browser, ADMIN, { timezoneId: TIME_ZONE })
+	const archive = await signIn(browser, ARCHIVE, { timezoneId: TIME_ZONE })
+	// Once signed in, each account has its templates.
+	for (const user of [READER, ADMIN]) {
+		await fixTemplates(user)
+	}
 	await shareElectricityWithAdmin()
 	for (const theme of ['light', 'dark']) {
 		await searchAndOpen(browser, reader, theme)

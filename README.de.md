@@ -686,13 +686,20 @@ In der CI führt die Pflichtprüfung `nextcloud` die Tests gegen jede unterstüt
 
 ### Screenshots
 
-Die Screenshots und die Animation in `screenshots/` kommen aus einem Skript, damit sie zeigen, was Benutzer sehen. Nach einer Änderung der Oberfläche nimmst du sie neu auf:
+Die Screenshots und die Animation in `screenshots/` und die Social Preview `.github/social-preview.png`, die GitHub und Chats zu einem Link auf das Repository zeigen, kommen aus einem Skript, damit sie zeigen, was Benutzer sehen:
 
 ```bash
 bash scripts/screenshots.sh
 ```
 
-Es startet die Docker-Suite unter einem eigenen Projekt mit einer Demo: dem Archiv-Konto `paperless`, dessen synthetische Dokumente nur lesend mit `jamie` geteilt sind, und einem Mock von Paperless, der drei davon für „invoice“ findet. Chromium sucht dann, öffnet einen Treffer, grenzt die Suche mit dem Datumsfilter auf Juli 2026 ein, verlinkt ein Dokument aus dem Smart Picker in einer Notiz von Text, speichert die Einstellungen und probiert darin eine Suche aus, hell und dunkel, auf einem Smartphone und als Animation. Jeder Schritt prüft, was sein Bild zeigt: Die nach Datum eingegrenzte Suche schlägt etwa fehl, wenn ein Paperless-Treffer außerhalb des Juli erscheint oder die Treffer unter *Teilübereinstimmungen* landen. Setze `KEEP_SCREENSHOTS=1`, um dich danach in der Demo umzusehen.
+Es startet die Docker-Suite unter einem eigenen Projekt mit einer Demo: dem Archiv-Konto `paperless`, dessen synthetische Dokumente nur lesend mit `jamie` geteilt sind, und einem Mock von Paperless, der drei davon für „invoice“ findet. Chromium sucht dann, öffnet einen Treffer, grenzt die Suche mit dem Datumsfilter auf Juli 2026 ein, verlinkt ein Dokument aus dem Smart Picker in einer Notiz von Text, speichert die Einstellungen und probiert darin eine Suche aus, hell und dunkel, auf einem Smartphone und als Animation. Jeder Schritt prüft, was sein Bild zeigt: Die nach Datum eingegrenzte Suche schlägt etwa fehl, wenn ein Paperless-Treffer außerhalb des Juli erscheint oder die Treffer unter *Teilübereinstimmungen* landen. Die Uhr des Browsers steht in jedem Lauf auf demselben Morgen, und die Dateien der Demo wurden zwei Tage davor geändert, also ergeben zwei Läufe dieselben Pixel. Setze `KEEP_SCREENSHOTS=1`, um dich danach in der Demo umzusehen.
+
+Selbst ausführen musst du es selten. Für einen Pull Request, der eine Datei von `.github/screenshots-paths.txt` ändert, etwa das CSS oder ein Template, nimmt die visuelle Prüfung die Bilder auf und kommentiert die, die anders aussehen: vorher, nachher und die geänderten Pixel in Rot. Nach dem Merge, nach jedem Release und jede Woche nimmt der Screenshot-Bot sie auf `main` auf und hält einen Pull Request, *docs: update the screenshots*, der sich selbst mergt, sobald jede Prüfung besteht.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/renewing-the-pictures.de.dark.svg">
+  <img src="docs/images/diagrams/renewing-the-pictures.de.svg" alt="Wie die Bilder neu entstehen: Ein Pull Request, der eine Datei von screenshots-paths.txt ändert, etwa das CSS oder ein Template, startet die visuelle Prüfung. scripts/screenshots.sh nimmt jeden Screenshot und die Social Preview aus der Demo auf, mit derselben Uhr und denselben Daten in jedem Lauf, und der Vergleich des Screenshot-Bots behält jedes Bild, dessen Pixel gleich geblieben sind. Haben sich Pixel geändert, nennt ein Kommentar am Pull Request die Bilder, mit einem Artefakt, das jedes vorher und nachher zeigt und die geänderten Pixel in Rot. Nach dem Merge, nach jedem Release, jede Woche und auf Wunsch nimmt der Screenshot-Bot die Bilder ebenso auf main auf. Haben sich Pixel geändert, hält er einen Pull Request, docs: update the screenshots, der sich selbst mergt, sobald jede Prüfung besteht; ist die Social Preview darunter, bittet er, sie in den Einstellungen des Repositorys hochzuladen.">
+</picture>
 
 Lies [CONTRIBUTING.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CONTRIBUTING.md), bevor du einen Pull Request öffnest.
 

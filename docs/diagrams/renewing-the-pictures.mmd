@@ -1,0 +1,38 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+---
+flowchart TB
+    accTitle: Renewing the pictures
+    accDescr: A pull request that changes a file of screenshots-paths.txt, such as the CSS or a template, runs the visual check. scripts/screenshots.sh renders every screenshot and the social preview from the demo, with the same clock and data in every run, and the comparison of the screenshot bot keeps each picture whose pixels stayed the same. When pixels changed, one comment on the pull request lists the pictures, with an artifact of each before and after and the changed pixels in red. After the merge, after each release, every week and on demand, the screenshot bot renders the pictures on main the same way. When pixels changed, it keeps one pull request, docs: update the screenshots, which merges itself once every check passes; when the social preview is among them, it asks to upload it in the settings of the repository.
+
+    pr["Pull request that changes a file<br>of screenshots-paths.txt"]
+    timed["Each release, every week<br>or a start by hand"]
+    render["scripts/screenshots.sh<br>the screenshots and the social preview,<br>same clock, same data"]
+    check{"Did the pixels<br>of a picture change?"}
+    comment["One comment on the pull request:<br>the pictures that changed,<br>before, after and diff"]
+    quiet["No comment: every picture<br>looks as committed"]
+    merge["Merge into main"]
+    bot["The screenshot bot<br>renders on main"]
+    renew{"Did the pixels<br>of a picture change?"}
+    botpr["Pull request<br>docs: update the screenshots,<br>merges itself"]
+    same["main keeps its pictures"]
+    upload["Upload the new social preview<br>under Settings → General"]
+
+    pr --> render --> check
+    check -- "yes" --> comment
+    check -- "no" --> quiet
+    comment & quiet --> merge --> bot
+    timed --> bot
+    bot --> renew
+    renew -- "yes" --> botpr
+    renew -- "no" --> same
+    botpr -- "social preview<br>among them" --> upload
+
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef bot fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    class pr,merge,upload person
+    class timed,render,comment,bot,botpr bot
+    class quiet,same done

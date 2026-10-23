@@ -1,0 +1,163 @@
+# SPDX-FileCopyrightText: 2026 Dennis Otto
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: Visual check comment
+
+# The second half of the visual check (visual.yml). When the check of a pull request
+# ends, this workflow posts or updates one comment on the pull request: the pictures
+# that look different, with the share of their pixels that changed, and a link to the
+# artifact with each one before and after and its differences. It may comment, so it
+# never checks out or runs the code of the pull request: it reads only the report of
+# the check, takes nothing from it but paths, changes and numbers that it checks, and
+# writes the comment itself.
+
+on:
+  workflow_run: # zizmor: ignore[dangerous-triggers] reads the report of the check only, never the code of the pull request
+    workflows: [Visual check]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: visual-comment-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  comment:
+    name: comment
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion != 'cancelled'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read # to download the report of the check's run
+      pull-requests: write # to post and update the comment
+    steps:
+      # The job may comment, so it reaches GitHub's API alone; Harden-Runner itself
+      # allows the storage of the artifacts. Without sudo and Docker no step can lift
+      # the block.
+      - name: Block every host that the job doesn't need
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+          disable-sudo-and-containers: true
+      - name: Write the comment from the report of the check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          PULL_REQUESTS: ${{ toJSON(github.event.workflow_run.pull_requests) }}
+        run: |
+          set -euo pipefail
+          # The pull request whose head is the commit the check rendered; a pull request
+          # from a fork is found by the commit, and one that moved on gets no comment.
+          number="$(jq -r --arg sha "$HEAD_SHA" '[.[] | select(.head.sha == $sha) | .number][0] // empty' <<<"$PULL_REQUESTS")"
+          if [[ -z "$number" ]]; then
+            number="$(gh pr list --state open --search "$HEAD_SHA" --json number,headRefOid \
+              | jq -r --arg sha "$HEAD_SHA" '[.[] | select(.headRefOid == $sha) | .number][0] // empty')"
+          fi
+          if [[ -z "$number" || "$(gh pr view "$number" --json headRefOid --jq .headRefOid)" != "$HEAD_SHA" ]]; then
+            echo "No open pull request has $HEAD_SHA as its head any more."
+            exit 0
+          fi
+
+          folder="$RUNNER_TEMP/visual"
+          mkdir -p "$folder"
+          gh api "repos/$GH_REPO/actions/runs/$RUN_ID/artifacts" --paginate \
+            --jq '.artifacts[] | "\(.name) \(.id)"' > "$folder/artifacts.txt"
+          if grep -qE '^visual ' "$folder/artifacts.txt"; then
+            gh run download "$RUN_ID" --name visual --dir "$folder/visual"
+          fi
+
+          python3 - "$folder" > "$folder/post" <<'PYTHON'
+          import json
+          import os
+          import re
+          import sys
+
+          folder = sys.argv[1]
+          # Only what a report of tests/e2e/visual-compare.mjs may hold; anything else
+          # is left out.
+          path_pattern = re.compile(r"^(?!.*(^|/)\.\.?(/|$))[A-Za-z0-9_.][A-Za-z0-9._/-]*\.(png|gif|jpe?g|webp|mp4)$")
+          statuses = {"changed", "new", "deleted"}
+          sha = os.environ["HEAD_SHA"][:7]
+          run = os.environ["RUN_URL"]
+          base = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GH_REPO']}/actions/runs/{os.environ['RUN_ID']}"
+          link = None
+          with open(f"{folder}/artifacts.txt") as file:
+              for line in file:
+                  name, _, number = line.strip().partition(" ")
+                  if name == "visual" and number.isdigit():
+                      link = f"{base}/artifacts/{number}"
+
+          def percent(share):
+              if share is None:
+                  return "–"
+              if share >= 1:
+                  return "100 %"
+              return "< 0.01 %" if share < 0.0001 else f"{share * 100:.2f} %"
+
+          lines = ["<!-- visual-check -->", "### Visual check", ""]
+          try:
+              with open(f"{folder}/visual/report.json") as file:
+                  report = json.load(file)
+          except (OSError, ValueError):
+              report = None
+          post = "always"
+          if not isinstance(report, dict) or not isinstance(report.get("pictures"), list):
+              if os.environ["CONCLUSION"] == "success":
+                  lines.append(f"The [run]({run}) left no report for {sha}.")
+              else:
+                  lines.append(f"The pictures could not be rendered for {sha}; the [run]({run}) shows why.")
+          else:
+              rows = []
+              for entry in report["pictures"]:
+                  if not isinstance(entry, dict):
+                      continue
+                  path, status, share = entry.get("path"), entry.get("status"), entry.get("share")
+                  if (
+                      isinstance(path, str) and path_pattern.match(path)
+                      and status in statuses
+                      and (share is None or (isinstance(share, (int, float)) and not isinstance(share, bool) and 0 <= share <= 1))
+                  ):
+                      rows.append(f"| `{path}` | {status} | {percent(share)} |")
+              if not rows:
+                  lines.append(f"Rendered by `scripts/screenshots.sh` for {sha}: every picture looks as committed.")
+                  post = "existing"
+              else:
+                  many = "1 picture looks" if len(rows) == 1 else f"{len(rows)} pictures look"
+                  lines += [
+                      f"Rendered by `scripts/screenshots.sh` for {sha}: {many} different from the committed ones.",
+                      "",
+                      "| Picture | Change | Pixels changed |",
+                      "| --- | --- | ---: |",
+                      *rows,
+                      "",
+                  ]
+                  if link:
+                      lines.append(f"[The pictures before and after]({link}), with every changed pixel in red.")
+                  lines.append(
+                      "This check only reports. When the change is intended, the screenshot bot "
+                      "renews the pictures after the merge."
+                  )
+          with open(f"{folder}/comment.md", "w") as file:
+              file.write("\n".join(lines) + "\n")
+          print(post)
+          PYTHON
+
+          post="$(cat "$folder/post")"
+          existing="$(gh api "repos/$GH_REPO/issues/$number/comments" --paginate \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- visual-check -->"))) | .id' | head -n 1)"
+          if [[ -n "$existing" ]]; then
+            gh api --method PATCH "repos/$GH_REPO/issues/comments/$existing" -F "body=@$folder/comment.md" >/dev/null
+            echo "Updated the comment on #$number."
+          elif [[ "$post" == always ]]; then
+            gh api --method POST "repos/$GH_REPO/issues/$number/comments" -F "body=@$folder/comment.md" >/dev/null
+            echo "Commented on #$number."
+          else
+            echo "Every picture looks as committed; #$number needs no comment."
+          fi

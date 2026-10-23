@@ -3,9 +3,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # The checks of this app alone, which scripts/check.sh runs last: the browser and the
-# scripts of the end-to-end tests, the pictures of the READMEs and the pages of the
-# website that they link, the German pages beside the English ones, the screenshots of the
-# website, the versions that the documentation names, the descriptions of the pages of
+# scripts of the end-to-end tests, the pictures of the READMEs and of the website, the
+# social preview and the files that tell the screenshot bot and the visual check when to
+# render, the pages of the website that the READMEs link, the German pages beside the
+# English ones, the screenshots of the website, the versions that the documentation names, the descriptions of the pages of
 # the website, the diagrams of the documentation, the explanations of the checks for the PR coach, and the JavaScript of
 # the settings and the translations, which have no build step, with their tests.
 set -euo pipefail
@@ -72,19 +73,79 @@ printf '\n== %s\n' "Scripts of the end-to-end tests"
   echo "The tests left the repository that GIT_DIR names alone."
 )
 
-printf '\n== %s\n' "Pictures of the READMEs"
-# The READMEs, English and German, show their pictures from main, so that the website
-# shows them as well, and the link check skips them (.lycheeignore): each of them must be
-# in the checkout.
-mapfile -t pictures < <(grep -ohE 'https://github\.com/Dennis-Otto/paperless-unified-search/raw/main/[^")[:space:]]+' README.md README.de.md |
-  sed 's#^https://github\.com/Dennis-Otto/paperless-unified-search/raw/main/##' | sort -u)
-for picture in "${pictures[@]}"; do
+printf '\n== %s\n' "Pictures of the READMEs and the website"
+# The READMEs and the pages of the website show their screenshots from main, so that the
+# website shows them as well, and the link check skips them (.lycheeignore): each of them
+# must be in the checkout. A fragment, such as #only-dark, which tells the website in
+# which theme to show a picture, and a query are no part of its path.
+raw='https://github.com/Dennis-Otto/paperless-unified-search/raw/main/'
+# The pictures that the documents given as arguments, or standard input, show from main.
+pictures_from_main() {
+  { grep -ohE "${raw//./\\.}[^\")[:space:]]+" "$@" || true; } | sed -E "s#^$raw##; s/[?#].*$//" | sort -u
+}
+# The check itself: a fragment and a query leave the path.
+probe="$(printf '%s\n' "<img src=\"${raw}screenshots/a-dark.png#only-dark\">" "![A](${raw}screenshots/b.png?raw=1)" "${raw}screenshots/a-dark.png" | pictures_from_main -)"
+if [[ "$probe" != $'screenshots/a-dark.png\nscreenshots/b.png' ]]; then
+  echo "The check of the pictures reads \"$probe\" from a picture with a fragment and one with a query, not their paths: fix the check."
+  exit 1
+fi
+mapfile -t showing < <(markdown README.md README.de.md 'docs/*.md')
+shown_pictures=0
+missing_pictures=0
+for document in "${showing[@]}"; do
+  while IFS= read -r picture; do
+    shown_pictures=$((shown_pictures + 1))
+    if [[ ! -f "$picture" ]]; then
+      echo "$document shows $picture from main, which isn't in the repository: correct the path of the picture, or add the picture to scripts/screenshots.sh and run it."
+      missing_pictures=$((missing_pictures + 1))
+    fi
+  done < <(pictures_from_main "$document")
+done
+if ((missing_pictures > 0)); then
+  exit 1
+fi
+echo "The ${#showing[@]} README(s) and page(s) of the website show ${shown_pictures} picture(s) from main, each in the repository."
+
+printf '\n== %s\n' "Social preview and the screenshot bot"
+# GitHub, chats and social networks show .github/social-preview.png for a link to the
+# repository, and it shows a screenshot. scripts/screenshots.sh renders it after the
+# screenshots, so that each run of the screenshot bot renews it with them. The bot
+# renders after a change of a file of .github/screenshots-paths.txt, the sources of the
+# social preview among them, and the visual check of pull requests
+# (.github/workflows/visual.yml) renders for a change of each of them as well.
+if ! grep -qE '^bash scripts/social-preview\.sh' scripts/screenshots.sh; then
+  echo "scripts/screenshots.sh doesn't render the social preview: end it with bash scripts/social-preview.sh, so that the picture renews with the screenshot that it shows."
+  exit 1
+fi
+mapfile -t previewed < <(grep -oE 'screenshots/[A-Za-z0-9._-]+\.png' .github/social-preview.html | sort -u)
+if ((${#previewed[@]} == 0)); then
+  echo ".github/social-preview.html shows no screenshot of screenshots/; show the first one, as the social preview did, or change this check."
+  exit 1
+fi
+for picture in "${previewed[@]}"; do
   if [[ ! -f "$picture" ]]; then
-    echo "A README shows $picture, which isn't in the repository."
+    echo ".github/social-preview.html shows $picture, which isn't in the repository: show a screenshot that scripts/screenshots.sh takes."
     exit 1
   fi
 done
-echo "The ${#pictures[@]} picture(s) of the READMEs are in the repository."
+# The patterns of the list, without comments and empty lines, and the paths of the pull
+# requests of the visual check, up to its next trigger.
+mapfile -t watched < <(sed -E 's/#.*$//; s/[[:space:]]+$//; /^$/d' .github/screenshots-paths.txt)
+visual_paths="$(awk '/^  pull_request:/ { inside = 1; next } inside && /^  [a-z_]+:/ { exit }
+  inside && /^      - / { sub(/^      - /, ""); gsub(/"/, ""); print }' .github/workflows/visual.yml)"
+for source in .github/social-preview.html .github/social-preview/Dockerfile scripts/social-preview.sh; do
+  if ! printf '%s\n' "${watched[@]}" | grep -qxF -- "$source"; then
+    echo ".github/screenshots-paths.txt doesn't list $source, a source of the social preview: add it, so that the bot renders the pictures after its change."
+    exit 1
+  fi
+done
+for pattern in "${watched[@]}"; do
+  if ! grep -qxF -- "$pattern" <<<"$visual_paths"; then
+    echo "The visual check (.github/workflows/visual.yml) doesn't run for a change of $pattern, which .github/screenshots-paths.txt lists: add it to the paths of its pull requests."
+    exit 1
+  fi
+done
+echo "scripts/screenshots.sh renders the social preview with ${previewed[*]}, and the visual check runs for each of the ${#watched[@]} pattern(s) of .github/screenshots-paths.txt."
 
 printf '\n== %s\n' "Files that the documentation links on main"
 # The README and the pages of the website link files and folders of the repository on
@@ -173,7 +234,6 @@ printf '\n== %s\n' "Screenshots of the website"
 # the screenshots from main, so a pull request that adds one can't show it there before
 # main has it: such a screenshot passes, and the check names the follow-up it needs.
 # Four of these follow-ups were forgotten before this check (#82, #135, #145, #174).
-raw='https://github.com/Dennis-Otto/paperless-unified-search/raw/main/'
 screenshots_of() {
   { grep -ohE "${raw//./\\.}screenshots/[^\")?#[:space:]]+" "$@" || true; } | sed "s#^$raw##" | sort -u
 }

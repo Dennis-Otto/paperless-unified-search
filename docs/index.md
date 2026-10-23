@@ -85,7 +85,7 @@ Paperless Sync is the companion, not a must: [any synchronization](configure.md#
 
 ## Screenshots
 
-Each picture follows the light or dark theme of this website. Select one to enlarge it.
+Each picture follows the light or dark theme of this website. Select one to enlarge it. A script takes them from a demo of the app, and a bot takes them again whenever a change of the app changes what they show, so they show the current version.
 
 <div class="grid" markdown>
 
