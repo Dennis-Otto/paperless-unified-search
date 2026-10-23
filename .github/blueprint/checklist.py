@@ -173,8 +173,12 @@ def release_app(api: Api, repo: str, settings: Settings) -> tuple[Step, Step]:
 # repository itself; or the Mend Renovate app.
 RENOVATE_RUNNERS = ("hub", "self", "mend")
 MEND_APP = "https://github.com/apps/renovate"
-# The issue that Renovate keeps open once it runs, by the rules of the blueprint.
-DASHBOARD = "Dependency dashboard"
+# The branches of Renovate, whose pull requests show that it runs: by the rules of
+# the blueprint, it keeps no issue open.
+BRANCHES = "renovate/"
+# The latest pull requests, newest first, among which one of Renovate shows that it
+# runs; the checklist reads no older ones.
+LATEST = 100
 
 
 def renovate_runner(root: Path) -> str:
@@ -186,14 +190,14 @@ def renovate_runner(root: Path) -> str:
 
 
 def renovate(api: Api, repo: str, settings: Settings, root: Path) -> Step:
-    """Renovate, which runs once its issue Dependency dashboard is open, and how it
-    comes to run."""
-    issues = api.get_all(f"repos/{repo}/issues?labels=dependencies&state=open")
-    running = any(
-        isinstance(issue, dict)
-        and issue.get("title") == DASHBOARD
-        and "pull_request" not in issue
-        for issue in issues
+    """Renovate, which runs once it has opened a pull request, and how it comes to
+    run."""
+    pulls = api.get(f"repos/{repo}/pulls?state=all&per_page={LATEST}")
+    running = isinstance(pulls, list) and any(
+        isinstance(pull, dict)
+        and isinstance(head := pull.get("head"), dict)
+        and str(head.get("ref", "")).startswith(BRANCHES)
+        for pull in pulls
     )
     runner = renovate_runner(root)
     if runner == "self":
@@ -205,7 +209,7 @@ def renovate(api: Api, repo: str, settings: Settings, root: Path) -> Step:
     elif runner == "mend":
         how = [
             "Install the Mend Renovate app on this repository; it reads"
-            " .github/renovate.json5 and opens the dashboard on its first run:",
+            " .github/renovate.json5 and opens its pull requests from its first run:",
             f"{MEND_APP}/installations/new",
             *ignored_author(api, settings),
         ]
@@ -213,11 +217,9 @@ def renovate(api: Api, repo: str, settings: Settings, root: Path) -> Step:
         how = [
             "The Renovate workflow of the blueprint runs it every two hours for each"
             " repository of its owner on which the release app is installed; its next"
-            " run after the installation opens the dashboard."
+            " run after the installation opens its pull requests."
         ]
-    return Step(
-        f"Renovate runs: its issue '{DASHBOARD}' is open", running, "\n".join(how)
-    )
+    return Step("Renovate runs: it has opened a pull request", running, "\n".join(how))
 
 
 def ignored_author(api: Api, settings: Settings) -> list[str]:
