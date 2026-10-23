@@ -10,6 +10,7 @@
 // the network of the Compose project.
 
 import { chromium } from 'playwright-core'
+import { SIZES, flowSizes } from './sizes.mjs'
 import {
 	BASE_URL,
 	connectedServices,
@@ -32,12 +33,8 @@ const RESULT = `${TITLE} ${SUBLINE}`
 const FILE = 'Mobile viewer test [P123].pdf'
 const START = '/index.php/settings/user'
 
-// The phone draws one pixel per CSS pixel: its layout is the same, and Chromium draws
-// a quarter of the pixels of a screen with twice the density.
-const SIZES = [
-	{ name: 'laptop', options: { viewport: { width: 1280, height: 800 } } },
-	{ name: 'phone', options: { viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true } },
-]
+// The sizes of this run, from E2E_FLOW_SIZES, and every size without it.
+const RUN = flowSizes(process.env.E2E_FLOW_SIZES)
 // A step waits this long, in milliseconds: on a runner of the CI, the three versions of
 // Nextcloud and their browsers share four CPUs, and a page of Files takes seconds there.
 const TIMEOUT = 60000
@@ -108,7 +105,11 @@ try {
 	// visits of the personal settings at once race in Nextcloud to store the profile of
 	// the user: one of them fails with HTTP 500 (UNIQUE constraint of oc_profile_config).
 	for (const size of SIZES) {
-		await searchAndOpen(browser, session, size)
+		if (RUN.includes(size)) {
+			await searchAndOpen(browser, session, size)
+		} else {
+			console.log(`Search dialog on a ${size.name}: left out, as E2E_FLOW_SIZES is ${JSON.stringify(process.env.E2E_FLOW_SIZES)}.`)
+		}
 	}
 } finally {
 	await browser.close()

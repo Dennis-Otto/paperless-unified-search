@@ -11,6 +11,14 @@
 #
 #   bash tests/e2e/run-all.sh
 #   E2E_VERSIONS="33 35" bash tests/e2e/run-all.sh
+#   E2E_PHONE=newest bash tests/e2e/run-all.sh
+#
+# flow.mjs goes through the search dialog on a laptop and on a phone, with every
+# version. E2E_PHONE=newest, which e2e.yml sets for a pull request, tests the phone only
+# with the newest of the versions and the laptop alone with the others, which saves each
+# of them 16 to 19 seconds on a runner of GitHub; a push to main, the weekly run and a
+# run started by hand keep E2E_PHONE=all, the default, and test every size with every
+# version.
 #
 # Each version writes its log to a file of its own, which the script prints once all
 # are done, in a group of the log of GitHub Actions per version. A version that fails
@@ -31,6 +39,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 DOCKER_BIN="${DOCKER_BIN:-docker}"
 VERSION_TIMEOUT="${E2E_VERSION_TIMEOUT:-600}"
+PHONE="${E2E_PHONE:-all}"
 LOG_DIR="$(mktemp -d)"
 versions=()
 pids=()
@@ -38,6 +47,7 @@ downloads=()
 results=()
 durations=()
 releases=()
+sizes=()
 
 cleanup() {
 	status=$?
@@ -104,6 +114,10 @@ for version in "${versions[@]}"; do
 		exit 1
 	fi
 done
+if [[ "${PHONE}" != all && "${PHONE}" != newest ]]; then
+	echo "E2E_PHONE is ${PHONE}, but must be all, for the phone with every version, or newest, for the phone with the newest version alone." >&2
+	exit 1
+fi
 if [[ ! "${VERSION_TIMEOUT}" =~ ^[1-9][0-9]*$ ]]; then
 	echo "E2E_VERSION_TIMEOUT is ${VERSION_TIMEOUT}, but must be a number of seconds, such as 600." >&2
 	exit 1
@@ -117,10 +131,28 @@ if timeout --version >/dev/null 2>&1; then
 	deadline=(timeout --kill-after=30 "${VERSION_TIMEOUT}")
 fi
 
+# The sizes of the search dialog in flow.mjs for each version (run.sh).
+newest="${versions[0]}"
+for version in "${versions[@]}"; do
+	if ((10#${version} > 10#${newest})); then
+		newest="${version}"
+	fi
+done
+for index in "${!versions[@]}"; do
+	if [[ "${PHONE}" == newest && "${versions[index]}" != "${newest}" ]]; then
+		sizes[index]="laptop"
+	else
+		sizes[index]="laptop phone"
+	fi
+done
+
 if ((${#versions[@]} == 1)); then
 	echo "The end-to-end tests run against Nextcloud ${versions[0]}."
 else
 	echo "The end-to-end tests run against Nextcloud ${versions[*]} at the same time."
+fi
+if [[ "${PHONE}" == newest ]]; then
+	echo "The search dialog runs on a phone only against Nextcloud ${newest}, and on a laptop against every version (E2E_PHONE=newest)."
 fi
 SECONDS=0
 
@@ -145,11 +177,13 @@ PLAYWRIGHT_IMAGE="$(grep -oE 'mcr\.microsoft\.com/playwright:v[^[:space:]]+' "${
 "${DOCKER_BIN}" pull --quiet "${PLAYWRIGHT_IMAGE}" >/dev/null 2>&1 &
 downloads+=("$!")
 
-for version in "${versions[@]}"; do
+for index in "${!versions[@]}"; do
+	version="${versions[index]}"
 	E2E_PORT="$((18000 + version))" \
 		E2E_PROJECT_NAME="pus_e2e_${version}" \
 		NEXTCLOUD_IMAGE="nextcloud:${version}-apache" \
 		E2E_SKIP_PLAYWRIGHT_PULL=1 \
+		E2E_FLOW_SIZES="${sizes[index]}" \
 		"${deadline[@]}" bash "${SCRIPT_DIR}/run.sh" >"${LOG_DIR}/e2e-${version}.log" 2>&1 &
 	pids+=("$!")
 done
@@ -217,10 +251,10 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
 	{
 		echo "### End-to-end tests"
 		echo
-		echo "| Nextcloud | Release | Result | Time |"
-		echo "| --- | --- | --- | --- |"
+		echo "| Nextcloud | Release | Result | Time | Search dialog |"
+		echo "| --- | --- | --- | --- | --- |"
 		for index in "${!versions[@]}"; do
-			echo "| ${versions[index]} | ${releases[index]:-unknown} | ${results[index]} | ${durations[index]} s |"
+			echo "| ${versions[index]} | ${releases[index]:-unknown} | ${results[index]} | ${durations[index]} s | ${sizes[index]// /, } |"
 		done
 	} >>"${GITHUB_STEP_SUMMARY}"
 fi

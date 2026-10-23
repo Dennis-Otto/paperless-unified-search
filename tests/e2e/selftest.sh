@@ -12,8 +12,8 @@
 #   request that makes it would still run them, as it changes tests/e2e/.
 # - run-all.sh, with a fake docker and a fake run.sh: a version that passes, one that
 #   fails and one that hangs, each in a group of its own, the table of the summary,
-#   the versions that broke as an output of the step, one download of the browser, and
-#   the exit status.
+#   the versions that broke as an output of the step, one download of the browser, the
+#   sizes of the search dialog of each version, and the exit status.
 # - the job of .github/workflows/e2e.yml that writes the issue about the supported
 #   Nextcloud versions, with a fake gh: it opens the issue with the versions that
 #   broke, adds a further failed run to it and closes it once the tests pass again.
@@ -161,8 +161,8 @@ XML
 cat >"${fake}/tests/e2e/run.sh" <<'SCRIPT'
 # A fake of run.sh, with PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright:v1.0.0-noble
 case "${NEXTCLOUD_IMAGE}" in
-	nextcloud:33-apache) echo "Log of 33 on port ${E2E_PORT}, project ${E2E_PROJECT_NAME}" ;;
-	nextcloud:34-apache) echo "Log of 34" && exit 1 ;;
+	nextcloud:33-apache) echo "Log of 33 on port ${E2E_PORT}, project ${E2E_PROJECT_NAME}, sizes ${E2E_FLOW_SIZES}" ;;
+	nextcloud:34-apache) echo "Log of 34, sizes ${E2E_FLOW_SIZES}" && exit 1 ;;
 	*)
 		trap 'echo "Log of 35: stopped" && exit 143' TERM
 		echo "Log of 35: hangs"
@@ -214,7 +214,9 @@ else
 	expect "the versions that broke" "failed=Nextcloud 34 (34.0.1, failed)|versions=34" "$(paste -s -d "|" "${WORK}/output")"
 fi
 expect_in "the group of the version that passes" "::group::Nextcloud 33 (passed, " "${WORK}/log"
-expect_in "the log of the version that passes" "Log of 33 on port 18033, project pus_e2e_33" "${WORK}/log"
+expect_in "the log of the version that passes" "Log of 33 on port 18033, project pus_e2e_33, sizes laptop phone" "${WORK}/log"
+expect_in "the sizes of the search dialog without E2E_PHONE" " s | laptop, phone |" "${WORK}/summary"
+expect "the sizes of every version without E2E_PHONE" 0 "$(grep --count --fixed-strings '| laptop |' "${WORK}/summary" || true)"
 expect_in "the group of the version that fails" "::group::Nextcloud 34 (failed, " "${WORK}/log"
 expect_in "the error of the version that fails" "::error title=Nextcloud 34::The end-to-end tests failed against Nextcloud 34" "${WORK}/log"
 expect_in "the summary of the version that passes" "| 33 | 33.0.1 | passed |" "${WORK}/summary"
@@ -226,6 +228,23 @@ expect "the download of the browser after those of Nextcloud" "pull --quiet mcr.
 expect "run-all.sh with one version that passes" 0 "$(run_all env E2E_VERSIONS=33)"
 expect_in "the result of one version" "The end-to-end tests passed against Nextcloud 33 in " "${WORK}/log"
 expect "the versions that broke when none did" "failed=|versions=" "$(paste -s -d "|" "${WORK}/output")"
+# A pull request: the phone only with the newest version, whatever the order of the versions.
+expect "run-all.sh with the phone of the newest version" 1 "$(run_all env E2E_VERSIONS="34 33" E2E_PHONE=newest)"
+expect_in "the sizes of an older version with E2E_PHONE=newest" "Log of 33 on port 18033, project pus_e2e_33, sizes laptop" "${WORK}/log"
+expect "the phone of an older version with E2E_PHONE=newest" 0 "$(grep --count --fixed-strings 'Log of 33 on port 18033, project pus_e2e_33, sizes laptop phone' "${WORK}/log" || true)"
+expect_in "the sizes of the newest version with E2E_PHONE=newest" "Log of 34, sizes laptop phone" "${WORK}/log"
+expect_in "the note about the phone" "The search dialog runs on a phone only against Nextcloud 34" "${WORK}/log"
+expect_in "the summary of an older version with E2E_PHONE=newest" " s | laptop |" "${WORK}/summary"
+expect_in "the summary of the newest version with E2E_PHONE=newest" " s | laptop, phone |" "${WORK}/summary"
+expect "run-all.sh with the phone of the only version" 0 "$(run_all env E2E_VERSIONS=33 E2E_PHONE=newest)"
+expect_in "the sizes of the only version with E2E_PHONE=newest" "sizes laptop phone" "${WORK}/log"
+expect "run-all.sh with the phone of every version" 0 "$(run_all env E2E_VERSIONS=33 E2E_PHONE=all)"
+expect_in "the sizes with E2E_PHONE=all" "sizes laptop phone" "${WORK}/log"
+expect "run-all.sh with an E2E_PHONE that isn't one" 1 "$(run_all env E2E_VERSIONS=33 E2E_PHONE=oldest)"
+expect_in "the message about an E2E_PHONE that isn't one" "E2E_PHONE is oldest, but must be all" "${WORK}/log"
+# The required check sets E2E_PHONE=newest for a pull request alone.
+expect "E2E_PHONE of the required check" 1 \
+	"$(grep --count --fixed-strings "E2E_PHONE: \${{ github.event_name == 'pull_request' && 'newest' || 'all' }}" "${SCRIPT_DIR}/../../.github/workflows/e2e.yml")"
 expect "run-all.sh with a version whose image is missing" 1 "$(run_all env E2E_VERSIONS="33 34" FAKE_NO_IMAGE=34)"
 expect_in "the summary of a version whose image is missing" "| 34 | unknown | failed |" "${WORK}/summary"
 expect "the version that broke, whose image is missing" "failed=Nextcloud 34 (unknown release, failed)|versions=34" \
@@ -396,6 +415,14 @@ expect "the guard ignores grep --quiet after ||" 0 \
 grep --line-number --extended-regexp "${pipe_into_quiet_grep}" \
 	"${SCRIPT_DIR}"/*.sh | grep --invert-match --extended-regexp '^[^:]+:[0-9]+:[[:space:]]*#' >"${WORK}/pipes" || true
 expect "the pipes into grep --quiet in the scripts of the end-to-end tests" "" "$(cat "${WORK}/pipes")"
+
+# run.sh hands the sizes of the search dialog to flow.mjs in the container of the browser,
+# with sizes.mjs, which tests/js/sizes.test.mjs tests.
+# shellcheck disable=SC2016 # the text of run.sh, with its variable unexpanded
+expect "run.sh passes E2E_FLOW_SIZES into the container of the browser" 1 \
+	"$(grep --count --fixed-strings -- '--env "E2E_FLOW_SIZES=${FLOW_SIZES}"' "${SCRIPT_DIR}/run.sh")"
+expect "run.sh copies sizes.mjs into the container of the browser" 1 \
+	"$(grep --count --extended-regexp '^[[:space:]]*tar .* sizes\.mjs .*flow\.mjs' "${SCRIPT_DIR}/run.sh")"
 
 if ((failures > 0)); then
 	echo "${failures} of ${checks} checks of the scripts of the end-to-end tests failed." >&2

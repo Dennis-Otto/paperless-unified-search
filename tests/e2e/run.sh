@@ -20,6 +20,8 @@ COMPOSE=("${DOCKER_BIN}" compose --project-name "${PROJECT_NAME}" --file "${SCRI
 # scripts/screenshots.sh find it.
 PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
 PLAYWRIGHT_PULL=""
+# The sizes of the search dialog in flow.mjs, every one by default.
+FLOW_SIZES="${E2E_FLOW_SIZES:-laptop phone}"
 
 export E2E_PORT
 # Git Bash on Windows: keep the paths in the container of the mock and the paths of the
@@ -111,20 +113,22 @@ upload_pdf() {
 # does, flow.mjs goes through the search dialog as a person does, and settings.mjs
 # checks the messages of the settings page and Disconnect, last, as it disconnects. The
 # files of the checks reach the browser through standard input, so that npm leaves
-# nothing in the checkout.
+# nothing in the checkout. E2E_FLOW_SIZES picks the sizes of flow.mjs, such as
+# "laptop", which run-all.sh sets for all but the newest version in a pull request.
 browser_checks() {
 	# The image has been loading since the start; a failed pull leaves it to docker run.
 	if [[ -n "${PLAYWRIGHT_PULL}" ]]; then
 		wait "${PLAYWRIGHT_PULL}" || true
 		PLAYWRIGHT_PULL=""
 	fi
-	tar -C "${SCRIPT_DIR}" -cf - package.json package-lock.json ui.mjs accessibility.mjs flow.mjs settings.mjs \
+	tar -C "${SCRIPT_DIR}" -cf - package.json package-lock.json ui.mjs sizes.mjs accessibility.mjs flow.mjs settings.mjs \
 		| "${DOCKER_BIN}" run --rm --interactive \
 			--network "${PROJECT_NAME}_default" \
 			--env NPM_CONFIG_UPDATE_NOTIFIER=false \
 			--env E2E_USER=e2e-admin \
 			--env E2E_SEARCH_USER=e2e-user \
 			--env "E2E_PASSWORD=${PASSWORD}" \
+			--env "E2E_FLOW_SIZES=${FLOW_SIZES}" \
 			"${PLAYWRIGHT_IMAGE}" \
 			sh -c 'mkdir /tmp/browser && cd /tmp/browser && tar -xf - && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error && node accessibility.mjs && node flow.mjs && node settings.mjs'
 }
