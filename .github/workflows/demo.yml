@@ -5,10 +5,14 @@ name: Demo
 
 # The demo of the README (demo/seed.sh), run as a reader runs it: a real Paperless-ngx
 # and a real Nextcloud in Docker, Paperless Sync from its pinned release and this app
-# from the checkout, up to the search as jamie that must show the documents. It runs in
-# a pull request that changes the demo or the code of the app, such as one of Renovate
-# with a new image of the demo or a new release of Paperless Sync, every Monday and when
-# started by hand. It is no required check and blocks nothing.
+# from the checkout, up to the search as jamie that must show the documents. Then it
+# records that search in a browser, as jamie searches in the real Nextcloud, with
+# scripts/demo-gif.sh, which runs the demo a second time as a reader's second run would,
+# and keeps its animation, screenshots/demo.gif, as the artifact demo-gif.
+# It runs in a pull request that changes the demo, its recording or the code of the
+# app, such as one of Renovate with a new image of the demo or a new release of Paperless
+# Sync, every Monday and when started by hand. It is no required check and blocks
+# nothing.
 #
 # A failure of the weekly run opens the issue "The demo breaks", or adds the run to it,
 # and the next run that passes closes it.
@@ -19,6 +23,13 @@ on:
       - demo/**
       - appinfo/**
       - lib/**
+      - scripts/demo-gif.sh
+      - tests/e2e/demo-recording.mjs
+      - tests/e2e/recording.mjs
+      - tests/e2e/ui.mjs
+      - tests/e2e/package.json
+      - tests/e2e/package-lock.json
+      - tests/e2e/run.sh
       - .github/workflows/demo.yml
   schedule:
     - cron: "41 5 * * 1"
@@ -47,6 +58,16 @@ jobs:
           persist-credentials: false
       - name: Run the demo
         run: bash demo/seed.sh
+      # The search of the demo in a browser, recorded as its animation.
+      - name: Record the demo
+        run: bash scripts/demo-gif.sh
+      - name: Keep the animation of the demo
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: demo-gif
+          path: screenshots/demo.gif
+          if-no-files-found: error
+          retention-days: 14
       - name: Remove the demo with its data
         if: always()
         run: |

@@ -34,6 +34,7 @@ import {
 	signIn,
 	waitForViewer,
 } from './ui.mjs'
+import { CHROMIUM_ARGS, INTER, encodeGif, newPage as recordingPage, recorder, settle, steady } from './recording.mjs'
 
 const { GIFEncoder, quantize } = gifenc
 const { PNG } = pngjs
@@ -56,20 +57,10 @@ const NOW = new Date('2026-10-09T09:30:00+02:00')
 const TIME_ZONE = 'Europe/Berlin'
 const FILED = Math.floor(Date.parse('2026-10-07T16:20:00+02:00') / 1000)
 
-// Inter, which the social preview uses too, from the files of one version of Google
-// Fonts: the stylesheet that Google Fonts serves for a family may name another
-// version or another cut from one request to the next, which moves the letters by a
-// fraction of a pixel.
-const INTER = `
-@font-face { font-family: 'Inter'; font-style: normal; font-weight: 100 900; font-display: block; src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa25L7SUc.woff2) format('woff2'); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
-@font-face { font-family: 'Inter'; font-style: normal; font-weight: 100 900; font-display: block; src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
-`
-// Nextcloud asks for system-ui, which is a Chinese font in the image of Playwright.
-// Inter stands in for the font of the system.
-const FONT = `${INTER}
-* { --font-face: 'Inter', sans-serif !important; }
-html, body { font-family: 'Inter', sans-serif !important; }
-`
+// A page of its own, in the time zone of the pictures and, unless clock is false, with
+// their clock (recording.mjs); pointer adds the pointer of the animation.
+const newPage = (browser, session, options, { pointer = false, clock = true } = {}) =>
+	recordingPage(browser, session, { timezoneId: TIME_ZONE, ...options }, { pointer, now: clock ? NOW : null })
 
 // The documents of the demo, in folders as Paperless Sync names them by default. The
 // mock of Paperless finds the first three for "invoice", with the same IDs.
@@ -269,104 +260,6 @@ async function createArchive(browser) {
 	}
 	const share = new URLSearchParams({ path: '/Paperless', shareType: '0', shareWith: READER, permissions: '1' })
 	await request(ARCHIVE, 'POST', `/ocs/v2.php/apps/files_sharing/api/v1/shares?${share}`)
-}
-
-// A pointer for the animation: Chromium draws none into its screenshots. It follows
-// the mouse of Playwright and keeps its place across a page load.
-function pointer() {
-	if (window.top !== window) {
-		return
-	}
-	const place = JSON.parse(sessionStorage.getItem('demo-pointer') ?? '[-40,-40]')
-	const show = () => {
-		const element = document.createElement('div')
-		element.id = 'demo-pointer'
-		element.innerHTML = '<svg width="28" height="28" viewBox="0 0 28 28"><path d="M5 3l15 13h-8l-4 8z" fill="#111" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg>'
-		Object.assign(element.style, {
-			position: 'fixed', left: '0', top: '0', zIndex: '2147483647', pointerEvents: 'none',
-			transform: `translate(${place[0] - 5}px, ${place[1] - 3}px)`,
-		})
-		const ring = document.createElement('div')
-		Object.assign(ring.style, {
-			position: 'absolute', left: '-11px', top: '-13px', width: '32px', height: '32px', borderRadius: '50%',
-			background: 'rgba(0, 130, 201, 0.35)', display: 'none',
-		})
-		element.prepend(ring)
-		document.documentElement.append(element)
-		document.addEventListener('mousemove', (event) => {
-			sessionStorage.setItem('demo-pointer', JSON.stringify([event.clientX, event.clientY]))
-			element.style.transform = `translate(${event.clientX - 5}px, ${event.clientY - 3}px)`
-		}, true)
-		document.addEventListener('mousedown', () => {
-			ring.style.display = 'block'
-		}, true)
-		document.addEventListener('mouseup', () => setTimeout(() => {
-			ring.style.display = 'none'
-		}, 350), true)
-	}
-	if (document.documentElement) {
-		show()
-	} else {
-		document.addEventListener('DOMContentLoaded', show)
-	}
-}
-
-// A page of its own, with the session, the language, the time zone and the font of the
-// pictures, and the clock of the pictures unless clock is false; pointer adds the
-// pointer of the animation.
-async function newPage(browser, session, options, { pointer: withPointer = false, clock = true } = {}) {
-	const context = await browser.newContext({
-		storageState: session,
-		locale: 'en-US',
-		timezoneId: TIME_ZONE,
-		bypassCSP: true,
-		reducedMotion: 'reduce',
-		...options,
-	})
-	if (clock) {
-		await context.clock.install({ time: NOW })
-	}
-	await context.addInitScript((css) => {
-		const add = () => {
-			const style = document.createElement('style')
-			style.textContent = css
-			document.documentElement.append(style)
-		}
-		if (document.documentElement) {
-			add()
-		} else {
-			document.addEventListener('DOMContentLoaded', add)
-		}
-	}, FONT)
-	if (withPointer) {
-		await context.addInitScript(pointer)
-	}
-	return context.newPage()
-}
-
-// Waits for the fonts and the pictures of the page to be ready, so that a picture
-// draws each of them at its final quality, then for the page to come to rest.
-async function settle(page, milliseconds = 600) {
-	await page.evaluate(async () => {
-		await document.fonts.ready
-		await Promise.all([...document.images].map((image) => image.decode().catch(() => {})))
-	})
-	await page.waitForTimeout(milliseconds)
-}
-
-// Waits until the page looks the same in three pictures in a row, 400 ms apart: the
-// viewer of PDF files draws the text of a page once more, sharper, at a moment that
-// varies from run to run.
-async function steady(page) {
-	const pictures = []
-	for (let tries = 0; tries < 40; tries++) {
-		pictures.push(await page.screenshot({ animations: 'disabled' }))
-		if (pictures.length >= 3 && pictures.slice(-3).every((picture) => picture.equals(pictures.at(-1)))) {
-			return
-		}
-		await page.waitForTimeout(400)
-	}
-	throw new Error('The page still changed after 16 seconds.')
 }
 
 async function save(page, name, milliseconds) {
@@ -722,32 +615,12 @@ async function phone(browser, session) {
 // The animation: the archive, the search for "invoice", the switch for connected
 // services and the insurance renewal, which only Paperless finds by its text.
 async function animation(browser, session) {
-	const frames = []
+	const start = [640, 460]
 	const page = await newPage(browser, session, { viewport: { width: 1280, height: 800 } }, { pointer: true })
-	const frame = async (delay) => {
-		frames.push({ png: await page.screenshot({ animations: 'disabled' }), delay })
-	}
-	let position = [640, 460]
-	const glide = async (locator, steps = 14) => {
-		const box = await locator.boundingBox()
-		const target = [box.x + Math.min(box.width / 2, 40), box.y + box.height / 2]
-		for (let step = 1; step <= steps; step++) {
-			const t = step / steps
-			const ease = t < 0.5 ? 2 * t * t : 1 - ((-2 * t + 2) ** 2) / 2
-			await page.mouse.move(position[0] + (target[0] - position[0]) * ease, position[1] + (target[1] - position[1]) * ease)
-			await frame(30)
-		}
-		position = target
-	}
-	const click = async (locator) => {
-		await glide(locator)
-		await page.mouse.down()
-		await frame(120)
-		await page.mouse.up()
-	}
+	const { frames, frame, click } = recorder(page, start)
 
 	await openArchive(page)
-	await page.mouse.move(...position)
+	await page.mouse.move(...start)
 	await settle(page)
 	await frame(1600)
 	await click(searchButton(page))
@@ -772,116 +645,11 @@ async function animation(browser, session) {
 	await steady(page)
 	await frame(3800)
 	await page.context().close()
-	writeGif(frames, join(OUT, 'search-and-open.gif'))
+	writeFileSync(join(OUT, 'search-and-open.gif'), encodeGif(frames, { PNG, GIFEncoder, quantize }))
 	console.log(`Took search-and-open.gif with ${frames.length} frames.`)
 }
 
-// Encodes the frames as GIF, with one palette for all of them. Every frame after the
-// first holds only the pixels whose color in that palette changed; the rest stays
-// transparent, so that the previous frame shows through. A palette of each frame of
-// its own would let the colors of the unchanged pixels drift from their neighbors.
-function writeGif(frames, path) {
-	const decode = (png) => {
-		const { width, height, data } = PNG.sync.read(png)
-		return { width, height, rgba: new Uint8Array(data) }
-	}
-	// Every seventh pixel of every frame is enough to choose the colors.
-	const samples = frames.map(({ png }) => {
-		const pixels = new Uint32Array(decode(png).rgba.buffer)
-		return pixels.filter((_, i) => i % 7 === 0)
-	})
-	const sample = new Uint32Array(samples.reduce((sum, part) => sum + part.length, 0))
-	samples.reduce((offset, part) => {
-		sample.set(part, offset)
-		return offset + part.length
-	}, 0)
-	// Nextcloud is mostly white and gray. The quantizer would merge white with the
-	// light blue of the background and tint the grays of shadows, so the palette has
-	// white and 64 neutral grays of its own.
-	const grays = Array.from({ length: 64 }, (_, i) => [i * 4, i * 4, i * 4])
-	const palette = [...quantize(new Uint8Array(sample.buffer), 255 - grays.length - 1), ...grays, [255, 255, 255]]
-	const transparentIndex = palette.length
-	// The nearest color of the palette for every color of a pixel, looked up once.
-	// applyPalette of gifenc decides for 32 shades at once, by the first it meets.
-	const lookup = new Int16Array(1 << 24).fill(-1)
-	const nearest = (color) => {
-		const [r, g, b] = [color & 0xff, (color >> 8) & 0xff, (color >> 16) & 0xff]
-		let best = 0
-		let distance = Infinity
-		palette.forEach(([pr, pg, pb], i) => {
-			const d = (r - pr) ** 2 + (g - pg) ** 2 + (b - pb) ** 2
-			if (d < distance) {
-				best = i
-				distance = d
-			}
-		})
-		return best
-	}
-	const indexOf = (rgba) => {
-		const pixels = new Uint32Array(rgba.buffer)
-		const index = new Uint8Array(pixels.length)
-		for (let i = 0; i < pixels.length; i++) {
-			const color = pixels[i] & 0xffffff
-			if (lookup[color] < 0) {
-				lookup[color] = nearest(color)
-			}
-			index[i] = lookup[color]
-		}
-		return index
-	}
-
-	const gif = GIFEncoder()
-	let previous = null
-	let pending = null
-	const write = () => {
-		gif.writeFrame(pending.index, pending.width, pending.height, {
-			palette: [...palette, [0, 0, 0]],
-			delay: pending.delay,
-			dispose: 1,
-			transparent: pending.transparent,
-			transparentIndex,
-		})
-	}
-	for (const { png, delay } of frames) {
-		const { width, height, rgba } = decode(png)
-		const index = indexOf(rgba)
-		if (previous === null) {
-			pending = { index, width, height, delay, transparent: false }
-			previous = index
-			continue
-		}
-		const changes = new Uint8Array(index.length).fill(transparentIndex)
-		let changed = false
-		for (let i = 0; i < index.length; i++) {
-			if (index[i] !== previous[i]) {
-				changes[i] = index[i]
-				changed = true
-			}
-		}
-		if (!changed) {
-			pending.delay += delay
-			continue
-		}
-		write()
-		pending = { index: changes, width, height, delay, transparent: true }
-		previous = index
-	}
-	write()
-	gif.finish()
-	writeFileSync(path, gif.bytes())
-}
-
-// Chromium draws the same pixels in every run and on every processor: Skia without
-// the code of a particular processor, every tile and every image drawn in full before
-// the picture, and the colours in sRGB.
-const browser = await chromium.launch({
-	args: [
-		'--disable-skia-runtime-opts',
-		'--disable-partial-raster',
-		'--disable-checker-imaging',
-		'--force-color-profile=srgb',
-	],
-})
+const browser = await chromium.launch({ args: CHROMIUM_ARGS })
 try {
 	await createArchive(browser)
 	// In the time zone of the pages, which Nextcloud keeps as the user's: the times that

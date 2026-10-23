@@ -87,6 +87,14 @@ rm demo/.env                                            # and its passwords
 
 The containers start again with Docker, until you stop or remove them. A new run after `down --volumes` keeps the passwords of `demo/.env`; delete it as well for new ones.
 
+## Record its animation
+
+`scripts/demo-gif.sh` records the demo as an animation, `screenshots/demo.gif`, from its real Paperless-ngx and Nextcloud, not drawn by hand: it runs `bash demo/seed.sh`, then Chromium in the image of Playwright signs in as `jamie`, opens the archive, searches for *invoice* and opens the home insurance renewal. It fails when the search doesn't show the two invoices and the renewal. The Demo workflow records it in each of its runs, every Monday among them, and keeps it as the artifact `demo-gif` of the run.
+
+```sh
+bash scripts/demo-gif.sh                                # record screenshots/demo.gif
+```
+
 ## A demo, not a production set-up
 
 The demo shows the app at work with the least that it takes, and leaves out what a server needs:

@@ -119,14 +119,15 @@ keeps every supported version working, which a person makes."""
 [check."demo"]
 title = "The demo"
 problem = """`bash demo/seed.sh`, the demo with a real Paperless-ngx and a real Nextcloud,
-stopped at a step; the log of the job shows the step and the end of the logs of its
-containers."""
-why = """The README and the install guide offer the demo as the first thing to try, so it
-must keep working with every change of the app, of its images and of Paperless Sync.
-It is no required check and blocks no merge."""
-fix = """Run the demo on your machine with Docker, fix what the step that stopped shows,
-and push. Remove it afterwards with its data:"""
-commands = ["bash demo/seed.sh", "docker compose -f demo/compose.yaml down --volumes"]
+stopped at a step, or `bash scripts/demo-gif.sh`, which records its search as jamie in a
+browser, didn't find what the animation of the README shows: the log of the job shows
+the step, with the end of the logs of the containers or of the browser."""
+why = """The README and the install guide offer the demo as the first thing to try, and
+show its animation, so it must keep working with every change of the app, of its images
+and of Paperless Sync. It is no required check and blocks no merge."""
+fix = """Run the demo and its recording on your machine with Docker, fix what the step
+that stopped shows, and push. Remove the demo afterwards with its data:"""
+commands = ["bash demo/seed.sh", "bash scripts/demo-gif.sh", "docker compose -f demo/compose.yaml down --volumes"]
 docs = "demo/README.md#when-it-doesnt-start"
 autofix = """A demo that stops at a step needs a person, who finds out what changed: the
 app, an image or Paperless Sync."""

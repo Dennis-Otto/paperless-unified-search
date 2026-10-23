@@ -142,6 +142,12 @@ python3 .github/blueprint.py screenshots restore
 
 The comparison needs Pillow: `python3 -m pip install --require-hashes -r .github/screenshots-requirements.txt`. `visual-compare.mjs` has its tests in `tests/js/visual-compare.test.mjs`, which `scripts/check-project.sh` runs with the others.
 
+`recording.mjs` holds what the pictures share: the page with the font Inter, the waits for a page at rest, the pointer and the frames of an animation, and the encoder of a GIF, to which the scripts hand `gifenc` and `pngjs`, so that its tests in `tests/js/recording.test.mjs` run with Node.js alone.
+
+### The animation of the demo
+
+`scripts/demo-gif.sh` records `screenshots/demo.gif` from [the demo](../../demo/README.md) itself instead of the mock: it runs `bash demo/seed.sh`, which starts a real Paperless-ngx and a real Nextcloud or finds them running, then `demo-recording.mjs` in the image of Playwright, in the network of the demo, at `http://nextcloud` as `jamie`, with the password of `demo/.env`. It opens the archive that Paperless Sync wrote, searches for `invoice` and opens the home insurance renewal, and fails unless *Paperless documents* shows the two invoices and the renewal. The demo searches Paperless always, so the animation needs no switch for connected services. It keeps the clock of the machine, as Paperless Sync wrote the files when the demo started, so two runs differ in what Files says about their time, and the screenshot bot and the visual check leave the animation alone. The Demo workflow (`.github/workflows/demo.yml`) records it in each of its runs and keeps it as the artifact `demo-gif`; to commit a new one, take it from there, or run the script.
+
 ## The coming Nextcloud
 
 Every Monday, and when started by hand, the workflow also runs the suite against the coming Nextcloud:

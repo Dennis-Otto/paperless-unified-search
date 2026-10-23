@@ -22,6 +22,7 @@ tests/e2e/pdf.py
 tests/e2e/package.json
 tests/e2e/package-lock.json
 tests/e2e/run.sh
+tests/e2e/recording.mjs
 tests/e2e/screenshots.mjs
 tests/e2e/ui.mjs
 

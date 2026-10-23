@@ -71,6 +71,9 @@ services:
       PAPERLESS_THREADS_PER_WORKER: "1"
       PAPERLESS_WEBSERVER_WORKERS: "1"
       PAPERLESS_ENABLE_NLTK: "false"
+      # IPv4 inside its container, which every Docker has: Paperless listens on IPv6 by
+      # default, and doesn't start where the kernel of Docker has no IPv6.
+      PAPERLESS_BIND_ADDR: 0.0.0.0
     ports:
       - "127.0.0.1:${PAPERLESS_PORT:-8100}:8000"
     volumes:
