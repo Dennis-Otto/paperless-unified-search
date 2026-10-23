@@ -92,11 +92,15 @@ jobs:
           client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY }}
           # Only what the update of a branch, its label and its comment need, and
-          # reading the checks and the statuses of the pull requests in the line.
+          # reading the checks and the statuses of the pull requests in the line. The
+          # update merges main into the branch, and GitHub takes that merge only from
+          # a token that may change workflows once main changed one since the branch
+          # left it; the job runs nothing of the pull request.
           permission-checks: read
           permission-contents: write
           permission-pull-requests: write
           permission-statuses: read
+          permission-workflows: write
       # The default branch, also for pull_request_target, without the token.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.app.outputs.token != ''

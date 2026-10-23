@@ -9,7 +9,7 @@ import re
 import tomllib
 import urllib.parse
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from blueprint.github import Api, GitHubError, Json
@@ -30,6 +30,9 @@ class Drift:
     have: Json
     # How a person sets it, when the API can't.
     manual: str = ""
+    # GitHub doesn't do it for the repository, whatever the settings ask: named, with
+    # the line that stops asking for it, but it fails nothing.
+    notice: bool = False
 
 
 class ConfigError(ValueError):
@@ -94,6 +97,11 @@ ANALYSIS = (
     "secret_scanning_push_protection",
     "secret_scanning_non_provider_patterns",
 )
+# The switches that the plan of a repository decides: GitHub accepts their write and
+# keeps them off where the plan lacks them, as on a repository of a user. Secret
+# scanning and its push protection are not among them: when GitHub keeps one of those
+# off, the run fails.
+PLAN_GATED = ("secret_scanning_non_provider_patterns",)
 # A switch that GitHub doesn't offer for a repository; it never comes on.
 UNOFFERED = "not offered"
 
@@ -126,16 +134,18 @@ def check_security(api: Api, repo: str, want: dict[str, bool]) -> list[Drift]:
     drift = []
     for key, value in want.items():
         current = have.get(key)
-        if current == UNOFFERED and not value:
-            continue
-        if current != value:
-            manual = ""
-            if current == UNOFFERED:
+        if current == UNOFFERED:
+            if value:
                 manual = (
-                    f"GitHub doesn't offer {key} for {repo}; set {key} = false in"
-                    " .github/repository.project.toml"
+                    f"GitHub doesn't offer {key} for {repo}; set {key} = false under"
+                    " [security] in .github/repository.project.toml to stop asking"
+                    " for it"
                 )
-            drift.append(Drift(f"security.{key}", value, current, manual=manual))
+                drift.append(
+                    Drift(f"security.{key}", value, current, manual, notice=True)
+                )
+        elif current != value:
+            drift.append(Drift(f"security.{key}", value, current))
     return drift
 
 
@@ -164,6 +174,41 @@ def apply_security(api: Api, repo: str, drift: list[Drift]) -> None:
             analysis[key] = {"status": "enabled" if item.want else "disabled"}
     if analysis:
         api.patch(f"repos/{repo}", {"security_and_analysis": analysis})
+
+
+def kept(repo: str, sent: list[Drift], have: list[Drift]) -> list[Drift]:
+    """The drift after an apply that sent `sent`, in which a switch of
+    security_and_analysis that depends on the plan and that GitHub accepted but kept
+    as it was is a notice.
+
+    GitHub answers the write of a switch that the plan of the repository lacks with
+    success and leaves the switch as it was, as it keeps the generic patterns of secret
+    scanning off on a repository of a user. Only a write shows it; GitHub names such a
+    switch as off, like one that is merely switched off.
+    """
+    tried = {
+        item.setting
+        for item in sent
+        if item.setting.removeprefix("security.") in PLAN_GATED and not item.notice
+    }
+    result = []
+    for item in have:
+        if item.setting in tried and not item.notice:
+            key = item.setting.removeprefix("security.")
+            state = "on" if item.have else "off"
+            item = replace(
+                item,
+                notice=True,
+                manual=(
+                    f"GitHub accepted {key} = {json.dumps(item.want)} for {repo} but"
+                    f" keeps it {state}, likely because the plan of the repository lacks"
+                    " the switch;"
+                    f" set {key} = {json.dumps(item.have)} under [security] in"
+                    " .github/repository.project.toml to stop asking for it"
+                ),
+            )
+        result.append(item)
+    return result
 
 
 # --------------------------------------------------------------------------- actions
@@ -1005,8 +1050,11 @@ PERMISSIONS = {
 }
 
 
-def apply(api: Api, repo: str, settings: Settings, drift: list[Drift]) -> list[str]:
-    """Apply every part of the drift and return the parts that GitHub refused.
+def apply(
+    api: Api, repo: str, settings: Settings, drift: list[Drift]
+) -> dict[str, str]:
+    """Apply every part of the drift and return the parts that GitHub refused, each
+    with the reason.
 
     A part that GitHub refuses, such as one whose permission the release app lacks,
     doesn't keep the parts after it from being applied.
@@ -1031,12 +1079,12 @@ def apply(api: Api, repo: str, settings: Settings, drift: list[Drift]) -> list[s
         ("pages", lambda: apply_pages(api, repo, settings.pages, part("pages"))),
         ("labels", lambda: apply_labels(api, repo, settings.labels, part("label "))),
     ]
-    refused = []
+    refused: dict[str, str] = {}
     for name, step in steps:
         try:
             step()
         except GitHubError as error:
-            refused.append(
+            refused[name] = (
                 f"the {name} could not be applied: {error}{hint(name, error)}"
             )
     return refused
