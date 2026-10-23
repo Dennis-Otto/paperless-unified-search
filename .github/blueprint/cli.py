@@ -703,23 +703,10 @@ def utf8_output() -> None:
             reconfigure(encoding="utf-8", newline="\n")
 
 
-def main(
-    argv: Sequence[str] | None = None, api: Api | None = None, root: Path = Path()
-) -> int:
-    utf8_output()
-    parser = argparse.ArgumentParser(
-        prog="blueprint.py", description=blueprint.__doc__.split("\n\n")[0]
-    )
-    parser.add_argument(
-        "--repo", help="OWNER/NAME; by default the repository of this folder"
-    )
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=CONFIG,
-        help="the settings, by default %(default)s",
-    )
-    commands = parser.add_subparsers(dest="command", required=True)
+def add_settings_parsers(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """The settings as code, the checklist and a new repository."""
     settings_parser = commands.add_parser(
         "settings", help="compare or apply the settings as code"
     )
@@ -738,6 +725,13 @@ def main(
     create_parser.add_argument(
         "--dry-run", action="store_true", help="print the commands and run none"
     )
+
+
+def add_changelog_parsers(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """The changelog and the notes of a release, its fragments, the coverage comment,
+    the VEX document and the notices."""
     changelog_parser = commands.add_parser(
         "changelog",
         help="the changelog and the notes of a release, for the release bot",
@@ -814,6 +808,12 @@ def main(
     )
     notices_parser.add_argument("version", help="the tag of the release")
     notices_parser.add_argument("sbom", help="the SBOM of GitHub's dependency graph")
+
+
+def add_update_parsers(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """The commit of a blueprint update and the next branch to bring up to date."""
     update_parser = commands.add_parser(
         "update-commit",
         help="commit what copier update staged and keep its one pull request, for the "
@@ -850,6 +850,12 @@ def main(
         help="pass even when GitHub refused a request, with the warnings alone, as "
         "in a run that shows as a check of a pull request",
     )
+
+
+def add_coach_parsers(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """The PR coach."""
     coach_parser = commands.add_parser(
         "coach",
         help="the PR coach: how to fix a check that failed, in its summary and in one "
@@ -895,6 +901,12 @@ def main(
         help="whether every required check and every step of scripts/check.sh has "
         "its explanation",
     )
+
+
+def add_bot_health_parsers(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """The bot-health bot."""
     health_parser = commands.add_parser(
         "bot-health",
         help="one issue for each bot that fails on the default branch, for the "
@@ -919,6 +931,12 @@ def main(
     renovate_parser.add_argument(
         "--run", required=True, help="the link of the run of Renovate"
     )
+
+
+def add_diagrams_parsers(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """The pictures of the diagrams."""
     diagrams_parser = commands.add_parser(
         "diagrams",
         help="the ```mermaid blocks of the Markdown as sources in docs/diagrams/ and "
@@ -965,6 +983,12 @@ def main(
         help="comment: on the pull request whose blocks became pictures; "
         "pull-request: the description of the bot's pull request for main",
     )
+
+
+def add_screenshots_parsers(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """The screenshot bot."""
     screenshots_parser = commands.add_parser(
         "screenshots",
         help="the pictures that scripts/screenshots.sh renders, renewed by the "
@@ -1040,6 +1064,12 @@ def main(
         default=screenshots.SCRIPT,
         help="the script that rendered",
     )
+
+
+def add_fix_parsers(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """The fix bot."""
     fix_parser = commands.add_parser(
         "fix",
         help="the fix bot: the commands that fix what a check found, and the commits "
@@ -1114,6 +1144,12 @@ def main(
             "--app", required=True, help="the slug of the release app, which commits"
         )
         bot_parser.add_argument("--url", required=True, help="the run of the checks")
+
+
+def add_mutation_parsers(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """The parts, the results and the report of the mutation tests."""
     mutation_parser = commands.add_parser(
         "mutation",
         help="the parts of a run of the mutation tests, the results of each and the "
@@ -1170,6 +1206,12 @@ def main(
         "folder",
         help="the folder of the report, with mutation.json and previous.json",
     )
+
+
+def add_pages_parsers(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """The pages of the website and the check of the published site."""
     pages_parser = commands.add_parser(
         "pages",
         help="the READMEs, CONTRIBUTING files and pages of docs/ in one column, for "
@@ -1196,8 +1238,47 @@ def main(
         help="the file of the outputs of the step, $GITHUB_OUTPUT: the further "
         "languages and the path of the address",
     )
-    arguments = parser.parse_args(argv)
 
+
+def parser() -> argparse.ArgumentParser:
+    """The command line of blueprint.py, each group of its commands from a function
+    of its own. mutmut writes a whole copy of a function for each of its mutants:
+    one function with every command made 1,800 copies of its 640 lines, 51 MB of
+    code that the Mutation workflow and its tests compiled for minutes."""
+    parser = argparse.ArgumentParser(
+        prog="blueprint.py", description=blueprint.__doc__.split("\n\n")[0]
+    )
+    parser.add_argument(
+        "--repo", help="OWNER/NAME; by default the repository of this folder"
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=CONFIG,
+        help="the settings, by default %(default)s",
+    )
+    commands = parser.add_subparsers(dest="command", required=True)
+    for add in (
+        add_settings_parsers,
+        add_changelog_parsers,
+        add_update_parsers,
+        add_coach_parsers,
+        add_bot_health_parsers,
+        add_diagrams_parsers,
+        add_screenshots_parsers,
+        add_fix_parsers,
+        add_mutation_parsers,
+        add_pages_parsers,
+    ):
+        add(commands)
+    return parser
+
+
+def standalone_command(
+    arguments: argparse.Namespace, root: Path, api: Api | None
+) -> int | None:
+    """A command that needs neither the settings nor the repository of the folder:
+    its exit code, or None for one that does."""
     if arguments.command == "coverage":
         # A report that isn't there, isn't XML or isn't text of UTF-8.
         try:
@@ -1281,6 +1362,17 @@ def main(
         except OSError as error:
             print(f"blueprint.py: {error}", file=sys.stderr)
             return 2
+    return None
+
+
+def main(
+    argv: Sequence[str] | None = None, api: Api | None = None, root: Path = Path()
+) -> int:
+    utf8_output()
+    arguments = parser().parse_args(argv)
+    code = standalone_command(arguments, root, api)
+    if code is not None:
+        return code
     api = api or Api()
     try:
         if arguments.command == "create":

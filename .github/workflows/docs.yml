@@ -113,7 +113,7 @@ jobs:
         timeout-minutes: 5
         with:
           # renovate: datasource=pypi depName=uv
-          version: "0.13.0"
+          version: "0.13.4"
           enable-cache: true
           prune-cache: true
           cache-dependency-glob: .github/docs-requirements.txt
