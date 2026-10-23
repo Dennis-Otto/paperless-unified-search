@@ -6,21 +6,20 @@
 // the new commit of a branch that an action follows. Routine updates merge on their
 // own once every check passes; the weekly refresh of the lock files and a major
 // update wait for the maintainer. Updates of what the users run are committed as
-// fix(deps) and lead to a patch release, updates of the tools as chore(deps). The
-// issue "Dependency dashboard" lists every update that waits or failed.
+// fix(deps) and lead to a patch release, updates of the tools as chore(deps).
+// Renovate keeps no issue open: what waits for the maintainer is a pull request,
+// and its warnings and errors reach the issue "Renovate logs problems".
 // https://github.com/Dennis-Otto/repo-blueprint
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["config:recommended", ":semanticCommits"],
   timezone: "Europe/Berlin",
-  // One issue lists every update: those that wait for their week, their window or
-  // the maintainer, those that failed and why, and the known vulnerabilities. Its
-  // checkboxes open, retry or rebase an update with the next run of the bot,
-  // also from a phone.
-  dependencyDashboard: true,
+  // No dependency dashboard, so that a repository can have no open issue: routine
+  // updates merge on their own, and what waits for the maintainer is a pull
+  // request. Renovate closes the issue of the dashboard by its title, which stays
+  // the one that it had.
+  dependencyDashboard: false,
   dependencyDashboardTitle: "Dependency dashboard",
-  dependencyDashboardLabels: ["dependencies"],
-  dependencyDashboardOSVVulnerabilitySummary: "all",
   // Once a week, so that the release bot sums the updates up in one release: the
   // whole Monday, since GitHub starts the runs of the bot every two hours only
   // roughly and now and then skips one, so that a window of a few hours could
