@@ -506,7 +506,11 @@ score there goes unnoticed."""
 fix = """A test that reads the code as text, or keeps a cache of functools between the
 tests, can't pass in mutmut's copy: mark it with `@pytest.mark.mutation_unsafe`, or
 clear the cache in a fixture. A part that runs out of its time needs more parts: set
-the repository variable `MUTATION_PARTS` to a larger number."""
+the repository variable `MUTATION_PARTS` to a larger number. When the output of mutmut
+ends in `Generating mutants` or `Running stats`, look for a long function with many
+mutants, such as a parser with the options of every command: mutmut copies it whole for
+each of them, into a module that takes minutes to compile, so split it into smaller
+functions."""
 docs = "CONTRIBUTING.md#tests"
 autofix = """Whether a test reads the code as text, or how many parts a project needs,
 is the decision of a person."""
