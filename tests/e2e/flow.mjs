@@ -38,6 +38,15 @@ const SIZES = [
 	{ name: 'laptop', options: { viewport: { width: 1280, height: 800 } } },
 	{ name: 'phone', options: { viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true } },
 ]
+// The sizes of this run, such as "laptop" or "laptop phone", and every size without
+// E2E_FLOW_SIZES: run-all.sh tests the phone in a pull request only against the newest
+// Nextcloud (E2E_PHONE=newest), where each size costs a version 16 to 19 seconds.
+const NAMES = (process.env.E2E_FLOW_SIZES ?? '').split(/[\s,]+/).filter(Boolean)
+const unknown = NAMES.filter((name) => !SIZES.some((size) => size.name === name))
+if (unknown.length > 0) {
+	throw new Error(`E2E_FLOW_SIZES names ${unknown.join(', ')}, but the sizes are ${SIZES.map((size) => size.name).join(', ')}.`)
+}
+const RUN = NAMES.length === 0 ? SIZES : SIZES.filter((size) => NAMES.includes(size.name))
 // A step waits this long, in milliseconds: on a runner of the CI, the three versions of
 // Nextcloud and their browsers share four CPUs, and a page of Files takes seconds there.
 const TIMEOUT = 60000
@@ -108,7 +117,11 @@ try {
 	// visits of the personal settings at once race in Nextcloud to store the profile of
 	// the user: one of them fails with HTTP 500 (UNIQUE constraint of oc_profile_config).
 	for (const size of SIZES) {
-		await searchAndOpen(browser, session, size)
+		if (RUN.includes(size)) {
+			await searchAndOpen(browser, session, size)
+		} else {
+			console.log(`Search dialog on a ${size.name}: left out, as E2E_FLOW_SIZES is ${JSON.stringify(process.env.E2E_FLOW_SIZES)}.`)
+		}
 	}
 } finally {
 	await browser.close()

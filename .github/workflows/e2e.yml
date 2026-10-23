@@ -7,7 +7,10 @@ name: Docker E2E
 # version that appinfo/info.xml supports, from min-version to max-version, so that
 # raising max-version, as the upstream bot does, tests the new version at once. One
 # job, the required check "nextcloud", runs all versions at the same time
-# (tests/e2e/run-all.sh): no queue between jobs, and one download of the browser.
+# (tests/e2e/run-all.sh): no queue between jobs, and one download of the browser. In
+# a pull request, the search dialog runs on a phone only against the newest version,
+# which saves the others 16 to 19 seconds each; everywhere else every size runs against
+# every version.
 #
 # A pull request or push that changes no file the tests cover, such as one of the
 # documentation, of the CI or from the blueprint, passes the check in seconds without
@@ -83,6 +86,11 @@ jobs:
       - name: Run the end-to-end tests against every supported Nextcloud version
         id: tests
         if: steps.scope.outputs.run == 'true'
+        env:
+          # A pull request tests the search dialog on a phone only with the newest
+          # Nextcloud, and on a laptop with every version; a push to main, the weekly
+          # run and a start by hand test every size with every version (#108).
+          E2E_PHONE: ${{ github.event_name == 'pull_request' && 'newest' || 'all' }}
         run: bash tests/e2e/run-all.sh
       # The PR coach: what failed, why it matters and how to fix it, in the summary
       # of the check and as its annotation, from .github/checks.project.toml.
