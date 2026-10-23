@@ -10,6 +10,7 @@
 // the network of the Compose project.
 
 import { chromium } from 'playwright-core'
+import { SIZES, flowSizes } from './sizes.mjs'
 import {
 	BASE_URL,
 	connectedServices,
@@ -32,21 +33,8 @@ const RESULT = `${TITLE} ${SUBLINE}`
 const FILE = 'Mobile viewer test [P123].pdf'
 const START = '/index.php/settings/user'
 
-// The phone draws one pixel per CSS pixel: its layout is the same, and Chromium draws
-// a quarter of the pixels of a screen with twice the density.
-const SIZES = [
-	{ name: 'laptop', options: { viewport: { width: 1280, height: 800 } } },
-	{ name: 'phone', options: { viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true } },
-]
-// The sizes of this run, such as "laptop" or "laptop phone", and every size without
-// E2E_FLOW_SIZES: run-all.sh tests the phone in a pull request only against the newest
-// Nextcloud (E2E_PHONE=newest), where each size costs a version 16 to 19 seconds.
-const NAMES = (process.env.E2E_FLOW_SIZES ?? '').split(/[\s,]+/).filter(Boolean)
-const unknown = NAMES.filter((name) => !SIZES.some((size) => size.name === name))
-if (unknown.length > 0) {
-	throw new Error(`E2E_FLOW_SIZES names ${unknown.join(', ')}, but the sizes are ${SIZES.map((size) => size.name).join(', ')}.`)
-}
-const RUN = NAMES.length === 0 ? SIZES : SIZES.filter((size) => NAMES.includes(size.name))
+// The sizes of this run, from E2E_FLOW_SIZES, and every size without it.
+const RUN = flowSizes(process.env.E2E_FLOW_SIZES)
 // A step waits this long, in milliseconds: on a runner of the CI, the three versions of
 // Nextcloud and their browsers share four CPUs, and a page of Files takes seconds there.
 const TIMEOUT = 60000

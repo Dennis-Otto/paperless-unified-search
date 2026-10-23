@@ -416,6 +416,14 @@ grep --line-number --extended-regexp "${pipe_into_quiet_grep}" \
 	"${SCRIPT_DIR}"/*.sh | grep --invert-match --extended-regexp '^[^:]+:[0-9]+:[[:space:]]*#' >"${WORK}/pipes" || true
 expect "the pipes into grep --quiet in the scripts of the end-to-end tests" "" "$(cat "${WORK}/pipes")"
 
+# run.sh hands the sizes of the search dialog to flow.mjs in the container of the browser,
+# with sizes.mjs, which tests/js/sizes.test.mjs tests.
+# shellcheck disable=SC2016 # the text of run.sh, with its variable unexpanded
+expect "run.sh passes E2E_FLOW_SIZES into the container of the browser" 1 \
+	"$(grep --count --fixed-strings -- '--env "E2E_FLOW_SIZES=${FLOW_SIZES}"' "${SCRIPT_DIR}/run.sh")"
+expect "run.sh copies sizes.mjs into the container of the browser" 1 \
+	"$(grep --count --extended-regexp '^[[:space:]]*tar .* sizes\.mjs .*flow\.mjs' "${SCRIPT_DIR}/run.sh")"
+
 if ((failures > 0)); then
 	echo "${failures} of ${checks} checks of the scripts of the end-to-end tests failed." >&2
 	exit 1

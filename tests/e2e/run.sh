@@ -121,7 +121,7 @@ browser_checks() {
 		wait "${PLAYWRIGHT_PULL}" || true
 		PLAYWRIGHT_PULL=""
 	fi
-	tar -C "${SCRIPT_DIR}" -cf - package.json package-lock.json ui.mjs accessibility.mjs flow.mjs settings.mjs \
+	tar -C "${SCRIPT_DIR}" -cf - package.json package-lock.json ui.mjs sizes.mjs accessibility.mjs flow.mjs settings.mjs \
 		| "${DOCKER_BIN}" run --rm --interactive \
 			--network "${PROJECT_NAME}_default" \
 			--env NPM_CONFIG_UPDATE_NOTIFIER=false \
