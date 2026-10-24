@@ -85,3 +85,17 @@ test('the demo is the one of demo/seed.sh and its documents', function() {
 	assert.match(opened, /invoice/i)
 	assert.equal(DEMO.gif, 'demo-search-and-open.gif')
 })
+
+// Paperless ranks the two invoices by how often their text says the term: with the same
+// count they get the same score, and their order follows the order in which Paperless
+// happened to read them, which differs from one fresh demo to the next. RESULTS lists
+// them in the order of their scores.
+test('the invoices of the demo rank in a fixed order, not by chance', function() {
+	const said = (name) => {
+		const letter = readFileSync(new URL(`../../demo/documents/${name}.txt`, import.meta.url), 'utf8')
+		const text = letter.slice(letter.indexOf('\n\n') + 2)
+		return (text.match(new RegExp(String.raw`\b${DEMO.term}\b`, 'gi')) ?? []).length
+	}
+	assert.ok(said('electricity-invoice') > said('internet-invoice'), 'the electricity invoice says the term more often than the internet invoice')
+	assert.ok(RESULTS.indexOf('Electricity invoice - August 2026') < RESULTS.indexOf('Internet invoice - July 2026'))
+})

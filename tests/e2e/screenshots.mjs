@@ -836,10 +836,13 @@ async function demoAnimation(browser) {
 	// What a person does at their first sign-in: they close the wizard of Nextcloud, which
 	// would cover the page, and Nextcloud shows them online, as the dot on their avatar
 	// says. Chosen here, the dot is there from the first frame on, not from the moment
-	// that the browser tells Nextcloud, which varies from run to run. Without the app
-	// of either, Nextcloud answers 404, and there is nothing to do.
+	// that the browser tells Nextcloud, which varies from run to run. And they read their
+	// notifications: a demo that has run for a while has some, a fresh one none, and the
+	// red dot of the bell would change every frame of the animation. Without the app of
+	// one of them, Nextcloud answers 404, and there is nothing to do.
 	for (const [method, path] of [
 		['DELETE', '/index.php/apps/firstrunwizard/wizard'],
+		['DELETE', '/ocs/v2.php/apps/notifications/api/v2/notifications'],
 		['PUT', `/ocs/v2.php/apps/user_status/api/v1/user_status/status?${new URLSearchParams({ statusType: 'online' })}`],
 	]) {
 		const response = await fetch(`${BASE_URL}${path}`, {

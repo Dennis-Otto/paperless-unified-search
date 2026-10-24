@@ -7,10 +7,17 @@ name: Demo
 # and a real Nextcloud in Docker, Paperless Sync from its pinned release and this app
 # from the checkout, up to the search as jamie that must show the documents, and then
 # records the animation of the README from it (bash scripts/screenshots.sh --demo). It
-# runs in a pull request that changes the demo, its recording or the code of the app,
-# such as one of Renovate
-# with a new image of the demo or a new release of Paperless Sync, every Monday and when
+# runs in a pull request that changes the demo, the code of the app or the code and the
+# browser that record the animation, such as one of Renovate with a new image of the
+# demo, a new release of Paperless Sync or a new Playwright, every Monday and when
 # started by hand. It is no required check and blocks nothing.
+#
+# The animation is compared with the committed one by its pixels, as the screenshot bot
+# compares its pictures, so that a new encoder or runner changes nothing. When its
+# pixels changed, the weekly run and one started by hand on main keep one pull request,
+# "docs: update the animation of the demo", from the branch bot/demo-animation, as the
+# release app, which merges itself once every check passes, and close it when main
+# looks as recorded without it.
 #
 # A failure of the weekly run opens the issue "The demo breaks", or adds the run to it,
 # and the next run that passes closes it.
@@ -23,12 +30,23 @@ on:
       - lib/**
       - scripts/screenshots.sh
       - tests/e2e/demo.mjs
+      - tests/e2e/screenshots.mjs
+      - tests/e2e/ui.mjs
+      - tests/e2e/package.json
+      - tests/e2e/package-lock.json
+      - tests/e2e/run.sh
       - .github/workflows/demo.yml
   schedule:
     - cron: "41 5 * * 1"
   workflow_dispatch:
 
 permissions: {}
+
+env:
+  # The branch of the pull request with a new animation, and the first line of its
+  # commit and its title.
+  BRANCH: bot/demo-animation
+  HEADLINE: "docs: update the animation of the demo"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
@@ -41,6 +59,8 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+    outputs:
+      stale: ${{ steps.record.outputs.stale }}
     steps:
       - name: Record the network traffic of the job
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -49,38 +69,60 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        timeout-minutes: 5
+        with:
+          # renovate: datasource=pypi depName=uv
+          version: "0.13.0"
+          enable-cache: true
+          prune-cache: true
+          cache-dependency-glob: .github/screenshots-requirements.txt
+      - name: Install Pillow, which compares the animation as the screenshot bot does
+        timeout-minutes: 5
+        run: |
+          uv venv --quiet "$RUNNER_TEMP/pictures"
+          uv pip install --quiet --python "$RUNNER_TEMP/pictures" --require-hashes \
+            -r .github/screenshots-requirements.txt
       - name: Run the demo
         run: bash demo/seed.sh
       # The animation of the README, from this demo, as bash scripts/screenshots.sh --demo
-      # records it on a machine: the run checks that the recording still works, keeps
-      # the animation as an artifact and says when it differs from the committed one.
+      # records it on a machine: the run checks that the recording still works and
+      # compares it with the committed one by its pixels. One that looks different goes
+      # into the folder kept and the artifact demo-animation, for the pull request of
+      # the job animation-pull-request.
       - name: Record the animation of the demo
+        id: record
         run: |
           set -euo pipefail
-          cp screenshots/demo-search-and-open.gif "$RUNNER_TEMP/committed.gif"
           bash scripts/screenshots.sh --demo
-          if cmp --silent screenshots/demo-search-and-open.gif "$RUNNER_TEMP/committed.gif"; then
-            echo "The animation of the demo is the committed \`screenshots/demo-search-and-open.gif\`." >>"$GITHUB_STEP_SUMMARY"
-          else
-            echo "::notice title=Animation of the demo::The demo looks different from screenshots/demo-search-and-open.gif. The artifact demo-animation of this run holds the new animation; commit it, or run bash scripts/screenshots.sh --demo with the demo running."
-            {
-              echo "### The animation of the demo changed"
-              echo
-              echo "The demo looks different from the committed \`screenshots/demo-search-and-open.gif\`, which the README shows. The artifact \`demo-animation\` of this run holds the new animation: commit it in a pull request, or record it on your machine with the demo running:"
-              echo
-              echo '```sh'
-              echo 'bash demo/seed.sh'
-              echo 'bash scripts/screenshots.sh --demo'
-              echo '```'
-            } >>"$GITHUB_STEP_SUMMARY"
+          kept="$RUNNER_TEMP/kept"
+          "$RUNNER_TEMP/pictures/bin/python" .github/blueprint.py screenshots keep "$kept" >"$RUNNER_TEMP/summary.md"
+          if [[ ! -f "$kept/report.json" ]]; then
+            echo "The animation of the demo looks as the committed \`screenshots/demo-search-and-open.gif\`." >>"$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
+          echo "stale=true" >>"$GITHUB_OUTPUT"
+          echo "::notice title=Animation of the demo::The demo looks different from screenshots/demo-search-and-open.gif. On main, the weekly run keeps the pull request \"$HEADLINE\" with the new animation; the artifact demo-animation of this run holds it too."
+          {
+            echo "### The animation of the demo changed"
+            echo
+            cat "$RUNNER_TEMP/summary.md"
+            echo
+            echo "The demo looks different from the committed \`screenshots/demo-search-and-open.gif\`, which the README shows. On \`main\`, the weekly run and one started by hand keep the pull request *$HEADLINE* with the new animation, which merges itself once every check passes. The artifact \`demo-animation\` of this run holds it as well, and a machine with the demo running records it again:"
+            echo
+            echo '```sh'
+            echo 'bash demo/seed.sh'
+            echo 'bash scripts/screenshots.sh --demo'
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
       - name: Keep the animation of the demo
+        if: steps.record.outputs.stale == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: demo-animation
-          path: screenshots/demo-search-and-open.gif
+          path: ${{ runner.temp }}/kept/
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
       - name: Remove the demo with its data
         if: always()
         run: |
@@ -94,6 +136,120 @@ jobs:
         env:
           CHECK: demo
         run: python3 .github/blueprint.py coach explain "$CHECK"
+
+  # The pull request with the new animation, as the screenshot bot keeps its own: only
+  # on main, from the weekly run or one started by hand, as the release app, whose key
+  # only main may use. Of the repository it runs only blueprint.py, which commits
+  # nothing but pictures, by plain paths.
+  animation-pull-request:
+    name: keep the pull request of the animation
+    needs: demo
+    if: >-
+      vars.RELEASE_AUTOMATION_CLIENT_ID != '' && needs.demo.result == 'success' &&
+      (github.event_name == 'schedule' ||
+        (github.event_name == 'workflow_dispatch' && github.ref_name == github.event.repository.default_branch))
+    concurrency:
+      group: ${{ github.workflow }}-animation-pull-request
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: release
+      deployment: false
+    permissions:
+      contents: read
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github/blueprint
+      - name: Fetch the animation that the job demo kept
+        if: needs.demo.outputs.stale == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: demo-animation
+          path: ${{ runner.temp }}/kept
+      - name: Create a token of the release app
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY }}
+          # The branch of an open pull request moves from a commit on an older main to
+          # one on the newest, which GitHub refuses without workflows when main changed
+          # a workflow in between. The commit itself holds only the animation.
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
+      - name: Open, update or close the pull request of the animation
+        timeout-minutes: 8
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          STALE: ${{ needs.demo.outputs.stale }}
+          SHA: ${{ github.sha }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # Only the app's own pull request from the branch of this repository: a fork
+          # may open one from a branch of the same name.
+          open="$(gh pr list --head "$BRANCH" --state open --json number,isCrossRepository,author \
+            --jq "map(select(.isCrossRepository == false and .author.login == \"app/$APP_SLUG\"))[0].number // empty")"
+          if [[ "$STALE" != true ]]; then
+            if [[ -n "$open" ]]; then
+              gh pr close "$open" --delete-branch \
+                --comment "\`main\` looks as recorded without this pull request: $URL"
+              echo "main looks as recorded; closed #$open." >>"$GITHUB_STEP_SUMMARY"
+            fi
+            exit 0
+          fi
+          # Points the branch of the pull request at a commit, new or moved.
+          point() {
+            if gh api "repos/$GH_REPO/git/ref/heads/$1" >/dev/null 2>&1; then
+              gh api --method PATCH "repos/$GH_REPO/git/refs/heads/$1" -f sha="$2" -F force=true >/dev/null
+            else
+              gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/heads/$1" -f sha="$2" >/dev/null
+            fi
+          }
+          # The commit starts from the commit that was recorded, on a branch of its own,
+          # and the branch of the pull request moves to it in one step, as the
+          # screenshot bot does it: a pull request whose head is a commit of main would
+          # be closed by GitHub. GitHub signs the commit of the release app, as main
+          # requires.
+          scratch="$BRANCH-next"
+          if gh api "repos/$GH_REPO/git/ref/heads/$scratch" >/dev/null 2>&1; then
+            gh api --method DELETE "repos/$GH_REPO/git/refs/heads/$scratch" >/dev/null
+          fi
+          gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/heads/$scratch" -f sha="$SHA" >/dev/null
+          kept="$RUNNER_TEMP/kept"
+          user_id="$(gh api "users/${APP_SLUG}[bot]" --jq .id)"
+          body="Recorded by bash scripts/screenshots.sh --demo on $SHA, from the demo of demo/seed.sh: $URL
+
+          Signed-off-by: ${APP_SLUG}[bot] <${user_id}+${APP_SLUG}[bot]@users.noreply.github.com>"
+          head="$SHA"
+          parts="$(python3 .github/blueprint.py screenshots parts "$kept")"
+          for ((part = 1; part <= parts; part++)); do
+            python3 .github/blueprint.py --repo "$GH_REPO" screenshots commit "$kept" --branch "$scratch" \
+              --head "$head" --headline "$HEADLINE" --body "$body" --part "$part" >"$RUNNER_TEMP/commit.json"
+            head="$(gh api graphql --input "$RUNNER_TEMP/commit.json" --jq .data.createCommitOnBranch.commit.oid)"
+          done
+          point "$BRANCH" "$head"
+          gh api --method DELETE "repos/$GH_REPO/git/refs/heads/$scratch" >/dev/null
+          python3 .github/blueprint.py screenshots report "$kept" --sha "$SHA" --run "$URL" >"$RUNNER_TEMP/body.md"
+          if [[ -n "$open" ]]; then
+            gh pr edit "$open" --title "$HEADLINE" --body-file "$RUNNER_TEMP/body.md"
+          else
+            created="$(gh pr create --base main --head "$BRANCH" --title "$HEADLINE" --body-file "$RUNNER_TEMP/body.md")"
+            open="${created##*/}"
+          fi
+          gh pr merge "$open" --auto --squash
+          echo "The pull request of the animation, #$open from $BRANCH, has the commit $head, and merges itself once every check passes." >>"$GITHUB_STEP_SUMMARY"
 
   # The only job that may write issues, and it runs no code of the repository. A run
   # started by hand on another branch than main reports nothing.

@@ -29,7 +29,10 @@ export const DEMO = {
 // The documents of demo/documents that Paperless finds for the term, by their titles:
 // the two invoices, and the home insurance renewal, whose text says "invoice" while
 // its title doesn't. The animation opens that one, by the name that Paperless Sync
-// gives its file, the date of the document in front.
+// gives its file, the date of the document in front. They are in the order in which
+// Paperless ranks them: the electricity invoice says the term twice, the internet
+// invoice once, so that their scores differ and the order doesn't follow the order in
+// which Paperless happened to read them.
 export const RESULTS = ['Electricity invoice - August 2026', 'Internet invoice - July 2026', 'Home insurance renewal']
 export const OPENED = { title: 'Home insurance renewal', file: '2026-07-21 - Home insurance renewal' }
 

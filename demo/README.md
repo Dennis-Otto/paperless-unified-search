@@ -102,13 +102,14 @@ bash scripts/screenshots.sh --demo    # writes screenshots/demo-search-and-open.
 
 Chromium in the image of Playwright joins the network of the demo, signs in as `jamie` with the password of `demo/.env`, which reaches the container in its environment alone, opens the archive, searches for *invoice* and opens the home insurance renewal. The script writes the animation alone: the demo keeps running, with its data, and the other pictures stay as they are. It fails, with the way to a fresh demo, when the search shows other Paperless documents than the three of the demo, such as one that you added.
 
-Two runs record the same pixels, so the animation in the repository changes only when the demo looks different:
+Two fresh demos record the same pixels, so the animation in the repository changes only when the demo looks different:
 
 - **The clock** of the browser starts two days after the last change of the archive, so Files always shows *2 days ago*, whenever the demo was set up.
 - **The search** starts once the whole term is typed: the clock stands still while the letters go in, so a real Paperless that answers a part of the term sooner in one run than in another doesn't show.
-- **What a person does at their first sign-in** happens first: the welcome wizard of Nextcloud is closed, and `jamie` is online, so the dot on the avatar is there from the first frame. The two templates that the search finds, `Invoice.ods` and `Invoice.odt`, which Nextcloud copies in the same second, get times an hour apart, so the search lists them in the same order.
+- **The order of the Paperless results** comes from the text of the documents alone: the electricity invoice says *invoice* twice, the internet invoice once, so Paperless ranks the electricity invoice first in every demo. With the same score, the order of two documents would follow the order in which Paperless happened to read them.
+- **What a person does at their first sign-in** happens first: the welcome wizard of Nextcloud is closed, the notifications are read, so the bell has no red dot however long the demo has run, and `jamie` is online, so the dot on the avatar is there from the first frame. The two templates that the search finds, `Invoice.ods` and `Invoice.odt`, which Nextcloud copies in the same second, get times an hour apart, so the search lists them in the same order.
 
-The weekly run of the demo (`.github/workflows/demo.yml`) records the animation as well and keeps it as the artifact `demo-animation` of the run; its summary says when it looks different from the one in the repository.
+The weekly run of the demo (`.github/workflows/demo.yml`) records the animation as well and compares it with the one in the repository by its pixels, as the screenshot bot compares its pictures. When they changed, it keeps one pull request, *docs: update the animation of the demo*, from the branch `bot/demo-animation`, which merges itself once every check passes; a pull request that changes the demo or its recording shows the difference in its summary and in the artifact `demo-animation`.
 
 ## A demo, not a production set-up
 

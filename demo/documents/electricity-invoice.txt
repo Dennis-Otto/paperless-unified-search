@@ -15,6 +15,6 @@ Meter number: NE-4471-0815
 
 Consumption: 212 kWh at 0.32 EUR per kWh      67.84 EUR
 Monthly base price                            16.46 EUR
-Total due by 2 September 2026                 84.30 EUR
+Total of this invoice, due by 2 September     84.30 EUR
 
 Thank you for choosing Northstar Energy.
