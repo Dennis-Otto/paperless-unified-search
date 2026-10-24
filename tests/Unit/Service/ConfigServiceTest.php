@@ -67,6 +67,7 @@ final class ConfigServiceTest extends TestCase {
 			'allowLocal' => true,
 			'paperlessVersion' => '3.3.0',
 			'paperlessApiVersion' => '10',
+			'personalAlwaysSearch' => true,
 		], $serialized);
 		self::assertStringNotContainsString('TEST_VALUE', json_encode($serialized, JSON_THROW_ON_ERROR));
 	}
@@ -226,23 +227,27 @@ final class ConfigServiceTest extends TestCase {
 		self::assertFalse($result->tokenUnreadable);
 		self::assertTrue($result->alwaysSearch);
 		self::assertFalse($result->allowLocal);
+		self::assertTrue($result->personalAlwaysSearch);
 		// The token goes to the credentials manager alone.
 		self::assertSame([
 			'paperless_url' => 'https://paperless.example.com',
 			'always_search' => true,
 			'allow_local' => false,
+			'personal_always_search' => true,
 		], $config->storedValues(AppConstants::APP_ID));
 		self::assertSame('TEST_VALUE', $service->getToken());
 	}
 
 	/**
-	 * A save that names neither switch turns both off: no search without the switch of
-	 * Nextcloud for connected services, and no address of the local network.
+	 * A save that names no switch sets each to its default: no search of every user
+	 * without the switch of Nextcloud for connected services, and no address of the local
+	 * network, but users may choose to include Paperless in every search of their own.
 	 */
 	public function testASaveWithoutTheSwitchesTurnsThemOff(): void {
 		$config = $this->settings([
 			AppConstants::APP_ID . '.always_search' => true,
 			AppConstants::APP_ID . '.allow_local' => true,
+			AppConstants::APP_ID . '.personal_always_search' => false,
 		]);
 
 		$result = $this->service($config, $this->createStub(ICredentialsManager::class))
@@ -250,8 +255,48 @@ final class ConfigServiceTest extends TestCase {
 
 		self::assertFalse($config->stored(AppConstants::APP_ID, 'always_search'));
 		self::assertFalse($config->stored(AppConstants::APP_ID, 'allow_local'));
+		self::assertTrue($config->stored(AppConstants::APP_ID, 'personal_always_search'));
 		self::assertFalse($result->alwaysSearch);
 		self::assertFalse($result->allowLocal);
+		self::assertTrue($result->personalAlwaysSearch);
+	}
+
+	/**
+	 * Whether users may include Paperless in every search of their own, in their personal
+	 * settings, which an administrator can turn off.
+	 */
+	#[DataProvider('localNetwork')]
+	public function testSaveStoresWhetherUsersMayAlwaysSearchPaperless(bool $allowed): void {
+		$config = $this->settings([]);
+
+		$result = $this->service($config, $this->createStub(ICredentialsManager::class))
+			->save('https://paperless.example.com', 'TEST_VALUE', personalAlwaysSearch: $allowed);
+
+		self::assertSame($allowed, $config->stored(AppConstants::APP_ID, 'personal_always_search'));
+		self::assertSame($allowed, $result->personalAlwaysSearch);
+		self::assertSame($allowed, $result->jsonSerialize()['personalAlwaysSearch']);
+	}
+
+	#[DataProvider('localNetwork')]
+	public function testThePublicConfigTellsWhetherUsersMayAlwaysSearchPaperless(bool $allowed): void {
+		$config = $this->settings([AppConstants::APP_ID . '.personal_always_search' => $allowed]);
+
+		$service = $this->service($config, $this->createStub(ICredentialsManager::class));
+
+		self::assertSame($allowed, $service->isPersonalAlwaysSearchAllowed());
+		self::assertSame($allowed, $service->getPublicConfig()->personalAlwaysSearch);
+	}
+
+	public function testUsersMayAlwaysSearchPaperlessByDefault(): void {
+		$config = $this->createMock(IAppConfig::class);
+		$config->expects(self::once())
+			->method('getValueBool')
+			->with(AppConstants::APP_ID, 'personal_always_search', true)
+			->willReturn(true);
+
+		$service = $this->service($config, $this->createStub(ICredentialsManager::class));
+
+		self::assertTrue($service->isPersonalAlwaysSearchAllowed());
 	}
 
 	/**
@@ -568,7 +613,7 @@ final class ConfigServiceTest extends TestCase {
 	public function testResetDeletesTheUrlTheSwitchesTheArchiveAccountAndTheToken(): void {
 		$deletedKeys = [];
 		$config = $this->createMock(IAppConfig::class);
-		$config->expects(self::exactly(6))
+		$config->expects(self::exactly(7))
 			->method('deleteKey')
 			->willReturnCallback(static function (string $app, string $key) use (&$deletedKeys): void {
 				$deletedKeys[] = $app . '.' . $key;
@@ -588,6 +633,7 @@ final class ConfigServiceTest extends TestCase {
 			AppConstants::APP_ID . '.always_search',
 			AppConstants::APP_ID . '.archive_owner',
 			AppConstants::APP_ID . '.allow_local',
+			AppConstants::APP_ID . '.personal_always_search',
 			AppConstants::APP_ID . '.paperless_version',
 			AppConstants::APP_ID . '.paperless_api_version',
 		], $deletedKeys);
@@ -602,6 +648,7 @@ final class ConfigServiceTest extends TestCase {
 			'allowLocal' => false,
 			'paperlessVersion' => '',
 			'paperlessApiVersion' => '',
+			'personalAlwaysSearch' => true,
 		], $result->jsonSerialize());
 		self::assertSame('', $service->getToken());
 	}

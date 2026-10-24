@@ -16,7 +16,21 @@
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { chromium } from 'playwright-core'
-import { BASE_URL, SETTINGS, SETTINGS_SCOPE, STATUS, expectStatus, expectWarning, signIn } from './ui.mjs'
+import {
+	ALWAYS_SEARCH,
+	ALWAYS_SEARCH_SAVED,
+	BASE_URL,
+	PERSONAL,
+	PERSONAL_SCOPE,
+	PERSONAL_STATUS,
+	SETTINGS,
+	SETTINGS_SCOPE,
+	STATUS,
+	chooseAlwaysSearch,
+	expectStatus,
+	expectWarning,
+	signIn,
+} from './ui.mjs'
 
 const USER = process.env.E2E_USER ?? 'e2e-admin'
 const AXE = readFileSync(createRequire(import.meta.url).resolve('axe-core/axe.min.js'), 'utf8')
@@ -79,30 +93,33 @@ async function saveSettings(page, expected = 'Connection successful. Settings sa
 // The fields of text, those of Try a search among them, are as wide as each other, and
 // each checkbox, at least 20 pixels big, sits on the line of its label, in front of it.
 async function expectFormLayout(page, size) {
-	const layout = await page.locator(SETTINGS_SCOPE).evaluate((root) => {
-		const box = (element) => element.getBoundingClientRect()
-		return {
-			widths: [...root.querySelectorAll('input[type="url"], input[type="password"], input[type="text"], input[type="search"]')]
-				.map((input) => Math.round(box(input).width)),
-			checkboxes: [...root.querySelectorAll('input[type="checkbox"]')].map((input) => {
-				const checkbox = box(input)
-				const label = box(root.querySelector(`label[for="${input.id}"]`))
-				const middle = checkbox.top + (checkbox.height / 2)
-				return {
-					id: input.id,
-					size: Math.min(checkbox.width, checkbox.height),
-					beside: checkbox.right <= label.left && middle >= label.top && middle <= label.bottom,
-				}
-			}),
-		}
-	})
-	expectEqual(layout.widths.length, 5, `Fields of text on a ${size}`)
+	const widths = await page.locator(SETTINGS_SCOPE).evaluate((root) => [
+		...root.querySelectorAll('input[type="url"], input[type="password"], input[type="text"], input[type="search"]'),
+	].map((input) => Math.round(input.getBoundingClientRect().width)))
+	expectEqual(widths.length, 5, `Fields of text on a ${size}`)
 	expectEqual(
-		layout.widths.every((width) => width === layout.widths[0]),
+		widths.every((width) => width === widths[0]),
 		true,
-		`Fields of text on a ${size} as wide as each other (${layout.widths.join(', ')} pixels)`,
+		`Fields of text on a ${size} as wide as each other (${widths.join(', ')} pixels)`,
 	)
-	for (const checkbox of layout.checkboxes) {
+	await expectCheckboxes(page, SETTINGS_SCOPE, size)
+}
+
+// Each checkbox of the page within the scope is big enough to hit and in front of its
+// label, on the line of it.
+async function expectCheckboxes(page, scope, size) {
+	const checkboxes = await page.locator(scope).evaluate((root) => [...root.querySelectorAll('input[type="checkbox"]')].map((input) => {
+		const checkbox = input.getBoundingClientRect()
+		const label = root.querySelector(`label[for="${input.id}"]`).getBoundingClientRect()
+		const middle = checkbox.top + (checkbox.height / 2)
+		return {
+			id: input.id,
+			size: Math.min(checkbox.width, checkbox.height),
+			beside: checkbox.right <= label.left && middle >= label.top && middle <= label.bottom,
+		}
+	}))
+	expectEqual(checkboxes.length > 0, true, `Checkboxes in ${scope} on a ${size}`)
+	for (const checkbox of checkboxes) {
 		expectEqual(checkbox.size >= 20, true, `Checkbox ${checkbox.id} on a ${size} at least 20 pixels big`)
 		expectEqual(checkbox.beside, true, `Checkbox ${checkbox.id} on a ${size} in front of its label`)
 	}
@@ -236,6 +253,37 @@ const PAGES = [
 			await page.locator(TOKEN_FIELD).fill(TOKEN)
 			await saveSettings(page)
 			await expectTokenField(page, `${MOCK_URL} after saving it`, false)
+		},
+	},
+	{
+		// The section Paperless of the personal settings, once the settings above name an
+		// archive account that exists, after the choice to include Paperless in every
+		// search: its message in the colour of success. The choice is taken back after
+		// the check (#220).
+		name: 'personal settings after choosing to always search Paperless',
+		path: PERSONAL,
+		scope: PERSONAL_SCOPE,
+		size: LAPTOP,
+		async prepare(page) {
+			expectEqual(await page.locator(ALWAYS_SEARCH).isChecked(), false, 'Always search my Paperless documents as stored')
+			await chooseAlwaysSearch(page, true)
+			await expectStatus(page, ALWAYS_SEARCH_SAVED.true, 'success', PERSONAL_STATUS)
+		},
+		async after(page) {
+			await chooseAlwaysSearch(page, false)
+		},
+	},
+	{
+		// On a phone, the checkbox stays in front of its label and the section within
+		// the width of the screen.
+		name: 'personal settings on a phone',
+		path: PERSONAL,
+		scope: PERSONAL_SCOPE,
+		size: PHONE,
+		async prepare(page) {
+			await expectCheckboxes(page, PERSONAL_SCOPE, PHONE.name)
+			const overflow = await page.locator(PERSONAL_SCOPE).evaluate((root) => root.scrollWidth - root.clientWidth)
+			expectEqual(overflow <= 0, true, `Personal settings within the width of a phone, ${overflow} pixels wider than it`)
 		},
 	},
 ]

@@ -9,7 +9,8 @@
 // jamie, and goes through the app in Chromium as a person does: the search, the
 // opened file, the search narrowed by the date filter of Nextcloud, the smart picker in
 // a note of Text with the link that it inserts, the settings and the share of the
-// archive, light and dark, Try a search of the settings, the search and the settings on
+// archive, light and dark, Try a search of the settings, the dashboard, the personal
+// settings with the choice to always search Paperless, the search and the settings on
 // a phone, and the search as an animation. The images go to the folder of
 // SCREENSHOTS_OUT. A step fails when the app doesn't show what its picture is meant to
 // show, such as a Paperless result that the date filter should have left out.
@@ -28,8 +29,11 @@ import { DEMO, OPENED, RESULTS, demoClock, lastChange, templateTimes, unexpected
 import {
 	BASE_URL,
 	PASSWORD,
+	PERSONAL,
+	PERSONAL_SCOPE,
 	SETTINGS,
 	SETTINGS_SCOPE,
+	chooseAlwaysSearch,
 	connectedServices,
 	paperlessResult,
 	resultGroup,
@@ -500,6 +504,22 @@ async function dashboard(browser, session, theme) {
 	const widget = page.locator('.panel').filter({ hasText: 'New in Paperless' })
 	await widget.getByText('Property tax notice 2026').waitFor()
 	await save(page, `11-dashboard${suffix}.png`, 1200)
+	await page.context().close()
+}
+
+// The section Paperless of the personal settings of jamie, after the choice to include
+// Paperless in every search of their own, down to the message below it. The choice is
+// taken back afterwards: the other pictures show the search with the switch.
+async function personalSettings(browser, session, theme) {
+	const suffix = theme === 'dark' ? '-dark' : ''
+	const page = await newPage(browser, session, { viewport: { width: 1280, height: 720 }, colorScheme: theme })
+	await page.goto(`${BASE_URL}${PERSONAL}`)
+	await page.locator(PERSONAL_SCOPE).waitFor()
+	await chooseAlwaysSearch(page, true)
+	// Away from the checkbox, which lights up under the pointer.
+	await page.mouse.move(0, 0)
+	await save(page, `13-personal-settings${suffix}.png`)
+	await chooseAlwaysSearch(page, false)
 	await page.context().close()
 }
 
@@ -997,6 +1017,7 @@ async function everyPicture(browser) {
 		await share(browser, archive, theme)
 		await trySearch(browser, admin, theme)
 		await dashboard(browser, reader, theme)
+		await personalSettings(browser, reader, theme)
 	}
 	await phone(browser, reader)
 	await phoneSettings(browser, admin)

@@ -48,7 +48,10 @@ Paperless-Dokumente erscheinen in der globalen Suche von Nextcloud für jeden Be
 
 **Verbundene Dienste durchsuchen** entscheidet, ob eine Suche Nextcloud verlässt. Nextcloud zählt jede Suche, die den Begriff an einen anderen Server schickt, als eine eines verbundenen Dienstes, auch Paperless, und fragt sie nur, solange der Schalter an ist. Es schaltet den Schalter aus, sobald die Seite neu lädt, damit kein Begriff ohne die Wahl des Benutzers an einen anderen Server geht, immer wieder.
 
-Ein Administrator, der seinem Paperless-Server vertraut, als dem, der die Dokumente ohnehin hält, kann in den Einstellungen **Paperless immer in die globale Suche einbeziehen** wählen. Paperless gehört dann zu jeder Suche jedes Benutzers, ohne den Schalter, der es nicht mehr steuert. Jeder Benutzer lädt Nextcloud nach der Änderung einmal neu.
+Es gibt zwei Wege darum herum, und beide schicken die Begriffe mit jeder Suche an Paperless:
+
+- **Für dich selbst:** Wähle unter **Persönliche Einstellungen → Paperless** **Meine Paperless-Dokumente immer durchsuchen**, wie *Deine Paperless-Dokumente immer durchsuchen* oben zeigt. Nur deine eigenen Suchen ändern sich, ab der nächsten Seite, die du öffnest.
+- **Für jeden Benutzer:** Ein Administrator, der seinem Paperless-Server vertraut, als dem, der die Dokumente ohnehin hält, kann in den Einstellungen **Paperless immer in die globale Suche einbeziehen** wählen. Paperless gehört dann zu jeder Suche jedes Benutzers, ohne den Schalter, der es nicht mehr steuert, und die persönlichen Einstellungen zeigen das Kästchen angehakt und ausgegraut. Jeder Benutzer lädt Nextcloud nach der Änderung einmal neu.
 
 ## Auf dem Smartphone
 

@@ -181,6 +181,10 @@ Type `/` in a note of Text and choose *Paperless documents*: the picker finds th
 
 *New in Paperless* on Nextcloud's dashboard lists the documents that Paperless added last and that you can open, without a search.
 
+### Paperless in every search of your own
+
+With **Always search my Paperless documents** in the personal settings, every search of yours includes Paperless without the switch *Search connected services*, which Nextcloud turns off on every page that loads.
+
 ### The archive, shared read-only
 
 <picture>
@@ -304,7 +308,8 @@ The search needs one thing from a synchronization: each document of Paperless-ng
 5. When Nextcloud reaches Paperless at an address of your local network or by the name of its Docker service, such as `http://192.168.1.20:8000` or `http://paperless:8000`, select **Paperless runs in my local network** ([below](#paperless-in-your-local-network)).
 6. Under **Archive account**, enter the Nextcloud account that owns the synchronized files, or leave it blank to use the account that Paperless Sync writes the archive with. The settings store the ID as Nextcloud spells it, whatever its case, and warn when the account doesn't exist.
 7. Optionally enable **Always include Paperless in global search** to treat the configured Paperless server as trusted.
-8. Select **Test connection and save**. Nextcloud asks for your password when you haven't confirmed it in the last 30 minutes, as for its own settings of this kind; so does **Disconnect**.
+8. Leave **Let users include Paperless in all their searches** on to let each user include Paperless in every search of their own, in their personal settings, or turn it off.
+9. Select **Test connection and save**. Nextcloud asks for your password when you haven't confirmed it in the last 30 minutes, as for its own settings of this kind; so does **Disconnect**.
 
 Leave the token blank to keep the stored one. The stored token goes only to the Paperless server it was saved for: when the URL names another server, with another scheme, host or port, the settings ask for the token again, so that the token never reaches a server it wasn't meant for. Another path on the same server keeps it. When Nextcloud can no longer decrypt the stored token, as after a move or a restore with another `secret` in `config.php`, the settings say so and ask for it again, and until then the search shows no Paperless documents.
 
@@ -312,7 +317,7 @@ The configuration is global. Access control remains user-specific because the ap
 
 When Paperless documents are missing from the search, look at **Search problems** at the end of the settings, and for a document that Paperless finds but a user doesn't see, use **Try a search** below it: enter the term and the user ID, and it lists the first 20 documents that Paperless ranks for the term, each with its ID, its title and whether it shows to that user, or why not: *Not shared with* the user, *Not a file of the archive account*, or *No file with* its marker, such as `[P412]`. It asks the same questions as [`occ paperless_unified_search:search --explain`](https://dennis-otto.github.io/paperless-unified-search/reference.html#explain-a-hidden-document), for administrators of a managed instance without a shell, and answers with the titles alone, without the content or the files of the documents. A failed search shows the users no Paperless documents and no error, and a request that fails before it reaches Paperless, as when the connection fails, is sent a second time before the search gives up; one that waited for a Paperless that hangs is not, so that a search never waits twice. The settings count both, the failed searches and the requests that only their second try answered, and list the latest 20 with the time, the step, asking Paperless or looking for the files in Nextcloud, the kind and the message of the error and how long it took, along with since when searches work again after the last failure. A query that Paperless refuses while it is still being typed isn't a problem and doesn't show up, and during an outage, also one that comes and goes, the problems of one kind are written at most once in 30 seconds, with those in between still counted. This helps where the hoster keeps the log of Nextcloud from administrators. **Clear history** and **Disconnect** forget the history; saving the settings keeps it.
 
-By default, Nextcloud's search in the browser asks Paperless only after the user enables **Search connected services**, and the smart picker only after the user picks **Paperless documents** in it. When the trusted-service option is enabled, every global search term from every Nextcloud user is sent to Paperless automatically and the connected-services switch no longer controls this provider. Reload Nextcloud after changing this option.
+By default, Nextcloud's search in the browser asks Paperless only after the user enables **Search connected services**, and the smart picker only after the user picks **Paperless documents** in it. When the trusted-service option is enabled, every global search term from every Nextcloud user is sent to Paperless automatically and the connected-services switch no longer controls this provider. Reload Nextcloud after changing this option. A user can make the same choice for their own searches alone, in the personal settings, while **Let users include Paperless in all their searches** is on ([Usage](https://dennis-otto.github.io/paperless-unified-search/usage.html#always-search-your-paperless-documents)).
 
 ### Paperless in your local network
 
@@ -383,9 +388,20 @@ The settings speak English and German: German with *du* for accounts set to *Deu
 
 ## Usage
 
-Open Nextcloud's global search, enable **Search connected services**, and select **Paperless documents**. Nextcloud 32 and later disable external providers after a page reload, so this switch must be enabled again unless an administrator has enabled trusted-service mode.
+Open Nextcloud's global search, enable **Search connected services**, and select **Paperless documents**. Nextcloud 32 and later turn the switch off again whenever a page loads, so that no term goes to another server without your choice. To skip it, select **Always search my Paperless documents** in your personal settings, as [below](#always-search-your-paperless-documents); an administrator can include Paperless in the search of every user instead, with trusted-service mode.
 
 Documents without a synchronized `[P<ID>]` file of the archive account are intentionally omitted. This also keeps Inbox-only documents out of Nextcloud search when the synchronization process does not export them.
+
+### Always search your Paperless documents
+
+Under **Personal settings → Paperless**, select **Always search my Paperless documents**, and every search of yours asks Paperless without the switch, from the next page that you open. Your search terms then go to the Paperless server of your Nextcloud with every search, also when you look for a file or a contact; the searches of everybody else stay as they are. Clear the checkbox, and the switch decides again.
+
+The section shows once Paperless is connected with an archive account. Administrators can turn off **Let users include Paperless in all their searches** in the administration settings: the section then disappears, and the search ignores what users chose until it is on again. While **Always include Paperless in global search** is on, every search includes Paperless anyway, and the section shows the checkbox ticked and greyed out.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/when-a-search-asks-paperless.dark.svg">
+  <img src="docs/images/diagrams/when-a-search-asks-paperless.svg" alt="When a search asks Paperless: As a page of Nextcloud loads, its search asks the app whether Paperless is a connected service for the user who signed in. While an administrator includes Paperless in every search of every user, it is not, and every search asks Paperless. Otherwise, while the administrators let users choose, a user who selected Always search my Paperless documents in the personal settings has every search of their own ask Paperless. Everybody else finds Paperless documents only with the switch Search connected services, which Nextcloud turns off again on every page that loads.">
+</picture>
 
 ### Narrow the results by date
 
@@ -520,6 +536,7 @@ The token never goes on the command line, where the history of the shell and the
 | `--archive-account=ID` | The account that owns the synchronized files; empty for the account of Paperless Sync |
 | `--allow-local`, `--no-allow-local` | **Paperless runs in my local network** |
 | `--always-search`, `--no-always-search` | **Always include Paperless in global search** |
+| `--personal-always-search`, `--no-personal-always-search` | **Let users include Paperless in all their searches** |
 
 On a server, as the user of the web server:
 
@@ -609,7 +626,7 @@ Documents without a file are no failure, as long as the search can show others: 
 - Search results are filtered through the current user's Nextcloud filesystem view.
 - The settings show administrators the history of the problems of the search without the API token, the search term or the query of any URL.
 - **Try a search** shows administrators which documents a user finds for a term, by their IDs and titles alone, without their content, an excerpt or their files; the audit log of the app *Auditing / Logging* (`admin_audit`) records which administrator tried a search as which user, whatever the log level, and so does the log of Nextcloud at level info, without the term.
-- Search terms are sent server-to-server only when connected-services search or trusted-service mode is enabled, after the user chose **Paperless documents** in the smart picker, or when a client asks this search by its ID through the API.
+- Search terms are sent server-to-server only when connected-services search or trusted-service mode is enabled, when the user chose **Always search my Paperless documents** in the personal settings, after the user chose **Paperless documents** in the smart picker, or when a client asks this search by its ID through the API.
 - A link that the smart picker inserts is the link of the file in Nextcloud, which shows its preview only to readers who can open the file.
 - The dashboard widget shows a user only the newest documents whose files they can open. Nextcloud's distributed cache keeps the IDs, titles, correspondents and types of the 25 newest documents for a minute, which are the same for every user, and never their text.
 - Administrators can explicitly trust the configured Paperless server to include it automatically in every user's global searches.

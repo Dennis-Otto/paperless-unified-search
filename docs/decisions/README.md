@@ -17,3 +17,4 @@ Copy [the template](0000-template.md) to the next free number, replace the descr
 | [0005](0005-name-the-cause-of-a-failed-connection-test.md) | Name the cause of a failed test of the connection, in the language of the administrator | accepted |
 | [0006](0006-retry-only-before-a-connection.md) | Try a request again only before it has a connection, and count no refused query as a problem | accepted |
 | [0007](0007-occ-takes-no-token-as-an-argument.md) | Take the token of occ from the standard input or the environment, and check the set-up without asking Paperless | accepted |
+| [0008](0008-let-each-user-always-search-paperless.md) | Let each user include Paperless in every search of their own | accepted |

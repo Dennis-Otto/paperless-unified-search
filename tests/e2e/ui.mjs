@@ -4,7 +4,8 @@
 // The steps through the pages of Nextcloud that the checks in the browser (flow.mjs,
 // accessibility.mjs, settings.mjs) and the screenshots of the README (screenshots.mjs)
 // share: signing in, the unified search with the results of Paperless, the Viewer that a
-// result opens, and the messages of the settings page of the app. Each step waits for
+// result opens, the messages of the settings page of the app, and the choice of a user
+// to include Paperless in every search of their own. Each step waits for
 // what a person would see before going on, and finds it by its role and name, as a
 // screen reader does, in every supported version of Nextcloud: Nextcloud 33 and 34
 // search in a dialog that a button of the header opens, and Nextcloud 35 in a field of
@@ -130,10 +131,29 @@ async function lookProblems(locator, kind) {
 	].filter(Boolean)
 }
 
-// Checks the message of the settings page after an action: its text and its kind,
-// success or error, in the colour of that kind and with its icon.
-export async function expectStatus(page, text, kind) {
-	const locator = page.locator(STATUS)
+// The section Paperless of the personal settings, its checkbox Always search my
+// Paperless documents, the message after a change, and that message for each choice.
+export const PERSONAL = '/index.php/settings/user/paperless_unified_search'
+export const PERSONAL_SCOPE = '#paperless-unified-search-personal'
+export const ALWAYS_SEARCH = '#paperless-unified-search-personal-always-search'
+export const PERSONAL_STATUS = '#paperless-unified-search-personal-status'
+export const ALWAYS_SEARCH_SAVED = {
+	true: 'Saved. Your searches include Paperless from the next page that you open.',
+	false: 'Saved. From the next page that you open, your searches include Paperless only with “Search connected services”.',
+}
+
+// Ticks or unticks Always search my Paperless documents in the personal settings that
+// the page shows, and waits for the message that the choice is saved.
+export async function chooseAlwaysSearch(page, always) {
+	await page.locator(ALWAYS_SEARCH).setChecked(always)
+	await page.locator(PERSONAL_STATUS).filter({ hasText: ALWAYS_SEARCH_SAVED[always] }).waitFor()
+}
+
+// Checks the message of a settings page after an action, by default the one of the
+// administration settings: its text and its kind, success or error, in the colour of
+// that kind and with its icon.
+export async function expectStatus(page, text, kind, selector = STATUS) {
+	const locator = page.locator(selector)
 	const status = await locator.evaluate((element) => ({
 		text: element.textContent,
 		kinds: [...element.classList].filter((name) => name.startsWith('paperless-unified-search-status--')),

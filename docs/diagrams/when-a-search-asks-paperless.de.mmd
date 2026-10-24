@@ -1,0 +1,34 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: Wann eine Suche Paperless fragt
+    accDescr: Während eine Seite von Nextcloud lädt, fragt ihre Suche die App, ob Paperless für den angemeldeten Benutzer ein verbundener Dienst ist. Solange ein Administrator Paperless in jede Suche aller Benutzer einbezieht, ist es keiner, und jede Suche fragt Paperless. Sonst fragt, solange die Administratoren Benutzer wählen lassen, jede Suche eines Benutzers Paperless, der in seinen persönlichen Einstellungen Meine Paperless-Dokumente immer durchsuchen gewählt hat. Alle anderen finden Paperless-Dokumente nur mit dem Schalter Verbundene Dienste durchsuchen, den Nextcloud auf jeder Seite, die lädt, wieder ausschaltet.
+
+    page["Eine Seite von Nextcloud lädt, und ihre Suche<br>listet ihre Anbieter für den Benutzer"]
+    trusted{"Paperless immer in die<br>globale Suche einbeziehen?"}
+    allowed{"Benutzern erlauben, Paperless<br>in alle ihre Suchen einzubeziehen?"}
+    chosen{"Hat der Benutzer Meine Paperless-Dokumente<br>immer durchsuchen gewählt?"}
+    always(["`**Jede Suche fragt Paperless**
+    ohne den Schalter`"])
+    switch(["`**Paperless nur mit dem Schalter**
+    Verbundene Dienste durchsuchen,
+    auf jeder Seite, die lädt, wieder aus`"])
+
+    page --> trusted
+    trusted -- "ja, für jeden Benutzer" --> always
+    trusted -- "nein" --> allowed
+    allowed -- "ja" --> chosen
+    allowed -- "nein" --> switch
+    chosen -- "ja, für diesen Benutzer" --> always
+    chosen -- "nein" --> switch
+
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    class page person
+    class trusted,allowed,chosen app
+    class always yes

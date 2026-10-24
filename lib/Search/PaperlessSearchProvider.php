@@ -16,6 +16,7 @@ use DateTimeZone;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessQueryRejected;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
+use OCA\PaperlessUnifiedSearch\Service\AlwaysSearch;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\FilePictures;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
@@ -31,6 +32,7 @@ use OCP\IL10N;
 use OCP\IRequest;
 use OCP\IURLGenerator;
 use OCP\IUser;
+use OCP\IUserSession;
 use OCP\Search\FilterDefinition;
 use OCP\Search\IExternalProvider;
 use OCP\Search\IFilter;
@@ -84,6 +86,8 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 		private FilePictures $pictures,
 		private IDateTimeFormatter $dateTimeFormatter,
 		private IDateTimeZone $dateTimeZone,
+		private AlwaysSearch $alwaysSearch,
+		private IUserSession $userSession,
 	) {
 	}
 
@@ -126,12 +130,15 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 	}
 
 	/**
-	 * Trusted-service mode is an explicit administrator opt-in. Returning false
-	 * tells Nextcloud not to gate this provider behind its connected-services switch.
-	 * Search terms are still sent server-to-server to the configured Paperless instance.
+	 * Whether Nextcloud searches Paperless only with its switch Search connected services,
+	 * which it turns off on every page that loads. Not for every user while the
+	 * administrators trust Paperless, and not for a user who chose to include it in every
+	 * search of their own: both are explicit opt-ins. Nextcloud asks it for the user of the
+	 * request, as it lists the providers of the search. The terms still go server-to-server
+	 * to the configured Paperless instance.
 	 */
 	public function isExternalProvider(): bool {
-		return !$this->configService->isAlwaysSearchEnabled();
+		return !$this->alwaysSearch->isOnFor($this->userSession->getUser());
 	}
 
 	/**

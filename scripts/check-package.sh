@@ -79,7 +79,9 @@ for catalog in l10n/*.json l10n/*.js; do
 done
 
 find "${APP_ROOT}" -type f -name '*.php' -print0 | xargs -0 -n1 php -l
-node --check "${APP_ROOT}/js/settings.js"
+for script in "${APP_ROOT}"/js/*.js; do
+	node --check "${script}"
+done
 for catalog in "${APP_ROOT}"/l10n/*.js; do
 	node --check "${catalog}"
 done

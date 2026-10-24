@@ -126,5 +126,7 @@ Dokumentation: <https://dennis-otto.github.io/paperless-unified-search/de/index.
 	<settings>
 		<admin>OCA\PaperlessUnifiedSearch\Settings\AdminSettings</admin>
 		<admin-section>OCA\PaperlessUnifiedSearch\Settings\AdminSection</admin-section>
+		<personal>OCA\PaperlessUnifiedSearch\Settings\PersonalSettings</personal>
+		<personal-section>OCA\PaperlessUnifiedSearch\Settings\PersonalSection</personal-section>
 	</settings>
 </info>

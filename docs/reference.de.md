@@ -17,8 +17,19 @@ Die Einstellungen liegen unter **Verwaltungseinstellungen → Paperless Unified 
 | **Paperless-API-Token** | Das Token des Paperless-Kontos der Suche; leer behält das gespeicherte, für denselben Server | — | Keiner: im Zugangsdatenmanager von Nextcloud, als `paperless_unified_search.api-token` |
 | **Archiv-Konto** | Das Nextcloud-Konto, dessen Dateien für die Dokumente stehen; leer nimmt das Konto von Paperless Sync | Das Konto von Paperless Sync | `archive_owner` |
 | **Paperless immer in die globale Suche einbeziehen** | Fragt Paperless bei jeder Suche jedes Benutzers, ohne **Verbundene Dienste durchsuchen**; lade Nextcloud nach einer Änderung neu | Aus | `always_search` |
+| **Benutzern erlauben, Paperless in alle ihre Suchen einzubeziehen** | Lässt jeden Benutzer in seinen persönlichen Einstellungen **Meine Paperless-Dokumente immer durchsuchen** wählen; aus blendet die Wahl aus, und die Suche übergeht, was Benutzer gewählt haben | An | `personal_always_search` |
 
 **Verbindung trennen** löscht die URL, das Token, die Schalter, das Archiv-Konto, die Version von Paperless und den Verlauf der Probleme. **Verlauf leeren** löscht nur den Verlauf.
+
+### Persönliche Einstellungen
+
+Unter **Persönliche Einstellungen → Paperless** kann jeder Benutzer **Meine Paperless-Dokumente immer durchsuchen** wählen: Jede seiner Suchen fragt Paperless dann ohne **Verbundene Dienste durchsuchen**, ab der nächsten Seite, die er öffnet, und die Begriffe gehen an den Paperless-Server, auch wenn er eine Datei oder einen Kontakt sucht. Das Kästchen speichert, sobald es sich ändert. Der Abschnitt erscheint, solange Paperless mit einem Archiv-Konto verbunden ist und die Administratoren Benutzer wählen lassen; solange **Paperless immer in die globale Suche einbeziehen** an ist, zeigt er das Kästchen angehakt und ausgegraut, weil jede Suche Paperless ohnehin einbezieht.
+
+| Einstellung | Standard | Benutzereinstellung |
+| --- | --- | --- |
+| **Meine Paperless-Dokumente immer durchsuchen** | Aus | `always_search` der App, nur gespeichert, solange sie gewählt ist |
+
+Ein Administrator liest die Wahl eines Benutzers mit `occ user:setting <user> paperless_unified_search always_search` und nimmt sie mit `occ user:setting <user> paperless_unified_search always_search --delete` zurück. Solange **Benutzern erlauben, Paperless in alle ihre Suchen einzubeziehen** aus ist, bleiben die gespeicherten Wahlen erhalten, zählen aber nicht; sie zählen wieder, sobald es an ist.
 
 ## Konfiguration der App
 
@@ -35,6 +46,7 @@ occ config:app:get paperless_unified_search paperless_url
 | `allow_local` | Ob Paperless im lokalen Netzwerk läuft |
 | `archive_owner` | Die ID des Archiv-Kontos, so geschrieben wie in Nextcloud; fehlt, wenn die Einstellungen das Konto von Paperless Sync nehmen |
 | `always_search` | Ob jede Suche Paperless fragt |
+| `personal_always_search` | Ob Benutzer wählen dürfen, Paperless in jede ihrer Suchen einzubeziehen; fehlt er, dürfen sie es |
 | `paperless_version`, `paperless_api_version` | Die Versionen von Paperless und seiner API, etwa `3.3.0` und `10`, wie seine letzte Antwort sie genannt hat |
 | `diagnostics` | Der Verlauf der Probleme der Suche, als JSON; ein Lazy-Schlüssel, den Nextcloud erst lädt, wenn er gelesen wird |
 | `diagnostics_pending` | Ob ein Fehler im Verlauf noch auf eine Suche wartet, die funktioniert |
@@ -49,14 +61,15 @@ Schlüssel, die eine ältere Version hinterlassen hat und diese nicht mehr liest
 
 ## Die Routen der Einstellungen
 
-Die Seite der Einstellungen speichert über vier Routen der App, die nur Administratoren aufrufen dürfen, jede mit dem CSRF-Token von Nextcloud. Ein Skript ruft sie mit der Anmeldung eines Administrators und dem Header `OCS-APIRequest: true` auf, wie es die End-to-End-Tests tun; `/index.php` steht vor `/apps`, wo Nextcloud ohne Pretty URLs läuft.
+Die Seite der Einstellungen speichert über vier Routen der App, die nur Administratoren aufrufen dürfen, jede mit dem CSRF-Token von Nextcloud, und die persönlichen Einstellungen über eine fünfte, die jeder angemeldete Benutzer aufrufen darf. Ein Skript ruft die vier mit der Anmeldung eines Administrators auf und die fünfte mit der Anmeldung des Benutzers, dessen Wahl sie speichert, jede mit dem Header `OCS-APIRequest: true`, wie es die End-to-End-Tests tun; `/index.php` steht vor `/apps`, wo Nextcloud ohne Pretty URLs läuft.
 
 | Route | Tut |
 | --- | --- |
-| `POST /apps/paperless_unified_search/settings` | Testet die Verbindung und speichert, mit den Parametern `url`, `token`, `archiveOwner`, `allowLocal` und `alwaysSearch`; fragt nach dem Passwort wie **Verbindung testen und speichern** |
+| `POST /apps/paperless_unified_search/settings` | Testet die Verbindung und speichert, mit den Parametern `url`, `token`, `archiveOwner`, `allowLocal`, `alwaysSearch` und `personalAlwaysSearch`; fragt nach dem Passwort wie **Verbindung testen und speichern** |
 | `DELETE /apps/paperless_unified_search/settings` | **Verbindung trennen**: löscht die Einstellungen, das Token und den Verlauf; fragt nach dem Passwort |
 | `DELETE /apps/paperless_unified_search/settings/diagnostics` | **Verlauf leeren** |
 | `POST /apps/paperless_unified_search/settings/try` | **Suche ausprobieren**: sucht mit dem Parameter `term` als das Konto `user` und sagt für jedes Dokument, ob es angezeigt wird und warum nicht, nur mit seiner ID und seinem Titel; das Protokoll hält fest, welcher Administrator als wer gesucht hat, ohne den Begriff |
+| `POST /apps/paperless_unified_search/personal` | **Meine Paperless-Dokumente immer durchsuchen** des angemeldeten Benutzers, mit dem Parameter `alwaysSearch`; antwortet `{"alwaysSearch": true}` oder `false`, und HTTP 403 mit dem Code `not_allowed`, solange die Administratoren Benutzer nicht wählen lassen |
 
 ```sh
 curl -u admin -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
@@ -66,7 +79,7 @@ curl -u admin -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
   'https://cloud.example.com/apps/paperless_unified_search/settings'
 ```
 
-`token@file` übergibt das Token in einer Datei, was es aus dem Verlauf der Shell und der Liste der Prozesse heraushält. Eine gespeicherte Einstellung antwortet mit HTTP 200 und den Einstellungen als JSON: `url`, `tokenConfigured`, `alwaysSearch`, `archiveOwner`, `syncAccount`, `tokenUnreadable`, `archiveOwnerMissing`, `allowLocal`, `paperlessVersion` und `paperlessApiVersion`, nie mit dem Token. Eine Ablehnung antwortet mit HTTP 400, oder 500, wenn etwas nach dem Test fehlgeschlagen ist, mit der `message`, die in der Sprache des Administrators zu zeigen ist, und einem `code`:
+`token@file` übergibt das Token in einer Datei, was es aus dem Verlauf der Shell und der Liste der Prozesse heraushält. Eine gespeicherte Einstellung antwortet mit HTTP 200 und den Einstellungen als JSON: `url`, `tokenConfigured`, `alwaysSearch`, `archiveOwner`, `syncAccount`, `tokenUnreadable`, `archiveOwnerMissing`, `allowLocal`, `paperlessVersion`, `paperlessApiVersion` und `personalAlwaysSearch`, nie mit dem Token. Ein Speichern ohne `alwaysSearch` oder `allowLocal` setzt den Schalter auf seinen Standard, aus; ein Speichern ohne `personalAlwaysSearch` lässt ihn, wie er ist. Eine Ablehnung antwortet mit HTTP 400, oder 500, wenn etwas nach dem Test fehlgeschlagen ist, mit der `message`, die in der Sprache des Administrators zu zeigen ist, und einem `code`:
 
 | Code | Bedeutet |
 | --- | --- |
@@ -172,7 +185,7 @@ Die App schreibt in das Protokoll von Nextcloud mit `app` auf `paperless_unified
 ## Deinstallieren
 
 1. **Verbindung trennen** in den Einstellungen. Das löscht die URL, das Token, die Schalter, das Archiv-Konto, die Version von Paperless und den Verlauf der Probleme; nur `diagnostics_pending` bleibt, mit den Schlüsseln, die Nextcloud von jeder App führt, etwa `enabled` und `installed_version`.
-2. **Die App entfernen:** `occ app:remove paperless_unified_search` deaktiviert sie und löscht ihren Code; oder *Apps → Deaktivieren* und *Entfernen* im Browser. Nextcloud behält die App-Konfiguration einer entfernten App: `occ config:list paperless_unified_search` listet, was übrig ist, und `occ config:app:delete paperless_unified_search <key>` löscht einen Schlüssel.
+2. **Die App entfernen:** `occ app:remove paperless_unified_search` deaktiviert sie und löscht ihren Code; oder *Apps → Deaktivieren* und *Entfernen* im Browser. Nextcloud behält die App-Konfiguration einer entfernten App: `occ config:list paperless_unified_search` listet, was übrig ist, und `occ config:app:delete paperless_unified_search <key>` löscht einen Schlüssel. Die Wahlen der Benutzer bleiben als ihre Benutzereinstellung `always_search`, die `occ user:setting <user> paperless_unified_search always_search --delete` löscht.
 3. **In Paperless** löschst du das API-Token oder das Konto der Suche: Ein Token, das Nextcloud vergessen hat, funktioniert weiter, bis auch Paperless es vergisst.
 
 Die Dateien des Archivs und ihre Freigaben bleiben, wie sie sind: Sie gehören dem Archiv-Konto und der Synchronisierung, nicht dieser App. Ohne **Verbindung trennen** bleibt das verschlüsselte Token im Zugangsdatenmanager von Nextcloud, unter `paperless_unified_search.api-token`, bis die App wieder installiert und getrennt wird.

@@ -78,6 +78,7 @@ final class AdminSettingsTest extends TestCase {
 			'allowLocal' => true,
 			'paperlessVersion' => '',
 			'paperlessApiVersion' => '',
+			'personalAlwaysSearch' => true,
 		], $params['config']->jsonSerialize());
 		self::assertStringNotContainsString('TEST_VALUE', json_encode($params, JSON_THROW_ON_ERROR));
 		self::assertNull($params['history']);
