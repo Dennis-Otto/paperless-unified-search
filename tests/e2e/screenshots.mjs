@@ -13,12 +13,18 @@
 // a phone, and the search as an animation. The images go to the folder of
 // SCREENSHOTS_OUT. A step fails when the app doesn't show what its picture is meant to
 // show, such as a Paperless result that the date filter should have left out.
+//
+// With SCREENSHOTS_DEMO=1, which `bash scripts/screenshots.sh --demo` sets, it records
+// the animation of the demo of the README instead, demo-search-and-open.gif, from the
+// real Paperless-ngx and Nextcloud of demo/seed.sh, and takes nothing else
+// (tests/e2e/demo.mjs).
 
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import gifenc from 'gifenc'
 import pngjs from 'pngjs'
 import { chromium } from 'playwright-core'
+import { DEMO, OPENED, RESULTS, demoClock, lastChange, templateTimes, unexpectedResults } from './demo.mjs'
 import {
 	BASE_URL,
 	PASSWORD,
@@ -208,8 +214,8 @@ async function request(user, method, path, body, headers = {}) {
 // and the search of Files would list them in either order.
 const TEMPLATES = [['Templates/Invoice.ods', FILED - 3600], ['Templates/Invoice.odt', FILED - 7200]]
 
-async function fixTemplates(user) {
-	for (const [path, time] of TEMPLATES) {
+async function fixTemplates(user, templates = TEMPLATES) {
+	for (const [path, time] of templates) {
 		const found = await fetch(`${BASE_URL}${davPath(user, path)}`, { method: 'HEAD', headers: { Authorization: authorization(user) } })
 		if (found.ok) {
 			await fileAt(user, path, time)
@@ -312,9 +318,9 @@ function pointer() {
 }
 
 // A page of its own, with the session, the language, the time zone and the font of the
-// pictures, and the clock of the pictures unless clock is false; pointer adds the
-// pointer of the animation.
-async function newPage(browser, session, options, { pointer: withPointer = false, clock = true } = {}) {
+// pictures, and the clock of the pictures unless clock is false, or another moment
+// that clock names; pointer adds the pointer of the animation.
+async function newPage(browser, session, options, { pointer: withPointer = false, clock = NOW } = {}) {
 	const context = await browser.newContext({
 		storageState: session,
 		locale: 'en-US',
@@ -324,7 +330,7 @@ async function newPage(browser, session, options, { pointer: withPointer = false
 		...options,
 	})
 	if (clock) {
-		await context.clock.install({ time: NOW })
+		await context.clock.install({ time: clock })
 	}
 	await context.addInitScript((css) => {
 		const add = () => {
@@ -719,11 +725,28 @@ async function phone(browser, session) {
 	await page.context().close()
 }
 
-// The animation: the archive, the search for "invoice", the switch for connected
-// services and the insurance renewal, which only Paperless finds by its text.
-async function animation(browser, session) {
+// The animation of the README, from the archive of the mock: its name, the moment of its
+// clock, the page that it starts on, whether the search waits for the whole term,
+// whether it switches on the connected services, as the search of Paperless needs
+// unless the administrator trusts it, the Paperless results that it waits for, a check
+// of them, and the result that it opens, by its title and the name of its file.
+const SEARCH_AND_OPEN = {
+	name: 'search-and-open.gif',
+	clock: NOW,
+	start: openArchive,
+	holdSearch: false,
+	connected: true,
+	results: [LAST_RESULT],
+	check: async () => {},
+	opened: { title: insurance.title, file: fileName(insurance) },
+}
+
+// An animation of a film such as SEARCH_AND_OPEN: the archive, the search for "invoice",
+// the switch for connected services where it needs it, and the insurance renewal, which
+// only Paperless finds by its text.
+async function animation(browser, session, film = SEARCH_AND_OPEN) {
 	const frames = []
-	const page = await newPage(browser, session, { viewport: { width: 1280, height: 800 } }, { pointer: true })
+	const page = await newPage(browser, session, { viewport: { width: 1280, height: 800 } }, { pointer: true, clock: film.clock })
 	const frame = async (delay) => {
 		frames.push({ png: await page.screenshot({ animations: 'disabled' }), delay })
 	}
@@ -746,34 +769,113 @@ async function animation(browser, session) {
 		await page.mouse.up()
 	}
 
-	await openArchive(page)
+	await film.start(page)
 	await page.mouse.move(...position)
 	await settle(page)
 	await frame(1600)
 	await click(searchButton(page))
 	await search(page, async (input) => {
 		await settle(page, 300)
+		// The filters below the field, such as Places, come a moment after the dialog,
+		// later in one run than in another.
+		await steady(page)
 		await frame(500)
+		if (film.holdSearch) {
+			// The clock stands still while the term grows, so that Nextcloud, which
+			// searches once the typing pauses, searches for the whole term alone.
+			await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000))
+		}
 		for (const letter of TERM) {
 			await input.press(letter)
 			await frame(110)
 		}
+		if (film.holdSearch) {
+			await page.clock.resume()
+		}
 	}, 'Files')
-	await settle(page, 400)
-	await frame(1400)
-	await click(connectedServices(page))
+	if (film.connected) {
+		await settle(page, 400)
+		await frame(1400)
+		await click(connectedServices(page))
+	}
 	await resultGroup(page, 'Paperless documents').waitFor()
-	await paperlessResult(page, LAST_RESULT).waitFor()
+	for (const title of film.results) {
+		await paperlessResult(page, title).waitFor()
+	}
 	await settle(page, 300)
+	await film.check(page)
 	await frame(2600)
-	await click(paperlessResult(page, insurance.title))
-	await waitForViewer(page, fileName(insurance))
+	await click(paperlessResult(page, film.opened.title))
+	await waitForViewer(page, film.opened.file)
 	await settle(page, 1500)
 	await steady(page)
 	await frame(3800)
 	await page.context().close()
-	writeGif(frames, join(OUT, 'search-and-open.gif'))
-	console.log(`Took search-and-open.gif with ${frames.length} frames.`)
+	writeGif(frames, join(OUT, film.name))
+	console.log(`Took ${film.name} with ${frames.length} frames.`)
+}
+
+// The animation of the demo of the README, from the real Paperless-ngx and Nextcloud of
+// demo/seed.sh, as jamie: the clock starts two days after the last change of the
+// archive, and the templates that the search finds get times of their own
+// (tests/e2e/demo.mjs). It fails when the search shows other Paperless documents than
+// the three of the demo.
+async function demoAnimation(browser) {
+	const archive = await fetch(`${BASE_URL}${davPath(DEMO.user, DEMO.folder)}`, {
+		method: 'PROPFIND',
+		body: '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:getlastmodified/></d:prop></d:propfind>',
+		headers: { Authorization: authorization(DEMO.user), Depth: '1' },
+	})
+	if (archive.status === 401) {
+		throw new Error(`${DEMO.user} can't sign in with DEMO_PASSWORD of demo/.env: is it the demo of this demo/.env? Remove the demo and demo/.env, then run bash demo/seed.sh.`)
+	}
+	if (!archive.ok) {
+		throw new Error(`${DEMO.user} has no folder ${DEMO.folder} (HTTP ${archive.status}), which the archive account shares: run bash demo/seed.sh to its end.`)
+	}
+	const changed = lastChange(await archive.text())
+	// What a person does at their first sign-in: they close the wizard of Nextcloud, which
+	// would cover the page, and Nextcloud shows them online, as the dot on their avatar
+	// says. Chosen here, the dot is there from the first frame on, not from the moment
+	// that the browser tells Nextcloud, which varies from run to run. Without the app
+	// of either, Nextcloud answers 404, and there is nothing to do.
+	for (const [method, path] of [
+		['DELETE', '/index.php/apps/firstrunwizard/wizard'],
+		['PUT', `/ocs/v2.php/apps/user_status/api/v1/user_status/status?${new URLSearchParams({ statusType: 'online' })}`],
+	]) {
+		const response = await fetch(`${BASE_URL}${path}`, {
+			method,
+			headers: { Authorization: authorization(DEMO.user), 'OCS-APIRequest': 'true', Accept: 'application/json' },
+		})
+		if (!response.ok && response.status !== 404) {
+			throw new Error(`${method} ${path} as ${DEMO.user}: ${response.status} ${await response.text()}`)
+		}
+	}
+	const session = await signIn(browser, DEMO.user, { timezoneId: TIME_ZONE })
+	// Nextcloud copies the templates at the first sign-in.
+	await fixTemplates(DEMO.user, templateTimes(changed))
+	await animation(browser, session, {
+		name: DEMO.gif,
+		clock: demoClock(changed),
+		start: async (page) => {
+			await page.goto(`${BASE_URL}/index.php/apps/files/files?dir=/${encodeURIComponent(DEMO.folder)}`)
+			await page.getByText(DEMO.shows, { exact: true }).first().waitFor()
+		},
+		// seed.sh sets the app up with --always-search: Paperless answers every search.
+		connected: false,
+		// A real Paperless answers a part of the term, such as "inv", sooner in one run
+		// than in another.
+		holdSearch: true,
+		results: RESULTS,
+		check: async (page) => {
+			const names = await resultGroup(page, 'Paperless documents').getByRole('link')
+				.evaluateAll((links) => links.map((link) => link.textContent))
+			const problem = unexpectedResults(names)
+			if (problem) {
+				throw new Error(problem)
+			}
+		},
+		opened: OPENED,
+	})
 }
 
 // Encodes the frames as GIF, with one palette for all of them. Every frame after the
@@ -871,18 +973,8 @@ function writeGif(frames, path) {
 	writeFileSync(path, gif.bytes())
 }
 
-// Chromium draws the same pixels in every run and on every processor: Skia without
-// the code of a particular processor, every tile and every image drawn in full before
-// the picture, and the colours in sRGB.
-const browser = await chromium.launch({
-	args: [
-		'--disable-skia-runtime-opts',
-		'--disable-partial-raster',
-		'--disable-checker-imaging',
-		'--force-color-profile=srgb',
-	],
-})
-try {
+// Every picture of the README, the website and the App Store, from the mock.
+async function everyPicture(browser) {
 	await createArchive(browser)
 	// In the time zone of the pages, which Nextcloud keeps as the user's: the times that
 	// the server writes, as in Search problems, are then in the zone of the browser's.
@@ -906,6 +998,25 @@ try {
 	await phone(browser, reader)
 	await phoneSettings(browser, admin)
 	await animation(browser, reader)
+}
+
+// Chromium draws the same pixels in every run and on every processor: Skia without
+// the code of a particular processor, every tile and every image drawn in full before
+// the picture, and the colours in sRGB.
+const browser = await chromium.launch({
+	args: [
+		'--disable-skia-runtime-opts',
+		'--disable-partial-raster',
+		'--disable-checker-imaging',
+		'--force-color-profile=srgb',
+	],
+})
+try {
+	if (process.env.SCREENSHOTS_DEMO === '1') {
+		await demoAnimation(browser)
+	} else {
+		await everyPicture(browser)
+	}
 } finally {
 	await browser.close()
 }

@@ -8,6 +8,10 @@ cd paperless-unified-search
 bash demo/seed.sh
 ```
 
+![The demo at work, as jamie: the archive that Paperless Sync wrote into Nextcloud, a search for "invoice", and below the files the Paperless documents, the two invoices and the home insurance renewal, whose text says "invoice". The renewal opens in Nextcloud's viewer.](../screenshots/demo-search-and-open.gif)
+
+<sub>Recorded from this demo by `bash scripts/screenshots.sh --demo`: [record it again](#record-the-animation).</sub>
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../docs/images/diagrams/what-the-demo-sets-up.dark.svg">
   <img src="../docs/images/diagrams/what-the-demo-sets-up.svg" alt="What the demo sets up: You run bash demo/seed.sh. It generates the secret key of Paperless and the passwords of the demo into demo/.env, and starts Paperless-ngx with Redis and Nextcloud with its background jobs in Docker, on 127.0.0.1 alone. Paperless reads five synthetic letters. Paperless Sync, a pinned signed release, writes each one into the files of the archive account paperless, which shares the archive read-only with jamie. occ paperless_unified_search:setup connects the app to Paperless, with the API token through a pipe. A search as jamie for invoice shows three Paperless documents, and the script prints the addresses and the accounts to sign in with.">
@@ -86,6 +90,25 @@ rm demo/.env                                            # and its passwords
 ```
 
 The containers start again with Docker, until you stop or remove them. A new run after `down --volumes` keeps the passwords of `demo/.env`; delete it as well for new ones.
+
+## Record the animation
+
+The animation at the top and in the README comes from this demo, recorded by a script, so that it shows what the demo shows:
+
+```sh
+bash demo/seed.sh                     # the demo must run
+bash scripts/screenshots.sh --demo    # writes screenshots/demo-search-and-open.gif
+```
+
+Chromium in the image of Playwright joins the network of the demo, signs in as `jamie` with the password of `demo/.env`, which reaches the container in its environment alone, opens the archive, searches for *invoice* and opens the home insurance renewal. The script writes the animation alone: the demo keeps running, with its data, and the other pictures stay as they are. It fails, with the way to a fresh demo, when the search shows other Paperless documents than the three of the demo, such as one that you added.
+
+Two runs record the same pixels, so the animation in the repository changes only when the demo looks different:
+
+- **The clock** of the browser starts two days after the last change of the archive, so Files always shows *2 days ago*, whenever the demo was set up.
+- **The search** starts once the whole term is typed: the clock stands still while the letters go in, so a real Paperless that answers a part of the term sooner in one run than in another doesn't show.
+- **What a person does at their first sign-in** happens first: the welcome wizard of Nextcloud is closed, and `jamie` is online, so the dot on the avatar is there from the first frame. The two templates that the search finds, `Invoice.ods` and `Invoice.odt`, which Nextcloud copies in the same second, get times an hour apart, so the search lists them in the same order.
+
+The weekly run of the demo (`.github/workflows/demo.yml`) records the animation as well and keeps it as the artifact `demo-animation` of the run; its summary says when it looks different from the one in the repository.
 
 ## A demo, not a production set-up
 

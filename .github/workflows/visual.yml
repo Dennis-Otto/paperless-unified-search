@@ -36,6 +36,7 @@ on:
       - tests/e2e/package-lock.json
       - tests/e2e/run.sh
       - tests/e2e/screenshots.mjs
+      - tests/e2e/demo.mjs
       - tests/e2e/ui.mjs
       - .github/social-preview.html
       - .github/social-preview/Dockerfile
