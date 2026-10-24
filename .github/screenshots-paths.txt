@@ -23,6 +23,7 @@ tests/e2e/package.json
 tests/e2e/package-lock.json
 tests/e2e/run.sh
 tests/e2e/screenshots.mjs
+tests/e2e/demo.mjs
 tests/e2e/ui.mjs
 
 # The social preview, which shows the first screenshot.

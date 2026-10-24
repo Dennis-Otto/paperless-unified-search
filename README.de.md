@@ -93,6 +93,10 @@ Er braucht Docker mit Compose und Bash, unter Windows Git Bash, und erzeugt die 
 
 <!-- --8<-- [end:try-it] -->
 
+![Die Demo bei der Arbeit, als jamie: das Archiv, das Paperless Sync in Nextcloud geschrieben hat, eine Suche nach „invoice“ und unter den Dateien die Paperless-Dokumente, die beiden Rechnungen und die Verlängerung der Hausratversicherung, deren Text „invoice“ sagt. Die Verlängerung öffnet sich im Viewer von Nextcloud.](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/demo-search-and-open.gif)
+
+<sub>Aufgenommen aus dem echten Paperless-ngx und Nextcloud der Demo, mit `bash scripts/screenshots.sh --demo`.</sub>
+
 <!-- --8<-- [start:quick-start-section] -->
 
 ## Schnellstart
@@ -693,6 +697,13 @@ bash scripts/screenshots.sh
 ```
 
 Es startet die Docker-Suite unter einem eigenen Projekt mit einer Demo: dem Archiv-Konto `paperless`, dessen synthetische Dokumente nur lesend mit `jamie` geteilt sind, und einem Mock von Paperless, der drei davon für „invoice“ findet. Chromium sucht dann, öffnet einen Treffer, grenzt die Suche mit dem Datumsfilter auf Juli 2026 ein, verlinkt ein Dokument aus dem Smart Picker in einer Notiz von Text, speichert die Einstellungen und probiert darin eine Suche aus, hell und dunkel, auf einem Smartphone und als Animation. Jeder Schritt prüft, was sein Bild zeigt: Die nach Datum eingegrenzte Suche schlägt etwa fehl, wenn ein Paperless-Treffer außerhalb des Juli erscheint oder die Treffer unter *Teilübereinstimmungen* landen. Die Uhr des Browsers steht in jedem Lauf auf demselben Morgen, und die Dateien der Demo wurden zwei Tage davor geändert, also ergeben zwei Läufe dieselben Pixel. Setze `KEEP_SCREENSHOTS=1`, um dich danach in der Demo umzusehen.
+
+Die Animation von [In drei Minuten ausprobieren](#in-drei-minuten-ausprobieren) kommt dagegen aus dem echten Paperless-ngx und Nextcloud der Demo. Während die Demo läuft, meldet sich `bash scripts/screenshots.sh --demo` als `jamie` mit dem Passwort aus `demo/.env` an, sucht nach *invoice*, öffnet die Verlängerung der Hausratversicherung und schreibt nur `screenshots/demo-search-and-open.gif`; die Demo und die anderen Bilder bleiben, wie sie sind. Auch hier ergeben zwei Läufe dieselben Pixel: Die Uhr beginnt zwei Tage nach der letzten Änderung des Archivs, und die Suche startet erst, wenn der ganze Begriff getippt ist. Der wöchentliche Lauf der Demo nimmt sie ebenfalls auf, und seine Zusammenfassung sagt, wenn sie anders aussieht als die committete.
+
+```bash
+bash demo/seed.sh
+bash scripts/screenshots.sh --demo
+```
 
 Selbst ausführen musst du es selten. Für einen Pull Request, der eine Datei von `.github/screenshots-paths.txt` ändert, etwa das CSS oder ein Template, nimmt die visuelle Prüfung die Bilder auf und kommentiert die, die anders aussehen: vorher, nachher und die geänderten Pixel in Rot. Nach dem Merge, nach jedem Release und jede Woche nimmt der Screenshot-Bot sie auf `main` auf und hält einen Pull Request, *docs: update the screenshots*, der sich selbst mergt, sobald jede Prüfung besteht.
 

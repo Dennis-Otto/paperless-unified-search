@@ -257,14 +257,16 @@ missing_screenshots() {
 }
 mapfile -t english < <(markdown 'docs/*.md' | grep -v '\.de\.md$')
 # The check itself: it finds a screenshot that a page leaves out, here the settings on a
-# phone, without the line of docs/index.md that shows them in the gallery.
+# phone, without the line of docs/index.md that shows them in the gallery. It finds that
+# one besides those that the pages leave out already, such as a new screenshot of
+# README.md that waits for main.
 probe="$(mktemp)"
 grep -v 'screenshots/09-admin-settings-mobile\.png' docs/index.md >"$probe"
 others=()
 for page in "${english[@]}"; do
   if [[ "$page" != docs/index.md ]]; then others+=("$page"); fi
 done
-found="$(missing_screenshots "$probe" "${others[@]}")"
+found="$(comm -13 <(missing_screenshots "${english[@]}") <(missing_screenshots "$probe" "${others[@]}"))"
 rm -f "$probe"
 if [[ "$found" != "screenshots/09-admin-settings-mobile.png" ]]; then
   echo "Without the settings on a phone in docs/index.md, the check of the screenshots finds \"$found\" missing, not screenshots/09-admin-settings-mobile.png: fix the check."

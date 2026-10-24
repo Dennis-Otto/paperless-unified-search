@@ -5,8 +5,10 @@ name: Demo
 
 # The demo of the README (demo/seed.sh), run as a reader runs it: a real Paperless-ngx
 # and a real Nextcloud in Docker, Paperless Sync from its pinned release and this app
-# from the checkout, up to the search as jamie that must show the documents. It runs in
-# a pull request that changes the demo or the code of the app, such as one of Renovate
+# from the checkout, up to the search as jamie that must show the documents, and then
+# records the animation of the README from it (bash scripts/screenshots.sh --demo). It
+# runs in a pull request that changes the demo, its recording or the code of the app,
+# such as one of Renovate
 # with a new image of the demo or a new release of Paperless Sync, every Monday and when
 # started by hand. It is no required check and blocks nothing.
 #
@@ -19,6 +21,8 @@ on:
       - demo/**
       - appinfo/**
       - lib/**
+      - scripts/screenshots.sh
+      - tests/e2e/demo.mjs
       - .github/workflows/demo.yml
   schedule:
     - cron: "41 5 * * 1"
@@ -47,6 +51,36 @@ jobs:
           persist-credentials: false
       - name: Run the demo
         run: bash demo/seed.sh
+      # The animation of the README, from this demo, as bash scripts/screenshots.sh --demo
+      # records it on a machine: the run checks that the recording still works, keeps
+      # the animation as an artifact and says when it differs from the committed one.
+      - name: Record the animation of the demo
+        run: |
+          set -euo pipefail
+          cp screenshots/demo-search-and-open.gif "$RUNNER_TEMP/committed.gif"
+          bash scripts/screenshots.sh --demo
+          if cmp --silent screenshots/demo-search-and-open.gif "$RUNNER_TEMP/committed.gif"; then
+            echo "The animation of the demo is the committed \`screenshots/demo-search-and-open.gif\`." >>"$GITHUB_STEP_SUMMARY"
+          else
+            echo "::notice title=Animation of the demo::The demo looks different from screenshots/demo-search-and-open.gif. The artifact demo-animation of this run holds the new animation; commit it, or run bash scripts/screenshots.sh --demo with the demo running."
+            {
+              echo "### The animation of the demo changed"
+              echo
+              echo "The demo looks different from the committed \`screenshots/demo-search-and-open.gif\`, which the README shows. The artifact \`demo-animation\` of this run holds the new animation: commit it in a pull request, or record it on your machine with the demo running:"
+              echo
+              echo '```sh'
+              echo 'bash demo/seed.sh'
+              echo 'bash scripts/screenshots.sh --demo'
+              echo '```'
+            } >>"$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Keep the animation of the demo
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: demo-animation
+          path: screenshots/demo-search-and-open.gif
+          if-no-files-found: error
+          retention-days: 14
       - name: Remove the demo with its data
         if: always()
         run: |
@@ -105,7 +139,7 @@ jobs:
           {
             printf 'The weekly run of the demo fails: %s\n\n' "$RUN_URL"
             cat <<'TEXT'
-          The job `demo` of `.github/workflows/demo.yml` runs `bash demo/seed.sh`, the demo that the README and the install guide offer as the first thing to try: a real Paperless-ngx and a real Nextcloud in Docker, Paperless Sync and this app, up to a search as jamie that must show three documents. The log of the job names the step that stopped, with the end of the logs of the containers; a new release of an image or of Nextcloud behind the same tag is the usual cause.
+          The job `demo` of `.github/workflows/demo.yml` runs `bash demo/seed.sh`, the demo that the README and the install guide offer as the first thing to try: a real Paperless-ngx and a real Nextcloud in Docker, Paperless Sync and this app, up to a search as jamie that must show three documents, and records the animation of the README from it with `bash scripts/screenshots.sh --demo`. The log of the job names the step that stopped, with the end of the logs of the containers; a new release of an image or of Nextcloud behind the same tag is the usual cause.
 
           `bash demo/seed.sh` runs the same demo locally with Docker, and `docker compose -f demo/compose.yaml down --volumes` removes it again.
 

@@ -21,19 +21,88 @@
 # http://127.0.0.1:18083, for jamie, paperless and e2e-admin with the password
 # e2e-only-password. SCREENSHOTS_PORT and SCREENSHOTS_PROJECT_NAME choose another port
 # and Compose project, for a second checkout that takes them at the same time.
+#
+# With --demo, it records one more animation, screenshots/demo-search-and-open.gif,
+# from the real Paperless-ngx and Nextcloud of the demo of the README instead, which
+# must run already (bash demo/seed.sh): jamie, with the password of demo/.env, opens
+# the archive, searches for "invoice" and opens the home insurance renewal, which only
+# Paperless finds by its text. It leaves the other pictures and the demo as they are,
+# but for what jamie does at a first sign-in, closing the welcome wizard and going
+# online, and times of their own for the two templates of jamie that the search finds,
+# so that every run records the same pixels (tests/e2e/demo.mjs).
+#   bash demo/seed.sh && bash scripts/screenshots.sh --demo
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+case "${1:-}" in
+	"") DEMO=0 ;;
+	--demo) DEMO=1 ;;
+	*)
+		echo "Usage: bash scripts/screenshots.sh [--demo]" >&2
+		echo "  --demo  record screenshots/demo-search-and-open.gif from the running demo of bash demo/seed.sh" >&2
+		exit 2
+		;;
+esac
+
 # Git Bash on Windows: keep the paths of the container as they are.
 export MSYS_NO_PATHCONV=1
+# The image of Playwright of the end-to-end tests, which Renovate keeps current.
+IMAGE="$(grep -oE 'mcr\.microsoft\.com/playwright:v[^[:space:]]+' tests/e2e/run.sh | head -n 1)"
+TMP_DIR="$(mktemp -d)"
+
+# Runs screenshots.mjs in the image of Playwright, in the Docker network that the first
+# argument names, with the options of docker run that follow, such as --env. The files
+# of the browser reach the container through standard input, and the pictures leave it
+# the same way, into TMP_DIR, so that they belong to whoever runs this.
+browse() {
+	local network="$1"
+	shift
+	tar -C tests/e2e -cf - package.json package-lock.json ui.mjs demo.mjs screenshots.mjs \
+		| docker run --rm --interactive \
+			--network "${network}" \
+			--env NPM_CONFIG_UPDATE_NOTIFIER=false \
+			"$@" \
+			"${IMAGE}" \
+			sh -c 'mkdir /tmp/browser && cd /tmp/browser && tar -xf - &&
+				npm ci --ignore-scripts --no-audit --no-fund --loglevel=error >&2 &&
+				out="$(mktemp -d)" && SCREENSHOTS_OUT="${out}" node screenshots.mjs >&2 &&
+				tar -C "${out}" -cf - .' \
+		| tar -C "${TMP_DIR}" -xf -
+}
+
+if [[ "${DEMO}" == 1 ]]; then
+	trap 'rm -rf "${TMP_DIR}"' EXIT
+	# The demo of demo/seed.sh, with the name of its Compose project in demo/compose.yaml,
+	# which names its network too.
+	DEMO_COMPOSE=(docker compose --file demo/compose.yaml --env-file demo/.env)
+	if [[ ! -f demo/.env ]]; then
+		echo "The demo isn't set up: start it with bash demo/seed.sh, then run bash scripts/screenshots.sh --demo again." >&2
+		exit 1
+	fi
+	running="$("${DEMO_COMPOSE[@]}" ps --status running --services 2>/dev/null || true)"
+	if ! grep -qxF nextcloud <<<"${running}"; then
+		echo "The Nextcloud of the demo doesn't run: start the demo with bash demo/seed.sh, then run bash scripts/screenshots.sh --demo again." >&2
+		exit 1
+	fi
+	# The password of jamie reaches the container in the environment, never on a command
+	# line, where the list of processes would show it.
+	E2E_PASSWORD="$(sed -n 's/^DEMO_PASSWORD=//p' demo/.env | tail -n 1)"
+	if [[ -z "${E2E_PASSWORD}" ]]; then
+		echo "demo/.env holds no DEMO_PASSWORD, the password of jamie: run bash demo/seed.sh, which writes it, or remove the demo and demo/.env to start anew." >&2
+		exit 1
+	fi
+	export E2E_PASSWORD
+	browse paperless-unified-search-demo_default --env E2E_PASSWORD --env SCREENSHOTS_DEMO=1
+	cp "${TMP_DIR}/demo-search-and-open.gif" screenshots/
+	ls -l screenshots/demo-search-and-open.gif
+	exit 0
+fi
+
 export E2E_PORT="${SCREENSHOTS_PORT:-18083}"
 PROJECT_NAME="${SCREENSHOTS_PROJECT_NAME:-paperless_unified_search_screenshots}"
 PASSWORD=e2e-only-password
 BASE_URL="http://127.0.0.1:${E2E_PORT}"
 COMPOSE=(docker compose --project-name "${PROJECT_NAME}" --file tests/e2e/compose.yaml)
-# The image of Playwright of the end-to-end tests, which Renovate keeps current.
-IMAGE="$(grep -oE 'mcr\.microsoft\.com/playwright:v[^[:space:]]+' tests/e2e/run.sh | head -n 1)"
-TMP_DIR="$(mktemp -d)"
 
 cleanup() {
 	status=$?
@@ -94,19 +163,7 @@ curl --fail-with-body --silent --show-error \
 occ config:app:set paperless_unified_search diagnostics --type=array --lazy \
 	--value='{"since":1791475200,"failed":1,"retried":2,"lastFailureAt":1791496720,"recoveredAt":1791496750,"events":[{"time":1791496872,"kind":"retried","step":"paperless","error":"ConnectException","message":"cURL error 28: Connection timed out after 3001 milliseconds for https://paperless.example.com/api/documents/","durationMs":3002},{"time":1791496720,"kind":"failed","step":"paperless","error":"ConnectException","message":"cURL error 7: Failed to connect to paperless.example.com port 443 after 3001 ms: Timeout was reached for https://paperless.example.com/api/documents/","durationMs":6108},{"time":1791496205,"kind":"retried","step":"paperless","error":"ConnectException","message":"cURL error 6: Could not resolve host: paperless.example.com for https://paperless.example.com/api/documents/","durationMs":1004}]}' >/dev/null
 
-# The files of the browser reach the container through standard input, and the
-# pictures leave it the same way, so that they belong to whoever runs this.
-tar -C tests/e2e -cf - package.json package-lock.json ui.mjs screenshots.mjs \
-	| docker run --rm --interactive \
-		--network "${PROJECT_NAME}_default" \
-		--env NPM_CONFIG_UPDATE_NOTIFIER=false \
-		--env "E2E_PASSWORD=${PASSWORD}" \
-		"${IMAGE}" \
-		sh -c 'mkdir /tmp/browser && cd /tmp/browser && tar -xf - &&
-			npm ci --ignore-scripts --no-audit --no-fund --loglevel=error >&2 &&
-			out="$(mktemp -d)" && SCREENSHOTS_OUT="${out}" node screenshots.mjs >&2 &&
-			tar -C "${out}" -cf - .' \
-	| tar -C "${TMP_DIR}" -xf -
+browse "${PROJECT_NAME}_default" --env "E2E_PASSWORD=${PASSWORD}"
 
 cp "${TMP_DIR}"/*.png "${TMP_DIR}"/*.gif screenshots/
 ls -l screenshots/
