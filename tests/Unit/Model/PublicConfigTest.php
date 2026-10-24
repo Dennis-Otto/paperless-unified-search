@@ -30,7 +30,15 @@ final class PublicConfigTest extends TestCase {
 			'allowLocal' => false,
 			'paperlessVersion' => '',
 			'paperlessApiVersion' => '',
+			// Users may choose to include Paperless in every search of their own.
+			'personalAlwaysSearch' => true,
 		], (new PublicConfig('https://paperless.example.com', true, false))->jsonSerialize());
+	}
+
+	public function testTheConfigurationTellsWhetherUsersMayAlwaysSearchPaperless(): void {
+		$config = new PublicConfig('https://paperless.example.com', true, false, personalAlwaysSearch: false);
+
+		self::assertFalse($config->jsonSerialize()['personalAlwaysSearch']);
 	}
 
 	public function testTheConfigurationNamesTheVersionOfPaperless(): void {

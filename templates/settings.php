@@ -134,6 +134,23 @@ $archiveAccount = $config->archiveOwner !== '' ? $config->archiveOwner : $config
 			</p>
 		</div>
 
+		<div class="paperless-unified-search-option">
+			<input
+				id="paperless-unified-search-users-always-search"
+				name="personalAlwaysSearch"
+				type="checkbox"
+				aria-describedby="paperless-unified-search-users-always-search-hint"
+				<?php if ($config->personalAlwaysSearch) {
+					print_unescaped('checked');
+				} ?>>
+			<label for="paperless-unified-search-users-always-search">
+				<?php p($l->t('Let users include Paperless in all their searches')); ?>
+			</label>
+			<p id="paperless-unified-search-users-always-search-hint" class="settings-hint">
+				<?php p($l->t('Each user can then choose in their personal settings, in the section Paperless, that every search of their own includes Paperless without the switch. Turned off, the personal settings don’t offer it and the search ignores what users chose.')); ?>
+			</p>
+		</div>
+
 		<div class="paperless-unified-search-actions">
 			<button id="paperless-unified-search-save" type="submit" class="primary">
 				<?php p($l->t('Test connection and save')); ?>

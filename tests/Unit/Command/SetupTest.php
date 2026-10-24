@@ -62,6 +62,7 @@ final class SetupTest extends TestCase {
 			'Paperless 3.3.0 (API 10) answers at http://paperless:8000. The settings are saved.',
 			'Archive account: archive',
 			'Always include Paperless in global search: no',
+			'Users may include Paperless in all their searches: yes',
 			'Paperless runs in the local network: yes',
 		], self::lines($tester->getDisplay()));
 		self::assertSame('', $tester->getErrorOutput());
@@ -70,6 +71,7 @@ final class SetupTest extends TestCase {
 			AppConstants::APP_ID . '.paperless_url' => 'http://paperless:8000',
 			AppConstants::APP_ID . '.always_search' => false,
 			AppConstants::APP_ID . '.allow_local' => true,
+			AppConstants::APP_ID . '.personal_always_search' => true,
 			// As Nextcloud spells the account.
 			AppConstants::APP_ID . '.archive_owner' => 'archive',
 			AppConstants::APP_ID . '.paperless_version' => '3.3.0',
@@ -170,6 +172,7 @@ final class SetupTest extends TestCase {
 		$this->connected();
 		$this->settings[AppConstants::APP_ID . '.always_search'] = true;
 		$this->settings[AppConstants::APP_ID . '.allow_local'] = true;
+		$this->settings[AppConstants::APP_ID . '.personal_always_search'] = false;
 		$tester = $this->tester($this->documents([]));
 		$tester->setInputs(['NEW_VALUE']);
 
@@ -178,6 +181,7 @@ final class SetupTest extends TestCase {
 		self::assertSame('NEW_VALUE', $this->storedToken);
 		self::assertTrue($this->settings[AppConstants::APP_ID . '.always_search']);
 		self::assertTrue($this->settings[AppConstants::APP_ID . '.allow_local']);
+		self::assertFalse($this->settings[AppConstants::APP_ID . '.personal_always_search']);
 		self::assertSame('archive', $this->settings[AppConstants::APP_ID . '.archive_owner']);
 		self::assertSame(['allow_local_address' => true], $this->requests[0][1]['nextcloud']);
 	}
@@ -191,18 +195,21 @@ final class SetupTest extends TestCase {
 		$status = $tester->execute([
 			'--url' => 'https://paperless.example.com',
 			'--always-search' => true,
+			'--personal-always-search' => false,
 			'--allow-local' => false,
 			'--archive-account' => '',
 		]);
 
 		self::assertSame(Command::SUCCESS, $status);
 		self::assertTrue($this->settings[AppConstants::APP_ID . '.always_search']);
+		self::assertFalse($this->settings[AppConstants::APP_ID . '.personal_always_search']);
 		self::assertFalse($this->settings[AppConstants::APP_ID . '.allow_local']);
 		self::assertArrayNotHasKey(AppConstants::APP_ID . '.archive_owner', $this->settings);
 		self::assertSame([
 			'Paperless 3.3.0 (API 10) answers at https://paperless.example.com. The settings are saved.',
 			'Archive account: alex, the account of Paperless Sync',
 			'Always include Paperless in global search: yes',
+			'Users may include Paperless in all their searches: no',
 			'Paperless runs in the local network: no',
 		], self::lines($tester->getDisplay()));
 	}
@@ -229,6 +236,7 @@ final class SetupTest extends TestCase {
 			'Paperless answers at https://paperless.example.com. The settings are saved.',
 			$line,
 			'Always include Paperless in global search: no',
+			'Users may include Paperless in all their searches: yes',
 			'Paperless runs in the local network: no',
 		], self::lines($tester->getDisplay()));
 	}

@@ -101,7 +101,7 @@ class Element {
 // keeps; `history: false` leaves out the button of the history, as without problems.
 function page({ url = '', tokenConfigured = false, history = true } = {}) {
 	const ids = [
-		'form', 'url', 'allow-local', 'token', 'token-unreadable', 'always-search', 'archive-owner',
+		'form', 'url', 'allow-local', 'token', 'token-unreadable', 'always-search', 'users-always-search', 'archive-owner',
 		'archive-owner-missing', 'save', 'reset', 'status', 'diagnostics',
 		'try-form', 'try-term', 'try-user', 'try', 'try-status', 'try-result',
 	]
@@ -152,6 +152,7 @@ const CONFIG = {
 	tokenUnreadable: false,
 	archiveOwnerMissing: false,
 	allowLocal: false,
+	personalAlwaysSearch: true,
 }
 const EMPTY = { ...CONFIG, url: '', tokenConfigured: false, syncAccount: '' }
 
@@ -249,12 +250,14 @@ test('a fresh install asks for the token and keeps Disconnect off', function() {
 
 test('saving sends the form, shows the progress, and then the settings as stored', async function() {
 	const { get, requests, statuses } = load(page(), {
-		answers: [json({ ...CONFIG, url: STORED, allowLocal: true, alwaysSearch: true, archiveOwner: 'archive' })],
+		answers: [json({ ...CONFIG, url: STORED, allowLocal: true, alwaysSearch: true, archiveOwner: 'archive', personalAlwaysSearch: false })],
 	})
 	get('url').value = ` ${STORED}/ `
 	get('allow-local').checked = true
 	get('token').value = 'secret-token'
 	get('always-search').checked = true
+	// The personal choice of the users, which the page shows as stored, on by default.
+	get('users-always-search').checked = false
 	get('archive-owner').value = 'Archive'
 
 	const event = await get('form').dispatch('submit')
@@ -265,7 +268,7 @@ test('saving sends the form, shows the progress, and then the settings as stored
 		method: 'POST',
 		credentials: 'same-origin',
 		headers: { Accept: 'application/json', 'Content-Type': 'application/json', requesttoken: 'request-token' },
-		body: { url: ` ${STORED}/ `, allowLocal: true, token: 'secret-token', alwaysSearch: true, archiveOwner: 'Archive' },
+		body: { url: ` ${STORED}/ `, allowLocal: true, token: 'secret-token', alwaysSearch: true, personalAlwaysSearch: false, archiveOwner: 'Archive' },
 	}])
 	assert.deepEqual(statuses, [{ text: 'Testing the Paperless connection…', kind: PENDING }])
 	assert.deepEqual(state(get), { status: 'Connection successful. Settings saved.', kind: SUCCESS, disconnect: 'enabled', save: 'enabled', busy: 'false' })
@@ -276,6 +279,7 @@ test('saving sends the form, shows the progress, and then the settings as stored
 	assert.equal(get('token').required, false)
 	assert.equal(get('allow-local').checked, true)
 	assert.equal(get('always-search').checked, true)
+	assert.equal(get('users-always-search').checked, false)
 	assert.equal(get('archive-owner').value, 'archive')
 	assert.equal(get('token-unreadable').textContent, '')
 	assert.equal(get('archive-owner-missing').textContent, '')
@@ -469,6 +473,7 @@ test('Disconnect does nothing when the administrator declines', async function()
 
 test('Disconnect forgets the settings and the history of the problems', async function() {
 	const { get, requests, statuses } = load(page({ url: STORED, tokenConfigured: true }), { answers: [json(EMPTY)] })
+	get('users-always-search').checked = false
 
 	await get('reset').dispatch('click')
 
@@ -477,6 +482,8 @@ test('Disconnect forgets the settings and the history of the problems', async fu
 	assert.deepEqual(state(get), { status: 'Paperless disconnected.', kind: SUCCESS, disconnect: 'disabled', save: 'enabled', busy: 'false' })
 	assert.equal(get('url').value, '')
 	assert.equal(get('token').placeholder, 'Required')
+	// Users may choose again, as on a fresh install.
+	assert.equal(get('users-always-search').checked, true)
 	assert.equal(get('diagnostics').children.length, 1)
 	assert.equal(get('diagnostics').children[0].tagName, 'P')
 	assert.equal(get('diagnostics').children[0].textContent, 'No problem recorded.')

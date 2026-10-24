@@ -1,0 +1,34 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: When a search asks Paperless
+    accDescr: As a page of Nextcloud loads, its search asks the app whether Paperless is a connected service for the user who signed in. While an administrator includes Paperless in every search of every user, it is not, and every search asks Paperless. Otherwise, while the administrators let users choose, a user who selected Always search my Paperless documents in the personal settings has every search of their own ask Paperless. Everybody else finds Paperless documents only with the switch Search connected services, which Nextcloud turns off again on every page that loads.
+
+    page["A page of Nextcloud loads, and its search<br>lists its providers for the user"]
+    trusted{"Always include Paperless<br>in global search?"}
+    allowed{"Let users include Paperless<br>in all their searches?"}
+    chosen{"Did the user select<br>Always search my Paperless documents?"}
+    always(["`**Every search asks Paperless**
+    without the switch`"])
+    switch(["`**Paperless only with the switch**
+    Search connected services,
+    off again on every page that loads`"])
+
+    page --> trusted
+    trusted -- "yes, for every user" --> always
+    trusted -- "no" --> allowed
+    allowed -- "yes" --> chosen
+    allowed -- "no" --> switch
+    chosen -- "yes, for this user" --> always
+    chosen -- "no" --> switch
+
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    class page person
+    class trusted,allowed,chosen app
+    class always yes

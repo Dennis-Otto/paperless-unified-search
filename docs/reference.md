@@ -17,8 +17,19 @@ The settings are under **Administration settings → Paperless Unified Search**,
 | **Paperless API token** | The token of the Paperless account of the search; blank keeps the stored one, for the same server | — | None: in Nextcloud's credentials manager, as `paperless_unified_search.api-token` |
 | **Archive account** | The Nextcloud account whose files stand for the documents; blank takes the account of Paperless Sync | The account of Paperless Sync | `archive_owner` |
 | **Always include Paperless in global search** | Asks Paperless in every search of every user, without **Search connected services**; reload Nextcloud after a change | Off | `always_search` |
+| **Let users include Paperless in all their searches** | Lets each user choose **Always search my Paperless documents** in their personal settings; off hides the choice, and the search ignores what users chose | On | `personal_always_search` |
 
 **Disconnect** deletes the URL, the token, the switches, the archive account, the version of Paperless and the history of the problems. **Clear history** deletes only the history.
+
+### Personal settings
+
+Under **Personal settings → Paperless**, each user can select **Always search my Paperless documents**: every search of their own then asks Paperless without **Search connected services**, from the next page that they open, and the terms go to the Paperless server even when they look for a file or a contact. The checkbox saves as it changes. The section shows while Paperless is connected with an archive account and the administrators let users choose; while **Always include Paperless in global search** is on, it shows the checkbox ticked and greyed out, as every search includes Paperless anyway.
+
+| Setting | Default | User preference |
+| --- | --- | --- |
+| **Always search my Paperless documents** | Off | `always_search` of the app, stored only while it is chosen |
+
+An administrator reads the choice of a user with `occ user:setting <user> paperless_unified_search always_search` and takes it back with `occ user:setting <user> paperless_unified_search always_search --delete`. While **Let users include Paperless in all their searches** is off, the stored choices stay but count for nothing; they count again once it is on.
 
 ## App configuration
 
@@ -35,6 +46,7 @@ occ config:app:get paperless_unified_search paperless_url
 | `allow_local` | Whether Paperless runs in the local network |
 | `archive_owner` | The ID of the archive account, as Nextcloud spells it; missing when the settings take the account of Paperless Sync |
 | `always_search` | Whether every search asks Paperless |
+| `personal_always_search` | Whether users may choose to include Paperless in every search of their own; missing means yes |
 | `paperless_version`, `paperless_api_version` | The versions of Paperless and of its API, such as `3.3.0` and `10`, as its last answer named them |
 | `diagnostics` | The history of the problems of the search, as JSON; a lazy key, which Nextcloud loads only when it is read |
 | `diagnostics_pending` | Whether a failure in the history still waits for a search that works |
@@ -49,14 +61,15 @@ Change the settings in the administration settings, which test the connection fi
 
 ## The routes of the settings
 
-The settings page saves through four routes of the app, which only administrators may call, each with Nextcloud's CSRF token. A script calls them with the login of an administrator and the header `OCS-APIRequest: true`, as the end-to-end tests do; `/index.php` goes before `/apps` where Nextcloud runs without pretty URLs.
+The settings page saves through four routes of the app, which only administrators may call, each with Nextcloud's CSRF token, and the personal settings through a fifth that every user who signed in may call. A script calls the four with the login of an administrator, and the fifth with the login of the user whose choice it stores, each with the header `OCS-APIRequest: true`, as the end-to-end tests do; `/index.php` goes before `/apps` where Nextcloud runs without pretty URLs.
 
 | Route | Does |
 | --- | --- |
-| `POST /apps/paperless_unified_search/settings` | Tests the connection and saves, with the parameters `url`, `token`, `archiveOwner`, `allowLocal` and `alwaysSearch`; asks for the password like **Test connection and save** |
+| `POST /apps/paperless_unified_search/settings` | Tests the connection and saves, with the parameters `url`, `token`, `archiveOwner`, `allowLocal`, `alwaysSearch` and `personalAlwaysSearch`; asks for the password like **Test connection and save** |
 | `DELETE /apps/paperless_unified_search/settings` | **Disconnect**: deletes the settings, the token and the history; asks for the password |
 | `DELETE /apps/paperless_unified_search/settings/diagnostics` | **Clear history** |
 | `POST /apps/paperless_unified_search/settings/try` | **Try a search**: searches with the parameter `term` as the account `user` and says for each document whether it shows and why not, with its ID and title alone; the log records which administrator tried a search as whom, without the term |
+| `POST /apps/paperless_unified_search/personal` | **Always search my Paperless documents** of the user who signed in, with the parameter `alwaysSearch`; answers `{"alwaysSearch": true}` or `false`, and HTTP 403 with the code `not_allowed` while the administrators don't let users choose |
 
 ```sh
 curl -u admin -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
@@ -66,7 +79,7 @@ curl -u admin -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
   'https://cloud.example.com/apps/paperless_unified_search/settings'
 ```
 
-`token@file` hands the token over in a file, which keeps it out of the history of the shell and the list of processes. A saved setting answers HTTP 200 with the settings as JSON: `url`, `tokenConfigured`, `alwaysSearch`, `archiveOwner`, `syncAccount`, `tokenUnreadable`, `archiveOwnerMissing`, `allowLocal`, `paperlessVersion` and `paperlessApiVersion`, never the token. A refusal answers HTTP 400, or 500 when something after the test failed, with the `message` to show in the language of the administrator and a `code`:
+`token@file` hands the token over in a file, which keeps it out of the history of the shell and the list of processes. A saved setting answers HTTP 200 with the settings as JSON: `url`, `tokenConfigured`, `alwaysSearch`, `archiveOwner`, `syncAccount`, `tokenUnreadable`, `archiveOwnerMissing`, `allowLocal`, `paperlessVersion`, `paperlessApiVersion` and `personalAlwaysSearch`, never the token. A save without `alwaysSearch` or `allowLocal` sets the switch to its default, off; a save without `personalAlwaysSearch` keeps it as it is. A refusal answers HTTP 400, or 500 when something after the test failed, with the `message` to show in the language of the administrator and a `code`:
 
 | Code | Means |
 | --- | --- |
@@ -172,7 +185,7 @@ The app writes to the log of Nextcloud with `app` set to `paperless_unified_sear
 ## Uninstall
 
 1. **Disconnect** in the settings. It deletes the URL, the token, the switches, the archive account, the version of Paperless and the history of the problems; only `diagnostics_pending` stays, with the keys that Nextcloud keeps of every app, such as `enabled` and `installed_version`.
-2. **Remove the app:** `occ app:remove paperless_unified_search` disables it and deletes its code; or *Apps → Disable* and *Remove* in the browser. Nextcloud keeps the app configuration of a removed app: `occ config:list paperless_unified_search` lists what is left, and `occ config:app:delete paperless_unified_search <key>` deletes a key.
+2. **Remove the app:** `occ app:remove paperless_unified_search` disables it and deletes its code; or *Apps → Disable* and *Remove* in the browser. Nextcloud keeps the app configuration of a removed app: `occ config:list paperless_unified_search` lists what is left, and `occ config:app:delete paperless_unified_search <key>` deletes a key. The choices of the users stay as their preference `always_search`, which `occ user:setting <user> paperless_unified_search always_search --delete` deletes.
 3. **In Paperless**, delete the API token, or the account of the search: a token that Nextcloud forgot still works until Paperless forgets it too.
 
 The files of the archive and their shares stay as they are: they belong to the archive account and to the synchronization, not to this app. Without **Disconnect**, the encrypted token stays in the credentials manager of Nextcloud, under `paperless_unified_search.api-token`, until the app is installed again and disconnected.

@@ -21,7 +21,7 @@ use TemplateAssets;
 require_once __DIR__ . '/../../stubs/template-functions.php';
 
 /**
- * templates/settings.php, the only HTML of the app, rendered as Nextcloud renders it for
+ * templates/settings.php, the HTML of the administration settings, rendered as Nextcloud renders it for
  * each state of the settings and of the history of the problems of the search, with values
  * that would break out of the page if they weren't escaped.
  */
@@ -50,6 +50,10 @@ final class SettingsTemplateTest extends TestCase {
 		self::assertSame('User ID of the account that owns the synchronized files', $this->element($page, 'paperless-unified-search-archive-owner')->getAttribute('placeholder'));
 		self::assertFalse($this->element($page, 'paperless-unified-search-allow-local')->hasAttribute('checked'));
 		self::assertFalse($this->element($page, 'paperless-unified-search-always-search')->hasAttribute('checked'));
+		// Users may choose to include Paperless in every search of their own by default.
+		$personal = $this->element($page, 'paperless-unified-search-users-always-search');
+		self::assertTrue($personal->hasAttribute('checked'));
+		self::assertSame('personalAlwaysSearch', $personal->getAttribute('name'));
 		// Nothing stored, nothing to disconnect.
 		self::assertTrue($this->element($page, 'paperless-unified-search-reset')->hasAttribute('disabled'));
 		self::assertSame('', $this->text($this->element($page, 'paperless-unified-search-token-unreadable')));
@@ -72,6 +76,15 @@ final class SettingsTemplateTest extends TestCase {
 		self::assertTrue($this->element($page, 'paperless-unified-search-allow-local')->hasAttribute('checked'));
 		self::assertTrue($this->element($page, 'paperless-unified-search-always-search')->hasAttribute('checked'));
 		self::assertFalse($this->element($page, 'paperless-unified-search-reset')->hasAttribute('disabled'));
+	}
+
+	public function testTheSettingsShowWhenUsersMayNotAlwaysSearchPaperless(): void {
+		[, $page] = $this->render(new PublicConfig(self::STORED, true, false, personalAlwaysSearch: false));
+
+		self::assertFalse($this->element($page, 'paperless-unified-search-users-always-search')->hasAttribute('checked'));
+		$label = (new DOMXPath($page))->query('//label[@for="paperless-unified-search-users-always-search"]')?->item(0);
+		self::assertInstanceOf(DOMElement::class, $label);
+		self::assertSame('Let users include Paperless in all their searches', $this->text($label));
 	}
 
 	public function testAStoredUrlWithoutTokenCanBeDisconnected(): void {
@@ -120,6 +133,7 @@ final class SettingsTemplateTest extends TestCase {
 			'paperless-unified-search-token' => ['paperless-unified-search-token-unreadable', 'paperless-unified-search-token-hint'],
 			'paperless-unified-search-archive-owner' => ['paperless-unified-search-archive-owner-missing', 'paperless-unified-search-archive-owner-hint'],
 			'paperless-unified-search-always-search' => ['paperless-unified-search-always-search-hint'],
+			'paperless-unified-search-users-always-search' => ['paperless-unified-search-users-always-search-hint'],
 			'paperless-unified-search-try-term' => ['paperless-unified-search-try-hint'],
 		], $described);
 		self::assertStringStartsWith(
