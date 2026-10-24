@@ -24,6 +24,11 @@ use Throwable;
 final class ConfigService {
 	private const URL_KEY = 'paperless_url';
 	private const ALWAYS_SEARCH_KEY = 'always_search';
+	/**
+	 * Whether a user may include Paperless in every search of their own, in their personal
+	 * settings: yes unless an administrator turned it off.
+	 */
+	private const PERSONAL_ALWAYS_SEARCH_KEY = 'personal_always_search';
 	private const ARCHIVE_OWNER_KEY = 'archive_owner';
 	private const ALLOW_LOCAL_KEY = 'allow_local';
 	/**
@@ -82,6 +87,7 @@ final class ConfigService {
 			$this->isMissing($archiveOwner !== '' ? $archiveOwner : $syncAccount),
 			$this->isLocalNetworkAllowed(),
 			$this->getPaperlessVersion(),
+			$this->isPersonalAlwaysSearchAllowed(),
 		);
 	}
 
@@ -170,6 +176,16 @@ final class ConfigService {
 	}
 
 	/**
+	 * Whether a user may include Paperless in every search of their own, in the personal
+	 * settings, without the switch Search connected services. On unless an administrator
+	 * turned it off; while it is off, the personal settings don't offer it and the search
+	 * ignores what users chose (AlwaysSearch).
+	 */
+	public function isPersonalAlwaysSearchAllowed(): bool {
+		return $this->config->getValueBool(AppConstants::APP_ID, self::PERSONAL_ALWAYS_SEARCH_KEY, true);
+	}
+
+	/**
 	 * Whether Nextcloud may reach the stored Paperless at an address of the local network,
 	 * such as 192.168.1.20 or the name of a service of Docker. Nextcloud refuses such
 	 * addresses to every request that doesn't allow them itself, unless
@@ -253,9 +269,11 @@ final class ConfigService {
 	/**
 	 * @param ?PaperlessVersion $paperlessVersion the version that the test of the connection
 	 *                                            found, null when Paperless named none
+	 * @param bool $personalAlwaysSearch whether users may include Paperless in every search
+	 *                                   of their own
 	 * @throws InvalidSettingException when the URL is invalid or the token blank
 	 */
-	public function save(string $url, #[SensitiveParameter] string $token, bool $alwaysSearch = false, string $archiveOwner = '', bool $allowLocal = false, ?PaperlessVersion $paperlessVersion = null): PublicConfig {
+	public function save(string $url, #[SensitiveParameter] string $token, bool $alwaysSearch = false, string $archiveOwner = '', bool $allowLocal = false, ?PaperlessVersion $paperlessVersion = null, bool $personalAlwaysSearch = true): PublicConfig {
 		$normalizedUrl = $this->normalizeUrl($url);
 		$normalizedToken = trim($token);
 		if ($normalizedToken === '') {
@@ -266,6 +284,7 @@ final class ConfigService {
 		$this->config->setValueString(AppConstants::APP_ID, self::URL_KEY, $normalizedUrl);
 		$this->config->setValueBool(AppConstants::APP_ID, self::ALWAYS_SEARCH_KEY, $alwaysSearch);
 		$this->config->setValueBool(AppConstants::APP_ID, self::ALLOW_LOCAL_KEY, $allowLocal);
+		$this->config->setValueBool(AppConstants::APP_ID, self::PERSONAL_ALWAYS_SEARCH_KEY, $personalAlwaysSearch);
 		if ($normalizedOwner === '') {
 			$this->config->deleteKey(AppConstants::APP_ID, self::ARCHIVE_OWNER_KEY);
 		} else {
@@ -289,6 +308,7 @@ final class ConfigService {
 			$this->isMissing($normalizedOwner !== '' ? $normalizedOwner : $syncAccount),
 			$allowLocal,
 			$paperlessVersion,
+			$personalAlwaysSearch,
 		);
 	}
 
@@ -297,6 +317,7 @@ final class ConfigService {
 		$this->config->deleteKey(AppConstants::APP_ID, self::ALWAYS_SEARCH_KEY);
 		$this->config->deleteKey(AppConstants::APP_ID, self::ARCHIVE_OWNER_KEY);
 		$this->config->deleteKey(AppConstants::APP_ID, self::ALLOW_LOCAL_KEY);
+		$this->config->deleteKey(AppConstants::APP_ID, self::PERSONAL_ALWAYS_SEARCH_KEY);
 		$this->storePaperlessVersion(null);
 		$this->credentialsManager->delete('', self::TOKEN_IDENTIFIER);
 		$this->token = '';

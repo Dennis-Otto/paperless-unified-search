@@ -129,6 +129,7 @@
 		const tokenInput = document.getElementById('paperless-unified-search-token')
 		const tokenUnreadable = document.getElementById('paperless-unified-search-token-unreadable')
 		const alwaysSearchInput = document.getElementById('paperless-unified-search-always-search')
+		const personalAlwaysSearchInput = document.getElementById('paperless-unified-search-users-always-search')
 		const archiveOwnerInput = document.getElementById('paperless-unified-search-archive-owner')
 		const archiveOwnerMissing = document.getElementById('paperless-unified-search-archive-owner-missing')
 		const saveButton = document.getElementById('paperless-unified-search-save')
@@ -182,6 +183,7 @@
 				? translate('The stored API token can\'t be decrypted, for example because the secret in config.php changed. Enter it again.')
 				: ''
 			alwaysSearchInput.checked = Boolean(config.alwaysSearch)
+			personalAlwaysSearchInput.checked = Boolean(config.personalAlwaysSearch)
 			archiveOwnerInput.value = config.archiveOwner || ''
 			archiveOwnerMissing.textContent = config.archiveOwnerMissing
 				? translate('The archive account {account} does not exist.', { account: config.archiveOwner || config.syncAccount })
@@ -225,6 +227,7 @@
 					allowLocal: allowLocalInput.checked,
 					token: tokenInput.value,
 					alwaysSearch: alwaysSearchInput.checked,
+					personalAlwaysSearch: personalAlwaysSearchInput.checked,
 					archiveOwner: archiveOwnerInput.value,
 				}))
 				showStatus(translate('Connection successful. Settings saved.'), 'success')

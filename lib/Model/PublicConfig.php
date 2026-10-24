@@ -21,6 +21,8 @@ final class PublicConfig implements JsonSerializable {
 	 *                         network, which it refuses to other requests
 	 * @param ?PaperlessVersion $paperlessVersion the version of this Paperless and of its API,
 	 *                                            as its last answer named them
+	 * @param bool $personalAlwaysSearch users may include Paperless in every search of their
+	 *                                   own, in their personal settings
 	 */
 	public function __construct(
 		public readonly string $url,
@@ -32,11 +34,12 @@ final class PublicConfig implements JsonSerializable {
 		public readonly bool $archiveOwnerMissing = false,
 		public readonly bool $allowLocal = false,
 		public readonly ?PaperlessVersion $paperlessVersion = null,
+		public readonly bool $personalAlwaysSearch = true,
 	) {
 	}
 
 	/**
-	 * @return array{url: string, tokenConfigured: bool, alwaysSearch: bool, archiveOwner: string, syncAccount: string, tokenUnreadable: bool, archiveOwnerMissing: bool, allowLocal: bool, paperlessVersion: string, paperlessApiVersion: string}
+	 * @return array{url: string, tokenConfigured: bool, alwaysSearch: bool, archiveOwner: string, syncAccount: string, tokenUnreadable: bool, archiveOwnerMissing: bool, allowLocal: bool, paperlessVersion: string, paperlessApiVersion: string, personalAlwaysSearch: bool}
 	 */
 	public function jsonSerialize(): array {
 		return [
@@ -51,6 +54,7 @@ final class PublicConfig implements JsonSerializable {
 			// Empty while no answer of Paperless named them.
 			'paperlessVersion' => $this->paperlessVersion?->version ?? '',
 			'paperlessApiVersion' => $this->paperlessVersion?->apiVersion ?? '',
+			'personalAlwaysSearch' => $this->personalAlwaysSearch,
 		];
 	}
 }

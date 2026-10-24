@@ -6,13 +6,18 @@
 // services and sees the group Paperless documents with the title and the excerpt of
 // the document, and only the one that a file of the archive account stands for. A click
 // on the result opens that file in Files, in the Viewer, which names it in its
-// header. run.sh starts it in the image of Playwright after accessibility.mjs, inside
-// the network of the Compose project.
+// header. A user who chose in the personal settings to include Paperless in every
+// search of their own finds its results after a reload without the switch (#220).
+// run.sh starts it in the image of Playwright after accessibility.mjs, inside the
+// network of the Compose project.
 
 import { chromium } from 'playwright-core'
 import { SIZES, flowSizes } from './sizes.mjs'
 import {
 	BASE_URL,
+	PERSONAL,
+	PERSONAL_SCOPE,
+	chooseAlwaysSearch,
 	connectedServices,
 	resultGroup,
 	search,
@@ -97,6 +102,35 @@ async function searchAndOpen(browser, session, size) {
 	}
 }
 
+// The user ticks Always search my Paperless documents in the personal settings, opens
+// another page, as a reload does, and finds the result among the Paperless documents
+// without the switch Search connected services, which Nextcloud turned off again. The
+// user then takes the choice back, for the next runs.
+async function searchAlways(browser, session, size) {
+	const context = await browser.newContext({ storageState: session, locale: 'en-US', ...size.options })
+	context.setDefaultTimeout(TIMEOUT)
+	const page = await context.newPage()
+	try {
+		await page.goto(`${BASE_URL}${PERSONAL}`, { waitUntil: 'domcontentloaded' })
+		await page.locator(PERSONAL_SCOPE).waitFor()
+		await chooseAlwaysSearch(page, true)
+		await page.goto(`${BASE_URL}${START}`, { waitUntil: 'domcontentloaded' })
+		await searchButton(page).click()
+		await search(page, (input) => input.fill(TERM))
+		await resultGroup(page, 'Paperless documents').getByRole('link', { name: RESULT, exact: true }).waitFor()
+		console.log(`Search dialog on a ${size.name} after choosing to always search Paperless: ${TITLE} without the switch.`)
+	} catch (error) {
+		throw new Error(`On a ${size.name}, with the choice to always search Paperless, at ${page.url()}: ${error.message}`, { cause: error })
+	} finally {
+		try {
+			await page.goto(`${BASE_URL}${PERSONAL}`, { waitUntil: 'domcontentloaded' })
+			await chooseAlwaysSearch(page, false)
+		} finally {
+			await context.close()
+		}
+	}
+}
+
 const browser = await chromium.launch()
 try {
 	const session = await signIn(browser, USER)
@@ -111,6 +145,8 @@ try {
 			console.log(`Search dialog on a ${size.name}: left out, as E2E_FLOW_SIZES is ${JSON.stringify(process.env.E2E_FLOW_SIZES)}.`)
 		}
 	}
+	// Once, on the first size of the run: the choice takes no other path on a phone.
+	await searchAlways(browser, session, RUN[0])
 } finally {
 	await browser.close()
 }

@@ -16,6 +16,7 @@ use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Model\DiagnosticsHistory;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCA\PaperlessUnifiedSearch\Search\PaperlessSearchProvider;
+use OCA\PaperlessUnifiedSearch\Service\AlwaysSearch;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\FilePictures;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
@@ -26,6 +27,7 @@ use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\FileCache;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryAppConfig;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryCache;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\UserPreferences;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Files\File;
@@ -57,6 +59,7 @@ use RuntimeException;
 final class PaperlessSearchProviderTest extends TestCase {
 	use Accounts;
 	use FileCache;
+	use UserPreferences;
 
 	private const NOW = 1791500000;
 
@@ -179,6 +182,8 @@ final class PaperlessSearchProviderTest extends TestCase {
 			$this->diagnostics($config),
 			$this->clock(),
 			...$this->presentation($paperlessApi, $configService, $urlGenerator),
+			alwaysSearch: new AlwaysSearch($configService, $this->userConfig()),
+			userSession: $this->session('dennis'),
 		);
 
 		self::assertTrue($provider->isExternalProvider());
@@ -241,9 +246,36 @@ final class PaperlessSearchProviderTest extends TestCase {
 			$this->diagnostics($config),
 			$this->clock(),
 			...$this->presentation($paperlessApi, $configService),
+			alwaysSearch: new AlwaysSearch($configService, $this->userConfig()),
+			// Also where no user signed in, such as in occ.
+			userSession: $this->session(null),
 		);
 
 		self::assertFalse($provider->isExternalProvider());
+	}
+
+	/**
+	 * Nextcloud asks whether the provider is external as it lists the providers of the
+	 * search for the user of the request: a user who chose to include Paperless in every
+	 * search of their own finds it without the switch, everybody else with it, and nobody
+	 * while the administrators don't let users choose it.
+	 */
+	public function testAUserWhoChoseToAlwaysSearchPaperlessIsNotGatedByTheSwitch(): void {
+		$provider = $this->provider($this->createStub(IClient::class));
+
+		self::assertTrue($provider->isExternalProvider());
+
+		$this->preferences['dennis.' . AppConstants::APP_ID . '.always_search'] = true;
+		self::assertFalse($provider->isExternalProvider());
+
+		$this->config->setValueBool(AppConstants::APP_ID, 'personal_always_search', false);
+		self::assertTrue($provider->isExternalProvider());
+	}
+
+	public function testTheChoiceOfAnotherUserLeavesTheSwitchOn(): void {
+		$this->preferences['alice.' . AppConstants::APP_ID . '.always_search'] = true;
+
+		self::assertTrue($this->provider($this->createStub(IClient::class))->isExternalProvider());
 	}
 
 	public function testDescribesItselfToTheUnifiedSearch(): void {
@@ -1637,6 +1669,8 @@ final class PaperlessSearchProviderTest extends TestCase {
 			$this->diagnostics($config),
 			$clock ?? $this->clock(),
 			...$this->presentation($paperlessApi, $configService, $urlGenerator, $previews, $locale, $timeZone),
+			alwaysSearch: new AlwaysSearch($configService, $this->userConfig()),
+			userSession: $this->session('dennis'),
 		);
 	}
 

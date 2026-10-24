@@ -48,7 +48,10 @@ Paperless documents show in the global search of Nextcloud for every user who ca
 
 **Search connected services** decides whether a search leaves Nextcloud. Nextcloud counts every search that sends the term to another server as one of a connected service, Paperless as well, and asks it only while the switch is on. It turns the switch off whenever the page loads anew, so that no term goes to another server without the choice of the user, again and again.
 
-An administrator who trusts their Paperless server, as the one that already holds the documents, can select **Always include Paperless in global search** in the settings. Paperless then belongs to every search of every user, without the switch, which no longer controls it. Every user reloads Nextcloud once after the change.
+There are two ways around it, and both send the terms to Paperless with every search:
+
+- **For yourself:** select **Always search my Paperless documents** under **Personal settings → Paperless**, as *Always search your Paperless documents* above shows. Only your own searches change, from the next page that you open.
+- **For every user:** an administrator who trusts their Paperless server, as the one that already holds the documents, can select **Always include Paperless in global search** in the settings. Paperless then belongs to every search of every user, without the switch, which no longer controls it, and the personal settings show the checkbox ticked and greyed out. Every user reloads Nextcloud once after the change.
 
 ## On a phone
 

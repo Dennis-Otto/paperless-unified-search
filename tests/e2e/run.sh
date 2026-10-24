@@ -580,6 +580,69 @@ curl --fail-with-body --silent --show-error \
 	"${BASE_URL}/ocs/v2.php/search/providers"
 assert_response external "${TMP_DIR}/providers-external.json"
 
+# A user may include Paperless in every search of their own, in the personal settings,
+# so that Nextcloud no longer counts it among the connected services for that user
+# alone: e2e-user then finds it without the switch, e2e-admin still needs it, and
+# nobody does while the administrators don't let users choose it (#220). The route
+# takes only a user who signed in.
+providers_of() {
+	curl --fail-with-body --silent --show-error \
+		--user "$1:${PASSWORD}" \
+		--header 'Accept: application/json' \
+		--header 'OCS-APIRequest: true' \
+		--output "$2" \
+		"${BASE_URL}/ocs/v2.php/search/providers"
+}
+choose_always_search() {
+	expect_status "$1" "$2" \
+		--user "e2e-user:${PASSWORD}" \
+		--request POST \
+		--data-urlencode "alwaysSearch=$3" \
+		"${PERSONAL_URL}"
+}
+let_users_always_search() {
+	expect_status 200 "$1" \
+		--user "e2e-admin:${PASSWORD}" \
+		--request POST \
+		--data-urlencode 'url=http://paperless-mock:8080' \
+		--data-urlencode 'allowLocal=1' \
+		--data-urlencode 'token=' \
+		--data-urlencode 'alwaysSearch=0' \
+		--data-urlencode "personalAlwaysSearch=$2" \
+		--data-urlencode 'archiveOwner=e2e-user' \
+		"${SETTINGS_URL}"
+}
+PERSONAL_URL="${BASE_URL}/apps/paperless_unified_search/personal"
+expect_status 401 'Choosing to always search Paperless without a login' \
+	--request POST \
+	--data-urlencode 'alwaysSearch=1' \
+	"${PERSONAL_URL}"
+choose_always_search 200 'Choosing to always search Paperless' 1
+expect_text '{"alwaysSearch":true}' "${TMP_DIR}/answer.json" \
+	"The choice to always search Paperless isn't stored: $(cat "${TMP_DIR}/answer.json")"
+if [[ "$(occ user:setting e2e-user paperless_unified_search always_search)" != 1 ]]; then
+	echo "The choice of e2e-user isn't its user preference always_search." >&2
+	exit 1
+fi
+providers_of e2e-user "${TMP_DIR}/providers-personal.json"
+assert_response trusted "${TMP_DIR}/providers-personal.json"
+providers_of e2e-admin "${TMP_DIR}/providers-personal-admin.json"
+assert_response external "${TMP_DIR}/providers-personal-admin.json"
+let_users_always_search 'Not letting users always search Paperless' 0
+expect_text '"personalAlwaysSearch":false' "${TMP_DIR}/answer.json" \
+	"The settings don't say that users may not always search Paperless: $(cat "${TMP_DIR}/answer.json")"
+providers_of e2e-user "${TMP_DIR}/providers-personal-off.json"
+assert_response external "${TMP_DIR}/providers-personal-off.json"
+choose_always_search 403 'Choosing to always search Paperless while users may not' 0
+expect_text '"code":"not_allowed"' "${TMP_DIR}/answer.json" \
+	"The refused choice has no code: $(cat "${TMP_DIR}/answer.json")"
+let_users_always_search 'Letting users always search Paperless again' 1
+providers_of e2e-user "${TMP_DIR}/providers-personal-again.json"
+assert_response trusted "${TMP_DIR}/providers-personal-again.json"
+choose_always_search 200 'Taking back the choice to always search Paperless' 0
+providers_of e2e-user "${TMP_DIR}/providers-personal-back.json"
+assert_response external "${TMP_DIR}/providers-personal-back.json"
+
 # The smart picker offers Paperless documents with an icon that Nextcloud serves, and
 # searches through the search provider (#110).
 curl --fail-with-body --silent --show-error \
@@ -859,4 +922,4 @@ phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed in ${SECONDS} s: the set-up, the repair step that removes the last failure of version 0.3.0, the test, the explained search and the check of occ, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, the dashboard widget with the newest documents that a user can open at one request to Paperless a minute, trusted mode, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date in English and German, its correspondent and its type, pages of results filled across pages of Paperless, the date filter in the timezone of the user, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, Try a search for administrators only with the IDs, titles and verdicts alone, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."
+echo "Docker E2E passed in ${SECONDS} s: the set-up, the repair step that removes the last failure of version 0.3.0, the test, the explained search and the check of occ, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, the dashboard widget with the newest documents that a user can open at one request to Paperless a minute, trusted mode, the choice of a user to include Paperless in every search of their own, which the administrators can disallow, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date in English and German, its correspondent and its type, pages of results filled across pages of Paperless, the date filter in the timezone of the user, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, Try a search for administrators only with the IDs, titles and verdicts alone, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."
