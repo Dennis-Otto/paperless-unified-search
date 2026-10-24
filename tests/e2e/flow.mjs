@@ -14,6 +14,7 @@
 import { chromium } from 'playwright-core'
 import { SIZES, flowSizes } from './sizes.mjs'
 import {
+	ALWAYS_SEARCH,
 	BASE_URL,
 	PERSONAL,
 	PERSONAL_SCOPE,
@@ -124,7 +125,12 @@ async function searchAlways(browser, session, size) {
 	} finally {
 		try {
 			await page.goto(`${BASE_URL}${PERSONAL}`, { waitUntil: 'domcontentloaded' })
-			await chooseAlwaysSearch(page, false)
+			// Unticks only a stored choice, so that a section that didn't show or a save
+			// that failed doesn't turn the cleanup into a timeout that hides the error.
+			const box = page.locator(ALWAYS_SEARCH)
+			if (await box.isVisible() && await box.isChecked()) {
+				await chooseAlwaysSearch(page, false)
+			}
 		} finally {
 			await context.close()
 		}

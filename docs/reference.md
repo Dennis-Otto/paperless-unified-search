@@ -61,7 +61,7 @@ Change the settings in the administration settings, which test the connection fi
 
 ## The routes of the settings
 
-The settings page saves through four routes of the app, which only administrators may call, each with Nextcloud's CSRF token, and the personal settings through a fifth that every user who signed in may call. A script calls them with the login of an administrator and the header `OCS-APIRequest: true`, as the end-to-end tests do; `/index.php` goes before `/apps` where Nextcloud runs without pretty URLs.
+The settings page saves through four routes of the app, which only administrators may call, each with Nextcloud's CSRF token, and the personal settings through a fifth that every user who signed in may call. A script calls the four with the login of an administrator, and the fifth with the login of the user whose choice it stores, each with the header `OCS-APIRequest: true`, as the end-to-end tests do; `/index.php` goes before `/apps` where Nextcloud runs without pretty URLs.
 
 | Route | Does |
 | --- | --- |
@@ -79,7 +79,7 @@ curl -u admin -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
   'https://cloud.example.com/apps/paperless_unified_search/settings'
 ```
 
-`token@file` hands the token over in a file, which keeps it out of the history of the shell and the list of processes. A saved setting answers HTTP 200 with the settings as JSON: `url`, `tokenConfigured`, `alwaysSearch`, `archiveOwner`, `syncAccount`, `tokenUnreadable`, `archiveOwnerMissing`, `allowLocal`, `paperlessVersion`, `paperlessApiVersion` and `personalAlwaysSearch`, never the token. A save without `alwaysSearch`, `allowLocal` or `personalAlwaysSearch` sets the switch to its default. A refusal answers HTTP 400, or 500 when something after the test failed, with the `message` to show in the language of the administrator and a `code`:
+`token@file` hands the token over in a file, which keeps it out of the history of the shell and the list of processes. A saved setting answers HTTP 200 with the settings as JSON: `url`, `tokenConfigured`, `alwaysSearch`, `archiveOwner`, `syncAccount`, `tokenUnreadable`, `archiveOwnerMissing`, `allowLocal`, `paperlessVersion`, `paperlessApiVersion` and `personalAlwaysSearch`, never the token. A save without `alwaysSearch` or `allowLocal` sets the switch to its default, off; a save without `personalAlwaysSearch` keeps it as it is. A refusal answers HTTP 400, or 500 when something after the test failed, with the `message` to show in the language of the administrator and a `code`:
 
 | Code | Means |
 | --- | --- |

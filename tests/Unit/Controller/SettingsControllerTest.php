@@ -66,6 +66,7 @@ final class SettingsControllerTest extends TestCase {
 		$config->expects(self::once())
 			->method('setValueString')
 			->with(AppConstants::APP_ID, 'paperless_url', 'https://paperless.example.com');
+		$config->method('getValueBool')->willReturnCallback(static fn (string $app, string $key, bool $default = false): bool => $default);
 		$switches = [];
 		$config->expects(self::exactly(3))
 			->method('setValueBool')
@@ -134,6 +135,32 @@ final class SettingsControllerTest extends TestCase {
 		self::assertSame(Http::STATUS_OK, $response->getStatus());
 		self::assertSame($allowed, $switches[AppConstants::APP_ID . '.personal_always_search'] ?? null);
 		self::assertSame($allowed, json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR)['personalAlwaysSearch']);
+	}
+
+	/**
+	 * A save without the parameter, as from a script written before it existed, keeps
+	 * what the administrators chose instead of turning the opt-in of users back on.
+	 */
+	#[DataProvider('localNetwork')]
+	public function testSaveWithoutTheChoiceKeepsWhetherUsersMayAlwaysSearchPaperless(bool $stored): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response(200, self::NO_DOCUMENTS));
+
+		$switches = [];
+		$config = $this->createStub(IAppConfig::class);
+		$config->method('getValueBool')->willReturnCallback(static fn (string $app, string $key, bool $default = false): bool => $key === 'personal_always_search' ? $stored : $default);
+		$config->method('setValueBool')->willReturnCallback(static function (string $app, string $key, bool $value) use (&$switches): bool {
+			$switches[$app . '.' . $key] = $value;
+
+			return true;
+		});
+
+		$response = $this->controller($config, $this->createStub(ICredentialsManager::class), $client)
+			->save('https://paperless.example.com', 'TEST_VALUE');
+
+		self::assertSame(Http::STATUS_OK, $response->getStatus());
+		self::assertSame($stored, $switches[AppConstants::APP_ID . '.personal_always_search'] ?? null);
+		self::assertSame($stored, json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR)['personalAlwaysSearch']);
 	}
 
 	/**

@@ -61,7 +61,7 @@ Schlüssel, die eine ältere Version hinterlassen hat und diese nicht mehr liest
 
 ## Die Routen der Einstellungen
 
-Die Seite der Einstellungen speichert über vier Routen der App, die nur Administratoren aufrufen dürfen, jede mit dem CSRF-Token von Nextcloud, und die persönlichen Einstellungen über eine fünfte, die jeder angemeldete Benutzer aufrufen darf. Ein Skript ruft sie mit der Anmeldung eines Administrators und dem Header `OCS-APIRequest: true` auf, wie es die End-to-End-Tests tun; `/index.php` steht vor `/apps`, wo Nextcloud ohne Pretty URLs läuft.
+Die Seite der Einstellungen speichert über vier Routen der App, die nur Administratoren aufrufen dürfen, jede mit dem CSRF-Token von Nextcloud, und die persönlichen Einstellungen über eine fünfte, die jeder angemeldete Benutzer aufrufen darf. Ein Skript ruft die vier mit der Anmeldung eines Administrators auf und die fünfte mit der Anmeldung des Benutzers, dessen Wahl sie speichert, jede mit dem Header `OCS-APIRequest: true`, wie es die End-to-End-Tests tun; `/index.php` steht vor `/apps`, wo Nextcloud ohne Pretty URLs läuft.
 
 | Route | Tut |
 | --- | --- |
@@ -79,7 +79,7 @@ curl -u admin -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
   'https://cloud.example.com/apps/paperless_unified_search/settings'
 ```
 
-`token@file` übergibt das Token in einer Datei, was es aus dem Verlauf der Shell und der Liste der Prozesse heraushält. Eine gespeicherte Einstellung antwortet mit HTTP 200 und den Einstellungen als JSON: `url`, `tokenConfigured`, `alwaysSearch`, `archiveOwner`, `syncAccount`, `tokenUnreadable`, `archiveOwnerMissing`, `allowLocal`, `paperlessVersion`, `paperlessApiVersion` und `personalAlwaysSearch`, nie mit dem Token. Ein Speichern ohne `alwaysSearch`, `allowLocal` oder `personalAlwaysSearch` setzt den Schalter auf seinen Standard. Eine Ablehnung antwortet mit HTTP 400, oder 500, wenn etwas nach dem Test fehlgeschlagen ist, mit der `message`, die in der Sprache des Administrators zu zeigen ist, und einem `code`:
+`token@file` übergibt das Token in einer Datei, was es aus dem Verlauf der Shell und der Liste der Prozesse heraushält. Eine gespeicherte Einstellung antwortet mit HTTP 200 und den Einstellungen als JSON: `url`, `tokenConfigured`, `alwaysSearch`, `archiveOwner`, `syncAccount`, `tokenUnreadable`, `archiveOwnerMissing`, `allowLocal`, `paperlessVersion`, `paperlessApiVersion` und `personalAlwaysSearch`, nie mit dem Token. Ein Speichern ohne `alwaysSearch` oder `allowLocal` setzt den Schalter auf seinen Standard, aus; ein Speichern ohne `personalAlwaysSearch` lässt ihn, wie er ist. Eine Ablehnung antwortet mit HTTP 400, oder 500, wenn etwas nach dem Test fehlgeschlagen ist, mit der `message`, die in der Sprache des Administrators zu zeigen ist, und einem `code`:
 
 | Code | Bedeutet |
 | --- | --- |

@@ -75,7 +75,8 @@ final class SettingsController extends Controller {
 	 * Disconnect, it asks for the password of the administrator when it wasn't confirmed
 	 * in the last 30 minutes. $allowLocal lets Nextcloud reach this Paperless, and only
 	 * this one, at an address of the local network, and $personalAlwaysSearch lets users
-	 * include Paperless in all their searches, in their personal settings.
+	 * include Paperless in all their searches, in their personal settings; a save without
+	 * it keeps the stored choice, so that no script turns the opt-in of users back on.
 	 *
 	 * A refusal answers the message to show, in the language of the administrator, and a
 	 * code that says what failed, such as unauthorized or invalid_url. A failed test of the
@@ -84,7 +85,7 @@ final class SettingsController extends Controller {
 	 */
 	#[FrontpageRoute(verb: 'POST', url: '/settings')]
 	#[PasswordConfirmationRequired]
-	public function save(string $url, #[SensitiveParameter] string $token = '', bool $alwaysSearch = false, string $archiveOwner = '', bool $allowLocal = false, bool $personalAlwaysSearch = true): JSONResponse {
+	public function save(string $url, #[SensitiveParameter] string $token = '', bool $alwaysSearch = false, string $archiveOwner = '', bool $allowLocal = false, ?bool $personalAlwaysSearch = null): JSONResponse {
 		$effectiveToken = '';
 		try {
 			$normalizedUrl = $this->configService->normalizeUrl($url);
@@ -92,7 +93,7 @@ final class SettingsController extends Controller {
 			$owner = $this->configService->resolveArchiveOwner($archiveOwner);
 			$version = $this->paperlessApi->testConnection($normalizedUrl, $effectiveToken, $allowLocal);
 
-			return new JSONResponse($this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner, $allowLocal, $version, $personalAlwaysSearch));
+			return new JSONResponse($this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner, $allowLocal, $version, $personalAlwaysSearch ?? $this->configService->isPersonalAlwaysSearchAllowed()));
 		} catch (InvalidSettingException $exception) {
 			return $this->refusal($this->messages->forSetting($exception->problem, trim($archiveOwner)), $exception->problem->value);
 		} catch (PaperlessRequestException $exception) {
