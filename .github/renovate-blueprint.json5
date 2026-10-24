@@ -12,7 +12,15 @@
 // https://github.com/Dennis-Otto/repo-blueprint
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
-  extends: ["config:recommended", ":semanticCommits"],
+  // The versions that an osv-scanner.toml accepts with every advisory, which no
+  // update of a lock file can fix, such as one that another package pins exactly:
+  // .github/renovate-accepted.json5 has a rule for each, which blueprint.py writes,
+  // so that Renovate tries no fix of them and logs no empty commit in every run.
+  extends: [
+    "config:recommended",
+    ":semanticCommits",
+    "local>Dennis-Otto/paperless-unified-search//.github/renovate-accepted.json5",
+  ],
   timezone: "Europe/Berlin",
   // No dependency dashboard, so that a repository can have no open issue: routine
   // updates merge on their own, and what waits for the maintainer is a pull

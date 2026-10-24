@@ -6,7 +6,8 @@ name: Issue lifecycle
 # pull request fixes, and closes them with a link once a release ships the fix.
 # Merges and releases start it at once, and every morning catches what was missed.
 # A fixed issue that a release closes is filed under the release's milestone. The
-# job blocks every host but GitHub's with Harden-Runner.
+# job is the issue assistant's reusable workflow at the commit of a release, so an
+# update is a move of the pin below; it blocks every host but GitHub's.
 # https://github.com/Dennis-Otto/issue-assistant
 
 on:
@@ -19,9 +20,9 @@ on:
     types: [published]
   # A release published with the job's GITHUB_TOKEN starts no workflow, so the end
   # of the repository's release workflow starts this one too: Release or, as in
-  # ha-autodarts, Release integration. Not a scheduled run of it, which runs every
-  # hour as a safety net and mostly releases nothing; the morning sweep catches a
-  # release that one of them made.
+  # homedarts-for-autodarts, Release integration. Not a scheduled run of it, which
+  # runs every hour as a safety net and mostly releases nothing; the morning sweep
+  # catches a release that one of them made.
   workflow_run:
     workflows: [Release, Release integration]
     types: [completed]
@@ -35,42 +36,12 @@ on:
 permissions: {}
 
 jobs:
-  sweep:
-    name: Remind and close
-    if: >-
-      !github.event.repository.fork &&
-      (github.event_name != 'pull_request_target' ||
-        (github.event.pull_request.merged &&
-         github.event.pull_request.user.login != 'dependabot[bot]')) &&
-      (github.event_name != 'workflow_run' ||
-        (github.event.workflow_run.conclusion == 'success' &&
-         github.event.workflow_run.event != 'schedule'))
-    # The job waits for the group, not the run: a run whose job is skipped never
-    # takes the place of a sweep that waits.
-    concurrency:
-      group: issue-lifecycle
-      cancel-in-progress: false
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
+  lifecycle:
+    name: Issue lifecycle
     permissions:
       contents: read
       issues: write
       pull-requests: read
-    steps:
-      - name: Block every host but GitHub's
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
-        with:
-          egress-policy: block
-          disable-sudo-and-containers: true
-          allowed-endpoints: >-
-            api.github.com:443
-            github.com:443
-      # The default branch, also for a merged pull request.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Remind, close and mark fixed issues
-        uses: Dennis-Otto/issue-assistant@1f39474ecec19a599e6e7a6ab53357b36d0ea99f # v1.5.0
-        with:
-          command: sweep
-          dry-run: ${{ inputs.dry_run || false }}
+    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-lifecycle.yml@1f78330598c545784358643ceda2b720014ebb42 # v1.6.1
+    with:
+      dry_run: ${{ inputs.dry_run || false }}

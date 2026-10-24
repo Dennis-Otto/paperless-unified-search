@@ -11,7 +11,7 @@
       "draft": true,
       "force-tag-creation": true,
       "pull-request-title-pattern": "chore: release ${version}",
-      "pull-request-header": "The next release: its version follows from the titles of the pull requests merged since the last one (fix: a patch, feat: a minor, ! or BREAKING CHANGE: a major version, or a minor one while the version is below 1.0.0), and its notes from what the fragments in changelog.d/ and CHANGELOG.md under Unreleased say. Merging this pull request publishes it.\n",
+      "pull-request-header": "The next release: its version follows from the titles of the pull requests merged since the last one (fix: a patch, feat: a minor, ! or BREAKING CHANGE: a major version, or a minor one while the version is below 1.0.0), and its notes from what the fragments in changelog.d/ and CHANGELOG.md under Unreleased say. Merging this pull request publishes it.\n\n<!-- The notes of the release follow. -->",
       "changelog-sections": [
         { "type": "feat", "section": "Features" },
         { "type": "fix", "section": "Bug fixes" },

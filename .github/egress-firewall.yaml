@@ -3,20 +3,37 @@
 # codeload.github.com and the Actions endpoints). The analyze job of the issue
 # assistant (https://github.com/Dennis-Otto/issue-assistant) uses that runner.
 # Add a host only when a step needs it, name it in full and say what uses it; keep
-# the hosts of an engine in its own block.
+# the hosts of an engine in its own block. install writes the block of the engine
+# of .github/issue-assistant/config.toml alone, and check names each host of that
+# engine that is missing here.
 mode: enforce
 allow:
   # GitHub API: the issue assistant and the engine actions
   - api.github.com
+  # npm: the engine's command line, which its step installs
+  - registry.npmjs.org
+
   # Engine claude: the Claude API, and Claude Code and Bun, which the Claude Code
   # action installs
   - api.anthropic.com
   - claude.ai
   - downloads.claude.ai
   - release-assets.githubusercontent.com
-  - registry.npmjs.org
   # Engine claude: bubblewrap and socat, which the Claude Code action installs to
   # isolate subprocesses because issues come from people without write access
   - archive.ubuntu.com
   - azure.archive.ubuntu.com
   - security.ubuntu.com
+
+  # Engine codex: the OpenAI API, which the Codex action reaches through its proxy
+  # of the Responses API
+  - api.openai.com
+
+  # Engine gemini: the Gemini API
+  - generativelanguage.googleapis.com
+
+  # Engine copilot: the Copilot API, with a host for each plan
+  - api.githubcopilot.com
+  - api.individual.githubcopilot.com
+  - api.business.githubcopilot.com
+  - api.enterprise.githubcopilot.com

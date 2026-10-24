@@ -116,9 +116,9 @@ markdown_extensions:
   # --8<-- "CHANGELOG.md", so that nothing is written twice.
   pymdownx.snippets:
     check_paths: true
-  # The live diagrams of the website: the hook in .github/mkdocs_blueprint.py puts
-  # the Mermaid source of docs/diagrams/ in place of each picture of a diagram, and
-  # Material draws it in the colors of its theme.
+  # A ```mermaid block that a page still has, which Material draws live with the
+  # Mermaid that the hook pins; a diagram that a page shows as its pictures, which
+  # scripts/diagrams.sh draws, loads no Mermaid.
   pymdownx.superfences:
     custom_fences:
       - name: mermaid

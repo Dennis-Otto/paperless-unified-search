@@ -84,7 +84,7 @@ jobs:
       - name: Check the issue assistant's set-up
         id: issue-assistant
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
-        uses: Dennis-Otto/issue-assistant@1f39474ecec19a599e6e7a6ab53357b36d0ea99f # v1.5.0
+        uses: Dennis-Otto/issue-assistant@1f78330598c545784358643ceda2b720014ebb42 # v1.6.1
         with:
           command: check
       - name: Check the sign-off of every commit
@@ -546,7 +546,7 @@ jobs:
       # The labels, issue forms, workflows and notice of the issue assistant fit the
       # templates of its release: https://github.com/Dennis-Otto/issue-assistant
       - name: Check the issue assistant's set-up
-        uses: Dennis-Otto/issue-assistant@1f39474ecec19a599e6e7a6ab53357b36d0ea99f # v1.5.0
+        uses: Dennis-Otto/issue-assistant@1f78330598c545784358643ceda2b720014ebb42 # v1.6.1
         with:
           command: check
       # The PR coach: what failed, why it matters and how to fix it, in the summary

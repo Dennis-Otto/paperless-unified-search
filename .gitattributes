@@ -15,5 +15,7 @@ requirements*.txt linguist-generated=true
 package-lock.json linguist-generated=true
 composer.lock linguist-generated=true
 
-# The pictures of the diagrams, which scripts/diagrams.sh draws from docs/diagrams/.
+# The pictures of the diagrams, which scripts/diagrams.sh draws from docs/diagrams/, and
+# those of the page of the automation, which the blueprint brings.
 docs/images/diagrams/*.svg linguist-generated=true
+.github/mkdocs-blueprint-diagrams/*.svg linguist-generated=true
