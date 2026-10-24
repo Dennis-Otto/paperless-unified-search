@@ -33,8 +33,9 @@ from blueprint.coach import code, fence, html_code
 from blueprint.github import Api
 
 # A part of the run gets about so many mutants: at the half a mutant a second of a slow
-# test suite on the four cores of a runner, as in the integration of ha-autodarts, that
-# is under two hours, and a quick suite needs only one part.
+# test suite on the four cores of a runner, as in the integration of
+# homedarts-for-autodarts, that is under two hours, and a quick suite needs only one
+# part.
 PART_MUTANTS = 3000
 MOST_PARTS = 8
 # The score and the score of the logic count as dropped when they fall by more than

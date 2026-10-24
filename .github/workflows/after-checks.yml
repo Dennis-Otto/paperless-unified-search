@@ -27,7 +27,9 @@ name: After the checks
 # The bot for failed releases: when the release that a merge started fails, such as
 # at a push of its tag that GitHub refused for a moment, it runs the failed jobs once
 # more, where they stopped, instead of leaving the release and its rollout to a
-# person. The release workflow takes up a tag that it pushed already.
+# person. The release workflow takes up a tag that it pushed already. A release that
+# a person or another bot already runs again, or ran again, is theirs: the bot leaves
+# it alone.
 #
 # The PR coach: after every run of the checks of a pull request, one comment on it
 # explains each check that failed: what it found, why that matters and how to fix
@@ -325,7 +327,28 @@ jobs:
           RUN: ${{ github.event.workflow_run.id }}
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          gh run rerun "$RUN" --failed
+          # A person or another bot may have run the release again before this job
+          # started: then the run is theirs, and GitHub refuses a rerun while it runs.
+          state="$(gh api "repos/$GH_REPO/actions/runs/$RUN" --jq '"\(.status) \(.run_attempt)"')"
+          if [[ "$state" != "completed 1" ]]; then
+            case "${state%% *}" in
+              completed) now="done" ;;
+              queued | waiting | pending | requested) now="waiting" ;;
+              *) now="running" ;;
+            esac
+            echo "The release of ${SHA:0:7} ran again already: its attempt ${state#* } is $now. The bot leaves it alone." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # It may also start again between the look and the rerun.
+          if ! output="$(gh run rerun "$RUN" --failed 2>&1)"; then
+            if grep -q "already running" <<<"$output"; then
+              echo "The release of ${SHA:0:7} runs again already; the bot leaves it alone." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            printf '%s\n' "$output" >&2
+            exit 1
+          fi
+          printf '%s\n' "$output"
           echo "The failed jobs of the release of ${SHA:0:7} run once more, where they stopped." >> "$GITHUB_STEP_SUMMARY"
 
   cancelled:

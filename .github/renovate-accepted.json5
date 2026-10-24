@@ -1,0 +1,10 @@
+// The versions that an osv-scanner.toml of this repository accepts with every
+// advisory, as rules of Renovate, which .github/renovate-blueprint.json5 extends:
+// Renovate opens no branch to fix a vulnerability of such a version, which the lock
+// file couldn't take, as for a version that another package pins exactly. The command
+// advisories of blueprint.py writes this file from the [[PackageOverrides]] of each
+// osv-scanner.toml, and scripts/check.sh fails when they disagree; change those, not
+// this file. https://github.com/Dennis-Otto/repo-blueprint
+{
+  "packageRules": []
+}

@@ -857,10 +857,12 @@ def required_checks(root: Path) -> list[str]:
 
 
 def check_steps(root: Path) -> list[str]:
-    """The steps of scripts/check.sh, by the names that its function step prints."""
+    """The steps of scripts/check.sh, by the names that its function step prints: also
+    one indented within an if, as the step Checks of this project, which runs only where
+    scripts/check-project.sh is."""
     path = root / "scripts/check.sh"
     text = path.read_text(encoding="utf-8") if path.is_file() else ""
-    return re.findall(r'^step "([^"$`\\]+)"$', text, re.M)
+    return re.findall(r'^[ \t]*step "([^"$`\\]+)"$', text, re.M)
 
 
 def undeclared(catalog: Catalog) -> list[str]:

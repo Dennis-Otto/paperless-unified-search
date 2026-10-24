@@ -15,7 +15,7 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 import blueprint
-from blueprint import mutation, screenshots
+from blueprint import advisories, mutation, screenshots
 from blueprint.bootstrap import CreateError, create
 from blueprint.bot_health import renovate_report, sweep, watch_run
 from blueprint.branches import next_branch
@@ -74,6 +74,7 @@ from blueprint.fixes import (
 from blueprint.fixes import keep as keep_fixes
 from blueprint.github import Api, GitHubError, Json, current_repo
 from blueprint.notices import third_party_notices
+from blueprint.overrides import write_overrides
 from blueprint.pages import Layout, annotation, command, fixed, layouts, pages
 from blueprint.pr_report import about as pr_parts
 from blueprint.settings import (
@@ -602,6 +603,42 @@ def pages_command(arguments: argparse.Namespace, root: Path) -> int:
     return 1
 
 
+def advisories_command(arguments: argparse.Namespace, root: Path) -> int:
+    """The versions that the osv-scanner.toml files accept with every advisory, and
+    whether .github/renovate-accepted.json5 has the rules of Renovate for them; with
+    --fix, it writes them first."""
+    outcome = advisories.check(root)
+    if arguments.fix and not outcome.in_step:
+        advisories.write(root, outcome)
+        print(
+            f"{advisories.PRESET}: the rules of Renovate are those of osv-scanner.toml now"
+        )
+        outcome = advisories.check(root)
+    for problem in outcome.problems:
+        print(problem)
+    if not outcome.in_step:
+        state = "differs from" if outcome.current is not None else "is missing for"
+        print(
+            f"{advisories.PRESET} {state} the versions that osv-scanner.toml accepts "
+            "with every advisory, so Renovate would go on trying to fix them, which "
+            f"no lock file can take. {command(root)} advisories --fix writes it; "
+            "commit it with the change of osv-scanner.toml."
+        )
+    if outcome.problems or not outcome.in_step:
+        return 1
+    if outcome.accepted:
+        print(
+            f"The {len(outcome.accepted)} version(s) that osv-scanner.toml accepts with "
+            f"every advisory have their rules of Renovate in {advisories.PRESET}."
+        )
+    else:
+        print(
+            "No osv-scanner.toml accepts a version with every advisory, and "
+            f"{advisories.PRESET} has no rule."
+        )
+    return 0
+
+
 def site_check_command(arguments: argparse.Namespace, root: Path) -> int:
     """What the website that MkDocs built promises, one broken promise on each line,
     and in the CI also as annotations; with --output, the further languages and the
@@ -627,7 +664,9 @@ def site_check_command(arguments: argparse.Namespace, root: Path) -> int:
         "mkdocs-static-i18n that writes its pages differently, or a hook of the "
         "project, changed them: build the website, compare the files named above "
         "with what the hooks write, and report it to the blueprint if its hooks "
-        "need to change."
+        "need to change. A page that loads more than it may at once names what it "
+        "loads the most: a picture that is too large, or Mermaid, which a "
+        "```mermaid block loads and the pictures of scripts/diagrams.sh don't."
     )
     return 1
 
@@ -758,6 +797,12 @@ def add_changelog_parsers(
         "--taken",
         help="release: the file to write the paths of the fragments into that the "
         "release takes in, one on each line, for the release bot to delete",
+    )
+    commands.add_parser(
+        "commit-overrides",
+        help="write the title of each merged pull request since the last release "
+        "into its description, for release-please, which might not parse its squash "
+        "commit (the release bot)",
     )
     beta_parser = commands.add_parser(
         "beta", help="the notes of a beta of the next release, for the release bot"
@@ -1208,6 +1253,22 @@ def add_mutation_parsers(
     )
 
 
+def add_advisories_parsers(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """The rules of Renovate for the versions that osv-scanner.toml accepts."""
+    advisories_parser = commands.add_parser(
+        "advisories",
+        help="the versions that each osv-scanner.toml accepts with every advisory, as "
+        f"rules of Renovate in {advisories.PRESET}, which open no branch to fix them",
+    )
+    advisories_parser.add_argument(
+        "--fix",
+        action="store_true",
+        help=f"write {advisories.PRESET} from the osv-scanner.toml files first",
+    )
+
+
 def add_pages_parsers(
     commands: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
@@ -1269,6 +1330,7 @@ def parser() -> argparse.ArgumentParser:
         add_fix_parsers,
         add_mutation_parsers,
         add_pages_parsers,
+        add_advisories_parsers,
     ):
         add(commands)
     return parser
@@ -1338,6 +1400,12 @@ def standalone_command(
         try:
             return site_check_command(arguments, root)
         except OSError as error:
+            print(f"blueprint.py: {error}", file=sys.stderr)
+            return 2
+    if arguments.command == "advisories":
+        try:
+            return advisories_command(arguments, root)
+        except (OSError, UnicodeDecodeError, subprocess.CalledProcessError) as error:
             print(f"blueprint.py: {error}", file=sys.stderr)
             return 2
     if arguments.command == "pages":
@@ -1418,6 +1486,9 @@ def main(
             return 1 if outcome.warnings and not arguments.warnings_only else 0
         if arguments.command == "fix":
             return fix_bot_command(api, repo, arguments)
+        if arguments.command == "commit-overrides":
+            print(write_overrides(api, repo), end="")
+            return 0
         settings = Settings.load(root / arguments.config, root)
         if arguments.command == "checklist":
             return checklist_command(api, repo, settings, root)

@@ -194,6 +194,22 @@ else
   echo "Python 3.12 or newer is not installed here; the CI checks the fragments."
 fi
 
+step "Accepted advisories"
+# The versions that an osv-scanner.toml accepts with every advisory, such as one that
+# another package pins exactly, need a rule of Renovate in
+# .github/renovate-accepted.json5, or Renovate tries a fix in every run that the lock
+# file can't take. The step checks that the rules are those of the files, and that
+# OSV-Scanner can read each file, which it ignores whole for an unknown key; advisories
+# --fix writes the rules. The Python and blueprint.py of the step before.
+if [[ -n "$python" ]]; then
+  "$python" "$tool" advisories
+elif [[ -n "${CI:-}" ]]; then
+  echo "Checking the accepted advisories needs Python 3.12 or newer, which this runner lacks."
+  exit 1
+else
+  echo "Python 3.12 or newer is not installed here; the CI checks the accepted advisories."
+fi
+
 step "Version"
 # The release bot writes the version of each release into these files.
 release="$(grep -oE '"\.": *"[^"]+"' .release-please-manifest.json | grep -oE '[0-9][^"]*')"

@@ -159,6 +159,21 @@ jobs:
             echo "The tag $tag is signed." >> "$GITHUB_STEP_SUMMARY"
           done 3<<<"$pending"
           echo "signed=true" >> "$GITHUB_OUTPUT"
+      # A squash commit carries the description of its pull request, such as the
+      # release notes that Renovate quotes, and a line of it that the strict parser of
+      # release-please takes for a footer makes it skip the commit, title included,
+      # in a run that passes. release-please reads the override in the description
+      # of a pull request instead: its title and the lines Release-As and BREAKING
+      # CHANGE, which blueprint.py commit-overrides writes into each merged one since
+      # the last release. The token of the job starts no workflow with the edit.
+      - name: Give release-please the title of each merged pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" --repo "$GITHUB_REPOSITORY" commit-overrides | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Update the release pull request, or create the release
         id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0

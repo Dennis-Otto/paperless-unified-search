@@ -50,6 +50,12 @@ exclude = [
   # only the build of the website writes: the check docs checks every link and anchor
   # of the built website.
   '^file://[^#?]+\.html([?#].*)?$',
+  # The CWE of MITRE, such as the CWE Top 25 that SECURITY.md links: the right pages,
+  # but since 2026-10-23 cwe.mitre.org gives the runners of GitHub no answer (a
+  # timeout), and other networks a reset connection or 503, so a link to it failed the
+  # check on main of every repository. Only this site: a link to any other site that
+  # times out still fails. Drop this line once cwe.mitre.org answers again (#390).
+  '^https://cwe\.mitre\.org/',
 ]
 
 exclude_path = ["CHANGELOG.md", "LICENSES", "node_modules", "vendor", ".venv", "build", "dist", "template"]

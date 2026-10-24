@@ -120,16 +120,22 @@ navigation of `mkdocs.yml`, or MkDocs warns about a page. After the build, lyche
 checks every link and anchor of the built pages, also those written in HTML, such as
 `<a href="…">` in a card, and `blueprint.py site-check` what the hooks of the website
 promise, such as a sitemap in every folder of pages and the 404 page in the default
-language; `scripts/check-site.sh` adds the checks of the project. When the log names a
+language, and that no page loads more than 1,200 KB at once, as it names a page that
+does with what it loads the most; `scripts/check-site.sh` adds the checks of the
+project. When the log names a
 font or a script that Material couldn't download, its server had a hiccup: that
 usually passes when the job runs again, and a build that finds them in the cache of
 the week, which a push to `main` saves, downloads nothing."""
 why = """A strict build keeps every link of the documentation working; a warning
 today is a broken page for a reader tomorrow. The checks of the built website see what
-the build doesn't: the links that a page writes in HTML, and what a new version of
-Material or of its plugins changes in the pages."""
+the build doesn't: the links that a page writes in HTML, what a new version of
+Material or of its plugins changes in the pages, and a page that takes a phone on a
+slow network more than a few seconds to load."""
 fix = """Fix what the log of the check names: the page and the link that leads nowhere,
-or the file of the website that breaks a promise of its hooks. Install the tools of the
+or the file of the website that breaks a promise of its hooks. A page that loads too
+much shows a smaller picture, or the pictures of a diagram in place of its ```mermaid
+block, which loads Mermaid, about 1 MB: `bash scripts/diagrams.sh --extract` makes
+them. Install the tools of the
 website as the section Website of CONTRIBUTING.md shows, and build and check it as the
 check does (in the blueprint itself, the tool is `blueprint.py` without `.github/`);
 with them, `bash scripts/check.sh` builds it as well:"""
@@ -393,9 +399,12 @@ problem = """A lock file of the pull request pins a dependency with a known vuln
 of the OSV database; the summary of the check names each one."""
 why = """A dependency with a vulnerability ships it to every user of the project."""
 fix = """Update the dependency to a version that fixes it. An advisory that doesn't
-affect the project goes into `osv-scanner.toml` with the reason, in the same pull
-request."""
-docs = "https://google.github.io/osv-scanner/configuration/"
+affect the project goes into the `osv-scanner.toml` beside the lock file with the
+reason, in the same pull request: as `[[IgnoredVulns]]` alone, or, for a version that
+another package pins exactly, as `[[PackageOverrides]]` with `effectiveUntil`, from
+which `blueprint.py advisories --fix` writes the rule that keeps Renovate from trying
+to fix it."""
+docs = "https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/troubleshooting.md#osv-scanner-reports-a-version-that-another-package-pins"
 autofix = """Which version fixes an advisory, and whether it affects the project, is
 the decision of a person."""
 
@@ -620,6 +629,23 @@ commands = ["python3 .github/blueprint.py fragments"]
 docs = "CONTRIBUTING.md#the-changelog"
 autofix = """Which kind of change an entry is and how a user reads it is the decision of
 a person; the log names the fragment and its problem."""
+
+[step."Accepted advisories"]
+problem = """`.github/renovate-accepted.json5` has other rules of Renovate than the versions
+that an `osv-scanner.toml` accepts with every advisory, or an `osv-scanner.toml` is one
+that OSV-Scanner can't use: a key that it doesn't know, or an entry of
+`[[PackageOverrides]]` without its package, version, ecosystem, reason or
+`effectiveUntil`; the log names each file and entry."""
+why = """Renovate doesn't read `osv-scanner.toml`: without its rule, it tries a fix of
+each accepted advisory in every run, which the lock file can't take, and logs an empty
+commit. OSV-Scanner ignores a whole file with a key that it doesn't know, and then
+reports every advisory that the file accepts."""
+fix = """Fix the `osv-scanner.toml` as the log says, then write the rules of Renovate from
+it and commit both (in the blueprint itself, the tool is `blueprint.py` without
+`.github/`):"""
+commands = ["python3 .github/blueprint.py advisories --fix"]
+docs = "https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/troubleshooting.md#osv-scanner-reports-a-version-that-another-package-pins"
+autofix = ["{blueprint} advisories --fix"]
 
 [step.Version]
 problem = """A file has another version than `.release-please-manifest.json`, whose

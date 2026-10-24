@@ -53,9 +53,14 @@ github_owned_allowed = true
 verified_allowed = false
 patterns_allowed = [
   "anchore/sbom-action@*",
+  # Run by the reusable workflow of the issue assistant.
   "anthropics/claude-code-action@*",
   "astral-sh/setup-uv@*",
   "DavidAnson/markdownlint-cli2-action@*",
+  "Dennis-Otto/issue-assistant/.github/workflows/reusable-findings.yml@*",
+  "Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-assistant.yml@*",
+  "Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-lifecycle.yml@*",
+  "Dennis-Otto/issue-assistant/.github/workflows/reusable-labels.yml@*",
   "Dennis-Otto/issue-assistant@*",
   "dependabot/fetch-metadata@*",
   "docker/build-push-action@*",
@@ -72,6 +77,8 @@ patterns_allowed = [
   "google/osv-scanner-action/osv-scanner-action@*",
   "googleapis/release-please-action@*",
   "lycheeverse/lychee-action@*",
+  # Run by the reusable workflow of the issue assistant.
+  "openai/codex-action@*",
   "ossf/scorecard-action@*",
   # Run by anthropics/claude-code-action.
   "oven-sh/setup-bun@*",

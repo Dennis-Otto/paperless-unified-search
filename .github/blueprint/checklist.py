@@ -58,7 +58,10 @@ def reuse_compliant(
     try:
         with opener(REUSE_API + repo) as response:
             return bool(json.load(response).get("status") == "compliant")
-    except (urllib.error.URLError, ValueError, OSError):
+    except (ValueError, OSError) as error:
+        if isinstance(error, urllib.error.HTTPError):
+            # The error is the answer too, and holds its body until it is closed.
+            error.close()
         return False
 
 
