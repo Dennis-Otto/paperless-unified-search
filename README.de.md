@@ -91,11 +91,11 @@ Er braucht Docker mit Compose und Bash, unter Windows Git Bash, und erzeugt die 
   <img src="docs/images/diagrams/what-the-demo-sets-up.de.svg" alt="Was die Demo einrichtet: Du startest bash demo/seed.sh. Das Skript erzeugt den geheimen Schlüssel von Paperless und die Passwörter der Demo in demo/.env und startet Paperless-ngx mit Redis und Nextcloud mit seinen Hintergrundjobs in Docker, nur auf 127.0.0.1. Paperless liest fünf synthetische Briefe ein. Paperless Sync, ein festgelegtes, signiertes Release, schreibt jeden in die Dateien des Archiv-Kontos paperless, das das Archiv nur lesend mit jamie teilt. occ paperless_unified_search:setup verbindet die App mit Paperless, mit dem API-Token über eine Pipe. Eine Suche als jamie nach invoice zeigt drei Paperless-Dokumente, und das Skript nennt die Adressen und die Konten zum Anmelden.">
 </picture>
 
-<!-- --8<-- [end:try-it] -->
-
 ![Die Demo bei der Arbeit, als jamie: das Archiv, das Paperless Sync in Nextcloud geschrieben hat, eine Suche nach „invoice“ und unter den Dateien die Paperless-Dokumente, die beiden Rechnungen und die Verlängerung der Hausratversicherung, deren Text „invoice“ sagt. Die Verlängerung öffnet sich im Viewer von Nextcloud.](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/demo-search-and-open.gif)
 
 <sub>Aufgenommen aus dem echten Paperless-ngx und Nextcloud der Demo, mit `bash scripts/screenshots.sh --demo`.</sub>
+
+<!-- --8<-- [end:try-it] -->
 
 <!-- --8<-- [start:quick-start-section] -->
 
