@@ -75,7 +75,7 @@
     "LessThan": {
       "ignoreSourceCodeByRegex": [
         // Two nodes of the same path are the same file.
-        "&& \\(!isset\\(\\$found\\[\\$documentId\\]\\) \\|\\| strcmp\\(\\$path, \\$found\\[\\$documentId\\]\\[0\\]\\) < 0\\)\\) \\{"
+        "if \\(!isset\\(\\$found\\[\\$documentId\\]\\) \\|\\| strcmp\\(\\$path, \\$found\\[\\$documentId\\]\\[0\\]\\) < 0\\) \\{"
       ]
     },
     "LessThanOrEqualTo": {

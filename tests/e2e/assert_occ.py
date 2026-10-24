@@ -14,8 +14,13 @@ argument:
                                   each with its ID, title and verdict and nothing more
   setupcheck SEVERITY TEXT        the JSON of occ setupchecks: the check of the app has
                                   this severity, and its description holds the text
+  shares SUMMARY WARNING ...      the text of paperless_unified_search:check: the line
+                                  SUMMARY of the shares of the archive account, such as
+                                  "✓ Shared read-only: 1 user.", and right after it
+                                  exactly these warnings about shares, each a line "! /…"
 """
 
+import itertools
 import json
 import sys
 
@@ -27,11 +32,23 @@ def fail(message):
 
 
 text = sys.stdin.read()
+mode = sys.argv[1]
+
+if mode == "shares":
+    summary, expected = sys.argv[2], [f"! {warning}" for warning in sys.argv[3:]]
+    lines = text.splitlines()
+    if summary not in lines:
+        fail(f"Expected the line {summary!r} about the shares, got {text!r}")
+    following = lines[lines.index(summary) + 1:]
+    warnings = list(itertools.takewhile(lambda line: line.startswith("! /"), following))
+    if warnings != expected:
+        fail(f"Expected the warnings {expected!r} about the shares, got {warnings!r}")
+    sys.exit(0)
+
 try:
     payload = json.loads(text)
 except json.JSONDecodeError as error:
     fail(f"occ wrote no JSON ({error}): {text!r}")
-mode = sys.argv[1]
 
 if mode == "verdicts":
     expected = []

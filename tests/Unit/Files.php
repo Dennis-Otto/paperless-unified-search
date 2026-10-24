@@ -28,13 +28,17 @@ trait Files {
 
 	/**
 	 * A file at a path in the folders of a user, such as /jamie/files/Invoice [P412].pdf,
-	 * which that user sees and the account $owner owns: the user's own file, or a share.
+	 * which that user sees and the account $owner owns: the user's own file, or a share,
+	 * which the user may only read, or also change when $writable.
 	 */
-	private function file(string $path, ?string $owner = 'archive'): File {
+	private function file(string $path, ?string $owner = 'archive', bool $writable = false): File {
 		$file = $this->createStub(File::class);
 		$file->method('getName')->willReturn(basename($path));
 		$file->method('getPath')->willReturn($path);
 		$file->method('getId')->willReturn(crc32($path));
+		$file->method('isUpdateable')->willReturn($writable);
+		// A folder of no account, where a file that the user adds is no file of the archive.
+		$file->method('getParent')->willReturn($this->createStub(Folder::class));
 		if ($owner === null) {
 			$file->method('getOwner')->willReturn(null);
 		} else {

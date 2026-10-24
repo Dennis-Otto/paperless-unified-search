@@ -24,6 +24,7 @@ use OCA\PaperlessUnifiedSearch\Tests\Unit\Files;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryCache;
 use OCP\Dashboard\Model\WidgetButton;
 use OCP\Files\File;
+use OCP\Files\Folder;
 use OCP\Files\IMimeTypeDetector;
 use OCP\Files\IRootFolder;
 use OCP\Http\Client\IClient;
@@ -306,6 +307,7 @@ final class RecentDocumentsWidgetTest extends TestCase {
 		$broken->method('getPath')->willReturn('/jamie/files/A/Electricity invoice [P412].pdf');
 		$broken->method('getOwner')->willReturn($this->user('archive'));
 		$broken->method('getMimetype')->willThrowException(new RuntimeException('The storage is not available.'));
+		$broken->method('getParent')->willReturn($this->createStub(Folder::class));
 		$this->visible['jamie'][] = $broken;
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::once())
@@ -331,6 +333,7 @@ final class RecentDocumentsWidgetTest extends TestCase {
 			$broken->method('getPath')->willReturn('/jamie/files/A/Broken [P' . $id . '].pdf');
 			$broken->method('getOwner')->willReturn($this->user('archive'));
 			$broken->method('getMimetype')->willThrowException($error);
+			$broken->method('getParent')->willReturn($this->createStub(Folder::class));
 			$this->visible['jamie'][] = $broken;
 		}
 		$logger = $this->createMock(LoggerInterface::class);
@@ -471,6 +474,7 @@ final class RecentDocumentsWidgetTest extends TestCase {
 		$file->method('getId')->willReturn($id);
 		$file->method('getMimetype')->willReturn('application/pdf');
 		$file->method('getOwner')->willReturn($this->user($owner));
+		$file->method('getParent')->willReturn($this->createStub(Folder::class));
 		$this->visible[explode('/', $path)[1]][] = $file;
 	}
 

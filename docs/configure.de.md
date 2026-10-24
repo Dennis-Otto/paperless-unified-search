@@ -50,6 +50,7 @@ Das Archiv-Konto entscheidet, wer welches Dokument findet: Ein Benutzer sieht ei
 - **Eine Gruppe** gibt jedem Mitglied die Dokumente auf einmal, auch denen, die später beitreten.
 - **Ein Unterordner**, etwa `Paperless/ACME`, gibt jemandem nur die Dokumente darin; Paperless Sync sortiert die Dokumente in Ordner nach Korrespondent, Typ und Jahr.
 - **Das Archiv-Konto** findet jedes Dokument ohne Freigabe. Ein Administrator von Nextcloud findet nur, was mit ihm geteilt ist, wie jeder Benutzer: Administrator zu sein öffnet keine Datei.
+- **Nur was ein Benutzer nur lesen darf, zählt:** Ein Benutzer, der eine Datei des Archivs ändern oder Dateien in ihren Ordner legen darf, findet keines der Dokumente darin, denn er könnte einer Datei die Kennung eines beliebigen Dokuments geben. Unter dem Archiv-Konto zeigen die Einstellungen, mit wem es seine Dateien teilt, etwa *Nur lesend geteilt: 1 Benutzer, 2 Gruppen.*, und warnen vor jeder Freigabe, die Änderungen erlaubt, ebenso `occ paperless_unified_search:check` und die Übersicht der Verwaltungseinstellungen.
 
 Ein Skript teilt über die OCS-API von Nextcloud, mit einem [App-Passwort](https://docs.nextcloud.com/server/latest/user_manual/en/session_management.html#managing-devices) des Archiv-Kontos: `shareType` ist `0` für einen Benutzer und `1` für eine Gruppe, und `permissions=1` ist nur lesend.
 

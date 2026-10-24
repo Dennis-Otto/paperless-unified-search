@@ -13,6 +13,7 @@ use DateTimeImmutable;
 use DateTimeZone;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
 use OCA\PaperlessUnifiedSearch\Model\PaperlessStatus;
+use OCA\PaperlessUnifiedSearch\Service\ArchiveShares;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
@@ -27,10 +28,11 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 /**
  * occ paperless_unified_search:check: everything that the search needs, in one go. The
- * connection to Paperless, the archive account, and how many documents of Paperless have
- * a file of the archive account, which the search can show. It exits with 1 when the
- * search can show no document at all, also when no document has a file, and with 0
- * otherwise.
+ * connection to Paperless, the archive account, how many documents of Paperless have a
+ * file of the archive account, which the search can show, and with whom the archive
+ * account shares its files, with a warning for each share that allows changes. It exits
+ * with 1 when the search can show no document at all, also when no document has a file,
+ * and with 0 otherwise.
  */
 final class Check extends Command {
 	use ReportsProblems;
@@ -46,20 +48,24 @@ final class Check extends Command {
 		private SearchDiagnostics $diagnostics,
 		private IUserManager $userManager,
 		private SettingsMessages $messages,
+		private ArchiveShares $archiveShares,
 	) {
 		parent::__construct();
 	}
 
 	protected function configure(): void {
 		$this->setName('paperless_unified_search:check')
-			->setDescription('Check the connection to Paperless-ngx, the archive account and how many documents have a file')
-			->setHelp('Tests the connection to Paperless, checks that the archive account exists, and compares the documents of Paperless with the files of the archive account whose names carry their markers, such as [P412]. Exits with 1 when the search can show no Paperless document, and with 0 otherwise.');
+			->setDescription('Check the connection to Paperless-ngx, the archive account, how many documents have a file and how the archive is shared')
+			->setHelp('Tests the connection to Paperless, checks that the archive account exists, compares the documents of Paperless with the files of the archive account whose names carry their markers, such as [P412], and lists with whom the archive account shares its files, with a warning for each share that allows changes. Exits with 1 when the search can show no Paperless document, and with 0 otherwise.');
 	}
 
 	protected function execute(InputInterface $input, OutputInterface $output): int {
 		$status = $this->checkTheConnection($output);
 		$archive = $this->checkTheArchiveAccount($output);
 		$showsDocuments = $status !== null && $archive !== null && $this->checkTheCoverage($output, $status, $archive);
+		if ($archive !== null) {
+			$this->checkTheShares($output, $archive);
+		}
 		$this->checkTheHistory($output);
 
 		return $showsDocuments ? self::SUCCESS : self::FAILURE;
@@ -165,6 +171,25 @@ final class Check extends Command {
 		}
 
 		return $shows;
+	}
+
+	/**
+	 * With whom the archive account shares its files, which decides who finds which
+	 * document, and what is wrong with each share that allows changes: whoever may write
+	 * into the archive can give a file the marker of any document.
+	 */
+	private function checkTheShares(OutputInterface $output, IUser $archive): void {
+		$overview = $this->archiveShares->of($archive->getUID());
+		$warnings = $this->archiveShares->warnings($overview);
+		$summary = $this->archiveShares->summarize($overview);
+		if ($overview->shares === [] || $warnings !== [] || $overview->error !== null) {
+			self::noted($output, $summary);
+		} else {
+			self::passed($output, $summary);
+		}
+		foreach ($warnings as $warning) {
+			self::noted($output, $warning);
+		}
 	}
 
 	/**

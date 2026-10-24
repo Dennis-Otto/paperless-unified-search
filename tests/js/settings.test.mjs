@@ -533,6 +533,7 @@ const TRIED = {
 	count: 12,
 	documents: [
 		{ id: 412, title: 'Electricity invoice', verdict: 'shown' },
+		{ id: 377, title: 'Receipt', verdict: 'writable' },
 		{ id: 389, title: 'Home insurance', verdict: 'not_shared' },
 		{ id: 371, title: '<b>Internet</b> invoice', verdict: 'not_owned' },
 		{ id: 360, title: 'Letter', verdict: 'no_file' },
@@ -571,7 +572,7 @@ test('Try a search sends the term and the user, and shows why each document show
 	}])
 	// While the server works, the form is busy and the earlier result gone.
 	assert.deepEqual(tries, [{ text: 'Searching Paperless as jamie…', kind: PENDING, busy: 'true', button: 'disabled', result: 0 }])
-	assert.equal(get('try-status').textContent, 'Shown to jamie: 1 of the first 5. Found by Paperless: 12.')
+	assert.equal(get('try-status').textContent, 'Shown to jamie: 1 of the first 6. Found by Paperless: 12.')
 	assert.equal(get('try-status').classList.toString(), SUCCESS)
 	assert.equal(get('try-form').getAttribute('aria-busy'), 'false')
 	assert.equal(get('try').disabled, false)
@@ -588,6 +589,7 @@ test('Try a search sends the term and the user, and shows why each document show
 		headings: [['ID', 'col', 'columnheader'], ['Title', 'col', 'columnheader'], ['Shown or why not', 'col', 'columnheader']],
 		rows: [
 			['ID: 412', 'Title: Electricity invoice', 'Shown or why not: Shown'],
+			['ID: 377', 'Title: Receipt', 'Shown or why not: Shared with write permission'],
 			['ID: 389', 'Title: Home insurance', 'Shown or why not: Not shared with jamie'],
 			// A title is text, never markup.
 			['ID: 371', 'Title: <b>Internet</b> invoice', 'Shown or why not: Not a file of the archive account'],
@@ -649,6 +651,6 @@ test('the verdicts of a try go through the translation of Nextcloud', async func
 
 	await get('try-form').dispatch('submit')
 
-	assert.equal(get('try-status').textContent, 'DE:Shown to jamie: 1 of the first 5. Found by Paperless: 12.')
-	assert.deepEqual(rowsOf(get('try-result').children[0]).rows[1], ['DE:ID: 389', 'DE:Title: Home insurance', 'DE:Shown or why not: DE:Not shared with jamie'])
+	assert.equal(get('try-status').textContent, 'DE:Shown to jamie: 1 of the first 6. Found by Paperless: 12.')
+	assert.deepEqual(rowsOf(get('try-result').children[0]).rows[2], ['DE:ID: 389', 'DE:Title: Home insurance', 'DE:Shown or why not: DE:Not shared with jamie'])
 })

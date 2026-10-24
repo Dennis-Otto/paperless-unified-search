@@ -147,8 +147,54 @@ final class SettingsTemplateTest extends TestCase {
 		self::assertSame('status', $this->element($page, 'paperless-unified-search-try-status')->getAttribute('role'));
 	}
 
+	/**
+	 * Below the archive account, the page says how it shares its files, and names what is
+	 * wrong with each share that allows changes; without an archive account it says
+	 * nothing about shares.
+	 */
+	public function testTheSharesOfTheArchiveShowBelowItsAccount(): void {
+		[, $page] = $this->render(new PublicConfig(self::STORED, true, false, 'archive'), shares: [
+			'summary' => 'Shared: 1 user, 1 group.',
+			'warnings' => ['/Paperless is shared with the user sam with write permission.', '/Inbox has a public link that allows uploads or changes.'],
+		]);
+
+		self::assertSame('Shared: 1 user, 1 group.', $this->text($this->element($page, 'paperless-unified-search-shares-summary')));
+		$warnings = [];
+		foreach ($this->element($page, 'paperless-unified-search-shares-warnings')->getElementsByTagName('li') as $warning) {
+			self::assertSame('paperless-unified-search-warning', $warning->getAttribute('class'));
+			$warnings[] = $this->text($warning);
+		}
+		self::assertSame(['/Paperless is shared with the user sam with write permission.', '/Inbox has a public link that allows uploads or changes.'], $warnings);
+		self::assertSame(
+			'paperless-unified-search-archive-owner-hint',
+			$this->element($page, 'paperless-unified-search-shares')->previousElementSibling?->getAttribute('id'),
+		);
+
+		[, $page] = $this->render(new PublicConfig(self::STORED, true, false, 'archive'), shares: ['summary' => 'Shared read-only: 2 groups.', 'warnings' => []]);
+
+		self::assertSame('Shared read-only: 2 groups.', $this->text($this->element($page, 'paperless-unified-search-shares-summary')));
+		self::assertNull($page->getElementById('paperless-unified-search-shares-warnings'));
+
+		[, $page] = $this->render(new PublicConfig(self::STORED, true, false));
+
+		self::assertNull($page->getElementById('paperless-unified-search-shares'));
+	}
+
+	/**
+	 * The reasons below Try a search name each verdict that it shows, in its order.
+	 */
+	public function testTheReasonsNameEachVerdict(): void {
+		[, $page] = $this->render(new PublicConfig(self::STORED, true, false));
+
+		$reasons = [];
+		foreach ((new DOMXPath($page))->query('//ul[@class="paperless-unified-search-reasons"]/li') ?: [] as $reason) {
+			$reasons[] = explode(':', $this->text($reason))[0];
+		}
+		self::assertSame(['Shared with write permission', 'Not shared', 'Not a file of the archive account', 'No file'], $reasons);
+	}
+
 	public function testEveryIdIsUnique(): void {
-		[, $page] = $this->render(new PublicConfig(self::STORED, true, false), $this->history('', ''));
+		[, $page] = $this->render(new PublicConfig(self::STORED, true, false, 'archive'), $this->history('', ''), shares: ['summary' => 'Shared: 1 user.', 'warnings' => ['One', 'Two']]);
 
 		$ids = [];
 		foreach ((new DOMXPath($page))->query('//*[@id]') ?: [] as $element) {
@@ -242,6 +288,7 @@ final class SettingsTemplateTest extends TestCase {
 			new PublicConfig(self::HOSTILE, true, false, self::HOSTILE_TAG, self::HOSTILE, archiveOwnerMissing: true),
 			$history,
 			self::HOSTILE,
+			['summary' => 'Shared: ' . self::HOSTILE_TAG, 'warnings' => [self::HOSTILE . ' is shared with ' . self::HOSTILE_TAG]],
 		);
 
 		self::assertStringNotContainsString('<script>alert', $html);
@@ -256,6 +303,8 @@ final class SettingsTemplateTest extends TestCase {
 		self::assertSame(self::HOSTILE_TAG, $this->element($page, 'paperless-unified-search-archive-owner')->getAttribute('value'));
 		self::assertSame('Paperless Sync: ' . self::HOSTILE . ' — leave blank to use it', $this->element($page, 'paperless-unified-search-archive-owner')->getAttribute('placeholder'));
 		self::assertSame('The archive account ' . self::HOSTILE_TAG . ' does not exist.', $this->text($this->element($page, 'paperless-unified-search-archive-owner-missing')));
+		self::assertSame('Shared: ' . self::HOSTILE_TAG, $this->text($this->element($page, 'paperless-unified-search-shares-summary')));
+		self::assertSame(self::HOSTILE . ' is shared with ' . self::HOSTILE_TAG, $this->text($this->element($page, 'paperless-unified-search-shares-warnings')));
 		self::assertSame([
 			['Recorded since', self::HOSTILE],
 			['Failed searches', '1'],
@@ -305,9 +354,10 @@ final class SettingsTemplateTest extends TestCase {
 	 * browser reads from it.
 	 *
 	 * @param ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, durationMs: int}>} $history
+	 * @param ?array{summary: string, warnings: list<string>} $shares
 	 * @return array{string, DOMDocument}
 	 */
-	private function render(PublicConfig $config, ?array $history = null, string $saveUrl = '/settings/save'): array {
+	private function render(PublicConfig $config, ?array $history = null, string $saveUrl = '/settings/save', ?array $shares = null): array {
 		$l10n = $this->createStub(IL10N::class);
 		$l10n->method('t')->willReturnCallback(
 			static fn (string $text, array $parameters = []): string => vsprintf($text, $parameters),
@@ -319,6 +369,7 @@ final class SettingsTemplateTest extends TestCase {
 			'clearDiagnosticsUrl' => '/settings/diagnostics',
 			'tryUrl' => '/settings/try',
 			'history' => $history,
+			'shares' => $shares,
 		];
 
 		ob_start();

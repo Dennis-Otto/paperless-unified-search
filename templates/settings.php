@@ -6,7 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2026 Dennis Otto
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * @var array{config: \OCA\PaperlessUnifiedSearch\Model\PublicConfig, saveUrl: string, resetUrl: string, clearDiagnosticsUrl: string, tryUrl: string, history: ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, durationMs: int}>}} $_
+ * @var array{config: \OCA\PaperlessUnifiedSearch\Model\PublicConfig, saveUrl: string, resetUrl: string, clearDiagnosticsUrl: string, tryUrl: string, history: ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, durationMs: int}>}, shares: ?array{summary: string, warnings: list<string>}} $_
  */
 
 script('paperless_unified_search', 'settings');
@@ -14,6 +14,7 @@ style('paperless_unified_search', 'settings');
 
 $config = $_['config'];
 $history = $_['history'];
+$shares = $_['shares'];
 // The archive account in use: the one of the settings, or else that of Paperless Sync.
 $archiveAccount = $config->archiveOwner !== '' ? $config->archiveOwner : $config->syncAccount;
 ?>
@@ -102,6 +103,19 @@ $archiveAccount = $config->archiveOwner !== '' ? $config->archiveOwner : $config
 		<p id="paperless-unified-search-archive-owner-hint" class="settings-hint">
 			<?php p($l->t('Only the files of this account stand for Paperless documents: a user sees a document when this account shares its file with them. Share the archive read-only. Without an archive account, the search shows no Paperless documents.')); ?>
 		</p>
+
+		<?php if ($shares !== null) { ?>
+			<div id="paperless-unified-search-shares" class="paperless-unified-search-shares">
+				<p id="paperless-unified-search-shares-summary"><?php p($shares['summary']); ?></p>
+				<?php if ($shares['warnings'] !== []) { ?>
+					<ul id="paperless-unified-search-shares-warnings" class="paperless-unified-search-shares-warnings">
+						<?php foreach ($shares['warnings'] as $warning) { ?>
+							<li class="paperless-unified-search-warning"><?php p($warning); ?></li>
+						<?php } ?>
+					</ul>
+				<?php } ?>
+			</div>
+		<?php } ?>
 
 		<div class="paperless-unified-search-option">
 			<input
@@ -251,6 +265,7 @@ $archiveAccount = $config->archiveOwner !== '' ? $config->archiveOwner : $config
 		<div class="paperless-unified-search-note">
 			<strong><?php p($l->t('Why a document doesn\'t show')); ?></strong>
 			<ul class="paperless-unified-search-reasons">
+				<li><?php p($l->t('Shared with write permission: the user may change the file of the archive account, or add files to its folder, so its name proves nothing. Share it read-only with the user.')); ?></li>
 				<li><?php p($l->t('Not shared: the archive account has the file of the document, but hasn\'t shared it with the user. Share the file, or a folder that holds it, read-only with the user.')); ?></li>
 				<li><?php p($l->t('Not a file of the archive account: the user sees a file with the marker of the document, but only the files of the archive account stand for documents.')); ?></li>
 				<li><?php p($l->t('No file: no file of the archive account has the marker of the document, such as [P123], in its name. The synchronization hasn\'t written it yet, or names files without it.')); ?></li>

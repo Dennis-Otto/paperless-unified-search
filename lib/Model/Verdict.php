@@ -19,6 +19,12 @@ enum Verdict: string {
 	case Shown = 'shown';
 	/** The search leaves the document out, for a reason that occ names with --explain. */
 	case Hidden = 'hidden';
+	/**
+	 * The user sees a file of the archive account with the marker of the document, but may
+	 * change it or add files to its folder, through a share with write permission, and so
+	 * could have given it the marker.
+	 */
+	case Writable = 'writable';
 	/** The archive account has a file of the document, but hasn't shared it with the user. */
 	case NotShared = 'not_shared';
 	/** The user sees a file with the marker of the document, but another account owns it. */

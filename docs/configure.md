@@ -50,6 +50,7 @@ The archive account decides who finds which document: a user sees a Paperless do
 - **A group** gives every member the documents at once, also those who join it later.
 - **A subfolder**, such as `Paperless/ACME`, gives someone only the documents in it; Paperless Sync sorts the documents into folders by correspondent, type and year.
 - **The archive account** finds every document without a share. An administrator of Nextcloud finds only what is shared with them, as any user does: being an administrator opens no file.
+- **Only what a user may only read counts:** a user who may change a file of the archive, or add files to its folder, finds none of the documents in it, since that user could give a file the marker of any document. Below the archive account, the settings show with whom it shares its files, such as *Shared read-only: 1 user, 2 groups.*, and warn about each share that allows changes, and so do `occ paperless_unified_search:check` and the overview of the administration settings.
 
 A script shares through the OCS API of Nextcloud, with an [app password](https://docs.nextcloud.com/server/latest/user_manual/en/session_management.html#managing-devices) of the archive account: `shareType` is `0` for a user and `1` for a group, and `permissions=1` is read-only.
 

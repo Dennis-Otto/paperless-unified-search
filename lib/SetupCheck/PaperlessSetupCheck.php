@@ -10,7 +10,9 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\SetupCheck;
 
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
+use OCA\PaperlessUnifiedSearch\Model\ArchiveShare;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
+use OCA\PaperlessUnifiedSearch\Service\ArchiveShares;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCP\IDateTimeFormatter;
@@ -22,11 +24,12 @@ use OCP\SetupCheck\SetupResult;
 /**
  * The state of the search in the overview of the administration settings and in
  * occ setupchecks: a warning when the search shows no Paperless documents for a reason
- * that an administrator can correct, with a link to the settings of the app, and else the
- * Paperless that it is connected to. It reads only what the app stored, and sends no
- * request to Paperless, so that the overview opens as fast as without it; the last answer
- * of Paperless named the version, and the history of the problems of the search tells
- * whether searches work.
+ * that an administrator can correct, or when the archive account shares files with write
+ * permission, with a link to the settings of the app, and else the Paperless that it is
+ * connected to and how the archive is shared. It reads only what the app stored and the
+ * shares in the database of Nextcloud, and sends no request to Paperless, so that the
+ * overview opens as fast as without it; the last answer of Paperless named the version,
+ * and the history of the problems of the search tells whether searches work.
  */
 final class PaperlessSetupCheck implements ISetupCheck {
 	/** @psalm-suppress PossiblyUnusedMethod */
@@ -36,6 +39,7 @@ final class PaperlessSetupCheck implements ISetupCheck {
 		private IL10N $l10n,
 		private IURLGenerator $urlGenerator,
 		private IDateTimeFormatter $dateTimeFormatter,
+		private ArchiveShares $archiveShares,
 	) {
 	}
 
@@ -79,12 +83,20 @@ final class PaperlessSetupCheck implements ISetupCheck {
 				: $this->l10n->t('A search failed on %s while asking Paperless, and none has worked since. Search problems in {section} shows what failed.', [$failedAt]));
 		}
 
+		// Whoever may write into the archive can give a file the marker of any document.
+		$shares = $this->archiveShares->of($archiveOwner);
+		$writable = array_unique(array_map(static fn (ArchiveShare $share): string => $share->path, $shares->writable()));
+		if ($writable !== []) {
+			return $this->warning($this->l10n->t('The archive account %1$s shares %2$s with write permission, so whoever may write there can give a file the marker of any document. Share the archive read-only: {section} lists each share.', [$archiveOwner, implode(', ', $writable)]));
+		}
+
 		$url = $this->configService->getUrl();
 		$version = $this->configService->getPaperlessVersion();
-
-		return SetupResult::success($version === null
+		$connected = $version === null
 			? $this->l10n->t('Connected to Paperless at %1$s, with the archive account %2$s.', [$url, $archiveOwner])
-			: $this->l10n->t('Connected to Paperless %1$s (API %2$s) at %3$s, with the archive account %4$s.', [$version->version, $version->apiVersion, $url, $archiveOwner]));
+			: $this->l10n->t('Connected to Paperless %1$s (API %2$s) at %3$s, with the archive account %4$s.', [$version->version, $version->apiVersion, $url, $archiveOwner]);
+
+		return SetupResult::success($connected . ' ' . $this->archiveShares->summarize($shares));
 	}
 
 	/**

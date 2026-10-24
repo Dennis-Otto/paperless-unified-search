@@ -17,9 +17,13 @@ use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppServices;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Files;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\Shares;
+use OCP\Constants;
 use OCP\Http\Client\IResponse;
+use OCP\Share\IShare;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
+use RuntimeException;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
 use Throwable;
@@ -32,6 +36,9 @@ final class CheckTest extends TestCase {
 	use Accounts;
 	use AppServices;
 	use Files;
+	use Shares;
+
+	private const NO_SHARES = "! The archive account shares none of its files, so only it finds its documents.\n";
 
 	private const NONE_COVERED = "No document of Paperless has a file of the archive account archive, so the search shows no Paperless documents. Name the account that owns the synchronized files with occ paperless_unified_search:setup --archive-account, and check that their names carry the markers of the documents, such as [P412].\n";
 
@@ -40,6 +47,8 @@ final class CheckTest extends TestCase {
 		foreach ([1, 2, 3] as $documentId) {
 			$this->file('/archive/files/Paperless/Document [P' . $documentId . '].pdf');
 		}
+		$this->share(IShare::TYPE_GROUP, 'staff', '/Paperless');
+		$this->share(IShare::TYPE_USER, 'jamie', '/Paperless', Constants::PERMISSION_READ | Constants::PERMISSION_SHARE);
 		$tester = $this->tester($this->documents([['id' => 3]], 3, [3, 2, 1]));
 
 		self::assertSame(Command::SUCCESS, $tester->execute([], ['capture_stderr_separately' => true]));
@@ -47,7 +56,8 @@ final class CheckTest extends TestCase {
 		self::assertSame(
 			"✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.\n"
 			. "✓ The archive account is archive.\n"
-			. "✓ Coverage: 3 of 3 Paperless document(s) have a file of the archive account.\n",
+			. "✓ Coverage: 3 of 3 Paperless document(s) have a file of the archive account.\n"
+			. "✓ Shared read-only: 1 user, 1 group.\n",
 			$tester->getDisplay(),
 		);
 		self::assertSame('', $tester->getErrorOutput());
@@ -75,7 +85,8 @@ final class CheckTest extends TestCase {
 			"✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.\n"
 			. "✓ The archive account is archive.\n"
 			. "! Coverage: 3 of 1,234 Paperless document(s) have a file of the archive account. Without one, among others: 4, 5, 6, 7, 8, 9, 10, 11, 12, 13.\n"
-			. "! 1 document(s) have a file of the archive account, but the account of the API token doesn't see them in Paperless, maybe because they were deleted there.\n",
+			. "! 1 document(s) have a file of the archive account, but the account of the API token doesn't see them in Paperless, maybe because they were deleted there.\n"
+			. self::NO_SHARES,
 			$tester->getDisplay(),
 		);
 		// One search of the file cache for all files with a marker.
@@ -108,7 +119,8 @@ final class CheckTest extends TestCase {
 		self::assertSame(
 			"✓ Paperless answers at https://paperless.example.com.\n"
 			. "✓ The archive account is archive, the account of Paperless Sync.\n"
-			. "! Coverage: 1 document(s) have a file of the archive account; Paperless has 1,180 document(s), without naming them.\n",
+			. "! Coverage: 1 document(s) have a file of the archive account; Paperless has 1,180 document(s), without naming them.\n"
+			. self::NO_SHARES,
 			$tester->getDisplay(),
 		);
 	}
@@ -130,7 +142,8 @@ final class CheckTest extends TestCase {
 			"✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.\n"
 			. "✓ The archive account is archive.\n"
 			. "! Coverage: 0 of 2 Paperless document(s) have a file of the archive account. Without one: 1, 2.\n"
-			. "! 1 document(s) have a file of the archive account, but the account of the API token doesn't see them in Paperless, maybe because they were deleted there.\n",
+			. "! 1 document(s) have a file of the archive account, but the account of the API token doesn't see them in Paperless, maybe because they were deleted there.\n"
+			. self::NO_SHARES,
 			$tester->getDisplay(),
 		);
 		self::assertSame(self::NONE_COVERED, $tester->getErrorOutput());
@@ -142,7 +155,7 @@ final class CheckTest extends TestCase {
 
 		self::assertSame(Command::FAILURE, $tester->execute([], ['capture_stderr_separately' => true]));
 
-		self::assertStringEndsWith("! Coverage: 0 document(s) have a file of the archive account; Paperless has 1,180 document(s), without naming them.\n", $tester->getDisplay());
+		self::assertStringEndsWith("! Coverage: 0 document(s) have a file of the archive account; Paperless has 1,180 document(s), without naming them.\n" . self::NO_SHARES, $tester->getDisplay());
 		self::assertSame(self::NONE_COVERED, $tester->getErrorOutput());
 	}
 
@@ -156,7 +169,7 @@ final class CheckTest extends TestCase {
 
 		self::assertSame(Command::SUCCESS, $tester->execute([], ['capture_stderr_separately' => true]));
 
-		self::assertStringEndsWith("! Coverage: 0 document(s) have a file of the archive account; Paperless has 0 document(s), without naming them.\n", $tester->getDisplay());
+		self::assertStringEndsWith("! Coverage: 0 document(s) have a file of the archive account; Paperless has 0 document(s), without naming them.\n" . self::NO_SHARES, $tester->getDisplay());
 		self::assertSame('', $tester->getErrorOutput());
 	}
 
@@ -166,7 +179,8 @@ final class CheckTest extends TestCase {
 
 		self::assertSame(Command::FAILURE, $tester->execute([], ['capture_stderr_separately' => true]));
 
-		self::assertSame("✓ The archive account is archive.\n", $tester->getDisplay());
+		// The shares still say who would find the documents.
+		self::assertSame("✓ The archive account is archive.\n" . self::NO_SHARES, $tester->getDisplay());
 		self::assertSame("Paperless Unified Search isn't connected to Paperless yet. Connect it with occ paperless_unified_search:setup.\n", $tester->getErrorOutput());
 		self::assertSame([], $this->searches);
 	}
@@ -177,7 +191,8 @@ final class CheckTest extends TestCase {
 
 		self::assertSame(Command::FAILURE, $tester->execute([], ['capture_stderr_separately' => true]));
 
-		self::assertSame("✓ The archive account is archive.\n", $tester->getDisplay());
+		// The shares still say who would find the documents.
+		self::assertSame("✓ The archive account is archive.\n" . self::NO_SHARES, $tester->getDisplay());
 		self::assertSame("Paperless answered with an error (HTTP 502). Check its log, or try again later.\n", $tester->getErrorOutput());
 	}
 
@@ -222,6 +237,61 @@ final class CheckTest extends TestCase {
 		self::assertStringNotContainsString('The last search failed', $tester->getDisplay());
 	}
 
+	/**
+	 * A share that allows changes lets its recipients give a file the marker of any
+	 * document: the check names each, and what corrects it, without failing, since the
+	 * search still shows documents to the others.
+	 */
+	public function testWarnsOfEachShareThatAllowsChanges(): void {
+		$this->connected();
+		$this->file('/archive/files/Paperless/Document [P1].pdf');
+		$this->share(IShare::TYPE_USER, 'jamie', '/Paperless');
+		$this->share(IShare::TYPE_USER, 'sam', '/Paperless', Constants::PERMISSION_ALL);
+		$this->share(IShare::TYPE_LINK, 'token', '/Inbox', Constants::PERMISSION_CREATE);
+		$tester = $this->tester($this->documents([['id' => 1]], 1, [1]));
+
+		self::assertSame(Command::SUCCESS, $tester->execute([]));
+
+		self::assertStringEndsWith(
+			"✓ Coverage: 1 of 1 Paperless document(s) have a file of the archive account.\n"
+			. "! Shared: 2 users, 1 public link.\n"
+			. "! /Inbox has a public link that allows uploads or changes, so whoever has the link can add a file with the marker of any document. Make the link read-only.\n"
+			. "! /Paperless is shared with the user sam with write permission, so the search shows sam none of the documents in it. Share it read-only.\n",
+			$tester->getDisplay(),
+		);
+	}
+
+	/**
+	 * A list of the shares that may lack some is no reason for comfort.
+	 */
+	public function testNotesWhenTheListOfTheSharesMayLackSome(): void {
+		$this->connected();
+		$this->file('/archive/files/Paperless/Document [P1].pdf');
+		$this->share(IShare::TYPE_USER, 'jamie', '/Paperless');
+		$broken = $this->createStub(IShare::class);
+		$broken->method('getShareOwner')->willReturn('archive');
+		$broken->method('getNode')->willThrowException(new RuntimeException('Storage unavailable'));
+		$this->shares[IShare::TYPE_GROUP][] = $broken;
+		$tester = $this->tester($this->documents([['id' => 1]], 1, [1]));
+
+		self::assertSame(Command::SUCCESS, $tester->execute([]));
+
+		self::assertStringEndsWith("! Shared read-only: 1 user. Not every share could be read, so the list may lack some.\n", $tester->getDisplay());
+	}
+
+	/**
+	 * Without an archive account, there are no shares to list.
+	 */
+	public function testListsNoSharesWithoutAnArchiveAccount(): void {
+		$this->connected('');
+		$tester = $this->tester($this->documents([], 0, []));
+
+		self::assertSame(Command::FAILURE, $tester->execute([]));
+
+		self::assertStringNotContainsString('Shared', $tester->getDisplay());
+		self::assertSame([], $this->askedForShares);
+	}
+
 	public function testIsTheCheckOfTheApp(): void {
 		self::assertSame('paperless_unified_search:check', $this->command()->getName());
 	}
@@ -241,6 +311,7 @@ final class CheckTest extends TestCase {
 			$this->diagnostics(),
 			$accounts,
 			$this->messages(),
+			$this->archiveShares(),
 		);
 	}
 }

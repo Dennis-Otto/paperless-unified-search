@@ -77,6 +77,23 @@
 	display: none;
 }
 
+/*
+ * How the archive account shares its files, below its field, with a warning for each
+ * share that allows changes.
+ */
+.paperless-unified-search-shares {
+	margin-top: 8px;
+	max-width: 720px;
+}
+
+.paperless-unified-search-settings .paperless-unified-search-shares-warnings {
+	display: grid;
+	gap: 4px;
+	list-style: none;
+	margin: 4px 0 0;
+	padding: 0;
+}
+
 .paperless-unified-search-actions {
 	display: flex;
 	flex-wrap: wrap;
