@@ -93,6 +93,10 @@ It needs Docker with Compose and Bash, Git Bash on Windows, and generates the pa
 
 <!-- --8<-- [end:try-it] -->
 
+![The demo at work, as jamie: the archive that Paperless Sync wrote into Nextcloud, a search for "invoice", and below the files the Paperless documents, the two invoices and the home insurance renewal, whose text says "invoice". The renewal opens in Nextcloud's viewer.](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/demo-search-and-open.gif)
+
+<sub>Recorded from the real Paperless-ngx and Nextcloud of the demo, by `bash scripts/screenshots.sh --demo`.</sub>
+
 <!-- --8<-- [start:quick-start-section] -->
 
 ## Quick start
@@ -693,6 +697,13 @@ bash scripts/screenshots.sh
 ```
 
 It starts the Docker suite under a project of its own with a demo: the archive account `paperless`, whose synthetic documents are shared read-only with `jamie`, and a Paperless mock that finds three of them for "invoice". Chromium then searches, opens a result, narrows the search to July 2026 with the date filter, links a document from the smart picker in a note of Text, saves the settings and tries a search in them, light and dark, on a phone and as an animation. Each step checks what its picture shows: the search narrowed by date fails, for one, when a Paperless result outside July shows or the results land under *Partial matches*. The clock of the browser stands at the same morning in every run and the files of the demo were changed two days before it, so two runs render the same pixels. Set `KEEP_SCREENSHOTS=1` to look around in the demo afterwards.
+
+The animation of [Try it in three minutes](#try-it-in-three-minutes) comes from the real Paperless-ngx and Nextcloud of the demo instead. With the demo running, `bash scripts/screenshots.sh --demo` signs in as `jamie` with the password of `demo/.env`, searches for *invoice*, opens the home insurance renewal and writes `screenshots/demo-search-and-open.gif` alone; it leaves the demo and the other pictures as they are. Two fresh demos render the same pixels here too: the clock starts two days after the last change of the archive, the search starts once the whole term is typed, the notifications are read, and Paperless ranks the documents by their text alone. The weekly run of the demo records it as well, compares it by its pixels and, when they changed, keeps one pull request, *docs: update the animation of the demo*, that merges itself once every check passes.
+
+```bash
+bash demo/seed.sh
+bash scripts/screenshots.sh --demo
+```
 
 You rarely need to run it yourself. For a pull request that changes a file of `.github/screenshots-paths.txt`, such as the CSS or a template, the visual check renders the pictures and comments with those that look different: before, after and the changed pixels in red. After the merge, after every release and every week, the screenshot bot renders them on `main` and keeps one pull request, *docs: update the screenshots*, that merges itself once every check passes.
 

@@ -142,6 +142,17 @@ python3 .github/blueprint.py screenshots restore
 
 The comparison needs Pillow: `python3 -m pip install --require-hashes -r .github/screenshots-requirements.txt`. `visual-compare.mjs` has its tests in `tests/js/visual-compare.test.mjs`, which `scripts/check-project.sh` runs with the others.
 
+### The animation of the demo
+
+`screenshots/demo-search-and-open.gif`, which *Try it in three minutes* of the README and `demo/README.md` show, comes from the real Paperless-ngx and Nextcloud of `bash demo/seed.sh`, not from the mock. `bash scripts/screenshots.sh --demo` records it while the demo runs: `screenshots.mjs` with `SCREENSHOTS_DEMO=1`, in the network of the demo, as `jamie` with the password of `demo/.env`, which reaches the container in its environment alone. It takes nothing else, leaves the demo running, and fails when the search shows other Paperless documents than the three of the demo.
+
+`demo.mjs` holds what the animation shows and how it stays the same from run to run, without a dependency, so that `tests/js/demo.test.mjs` tests it: the clock of the pages starts two days after the last change of the archive, the templates `Invoice.ods` and `Invoice.odt` get times an hour apart before it, the clock stands still while the term is typed, so that Nextcloud searches for the whole term alone, and the electricity invoice says the term more often than the internet invoice, so that Paperless ranks them in the same order in every demo. `selftest.sh` runs the script with a fake docker. The weekly run of the demo (`.github/workflows/demo.yml`) records the animation too, compares it by its pixels with `blueprint.py screenshots keep` and, when they changed, keeps the pull request *docs: update the animation of the demo* from `bot/demo-animation`, which merges itself; the screenshot bot and the visual check don't record it, as they run without the demo.
+
+```bash
+bash demo/seed.sh
+bash scripts/screenshots.sh --demo
+```
+
 ## The coming Nextcloud
 
 Every Monday, and when started by hand, the workflow also runs the suite against the coming Nextcloud:

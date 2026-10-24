@@ -21,6 +21,10 @@
 #   holds each request right after its answer, and run.sh reads that journal.
 # - that no script here pipes a command into grep --quiet, which fails the pipe now
 #   and then under set -o pipefail.
+# - scripts/screenshots.sh --demo, with a fake docker: it records the animation of the
+#   running demo of demo/seed.sh as jamie, with the password of demo/.env in the
+#   environment of the browser, never on a command line, and leaves the demo and every
+#   other picture alone; without the demo it says how to start it.
 #
 #   bash tests/e2e/selftest.sh
 
@@ -424,8 +428,84 @@ expect "run.sh passes E2E_FLOW_SIZES into the container of the browser" 1 \
 expect "run.sh copies sizes.mjs into the container of the browser" 1 \
 	"$(grep --count --extended-regexp '^[[:space:]]*tar .* sizes\.mjs .*flow\.mjs' "${SCRIPT_DIR}/run.sh")"
 
+## The animation of the demo: scripts/screenshots.sh --demo
+
+# In a copy of the repository with the script alone, a fake docker and a fake social
+# preview: the script records from the demo of demo/seed.sh, which must run already, and
+# must neither stop that demo nor change any other picture.
+shots="${WORK}/shots"
+mkdir -p "${shots}/scripts" "${shots}/tests/e2e" "${shots}/screenshots" "${shots}/demo" "${shots}/bin"
+cp "${SCRIPT_DIR}/../../scripts/screenshots.sh" "${shots}/scripts/screenshots.sh"
+# shellcheck disable=SC2016 # the fake expands it, not this script
+echo 'echo "social preview" >>"${FAKE_DOCKER_LOG}"' >"${shots}/scripts/social-preview.sh"
+# The script finds the image of the browser in run.sh.
+echo 'PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright:v1.0.0-noble' >"${shots}/tests/e2e/run.sh"
+for file in package.json package-lock.json ui.mjs demo.mjs screenshots.mjs; do
+	echo "${file}" >"${shots}/tests/e2e/${file}"
+done
+echo "the committed picture" >"${shots}/screenshots/01-unified-search.png"
+cat >"${shots}/bin/docker" <<'SCRIPT'
+#!/usr/bin/env bash
+# A fake of Docker: it notes each call, lists FAKE_RUNNING as the running services of
+# Compose and, as the browser, notes its environment and the files that it gets, and
+# answers with an animation.
+echo "$*" >>"${FAKE_DOCKER_LOG}"
+case "$1" in
+	compose)
+		if [[ " $* " == *" ps "* ]]; then
+			printf '%s\n' ${FAKE_RUNNING:-}
+		fi
+		;;
+	run)
+		echo "browser environment: E2E_PASSWORD=${E2E_PASSWORD:-}" >>"${FAKE_DOCKER_LOG}"
+		echo "browser files: $(tar -tf - | sort | paste -s -d ' ')" >>"${FAKE_DOCKER_LOG}"
+		out="$(mktemp -d)"
+		printf 'GIF89a of the demo' >"${out}/demo-search-and-open.gif"
+		tar -C "${out}" -cf - .
+		rm -rf "${out}"
+		;;
+esac
+SCRIPT
+chmod +x "${shots}/bin/docker"
+
+# Runs the script in the copy with the arguments and prints its exit status.
+screenshots() {
+	local status=0
+	: >"${WORK}/docker.log"
+	(PATH="${shots}/bin:${PATH}" FAKE_DOCKER_LOG="${WORK}/docker.log" \
+		bash "${shots}/scripts/screenshots.sh" "$@" >"${WORK}/log" 2>&1) || status=$?
+	echo "${status}"
+}
+
+expect "screenshots.sh with an unknown argument" 2 "$(FAKE_RUNNING=nextcloud screenshots --demos)"
+expect_in "the usage of screenshots.sh" "Usage: bash scripts/screenshots.sh [--demo]" "${WORK}/log"
+expect "screenshots.sh --demo before demo/seed.sh" 1 "$(FAKE_RUNNING=nextcloud screenshots --demo)"
+expect_in "the way to a demo that isn't set up" "The demo isn't set up: start it with bash demo/seed.sh" "${WORK}/log"
+cat >"${shots}/demo/.env" <<'ENV'
+NEXTCLOUD_ADMIN_PASSWORD=fake-admin-password
+DEMO_PASSWORD=fake-demo-password
+ENV
+expect "screenshots.sh --demo while the demo doesn't run" 1 "$(FAKE_RUNNING="postgres paperless" screenshots --demo)"
+expect_in "the way to a demo that doesn't run" "The Nextcloud of the demo doesn't run: start the demo with bash demo/seed.sh" "${WORK}/log"
+expect "the browser of a demo that doesn't run" 0 "$(grep --count '^run ' "${WORK}/docker.log" || true)"
+expect "screenshots.sh --demo" 0 "$(FAKE_RUNNING="postgres nextcloud paperless" screenshots --demo)"
+expect "the animation of the demo" "GIF89a of the demo" "$(cat "${shots}/screenshots/demo-search-and-open.gif")"
+expect "the other pictures after screenshots.sh --demo" "the committed picture" "$(cat "${shots}/screenshots/01-unified-search.png")"
+expect_in "the browser in the network of the demo" "--network paperless-unified-search-demo_default" "${WORK}/docker.log"
+expect_in "the mode of the browser" "--env SCREENSHOTS_DEMO=1" "${WORK}/docker.log"
+expect_in "the password of jamie, from demo/.env, in the environment of the browser" \
+	"browser environment: E2E_PASSWORD=fake-demo-password" "${WORK}/docker.log"
+expect "the password of jamie on a command line" 0 \
+	"$(grep --invert-match '^browser environment: ' "${WORK}/docker.log" | grep --count --fixed-strings fake-demo-password || true)"
+expect_in "the files of the browser" "browser files: demo.mjs package-lock.json package.json screenshots.mjs ui.mjs" "${WORK}/docker.log"
+expect "the demo after screenshots.sh --demo" 0 "$(grep --count --extended-regexp '^compose .*(down|stop|rm)( |$)' "${WORK}/docker.log" || true)"
+expect "the social preview after screenshots.sh --demo" 0 "$(grep --count --fixed-strings 'social preview' "${WORK}/docker.log" || true)"
+echo 'NEXTCLOUD_ADMIN_PASSWORD=fake-admin-password' >"${shots}/demo/.env"
+expect "screenshots.sh --demo without the password of jamie" 1 "$(FAKE_RUNNING=nextcloud screenshots --demo)"
+expect_in "the way to the password of jamie" "demo/.env holds no DEMO_PASSWORD, the password of jamie" "${WORK}/log"
+
 if ((failures > 0)); then
 	echo "${failures} of ${checks} checks of the scripts of the end-to-end tests failed." >&2
 	exit 1
 fi
-echo "The ${checks} checks of scope.sh, run-all.sh, the issue of the weekly run, the journal of the mock and the pipes of the scripts pass."
+echo "The ${checks} checks of scope.sh, run-all.sh, the issue of the weekly run, the journal of the mock, the pipes of the scripts and the animation of the demo pass."
