@@ -53,12 +53,6 @@ Es gibt zwei Wege darum herum, und beide schicken die Begriffe mit jeder Suche a
 - **Für dich selbst:** Wähle unter **Persönliche Einstellungen → Paperless** **Meine Paperless-Dokumente immer durchsuchen**, wie *Deine Paperless-Dokumente immer durchsuchen* oben zeigt. Nur deine eigenen Suchen ändern sich, ab der nächsten Seite, die du öffnest.
 - **Für jeden Benutzer:** Ein Administrator, der seinem Paperless-Server vertraut, als dem, der die Dokumente ohnehin hält, kann in den Einstellungen **Paperless immer in die globale Suche einbeziehen** wählen. Paperless gehört dann zu jeder Suche jedes Benutzers, ohne den Schalter, der es nicht mehr steuert, und die persönlichen Einstellungen zeigen das Kästchen angehakt und ausgegraut. Jeder Benutzer lädt Nextcloud nach der Änderung einmal neu.
 
-<figure markdown="span">
-  ![Der Abschnitt Paperless der persönlichen Einstellungen von jamie: Always search my Paperless documents ist gewählt, der Hinweis darunter sagt, dass die Suchbegriffe dann an den Paperless-Server dieser Nextcloud gehen, und die Meldung darunter sagt Saved. Your searches include Paperless from the next page that you open.](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/13-personal-settings.png#only-light)
-  ![Der Abschnitt Paperless der persönlichen Einstellungen von jamie: Always search my Paperless documents ist gewählt, der Hinweis darunter sagt, dass die Suchbegriffe dann an den Paperless-Server dieser Nextcloud gehen, und die Meldung darunter sagt Saved. Your searches include Paperless from the next page that you open.](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/13-personal-settings-dark.png#only-dark)
-  <figcaption>Meine Paperless-Dokumente immer durchsuchen in den persönlichen Einstellungen</figcaption>
-</figure>
-
 ## Auf dem Smartphone
 
 - **Im Browser** eines Smartphones funktioniert die Suche wie auf einem Computer, und ein Treffer öffnet sich im Viewer von Nextcloud.

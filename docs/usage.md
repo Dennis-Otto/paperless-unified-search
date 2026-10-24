@@ -53,12 +53,6 @@ There are two ways around it, and both send the terms to Paperless with every se
 - **For yourself:** select **Always search my Paperless documents** under **Personal settings → Paperless**, as *Always search your Paperless documents* above shows. Only your own searches change, from the next page that you open.
 - **For every user:** an administrator who trusts their Paperless server, as the one that already holds the documents, can select **Always include Paperless in global search** in the settings. Paperless then belongs to every search of every user, without the switch, which no longer controls it, and the personal settings show the checkbox ticked and greyed out. Every user reloads Nextcloud once after the change.
 
-<figure markdown="span">
-  ![The section Paperless of the personal settings of jamie: Always search my Paperless documents is selected, the hint below it says that the search terms then go to the Paperless server of this Nextcloud, and the message below says Saved. Your searches include Paperless from the next page that you open.](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/13-personal-settings.png#only-light)
-  ![The section Paperless of the personal settings of jamie: Always search my Paperless documents is selected, the hint below it says that the search terms then go to the Paperless server of this Nextcloud, and the message below says Saved. Your searches include Paperless from the next page that you open.](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/13-personal-settings-dark.png#only-dark)
-  <figcaption>Always search my Paperless documents in the personal settings</figcaption>
-</figure>
-
 ## On a phone
 
 - **In the browser** of a phone, the search works as on a computer, and a result opens in Nextcloud's viewer.

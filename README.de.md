@@ -183,11 +183,6 @@ Tippe `/` in einer Notiz von Text und wähle *Paperless-Dokumente*: Der Picker f
 
 ### Paperless in jeder deiner Suchen
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/13-personal-settings-dark.png">
-  <img alt="Der Abschnitt Paperless der persönlichen Einstellungen von jamie: Always search my Paperless documents ist gewählt, der Hinweis darunter sagt, dass die Suchbegriffe dann an den Paperless-Server dieser Nextcloud gehen, und die Meldung darunter sagt Saved. Your searches include Paperless from the next page that you open." src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/13-personal-settings.png">
-</picture>
-
 Mit **Meine Paperless-Dokumente immer durchsuchen** in den persönlichen Einstellungen bezieht jede deiner Suchen Paperless ohne den Schalter *Verbundene Dienste durchsuchen* ein, den Nextcloud auf jeder Seite, die lädt, ausschaltet.
 
 ### Das Archiv, nur lesend geteilt

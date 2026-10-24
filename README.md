@@ -183,11 +183,6 @@ Type `/` in a note of Text and choose *Paperless documents*: the picker finds th
 
 ### Paperless in every search of your own
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/13-personal-settings-dark.png">
-  <img alt="The section Paperless of the personal settings of jamie: Always search my Paperless documents is selected, the hint below it says that the search terms then go to the Paperless server of this Nextcloud, and the message below says Saved. Your searches include Paperless from the next page that you open." src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/13-personal-settings.png">
-</picture>
-
 With **Always search my Paperless documents** in the personal settings, every search of yours includes Paperless without the switch *Search connected services*, which Nextcloud turns off on every page that loads.
 
 ### The archive, shared read-only
