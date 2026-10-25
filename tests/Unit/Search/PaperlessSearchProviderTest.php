@@ -140,6 +140,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$file->method('getId')->willReturn(4711);
 		$file->method('getOwner')->willReturn($this->account('archive'));
 		$file->method('getMimetype')->willReturn('application/pdf');
+		$file->method('getParent')->willReturn($this->createStub(Folder::class));
 
 		$root = $this->createMock(IRootFolder::class);
 		$root->expects(self::atLeastOnce())->method('getUserFolder')->with('dennis')->willReturn($this->userFolder([$file]));
@@ -1913,6 +1914,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$file->method('getId')->willReturn(1000 + $documentId);
 		$file->method('getOwner')->willReturn($this->account($owner));
 		$file->method('getMimetype')->willReturn($mimeType);
+		$file->method('getParent')->willReturn($this->createStub(Folder::class));
 
 		return $file;
 	}
@@ -1926,6 +1928,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$file->method('getPath')->willReturn('/dennis/files/Paperless/' . $name);
 		$file->method('getId')->willThrowException(new RuntimeException($message));
 		$file->method('getOwner')->willReturn($this->account('archive'));
+		$file->method('getParent')->willReturn($this->createStub(Folder::class));
 
 		return $file;
 	}

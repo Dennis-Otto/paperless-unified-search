@@ -61,19 +61,25 @@ final class NextcloudFileLocator {
 	 * nothing, since anyone can give a file such a name; the files of the archive account
 	 * reach other users only through its shares.
 	 *
+	 * A user other than the archive account counts only the files that the user may only
+	 * read: whoever may change a file of the archive account, or add one to its folder,
+	 * through a share with write permission, can give it the marker of any document. The
+	 * archive account writes its own files, and counts them all.
+	 *
 	 * A search of the file cache compares the names of all files that the user can see,
 	 * which no index serves, so one search looks for the markers of all documents at once.
 	 *
 	 * @param list<int> $documentIds
 	 * @return FoundFiles the files in the order of the IDs, without a document that has no
-	 *                    such file, and the error of the first file that failed to answer
+	 *                    such file, the error of the first file that failed to answer, and
+	 *                    the files that the user may write of the documents without a file
 	 */
 	public function findAllForUser(IUser $user, array $documentIds, string $archiveOwner): FoundFiles {
 		if ($archiveOwner === '') {
 			return new FoundFiles([]);
 		}
 
-		return $this->find($user, $documentIds, $archiveOwner);
+		return $this->find($user, $documentIds, $archiveOwner, $user->getUID() !== $archiveOwner);
 	}
 
 	/**
@@ -85,7 +91,7 @@ final class NextcloudFileLocator {
 	 * @return FoundFiles as findAllForUser() returns them, of any owner
 	 */
 	public function findAnyForUser(IUser $user, array $documentIds): FoundFiles {
-		return $this->find($user, $documentIds, null);
+		return $this->find($user, $documentIds, null, false);
 	}
 
 	/**
@@ -126,11 +132,12 @@ final class NextcloudFileLocator {
 
 	/**
 	 * The files with the markers of the documents among those that the user can see, of the
-	 * owner, or of any owner for null.
+	 * owner, or of any owner for null, and for $readOnly only those that the user may only
+	 * read, with the others apart.
 	 *
 	 * @param list<int> $documentIds
 	 */
-	private function find(IUser $user, array $documentIds, ?string $owner): FoundFiles {
+	private function find(IUser $user, array $documentIds, ?string $owner, bool $readOnly): FoundFiles {
 		/** @var array<int, string> $markers by document ID */
 		$markers = [];
 		foreach ($documentIds as $documentId) {
@@ -147,8 +154,12 @@ final class NextcloudFileLocator {
 			? $this->searchAll($userFolder, $user, array_values($markers))
 			: $this->searchEach($userFolder, array_values($markers));
 
-		/** @var array<int, array{string, File}> $found the path and the file of each document, by document ID */
-		$found = [];
+		/** @var array<int, list<array{string, File}>> $candidates the path and the file of each file of each document, by document ID */
+		$candidates = [];
+		/** @var array<int, true> $writableIds the IDs of the files that the user may write through any of their paths */
+		$writableIds = [];
+		/** @var array<string, bool> $openFolders whether the user may add files to each folder so far, by its path */
+		$openFolders = [];
 		$skipped = 0;
 		$firstError = null;
 		foreach ($nodes as $node) {
@@ -162,12 +173,20 @@ final class NextcloudFileLocator {
 				if ($documentIdsOfTheName === [] || ($owner !== null && $node->getOwner()?->getUID() !== $owner)) {
 					continue;
 				}
+				if ($readOnly && self::isTheRootOfAShare($node)) {
+					$documentIdsOfTheName = self::documentIdsIn($this->nameOfTheOwner($node, (string)$owner));
+				}
 
 				$path = $node->getPath();
+
+				// The user may reach one file through several shares: whoever may write it
+				// through one of them gives it its name, which counts through none.
+				if ($readOnly && self::mayWrite($node, $path, $owner, $openFolders)) {
+					$writableIds[$node->getId()] = true;
+				}
 				foreach ($documentIdsOfTheName as $documentId) {
-					if (isset($markers[$documentId])
-						&& (!isset($found[$documentId]) || strcmp($path, $found[$documentId][0]) < 0)) {
-						$found[$documentId] = [$path, $node];
+					if (isset($markers[$documentId])) {
+						$candidates[$documentId][] = [$path, $node];
 					}
 				}
 			} catch (Throwable $error) {
@@ -176,16 +195,64 @@ final class NextcloudFileLocator {
 				$firstError ??= $error;
 			}
 		}
-		$this->logSkipped($skipped, $firstError);
 
 		$files = [];
+		$writableFiles = [];
 		foreach (array_keys($markers) as $documentId) {
-			if (isset($found[$documentId])) {
-				$files[$documentId] = $found[$documentId][1];
+			$found = null;
+			$writable = null;
+			foreach ($candidates[$documentId] ?? [] as $candidate) {
+				try {
+					$mayWrite = $writableIds !== [] && ($writableIds[$candidate[1]->getId()] ?? false);
+				} catch (Throwable $error) {
+					$skipped++;
+					$firstError ??= $error;
+					continue;
+				}
+				if ($mayWrite) {
+					$writable = self::theFirst($writable, $candidate);
+				} else {
+					$found = self::theFirst($found, $candidate);
+				}
+			}
+			if ($found !== null) {
+				$files[$documentId] = $found[1];
+			} elseif ($writable !== null) {
+				$writableFiles[$documentId] = $writable[1];
 			}
 		}
 
-		return new FoundFiles($files, $firstError);
+		$this->logSkipped($skipped, $firstError);
+
+		return new FoundFiles($files, $firstError, $writableFiles);
+	}
+
+	/**
+	 * Of the path and file found so far and another one, the one with the earlier path.
+	 *
+	 * @param array{string, File}|null $first
+	 * @param array{string, File} $candidate
+	 * @return array{string, File}
+	 */
+	private static function theFirst(?array $first, array $candidate): array {
+		return $first === null || strcmp($candidate[0], $first[0]) < 0 ? $candidate : $first;
+	}
+
+	/**
+	 * Whether the file is the root of its share, a file shared on its own, which has no
+	 * path within the share.
+	 */
+	private static function isTheRootOfAShare(File $file): bool {
+		return $file->getInternalPath() === '';
+	}
+
+	/**
+	 * The name that the owner gave the file. A file shared on its own is the root of its
+	 * share, which bears the name that the recipient gives it, even a recipient who may
+	 * only read it, so its name in the folders of the owner counts instead.
+	 */
+	private function nameOfTheOwner(File $file, string $owner): string {
+		return $this->rootFolder->getUserFolder($owner)->getFirstNodeById($file->getId())?->getName() ?? '';
 	}
 
 	/**
@@ -208,6 +275,29 @@ final class NextcloudFileLocator {
 		}
 
 		return array_values($documentIds);
+	}
+
+	/**
+	 * Whether the user may change the file, or add a file to its folder of the owner, and
+	 * so give a file of the owner any name. A file shared on its own lies in a folder of the
+	 * user, where a file that the user adds is the user's own; the name that the user gives
+	 * the share itself counts for nothing (see nameOfTheOwner()).
+	 *
+	 * @param array<string, bool> $openFolders whether the user may add files to each
+	 *                                         folder so far, by its path, which this adds to
+	 */
+	private static function mayWrite(File $file, string $path, ?string $owner, array &$openFolders): bool {
+		if ($file->isUpdateable()) {
+			return true;
+		}
+
+		$folderPath = dirname($path);
+		if (!isset($openFolders[$folderPath])) {
+			$folder = $file->getParent();
+			$openFolders[$folderPath] = $folder->getOwner()?->getUID() === $owner && $folder->isCreatable();
+		}
+
+		return $openFolders[$folderPath];
 	}
 
 	private function logSkipped(int $skipped, ?Throwable $firstError): void {

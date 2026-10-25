@@ -93,6 +93,27 @@ final class SearchTest extends TestCase {
 		self::assertSame(4, $this->requests[0][1]['query']['page_size']);
 	}
 
+	/**
+	 * A file that jamie may write proves nothing, since jamie could have named it: its
+	 * share is what to correct.
+	 */
+	public function testExplainsThatJamieMayWriteTheFileOfADocument(): void {
+		$this->file('/jamie/files/Upload/Receipt [P377].pdf', writable: true);
+		$tester = $this->tester($this->documents([['id' => 377, 'title' => 'Receipt'], ...self::HITS], 12));
+
+		self::assertSame(Command::SUCCESS, $tester->execute(['user' => 'jamie', 'term' => 'invoice', '--explain' => true, '--limit' => '2']));
+
+		self::assertSame([
+			'| ID  | Title               | Verdict  | File                                                      |',
+			'| 377 | Receipt             | writable | /Upload/Receipt [P377].pdf of archive, jamie may write it |',
+			'| 412 | Electricity invoice | shown    | /Electricity [P412].pdf                                   |',
+		], array_slice(self::rows($tester->getDisplay()), 0, 3));
+		self::assertContains(
+			'Writable (377): jamie may change the file of the archive account archive, or add files to its folder, so anyone with that share could have given it the marker of the document. Share it read-only with jamie.',
+			self::rows($tester->getDisplay()),
+		);
+	}
+
 	public function testWritesTheDocumentsAsJson(): void {
 		$tester = $this->tester($this->documents([...self::HITS, ['id' => 'none'], ['title' => 'No ID']], 12));
 
@@ -137,6 +158,7 @@ final class SearchTest extends TestCase {
 	public function testSaysThatAFileFailedToAnswer(): void {
 		$broken = $this->createStub(File::class);
 		$broken->method('getName')->willReturn('Letter [P360].pdf');
+		$broken->method('getPath')->willReturn('/jamie/files/Letter [P360].pdf');
 		$broken->method('getOwner')->willThrowException(new RuntimeException('Storage unavailable'));
 		$this->visible['jamie'][] = $broken;
 		$tester = $this->tester($this->documents(self::HITS, 12));

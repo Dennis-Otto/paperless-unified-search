@@ -19,20 +19,24 @@ use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
 use OCA\PaperlessUnifiedSearch\Settings\AdminSection;
 use OCA\PaperlessUnifiedSearch\Settings\AdminSettings;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\Shares;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\AppFramework\Utility\ITimeFactory;
+use OCP\Constants;
 use OCP\IAppConfig;
 use OCP\ICacheFactory;
 use OCP\IDateTimeFormatter;
 use OCP\IL10N;
 use OCP\IURLGenerator;
 use OCP\Security\ICredentialsManager;
+use OCP\Share\IShare;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use RuntimeException;
 
 final class AdminSettingsTest extends TestCase {
 	use Accounts;
+	use Shares;
 
 	public function testTheFormShowsThePublicConfigAndTheRoutesOfTheSettings(): void {
 		$config = $this->createStub(IAppConfig::class);
@@ -85,6 +89,27 @@ final class AdminSettingsTest extends TestCase {
 		self::assertStringNotContainsString('TEST_VALUE', json_encode($params, JSON_THROW_ON_ERROR));
 		self::assertNull($params['history']);
 		self::assertSame([], $params['tokenWarnings']);
+		// The shares of the account of Paperless Sync, the archive account in use.
+		self::assertSame(['summary' => 'The archive account shares none of its files, so only it finds its documents.', 'warnings' => []], $params['shares']);
+		self::assertSame(['sync'], $this->askedForSharesOf);
+	}
+
+	/**
+	 * Below the archive account, the page says with whom it shares its files, and what is
+	 * wrong with each share that allows changes.
+	 */
+	public function testTheFormSaysHowTheArchiveIsShared(): void {
+		$config = $this->createStub(IAppConfig::class);
+		$config->method('getValueString')->willReturnCallback(static fn (string $app, string $key): string => $app . '.' . $key === AppConstants::APP_ID . '.archive_owner' ? 'sync' : '');
+		$this->share(IShare::TYPE_GROUP, 'staff', '/Paperless', owner: 'sync');
+		$this->share(IShare::TYPE_USER, 'sam', '/Paperless', Constants::PERMISSION_ALL, owner: 'sync');
+
+		$params = $this->settings($config, $this->createStub(ICredentialsManager::class), $this->createStub(IURLGenerator::class))->getForm()->getParams();
+
+		self::assertSame([
+			'summary' => 'Shared: 1 user, 1 group.',
+			'warnings' => ['/Paperless is shared with the user sam with write permission, so the search shows sam none of the documents in it. Share it read-only.'],
+		], $params['shares']);
 	}
 
 	/**
@@ -133,6 +158,9 @@ final class AdminSettingsTest extends TestCase {
 		self::assertFalse($params['config']->tokenConfigured);
 		self::assertTrue($params['config']->tokenUnreadable);
 		self::assertTrue($params['config']->archiveOwnerMissing);
+		// Without an archive account, there are no shares to show.
+		self::assertNull($params['shares']);
+		self::assertSame([], $this->askedForSharesOf);
 	}
 
 	public function testTheFormShowsTheHistoryOfTheProblemsWithFormattedTimes(): void {
@@ -222,6 +250,7 @@ final class AdminSettingsTest extends TestCase {
 			$urlGenerator,
 			new SearchDiagnostics($config, $this->createStub(ITimeFactory::class), $this->createStub(ICacheFactory::class)),
 			$formatter,
+			$this->archiveShares(),
 			new SettingsMessages($l10n),
 		);
 	}
