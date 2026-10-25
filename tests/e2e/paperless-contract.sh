@@ -10,8 +10,9 @@
 # compose.yaml, whose container runs assert_contract.py in the network of the project:
 # it gives Paperless three synthetic text files of contract/documents/ and checks, with
 # the version of the API and the fields that the app asks for, what the app relies on,
-# first directly and then through Nextcloud, and writes what it found to the summary of
-# the job. It takes about three minutes, most of it the start of Paperless.
+# first directly and then through Nextcloud, last what each permission of the account of
+# the token gives the search, as the table of docs/configure.md says, and writes what it
+# found to the summary of the job. It takes about three minutes, most of it the start of Paperless.
 #
 #   PAPERLESS=3 bash tests/e2e/paperless-contract.sh   # the newest Paperless-ngx (default)
 #   PAPERLESS=2 bash tests/e2e/paperless-contract.sh   # the last release of Paperless-ngx 2

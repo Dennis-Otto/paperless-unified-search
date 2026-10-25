@@ -12,7 +12,9 @@ waits until it has read them, and then checks what the app relies on: first dire
 with the version of the API and the fields that the app asks for, and what
 /api/ui_settings/ says of the account of a token, of a superuser and of an account that
 may only view, then through Nextcloud with the app set up for this Paperless, first with
-the token of the account that may only view and then with that of the superuser. It prints a report in Markdown, which
+the token of the account that may only view and then with that of the superuser. Last, it
+checks what each permission of the account of the token gives the search, as the table of
+docs/configure.md says, directly and in the results of Nextcloud. It prints a report in Markdown, which
 paperless-contract.sh adds to the summary of the job, and fails with the first broken
 promise.
 
@@ -67,6 +69,21 @@ DEADLINE = 240
 # change documents, which the app warns about (lib/Model/TokenWarning.php).
 VIEWER_PERMISSIONS = ["view_document", "view_correspondent", "view_documenttype", "view_uisettings"]
 CHANGING_DOCUMENTS = {"add_document", "change_document", "delete_document"}
+
+# The correspondent and the type of the invoice, which the superuser adds and therefore
+# owns, as an administrator of Paperless does in its web interface; a note of the invoice
+# with a word of its own, which only a search of the notes finds.
+CORRESPONDENT = "Contract Energy"
+DOCUMENT_TYPE = "Contract bill"
+NOTE_TERM = "remittance"
+NOTE = f"Paid by {NOTE_TERM} on the due date."
+# A document that a workflow lets the account view as Paperless adds it, as step 2 of
+# docs/configure.md sets it up; it isn't one of SEED, and the check deletes it again.
+RECEIPT = ("contract-receipt.txt", "Contract receipt", "2026-04-02")
+# The types of a trigger and an action of a workflow in the API of Paperless-ngx:
+# Document Added, and Assignment.
+DOCUMENT_ADDED = 2
+ASSIGNMENT = 1
 
 # The fields of a document that a result of the app shows.
 SHOWN = {"id", "title", "created", "__search_hit__"}
@@ -184,7 +201,7 @@ class Paperless:
         return token
 
     def account(self, permissions):
-        """The token of a new account that is neither superuser nor staff, with these
+        """The ID and the token of a new account that is neither superuser nor staff, with these
         permissions, as an administrator of Paperless adds it under Users & Groups; a name
         of its own in each run, so that a kept Paperless takes it as well."""
         username = f"contract-viewer-{secrets.token_hex(4)}"
@@ -196,7 +213,46 @@ class Paperless:
             data=json.dumps({"username": username, "password": password, "is_active": True, "is_staff": False, "is_superuser": False, "user_permissions": permissions}).encode(),
         )
         expect(answer.status == 201, f"Paperless didn't add the account {username} (HTTP {answer.status}): {answer.body[:300]!r}")
-        return self.token_of(username, password)
+        return answer.json("/api/users/")["id"], self.token_of(username, password)
+
+    def as_account(self, token, path, **query):
+        """A GET with the token of another account than the superuser."""
+        return request(f"{PAPERLESS}{path}?{urlencode(query)}", headers={"Accept": self.accept, "Authorization": f"Token {token}"})
+
+    def send(self, path, body, *, method="POST"):
+        """A request with JSON as the superuser, as the web interface of Paperless sends it."""
+        return request(
+            f"{PAPERLESS}{path}",
+            method=method,
+            headers={"Accept": self.accept, "Authorization": f"Token {self.token}", "Content-Type": "application/json"},
+            data=None if body is None else json.dumps(body).encode(),
+        )
+
+    def named(self, path, name):
+        """The ID of the correspondent or the type of this name, which the superuser adds
+        once, and therefore owns, as Paperless makes whoever adds one its owner."""
+        found = self.get(f"/api/{path}/", name__iexact=name).json(f"/api/{path}/").get("results", [])
+        if found:
+            return found[0]["id"]
+        answer = self.send(f"/api/{path}/", {"name": name})
+        expect(answer.status == 201, f"Paperless didn't add {name} to /api/{path}/ (HTTP {answer.status}): {answer.body[:300]!r}")
+        return answer.json(f"/api/{path}/")["id"]
+
+    def bulk_edit(self, documents, method, parameters):
+        answer = self.send("/api/documents/bulk_edit/", {"documents": documents, "method": method, "parameters": parameters})
+        expect(answer.status == 200, f"The bulk editor of Paperless refused {method} (HTTP {answer.status}): {answer.body[:300]!r}")
+
+    def let_view(self, users, *, documents=None, objects=None):
+        """Lets these users view the documents, or the objects of a kind such as
+        correspondents, besides those who may already, as Permissions of the bulk editor
+        of Paperless does."""
+        permissions = {"view": {"users": users, "groups": []}, "change": {"users": [], "groups": []}}
+        if documents is not None:
+            self.bulk_edit(documents, "set_permissions", {"set_permissions": permissions, "merge": True})
+            return
+        kind, ids = objects
+        answer = self.send("/api/bulk_edit_objects/", {"objects": ids, "object_type": kind, "operation": "set_permissions", "permissions": permissions, "merge": True})
+        expect(answer.status == 200, f"Paperless didn't let {users} view the {kind} {ids} (HTTP {answer.status}): {answer.body[:300]!r}")
 
     def ui_settings(self, token):
         """The answer of /api/ui_settings/ to a token, which the app asks what the account may do."""
@@ -207,6 +263,7 @@ class Paperless:
         return {result["title"]: result for result in answer.json("The list of the documents")["results"]}
 
     def upload(self, name, title, created):
+        """Gives Paperless a document of contract/documents/, as its upload in the web interface."""
         boundary = uuid.uuid4().hex
         parts = []
         for field, value in (("title", title), ("created", created)):
@@ -349,7 +406,7 @@ def check_privileges(paperless, report):
     expect(CHANGING_DOCUMENTS <= set(permissions), f"The permissions of the superuser lack {sorted(CHANGING_DOCUMENTS - set(permissions))}: {sorted(permissions)}")
     report.passed("What the account of a superuser may do (/api/ui_settings/)", f"{code('is_superuser')} true, {len(permissions)} permissions without the label of their app, such as {code('change_document')}")
 
-    viewer = paperless.account(VIEWER_PERMISSIONS)
+    viewer_id, viewer = paperless.account(VIEWER_PERMISSIONS)
     data = paperless.ui_settings(viewer).json("/api/ui_settings/ of the viewer")
     user, permissions = data.get("user", {}), set(data.get("permissions", []))
     expect(user.get("is_superuser") is False and user.get("is_staff") is False, f"The account that may only view is a superuser or staff: {user!r}")
@@ -358,10 +415,10 @@ def check_privileges(paperless, report):
 
     # Without the permission to view its UI settings, Paperless doesn't say: the app then
     # warns about nothing, and occ says that it can't tell.
-    refused = paperless.ui_settings(paperless.account(["view_document"]))
+    refused = paperless.ui_settings(paperless.account(["view_document"])[1])
     expect(refused.status == 403, f"/api/ui_settings/ answered an account without view_uisettings with HTTP {refused.status}, not 403: {refused.body[:300]!r}")
     report.passed("An account that may not view its UI settings", f"HTTP {refused.status}")
-    return viewer
+    return viewer_id, viewer
 
 
 def nextcloud(path, *, method="GET", data=None, headers=None):
@@ -449,6 +506,126 @@ def check_nextcloud(paperless, line, ids, version, api_version, shown, viewer, r
         report.passed("A query that is still being typed, in Nextcloud", f"the simple mode finds {code(', '.join(titles))}")
 
 
+def hits(paperless, token, query):
+    """The results of a search with the fields of the app, for the account of a token."""
+    answer = paperless.as_account(token, "/api/documents/", page=1, page_size=25, fields=",".join(paperless.fields), query=query)
+    expect(answer.status == 200, f"A search for {query!r} with the token of an account answered HTTP {answer.status}: {answer.body[:300]!r}")
+    return answer.json("A search").get("results", [])
+
+
+def until(what, found):
+    """The first answer of found() that isn't empty, within the deadline: Paperless takes
+    a change of the permissions of a document into the index of its search a moment later."""
+    deadline = time.monotonic() + DEADLINE
+    while True:
+        answer = found()
+        if answer:
+            return answer
+        expect(time.monotonic() < deadline, f"{what} within {DEADLINE} s.")
+        time.sleep(2)
+
+
+def names(paperless, token, path, ids):
+    """The names of these correspondents or types that the account of a token may view,
+    as the app asks for them, or the status of a refusal."""
+    answer = paperless.as_account(token, f"/api/{path}/", id__in=",".join(map(str, ids)), page_size=len(ids))
+    if answer.status != 200:
+        return answer.status
+    return sorted(result.get("name") for result in answer.json(f"/api/{path}/").get("results", []))
+
+
+def check_permissions(paperless, ids, viewer_id, viewer, report):
+    """What each permission of the account of the token gives the search, as the table
+    "What each permission gives the search" of docs/configure.md says: View for documents
+    finds the documents that the account may view, View for correspondents and document
+    types shows the names of those that it may view, a note matches without View for
+    notes, and a workflow with the trigger Document Added and an action Assignment lets
+    the account view each new document. The table and this check change together."""
+    invoice = ids["Contract invoice"]
+    correspondent = paperless.named("correspondents", CORRESPONDENT)
+    document_type = paperless.named("document_types", DOCUMENT_TYPE)
+    paperless.bulk_edit([invoice], "set_correspondent", {"correspondent": correspondent})
+    paperless.bulk_edit([invoice], "set_document_type", {"document_type": document_type})
+    notes = paperless.get(f"/api/documents/{invoice}/notes/").json("The notes of the invoice")
+    if not any(note.get("note") == NOTE for note in notes):
+        answer = paperless.send(f"/api/documents/{invoice}/notes/", {"note": NOTE})
+        expect(answer.status == 200, f"Paperless didn't add the note to the invoice (HTTP {answer.status}): {answer.body[:300]!r}")
+
+    documents_only_id, documents_only = paperless.account(["view_document"])
+    expect(hits(paperless, viewer, RARE_TERM) == [], f"An account finds the invoice of the superuser for {RARE_TERM!r} before it may view it.")
+    paperless.let_view([viewer_id, documents_only_id], documents=sorted(ids.values()))
+    for token in (viewer, documents_only):
+        found = until(f"The account found no invoice for {RARE_TERM!r} once it may view it", lambda token=token: hits(paperless, token, RARE_TERM))
+        expect([result["id"] for result in found] == [invoice], f"The account finds {found!r} for {RARE_TERM!r}, not the invoice {invoice}.")
+        expect((found[0]["correspondent"], found[0]["document_type"]) == (correspondent, document_type), f"The invoice names the correspondent and the type {found[0]!r} for the account.")
+    refused = paperless.as_account(paperless.account(["view_uisettings"])[1], "/api/documents/", page_size=1, fields="id")
+    expect(refused.status == 403, f"/api/documents/ answered an account without the permission to view documents with HTTP {refused.status}, not 403, which fails the test of the connection.")
+    report.passed("View for documents", "HTTP 403 without it; with it, a document of another owner only once the account may view it, as Permissions of the bulk editor lets it")
+
+    for path in ("correspondents", "document_types"):
+        refused = names(paperless, documents_only, path, [correspondent, document_type])
+        expect(refused == 403, f"/api/{path}/ answered an account without the permission to view them with {refused!r}, not HTTP 403.")
+    owned = (names(paperless, viewer, "correspondents", [correspondent]), names(paperless, viewer, "document_types", [document_type]))
+    expect(owned == ([], []), f"An account names the correspondent and the type of the superuser before it may view them: {owned!r}")
+    paperless.let_view([viewer_id], objects=("correspondents", [correspondent]))
+    paperless.let_view([viewer_id], objects=("document_types", [document_type]))
+    shown = (names(paperless, viewer, "correspondents", [correspondent]), names(paperless, viewer, "document_types", [document_type]))
+    expect(shown == ([CORRESPONDENT], [DOCUMENT_TYPE]), f"The account names {shown!r} once it may view the correspondent and the type.")
+    report.passed(
+        "View for correspondents and document types",
+        "HTTP 403 without it; with it, the names of those that the account may view, so of another owner only once Permissions of the bulk editor lets it",
+    )
+
+    notes = until(f"The account found no note for notes:{NOTE_TERM}", lambda: hits(paperless, viewer, f"notes:{NOTE_TERM}"))
+    highlights = notes[0]["__search_hit__"].get("note_highlights") or ""
+    expect(NOTE_TERM in excerpt(highlights), f"The search of the notes sends {highlights!r} to an account without the permission to view notes.")
+    report.passed("A note without View for notes", f"{code('notes:' + NOTE_TERM)} sends {code(highlights[:80])}")
+
+    saved = save_settings(viewer)
+    expect(saved.get("tokenWarnings") == [], f"The settings warn about the token of the account: {saved.get('tokenWarnings')!r}")
+    sublines = [entry.get("subline", "") for entry in search_nextcloud(RARE_TERM)]
+    expect(
+        len(sublines) == 1 and CORRESPONDENT in sublines[0] and DOCUMENT_TYPE in sublines[0],
+        f"Nextcloud's result for {RARE_TERM!r} with the token of the account shows {sublines!r}, without {CORRESPONDENT} and {DOCUMENT_TYPE}.",
+    )
+    report.passed("The names in Nextcloud's results, with the token of the account", f"{code(sublines[0][:80])}")
+
+    check_workflow(paperless, viewer_id, viewer, report)
+
+
+def check_workflow(paperless, viewer_id, viewer, report):
+    """A workflow with the trigger Document Added and an action Assignment that lets the
+    account view each new document, as step 2 of docs/configure.md sets it up. It
+    removes the workflow and the new document again, so that a kept Paperless passes the
+    contract once more."""
+    name, title, created = RECEIPT
+    answer = paperless.send(
+        "/api/workflows/",
+        {
+            "name": f"Contract: the search may view new documents ({viewer_id})",
+            "order": 0,
+            "enabled": True,
+            "triggers": [{"type": DOCUMENT_ADDED}],
+            "actions": [{"type": ASSIGNMENT, "assign_view_users": [viewer_id], "assign_view_groups": []}],
+        },
+    )
+    expect(answer.status == 201, f"Paperless didn't add the workflow (HTTP {answer.status}): {answer.body[:300]!r}")
+    workflow = answer.json("/api/workflows/")["id"]
+    receipt = None
+    try:
+        paperless.upload(name, title, created)
+        receipt = until(f"Paperless didn't add {name}", lambda: paperless.titles().get(title))["id"]
+        seen = paperless.as_account(viewer, "/api/documents/", id=receipt, fields="id").json("A new document")
+        expect(seen.get("count") == 1, f"The workflow didn't let the account view the new document {receipt}: {seen!r}")
+        report.passed("A workflow Document Added with an action Assignment", "the account may view each new document as Paperless adds it")
+    finally:
+        if receipt is not None:
+            # Into the trash, and out of it for good.
+            paperless.send(f"/api/documents/{receipt}/", None, method="DELETE")
+            paperless.send("/api/trash/", {"documents": [receipt], "action": "empty"})
+        paperless.send(f"/api/workflows/{workflow}/", None, method="DELETE")
+
+
 def main():
     accept = os.environ.get("ACCEPT", "")
     fields = [field for field in os.environ.get("FIELDS", "").split(",") if field]
@@ -468,8 +645,9 @@ def main():
         report.passed("Documents", f"{len(ids)} synthetic text files, read and indexed")
         version, api_version, shown = check_paperless(paperless, line, report)
         heading = f"### The contract with Paperless-ngx {version} (newest API version {api_version})"
-        viewer = check_privileges(paperless, report)
+        viewer_id, viewer = check_privileges(paperless, report)
         check_nextcloud(paperless, line, ids, version, api_version, shown, viewer, report)
+        check_permissions(paperless, ids, viewer_id, viewer, report)
     except Broken as broken:
         status = 1
         report.failed(broken)

@@ -17,10 +17,13 @@
 # paperless, whose folder Paperless holds synthetic documents and is shared read-only
 # with jamie, and the documents that the mock finds for "invoice". Chromium in the
 # image of Playwright then goes through the app as a person does
-# (tests/e2e/screenshots.mjs). KEEP_SCREENSHOTS=1 leaves the demo running at
-# http://127.0.0.1:18083, for jamie, paperless and e2e-admin with the password
-# e2e-only-password. SCREENSHOTS_PORT and SCREENSHOTS_PROJECT_NAME choose another port
-# and Compose project, for a second checkout that takes them at the same time.
+# (tests/e2e/screenshots.mjs). Beside them runs the newest Paperless-ngx of the contract
+# tests (tests/e2e/compose.paperless.yaml), in which Chromium sets up the account of the
+# search as docs/configure.md does, for the pictures of that set-up. KEEP_SCREENSHOTS=1
+# leaves the demo running at http://127.0.0.1:18083, for jamie, paperless and e2e-admin
+# with the password e2e-only-password. SCREENSHOTS_PORT and SCREENSHOTS_PROJECT_NAME
+# choose another port and Compose project, for a second checkout that takes them at the
+# same time.
 #
 # With --demo, it records one more animation, screenshots/demo-search-and-open.gif,
 # from the real Paperless-ngx and Nextcloud of the demo of the README instead, which
@@ -102,7 +105,11 @@ export E2E_PORT="${SCREENSHOTS_PORT:-18083}"
 PROJECT_NAME="${SCREENSHOTS_PROJECT_NAME:-paperless_unified_search_screenshots}"
 PASSWORD=e2e-only-password
 BASE_URL="http://127.0.0.1:${E2E_PORT}"
-COMPOSE=(docker compose --project-name "${PROJECT_NAME}" --file tests/e2e/compose.yaml)
+COMPOSE=(docker compose --project-name "${PROJECT_NAME}" --file tests/e2e/compose.yaml
+	--file tests/e2e/compose.paperless.yaml --profile paperless-3)
+# A secret key of Paperless for this run alone, as the contract tests make it.
+PAPERLESS_SECRET_KEY="$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')"
+export PAPERLESS_SECRET_KEY
 
 cleanup() {
 	status=$?
@@ -122,7 +129,7 @@ occ() {
 }
 
 "${COMPOSE[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
-"${COMPOSE[@]}" up --detach --wait --wait-timeout 240 >/dev/null
+"${COMPOSE[@]}" up --detach --wait --wait-timeout 300 --quiet-pull >/dev/null
 
 if ! occ status --output=json 2>/dev/null | grep --fixed-strings '"installed":true' >/dev/null; then
 	occ maintenance:install --database=sqlite --admin-user=e2e-admin --admin-pass="${PASSWORD}" >/dev/null

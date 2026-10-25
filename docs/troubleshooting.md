@@ -47,6 +47,7 @@ Still missing? [Ask for help](#ask-for-help), with what each of these steps show
 | No section *Paperless documents* at all | Nextcloud shows a section only when it has results, and asks Paperless only with *Search connected services* on | Switch it on, then follow the six questions above |
 | The archive account finds the documents, other users don't | The archive isn't shared with them | Share it read-only with them or their group |
 | Some documents show, others don't | The account of the token may not view them, or they have no file with their marker yet | Questions 4 and 5 above |
+| Results show no correspondent or no type, and the settings warn about nothing | The account of the token may view correspondents and document types, but not these ones, which another user of Paperless owns | Let the account view them, as [Configure](configure.md#the-names-of-correspondents-and-types) shows; the results show the names within ten minutes |
 | Paperless documents vanished after a move or a restore of Nextcloud | The stored API token can't be decrypted with the new `secret` of `config.php` | Enter the token again in the settings |
 | Paperless documents vanished after `allow_local_remote_servers` was removed from `config.php` | Nextcloud refuses the address of Paperless in the local network | Select **Paperless runs in my local network** and save |
 | A query in the syntax of Paperless finds nothing while you still type it | Paperless can't parse it yet, such as `created:[2026 to` | Finish the query; Paperless 3 finds the words of it meanwhile |
