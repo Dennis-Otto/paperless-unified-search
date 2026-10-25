@@ -31,10 +31,11 @@ OUTPUT="${GITHUB_OUTPUT:-/dev/null}"
 SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/null}"
 case "${SCOPE:-nextcloud}" in
 	nextcloud)
-		# The app, its dependencies, the end-to-end tests and their workflow.
-		COVERED='^(appinfo|lib|templates|js|css|img|l10n|tests/e2e)/|^composer\.(json|lock)$|^\.github/workflows/e2e\.yml$'
+		# The app, its dependencies, the rules of its package, which the upgrade test
+		# packs it by, the end-to-end tests and their workflow.
+		COVERED='^(appinfo|lib|templates|js|css|img|l10n|tests/e2e)/|^composer\.(json|lock)$|^\.nextcloudignore$|^krankerl\.toml$|^\.github/workflows/e2e\.yml$'
 		TESTS="End-to-end tests"
-		FILES="the app (appinfo/, lib/, templates/, js/, css/, img/, l10n/), composer.json, composer.lock, tests/e2e/"
+		FILES="the app (appinfo/, lib/, templates/, js/, css/, img/, l10n/), composer.json, composer.lock, .nextcloudignore, krankerl.toml, tests/e2e/"
 		;;
 	paperless)
 		# The code of the app, which talks to Paperless and reads its answers in many

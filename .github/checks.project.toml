@@ -55,11 +55,18 @@ context` with a trace through `lib/`, a deprecation, notice or warning of PHP in
 of the app, and a warning of the app that no test provokes on purpose. Its output in
 the log of the version, after *Check the log of Nextcloud*, names each finding, its
 place in the files of the app, such as `lib/Search/PaperlessSearchProvider.php:42`,
-the request during which Nextcloud wrote it and the record. The annotation of each
-version that failed names it; the group of
-the log named after the version, such as *Nextcloud 35 (failed, 312 s)*, shows the step
-that stopped and the logs of its containers, and the summary of the run the release of
-Nextcloud behind each image. A failure of the weekly run, which tests the newest
+the request during which Nextcloud wrote it and the record. Beside the tests,
+`tests/e2e/upgrade.sh` installs the last release of the app, verified by its signature
+and provenance, sets it up and upgrades it with `occ upgrade` to the checkout as the
+App Store would, in a pull request with the newest Nextcloud and elsewhere with every
+version: it fails when the settings page shows another setting than before, a key of
+the app is gone, the same search no longer finds the same file, the stored token would
+go to another server, a repair step of the app runs twice or warns, or the log holds a
+finding. The annotation of each version that failed names it; the group of
+the log named after the version, such as *Nextcloud 35 (failed, 312 s)* or *Upgrade on
+Nextcloud 35 (failed, 95 s)*, shows the step that stopped and the logs of its
+containers, and the summary of the run the release of Nextcloud behind each image and
+the result of each upgrade. A failure of the weekly run, which tests the newest
 release behind each image also in a week without a change of the app, opens the issue
 *A supported Nextcloud release breaks the app* with the versions that broke, or adds
 the run to it, and the next run that passes closes it."""
@@ -73,12 +80,16 @@ fix = """Run the tests with Docker against the version that failed, such as
 the containers running, so that you can look inside them. For a finding of the log,
 change the code at the place that it names, as the migration guide of PHP says for a
 deprecation; only a warning that a step of `tests/e2e/run.sh` provokes on purpose goes
-into `EXPECTED_WARNINGS` of `tests/e2e/assert_log.py`, with that step. A version that
-took too long on a busy runner usually passes when the job runs again, which the
-flaky-test bot does once by itself."""
+into `EXPECTED_WARNINGS` of `tests/e2e/assert_log.py`, with that step. For a failed
+upgrade, run `tests/e2e/upgrade.sh` against that version: a setting or a key that the
+upgrade lost needs a migration or a repair step that carries it over, and a key that
+the app retires on purpose a repair step that removes it and its place in
+`RETIRED_KEYS` of `tests/e2e/upgrade.sh`. A version that took too long on a busy runner
+usually passes when the job runs again, which the flaky-test bot does once by itself."""
 commands = [
   "bash tests/e2e/run-all.sh",
   "NEXTCLOUD_IMAGE=nextcloud:35-apache KEEP_E2E=1 bash tests/e2e/run.sh",
+  "NEXTCLOUD_IMAGE=nextcloud:35-apache KEEP_E2E=1 bash tests/e2e/upgrade.sh",
 ]
 docs = "tests/e2e/README.md#in-the-ci"
 autofix = """A test that fails shows either that the app broke a promise or that the

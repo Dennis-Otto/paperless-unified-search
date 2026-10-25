@@ -14,7 +14,19 @@
 # - run-all.sh, with a fake docker and a fake run.sh: a version that passes, one that
 #   fails and one that hangs, each in a group of its own, the table of the summary,
 #   the versions that broke as an output of the step, one download of the browser, the
-#   sizes of the search dialog of each version, and the exit status.
+#   sizes of the search dialog of each version, and the exit status; and with a fake
+#   upgrade.sh, the upgrade from the last release beside the tests of the versions that
+#   E2E_UPGRADE names, one that passes, fails, hangs or is skipped.
+# - package.sh, in a repository of its own: the files that Git tracks, without what a
+#   .nextcloudignore leaves out, in its folder and below it, with the content of the
+#   checkout and the version given.
+# - upgrade.sh up to the start of Nextcloud, with fakes of curl, gh and Docker and a
+#   release that openssl signs: the last release, its signature and provenance, a
+#   certificate of another app, a release that its signature doesn't match, one without
+#   its signature or provenance, and the notice without any release, before Docker.
+# - assert_upgrade.py, with answers of its own, when Python is installed: the results
+#   of a search, the settings of the page of the administration settings and the keys
+#   of the configuration of the app, which upgrade.sh compares before and after.
 # - the job of .github/workflows/e2e.yml that writes the issue about the supported
 #   Nextcloud versions, with a fake gh: it opens the issue with the versions that
 #   broke, adds a further failed run to it and closes it once the tests pass again.
@@ -127,6 +139,9 @@ expect "a pull request of a new file of the app" true "$(pull_request 'mkdir -p 
 expect "a pull request of the end-to-end tests" true "$(pull_request 'echo second >tests/e2e/README.md')"
 expect "a pull request of composer.json" true "$(pull_request 'echo second >composer.json')"
 expect "a pull request of a new composer.lock" true "$(pull_request 'echo new >composer.lock')"
+expect "a pull request of the files that the package leaves out" true "$(pull_request 'echo new >.nextcloudignore')"
+expect "a pull request of the rules of krankerl" true "$(pull_request 'echo new >krankerl.toml')"
+expect "a pull request of a .nextcloudignore in another folder" false "$(pull_request 'mkdir -p docs && echo new >docs/.nextcloudignore')"
 expect "a pull request of the workflow of the tests" true "$(pull_request 'echo second >.github/workflows/e2e.yml')"
 expect "a pull request of another workflow" false "$(pull_request 'echo second >.github/workflows/lint.yml')"
 expect "a pull request of a path that only looks like the app" false "$(pull_request 'echo second >docs/lib/notes.md')"
@@ -192,6 +207,7 @@ cat >"${fake}/tests/e2e/run.sh" <<'SCRIPT'
 case "${NEXTCLOUD_IMAGE}" in
 	nextcloud:33-apache) echo "Log of 33 on port ${E2E_PORT}, project ${E2E_PROJECT_NAME}, sizes ${E2E_FLOW_SIZES}" ;;
 	nextcloud:34-apache) echo "Log of 34, sizes ${E2E_FLOW_SIZES}" && exit 1 ;;
+	nextcloud:36-apache) echo "Log of 36, sizes ${E2E_FLOW_SIZES}" ;;
 	*)
 		trap 'echo "Log of 35: stopped" && exit 143' TERM
 		echo "Log of 35: hangs"
@@ -199,6 +215,26 @@ case "${NEXTCLOUD_IMAGE}" in
 		wait
 		;;
 esac
+SCRIPT
+# A fake of upgrade.sh, which passes from the release v9.8.7, or fails, hangs or skips
+# for the versions of FAKE_UPGRADE_FAIL, FAKE_UPGRADE_HANG and FAKE_UPGRADE_SKIP.
+cat >"${fake}/tests/e2e/upgrade.sh" <<'SCRIPT'
+version="${NEXTCLOUD_IMAGE#nextcloud:}"
+version="${version%-apache}"
+echo "Upgrade log of ${version} on port ${E2E_PORT}, project ${E2E_PROJECT_NAME}"
+if [[ " ${FAKE_UPGRADE_SKIP:-} " == *" ${version} "* ]]; then
+	echo "The upgrade test is skipped: o/r has no release yet to upgrade from."
+	exit 0
+fi
+echo "The release to upgrade from: v9.8.7"
+if [[ " ${FAKE_UPGRADE_FAIL:-} " == *" ${version} "* ]]; then
+	exit 1
+fi
+if [[ " ${FAKE_UPGRADE_HANG:-} " == *" ${version} "* ]]; then
+	trap 'echo "Upgrade log of ${version}: stopped" && exit 143' TERM
+	sleep 60 &
+	wait
+fi
 SCRIPT
 cat >"${fake}/bin/docker" <<'SCRIPT'
 #!/usr/bin/env bash
@@ -282,6 +318,218 @@ expect "run-all.sh with a version that isn't one" 1 "$(run_all env E2E_VERSIONS=
 expect_in "the message about a version that isn't one" "next is no major version of Nextcloud" "${WORK}/log"
 expect "the versions that broke when the tests didn't start" "" "$(cat "${WORK}/output")"
 expect "run-all.sh with a deadline that isn't one" 1 "$(run_all env E2E_VERSIONS=33 E2E_VERSION_TIMEOUT=0)"
+
+# The upgrade from the last release (upgrade.sh), beside the tests of each version: with
+# every version by default, in a project and on a port of its own, in a group of its own.
+expect "run-all.sh with the upgrade of every version" 0 "$(run_all env E2E_VERSIONS="33 36")"
+expect_in "the upgrade of a version" "Upgrade log of 33 on port 19033, project pus_upgrade_33" "${WORK}/log"
+expect_in "the upgrade of the other version" "Upgrade log of 36 on port 19036, project pus_upgrade_36" "${WORK}/log"
+expect_in "the group of an upgrade" "::group::Upgrade on Nextcloud 33 (passed, " "${WORK}/log"
+expect_in "the summary of an upgrade" "| 33 | 33.0.1 | passed | " "${WORK}/summary"
+expect_in "the upgrade in the summary" " s | laptop, phone | passed, from v9.8.7, " "${WORK}/summary"
+expect_in "the result of the upgrade" "and so did the upgrade from v9.8.7 on Nextcloud 33 36." "${WORK}/log"
+# A pull request: the upgrade only with the newest version.
+expect "run-all.sh with the upgrade of the newest version" 0 "$(run_all env E2E_VERSIONS="36 33" E2E_UPGRADE=newest)"
+expect_in "the upgrade of the newest version with E2E_UPGRADE=newest" "Upgrade log of 36 on port 19036" "${WORK}/log"
+expect "the upgrade of an older version with E2E_UPGRADE=newest" 0 "$(grep --count --fixed-strings 'Upgrade log of 33' "${WORK}/log" || true)"
+expect_in "the note about the upgrade" "The upgrade from the last release runs only against Nextcloud 36 (E2E_UPGRADE=newest)." "${WORK}/log"
+expect_in "the summary of a version without the upgrade" "| 33 | 33.0.1 | passed | " "${WORK}/summary"
+expect_in "the upgrade that doesn't run in the summary" " | not run |" "${WORK}/summary"
+expect "run-all.sh without the upgrade" 0 "$(run_all env E2E_VERSIONS=33 E2E_UPGRADE=none)"
+expect "the upgrades with E2E_UPGRADE=none" 0 "$(grep --count --fixed-strings 'Upgrade log of' "${WORK}/log" || true)"
+expect_in "the result without the upgrade" "The end-to-end tests passed against Nextcloud 33 in " "${WORK}/log"
+expect "run-all.sh with an E2E_UPGRADE that isn't one" 1 "$(run_all env E2E_VERSIONS=33 E2E_UPGRADE=oldest)"
+expect_in "the message about an E2E_UPGRADE that isn't one" "E2E_UPGRADE is oldest, but must be all" "${WORK}/log"
+# A failed upgrade fails its version, also when its tests pass.
+expect "run-all.sh with an upgrade that fails" 1 "$(run_all env E2E_VERSIONS="33 36" FAKE_UPGRADE_FAIL=33)"
+expect_in "the error of the upgrade that fails" "::error title=Upgrade on Nextcloud 33::The upgrade from the last release failed on Nextcloud 33" "${WORK}/log"
+expect_in "the summary of the upgrade that fails" " | failed, from v9.8.7, " "${WORK}/summary"
+expect "the version whose upgrade broke" "failed=Nextcloud 33 (33.0.1, upgrade failed)|versions=33" "$(paste -s -d "|" "${WORK}/output")"
+# Before the first release, upgrade.sh skips the upgrade, which passes.
+expect "run-all.sh with an upgrade that upgrade.sh skips" 0 "$(run_all env E2E_VERSIONS=33 FAKE_UPGRADE_SKIP=33)"
+expect_in "the summary of the upgrade that upgrade.sh skips" " | skipped, " "${WORK}/summary"
+expect "the result of the upgrade that upgrade.sh skips" 0 "$(grep --count --fixed-strings 'and so did the upgrade' "${WORK}/log" || true)"
+if timeout --version >/dev/null 2>&1; then
+	expect "run-all.sh with an upgrade that hangs" 1 "$(run_all env E2E_VERSIONS="33 34" FAKE_UPGRADE_HANG=33)"
+	expect_in "the log of the upgrade that hangs" "Upgrade log of 33: stopped" "${WORK}/log"
+	expect_in "the error of the upgrade that hangs" "::error title=Upgrade on Nextcloud 33::The upgrade from the last release on Nextcloud 33 took longer than 2 s" "${WORK}/log"
+	expect "the versions whose tests or upgrade broke" "failed=Nextcloud 33 (33.0.1, upgrade timed out), Nextcloud 34 (34.0.1, failed)|versions=33 34" \
+		"$(paste -s -d "|" "${WORK}/output")"
+fi
+# The required check sets E2E_UPGRADE=newest for a pull request alone.
+expect "E2E_UPGRADE of the required check" 1 \
+	"$(grep --count --fixed-strings "E2E_UPGRADE: \${{ github.event_name == 'pull_request' && 'newest' || 'all' }}" "${SCRIPT_DIR}/../../.github/workflows/e2e.yml")"
+
+## package.sh and upgrade.sh up to Docker
+
+# package.sh packs the files that Git tracks, without what a .nextcloudignore leaves
+# out, in its folder and below it, as krankerl does, with the content of the checkout,
+# and the version that upgrade.sh gives it.
+app="${WORK}/app"
+mkdir -p "${app}/appinfo" "${app}/lib" "${app}/docs" "${app}/demo" "${app}/tests/e2e"
+cp "${SCRIPT_DIR}/package.sh" "${SCRIPT_DIR}/upgrade.sh" "${app}/tests/e2e/"
+cat >"${app}/appinfo/info.xml" <<'XML'
+<info>
+	<id>paperless_unified_search</id>
+	<version>1.0.0</version>
+	<repository type="git">https://github.com/o/r.git</repository>
+</info>
+XML
+printf '<?php\n' >"${app}/lib/Kept.php"
+printf '<?php\n' >"${app}/lib/Left.php"
+printf 'Committed.\n' >"${app}/lib/changed.txt"
+printf 'Deleted.\n' >"${app}/lib/deleted.txt"
+printf '# The documentation.\n' >"${app}/docs/index.md"
+printf '*\n' >"${app}/demo/.nextcloudignore"
+printf 'services: {}\n' >"${app}/demo/compose.yaml"
+printf '/docs\n/tests\n/lib/Left.php\n.nextcloudignore\n' >"${app}/.nextcloudignore"
+git init --quiet "${app}"
+git -C "${app}" add --all
+git -C "${app}" commit --quiet --message "The app"
+printf 'Not yet committed.\n' >"${app}/lib/changed.txt"
+rm "${app}/lib/deleted.txt"
+printf 'Untracked.\n' >"${app}/lib/untracked.txt"
+package_status=0
+bash "${app}/tests/e2e/package.sh" "${WORK}/package.tar.gz" 1.0.1 >"${WORK}/package.log" 2>&1 || package_status=$?
+expect "package.sh" 0 "${package_status}"
+expect "the files of the package" "paperless_unified_search/appinfo/info.xml paperless_unified_search/lib/Kept.php paperless_unified_search/lib/changed.txt" \
+	"$(tar -tzf "${WORK}/package.tar.gz" | grep --invert-match '/$' | LC_ALL=C sort | paste -s -d ' ')"
+expect "a change not yet committed in the package" "Not yet committed." \
+	"$(tar -xzOf "${WORK}/package.tar.gz" paperless_unified_search/lib/changed.txt)"
+tar -xzOf "${WORK}/package.tar.gz" paperless_unified_search/appinfo/info.xml >"${WORK}/info.xml"
+expect_in "the version of the package" "<version>1.0.1</version>" "${WORK}/info.xml"
+expect_in "the files that package.sh names" "Packed 3 files of the checkout as version 1.0.1 into " "${WORK}/package.log"
+package_status=0
+bash "${app}/tests/e2e/package.sh" "${WORK}/package.tar.gz" next >"${WORK}/package.log" 2>&1 || package_status=$?
+expect "package.sh with a version that isn't one" 2 "${package_status}"
+expect_in "the message about a version that isn't one" "next is no version of the app" "${WORK}/package.log"
+
+# upgrade.sh up to Docker, with fakes of curl and gh in front of PATH: a release whose
+# signature openssl makes with a certificate of its own, served for every URL by the end
+# of the URL, and a fake Docker that stops it at the start of Nextcloud.
+if command -v openssl >/dev/null 2>&1; then
+	release="${WORK}/release"
+	fakes="${WORK}/upgrade-bin"
+	mkdir -p "${release}" "${fakes}"
+	cat >"${fakes}/curl" <<'SCRIPT'
+#!/usr/bin/env bash
+url="${*: -1}"
+output=""
+redirect=0
+while (($# > 0)); do
+	case "$1" in
+		--output) output="$2" && shift ;;
+		--write-out) redirect=1 && shift ;;
+	esac
+	shift
+done
+echo "curl ${url}" >>"${FAKE_DOCKER_LOG}"
+if ((redirect == 1)); then
+	printf '%s %s' "${FAKE_LATEST_STATUS:-302}" "${FAKE_LATEST:-}"
+	exit 0
+fi
+if [[ ! -f "${FAKE_RELEASE}/${url##*/}" ]]; then
+	echo "curl: (22) The requested URL returned error: 404" >&2
+	exit 22
+fi
+cp "${FAKE_RELEASE}/${url##*/}" "${output}"
+SCRIPT
+	cat >"${fakes}/gh" <<'SCRIPT'
+#!/usr/bin/env bash
+echo "gh $*" >>"${FAKE_DOCKER_LOG}"
+exit "${FAKE_GH_STATUS:-0}"
+SCRIPT
+	cat >"${fakes}/docker" <<'SCRIPT'
+#!/usr/bin/env bash
+echo "docker $*" >>"${FAKE_DOCKER_LOG}"
+if [[ " $* " == *" up "* ]]; then
+	echo "The fake Docker starts no Nextcloud." >&2
+	exit 1
+fi
+SCRIPT
+	chmod +x "${fakes}/curl" "${fakes}/gh" "${fakes}/docker"
+	# The certificate of the app, and one of another app; Git Bash would take /CN= for a path.
+	certificate() {
+		MSYS2_ARG_CONV_EXCL='/CN=' openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=$1" \
+			-keyout "${WORK}/$1.key" -out "${WORK}/$1.crt" >/dev/null 2>&1
+	}
+	certificate paperless_unified_search
+	certificate another_app
+	# The release, which supports Nextcloud 33 to 35.
+	mkdir -p "${WORK}/packed/paperless_unified_search/appinfo"
+	printf '<info>\n\t<dependencies>\n\t\t<nextcloud min-version="33" max-version="35"/>\n\t</dependencies>\n</info>\n' \
+		>"${WORK}/packed/paperless_unified_search/appinfo/info.xml"
+	tar -C "${WORK}/packed" -czf - paperless_unified_search >"${release}/paperless_unified_search.tar.gz"
+	openssl dgst -sha512 -sign "${WORK}/paperless_unified_search.key" \
+		-out "${release}/paperless_unified_search.tar.gz.sig" "${release}/paperless_unified_search.tar.gz"
+	cp "${WORK}/paperless_unified_search.crt" "${release}/paperless_unified_search.crt"
+	printf '{}\n' >"${release}/provenance.sigstore.json"
+	# Runs upgrade.sh with the fakes and prints its exit status.
+	upgrade() {
+		local status=0
+		: >"${WORK}/docker.log"
+		(cd "${app}" && PATH="${fakes}:${PATH}" DOCKER_BIN="${fakes}/docker" FAKE_DOCKER_LOG="${WORK}/docker.log" \
+			FAKE_RELEASE="${release}" FAKE_LATEST="https://github.com/o/r/releases/tag/v1.0.0" \
+			NEXTCLOUD_IMAGE=nextcloud:35-apache "$@" bash tests/e2e/upgrade.sh >"${WORK}/log" 2>&1) || status=$?
+		echo "${status}"
+	}
+
+	expect "upgrade.sh up to Docker" 1 "$(upgrade env)"
+	expect_in "the release that upgrade.sh upgrades from" "The release to upgrade from: v1.0.0" "${WORK}/log"
+	expect_in "the next patch version, as the checkout names the version of the release" "its package upgrades the release to 1.0.1." "${WORK}/log"
+	expect_in "the signature of the release" "The signature of paperless_unified_search.tar.gz matches the certificate of the app at the App Store." "${WORK}/log"
+	expect_in "the provenance of the release" "/paperless_unified_search.tar.gz --repo o/r --signer-workflow o/r/.github/workflows/build-release.yml --bundle " "${WORK}/docker.log"
+	expect_in "the package of the checkout" "Packed 3 files of the checkout as version 1.0.1 into " "${WORK}/log"
+	expect_in "the start of Nextcloud after the checks" "docker compose --project-name paperless_unified_search_upgrade --file ${app}/tests/e2e/compose.yaml up " "${WORK}/docker.log"
+	expect "upgrade.sh with a checkout newer than the release" 1 "$(upgrade env E2E_UPGRADE_FROM=v0.9.0)"
+	expect_in "the version of the checkout, newer than the release" "its package upgrades the release to 1.0.0." "${WORK}/log"
+	expect "the lookup of the last release with E2E_UPGRADE_FROM" 0 "$(grep --count --fixed-strings 'releases/latest' "${WORK}/docker.log" || true)"
+	expect "upgrade.sh without a release" 0 "$(upgrade env FAKE_LATEST=https://github.com/o/r/releases)"
+	expect_in "the notice without a release" "The upgrade test is skipped: o/r has no release yet to upgrade from." "${WORK}/log"
+	expect "Docker without a release" 0 "$(grep --count '^docker ' "${WORK}/docker.log" || true)"
+	# A lookup that GitHub refuses, such as with a 429, fails rather than skip the test.
+	expect "upgrade.sh when GitHub refuses the lookup of the last release" 1 "$(upgrade env FAKE_LATEST_STATUS=429 FAKE_LATEST=)"
+	expect_in "the message about the refused lookup" "GitHub answered the request for the last release of o/r with HTTP 429, not with a redirect" "${WORK}/log"
+	expect "upgrade.sh with a redirect elsewhere" 1 "$(upgrade env FAKE_LATEST=https://github.com/login)"
+	expect "Docker when GitHub refuses the lookup" 0 "$(grep --count '^docker ' "${WORK}/docker.log" || true)"
+	# A Nextcloud that the release doesn't support, as the pull request of the upstream
+	# bot for a new version meets: app:enable would refuse the release, so the test skips.
+	expect "upgrade.sh on a Nextcloud newer than the release supports" 0 "$(upgrade env NEXTCLOUD_IMAGE=nextcloud:36-apache)"
+	expect_in "the notice about a newer Nextcloud" "The upgrade test is skipped: v1.0.0 supports Nextcloud 33 to 35, not 36." "${WORK}/log"
+	expect "Docker on a Nextcloud newer than the release supports" 0 "$(grep --count '^docker ' "${WORK}/docker.log" || true)"
+	expect "upgrade.sh on a Nextcloud older than the release supports" 0 "$(upgrade env NEXTCLOUD_IMAGE=nextcloud:32.0.1-apache)"
+	expect_in "the notice about an older Nextcloud" "supports Nextcloud 33 to 35, not 32." "${WORK}/log"
+	expect "upgrade.sh with an image without a version" 1 "$(upgrade env NEXTCLOUD_IMAGE=nextcloud:apache)"
+	expect_in "the message about an image without a version" "The image nextcloud:apache names no major version of Nextcloud" "${WORK}/log"
+	# Without NEXTCLOUD_IMAGE, the image of compose.yaml, pinned by its digest.
+	# shellcheck disable=SC2016 # the text of compose.yaml, with its variable unexpanded
+	printf 'services:\n  nextcloud:\n    image: ${NEXTCLOUD_IMAGE:-nextcloud:34.0.2-apache@sha256:0123}\n' >"${app}/tests/e2e/compose.yaml"
+	expect "upgrade.sh with the image of compose.yaml" 1 "$(upgrade env NEXTCLOUD_IMAGE=)"
+	expect_in "the major version of the image of compose.yaml" "v1.0.0 supports Nextcloud 33 to 35, 34 among them." "${WORK}/log"
+	rm "${app}/tests/e2e/compose.yaml"
+	expect "upgrade.sh with a tag that isn't one" 1 "$(upgrade env E2E_UPGRADE_FROM=latest)"
+	expect_in "the message about a tag that isn't one" "latest is no tag of a release, such as v1.1.1." "${WORK}/log"
+	expect "upgrade.sh with the provenance refused" 1 "$(upgrade env FAKE_GH_STATUS=1)"
+	expect_in "the message about the provenance" "paperless_unified_search.tar.gz of v1.0.0 has no valid provenance of build-release.yml of o/r." "${WORK}/log"
+	expect "Docker with the provenance refused" 0 "$(grep --count '^docker ' "${WORK}/docker.log" || true)"
+	mv "${release}/provenance.sigstore.json" "${WORK}/provenance.sigstore.json"
+	expect "upgrade.sh with a release without provenance" 1 "$(upgrade env)"
+	expect_in "the notice about a release without provenance" "The release v1.0.0 has no provenance.sigstore.json" "${WORK}/log"
+	mv "${WORK}/provenance.sigstore.json" "${release}/provenance.sigstore.json"
+	cp "${WORK}/another_app.crt" "${release}/paperless_unified_search.crt"
+	expect "upgrade.sh with the certificate of another app" 1 "$(upgrade env)"
+	expect_in "the message about the certificate of another app" "is not the one of the app paperless_unified_search" "${WORK}/log"
+	cp "${WORK}/paperless_unified_search.crt" "${release}/paperless_unified_search.crt"
+	printf 'Changed.\n' >>"${release}/paperless_unified_search.tar.gz"
+	expect "upgrade.sh with a release that its signature doesn't match" 1 "$(upgrade env)"
+	expect_in "the message about the signature" "The signature of paperless_unified_search.tar.gz of v1.0.0 doesn't match the certificate of the app at the App Store." "${WORK}/log"
+	expect "Docker with a release that its signature doesn't match" 0 "$(grep --count '^docker ' "${WORK}/docker.log" || true)"
+	rm "${release}/paperless_unified_search.tar.gz.sig"
+	expect "upgrade.sh with a release without its signature" 1 "$(upgrade env)"
+	expect_in "the message about the missing signature" "The release v1.0.0 of o/r has no asset paperless_unified_search.tar.gz.sig" "${WORK}/log"
+else
+	echo "openssl is not installed here; the CI tests upgrade.sh up to Docker."
+fi
 
 ## The issue about the supported Nextcloud versions
 
@@ -509,6 +757,51 @@ else
 	echo "Python 3.9 or newer is not installed here; the CI tests the check of the log of Nextcloud."
 fi
 
+## What upgrade.sh compares before and after the upgrade
+
+# assert_upgrade.py turns the answer of the search, the page of the administration
+# settings and the keys of occ config:list into lines that upgrade.sh compares; the
+# answers below are as Nextcloud writes them.
+if [[ -n "${python}" ]]; then
+	# Runs assert_upgrade.py on the text $1, with the rest as its mode and arguments,
+	# prints its exit status, and keeps its output in ${WORK}/upgrade-check. Git Bash
+	# would take the paths of the files in Nextcloud for paths of Windows.
+	upgrade_check() {
+		local status=0 text="$1"
+		shift
+		printf '%s' "${text}" | MSYS2_ARG_CONV_EXCL='/Documents/;/Elsewhere' \
+			"${python}" -B "${SCRIPT_DIR}/assert_upgrade.py" "$@" 2>&1 | tr -d '\r' >"${WORK}/upgrade-check" || status=$?
+		echo "${status}"
+	}
+	answer='{"ocs":{"data":{"entries":[{"title":"Mobile viewer test","attributes":{"fileId":"42","path":"/Documents/Mobile viewer test [P123].pdf"}},{"title":"Other","attributes":{"fileId":"7","path":"/Other [P999].pdf"}}]}}}'
+	expect "the results of a search" 0 "$(upgrade_check "${answer}" results '/Documents/Mobile viewer test [P123].pdf')"
+	expect "the results of a search at another path" 1 "$(upgrade_check "${answer}" results /Elsewhere.pdf)"
+	expect "the results of a search, sorted" "42 /Documents/Mobile viewer test [P123].pdf Mobile viewer test|7 /Other [P999].pdf Other" \
+		"$(upgrade_check "${answer}" results >/dev/null; paste -s -d '|' "${WORK}/upgrade-check")"
+	expect "a search without results" 1 "$(upgrade_check '{"ocs":{"data":{"entries":[]}}}' results)"
+	expect_in "the message of a search without results" "The search found nothing" "${WORK}/upgrade-check"
+	page='<div id="paperless-unified-search-settings" data-token-configured="true"><form>
+<input id="paperless-unified-search-url" name="url" type="url" value="http://paperless-mock:8080" required>
+<input name="allowLocal" type="checkbox" checked>
+<input name="token" type="password" value="">
+<input name="archiveOwner" type="text" value="e2e-user">
+<input name="alwaysSearch" type="checkbox">
+<input name="personalAlwaysSearch" type="checkbox"
+	checked></form></div>'
+	expect "the settings of the page" 0 "$(upgrade_check "${page}" settings)"
+	expect "the settings that the page shows" "allowLocal=on|alwaysSearch=off|archiveOwner=e2e-user|personalAlwaysSearch=on|token=stored|url=http://paperless-mock:8080" \
+		"$(paste -s -d '|' "${WORK}/upgrade-check")"
+	expect "the settings without a URL or a token" "token=missing|url=" \
+		"$(upgrade_check '<div id="paperless-unified-search-settings" data-token-configured="false"><input name="url" value=""></div>' settings >/dev/null; paste -s -d '|' "${WORK}/upgrade-check")"
+	expect "a page without the settings of the app" 1 "$(upgrade_check '<html><body>Update needed</body></html>' settings)"
+	expect "the keys of the app" "always_search|paperless_url" \
+		"$(upgrade_check '{"system":{},"apps":{"paperless_unified_search":{"paperless_url":"http://x","always_search":"1"}}}' keys >/dev/null; paste -s -d '|' "${WORK}/upgrade-check")"
+	expect "occ config:list without the app" 1 "$(upgrade_check '{"apps":{}}' keys)"
+	expect "assert_upgrade.py without a mode" 1 "$(upgrade_check '{}')"
+else
+	echo "Python 3.9 or newer is not installed here; the CI tests what upgrade.sh compares."
+fi
+
 ## Pipes into grep --quiet
 
 # grep --quiet stops reading at its first match, and the command that writes into the
@@ -692,4 +985,4 @@ if ((failures > 0)); then
 	echo "${failures} of ${checks} checks of the scripts of the end-to-end tests failed." >&2
 	exit 1
 fi
-echo "The ${checks} checks of scope.sh, run-all.sh, the issue of the weekly run, the journal of the mock, the check of the log of Nextcloud, the pipes of the scripts, the animation of the demo and the videos of the animations pass."
+echo "The ${checks} checks of scope.sh, run-all.sh, package.sh, upgrade.sh up to Docker, the issue of the weekly run, the journal of the mock, the check of the log of Nextcloud, what the upgrade compares, the pipes of the scripts, the animation of the demo and the videos of the animations pass."
