@@ -23,12 +23,20 @@ afterEach(function() {
 	}
 })
 
-// An app with a template that translates "Paperless URL", the files $files by path, and
-// a JSON catalog for each language of $catalogs.
+// The appinfo/info.xml of an app, with a summary and a description for the App Store in
+// English and in each language of $languages.
+function info(...languages) {
+	const texts = languages.map((language) => `\t<summary lang="${language}">Summary</summary>\n\t<description lang="${language}"><![CDATA[\nDescription\n]]></description>\n`)
+	return `<?xml version="1.0"?>\n<info>\n\t<summary>Summary</summary>\n\t<description><![CDATA[\nDescription\n]]></description>\n${texts.join('')}</info>\n`
+}
+
+// An app with a template that translates "Paperless URL", the texts of the App Store in
+// German, the files $files by path, of which null leaves one out, and a JSON catalog for
+// each language of $catalogs.
 function app(files, catalogs = { de: { 'Paperless URL': 'Paperless-URL' } }) {
 	const root = mkdtempSync(join(tmpdir(), 'check-l10n-'))
 	folders.push(root)
-	const all = { 'templates/settings.php': '<?php p($l->t(\'Paperless URL\'));', ...files }
+	const all = { 'templates/settings.php': '<?php p($l->t(\'Paperless URL\'));', 'appinfo/info.xml': info('de'), ...files }
 	for (const [language, translations] of Object.entries(catalogs)) {
 		all[`l10n/${language}.json`] = `${JSON.stringify({ translations, pluralForm: 'nplurals=2; plural=(n != 1);' }, null, '\t')}\n`
 	}
@@ -189,9 +197,86 @@ test('fails without any catalog', function() {
 	assert.match(check(root).output, /l10n\/ holds no catalog/)
 })
 
+test('fails on a plural with another number of forms than its "pluralForm" names', function() {
+	const root = app({ 'lib/Settings/AdminSettings.php': '<?php $l->n(\'%n problem\', \'%n problems\', $count);', 'appinfo/info.xml': info('fr') }, {})
+	mkdirSync(join(root, 'l10n'))
+	writeFileSync(join(root, 'l10n/fr.json'), JSON.stringify({
+		translations: { 'Paperless URL': 'URL de Paperless', '_%n problem_::_%n problems_': ['%n problème', '%n problèmes'] },
+		pluralForm: 'nplurals=3; plural=(n == 0 || n == 1) ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;',
+	}))
+	written(root)
+
+	const result = check(root)
+
+	assert.equal(result.status, 1)
+	assert.match(result.output, /l10n\/fr\.json translates "_%n problem_::_%n problems_" with 2 form\(s\) instead of the 3 of its "pluralForm"/)
+})
+
+test('fails on a middle plural form for millions, which Nextcloud would show for every count above one', function() {
+	const root = app({ 'lib/Settings/AdminSettings.php': '<?php $l->n(\'%n user\', \'%n users\', $count);', 'appinfo/info.xml': info('fr') }, {})
+	mkdirSync(join(root, 'l10n'))
+	const catalog = (forms) => JSON.stringify({
+		translations: { 'Paperless URL': 'URL de Paperless', '_%n user_::_%n users_': forms },
+		pluralForm: 'nplurals=3; plural=(n == 0 || n == 1) ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;',
+	})
+	writeFileSync(join(root, 'l10n/fr.json'), catalog(['%n utilisateur', '%n d’utilisateurs', '%n utilisateurs']))
+	written(root)
+
+	const result = check(root)
+
+	assert.equal(result.status, 1)
+	assert.match(result.output, /l10n\/fr\.json translates "_%n user_::_%n users_" with a middle form "%n d’utilisateurs" that Nextcloud shows for every count but one/)
+
+	writeFileSync(join(root, 'l10n/fr.json'), catalog(['%n utilisateur', '%n utilisateurs', '%n utilisateurs']))
+	written(root)
+	assert.equal(check(root).status, 0)
+})
+
+test('fails on a "pluralForm" that names no number of forms', function() {
+	const root = app({})
+	writeFileSync(join(root, 'l10n/de.json'), JSON.stringify({ translations: { 'Paperless URL': 'Paperless-URL' }, pluralForm: 'plural=(n != 1);' }))
+	written(root)
+
+	assert.match(check(root).output, /l10n\/de\.json has a "pluralForm" without the number of its forms/)
+})
+
+test('fails on a language without a summary or a description for the App Store', function() {
+	const root = written(app({}, {
+		de: { 'Paperless URL': 'Paperless-URL' },
+		fr: { 'Paperless URL': 'URL de Paperless' },
+	}))
+
+	const result = check(root)
+
+	assert.equal(result.status, 1)
+	assert.match(result.output, /appinfo\/info\.xml has no <summary lang="fr">, so the App Store shows its English summary to whoever reads the app in l10n\/fr\.json/)
+	assert.match(result.output, /appinfo\/info\.xml has no <description lang="fr">/)
+	assert.doesNotMatch(result.output, /lang="de"/)
+})
+
+test('takes the texts of the App Store of a language for its variants, but not an empty one', function() {
+	const root = written(app({
+		'appinfo/info.xml': info('de').replace('<description lang="de"><![CDATA[\nDescription\n]]>', '<description lang="de"><![CDATA[ ]]>'),
+	}, {
+		de_DE: { 'Paperless URL': 'Paperless-URL' },
+	}))
+
+	const result = check(root)
+
+	assert.equal(result.status, 1)
+	assert.match(result.output, /appinfo\/info\.xml has no <description lang="de">, so the App Store shows its English description to whoever reads the app in l10n\/de_DE\.json/)
+	assert.doesNotMatch(result.output, /<summary/)
+})
+
+test('fails without appinfo/info.xml', function() {
+	const root = written(app({ 'appinfo/info.xml': null }))
+
+	assert.match(check(root).output, /appinfo\/info\.xml is missing, whose summary and description the App Store shows/)
+})
+
 test('the catalogs of the app match its code', function() {
 	const result = spawnSync(process.execPath, [script], { encoding: 'utf8' })
 
 	assert.equal(result.status, 0, result.stdout + result.stderr)
-	assert.match(result.stdout, /in de, de_DE,/)
+	assert.match(result.stdout, /in de, de_DE, es, fr, nl,/)
 })

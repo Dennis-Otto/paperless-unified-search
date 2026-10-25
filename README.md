@@ -383,7 +383,9 @@ When Nextcloud itself can't take the request, the page says so in one sentence i
 
 ### Languages
 
-The settings speak English and German: German with *du* for accounts set to *Deutsch (Persönlich: Du)*, and with *Sie* for accounts set to *Deutsch (Förmlich: Sie)*.
+The app speaks English, German, French, Spanish and Dutch, each account in its language: the search and its results, the widget on the dashboard, the personal and the administration settings with their messages, the warnings of the overview, and its listing in the App Store. German says *du* to accounts set to *Deutsch (Persönlich: Du)* and *Sie* to accounts set to *Deutsch (Förmlich: Sie)*; French says *vous*, Spanish *tú* and Dutch *je*, as Nextcloud does in these languages. In every other language, the app speaks English.
+
+The French, Spanish and Dutch texts were drafted with the help of an AI, with the words of Nextcloud's own translations, such as *Rechercher dans les services connectés* for **Search connected services**, and wait for native speakers to read them. [Translate](https://dennis-otto.github.io/paperless-unified-search/translate.html) shows how to correct a text or add a language.
 
 <!-- --8<-- [end:languages] -->
 <!-- --8<-- [start:usage] -->

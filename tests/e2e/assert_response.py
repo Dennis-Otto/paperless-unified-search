@@ -12,8 +12,11 @@ from urllib.parse import parse_qs, urlparse
 # the language of the user, its correspondent and its type, which the mock lists, and its
 # excerpt, which Paperless sends marked up and escaped as HTML, as text without a tag.
 SUBLINE = "Aug 26, 2026 · Example Mobile · Letter — Synthetic OCR mobiletest result for O'Brien & \"Sons\" < GmbH>"
-# The same for a user whose language is German.
+# The same for a user whose language is German, and for one whose language is French.
 GERMAN_SUBLINE = SUBLINE.replace("Aug 26, 2026", "26.08.2026")
+FRENCH_SUBLINE = SUBLINE.replace("Aug 26, 2026", "26 août 2026")
+# The name of the provider, which the search shows above its results, in each language.
+NAMES = {"french": "Documents Paperless", "german": "Paperless-Dokumente"}
 
 
 def fail(message):
@@ -119,9 +122,12 @@ if len(entries) != 1:
 entry = entries[0]
 if entry.get("title") != "Mobile viewer test":
     fail(f"Unexpected title: {entry!r}")
-subline = GERMAN_SUBLINE if mode == "german" else SUBLINE
+subline = {"german": GERMAN_SUBLINE, "french": FRENCH_SUBLINE}.get(mode, SUBLINE)
 if entry.get("subline") != subline:
     fail(f"Expected the subline {subline!r}, got {entry!r}")
+name = NAMES.get(mode, "Paperless documents")
+if data.get("name") != name:
+    fail(f"Expected the provider name {name!r}, got {data.get('name')!r}")
 
 attributes = entry.get("attributes", {})
 if not str(attributes.get("fileId", "")).isdigit():
@@ -162,7 +168,7 @@ if mode == "ios":
         fail(f"iOS deep link has the wrong user: {resource_url}")
     if not params.get("link", [""])[0].endswith(f"/f/{attributes['fileId']}"):
         fail(f"iOS deep link has the wrong web fallback: {resource_url}")
-elif mode in ("browser", "german", "android", "shared", "link"):
+elif mode in ("browser", "german", "french", "android", "shared", "link"):
     if not resource_url.endswith(f"/f/{attributes['fileId']}"):
         fail(f"Unexpected web/native viewer link: {resource_url}")
     if mode == "link":

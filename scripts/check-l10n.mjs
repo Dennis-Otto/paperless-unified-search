@@ -5,9 +5,13 @@
 
 // Checks the translations of the app against its code, for every catalog in l10n/:
 // each text that the code translates has a translation, none is left that it doesn't,
-// a translation keeps the placeholders of its text, such as %s and {account}, and
-// the JavaScript catalog that the browser loads holds the same as the JSON one that
-// PHP loads. The texts come from the calls ->t('…') and ->n('…', '…') in lib/ and
+// a translation keeps the placeholders of its text, such as %s and {account}, a plural
+// has as many forms as the "pluralForm" of its catalog names (and, where the third one is
+// for millions, repeats the form for many in the middle, the only one besides the first
+// that Nextcloud shows), the JavaScript catalog
+// that the browser loads holds the same as the JSON one that PHP loads, and
+// appinfo/info.xml gives the App Store a summary and a description in the language of
+// each catalog. The texts come from the calls ->t('…') and ->n('…', '…') in lib/ and
 // templates/, and translate('…') in js/, which must therefore name their texts
 // literally.
 //
@@ -161,6 +165,23 @@ function forms(text, translation) {
 	return translation.map((form, index) => [plural === null ? text : plural[index === 0 ? 1 : 2], form])
 }
 
+// The languages of the summaries and the descriptions in appinfo/info.xml that have a
+// text, or null without the file. The App Store shows them to whoever speaks a language,
+// and the English ones, without lang, to everyone else.
+function storeLanguages() {
+	const path = join(root, 'appinfo', 'info.xml')
+	if (!existsSync(path)) {
+		return null
+	}
+	const languages = { summary: new Set(), description: new Set() }
+	for (const match of readFileSync(path, 'utf8').matchAll(/<(summary|description)\s+lang="([^"]+)"\s*>([\s\S]*?)<\/\1>/g)) {
+		if (match[3].replace(/^\s*<!\[CDATA\[([\s\S]*)\]\]>\s*$/, '$1').trim() !== '') {
+			languages[match[1]].add(match[2])
+		}
+	}
+	return languages
+}
+
 const files = existsSync(catalogFolder) ? readdirSync(catalogFolder) : []
 const catalogs = files.filter((file) => file.endsWith('.json')).sort()
 for (const file of files.filter((name) => name.endsWith('.js'))) {
@@ -174,6 +195,10 @@ if (catalogs.length === 0) {
 }
 
 const texts = usedTexts()
+const store = storeLanguages()
+if (store === null && catalogs.length > 0) {
+	problems.push('appinfo/info.xml is missing, whose summary and description the App Store shows in the language of each catalog.')
+}
 for (const file of catalogs) {
 	const name = `l10n/${file}`
 	const javaScriptName = name.replace(/\.json$/, '.js')
@@ -183,6 +208,21 @@ for (const file of catalogs) {
 		problems.push(`${name} needs an object "translations" and a string "pluralForm".`)
 		continue
 	}
+
+	// A variant of a language, such as de_DE, shares the texts of the App Store of its
+	// language, such as de, which the App Store knows alone.
+	const language = file.replace(/\.json$/, '')
+	const storeLanguage = language.split('_')[0]
+	for (const element of ['summary', 'description']) {
+		if (store !== null && !store[element].has(language) && !store[element].has(storeLanguage)) {
+			problems.push(`appinfo/info.xml has no <${element} lang="${storeLanguage}">, so the App Store shows its English ${element} to whoever reads the app in ${name}; add one.`)
+		}
+	}
+	const pluralForms = /^nplurals=(\d+);/.exec(catalog.pluralForm.replace(/\s/g, ''))
+	if (pluralForms === null) {
+		problems.push(`${name} has a "pluralForm" without the number of its forms, such as "nplurals=2; plural=(n != 1);".`)
+	}
+	const millions = catalog.pluralForm.replace(/\s/g, '').includes('n%1000000==0')
 
 	if (write) {
 		writeFileSync(javaScriptPath, javaScriptCatalog(catalog))
@@ -202,6 +242,18 @@ for (const file of catalogs) {
 		if (!texts.has(text)) {
 			problems.push(`${name} translates ${JSON.stringify(text)}, which no code translates any more; remove it.`)
 		}
+		const plural = /^_.*_::_.*_$/s.test(text)
+		const count = Array.isArray(translation) ? translation.length : 1
+		if (plural && pluralForms !== null && count !== Number(pluralForms[1])) {
+			problems.push(`${name} translates ${JSON.stringify(text)} with ${count} form(s) instead of the ${pluralForms[1]} of its "pluralForm".`)
+		}
+		// Nextcloud picks a plural form by its own rules, not by "pluralForm": for a
+		// language whose third form is the one for millions (French, Spanish, ...) only
+		// form 0 (one) or 1 (other), so form 1 must be the "other" form, as in Nextcloud's
+		// own catalogs.
+		if (plural && millions && count === 3 && translation[1] !== translation[2]) {
+			problems.push(`${name} translates ${JSON.stringify(text)} with a middle form ${JSON.stringify(translation[1])} that Nextcloud shows for every count but one, though it is not the form ${JSON.stringify(translation[2])} for many; repeat that form in the middle.`)
+		}
 		for (const [source, form] of forms(text, translation)) {
 			if (typeof form !== 'string' || form.trim() === '') {
 				problems.push(`${name} has an empty translation of ${JSON.stringify(text)}.`)
@@ -219,4 +271,4 @@ if (problems.length > 0) {
 }
 
 const languages = catalogs.map((file) => file.replace(/\.json$/, '')).join(', ')
-process.stdout.write(`Each of the ${texts.size} texts of the code has a translation in ${languages}, with the same placeholders, and the JavaScript catalogs match the JSON ones.\n`)
+process.stdout.write(`Each of the ${texts.size} texts of the code has a translation in ${languages}, with the same placeholders and the forms of its plurals, the JavaScript catalogs match the JSON ones, and appinfo/info.xml has a summary and a description for the App Store in each language.\n`)

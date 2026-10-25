@@ -54,6 +54,7 @@ plugins:
           Security design: Sicherheitsdesign
           Decisions: Entscheidungen
           Changelog: Änderungen
+          Translate: Übersetzen
 
 # The menu. A tab in the header for each section: the pages for administrators who set
 # the app up, for its users, for when something fails, and those of the project. The
@@ -74,6 +75,7 @@ nav:
       - Architecture: architecture.md
       - Security design: security.md
       - Roadmap: roadmap.md
+      - Translate: translate.md
       - Decisions: decisions/README.md
       - Releases: releases.md
       - Changelog: changelog.md

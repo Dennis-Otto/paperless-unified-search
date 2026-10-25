@@ -4,6 +4,9 @@
 	<name>Paperless Unified Search</name>
 	<summary>Search Paperless-ngx OCR content from Nextcloud and open matching files directly in its viewer</summary>
 	<summary lang="de">Paperless-ngx-OCR direkt in Nextcloud durchsuchen und gefundene Dateien im Viewer öffnen</summary>
+	<summary lang="es">Busca en el contenido OCR de Paperless-ngx desde Nextcloud y abre los archivos encontrados directamente en su visor</summary>
+	<summary lang="fr">Recherchez dans le contenu OCR de Paperless-ngx depuis Nextcloud et ouvrez les fichiers trouvés directement dans sa visionneuse</summary>
+	<summary lang="nl">Doorzoek de OCR-inhoud van Paperless-ngx vanuit Nextcloud en open gevonden bestanden direct in de viewer</summary>
 	<description><![CDATA[
 Full-text search of your Paperless-ngx archive in Nextcloud's search bar, without Elasticsearch, a second index or another container: Paperless answers, Nextcloud decides who sees the file.
 
@@ -83,6 +86,126 @@ Die App integriert ausschließlich die Suche. Sie synchronisiert selbst keine Do
 Die unabhängige Nextcloud-App [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) schreibt diese Dateien in das Archiv-Konto. Beide Apps verwenden dieselbe stabile Dokumentkennung wie `[P123]` und lassen sich getrennt warten und aktualisieren.
 
 Dokumentation: <https://dennis-otto.github.io/paperless-unified-search/de/index.html>
+]]></description>
+	<description lang="es"><![CDATA[
+Búsqueda de texto completo en los documentos de tu Paperless-ngx desde la barra de búsqueda de Nextcloud, sin Elasticsearch, sin un segundo índice ni otro contenedor: Paperless responde y Nextcloud decide quién ve el archivo.
+
+Encuentra facturas, contratos, cartas, extractos y cualquier texto reconocido dentro de tus documentos, y abre el archivo sincronizado en el visor de Nextcloud, sin salir de Nextcloud.
+
+### Busca en Paperless. Trabaja en Nextcloud.
+
+- Usa el OCR y la búsqueda de texto completo nativos de Paperless-ngx, sin un índice propio que construir o mantener al día
+- Muestra los resultados directamente en la búsqueda global de Nextcloud, cada uno con una vista previa del documento, su fecha en tu idioma, su interlocutor y su tipo
+- Encuentra documentos desde el selector inteligente de Talk, Text, Deck y Mail, e inserta un enlace a su archivo
+- Muestra en el Dashboard de Nextcloud los documentos más recientes de Paperless que puedes abrir, con el widget Nuevo en Paperless
+- Abre el archivo sincronizado en el visor integrado de Nextcloud en la web, iOS y Android
+- Asocia los documentos mediante marcadores estables como `[P123]`
+- Muestra un documento solo a los usuarios que pueden abrir su archivo sincronizado
+- Excluye automáticamente los documentos que aún no se han sincronizado
+- Diagnóstico: la configuración prueba la conexión y guarda un historial de las búsquedas fallidas con sus errores, también cuando el proveedor de alojamiento oculta el registro de Nextcloud a los administradores
+- Para administradores: configura la app y pruébala con occ, sin navegador, pregunta a occ por qué un usuario no ve un documento y consulta el estado de la búsqueda en la vista general de la configuración de administración
+
+### Privacidad y control de acceso
+
+Paperless se consulta de servidor a servidor. El token de API se guarda en el gestor de credenciales cifrado de Nextcloud y nunca se expone al navegador.
+
+De forma predeterminada, la búsqueda de Nextcloud solo envía términos a Paperless cuando los usuarios activan la búsqueda en servicios conectados, y el selector inteligente solo cuando los usuarios eligen en él los documentos de Paperless; un cliente que pide este proveedor a la API de búsqueda también los envía. Los administradores pueden marcar opcionalmente su servidor de Paperless como de confianza e incluirlo automáticamente en cada búsqueda global.
+
+Se recomienda una cuenta de Paperless propia y de solo lectura.
+
+### Requisitos
+
+- Nextcloud 33 a 35
+- Una instancia de Paperless-ngx accesible con acceso a la API
+- Archivos sincronizados cuyo nombre contiene su marcador de documento de Paperless, por ejemplo `[P123]`, que pertenecen a una cuenta de Nextcloud, la cuenta de archivo, y que están compartidos en solo lectura con los usuarios que pueden verlos
+
+Esta app solo proporciona la integración de la búsqueda. No sincroniza documentos entre Paperless y Nextcloud, y sin esos archivos la búsqueda no muestra documentos de Paperless.
+
+### Complemento de sincronización nativo
+
+La app independiente de Nextcloud [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) escribe estos archivos en la cuenta de archivo. Ambas apps usan el mismo marcador de documento estable `[P123]` y se pueden mantener y actualizar por separado.
+
+Documentación (en inglés): <https://dennis-otto.github.io/paperless-unified-search/>
+]]></description>
+	<description lang="fr"><![CDATA[
+Recherche plein texte dans votre archive Paperless-ngx depuis la barre de recherche de Nextcloud, sans Elasticsearch, sans second index ni conteneur supplémentaire : Paperless répond, Nextcloud décide qui voit le fichier.
+
+Trouvez factures, contrats, lettres, relevés et tout texte reconnu dans vos documents, et ouvrez le fichier synchronisé dans la visionneuse de Nextcloud — sans quitter Nextcloud.
+
+### Rechercher dans Paperless. Travailler dans Nextcloud.
+
+- Utilise l’OCR et la recherche plein texte natives de Paperless-ngx, sans index propre à construire ou à tenir à jour
+- Affiche les résultats directement dans la recherche globale de Nextcloud, chacun avec un aperçu du document, sa date dans votre langue, son correspondant et son type
+- Trouve des documents depuis le sélecteur intelligent de Talk, Text, Deck et Mail, et insère un lien vers leur fichier
+- Liste sur le tableau de bord de Nextcloud les documents Paperless les plus récents que vous pouvez ouvrir, avec le widget Nouveau dans Paperless
+- Ouvre le fichier synchronisé dans la visionneuse intégrée de Nextcloud, sur le web, iOS et Android
+- Associe les documents grâce à des marqueurs stables comme `[P123]`
+- N’affiche un document qu’aux utilisateurs qui peuvent ouvrir son fichier synchronisé
+- Exclut automatiquement les documents qui ne sont pas encore synchronisés
+- Diagnostic : les paramètres testent la connexion et conservent un historique des recherches échouées avec leurs erreurs, même lorsque l’hébergeur cache le journal de Nextcloud aux administrateurs
+- Pour les administrateurs : configurer l’application et la tester avec occ, sans navigateur, demander à occ pourquoi un utilisateur ne voit pas un document, et voir l’état de la recherche dans la vue d’ensemble des paramètres d’administration
+
+### Confidentialité et contrôle d’accès
+
+Paperless est interrogé de serveur à serveur. Le jeton d’API est stocké dans le gestionnaire d’identifiants chiffré de Nextcloud et n’est jamais exposé au navigateur.
+
+Par défaut, la recherche de Nextcloud n’envoie des termes à Paperless que lorsque les utilisateurs activent la recherche dans les services connectés, et le sélecteur intelligent uniquement lorsque les utilisateurs y choisissent les documents Paperless ; un client qui demande ce fournisseur à l’API de recherche les envoie aussi. Les administrateurs peuvent, s’ils le souhaitent, marquer leur serveur Paperless comme fiable et l’inclure automatiquement dans chaque recherche globale.
+
+Un compte Paperless dédié, en lecture seule, est recommandé.
+
+### Prérequis
+
+- Nextcloud 33 à 35
+- Une instance Paperless-ngx joignable, avec accès à l’API
+- Des fichiers synchronisés dont le nom contient leur marqueur de document Paperless, par exemple `[P123]`, qui appartiennent à un compte Nextcloud, le compte d’archive, et sont partagés en lecture seule avec les utilisateurs qui peuvent les voir
+
+Cette application fournit uniquement l’intégration de la recherche. Elle ne synchronise pas de documents entre Paperless et Nextcloud, et sans de tels fichiers, la recherche n’affiche aucun document Paperless.
+
+### Compagnon de synchronisation natif
+
+L’application Nextcloud indépendante [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) écrit ces fichiers dans le compte d’archive. Les deux applications utilisent le même marqueur de document stable `[P123]` et peuvent être maintenues et mises à jour séparément.
+
+Documentation (en anglais) : <https://dennis-otto.github.io/paperless-unified-search/>
+]]></description>
+	<description lang="nl"><![CDATA[
+Volledige-tekstzoeken in je Paperless-ngx-archief vanuit de zoekbalk van Nextcloud, zonder Elasticsearch, een tweede index of nog een container: Paperless antwoordt, Nextcloud beslist wie het bestand ziet.
+
+Vind facturen, contracten, brieven, afschriften en elke tekst die in je documenten is herkend, en open het gesynchroniseerde bestand in de viewer van Nextcloud — zonder Nextcloud te verlaten.
+
+### Zoeken in Paperless. Werken in Nextcloud.
+
+- Gebruikt de eigen OCR en volledige-tekstzoekfunctie van Paperless-ngx, zonder een eigen index die opgebouwd of bijgehouden moet worden
+- Toont resultaten direct in de globale zoekfunctie van Nextcloud, elk met een voorbeeld van het document, de datum in je taal, de correspondent en het type
+- Vindt documenten vanuit de slimme kiezer in Talk, Text, Deck en Mail, en voegt een link naar hun bestand in
+- Toont op het dashboard van Nextcloud de nieuwste Paperless-documenten die je kunt openen, met de widget Nieuw in Paperless
+- Opent het gesynchroniseerde bestand in de ingebouwde viewer van Nextcloud op het web, iOS en Android
+- Koppelt documenten via stabiele markeringen zoals `[P123]`
+- Toont een document alleen aan de gebruikers die het gesynchroniseerde bestand ervan mogen openen
+- Sluit documenten die nog niet zijn gesynchroniseerd automatisch uit
+- Diagnose: de instellingen testen de verbinding en houden een geschiedenis bij van mislukte zoekopdrachten met hun fouten, ook waar de hostingprovider het logboek van Nextcloud voor beheerders verbergt
+- Voor beheerders: stel de app in en test hem met occ, zonder browser, vraag occ waarom een gebruiker een document niet ziet, en bekijk de toestand van de zoekfunctie in het overzicht van de beheerdersinstellingen
+
+### Privacy en toegangsbeheer
+
+Paperless wordt van server tot server bevraagd. Het API-token wordt opgeslagen in de versleutelde opslag voor inloggegevens van Nextcloud en komt nooit in de browser.
+
+Standaard stuurt de zoekfunctie van Nextcloud alleen termen naar Paperless wanneer gebruikers het zoeken in verbonden diensten inschakelen, en de slimme kiezer alleen wanneer gebruikers daarin Paperless-documenten kiezen; een client die de zoek-API om deze provider vraagt, stuurt ze ook. Beheerders kunnen hun Paperless-server optioneel als vertrouwd markeren en automatisch in elke globale zoekopdracht opnemen.
+
+Een eigen Paperless-account met alleen leesrechten wordt aanbevolen.
+
+### Vereisten
+
+- Nextcloud 33 tot 35
+- Een bereikbare Paperless-ngx-installatie met API-toegang
+- Gesynchroniseerde bestanden waarvan de naam hun Paperless-documentmarkering bevat, bijvoorbeeld `[P123]`, die eigendom zijn van één Nextcloud-account, het archiefaccount, en alleen-lezen gedeeld zijn met de gebruikers die ze mogen zien
+
+Deze app biedt alleen de integratie met de zoekfunctie. Hij synchroniseert geen documenten tussen Paperless en Nextcloud, en zonder zulke bestanden toont de zoekfunctie geen Paperless-documenten.
+
+### Eigen synchronisatie als aanvulling
+
+De onafhankelijke Nextcloud-app [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) schrijft deze bestanden in het archiefaccount. Beide apps gebruiken dezelfde stabiele documentmarkering `[P123]` en kunnen los van elkaar worden onderhouden en bijgewerkt.
+
+Documentatie (in het Engels): <https://dennis-otto.github.io/paperless-unified-search/>
 ]]></description>
 	<version>1.1.1</version>
 	<licence>AGPL-3.0-or-later</licence>
