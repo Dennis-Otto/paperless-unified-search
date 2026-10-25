@@ -1,0 +1,27 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+---
+flowchart TB
+    accTitle: When Nextcloud releases a new version
+    accDescr: Every Wednesday the upstream bot compares max-version of appinfo/info.xml with the newest release of Nextcloud. For a new major version it opens a pull request that raises max-version and adds a fragment of the changelog. Its step Checks of this project fails, because the READMEs, the pages of the website and the descriptions of the App Store still name the old versions. The fix bot runs bash scripts/versions.sh --write, which writes the new version into each place and adds a column to each table of compatibility, and commits that onto the branch of the pull request. The checks run again, the end-to-end tests also against the new version, and once they pass the pull request merges itself.
+
+    release["Nextcloud releases<br>a new major version"]
+    upstream["The upstream bot opens a pull request<br>that raises max-version<br>in appinfo/info.xml"]
+    failed["Checks of this project fails:<br>the documentation names<br>the old versions"]
+    write["The fix bot runs<br>bash scripts/versions.sh --write"]
+    commit["It commits the new version in each place<br>and a column in each table<br>of compatibility onto the branch"]
+    checks["The checks run again,<br>the end-to-end tests also<br>against the new version"]
+    merged["The pull request<br>merges itself"]
+
+    release --> upstream --> failed --> write --> commit --> checks --> merged
+
+    classDef outside fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef bot fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef fail fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class release outside
+    class upstream,write,commit,checks bot
+    class failed fail
+    class merged done

@@ -293,54 +293,161 @@ echo "The website shows the $(($(screenshots_of README.md | wc -l) - waiting)) s
 
 printf '\n== %s\n' "Versions in the documentation"
 # appinfo/info.xml decides on which versions of Nextcloud and PHP the app installs. The
-# READMEs and the pages of the website that name them, in English and German, say the
-# same, and so do the descriptions of the App Store in appinfo/info.xml in English,
-# German, Spanish, French and Dutch, so that a change of the versions can't leave a copy
-# behind.
-nextcloud_min="$(sed -nE 's/.*<nextcloud [^>]*min-version="([0-9]+)".*/\1/p' appinfo/info.xml)"
-nextcloud_max="$(sed -nE 's/.*<nextcloud [^>]*max-version="([0-9]+)".*/\1/p' appinfo/info.xml)"
-php_min="$(sed -nE 's/.*<php [^>]*min-version="([0-9.]+)".*/\1/p' appinfo/info.xml)"
-if [[ -z "$nextcloud_min" || -z "$nextcloud_max" || -z "$php_min" ]]; then
-  echo "appinfo/info.xml names no min-version and max-version of nextcloud, or no min-version of php."
-  exit 1
-fi
-columns="|"
-for ((version = nextcloud_min; version <= nextcloud_max; version++)); do
-  columns+=" Nextcloud $version |"
-done
-version_problems=0
-says() {
-  if ! grep -qF -- "$2" "$1"; then
-    echo "$1 doesn't say \"$2\": write the versions of appinfo/info.xml there."
-    version_problems=$((version_problems + 1))
+# READMEs and the pages of the website that name them, in English and German, with the
+# columns of their tables of compatibility, say the same, and so do the descriptions of
+# the App Store in appinfo/info.xml in every language, so that a change of the versions
+# can't leave a copy behind. scripts/versions.sh checks every place, and its --write
+# writes the versions there, as the fix bot does on the pull request of the upstream bot.
+bash scripts/versions.sh
+# Its tests, against a copy of the documentation: a run that is in sync changes nothing;
+# a new max-version, as the upstream bot writes it, reaches every place and adds a
+# column with the cells of the newest one; a new min-version drops the oldest column; a
+# new PHP changes its places alone; and what no command can fix fails both the check
+# and the fix.
+(
+  work="$(mktemp -d)"
+  trap 'rm -rf "$work"' EXIT
+  copy="$work/copy"
+  mkdir -p "$copy/scripts" "$copy/appinfo" "$copy/docs"
+  cp scripts/versions.sh "$copy/scripts/"
+  cp appinfo/info.xml "$copy/appinfo/"
+  cp README.md README.de.md "$copy/"
+  cp docs/*.md "$copy/docs/"
+  status=0
+  versions() {
+    status=0
+    bash "$copy/scripts/versions.sh" "$@" >"$work/output" 2>&1 || status=$?
+  }
+  fail() {
+    echo "scripts/versions.sh $1. Its output:"
+    cat "$work/output"
+    exit 1
+  }
+  ends() {
+    if ((status != $1)); then
+      fail "ended with $status, not $1, $2"
+    fi
+  }
+  says() {
+    if ! grep -qxF -- "$2" "$copy/$1"; then
+      fail "left no line \"$2\" in $1"
+    fi
+  }
+  printed() {
+    if ! grep -qF -- "$1" "$work/output"; then
+      fail "didn't say \"$1\""
+    fi
+  }
+  # The min-version and max-version of nextcloud and the min-version of php of the copy.
+  set_versions() {
+    sed -E -e "s/(<nextcloud [^>]*min-version=\")[0-9]+/\\1$1/" \
+      -e "s/(<nextcloud [^>]*max-version=\")[0-9]+/\\1$2/" \
+      -e "s/(<php [^>]*min-version=\")[0-9.]+/\\1$3/" \
+      "$copy/appinfo/info.xml" >"$work/info.xml"
+    mv "$work/info.xml" "$copy/appinfo/info.xml"
+  }
+  snapshot() {
+    rm -rf "$work/before"
+    cp -R "$copy" "$work/before"
+  }
+  unchanged() {
+    if ! diff -r "$work/before" "$copy" >"$work/diff"; then
+      cat "$work/diff" >>"$work/output"
+      fail "changed files $1"
+    fi
+  }
+  # From Nextcloud 33 to 35 and PHP 8.2, with a table of compatibility of its own, which
+  # has an alignment and an empty cell, and a line that is no place, as it goes on after
+  # the versions.
+  set_versions 33 35 8.2
+  echo "- Nextcloud 30 to 31, which an old release supported" >>"$copy/README.md"
+  printf '%s\n' "" "| | Nextcloud 33 | Nextcloud 34 | Nextcloud 35 |" "| :--- | :---: | :---: | :---: |" \
+    "| **A** | a33 | a34 | a35 |" "| **B** | | b34 | b35 |" >>"$copy/docs/reference.md"
+  versions --write
+  ends 0 "writing Nextcloud 33 to 35"
+  snapshot
+  versions --write
+  ends 0 "writing the same versions again"
+  unchanged "that named the versions already"
+  versions
+  ends 0 "checking what it wrote"
+
+  # The upstream bot raises max-version.
+  set_versions 33 36 8.2
+  versions
+  ends 1 "checking a max-version of 36 that only appinfo/info.xml names"
+  printed "  new: | | Nextcloud 33 | Nextcloud 34 | Nextcloud 35 | Nextcloud 36 |"
+  printed "bash scripts/versions.sh --write"
+  versions --write
+  ends 0 "writing a max-version of 36"
+  says README.md "- Nextcloud 33 to 36"
+  says README.md "- Nextcloud 30 to 31, which an old release supported"
+  says README.de.md "- Nextcloud 33 bis 36"
+  says docs/install.md "| **Nextcloud** | 33 to 36 |"
+  says docs/install.de.md "| **Nextcloud** | 33 bis 36 |"
+  says appinfo/info.xml "- Nextcloud 33 à 36"
+  says appinfo/info.xml "- Nextcloud 33 tot 36"
+  says docs/reference.md "| | Nextcloud 33 | Nextcloud 34 | Nextcloud 35 | Nextcloud 36 |"
+  says docs/reference.de.md "| | Nextcloud 33 | Nextcloud 34 | Nextcloud 35 | Nextcloud 36 |"
+  says docs/reference.de.md "| --- | --- | --- | --- | --- |"
+  says docs/reference.md "| :--- | :---: | :---: | :---: | :---: |"
+  says docs/reference.md "| **A** | a33 | a34 | a35 | a35 |"
+  says docs/reference.md "| **B** | | b34 | b35 | b35 |"
+  if ! grep -qE '^Nextcloud 33 bis 36 ' "$copy/docs/faq.de.md"; then
+    fail "left docs/faq.de.md without \"Nextcloud 33 bis 36\""
   fi
-}
-says README.md "Nextcloud $nextcloud_min to $nextcloud_max"
-says README.md "PHP $php_min or newer"
-says docs/install.md "| **Nextcloud** | $nextcloud_min to $nextcloud_max |"
-says docs/install.md "| **PHP** | $php_min or newer"
-says docs/faq.md "Nextcloud $nextcloud_min to $nextcloud_max"
-says docs/reference.md "| $columns"
-says docs/reference.md "**PHP:** $php_min or newer"
-says README.de.md "Nextcloud $nextcloud_min bis $nextcloud_max"
-says README.de.md "PHP $php_min oder neuer"
-says docs/install.de.md "| **Nextcloud** | $nextcloud_min bis $nextcloud_max |"
-says docs/install.de.md "| **PHP** | $php_min oder neuer"
-says docs/faq.de.md "Nextcloud $nextcloud_min bis $nextcloud_max"
-says docs/reference.de.md "| $columns"
-says docs/reference.de.md "**PHP:** $php_min oder neuer"
-# Every description of the App Store, in whatever language, names the versions in
-# one line "- Nextcloud <min> <word> <max>", such as "to", "bis", "à" or "tot".
-descriptions="$(grep -c '<description' appinfo/info.xml || true)"
-named="$(grep -cE "^- Nextcloud $nextcloud_min [^ ]+ $nextcloud_max\$" appinfo/info.xml || true)"
-if [[ "$descriptions" != "$named" ]]; then
-  echo "appinfo/info.xml has $descriptions description(s) for the App Store, but only $named line(s) \"- Nextcloud $nextcloud_min <to> $nextcloud_max\": write the versions of appinfo/info.xml in each description."
-  version_problems=$((version_problems + 1))
-fi
-if ((version_problems > 0)); then
-  exit 1
-fi
-echo "The documentation names Nextcloud $nextcloud_min to $nextcloud_max and PHP $php_min, and the descriptions of the App Store in every language Nextcloud $nextcloud_min to $nextcloud_max, as appinfo/info.xml does."
+  versions
+  ends 0 "checking a max-version of 36 after writing it"
+  snapshot
+  versions --write
+  ends 0 "writing a max-version of 36 again"
+  unchanged "that it had written already"
+
+  # Nextcloud 33 reaches its end.
+  set_versions 34 36 8.2
+  versions --write
+  ends 0 "writing a min-version of 34"
+  says README.de.md "- Nextcloud 34 bis 36"
+  says docs/reference.md "| | Nextcloud 34 | Nextcloud 35 | Nextcloud 36 |"
+  says docs/reference.de.md "| | Nextcloud 34 | Nextcloud 35 | Nextcloud 36 |"
+  says docs/reference.md "| :--- | :---: | :---: | :---: |"
+  says docs/reference.md "| **A** | a34 | a35 | a35 |"
+  says docs/reference.md "| **B** | b34 | b35 | b35 |"
+
+  # A new PHP changes its six places and nothing else, such as the PHP of the unit tests.
+  set_versions 34 36 8.4
+  snapshot
+  versions --write
+  ends 0 "writing PHP 8.4"
+  diff -r "$work/before" "$copy" | grep '^>' >"$work/diff" || true
+  php_places="$(grep -cE '8\.4 (or newer|oder neuer)' "$work/diff" || true)"
+  if [[ "$(wc -l <"$work/diff" | tr -d ' ')" != 6 || "$php_places" != 6 ]]; then
+    cat "$work/diff" >>"$work/output"
+    fail "changed other lines than the six places of PHP, or missed one"
+  fi
+
+  # What no command can fix: a place that is gone, a row of a table without a cell for
+  # each version and a description of the App Store without its versions.
+  grep -v '^Nextcloud [0-9]* to ' "$copy/docs/faq.md" >"$work/faq.md"
+  mv "$work/faq.md" "$copy/docs/faq.md"
+  grep -v '^- Nextcloud [0-9]* tot ' "$copy/appinfo/info.xml" >"$work/info.xml"
+  mv "$work/info.xml" "$copy/appinfo/info.xml"
+  printf '%s\n' "| **C** | c34 |" >>"$copy/docs/reference.md"
+  for mode in check --write; do
+    if [[ "$mode" == check ]]; then
+      versions
+    else
+      versions "$mode"
+    fi
+    ends 1 "with $mode where a place is gone"
+    printed "docs/faq.md has no line that says \"Nextcloud 34 to 36\""
+    printed "has 2 cell(s) in its row of the table of compatibility, and the header 4"
+    printed "appinfo/info.xml has 5 description(s) for the App Store, but 4 line(s)"
+  done
+  versions --force
+  ends 2 "with an argument that it doesn't know"
+  echo "scripts/versions.sh checks a new max-version, min-version and PHP and writes them into each place, and changes nothing that is in sync."
+)
 
 printf '\n== %s\n' "Descriptions of the website pages"
 # Search engines and shared links show the description of a page, from its front
