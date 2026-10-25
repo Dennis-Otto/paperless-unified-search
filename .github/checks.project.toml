@@ -48,7 +48,15 @@ problem = """`tests/e2e/run-all.sh` failed against a version of Nextcloud from
 `min-version` to `max-version` of `appinfo/info.xml`: a test of the app in a real
 Nextcloud, with a mock of Paperless-ngx and Chromium, found that the app no longer does
 what it promises, or the tests of a version took longer than their time, 600 seconds,
-and were stopped. The annotation of each version that failed names it; the group of
+and were stopped. Last, `tests/e2e/assert_log.py` checks the log of Nextcloud of each
+version, and fails on each record of the app that no test expects: an error of the
+app, also an uncaught exception that Nextcloud logs for `index`, `core` or `no app in
+context` with a trace through `lib/`, a deprecation, notice or warning of PHP in a file
+of the app, and a warning of the app that no test provokes on purpose. Its output in
+the log of the version, after *Check the log of Nextcloud*, names each finding, its
+place in the files of the app, such as `lib/Search/PaperlessSearchProvider.php:42`,
+the request during which Nextcloud wrote it and the record. The annotation of each
+version that failed names it; the group of
 the log named after the version, such as *Nextcloud 35 (failed, 312 s)*, shows the step
 that stopped and the logs of its containers, and the summary of the run the release of
 Nextcloud behind each image. A failure of the weekly run, which tests the newest
@@ -62,9 +70,12 @@ smart picker, in a browser on a laptop and on a phone. The check is required, so
 pull request that changes no file that the tests cover passes it in seconds."""
 fix = """Run the tests with Docker against the version that failed, such as
 `E2E_VERSIONS=35`, fix what its log shows, and push. `KEEP_E2E=1` with `run.sh` leaves
-the containers running, so that you can look inside them. A version that took too long
-on a busy runner usually passes when the job runs again, which the flaky-test bot does
-once by itself."""
+the containers running, so that you can look inside them. For a finding of the log,
+change the code at the place that it names, as the migration guide of PHP says for a
+deprecation; only a warning that a step of `tests/e2e/run.sh` provokes on purpose goes
+into `EXPECTED_WARNINGS` of `tests/e2e/assert_log.py`, with that step. A version that
+took too long on a busy runner usually passes when the job runs again, which the
+flaky-test bot does once by itself."""
 commands = [
   "bash tests/e2e/run-all.sh",
   "NEXTCLOUD_IMAGE=nextcloud:35-apache KEEP_E2E=1 bash tests/e2e/run.sh",

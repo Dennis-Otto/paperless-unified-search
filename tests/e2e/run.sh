@@ -26,7 +26,7 @@ FLOW_SIZES="${E2E_FLOW_SIZES:-laptop phone}"
 export E2E_PORT
 # Git Bash on Windows: keep the paths in the container of the mock and the paths of the
 # shares in Nextcloud as they are.
-export MSYS2_ARG_CONV_EXCL="/mock/;path=/${MSYS2_ARG_CONV_EXCL:+;${MSYS2_ARG_CONV_EXCL}}"
+export MSYS2_ARG_CONV_EXCL="/mock/;/Base/;path=/${MSYS2_ARG_CONV_EXCL:+;${MSYS2_ARG_CONV_EXCL}}"
 
 cleanup() {
 	status=$?
@@ -279,6 +279,21 @@ fi
 # Nextcloud always trusts 127.0.0.1, where the tests reach it. The browser of the
 # accessibility check reaches it by its name in the network of the project.
 occ config:system:set trusted_domains 1 --value=nextcloud >/dev/null
+# Nextcloud logs a deprecation of PHP at debug and a notice at info, below its log level,
+# warning, so that the log would hold neither. The condition logs every record of PHP
+# and of the app at debug, and assert_log.py fails at the end on each deprecation,
+# notice and warning raised in a file of the app: the images run a newer PHP than the
+# unit tests, so only these tests see what it deprecates. The log level debug for all
+# would do the same, with a trace for each query of the database that reads a table
+# that the request wrote, 100 MB within the first minute. Set before the app is
+# enabled, so that the log holds its first run too.
+occ config:system:set log.condition --type=json --value='{"apps":["PHP","paperless_unified_search"]}' >/dev/null
+# PHP hands Nextcloud only the errors that error_reporting names. The images have no
+# php.ini and so name all, E_ALL; php.ini-production would leave out the deprecations.
+if ! "${COMPOSE[@]}" exec -T nextcloud php -r 'exit(error_reporting() === E_ALL ? 0 : 1);'; then
+	echo "PHP of the image of Nextcloud reports not every error, as error_reporting leaves some out, so the check of the log would miss them: set error_reporting = E_ALL." >&2
+	exit 1
+fi
 # The coming Nextcloud of canary.sh is newer than max-version of appinfo/info.xml:
 # --force enables the app there anyway, without making it compatible.
 enable_options=()

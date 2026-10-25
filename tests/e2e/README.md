@@ -51,6 +51,33 @@ The suite checks what reached Paperless in the journal of the mock, not in the l
 
 All credentials and document data are synthetic, local to the disposable Compose project, and intentionally unsuitable for production.
 
+## The log of Nextcloud
+
+At its end, `run.sh` pipes the log of Nextcloud, `data/nextcloud.log`, into `assert_log.py`, which fails on every record of the app that no test expects. A record is of the app when the app wrote it, or when its message, its exception or its data names a file of the app, `custom_apps/paperless_unified_search/`, or its namespace, `OCA\PaperlessUnifiedSearch\`. Nextcloud logs an uncaught exception for the app `index`, `core`, `PHP` or `no app in context`, with a trace through `lib/`, so a `TypeError` in the search provider, the dashboard widget, the smart picker or a command of occ counts as well; the URL of a request to a route of the app doesn't, as it names the app whatever code failed ([#237](https://github.com/Dennis-Otto/paperless-unified-search/issues/237)).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../../docs/images/diagrams/the-check-of-the-log-of-nextcloud.dark.svg">
+  <img src="../../docs/images/diagrams/the-check-of-the-log-of-nextcloud.svg" alt="The check of the log of Nextcloud: At its end, run.sh pipes the log of Nextcloud, which holds every record of PHP and of the app at debug, into assert_log.py, which counts the records at each level. A record that the app didn't write and whose message, exception and data name neither a file of the app nor its namespace passes. A record of the app fails the check when it is a deprecation, notice or warning of PHP in a file of the app, an error or a fatal error, or a warning that no test provokes on purpose; every other record of the app passes. Each finding names its place in the files of the app, its request and the record.">
+</picture>
+
+| Finding | What the log holds | How to fix it |
+| --- | --- | --- |
+| *a deprecation of PHP*, *a notice of PHP* or *a warning of PHP in a file of the app* | PHP raised it in a file of the app, at any level, such as a parameter that is nullable without saying so | Change the code at the place that the finding names, as the migration guide of that version of PHP says |
+| *an error of the app* or *a fatal error of the app* | A record of the app at the level error or fatal, such as an uncaught exception with a trace through `lib/` | Fix the code at the place that the finding names, the first frame of the trace in the files of the app |
+| *a warning of the app that no test expects* | A warning of the app that `EXPECTED_WARNINGS` of `assert_log.py` doesn't name | Fix its cause. A warning that a step of `run.sh` provokes on purpose, such as the save of a token that the mock refuses, goes into `EXPECTED_WARNINGS`, with that step |
+
+The images of Nextcloud run a newer PHP than the unit tests, PHP 8.4 for Nextcloud 33 and PHP 8.5 for 34 and 35, against 8.2 and 8.3 of the unit tests, so these tests are the only ones that see what the newer PHP deprecates; the next major version of PHP turns many deprecations into errors. Nextcloud logs a deprecation of PHP at debug and a notice at info, below its default log level, warning, so `run.sh` sets the condition `log.condition` of `config.php`, which logs every record of PHP and of the app at debug. The log level debug for all would do the same, with a trace for each query of the database that reads a table which the request wrote: 100 MB within the first minute. `run.sh` fails as well when PHP of the image doesn't hand Nextcloud every error, `error_reporting` other than `E_ALL`, as `php.ini-production` would leave out the deprecations.
+
+The check first prints how many records the log holds at each level, of all and of the app, so that a log that grows shows in the output of the job, and how often each expected warning came. Each finding follows with what it is, the app that the record names and its message, its place in the files of the app, the request or the command of occ during which Nextcloud wrote it, and the record in JSON, with a line for each frame of its trace in place of the frame with its arguments:
+
+```text
+- an error of the app, for the app 'index': Argument #1 ($term) must be of type string, null given
+  at lib/Search/PaperlessSearchProvider.php:42, during GET /ocs/v2.php/search/providers/paperless_unified_search/search
+  {"app": "index", "exception": {"Exception": "TypeError", ...}, "level": 3, ...}
+```
+
+`KEEP_E2E=1` leaves the containers running, and `docker compose --project-name paperless_unified_search_e2e exec nextcloud cat data/nextcloud.log` shows the whole log, with the project `pus_e2e_<version>` for a version of `run-all.sh`. `selftest.sh` tests `assert_log.py` with records of its own, as Nextcloud writes them.
+
 ## Every supported version at once
 
 `run-all.sh` reads `min-version` and `max-version` of `appinfo/info.xml` and starts `run.sh` for every major version from the one to the other at the same time, each with the image `nextcloud:<version>-apache`, the Compose project `pus_e2e_<version>` and the port `18000 + <version>`, such as `18035` for Nextcloud 35. Each version writes its log to a file of its own; the script notes each version as it finishes and then prints the logs one after another, in the CI each in a group named after the version and its result. The script fails when one version does, and Ctrl-C stops every version and removes its containers. A version that takes longer than `E2E_VERSION_TIMEOUT` seconds, 600 by default and more than twice what it needs, stops and fails as well, with its log up to that point and the state of its containers, long before the job of the CI times out.
