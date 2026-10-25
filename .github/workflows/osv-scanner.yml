@@ -5,7 +5,10 @@ name: OSV-Scanner
 # and on main and every week all of them. Findings go to code scanning, where the
 # Findings workflow keeps them fixed or accepted; osv-scanner.toml lists those that the
 # project accepts, each with its reason, such as an advisory in a test base that pins
-# its dependencies. https://github.com/Dennis-Otto/repo-blueprint
+# its dependencies. Dependabot doesn't read that file: on main, every week and by hand,
+# the job dependabot alerts closes each Dependabot alert that an acceptance covers, with
+# its reason and its end, and opens again each one that it closed once the acceptance
+# is gone. https://github.com/Dennis-Otto/repo-blueprint
 
 on:
   pull_request:
@@ -23,14 +26,27 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "33 5 * * 1"
+    - cron: "6 5 * * 5"
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only show which Dependabot alerts the run would close or open again
+        type: boolean
+        default: false
 
 permissions: {}
 
+# The GitHub CLI of the jobs sends no telemetry to GitHub.
+env:
+  GH_TELEMETRY: "false"
+
+# A newer run for the same pull request, or for a newer push to main, cancels the run
+# still going, which would only tell what the newer one tells; the bot for cancelled
+# checks starts the run of the head again when a late run for an older commit
+# cancelled it. A run on a schedule or by hand is in a group of its own.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.ref) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
   pull-request:
@@ -45,6 +61,10 @@ jobs:
       contents: read
       security-events: write
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+    with:
+      # Code scanning, where GitHub offers it: without it, the findings stay in the
+      # summary and the artifact of the check.
+      upload-sarif: ${{ vars.CODE_SCANNING != 'off' }}
 
   repository:
     name: osv-scanner
@@ -54,3 +74,195 @@ jobs:
       contents: read
       security-events: write
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+    with:
+      # Code scanning, where GitHub offers it.
+      upload-sarif: ${{ vars.CODE_SCANNING != 'off' }}
+
+  # Dependabot doesn't read osv-scanner.toml, so it keeps an alert open for every
+  # advisory that the project accepts, such as each of the Pillow that Home Assistant
+  # pins for the tests. The token of a workflow can't read the Dependabot alerts: an
+  # app of the owner closes them, with the permission Dependabot alerts (read and write)
+  # alone, for this repository alone (decision 0086).
+  dependabot:
+    name: dependabot alerts
+    if: github.event_name != 'pull_request' && !github.event.repository.fork
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # The environment holds the private keys of the release app and of the settings
+    # app; only main may use it.
+    environment:
+      name: release
+      deployment: false
+    permissions:
+      contents: read
+    steps:
+      - name: Block every host that the job doesn't need
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The settings app writes the alerts once the variable SETTINGS_APP_CLIENT_ID and
+      # the secret SETTINGS_APP_PRIVATE_KEY name it, as it writes the rest of the
+      # administration; set up in part, the run says what is missing and goes on with
+      # the release app, as the settings bot does.
+      - name: Check whether the settings app is set up
+        id: settings-app
+        env:
+          CLIENT_ID: ${{ vars.SETTINGS_APP_CLIENT_ID }}
+          KEY_SET: ${{ secrets.SETTINGS_APP_PRIVATE_KEY != '' }}
+          # Who would take the settings app, and what happens without it.
+          BOT: the Dependabot alert bot
+          INSTEAD: the release app closes the Dependabot alerts that osv-scanner.toml accepts
+        run: |
+          if [[ -n "$CLIENT_ID" && "$KEY_SET" == true ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ -n "$CLIENT_ID" ]]; then
+            missing="names a settings app in the variable SETTINGS_APP_CLIENT_ID, but has no private key of it in the secret SETTINGS_APP_PRIVATE_KEY of the environment release"
+          elif [[ "$KEY_SET" == true ]]; then
+            missing="has a private key of a settings app in the secret SETTINGS_APP_PRIVATE_KEY of the environment release, but names no settings app in the variable SETTINGS_APP_CLIENT_ID"
+          else
+            # No settings app: nothing to say, the release app does its work.
+            exit 0
+          fi
+          echo "::warning::This repository $missing, so $BOT goes on without it: $INSTEAD."
+          {
+            echo "### The settings app is set up only in part"
+            echo
+            echo "This repository $missing, so $BOT goes on without it: $INSTEAD. The settings app is an optional second GitHub App of the owner, the only one that writes the administration of the repository, so that the release app needs no *Administration*."
+            echo
+            echo "[The settings app](https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/own-account.md#8-the-settings-app-optional) shows how to set it up, with the variable and the secret. Once both are set, $BOT takes the settings app in its next run."
+          } >> "$GITHUB_STEP_SUMMARY"
+      # Without the release app of the owner, the run names what is missing rather than
+      # fail at the token, and the alerts stay as they are.
+      - name: Check that the release app is set up
+        id: release-app
+        if: steps.settings-app.outputs.ready != 'true'
+        env:
+          CLIENT_ID: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          KEY_SET: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY != '' }}
+          # Who needs the app and for what, what happens without it, and whether the
+          # run fails then.
+          BOT: the Dependabot alert bot
+          TASK: close the Dependabot alerts that osv-scanner.toml accepts
+          WITHOUT: the alerts stay as they are
+          REQUIRED: "false"
+        run: |
+          if [[ -z "$CLIENT_ID" ]]; then
+            missing="names no release app in the variable RELEASE_AUTOMATION_CLIENT_ID"
+          elif [[ "$KEY_SET" != true ]]; then
+            missing="has no private key of its release app in the secret RELEASE_AUTOMATION_PRIVATE_KEY of the environment release"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          level=warning
+          if [[ "$REQUIRED" == true ]]; then
+            level=error
+          fi
+          echo "::$level::This repository $missing, which $BOT needs to $TASK; $WITHOUT."
+          {
+            echo "### ${BOT^} needs the release app of the owner"
+            echo
+            echo "This repository $missing, which $BOT needs to $TASK; $WITHOUT. The release app is a GitHub App of the owner, whose token may do what the token of a job can't: start the checks of a pull request, change a workflow and apply the settings."
+            echo
+            echo "\`python3 .github/blueprint.py checklist\` shows the steps: a link that registers the app with its permissions filled in, the update of the answers of the blueprint that names it in \`.github/repository.toml\`, the settings and its private key. Once they are done, $BOT can $TASK in its next run."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$REQUIRED" == true ]]; then
+            exit 1
+          fi
+      # Only the Dependabot alerts, for this repository alone. GitHub refuses the token
+      # of an app that lacks the permission, or whose installation hasn't accepted it
+      # yet; the next step says what to do.
+      - name: Create a token of the settings app
+        id: settings-token
+        if: steps.settings-app.outputs.ready == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SETTINGS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SETTINGS_APP_PRIVATE_KEY }}
+          permission-vulnerability-alerts: write
+      - name: Create a token of the release app
+        id: release-token
+        if: steps.release-app.outputs.ready == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY }}
+          permission-vulnerability-alerts: write
+      - name: Say what the app lacks
+        if: steps.settings-token.outcome == 'failure' || steps.release-token.outcome == 'failure'
+        env:
+          APP: ${{ steps.settings-token.outcome == 'failure' && 'settings' || 'release' }}
+          # The apps of the blueprint's owner have the permission, so a refused token
+          # fails the check in the owner's repositories, and the PR coach explains it;
+          # in those of every other owner it is a notice until the owner grants it. The
+          # template sets it for the owner of each repository.
+          STRICT: "true"
+        run: |
+          text="GitHub refused a token of the $APP app with the permission Dependabot alerts (read and write), most often because the app lacks it or its installation hasn't accepted it yet, so the Dependabot alerts stay as they are."
+          {
+            echo "### The $APP app may not close the Dependabot alerts"
+            echo
+            echo "$text The log of the step *Create a token of the $APP app* has GitHub's answer."
+            echo
+            echo "On the settings page of the $APP app, under *Permissions & events*, set *Dependabot alerts* to *Read and write* and save; then accept the new permission on its installation (*Settings → Applications → Installed GitHub Apps*, *Configure*, *Review request*), and run the workflow *OSV-Scanner* again. [Your own account](https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/own-account.md#8-the-settings-app-optional) shows each step."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$STRICT" == true ]]; then
+            echo "::error::$text"
+            exit 1
+          fi
+          echo "::notice::$text"
+      - name: Close the alerts that osv-scanner.toml accepts
+        if: steps.settings-token.outputs.token != '' || steps.release-token.outputs.token != ''
+        env:
+          GH_TOKEN: ${{ steps.settings-token.outputs.token || steps.release-token.outputs.token }}
+          DRY_RUN: ${{ inputs.dry_run || false }}
+        run: |
+          # Repositories have the copy that the blueprint keeps current; the blueprint
+          # has the original.
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          options=()
+          if [[ "$DRY_RUN" == true ]]; then
+            options=(--dry-run)
+          fi
+          status=0
+          python3 "$script" --repo "$GITHUB_REPOSITORY" advisories --dependabot "${options[@]}" > "$RUNNER_TEMP/dependabot.txt" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/dependabot.txt"
+          {
+            echo '### Dependabot alerts'
+            echo '```'
+            cat "$RUNNER_TEMP/dependabot.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.toml.
+      - name: Explain the failure
+        if: failure()
+        env:
+          CHECK: dependabot alerts
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" coach explain "$CHECK"

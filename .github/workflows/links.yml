@@ -35,14 +35,22 @@ on:
       - .lycheeignore
       - .github/workflows/links.yml
   schedule:
-    - cron: "50 5 * * 1"
+    - cron: "23 5 * * 5"
   workflow_dispatch:
 
 permissions: {}
 
+# A newer run for the same pull request, or for a newer push to main, cancels the run
+# still going, which would only tell what the newer one tells; the bot for cancelled
+# checks starts the run of the head again when a late run for an older commit
+# cancelled it. A run on a schedule or by hand is in a group of its own.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.ref) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+
+# The GitHub CLI of the jobs sends no telemetry to GitHub.
+env:
+  GH_TELEMETRY: "false"
 
 jobs:
   links:

@@ -10,6 +10,10 @@ on:
 
 permissions: {}
 
+# The GitHub CLI of the jobs sends no telemetry to GitHub.
+env:
+  GH_TELEMETRY: "false"
+
 jobs:
   welcome:
     name: welcome
@@ -21,10 +25,13 @@ jobs:
     permissions:
       pull-requests: write
     steps:
-      - name: Record the network traffic of the job
+      - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
       # No checkout: the comment needs nothing of the pull request.
       - name: Welcome the first pull request
         env:
@@ -41,3 +48,13 @@ jobs:
             "- \`bash scripts/check.sh\` runs the checks of the CI on your computer." \
             "" \
             "[CONTRIBUTING.md](../blob/main/CONTRIBUTING.md) explains the rest. The checks start once the maintainer approves them for this first pull request.")"
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."

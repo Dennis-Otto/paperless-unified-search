@@ -1,18 +1,21 @@
 """What a pull request makes, for the one report of the PR coach: the release that it
 brings and the entry that it adds to the changelog, the coverage of its tests against
-that of main, and the website that it builds.
+that of main, the website that it builds, and the parts that workflows add, such as the
+size of a module or the pictures of visual tests.
 
 The coach adds these parts after the sections of the checks that failed. A pull request
-controls its title, its description, its files and its coverage report, so their text
-appears only as code, and a link leads only to GitHub or to the website of the
-repository, built from names that can't end it. The versions and the address of the
-website come from the files of the default branch; nothing of the pull request runs.
+controls its title, its description, its files, its coverage report and what its
+workflows keep, so their text appears only as code, and a link leads only to GitHub or
+to the website of the repository, built from names that can't end it. The versions, the
+address of the website and the titles of the parts come from the files of the default
+branch; nothing of the pull request runs.
 """
 
 from __future__ import annotations
 
 import json
 import re
+import tempfile
 import textwrap
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
@@ -20,7 +23,17 @@ from itertools import islice
 from pathlib import Path
 from typing import Any
 
-from blueprint.coach import CONTROL, PAGE, TYPES, Part, code, fence, paged
+from blueprint.coach import (
+    CONTROL,
+    MOST_REPORTS,
+    PAGE,
+    TYPES,
+    Part,
+    ReportEntry,
+    code,
+    fence,
+    paged,
+)
 from blueprint.coverage_comment import COVERAGE_MARKER, Coverage, coverage_table
 from blueprint.github import Api, Json
 
@@ -54,6 +67,27 @@ FRAGMENT = re.compile(r"changelog\.d/[A-Za-z0-9][A-Za-z0-9._-]*\.md")
 WEBSITE_DAYS = 7
 # The artifact of the website that the check docs keeps of a pull request.
 WEBSITE_ARTIFACT = "website"
+# A part that a workflow adds: the artifact pr-report-<name> that it keeps for the head
+# of the pull request, with the file report.md, where [report.<name>] of the catalog
+# declares it. Its first line QUIET makes it no news by itself, such as a size that
+# stays as it was.
+REPORT_ARTIFACT = "pr-report-"
+REPORT_FILE = "report.md"
+QUIET = "<!-- quiet -->"
+# What the coach takes of the parts of the workflows at most (MOST_REPORTS parts): each
+# artifact so large as GitHub keeps it zipped, so much of its report.md, so long a
+# part, so many rows and columns of a table, so long a cell, paragraph or line of code,
+# and so many lines of a block of code: the longest table and block of code fit into a
+# part, and the parts into the comment beside the others.
+REPORT_BYTES = 256 * 1024
+REPORT_TEXT = 64 * 1024
+REPORT_LENGTH = 8000
+TABLE_ROWS = 20
+TABLE_COLUMNS = 6
+CELL_LENGTH = 50
+PARAGRAPH_LENGTH = 1000
+CODE_LINES = 30
+CODE_WIDTH = 200
 
 Version = tuple[int, int, int]
 
@@ -350,19 +384,34 @@ class Website:
         return self.url + prefix + "".join(f"{folder}/" for folder in folders)
 
 
-def website_artifact(api: Api, repo: str, sha: str) -> str | None:
-    """The link to the artifact website that the check docs kept for sha."""
-    data = api.get(
-        f"repos/{repo}/actions/artifacts?name={WEBSITE_ARTIFACT}&per_page={PAGE}"
-    )
+@dataclass(frozen=True)
+class Artifact:
+    """An artifact that a run kept: the number of the run, its own, and its size."""
+
+    run: int
+    id: int
+    size: int = 0
+
+    def link(self, repo: str) -> str:
+        return f"https://github.com/{repo}/actions/runs/{self.run}/artifacts/{self.id}"
+
+
+def newest_artifact(api: Api, repo: str, sha: str, name: str) -> Artifact | None:
+    """The newest artifact of a name that a run kept for sha and that hasn't expired:
+    GitHub lists the newest first, so a run again takes the place of the one before."""
+    data = api.get(f"repos/{repo}/actions/artifacts?name={name}&per_page={PAGE}")
     for item in (data or {}).get("artifacts") or []:
         run = item.get("workflow_run") or {}
         if run.get("head_sha") == sha and not item.get("expired"):
-            return (
-                f"https://github.com/{repo}/actions/runs/{int(run['id'])}"
-                f"/artifacts/{int(item['id'])}"
-            )
+            size = int(item.get("size_in_bytes") or 0)
+            return Artifact(int(run["id"]), int(item["id"]), size)
     return None
+
+
+def website_artifact(api: Api, repo: str, sha: str) -> str | None:
+    """The link to the artifact website that the check docs kept for sha."""
+    found = newest_artifact(api, repo, sha, WEBSITE_ARTIFACT)
+    return found.link(repo) if found else None
 
 
 def website_part(
@@ -404,6 +453,277 @@ def website_part(
     return Part("\n".join(lines).rstrip(), news=True)
 
 
+# ---------------------------------------------------------------- the parts of workflows
+
+# The lines of the Markdown of a part that begin a block of their own: the fence of a
+# block of code with what follows it, of which the language comes first, a row of a
+# table and the row below its head that aligns its columns, an item of a list with its
+# indent, and a heading. Each pattern reads a line in one pass: a line of the 64 kB of
+# a report.md from a fork can't make a pattern try again at every place.
+CODE_FENCE = re.compile(r" {0,3}(`{3,}|~{3,}) *([A-Za-z0-9+-]*)(.*)")
+TABLE_ROW = re.compile(r" {0,3}\|.*\|")
+TABLE_DELIMITER = re.compile(r" {0,3}\|(?: *:?-+:? *\|)+")
+LIST_ITEM = re.compile(r"( *)(?:[-*+]|\d{1,9}[.)]) +(\S.*)")
+HEADING = re.compile(r" {0,3}#{1,6} +(.*)")
+# The languages of a block of code that GitHub draws as a diagram, a map, a model or a
+# formula instead of showing it as code; such a block of a part shows without one.
+DRAWN = frozenset({"mermaid", "geojson", "topojson", "stl", "math"})
+
+
+@dataclass
+class Block:
+    """A block of the Markdown of a part: its kind, its lines, how deep an item of a
+    list is, and whether the next line can continue it, as one of a paragraph can."""
+
+    kind: str
+    lines: list[str]
+    depth: int = 0
+    open: bool = False
+
+
+def code_fence(line: str) -> re.Match[str] | None:
+    """The fence that opens a block of code on line; a fence of backticks with a
+    backtick after it is none, but code inside a paragraph."""
+    opening = CODE_FENCE.fullmatch(line)
+    if opening and opening[1][0] == "`" and "`" in opening[3]:
+        return None
+    return opening
+
+
+def fenced(lines: list[str], start: int, opening: re.Match[str]) -> tuple[Block, int]:
+    """The block of code that opens at start, up to the fence that closes it or the end
+    of the text, with its language first, and the line after it."""
+    closing = re.compile(rf" {{0,3}}{re.escape(opening[1][0])}{{{len(opening[1])},}} *")
+    end = start + 1
+    while end < len(lines) and not closing.fullmatch(lines[end]):
+        end += 1
+    return Block("code", [opening[2], *lines[start + 1 : end]]), end + 1
+
+
+def tabled(lines: list[str], start: int) -> tuple[Block, int] | None:
+    """The table whose head is at start, with the row below it that aligns its
+    columns, and the line after it; none when start begins no table."""
+    if not (
+        TABLE_ROW.fullmatch(lines[start])
+        and start + 1 < len(lines)
+        and TABLE_DELIMITER.fullmatch(lines[start + 1])
+    ):
+        return None
+    end = start + 2
+    while end < len(lines) and TABLE_ROW.fullmatch(lines[end]):
+        end += 1
+    return Block("table", lines[start:end]), end
+
+
+def block_of(line: str) -> Block:
+    """The block that a line begins outside a block of code or a table."""
+    item = LIST_ITEM.fullmatch(line)
+    if item:
+        return Block("item", [item[2]], len(item[1]) // 2, open=True)
+    heading = HEADING.fullmatch(line)
+    if heading:
+        # Without the marks that may close it, after a space.
+        closed = heading[1].rstrip("#")
+        text = closed.rstrip() if closed.endswith(" ") else heading[1]
+        return Block("heading", [text])
+    return Block("text", [line.strip()], open=True)
+
+
+def next_block(lines: list[str], start: int, blocks: list[Block]) -> int:
+    """Reads the line at start into blocks, as a block of its own or as the next line
+    of a paragraph or an item, and returns the line after what it read."""
+    opening = code_fence(lines[start])
+    found = fenced(lines, start, opening) if opening else tabled(lines, start)
+    if found:
+        blocks.append(found[0])
+        return found[1]
+    last = blocks[-1] if blocks else None
+    block = block_of(lines[start]) if lines[start].strip() else None
+    if block is None:
+        if last:
+            last.open = False
+    elif last and last.open and block.kind == "text":
+        last.lines += block.lines
+    else:
+        blocks.append(block)
+    return start + 1
+
+
+def blocks_of(text: str) -> list[Block]:
+    """The blocks of the Markdown of a part, without control characters: blocks of
+    code, tables, items of lists, headings and paragraphs."""
+    lines = [
+        CONTROL.sub(" ", line.expandtabs(4)).rstrip() for line in text.splitlines()
+    ]
+    blocks: list[Block] = []
+    start = 0
+    while start < len(lines):
+        start = next_block(lines, start, blocks)
+    return blocks
+
+
+def cells(row: str) -> list[str]:
+    """The cells of a row of a table, split at each pipe that no backslash escapes."""
+    inner = row.strip().removeprefix("|")
+    inner = inner.removesuffix("|") if not inner.endswith("\\|") else inner
+    return [part.strip().replace("\\|", "|") for part in re.split(r"(?<!\\)\|", inner)]
+
+
+def cell(text: str) -> str:
+    """A cell of a table as code, whose pipes end neither its code nor its cell."""
+    return code(text, CELL_LENGTH).replace("|", "\\|")
+
+
+def alignment(delimiter: str) -> str:
+    """How a column of the row below the head aligns its cells, as GitHub reads it."""
+    left, right = delimiter.startswith(":"), delimiter.endswith(":")
+    return (":" if left else "") + "---" + (":" if right else "")
+
+
+def table_lines(block: Block) -> list[str]:
+    """A table with every cell as code, so many rows and columns at most, each row
+    with as many cells as its head."""
+    head = cells(block.lines[0])[:TABLE_COLUMNS]
+    width = len(head)
+    aligned = [alignment(part) for part in cells(block.lines[1])]
+    aligned = (aligned + ["---"] * width)[:width]
+    rows = [cells(row) for row in block.lines[2:]]
+
+    def row(values: list[str]) -> str:
+        values = (values + [""] * width)[:width]
+        return "| " + " | ".join(cell(value) for value in values) + " |"
+
+    lines = [row(head), "| " + " | ".join(aligned) + " |"]
+    lines += [row(values) for values in rows[:TABLE_ROWS]]
+    if len(rows) > TABLE_ROWS:
+        lines += ["", f"… and {len(rows) - TABLE_ROWS} more rows."]
+    return lines
+
+
+def code_lines(block: Block) -> list[str]:
+    """A block of code that none of its lines can close, so many lines at most."""
+    language, lines = block.lines[0], block.lines[1:]
+    language = "" if language.lower() in DRAWN else language
+    shown_lines = [line[:CODE_WIDTH] for line in lines[:CODE_LINES]]
+    more = len(lines) - len(shown_lines)
+    return [
+        fence(language, shown_lines),
+        *([f"… and {more} more lines."] if more else []),
+    ]
+
+
+def shown_block(block: Block) -> str:
+    """A block of the Markdown of a part as the report shows it: its text as code."""
+    if block.kind == "code":
+        return "\n".join(code_lines(block))
+    if block.kind == "table":
+        return "\n".join(table_lines(block))
+    text = code(" ".join(block.lines), PARAGRAPH_LENGTH)
+    if block.kind == "item":
+        return "  " * block.depth + "- " + text
+    if block.kind == "heading":
+        return f"**{text}**"
+    return text
+
+
+def shown_report(text: str) -> tuple[str, bool]:
+    """The Markdown of a part as data, at most REPORT_LENGTH long, and whether its
+    report.md holds more than that. Every block shows some text: a line that has none
+    begins no block."""
+    shown_text = ""
+    previous = ""
+    depth = 0
+    for block in blocks_of(text):
+        if block.kind == "item":
+            # At most one deeper than the item before it, and none deep after anything
+            # else, which GitHub would show indented as code instead of as an item.
+            deepest = depth + 1 if previous == "item" else 0
+            depth = block.depth = min(block.depth, deepest, 2)
+        rendered = shown_block(block)
+        # Items next to each other stay one list.
+        gap = "\n" if previous == block.kind == "item" else "\n\n"
+        gap = gap if shown_text else ""
+        if len(shown_text) + len(gap) + len(rendered) > REPORT_LENGTH:
+            return shown_text, True
+        shown_text += gap + rendered
+        previous = block.kind
+    return shown_text, False
+
+
+def read_report(api: Api, repo: str, name: str, artifact: Artifact) -> str | None:
+    """The first REPORT_TEXT bytes of report.md of an artifact, or none when gh can't
+    download it or it holds no such file. gh unzips the artifact into a folder of its
+    own, and nothing of it runs."""
+    with tempfile.TemporaryDirectory() as folder:
+        arguments = ["run", "download", str(artifact.run), "--repo", repo]
+        done = api.runner([*arguments, "--name", name, "--dir", folder], None)
+        path = Path(folder) / REPORT_FILE
+        if done.returncode != 0 or path.is_symlink() or not path.is_file():
+            return None
+        with path.open("rb") as file:
+            data = file.read(REPORT_TEXT)
+    # Without the byte order mark that some editors write, so QUIET stays first.
+    return data.decode("utf-8-sig", errors="replace")
+
+
+def workflow_part(
+    entry: ReportEntry, repo: str, artifact: Artifact, text: str | None
+) -> Part | None:
+    """The part that a workflow added, under the title and the text of its entry in the
+    catalog, with a link to its artifact; none when its report.md says nothing, and a
+    note when the artifact is too large or the coach couldn't read it. It is news
+    unless its first line is QUIET."""
+    link = f"[`{REPORT_ARTIFACT}{entry.key}`]({artifact.link(repo)})"
+    lines = [f"#### {entry.title}", ""]
+    if entry.about:
+        lines += [entry.about, ""]
+    # The older comment stays until the part shows what it said.
+    news, replaces = True, ""
+    if artifact.size > REPORT_BYTES:
+        lines.append(
+            f"The artifact {link} is {artifact.size // 1024} kB, more than the "
+            f"{REPORT_BYTES // 1024} kB that the PR coach reads; let its workflow "
+            f"keep `{REPORT_FILE}` alone in it."
+        )
+    elif text is None:
+        news = False
+        lines.append(
+            f"The PR coach couldn't read `{REPORT_FILE}` of the artifact {link}; its "
+            "next run tries again."
+        )
+    else:
+        first, _, rest = text.partition("\n")
+        news = first.strip() != QUIET
+        shown_text, more = shown_report(text if news else rest)
+        if not shown_text and not more:
+            return None
+        shown_text = shown_text or f"Its `{REPORT_FILE}` begins with too much to show."
+        held = ", which holds more" if more else ""
+        replaces = entry.replaces
+        lines += [shown_text, "", f"<sub>From the artifact {link}{held}.</sub>"]
+    return Part("\n".join(lines), news=news, replaces=replaces)
+
+
+def workflow_parts(
+    api: Api, repo: str, sha: str, entries: Iterable[ReportEntry]
+) -> list[Part]:
+    """The parts that workflows added for sha, in the order of the catalog: one for
+    each artifact pr-report-<name> that [report.<name>] declares."""
+    parts: list[Part] = []
+    for entry in islice(entries, MOST_REPORTS):
+        name = REPORT_ARTIFACT + entry.key
+        artifact = newest_artifact(api, repo, sha, name)
+        if artifact is None:
+            continue
+        text = None
+        if artifact.size <= REPORT_BYTES:
+            text = read_report(api, repo, name, artifact)
+        part = workflow_part(entry, repo, artifact, text)
+        if part is not None:
+            parts.append(part)
+    return parts
+
+
 # ---------------------------------------------------------------- the parts
 
 
@@ -413,9 +733,11 @@ def about(
     pull: Json,
     root: Path,
     coverage: tuple[Coverage, Coverage | None] | None = None,
+    reports: Iterable[ReportEntry] = (),
 ) -> list[Part]:
     """The parts of the report about the pull request: its release, its coverage when
-    the tests kept a report, and its website."""
+    the tests kept a report, its website, and the parts that its workflows added, as
+    reports of the catalog declares them."""
     number = int(pull["number"])
     sha = str(pull["head"]["sha"])
     files = list(islice(paged(api, f"repos/{repo}/pulls/{number}/files"), MOST_FILES))
@@ -427,5 +749,6 @@ def about(
         website_part(
             files, Website.load(root), lambda: website_artifact(api, repo, sha)
         ),
+        *workflow_parts(api, repo, sha, reports),
     ]
     return [part for part in parts if part is not None]

@@ -12,9 +12,17 @@ on:
 permissions:
   contents: read
 
+# A newer run for the same pull request, or for a newer push to main, cancels the run
+# still going, which would only tell what the newer one tells; the bot for cancelled
+# checks starts the run of the head again when a late run for an older commit
+# cancelled it. A run on a schedule or by hand is in a group of its own.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.ref) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+
+# The GitHub CLI of the jobs sends no telemetry to GitHub.
+env:
+  GH_TELEMETRY: "false"
 
 jobs:
   check:
@@ -216,7 +224,10 @@ jobs:
         with:
           name: psalm-taint
           path: ${{ runner.temp }}/psalm-taint
+      # Not to a private repository without GitHub Code Security: check (php) shows
+      # the paths in its log.
       - name: Upload the paths to code scanning
+        if: vars.CODE_SCANNING != 'off'
         uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           sarif_file: ${{ runner.temp }}/psalm-taint/psalm-taint.sarif

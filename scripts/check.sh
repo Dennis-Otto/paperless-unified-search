@@ -35,6 +35,19 @@ files() {
   git ls-files -z --cached --others --exclude-standard --deduplicate "$@"
 }
 
+# What a tool finds, in the CI also as annotations at its lines, which the files of a
+# pull request show and the PR coach lists: blueprint.py annotate passes on what the
+# tool writes and adds one for each finding, or reads the report of JUnit of the tests.
+# The Python and blueprint.py of the step Pages in one column, which the CI never skips;
+# without them, what the tool writes passes on as it is.
+annotate() {
+  if [[ -n "${python:-}" && -f "${tool:-}" ]]; then
+    "$python" "$tool" annotate "$@"
+  elif (($# == 1)); then
+    cat
+  fi
+}
+
 step "Text files"
 # --deduplicate is new in Git 2.31; an older git would list no files, and every step
 # would pass without checking anything. The coach has nothing to add to that.
@@ -210,6 +223,37 @@ else
   echo "Python 3.12 or newer is not installed here; the CI checks the accepted advisories."
 fi
 
+step "Lock files"
+# Renovate compiles each lock file of pip-compile, such as requirements-dev.txt, again
+# with the command in its header, and skips one whose command it can't read, in every
+# run and with no more than a warning in its log: the file gets no update, not even
+# one that fixes a vulnerability. The step reads each header as Renovate does; locks
+# --fix puts the = between an option and its value. The Python and blueprint.py of the
+# step before.
+if [[ -n "$python" ]]; then
+  "$python" "$tool" locks
+elif [[ -n "${CI:-}" ]]; then
+  echo "Checking the lock files needs Python 3.12 or newer, which this runner lacks."
+  exit 1
+else
+  echo "Python 3.12 or newer is not installed here; the CI checks the lock files."
+fi
+
+step "Explanations of the checks"
+# Every required check of .github/repository.toml and .github/repository.project.toml
+# and every step of this file has its explanation in .github/checks.toml or
+# .github/checks.project.toml, which the PR coach shows when it fails, with the
+# commands that fix what it finds or the reason why none can. The Python and
+# blueprint.py of the step Pages in one column.
+if [[ -n "$python" ]]; then
+  "$python" "$tool" coach verify
+elif [[ -n "${CI:-}" ]]; then
+  echo "Checking the explanations needs Python 3.12 or newer, which this runner lacks."
+  exit 1
+else
+  echo "Python 3.12 or newer is not installed here; the CI checks the explanations."
+fi
+
 step "Version"
 # The release bot writes the version of each release into these files.
 release="$(grep -oE '"\.": *"[^"]+"' .release-please-manifest.json | grep -oE '[0-9][^"]*')"
@@ -249,7 +293,12 @@ if ! command -v shellcheck >/dev/null 2>&1; then
   fi
   echo "shellcheck is not installed here; the CI runs it."
 elif ((${#scripts[@]} > 0)); then
-  shellcheck "${scripts[@]}"
+  # In the CI one line for each finding, in the format of gcc, as its annotation.
+  if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
+    shellcheck --format=gcc "${scripts[@]}" 2>&1 | annotate shellcheck
+  else
+    shellcheck "${scripts[@]}"
+  fi
   echo "shellcheck found nothing in ${#scripts[@]} script(s)."
 fi
 
@@ -313,10 +362,16 @@ else
 fi
 
 step "Coding standard"
-vendor/bin/php-cs-fixer fix --dry-run --diff
+# In the CI, each change of the diff is an annotation at its lines as well.
+if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
+  vendor/bin/php-cs-fixer fix --dry-run --diff 2>&1 | annotate php-cs-fixer
+else
+  vendor/bin/php-cs-fixer fix --dry-run --diff
+fi
 
 step "Psalm"
-# The canary of the taint analysis runs on another processor meanwhile; its step reads
+# In the CI, Psalm writes each finding as an annotation at its line on its own. The
+# canary of the taint analysis runs on another processor meanwhile; its step reads
 # what it found, never the report of a run before.
 mkdir -p build
 rm -f build/psalm-canary.json
@@ -344,7 +399,10 @@ step "Psalm taint analysis"
 # or a header unescaped: the parameters of a request to a controller, the term of a
 # search and the answers of other servers, as .github/psalm/NextcloudTaintPlugin.php
 # teaches Psalm. The CI shows each path in code scanning too, from the SARIF report.
-vendor/bin/psalm --taint-analysis --threads=1 --no-cache --report=build/psalm-taint.sarif
+# Psalm passes a taint analysis that writes a report in a workflow of GitHub, which
+# it tells by GITHUB_WORKFLOW, whatever the analysis finds: without the variable, a
+# path fails the step there as well.
+env -u GITHUB_WORKFLOW vendor/bin/psalm --taint-analysis --threads=1 --no-cache --report=build/psalm-taint.sarif
 
 step "Tests, with every line covered"
 # pcov measures the coverage in the CI, Xdebug in the dev container.
@@ -352,7 +410,15 @@ if ! php -r 'exit(extension_loaded("pcov") || extension_loaded("xdebug") ? 0 : 1
   echo "The tests need pcov or Xdebug to measure their coverage: pecl install pcov" >&2
   exit 1
 fi
-XDEBUG_MODE=coverage vendor/bin/phpunit --coverage-text --coverage-cobertura build/coverage.xml
+# PHPUnit writes a report of JUnit too, of which in the CI each test that fails becomes
+# an annotation at the line where it failed.
+if ! XDEBUG_MODE=coverage vendor/bin/phpunit --log-junit build/phpunit.xml \
+  --coverage-text --coverage-cobertura build/coverage.xml; then
+  if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
+    annotate phpunit build/phpunit.xml
+  fi
+  exit 1
+fi
 # This is PHP code, not a shell expression.
 # shellcheck disable=SC2016
 php -r '$rate = (float) simplexml_load_file($argv[1])["line-rate"];

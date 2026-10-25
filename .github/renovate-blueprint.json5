@@ -202,6 +202,14 @@
       enabled: false,
     },
     {
+      // The Nextcloud of the pictures of the app stays within the max-version of
+      // its appinfo/info.xml: a new major version moves with that by hand.
+      matchFileNames: ["scripts/screenshots.sh"],
+      matchDepNames: ["docker.io/library/nextcloud"],
+      matchUpdateTypes: ["major"],
+      enabled: false,
+    },
+    {
       matchManagers: ["composer"],
       matchDepTypes: ["require"],
       matchUpdateTypes: ["minor", "patch"],

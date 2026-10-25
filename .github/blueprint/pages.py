@@ -9,14 +9,20 @@ table, and a cell with a width, at its line; its edits put the cells of a layout
 one below the other, the text before its picture, and take the widths out of the cells
 of a table of data. Code and comments of HTML don't count, so that a page can show
 such markup as an example.
+
+A Markdown table whose cells hold paragraphs fails the same readers: the GitHub app and
+a phone squeeze its columns or scroll it sideways, and a screen reader reads it cell by
+cell. long_cells finds each cell of more than CELL_WORDS words at the line of its row,
+as a warning for now, since only a person can make a list or a page of it.
 """
 
 from __future__ import annotations
 
 import re
 import textwrap
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 
 from blueprint.diagrams import markdown_pages
@@ -60,18 +66,35 @@ CELL_WIDTH = (
     "one column."
 )
 
+# The line below the header of a Markdown table, which sets its columns, such as
+# | --- | :-: |; one without a pipe is a rule or the line under a heading.
+DELIMITER = re.compile(r"[ \t]*\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*")
+# A pipe between two cells, one that no backslash escapes.
+PIPE = re.compile(r"(?<!\\)\|")
+# The most words of a cell of a Markdown table: a value, a name or a short sentence.
+# More is a paragraph, which belongs in a list or on a page of its own.
+CELL_WORDS = 30
+LONG_CELL = (
+    "a cell of a Markdown table with {words} words, more than {limit}: the GitHub app "
+    "and phones squeeze a table of paragraphs into narrow columns or scroll it "
+    "sideways, and a screen reader reads it cell by cell. Make the rows a list, or move "
+    "the detail to a page of its own and link it; a table is for short values."
+)
+
 # What an edit replaces: from where, up to where, and with what.
 Edit = tuple[int, int, str]
 
 
 @dataclass(frozen=True)
 class Layout:
-    """Columns side by side on a page: the line where they start, what is wrong, and
-    the edits that put them in one column, where there is a safe way to."""
+    """Columns side by side on a page: the line where they start, what is wrong, the
+    edits that put them in one column, where there is a safe way to, and whether the
+    CI shows it as an error or as a warning."""
 
     line: int
     message: str
     edits: tuple[Edit, ...] = ()
+    level: str = "error"
 
 
 @dataclass(frozen=True)
@@ -188,6 +211,57 @@ def layouts(text: str) -> list[Layout]:
         if sized:
             found.append(Layout(line_of(text, cell.start()), CELL_WIDTH, tuple(sized)))
     return sorted(found, key=lambda layout: layout.line)
+
+
+def long_cells(text: str) -> list[Layout]:
+    """The cells of the Markdown tables of a page with more than CELL_WORDS words, each
+    as a warning at the line of its row, in their order. Code counts as words, since a
+    reader reads it, but a table in a block of code is no table."""
+    shown = masked(text).split("\n")
+    lines = text.split("\n")
+    found = []
+    for number in table_rows(shown):
+        for start, end in cells(lines[number], shown[number]):
+            words = len(lines[number][start:end].split())
+            if words > CELL_WORDS:
+                message = LONG_CELL.format(words=words, limit=CELL_WORDS)
+                found.append(Layout(number + 1, message, level="warning"))
+    return found
+
+
+def table_rows(lines: list[str]) -> Iterator[int]:
+    """The numbers of the lines of the Markdown tables among these lines, from 0: the
+    header and each row below the line that sets the columns, up to the first line
+    without a pipe."""
+    number = 0
+    while number + 1 < len(lines):
+        below = lines[number + 1]
+        if not (
+            PIPE.search(lines[number])
+            and PIPE.search(below)
+            and DELIMITER.fullmatch(below)
+        ):
+            number += 1
+            continue
+        yield number
+        number += 2
+        while number < len(lines) and PIPE.search(lines[number]):
+            yield number
+            number += 1
+
+
+def cells(line: str, shown: str | None = None) -> list[tuple[int, int]]:
+    """Where each cell of a row of a Markdown table starts and ends on its line, without
+    the pipes at the ends of the row. A pipe in the code of a cell, which shown has as
+    a blank, splits no cell."""
+    pipes = [pipe.start() for pipe in PIPE.finditer(line if shown is None else shown)]
+    edges = [-1, *pipes, len(line)]
+    spans = [(start + 1, end) for start, end in pairwise(edges)]
+    if not line[: pipes[0]].strip():
+        spans = spans[1:]
+    if not line[pipes[-1] + 1 :].strip():
+        spans = spans[:-1]
+    return spans
 
 
 def one_column(text: str, table: Table) -> Edit | None:
@@ -319,4 +393,7 @@ def annotation(page: Path, layout: Layout) -> str:
     for sign, code in (("%", "%25"), ("\r", "%0D"), ("\n", "%0A"), (":", "%3A")):
         name = name.replace(sign, code)
     name = name.replace(",", "%2C")
-    return f"::error file={name},line={layout.line},title={TITLE}::{layout.message}"
+    return (
+        f"::{layout.level} file={name},line={layout.line},title={TITLE}::"
+        f"{layout.message}"
+    )

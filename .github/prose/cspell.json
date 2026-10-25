@@ -67,6 +67,7 @@
     "Prereleases",
     "prereleases",
     "Psalm",
+    "psutil",
     "pytest",
     "Renovate",
     "Repositorys",

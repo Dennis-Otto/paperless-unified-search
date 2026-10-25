@@ -3,7 +3,11 @@ name: CodeQL
 # The code analysis of GitHub. CodeQL reads the code of every language of this
 # repository and its workflows with the queries of security-extended, for every pull
 # request, every push to main and every week, and sends what it finds to code
-# scanning, where a new alert of a pull request stops its merge.
+# scanning, where a new alert of a pull request stops its merge. A private repository
+# without GitHub Code Security has no code scanning: there the settings bot sets the
+# variable CODE_SCANNING to off, and the check passes without an analysis, because the
+# terms of CodeQL allow it on private code only with GitHub Code Security or Advanced
+# Security.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -12,15 +16,23 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: "17 4 * * 3"
+    - cron: "49 4 * * 0"
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# A newer run for the same pull request, or for a newer push to main, cancels the run
+# still going, which would only tell what the newer one tells; the bot for cancelled
+# checks starts the run of the head again when a late run for an older commit
+# cancelled it. A run on a schedule or by hand is in a group of its own.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.ref) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+
+# The GitHub CLI of the jobs sends no telemetry to GitHub.
+env:
+  GH_TELEMETRY: "false"
 
 jobs:
   # One job for every language, which downloads CodeQL once and takes one runner:
@@ -41,13 +53,23 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The terms of CodeQL allow it on the code of a private repository only with a
+      # licence of GitHub Code Security or Advanced Security (decision 0082).
+      - name: Skip the analysis without GitHub Code Security
+        if: vars.CODE_SCANNING == 'off'
+        run: |
+          message="CodeQL doesn't analyze this repository: its terms allow it on private code only with GitHub Code Security or Advanced Security, and CODE_SCANNING is off. zizmor, OSV-Scanner and the linters of check.sh still run."
+          echo "::notice::$message"
+          echo "$message" >> "$GITHUB_STEP_SUMMARY"
       - name: Initialize the analysis
+        if: vars.CODE_SCANNING != 'off'
         uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           languages: javascript-typescript, actions
           build-mode: none
           queries: security-extended
       - name: Analyze
+        if: vars.CODE_SCANNING != 'off'
         uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           # The results of each language as <language>.sarif, uploaded below.
@@ -57,6 +79,7 @@ jobs:
       # job, and code scanning would see new analyses, whose alerts open anew. Each
       # file gets the category that the analysis of its language always had.
       - name: File the results of each language under its own category
+        if: vars.CODE_SCANNING != 'off'
         run: |
           shopt -s nullglob
           files=("$RUNNER_TEMP"/codeql/*.sarif)
@@ -80,6 +103,7 @@ jobs:
             echo "- $language: \`/language:$language\`" >> "$GITHUB_STEP_SUMMARY"
           done
       - name: Upload the results
+        if: vars.CODE_SCANNING != 'off'
         uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           sarif_file: ${{ runner.temp }}/codeql

@@ -206,11 +206,19 @@ class Api:
         return answer
 
     def request(
-        self, method: str, path: str, body: Json = None, *, missing_ok: bool = False
+        self,
+        method: str,
+        path: str,
+        body: Json = None,
+        *,
+        missing_ok: bool = False,
+        retry: bool | None = None,
     ) -> Response:
         """A request that GitHub answered without an error. A 404 is one, unless
         missing_ok makes it the answer that nothing is there: GitHub also answers 404
-        to a token that lacks the permission for a change, which then didn't happen."""
+        to a token that lacks the permission for a change, which then didn't happen.
+        With retry, a gateway error is asked once more also for a POST that only
+        reads, such as a query of GraphQL."""
         arguments = ["api", "--include", "--method", method, path]
         payload = None
         if body is not None:
@@ -218,9 +226,8 @@ class Api:
             payload = json.dumps(body)
         # A POST that a gateway timed out has often been done all the same: sent
         # twice, it would open a second issue, comment or workflow run.
-        answer = self.answer(
-            arguments, payload, Answer.of_request, missing_ok, method != "POST"
-        )
+        gateway = method != "POST" if retry is None else retry
+        answer = self.answer(arguments, payload, Answer.of_request, missing_ok, gateway)
         return Response(answer.status, answer.data)
 
     def get(self, path: str) -> Json:

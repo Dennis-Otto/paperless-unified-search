@@ -19,6 +19,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# The GitHub CLI of the jobs sends no telemetry to GitHub.
+env:
+  GH_TELEMETRY: "false"
+
 jobs:
   # Every linter in one job, which takes one runner instead of one each: the workflows,
   # the license of every file, the Markdown, the set-up of the issue assistant, the
@@ -58,6 +62,23 @@ jobs:
         env:
           ACTIONLINT: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         run: docker run --rm --volume "$PWD:/repo" --workdir /repo "$ACTIONLINT"
+      # GitHub starts a workflow only when [actions.selected] of .github/repository.toml
+      # allows every action and reusable workflow that it runs, also those that these
+      # run in turn at the commit of their pin. The step follows each of them, so that
+      # a pull request that makes a workflow run one that the list lacks, such as an
+      # update of an action by Renovate, fails here and not every workflow after the
+      # merge. It reads the files of the public actions with the token of the job, a
+      # few queries of GraphQL, and none of the settings on GitHub.
+      - name: Check that the allowed actions let every action start
+        id: allowed-actions
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" settings actions
       # The image of the REUSE tool as it is, without the action, which builds an image
       # of its own in every run. Git, which the tool asks for the ignored files, works
       # in the folder of another user only when it is named safe.
@@ -223,6 +244,7 @@ jobs:
           CHECK: lint
           FAILED: |
             ${{ steps.workflow-lint.outcome == 'failure' && 'workflow-lint' || '' }}
+            ${{ steps.allowed-actions.outcome == 'failure' && 'allowed-actions' || '' }}
             ${{ steps.reuse.outcome == 'failure' && 'reuse' || '' }}
             ${{ steps.markdown.outcome == 'failure' && 'markdown' || '' }}
             ${{ steps.issue-assistant.outcome == 'failure' && 'issue-assistant' || '' }}
@@ -337,224 +359,6 @@ jobs:
         if: failure()
         env:
           CHECK: diagrams
-        run: |
-          script=.github/blueprint.py
-          [[ -f "$script" ]] || script=blueprint.py
-          python3 "$script" coach explain "$CHECK"
-
-  # The linters one job each, as the rulesets of the repositories require them until
-  # the settings bot applies the required checks of this release, which take the job
-  # lint instead; the next release of the blueprint removes these jobs.
-  workflow-lint:
-    name: workflow-lint
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Record the network traffic of the job
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # actionlint's problem matcher, as its documentation has it, shows each error as
-      # an annotation at its line, in the files of the pull request too.
-      - name: Show each error at its line
-        run: |
-          cat > "$RUNNER_TEMP/actionlint.json" <<'EOF'
-          {"problemMatcher": [{"owner": "actionlint", "pattern": [{"regexp": "^(.+?):(\\d+):(\\d+): (.+) \\[(.+)\\]$", "file": 1, "line": 2, "column": 3, "message": 4, "code": 5}]}]}
-          EOF
-          echo "::add-matcher::$RUNNER_TEMP/actionlint.json"
-      - name: Lint the workflows
-        # The image itself, as for REUSE: a step that names a docker:// image is
-        # an action too, and the allowed actions in .github/repository.toml can't
-        # name an image.
-        env:
-          ACTIONLINT: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
-        run: docker run --rm --volume "$PWD:/repo" --workdir /repo "$ACTIONLINT"
-      # The PR coach: what failed, why it matters and how to fix it, in the summary
-      # of the check and as its annotation, from .github/checks.toml.
-      - name: Explain the failure
-        if: failure()
-        env:
-          CHECK: workflow-lint
-        run: |
-          script=.github/blueprint.py
-          [[ -f "$script" ]] || script=blueprint.py
-          python3 "$script" coach explain "$CHECK"
-
-  reuse:
-    name: reuse
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Record the network traffic of the job
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Check that every file names its license
-        uses: fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5 # v6.0.0
-      # The PR coach: what failed, why it matters and how to fix it, in the summary
-      # of the check and as its annotation, from .github/checks.toml.
-      - name: Explain the failure
-        if: failure()
-        env:
-          CHECK: reuse
-        run: |
-          script=.github/blueprint.py
-          [[ -f "$script" ]] || script=blueprint.py
-          python3 "$script" coach explain "$CHECK"
-
-  markdown:
-    name: markdown
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Record the network traffic of the job
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # The merge of a pull request into main, and its head as the second
-          # parent, onto which the fix bot commits.
-          fetch-depth: 2
-          persist-credentials: false
-      # The files are in .markdownlint-cli2.jsonc, the rules in .markdownlint.jsonc.
-      # Locally: npx markdownlint-cli2@0.23.2
-      - name: Lint the Markdown of every document
-        uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
-        with:
-          globs: "**/*.md"
-      # The fix bot: markdownlint fixes what it can of what it found, on the head of
-      # the pull request, and after the checks the bot commits the files that it
-      # changed onto a branch of this repository, or suggests them on a pull request
-      # from a fork; the command of autofix in .github/checks.toml does the same.
-      - name: Check out the head of the pull request for the fixes
-        id: head
-        if: failure() && github.event_name == 'pull_request'
-        # Onto which the bot commits, not its merge into main.
-        run: git checkout --quiet --force --detach HEAD^2
-      - name: Fix what markdownlint can fix
-        if: failure() && steps.head.outcome == 'success'
-        # Findings that no command fixes stay for a person; the check failed already.
-        continue-on-error: true
-        uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
-        with:
-          globs: "**/*.md"
-          fix: true
-      - name: Keep the files that markdownlint fixed
-        id: fix
-        if: failure() && steps.head.outcome == 'success'
-        run: |
-          script=.github/blueprint.py
-          [[ -f "$script" ]] || script=blueprint.py
-          python3 "$script" fix keep "$RUNNER_TEMP/fixes" >> "$GITHUB_STEP_SUMMARY"
-      - name: Keep the fixes for the fix bot
-        if: failure() && steps.fix.outcome == 'success'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: fixes-markdown
-          path: ${{ runner.temp }}/fixes/
-          # Fixes of files in .github/ as well.
-          include-hidden-files: true
-          if-no-files-found: ignore
-          retention-days: 3
-      # The PR coach: what failed, why it matters and how to fix it, in the summary
-      # of the check and as its annotation, from .github/checks.toml.
-      - name: Explain the failure
-        if: failure()
-        env:
-          CHECK: markdown
-        run: |
-          script=.github/blueprint.py
-          [[ -f "$script" ]] || script=blueprint.py
-          python3 "$script" coach explain "$CHECK"
-
-  dco:
-    name: dco
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Record the network traffic of the job
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Check the sign-off of every commit
-        env:
-          # The base branch as it is now, not the base that the event names: that one
-          # can be older than the commit of main that the branch was built on, and
-          # would bring commits of main into the check, such as squash commits that
-          # GitHub authors with another address than their sign-off names.
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          # Bots can't sign the Developer Certificate of Origin. A pull request of a
-          # bot, such as Dependabot or the release app, may carry its unsigned commits.
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-        run: |
-          count=0
-          while IFS= read -r commit; do
-            author="$(git show --no-patch --format='%an <%ae>' "$commit")"
-            name="$(git show --no-patch --format='%an' "$commit")"
-            if git show --no-patch --format='%B' "$commit" | git interpret-trailers --parse |
-              grep --fixed-strings --line-regexp --quiet "Signed-off-by: $author"; then
-              count=$((count + 1))
-              continue
-            fi
-            if [[ "$PR_AUTHOR" == *"[bot]" && "$name" == "$PR_AUTHOR" ]]; then
-              echo "Accepted commit $commit of $PR_AUTHOR without a sign-off."
-              count=$((count + 1))
-              continue
-            fi
-            echo "::error::Commit $commit lacks the sign-off 'Signed-off-by: $author'. Commit with git commit -s."
-            exit 1
-          # The commits of the pull request that the base branch doesn't have. Merge
-          # commits only bring main into the branch, such as those of the branch bot.
-          done < <(git rev-list --reverse --no-merges "origin/$BASE_REF..$HEAD_SHA")
-          echo "Checked the sign-off of $count commit(s)."
-      # The PR coach: what failed, why it matters and how to fix it, in the summary
-      # of the check and as its annotation, from .github/checks.toml.
-      - name: Explain the failure
-        if: failure()
-        env:
-          CHECK: dco
-        run: |
-          script=.github/blueprint.py
-          [[ -f "$script" ]] || script=blueprint.py
-          python3 "$script" coach explain "$CHECK"
-
-  issue-assistant:
-    name: issue-assistant
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Record the network traffic of the job
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # The labels, issue forms, workflows and notice of the issue assistant fit the
-      # templates of its release: https://github.com/Dennis-Otto/issue-assistant
-      - name: Check the issue assistant's set-up
-        uses: Dennis-Otto/issue-assistant@1f78330598c545784358643ceda2b720014ebb42 # v1.6.1
-        with:
-          command: check
-      # The PR coach: what failed, why it matters and how to fix it, in the summary
-      # of the check and as its annotation, from .github/checks.toml.
-      - name: Explain the failure
-        if: failure()
-        env:
-          CHECK: issue-assistant
         run: |
           script=.github/blueprint.py
           [[ -f "$script" ]] || script=blueprint.py

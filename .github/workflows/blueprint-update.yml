@@ -12,7 +12,7 @@ name: Blueprint update
 
 on:
   schedule:
-    - cron: "40 4 * * 2"
+    - cron: "13 4 * * 6"
   workflow_dispatch:
 
 permissions: {}
@@ -21,48 +21,79 @@ concurrency:
   group: blueprint-update
   cancel-in-progress: false
 
+# The GitHub CLI of the jobs sends no telemetry to GitHub.
+env:
+  GH_TELEMETRY: "false"
+
 jobs:
   update:
     name: blueprint update
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    # The environment holds the private key of the release app; only main may use it.
+    # The environment holds the private keys of the release app and of the settings
+    # app; only main may use it.
     environment:
       name: release
       deployment: false
     permissions:
       contents: read
     steps:
-      - name: Record the network traffic of the job
+      - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            rekor.sigstore.dev:443
+            tuf-repo-cdn.sigstore.dev:443
       # The release app of the owner pushes the update, whose workflows the token of a
       # job may not change, and opens its pull request, whose checks only then run.
-      # Without it, the run says what to set up rather than fail at the token.
+      # Without the release app of the owner, the run names what is missing rather than
+      # fail at the token; every workflow has this step, the same but for its variables.
       - name: Check that the release app is set up
+        id: release-app
         env:
           CLIENT_ID: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
           KEY_SET: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY != '' }}
+          # Who needs the app and for what, what happens without it, and whether the
+          # run fails then.
+          BOT: the blueprint bot
+          TASK: push an update and open its pull request
+          WITHOUT: nothing has changed
+          REQUIRED: "true"
         run: |
           if [[ -z "$CLIENT_ID" ]]; then
             missing="names no release app in the variable RELEASE_AUTOMATION_CLIENT_ID"
           elif [[ "$KEY_SET" != true ]]; then
             missing="has no private key of its release app in the secret RELEASE_AUTOMATION_PRIVATE_KEY of the environment release"
           else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo "::error::This repository $missing, which the blueprint bot needs to push an update and open its pull request; nothing has changed."
+          level=warning
+          if [[ "$REQUIRED" == true ]]; then
+            level=error
+          fi
+          echo "::$level::This repository $missing, which $BOT needs to $TASK; $WITHOUT."
           {
-            echo "### The blueprint bot needs the release app of the owner"
+            echo "### ${BOT^} needs the release app of the owner"
             echo
-            echo "This repository $missing. The bot pushes an update as the release app of the owner, a GitHub App whose token may change the workflows that an update brings and starts the checks of its pull request, which the token of a job can't. Nothing has changed."
+            echo "This repository $missing, which $BOT needs to $TASK; $WITHOUT. The release app is a GitHub App of the owner, whose token may do what the token of a job can't: start the checks of a pull request, change a workflow and apply the settings."
             echo
-            echo "\`python3 .github/blueprint.py checklist\` shows the steps: a link that registers the app with its permissions filled in, the update of the answers of the blueprint that names it in \`.github/repository.toml\`, the settings and its private key. The next run updates the repository."
+            echo "\`python3 .github/blueprint.py checklist\` shows the steps: a link that registers the app with its permissions filled in, the update of the answers of the blueprint that names it in \`.github/repository.toml\`, the settings and its private key. Once they are done, $BOT can $TASK in its next run."
           } >> "$GITHUB_STEP_SUMMARY"
-          exit 1
+          if [[ "$REQUIRED" == true ]]; then
+            exit 1
+          fi
       - name: Create a token of the release app
         id: app
+        if: steps.release-app.outputs.ready == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
@@ -71,6 +102,54 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
           permission-workflows: write
+      # The settings app is optional: a second GitHub App of the owner with only the
+      # permissions of the settings. With it, the bot adds the actions of the release
+      # to those that GitHub lets the repository start, before it pushes the update;
+      # without it, the release app's token has no Administration, as before, and an
+      # update that brings a new action waits for settings apply from its branch. The
+      # settings bot has this step too, the same but for its variables.
+      - name: Check whether the settings app is set up
+        id: settings-app
+        env:
+          CLIENT_ID: ${{ vars.SETTINGS_APP_CLIENT_ID }}
+          KEY_SET: ${{ secrets.SETTINGS_APP_PRIVATE_KEY != '' }}
+          # Who would take the settings app, and what happens without it.
+          BOT: the blueprint bot
+          INSTEAD: an update that brings a new action waits for settings apply from its branch, as it did before
+        run: |
+          if [[ -n "$CLIENT_ID" && "$KEY_SET" == true ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ -n "$CLIENT_ID" ]]; then
+            missing="names a settings app in the variable SETTINGS_APP_CLIENT_ID, but has no private key of it in the secret SETTINGS_APP_PRIVATE_KEY of the environment release"
+          elif [[ "$KEY_SET" == true ]]; then
+            missing="has a private key of a settings app in the secret SETTINGS_APP_PRIVATE_KEY of the environment release, but names no settings app in the variable SETTINGS_APP_CLIENT_ID"
+          else
+            # No settings app: nothing to say, the release app does its work.
+            exit 0
+          fi
+          echo "::warning::This repository $missing, so $BOT goes on without it: $INSTEAD."
+          {
+            echo "### The settings app is set up only in part"
+            echo
+            echo "This repository $missing, so $BOT goes on without it: $INSTEAD. The settings app is an optional second GitHub App of the owner, the only one that writes the administration of the repository, so that the release app needs no *Administration*."
+            echo
+            echo "[The settings app](https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/own-account.md#8-the-settings-app-optional) shows how to set it up, with the variable and the secret. Once both are set, $BOT takes the settings app in its next run."
+          } >> "$GITHUB_STEP_SUMMARY"
+      # Only the Administration of this repository, which the list of the allowed
+      # actions needs, and the step that widens it runs no code of the update. A token
+      # that GitHub refuses, of an app that is not installed here, leaves the update as
+      # it would be without the settings app.
+      - name: Create a token of the settings app
+        id: settings-token
+        if: steps.settings-app.outputs.ready == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SETTINGS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SETTINGS_APP_PRIVATE_KEY }}
+          permission-administration: write
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -194,11 +273,7 @@ jobs:
           echo "The release $TAG of $SOURCE is immutable, on its main, no older than $old and signed by its release workflow." >> "$GITHUB_STEP_SUMMARY"
       - name: Update to the latest release of the blueprint
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
-          SOURCE: ${{ steps.release.outputs.source }}
           TAG: ${{ steps.release.outputs.tag }}
-          APP: ${{ steps.app.outputs.app-slug }}
-          AUTOMERGE: ${{ vars.BLUEPRINT_AUTOMERGE }}
           # Git starts its maintenance in the background after a commit, and Copier
           # deletes the repositories it commits to for the update right away: the two
           # collided now and then, and the update failed with "Directory not empty".
@@ -215,6 +290,43 @@ jobs:
           cp -R .github/blueprint.py .github/blueprint "$tool/"
           copier update --defaults --conflict inline --vcs-ref "$TAG"
           git add --all
+      # GitHub checks the list of the allowed actions when a workflow starts, so the
+      # list grows by the patterns of the verified release before the push: the checks
+      # of the pull request can then start the actions that the release adds. The bot
+      # of main reads the settings of the update as data and only adds patterns, which
+      # stops no workflow; the settings bot narrows the list after the merge. A list
+      # that can't grow, such as one of settings with conflicts, leaves the update as it
+      # was before: its pull request waits for settings apply from its branch.
+      - name: Let the actions of the update start
+        if: steps.settings-app.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ steps.settings-token.outputs.token }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::warning::GitHub refused a token of the settings app, which may not be installed on this repository or may lack Administration; the update goes on as without it, and its pull request may wait for settings apply from its branch."
+            exit 0
+          fi
+          status=0
+          python3 "$RUNNER_TEMP/blueprint-tool/blueprint.py" --repo "$GITHUB_REPOSITORY" settings widen > "$RUNNER_TEMP/widen.txt" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/widen.txt"
+          if ((status != 0)); then
+            echo "::warning::The list of the allowed actions could not grow by the patterns of the update; its pull request may wait for settings apply from its branch."
+          fi
+          {
+            echo '### The allowed actions of the update'
+            echo '```'
+            cat "$RUNNER_TEMP/widen.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Commit the update and open its pull request
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SOURCE: ${{ steps.release.outputs.source }}
+          APP: ${{ steps.app.outputs.app-slug }}
+          AUTOMERGE: ${{ vars.BLUEPRINT_AUTOMERGE }}
+        run: |
+          set -euo pipefail
+          tool="$RUNNER_TEMP/blueprint-tool"
           # The commit goes through GitHub's API as the release app: GitHub signs it, as
           # main requires, and the DCO check accepts the pull requests of the app. The
           # bot moves the branch blueprint/update on from the update before, so its pull
@@ -223,3 +335,13 @@ jobs:
           python3 "$tool/blueprint.py" --repo "$GITHUB_REPOSITORY" update-commit \
             --app "${APP}[bot]" --automerge "$AUTOMERGE" --run-id "$GITHUB_RUN_ID" \
             --source "$SOURCE"
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."

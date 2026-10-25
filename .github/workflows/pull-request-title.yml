@@ -23,6 +23,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
   cancel-in-progress: true
 
+# The GitHub CLI of the jobs sends no telemetry to GitHub.
+env:
+  GH_TELEMETRY: "false"
+
 jobs:
   title:
     name: conventional title
@@ -37,10 +41,14 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      - name: Record the network traffic of the job
+      - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
       # Never check out or run pull request code in this privileged workflow; the
       # title only reaches the script through an environment variable.
       - name: Check the title and set the label
@@ -242,6 +250,16 @@ jobs:
             sed 's/^/- /' "$RUNNER_TEMP/report"
           } >> "$GITHUB_STEP_SUMMARY"
           exit 1
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
       # The PR coach: what failed, why it matters and how to fix it, in the summary
       # of the check and as its annotation, from .github/checks.toml: each check
       # of the job that failed, or the job itself when none of them did.
@@ -257,19 +275,3 @@ jobs:
           [[ -f "$script" ]] || script=blueprint.py
           mapfile -t parts < <(grep . <<<"$FAILED" || true)
           python3 "$script" coach explain "$CHECK" --parts "${parts[@]}"
-
-  # The entry in the changelog is a step of the check of the title since this release.
-  # The rulesets of the repositories require the check changelog until the settings
-  # bot applies the required checks of this release; the next release removes it.
-  changelog:
-    name: changelog
-    if: ${{ !github.event.repository.fork }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Record the network traffic of the job
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
-        with:
-          egress-policy: audit
-      - name: Name the check that checks the changelog
-        run: echo "The check *conventional title* checks the entry in the changelog." >> "$GITHUB_STEP_SUMMARY"

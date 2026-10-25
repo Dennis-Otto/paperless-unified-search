@@ -45,6 +45,11 @@ rules:
       # blueprint.py of main.
       - screenshot-bot.yml
       - docs-pictures.yml
+      # The workflow Chrome Web Store of a Chrome extension starts after a run of the
+      # Release workflow on main and delivers its latest release: it checks out main
+      # alone, never for a pull request, and uploads only the zip that the isolated
+      # build attached to the release, after it checked its provenance.
+      - publish-store.yml
       # The bot-health bot starts after the runs of the bots and acts only on those of
       # the default branch: it runs their failed jobs again, reads their jobs and
       # annotations and writes issues, and checks out only the default branch.
@@ -67,9 +72,3 @@ rules:
       # self-repository syntax $/ yet.
       - release.yml
       - next-runner.yml
-  github-app:
-    ignore:
-      # The token action has no input for the Variables permission that the settings
-      # need, so its token has all permissions of the installation; the job runs only
-      # blueprint.py settings apply.
-      - settings.yml

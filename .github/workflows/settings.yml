@@ -3,9 +3,12 @@ name: Settings
 # The settings bot. Every week, and after each change of the settings as code or of its
 # own code, it brings the settings of the repository on GitHub in line with
 # .github/repository.toml, .github/repository.project.toml and .github/labels.toml, as
-# the release app, which may write the administration of the repository. What the API
-# can't set, such as the value of a secret, and what GitHub refused fail the run and show
-# in its summary, with the command that sets it or the permission that the app lacks.
+# the settings app, a second GitHub App of the owner that only administers, once the
+# variable SETTINGS_APP_CLIENT_ID and the secret SETTINGS_APP_PRIVATE_KEY name it, and
+# as the release app until then, with a token that may write the administration of the
+# repository but neither its code nor its workflows. What the API can't set, such as the
+# value of a secret, and what GitHub refused fail the run and show in its summary, with
+# the command that sets it or the permission that the app lacks.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -33,7 +36,7 @@ on:
       - blueprint/github.py
       - blueprint/settings.py
   schedule:
-    - cron: "5 6 * * 4"
+    - cron: "37 6 * * 1"
   workflow_dispatch:
 
 permissions: {}
@@ -42,37 +45,183 @@ concurrency:
   group: settings
   cancel-in-progress: true
 
+# The GitHub CLI of the jobs sends no telemetry to GitHub.
+env:
+  GH_TELEMETRY: "false"
+
 jobs:
   check:
     name: settings
     if: ${{ !github.event.repository.fork }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    # The environment holds the private key of the release app; only main may use it.
+    # The environment holds the private keys of the release app and of the settings
+    # app; only main may use it.
     environment:
       name: release
       deployment: false
     permissions:
       contents: read
     steps:
-      - name: Record the network traffic of the job
+      - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # The token action can't ask for the Variables permission alone, so this token
-      # has all permissions of the installation; the job only changes the settings.
+      # The settings app is optional: a second GitHub App of the owner with only the
+      # permissions of the settings, so that the release app needs no Administration.
+      # Without it, the release app applies the settings, as it did before; set up in
+      # part, the run says what is missing and goes on with the release app. The
+      # blueprint bot has this step too, the same but for its variables.
+      - name: Check whether the settings app is set up
+        id: settings-app
+        env:
+          CLIENT_ID: ${{ vars.SETTINGS_APP_CLIENT_ID }}
+          KEY_SET: ${{ secrets.SETTINGS_APP_PRIVATE_KEY != '' }}
+          # Who would take the settings app, and what happens without it.
+          BOT: the settings bot
+          INSTEAD: the release app applies the settings, as it did before
+        run: |
+          if [[ -n "$CLIENT_ID" && "$KEY_SET" == true ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ -n "$CLIENT_ID" ]]; then
+            missing="names a settings app in the variable SETTINGS_APP_CLIENT_ID, but has no private key of it in the secret SETTINGS_APP_PRIVATE_KEY of the environment release"
+          elif [[ "$KEY_SET" == true ]]; then
+            missing="has a private key of a settings app in the secret SETTINGS_APP_PRIVATE_KEY of the environment release, but names no settings app in the variable SETTINGS_APP_CLIENT_ID"
+          else
+            # No settings app: nothing to say, the release app does its work.
+            exit 0
+          fi
+          echo "::warning::This repository $missing, so $BOT goes on without it: $INSTEAD."
+          {
+            echo "### The settings app is set up only in part"
+            echo
+            echo "This repository $missing, so $BOT goes on without it: $INSTEAD. The settings app is an optional second GitHub App of the owner, the only one that writes the administration of the repository, so that the release app needs no *Administration*."
+            echo
+            echo "[The settings app](https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/own-account.md#8-the-settings-app-optional) shows how to set it up, with the variable and the secret. Once both are set, $BOT takes the settings app in its next run."
+          } >> "$GITHUB_STEP_SUMMARY"
+      # Without the release app of the owner, the run names what is missing rather than
+      # fail at the token; every workflow has this step, the same but for its variables.
+      # The settings app, once it is set up, takes its place.
+      - name: Check that the release app is set up
+        id: release-app
+        if: steps.settings-app.outputs.ready != 'true'
+        env:
+          CLIENT_ID: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          KEY_SET: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY != '' }}
+          # Who needs the app and for what, what happens without it, and whether the
+          # run fails then.
+          BOT: the settings bot
+          TASK: apply the settings as code
+          WITHOUT: no setting has changed
+          REQUIRED: "true"
+        run: |
+          if [[ -z "$CLIENT_ID" ]]; then
+            missing="names no release app in the variable RELEASE_AUTOMATION_CLIENT_ID"
+          elif [[ "$KEY_SET" != true ]]; then
+            missing="has no private key of its release app in the secret RELEASE_AUTOMATION_PRIVATE_KEY of the environment release"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          level=warning
+          if [[ "$REQUIRED" == true ]]; then
+            level=error
+          fi
+          echo "::$level::This repository $missing, which $BOT needs to $TASK; $WITHOUT."
+          {
+            echo "### ${BOT^} needs the release app of the owner"
+            echo
+            echo "This repository $missing, which $BOT needs to $TASK; $WITHOUT. The release app is a GitHub App of the owner, whose token may do what the token of a job can't: start the checks of a pull request, change a workflow and apply the settings."
+            echo
+            echo "\`python3 .github/blueprint.py checklist\` shows the steps: a link that registers the app with its permissions filled in, the update of the answers of the blueprint that names it in \`.github/repository.toml\`, the settings and its private key. Once they are done, $BOT can $TASK in its next run."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$REQUIRED" == true ]]; then
+            exit 1
+          fi
+      # Only what settings apply needs, by GitHub's names: it writes the administration,
+      # the variables, the labels and the website, and reads the environments, the names
+      # of their secrets and the files of the community standards. The token can't
+      # push a commit or change a workflow, and it is for this repository alone. The
+      # settings app, once it is set up, gets the same request as the release app.
+      - name: Create a token of the settings app
+        id: settings-token
+        if: steps.settings-app.outputs.ready == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        env:
+          # The action has no input for Variables, which GitHub calls actions_variables,
+          # and takes every INPUT_PERMISSION-* of its environment, as the runner passes
+          # an input; an input that the action doesn't name would warn in every run.
+          INPUT_PERMISSION-ACTIONS-VARIABLES: write
+        with:
+          client-id: ${{ vars.SETTINGS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SETTINGS_APP_PRIVATE_KEY }}
+          permission-administration: write
+          permission-issues: write
+          permission-pages: write
+          permission-actions: read
+          permission-contents: read
+          permission-environments: read
       - name: Create a token of the release app
         id: app
+        if: steps.release-app.outputs.ready == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        env:
+          # The action has no input for Variables, which GitHub calls actions_variables,
+          # and takes every INPUT_PERMISSION-* of its environment, as the runner passes
+          # an input; an input that the action doesn't name would warn in every run.
+          INPUT_PERMISSION-ACTIONS-VARIABLES: write
         with:
           client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY }}
+          permission-administration: write
+          permission-issues: write
+          permission-pages: write
+          permission-actions: read
+          permission-contents: read
+          permission-environments: read
+      # GitHub refuses the whole token when the app lacks one of the permissions that
+      # it asks for, as an app registered before the bot asked for it does; a wrong
+      # key, a missing installation or an outage fail the step too.
+      - name: Explain a refused token
+        if: failure() && steps.app.outcome == 'failure'
+        run: |
+          echo "::error::GitHub refused a token of the release app for the settings bot, most often because the app lacks one of the permissions that the bot asks for; the summary of the run names them and the other causes."
+          {
+            echo "### The release app refused the token of the settings bot"
+            echo
+            echo "The settings bot asks the release app for a token with only the permissions that it needs: *Administration*, *Issues*, *Pages* and *Variables* (read and write), and *Actions*, *Contents* and *Environments* (read). GitHub refuses the token when the app lacks one of them, and the log of the step *Create a token of the release app* has its answer. No setting has changed."
+            echo
+            echo "Most often the app lacks one of them: grant the missing permissions on the settings page of the app, under *Permissions & events*, accept them on the installation of the app, and run the workflow *Settings* again."
+            echo
+            echo "Other causes, when the app has every permission: a private key in the secret RELEASE_AUTOMATION_PRIVATE_KEY that doesn't belong to the app named by the variable RELEASE_AUTOMATION_CLIENT_ID (generate a new key of that app and store it), an app that isn't installed on this repository (add the repository to its installation), or an outage of GitHub (run the workflow again)."
+          } >> "$GITHUB_STEP_SUMMARY"
+      # GitHub refuses the token of an app that is not installed on the repository or
+      # lacks one of the permissions; the bot falls back on nothing, so that a settings
+      # app with too little shows rather than a release app that should have less.
+      - name: Explain a refused token of the settings app
+        if: failure() && steps.settings-token.outcome == 'failure'
+        run: |
+          echo "::error::GitHub refused a token of the settings app; the summary of the run says what the app needs."
+          {
+            echo "### GitHub refused a token of the settings app"
+            echo
+            echo "The variable SETTINGS_APP_CLIENT_ID and the secret SETTINGS_APP_PRIVATE_KEY of the environment release name a settings app, but GitHub refused its token, and the log of the step *Create a token of the settings app* has its answer. The bot asks it for the permissions that the settings need: *Administration*, *Issues*, *Pages* and *Variables* (read and write), and *Actions*, *Contents* and *Environments* (read). No setting has changed."
+            echo
+            echo "Grant the app the permissions that it lacks, as [the settings app](https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/own-account.md#8-the-settings-app-optional) lists them, accept them on its installation, install it on this repository if it is not, check that the secret holds a key of the app that the variable names, and run the workflow *Settings* again. Without the variable SETTINGS_APP_CLIENT_ID, the release app applies the settings again, as long as it still has their permissions."
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Apply the settings as code
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
+          # The settings app once it is set up, the release app until then.
+          GH_TOKEN: ${{ steps.settings-token.outputs.token || steps.app.outputs.token }}
         run: |
           # Repositories have the copy that the blueprint keeps current; the blueprint
           # has the original.
@@ -90,3 +239,13 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."

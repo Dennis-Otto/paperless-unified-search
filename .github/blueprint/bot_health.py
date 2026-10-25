@@ -19,9 +19,9 @@ import hashlib
 import json
 import re
 import urllib.parse
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -42,8 +42,17 @@ PASSED = "success"
 # open, Mutation takes hours to measure the same again, and the property tests and the
 # fuzzing failed on an input that they found.
 ONE_TRY = frozenset({"Findings", "Mutation", "Property tests", "Fuzzing"})
-# Workflows that keep an issue of their own about their failures.
-OWN_ISSUE = frozenset({"Diagrams", "Newest Python", "Next runner"})
+# Workflows that keep an issue of their own about their failures; a workflow of the
+# project says so in a comment line of its own, `# bot-health: own-issue`. The daily
+# look still starts one whose schedule GitHub missed or switched off.
+OWN_ISSUE = frozenset({"Diagrams", "Newest Node", "Newest Python", "Next runner"})
+OWN_ISSUE_LINE = re.compile(r"^[ \t]*#[ \t]*bot-health:[ \t]*own-issue\b", re.MULTILINE)
+# The runs that do what a schedule does. A push may start the same workflow, but its
+# run may leave out what only the schedule does, such as the tests of the coming
+# release, so it doesn't count as the run of a schedule.
+SCHEDULED = frozenset({"schedule", "workflow_dispatch"})
+# The runs of a workflow that one request lists, the newest first.
+PAGE = 50
 # A failure that ended this recently may still get its second try from the run that
 # its end started; the daily look leaves it to that run.
 SECOND_TRY_TIME = timedelta(hours=1)
@@ -69,7 +78,11 @@ CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 # The annotation that every failed step gets; another one says more.
 GENERIC = re.compile(r"Process completed with exit code \d+\.")
 REPOSITORY = re.compile(r"[\w.-]+/[\w.-]+")
-CRON = re.compile(r"""^\s*-\s*cron:\s*["']([^"'\n]+)["']""", re.MULTILINE)
+# One item of the list on.schedule of a workflow, such as - cron: "17 4 * * 3", with
+# or without quotes and with a comment after it; no other key of a workflow is cron.
+CRON = re.compile(
+    r"""^[ \t]*-[ \t]+cron:[ \t]*["']?([^"'#\n]*?)["']?[ \t\r]*(?:#.*)?$""", re.M
+)
 DISPATCH = re.compile(r"^  workflow_dispatch:.*\n((?:(?: {4}.*)?\n)*)", re.MULTILINE)
 # The events of a workflow, under on: or after it on its line, and the workflows whose
 # end starts it, listed after workflows: or below it.
@@ -468,82 +481,125 @@ def watch_run(api: Api, repo: str, run_id: int, now: datetime) -> str:
 
 # ---------------------------------------------------------------- the daily look
 
-FIELDS = ((0, 59), (0, 23), (1, 31), (1, 12), (0, 7))
+# The days that the time of a schedule may lie back: every cron comes round within
+# a year, but that of a February 29th.
+LOOKBACK = 366
+MONTHS = (
+    "JAN",
+    "FEB",
+    "MAR",
+    "APR",
+    "MAY",
+    "JUN",
+    "JUL",
+    "AUG",
+    "SEP",
+    "OCT",
+    "NOV",
+    "DEC",
+)
+WEEKDAYS = ("SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT")
+# The five fields of a cron, each with its lowest and highest value and the names of
+# its values from the lowest on: the minute, the hour, the day of the month, the month
+# and the day of the week, in which 0 and 7 are Sunday.
+FIELDS: tuple[tuple[int, int, tuple[str, ...]], ...] = (
+    (0, 59, ()),
+    (0, 23, ()),
+    (1, 31, ()),
+    (1, 12, MONTHS),
+    (0, 7, WEEKDAYS),
+)
 
 
-def cron_field(text: str, low: int, high: int) -> frozenset[int] | None:
-    values: set[int] = set()
+def field_values(
+    text: str, low: int, high: int, names: Sequence[str]
+) -> frozenset[int]:
+    """The values of one field of a cron, from low to high: a list of values, ranges
+    such as 1-5 and steps such as */15, 10-50/20 or 5/15, from 5 to high, of numbers
+    or of names, such as MON or JAN. ValueError for anything else."""
+
+    def value(item: str) -> int:
+        named = item.upper()
+        if named in names:
+            return low + names.index(named)
+        if not (item.isascii() and item.isdigit()):
+            raise ValueError(f"{item!r} is no number")
+        return int(item)
+
+    found: set[int] = set()
     for part in text.split(","):
-        match = re.fullmatch(r"(?:(\*)|(\d+)(?:-(\d+))?)(?:/(\d+))?", part)
-        if not match:
-            return None
-        if match[1]:
-            start, end = low, high
+        span, slash, every = part.partition("/")
+        step = int(every) if slash else 1
+        if span == "*":
+            first, last = low, high
         else:
-            start = int(match[2])
-            end = int(match[3]) if match[3] else high if match[4] else start
-        step = int(match[4]) if match[4] else 1
-        if not low <= start <= end <= high or step < 1:
-            return None
-        values.update(range(start, end + 1, step))
-    return frozenset(values)
+            start, dash, end = span.partition("-")
+            first = value(start)
+            last = value(end) if dash else high if slash else first
+        if step < 1 or not low <= first <= last <= high:
+            raise ValueError(f"{part!r} is no value from {low} to {high}")
+        found.update(range(first, last + 1, step))
+    return frozenset(found)
 
 
 @dataclass(frozen=True)
 class Cron:
-    """A schedule of a workflow, in the five fields of cron, in UTC."""
+    """A schedule of a workflow as GitHub reads its cron, in UTC: the minutes, hours,
+    days of the month, months and days of the week, 0 for Sunday, at which it is due.
+    As in cron, a day is due when both kinds of day match it, or either of them where
+    both fields are limited: a field that starts with * limits nothing."""
 
     minutes: frozenset[int]
     hours: frozenset[int]
     days: frozenset[int]
     months: frozenset[int]
     weekdays: frozenset[int]
-    # As in cron, a schedule with both a day of the month and a day of the week runs
-    # on either; with one of them a star, on the other alone.
     either: bool
 
     @classmethod
     def parse(cls, text: str) -> Cron | None:
+        """The schedule of a cron such as "17 4 * * 3", or None for one that cron
+        can't read, which GitHub doesn't run either."""
         fields = text.split()
-        if len(fields) != 5:
+        if len(fields) != len(FIELDS):
             return None
-        values = []
-        for field, (low, high) in zip(fields, FIELDS, strict=True):
-            value = cron_field(field, low, high)
-            if value is None:
-                return None
-            values.append(value)
-        minutes, hours, days, months, weekdays = values
+        try:
+            minutes, hours, days, months, weekdays = (
+                field_values(found, *limits)
+                for found, limits in zip(fields, FIELDS, strict=True)
+            )
+        except ValueError:
+            return None
         return cls(
             minutes,
             hours,
             days,
             months,
-            # Sunday is 0 and 7.
-            frozenset(day % 7 for day in weekdays),
+            frozenset(weekday % 7 for weekday in weekdays),
             not fields[2].startswith("*") and not fields[4].startswith("*"),
         )
 
     def runs_on(self, day: date) -> bool:
         if day.month not in self.months:
             return False
-        in_month = day.day in self.days
-        in_week = day.isoweekday() % 7 in self.weekdays
-        return in_month or in_week if self.either else in_month and in_week
+        of_month = day.day in self.days
+        of_week = day.isoweekday() % 7 in self.weekdays
+        return (of_month or of_week) if self.either else (of_month and of_week)
 
-    def last(self, before: datetime) -> datetime | None:
-        """The latest time of the schedule at or before a moment, within a year."""
-        for back in range(367):
-            day = before.date() - timedelta(days=back)
+    def last(self, moment: datetime) -> datetime | None:
+        """The last time at which the schedule was due, at moment or before it, to the
+        minute: None when it wasn't within LOOKBACK days."""
+        for back in range(LOOKBACK + 1):
+            day = moment.date() - timedelta(days=back)
             if not self.runs_on(day):
                 continue
             for hour in sorted(self.hours, reverse=True):
-                for minute in sorted(self.minutes, reverse=True):
-                    time = datetime(
-                        day.year, day.month, day.day, hour, minute, tzinfo=UTC
-                    )
-                    if time <= before:
-                        return time
+                if back == 0 and hour > moment.hour:
+                    continue
+                latest = moment.minute if back == 0 and hour == moment.hour else 59
+                minutes = [minute for minute in self.minutes if minute <= latest]
+                if minutes:
+                    return datetime.combine(day, time(hour, max(minutes)), UTC)
         return None
 
 
@@ -617,6 +673,76 @@ def after_pull_requests(texts: Iterable[tuple[str, str]]) -> frozenset[str]:
     return frozenset(found)
 
 
+def own_issue(text: str) -> bool:
+    """Whether the text of a workflow says that it keeps an issue of its own."""
+    return OWN_ISSUE_LINE.search(text) is not None
+
+
+def leave_to_its_own(
+    api: Api, repo: str, workflow: Json, issues: Mapping[str, Issue]
+) -> str:
+    """What the daily look does for a workflow that keeps an issue of its own: the
+    issue that the bot opened for it before it said so closes, as continued there."""
+    issue = issues.get(str(workflow["path"]))
+    if issue is None:
+        return "keeps an issue of its own"
+    close_issue(
+        api,
+        repo,
+        issue.number,
+        f"{code(str(workflow['name']))} keeps an issue of its own about its failures "
+        "now, so this one closes.",
+        reason="not_planned",
+    )
+    return f"keeps an issue of its own: closed #{issue.number}"
+
+
+def runs_of(
+    api: Api, repo: str, branch: str, workflow: Json, *, event: str = "", most: int
+) -> list[Run]:
+    """A page of the runs of a workflow on the branch, the newest first; with event,
+    only those that it started. GitHub lists the runs of a pull request from a branch
+    of the same name too, such as main of a fork."""
+    of_event = f"&event={event}" if event else ""
+    listed = api.get(
+        f"repos/{repo}/actions/workflows/{workflow['id']}/runs"
+        f"?branch={urllib.parse.quote(branch)}{of_event}"
+        f"&exclude_pull_requests=true&per_page={most}"
+    )
+    return [Run.of(item) for item in (listed or {}).get("workflow_runs", [])]
+
+
+def scheduled_since(runs: Iterable[Run], repo: str, branch: str, due: datetime) -> bool:
+    """Whether one of the runs is one of the branch that its schedule or a hand
+    started, as the daily look starts one, at the time due or after it."""
+    return any(
+        run.of_branch(repo, branch) and run.event in SCHEDULED and run.created >= due
+        for run in runs
+    )
+
+
+def ran_as_scheduled(
+    api: Api,
+    repo: str,
+    branch: str,
+    workflow: Json,
+    listed: Sequence[Run],
+    due: datetime,
+) -> bool:
+    """Whether the schedule's work ran since the time due. Where a full page of runs,
+    listed, all began after it, GitHub names the latest run of each such event too."""
+    if scheduled_since(listed, repo, branch, due):
+        return True
+    if len(listed) < PAGE or min(run.created for run in listed) < due:
+        return False
+    return any(
+        scheduled_since(
+            runs_of(api, repo, branch, workflow, event=event, most=1), repo, branch, due
+        )
+        for event in sorted(SCHEDULED)
+    )
+
+
 def look_after(
     api: Api,
     repo: str,
@@ -628,31 +754,28 @@ def look_after(
     *,
     start: bool,
     after_checks: bool,
+    own: bool,
 ) -> tuple[str, bool]:
     """What the daily look does for one workflow, and whether it started it. With
-    after_checks, a run that the end of another workflow started doesn't count."""
-    listed = api.get(
-        f"repos/{repo}/actions/workflows/{workflow['id']}/runs"
-        f"?branch={urllib.parse.quote(branch)}&exclude_pull_requests=true&per_page=50"
-    )
-    runs = [Run.of(item) for item in (listed or {}).get("workflow_runs", [])]
-    runs = [
-        run
-        for run in runs
-        if run.of_branch(repo, branch)
-        and not (after_checks and run.event == "workflow_run")
-    ]
+    after_checks, a run that the end of another workflow started doesn't count. With
+    own, the workflow keeps an issue of its own: its runs open and close none here,
+    and only an issue of the bot from before it said so closes."""
+    listed = runs_of(api, repo, branch, workflow, most=PAGE)
+    runs = [run for run in listed if run.of_branch(repo, branch)]
     finished = next(
         (
             run
             for run in runs
             if run.status == "completed"
             and (run.conclusion == PASSED or run.conclusion in FAILED)
+            and not (after_checks and run.event == "workflow_run")
         ),
         None,
     )
     notes = []
-    if finished is None:
+    if own:
+        notes.append(leave_to_its_own(api, repo, workflow, issues))
+    elif finished is None:
         notes.append(f"no finished run on `{branch}`")
     else:
         notes.append(
@@ -665,7 +788,9 @@ def look_after(
     if not readable:
         notes.append("a schedule that can't be read")
     started = False
-    if due is not None and (not runs or runs[0].created < due):
+    if due is not None and not ran_as_scheduled(
+        api, repo, branch, workflow, listed, due
+    ):
         inputs = dispatch_inputs(text)
         missed = f"missed its run of {moment(due)}"
         if inputs is None:
@@ -714,12 +839,12 @@ def sweep(api: Api, repo: str, root: Path, now: datetime) -> tuple[str, bool]:
     healthy = True
     for workflow in workflows:
         name = str(workflow["name"])
-        if (
-            str(workflow["path"]).startswith("dynamic/")
-            or name in OWN_ISSUE
-            or workflow["state"] not in ("active", "disabled_inactivity")
+        if str(workflow["path"]).startswith("dynamic/") or workflow["state"] not in (
+            "active",
+            "disabled_inactivity",
         ):
             continue
+        text = texts[str(workflow["path"])]
         try:
             state, started = look_after(
                 api,
@@ -727,10 +852,11 @@ def sweep(api: Api, repo: str, root: Path, now: datetime) -> tuple[str, bool]:
                 branch,
                 workflow,
                 issues,
-                texts[str(workflow["path"])],
+                text,
                 now,
                 start=starts < MOST_STARTS,
                 after_checks=name in after_checks,
+                own=name in OWN_ISSUE or own_issue(text),
             )
         except GitHubError as error:
             state, started, healthy = f"couldn't look: {code(str(error))}", False, False
