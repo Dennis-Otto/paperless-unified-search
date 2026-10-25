@@ -4,6 +4,26 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [1.2.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.1.1...v1.2.0) (2026-10-25)
+
+
+### Features
+
+* **demo:** show the demo at work in an animation recorded from the real Paperless and Nextcloud ([#216](https://github.com/Dennis-Otto/paperless-unified-search/issues/216)) ([acd3884](https://github.com/Dennis-Otto/paperless-unified-search/commit/acd388497e3aaf1d72e11aa594316f3c2ab7031e))
+* **l10n:** speak French, Spanish and Dutch in the search, the dashboard, the settings and the App Store ([#232](https://github.com/Dennis-Otto/paperless-unified-search/issues/232)) ([3fec56d](https://github.com/Dennis-Otto/paperless-unified-search/commit/3fec56da5da2b5992c17a3cfbd7cec403cd8ac64))
+* **search:** let each user include Paperless in every search of their own ([#221](https://github.com/Dennis-Otto/paperless-unified-search/issues/221)) ([2bb55e5](https://github.com/Dennis-Otto/paperless-unified-search/commit/2bb55e58826cf64f344e9f4f0563143f148269aa))
+* **settings:** warn when the API token can change documents or can't read the names that results show ([#226](https://github.com/Dennis-Otto/paperless-unified-search/issues/226)) ([96cf4e2](https://github.com/Dennis-Otto/paperless-unified-search/commit/96cf4e26da7cef121d3de11627b1f45d4cff2372))
+
+
+### Bug fixes
+
+* **search:** count only read-only shared files of the archive, and show administrators who the archive is shared with ([#224](https://github.com/Dennis-Otto/paperless-unified-search/issues/224)) ([b46b7e7](https://github.com/Dennis-Otto/paperless-unified-search/commit/b46b7e78e54d7c8261d258452e6faebc0d1b8bd4))
+
+
+### Performance
+
+* **docs:** a lighter home page and a hero animation that starts on the results ([#248](https://github.com/Dennis-Otto/paperless-unified-search/issues/248)) ([e519ca3](https://github.com/Dennis-Otto/paperless-unified-search/commit/e519ca3037ac73296251b1c216a2d31bb8c93755))
+
 ## [1.1.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.1.0...v1.1.1) (2026-10-19)
 
 ### Bug fixes
