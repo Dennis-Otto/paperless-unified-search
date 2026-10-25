@@ -11,6 +11,7 @@ namespace OCA\PaperlessUnifiedSearch\Settings;
 
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
+use OCA\PaperlessUnifiedSearch\Service\ArchiveShares;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
@@ -26,6 +27,7 @@ final class AdminSettings implements ISettings {
 		private IURLGenerator $urlGenerator,
 		private SearchDiagnostics $diagnostics,
 		private IDateTimeFormatter $dateTimeFormatter,
+		private ArchiveShares $archiveShares,
 		private SettingsMessages $messages,
 	) {
 	}
@@ -42,6 +44,7 @@ final class AdminSettings implements ISettings {
 			'clearDiagnosticsUrl' => $this->urlGenerator->linkToRoute(AppConstants::APP_ID . '.settings.clearDiagnostics'),
 			'tryUrl' => $this->urlGenerator->linkToRoute(AppConstants::APP_ID . '.settings.trySearch'),
 			'history' => $this->getHistory(),
+			'shares' => $this->getShares(),
 		]);
 	}
 
@@ -78,6 +81,27 @@ final class AdminSettings implements ISettings {
 				'error' => $event->message === '' ? $event->error : $event->error . ': ' . $event->message,
 				'durationMs' => $event->durationMs,
 			], $history->events),
+		];
+	}
+
+	/**
+	 * How the archive account shares its files, as the page shows it below the field of the
+	 * account, with a warning for each share that allows changes, or null without an
+	 * archive account.
+	 *
+	 * @return ?array{summary: string, warnings: list<string>}
+	 */
+	private function getShares(): ?array {
+		$archiveOwner = $this->configService->getArchiveOwner();
+		if ($archiveOwner === '') {
+			return null;
+		}
+
+		$overview = $this->archiveShares->of($archiveOwner);
+
+		return [
+			'summary' => $this->archiveShares->summarize($overview),
+			'warnings' => $this->archiveShares->warnings($overview),
 		];
 	}
 

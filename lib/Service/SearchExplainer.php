@@ -10,7 +10,6 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\Service;
 
 use OCA\PaperlessUnifiedSearch\Model\Explanation;
-use OCA\PaperlessUnifiedSearch\Model\FoundFiles;
 use OCA\PaperlessUnifiedSearch\Model\Verdict;
 use OCP\Files\File;
 use OCP\IUser;
@@ -25,9 +24,11 @@ use Throwable;
  * a search of the file cache each, and only for the documents that are still unexplained:
  *
  * 1. a file of the archive account that the user can open: the document shows;
- * 2. a file of the archive account in its own folders: it isn't shared with the user;
- * 3. a file with the marker that the user can see, of another account: it doesn't count;
- * 4. otherwise no file of the archive account carries the marker: it isn't synchronized.
+ * 2. such a file that the user may also write: it is shared with write permission, which
+ *    the same search finds;
+ * 3. a file of the archive account in its own folders: it isn't shared with the user;
+ * 4. a file with the marker that the user can see, of another account: it doesn't count;
+ * 5. otherwise no file of the archive account carries the marker: it isn't synchronized.
  */
 final class SearchExplainer {
 	/** @psalm-suppress PossiblyUnusedMethod */
@@ -48,7 +49,7 @@ final class SearchExplainer {
 	public function verdicts(IUser $user, array $documentIds, string $archiveOwner): array {
 		$explanations = $this->unexplainedOf($documentIds);
 		$shown = $this->fileLocator->findAllForUser($user, array_keys($explanations), $archiveOwner);
-		$this->explainWith($explanations, $shown, Verdict::Shown, $user);
+		$this->explainWith($explanations, $shown->files, Verdict::Shown, $user);
 
 		return [$this->listOf($explanations, Verdict::Hidden), $shown->error];
 	}
@@ -66,18 +67,19 @@ final class SearchExplainer {
 		$explanations = $this->unexplainedOf($documentIds);
 		$shown = $this->fileLocator->findAllForUser($user, $this->unexplained($explanations), $archiveOwner);
 		$error = $shown->error;
-		$this->explainWith($explanations, $shown, Verdict::Shown, $user);
+		$this->explainWith($explanations, $shown->files, Verdict::Shown, $user);
+		$this->explainWith($explanations, $shown->writable, Verdict::Writable, $user);
 
 		$archive = $archiveOwner !== '' ? $this->userManager->get($archiveOwner) : null;
 		if ($archive !== null && $archive->getUID() !== $user->getUID()) {
 			$archived = $this->fileLocator->findAllForUser($archive, $this->unexplained($explanations), $archiveOwner);
 			$error ??= $archived->error;
-			$this->explainWith($explanations, $archived, Verdict::NotShared, $archive);
+			$this->explainWith($explanations, $archived->files, Verdict::NotShared, $archive);
 		}
 
 		$others = $this->fileLocator->findAnyForUser($user, $this->unexplained($explanations));
 		$error ??= $others->error;
-		$this->explainWith($explanations, $others, Verdict::NotOwned, $user);
+		$this->explainWith($explanations, $others->files, Verdict::NotOwned, $user);
 
 		return [$this->listOf($explanations, Verdict::NoFile), $error];
 	}
@@ -128,9 +130,10 @@ final class SearchExplainer {
 	 * in the folders of the account that found it.
 	 *
 	 * @param array<int, ?Explanation> $explanations
+	 * @param array<int, File> $files by document ID
 	 */
-	private function explainWith(array &$explanations, FoundFiles $found, Verdict $verdict, IUser $account): void {
-		foreach ($found->files as $documentId => $file) {
+	private function explainWith(array &$explanations, array $files, Verdict $verdict, IUser $account): void {
+		foreach ($files as $documentId => $file) {
 			$explanations[$documentId] = new Explanation(
 				$documentId,
 				$verdict,

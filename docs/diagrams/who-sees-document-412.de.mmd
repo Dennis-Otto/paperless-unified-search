@@ -6,7 +6,7 @@ config:
 ---
 flowchart TB
     accTitle: Wer Dokument 412 sieht
-    accDescr: Dem Archiv-Konto paperless gehört die Datei Rechnung [P412].pdf, und es sieht Dokument 412. Es teilt die Datei nur lesend mit jamie, und jamie sieht Dokument 412 ebenfalls. sam hat eine eigene Datei namens Kopie [P412].pdf; sie ist keine Datei des Archiv-Kontos, also sieht sam kein Dokument.
+    accDescr: Dem Archiv-Konto paperless gehört die Datei Rechnung [P412].pdf, und es sieht Dokument 412. Es teilt die Datei nur lesend mit jamie, und jamie sieht Dokument 412 ebenfalls. Es teilt die Datei mit alex mit Schreibrecht, also könnte alex sie so benannt haben und sieht kein Dokument. sam hat eine eigene Datei namens Kopie [P412].pdf; sie ist keine Datei des Archiv-Kontos, also sieht sam kein Dokument.
 
     subgraph owner ["paperless, das Archiv-Konto"]
         own["… Rechnung [P412].pdf"]
@@ -14,14 +14,20 @@ flowchart TB
     subgraph reader ["jamie"]
         shared["… Rechnung [P412].pdf<br>nur lesend geteilt"]
     end
+    subgraph writer ["alex"]
+        writable["… Rechnung [P412].pdf<br>mit Schreibrecht geteilt"]
+    end
     subgraph other ["sam"]
         copy["Kopie [P412].pdf<br>eine eigene Datei von sam"]
     end
     seen1(["✓ Dokument 412"])
     seen2(["✓ Dokument 412"])
     unseen(["✗ kein Dokument"])
+    unwritten(["✗ kein Dokument"])
 
     own -- "teilt" --> shared
+    own -- "teilt" --> writable
+    writable --> unwritten
     own --> seen1
     shared --> seen2
     seen2 ~~~ copy
@@ -30,4 +36,4 @@ flowchart TB
     classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
     classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
     class seen1,seen2 yes
-    class unseen no
+    class unseen,unwritten no

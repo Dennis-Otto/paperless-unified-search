@@ -115,10 +115,23 @@ async function searchAlways(browser, session, size) {
 		await page.goto(`${BASE_URL}${PERSONAL}`, { waitUntil: 'domcontentloaded' })
 		await page.locator(PERSONAL_SCOPE).waitFor()
 		await chooseAlwaysSearch(page, true)
-		await page.goto(`${BASE_URL}${START}`, { waitUntil: 'domcontentloaded' })
-		await searchButton(page).click()
-		await search(page, (input) => input.fill(TERM))
-		await resultGroup(page, 'Paperless documents').getByRole('link', { name: RESULT, exact: true }).waitFor()
+		// Now and then, on a busy runner of the CI, the dialog of Nextcloud starts no search
+		// for a term typed while it is still getting ready, and nothing here types again,
+		// as the switch of the other flows does: up to three tries, each on a fresh page.
+		for (let attempt = 1; ; attempt++) {
+			try {
+				await page.goto(`${BASE_URL}${START}`, { waitUntil: 'domcontentloaded' })
+				await searchButton(page).click()
+				await search(page, (input) => input.fill(TERM))
+				await resultGroup(page, 'Paperless documents').getByRole('link', { name: RESULT, exact: true }).waitFor({ timeout: TIMEOUT / 3 })
+				break
+			} catch (error) {
+				if (attempt === 3) {
+					throw error
+				}
+				console.log(`Search dialog on a ${size.name} after choosing to always search Paperless: try ${attempt} found no result (${error.message.split(String.fromCharCode(10))[0]}), trying again.`)
+			}
+		}
 		console.log(`Search dialog on a ${size.name} after choosing to always search Paperless: ${TITLE} without the switch.`)
 	} catch (error) {
 		throw new Error(`On a ${size.name}, with the choice to always search Paperless, at ${page.url()}: ${error.message}`, { cause: error })

@@ -16,11 +16,13 @@ use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCA\PaperlessUnifiedSearch\SetupCheck\PaperlessSetupCheck;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppServices;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\Shares;
+use OCP\Constants;
 use OCP\IDateTimeFormatter;
-use OCP\IL10N;
 use OCP\IURLGenerator;
 use OCP\RichObjectStrings\IValidator;
 use OCP\SetupCheck\SetupResult;
+use OCP\Share\IShare;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -31,6 +33,7 @@ use PHPUnit\Framework\TestCase;
 final class PaperlessSetupCheckTest extends TestCase {
 	use Accounts;
 	use AppServices;
+	use Shares;
 
 	private const SECTION = 'https://cloud.example.com/index.php/settings/admin/paperless_unified_search';
 
@@ -86,7 +89,7 @@ final class PaperlessSetupCheckTest extends TestCase {
 		$result = $this->check()->run();
 
 		self::assertSame(SetupResult::SUCCESS, $result->getSeverity());
-		self::assertSame('T:Connected to Paperless 3.3.0 (API 10) at https://paperless.example.com, with the archive account archive.', $result->getDescription());
+		self::assertSame('T:Connected to Paperless 3.3.0 (API 10) at https://paperless.example.com, with the archive account archive. T:The archive account shares none of its files, so only it finds its documents.', $result->getDescription());
 		self::assertNull($result->getDescriptionParameters());
 	}
 
@@ -96,7 +99,21 @@ final class PaperlessSetupCheckTest extends TestCase {
 		$result = $this->check()->run();
 
 		self::assertSame(SetupResult::SUCCESS, $result->getSeverity());
-		self::assertSame('T:Connected to Paperless at https://paperless.example.com, with the archive account archive.', $result->getDescription());
+		self::assertSame('T:Connected to Paperless at https://paperless.example.com, with the archive account archive. T:The archive account shares none of its files, so only it finds its documents.', $result->getDescription());
+	}
+
+	/**
+	 * Shares that allow no changes are what the archive needs: the check says how many.
+	 */
+	public function testSaysHowTheArchiveIsSharedReadOnly(): void {
+		$this->connected();
+		$this->share(IShare::TYPE_GROUP, 'staff', '/Paperless');
+		$this->share(IShare::TYPE_USER, 'jamie', '/Paperless/2026', Constants::PERMISSION_READ | Constants::PERMISSION_SHARE);
+
+		$result = $this->check()->run();
+
+		self::assertSame(SetupResult::SUCCESS, $result->getSeverity());
+		self::assertStringEndsWith('archive. T:Shared read-only: T:1 user, T:1 group.', $result->getDescription());
 	}
 
 	/**
@@ -150,6 +167,16 @@ final class PaperlessSetupCheckTest extends TestCase {
 					$test->history(DiagnosticsHistory::start(1791300000)->with($test->event(SearchEvent::KIND_FAILED, SearchEvent::STEP_PAPERLESS)));
 				},
 				'T:A search failed on formatted 1791400000 while asking Paperless, and none has worked since. Search problems in {section} shows what failed.',
+			],
+			'shares that allow changes' => [
+				static function (self $test): void {
+					$test->connected();
+					$test->share(IShare::TYPE_USER, 'jamie', '/Paperless');
+					$test->share(IShare::TYPE_USER, 'sam', '/Paperless', Constants::PERMISSION_ALL);
+					$test->share(IShare::TYPE_GROUP, 'staff', '/Paperless', Constants::PERMISSION_READ | Constants::PERMISSION_UPDATE);
+					$test->share(IShare::TYPE_LINK, 'token', '/Inbox', Constants::PERMISSION_CREATE);
+				},
+				'T:The archive account archive shares /Inbox, /Paperless with write permission, so whoever may write there can give a file the marker of any document. Share the archive read-only: {section} lists each share.',
 			],
 			// The search works with such a token, so this warning comes after the others.
 			'a token that may change documents and may not view correspondents' => [
@@ -219,8 +246,7 @@ final class PaperlessSetupCheckTest extends TestCase {
 	 * the overview opens as fast as without the app: it has no service that would.
 	 */
 	private function check(): PaperlessSetupCheck {
-		$l10n = $this->createStub(IL10N::class);
-		$l10n->method('t')->willReturnCallback(static fn (string $text, array $parameters = []): string => 'T:' . vsprintf($text, $parameters));
+		$l10n = $this->writtenTexts('T:');
 		$urlGenerator = $this->createStub(IURLGenerator::class);
 		$urlGenerator->method('linkToRouteAbsolute')->willReturnCallback(static function (string $route, array $arguments): string {
 			TestCase::assertSame(['settings.AdminSettings.index', ['section' => AppConstants::APP_ID]], [$route, $arguments]);
@@ -236,6 +262,7 @@ final class PaperlessSetupCheckTest extends TestCase {
 			$l10n,
 			$urlGenerator,
 			$dateTimeFormatter,
+			$this->archiveShares($l10n),
 			$this->messages(),
 		);
 	}
