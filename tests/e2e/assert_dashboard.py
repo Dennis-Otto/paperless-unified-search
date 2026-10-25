@@ -11,6 +11,9 @@ run.sh, from standard input:
                                               the archive account shares files with, the
                                               link to them, which goes to standard output
     assert_dashboard.py unlisted              /api/v1/widgets doesn't offer the widget
+    assert_dashboard.py translated TITLE LINK /api/v1/widgets offers the widget of a reader
+                                              with this title and this text of its link,
+                                              in the language of the user
     assert_dashboard.py items TITLE...        /api/v2/widget-items lists these documents,
                                               in this order, each with its file
     assert_dashboard.py empty MESSAGE         /api/v2/widget-items lists no document, and
@@ -56,6 +59,12 @@ if mode == "unlisted":
 widget = data.get(WIDGET)
 if not isinstance(widget, dict):
     fail(f"The dashboard has no widget {WIDGET}: {sorted(data)!r}")
+
+if mode == "translated":
+    buttons = widget.get("buttons") or [{}]
+    if widget.get("title") != sys.argv[2] or buttons[0].get("text") != sys.argv[3]:
+        fail(f"Expected the title {sys.argv[2]!r} and the link {sys.argv[3]!r} in the language of the user, got {widget!r}")
+    sys.exit(0)
 
 if mode == "listed":
     if widget.get("title") != "New in Paperless":

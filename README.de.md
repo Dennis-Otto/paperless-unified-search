@@ -383,7 +383,9 @@ Kann Nextcloud selbst die Anfrage nicht annehmen, sagt die Seite das in einem Sa
 
 ### Sprachen
 
-Die Einstellungen sprechen Englisch und Deutsch: Deutsch mit *du* für Konten mit der Sprache *Deutsch (Persönlich: Du)* und mit *Sie* für Konten mit der Sprache *Deutsch (Förmlich: Sie)*.
+Die App spricht Englisch, Deutsch, Französisch, Spanisch und Niederländisch, mit jedem Konto in seiner Sprache: die Suche und ihre Treffer, das Widget im Dashboard, die persönlichen und die Verwaltungseinstellungen mit ihren Meldungen, die Warnungen der Übersicht und ihr Eintrag im App Store. Deutsch sagt *du* zu Konten mit der Sprache *Deutsch (Persönlich: Du)* und *Sie* zu Konten mit der Sprache *Deutsch (Förmlich: Sie)*; Französisch sagt *vous*, Spanisch *tú* und Niederländisch *je*, wie Nextcloud in diesen Sprachen. In jeder anderen Sprache spricht die App Englisch.
+
+Die französischen, spanischen und niederländischen Texte sind mit Hilfe einer KI entstanden, mit den Wörtern der Übersetzungen von Nextcloud selbst, etwa *Rechercher dans les services connectés* für **Verbundene Dienste durchsuchen**, und warten darauf, dass Muttersprachler sie lesen. [Übersetzen](https://dennis-otto.github.io/paperless-unified-search/de/translate.html) zeigt, wie du einen Text korrigierst oder eine Sprache hinzufügst.
 
 <!-- --8<-- [end:languages] -->
 <!-- --8<-- [start:usage] -->

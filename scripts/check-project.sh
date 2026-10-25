@@ -294,7 +294,9 @@ echo "The website shows the $(($(screenshots_of README.md | wc -l) - waiting)) s
 printf '\n== %s\n' "Versions in the documentation"
 # appinfo/info.xml decides on which versions of Nextcloud and PHP the app installs. The
 # READMEs and the pages of the website that name them, in English and German, say the
-# same, so that a change of the versions can't leave a copy behind.
+# same, and so do the descriptions of the App Store in appinfo/info.xml in English,
+# German, Spanish, French and Dutch, so that a change of the versions can't leave a copy
+# behind.
 nextcloud_min="$(sed -nE 's/.*<nextcloud [^>]*min-version="([0-9]+)".*/\1/p' appinfo/info.xml)"
 nextcloud_max="$(sed -nE 's/.*<nextcloud [^>]*max-version="([0-9]+)".*/\1/p' appinfo/info.xml)"
 php_min="$(sed -nE 's/.*<php [^>]*min-version="([0-9.]+)".*/\1/p' appinfo/info.xml)"
@@ -327,10 +329,15 @@ says docs/install.de.md "| **PHP** | $php_min oder neuer"
 says docs/faq.de.md "Nextcloud $nextcloud_min bis $nextcloud_max"
 says docs/reference.de.md "| $columns"
 says docs/reference.de.md "**PHP:** $php_min oder neuer"
+says appinfo/info.xml "- Nextcloud $nextcloud_min to $nextcloud_max"
+says appinfo/info.xml "- Nextcloud $nextcloud_min bis $nextcloud_max"
+says appinfo/info.xml "- Nextcloud $nextcloud_min a $nextcloud_max"
+says appinfo/info.xml "- Nextcloud $nextcloud_min à $nextcloud_max"
+says appinfo/info.xml "- Nextcloud $nextcloud_min tot $nextcloud_max"
 if ((version_problems > 0)); then
   exit 1
 fi
-echo "The documentation names Nextcloud $nextcloud_min to $nextcloud_max and PHP $php_min, as appinfo/info.xml does."
+echo "The documentation names Nextcloud $nextcloud_min to $nextcloud_max and PHP $php_min, and the descriptions of the App Store in every language Nextcloud $nextcloud_min to $nextcloud_max, as appinfo/info.xml does."
 
 printf '\n== %s\n' "Descriptions of the website pages"
 # Search engines and shared links show the description of a page, from its front
