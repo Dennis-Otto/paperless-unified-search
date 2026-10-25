@@ -182,15 +182,18 @@ in `docs/`; *German pages*, that `README.de.md` marks each section of `README.md
 German page shows the pictures of its English twin in the same order, a German one,
 `NAME.de.svg`, in place of `NAME.svg`; *Screenshots of the website*, that a page of
 the website shows each screenshot of `README.md` that main has, itself or through a
-section of `README.md` that it includes; that the documentation names the versions of
-Nextcloud and PHP of `appinfo/info.xml`; a description of its own for every page of the
+section of `README.md` that it includes; that the documentation and the descriptions
+of `appinfo/info.xml` in every language name the versions of Nextcloud and PHP of
+`appinfo/info.xml`; a description of its own for every page of the
 website; that every Mermaid diagram runs from top to bottom with `accTitle` and
 `accDescr`; that every required check and every step of `scripts/check.sh` has its
 explanation for the PR coach; and the JavaScript of the settings with its tests, every
 line, branch and function covered, and the translations: each text of the code has a
-translation in every catalog of `l10n/`, with its placeholders, and each JavaScript
-catalog, which the browser loads, holds the same as its JSON catalog, which PHP
-loads."""
+translation in every catalog of `l10n/`, with its placeholders, each plural with as
+many forms as the `pluralForm` of its catalog, each JavaScript catalog, which the
+browser loads, holds the same as its JSON catalog, which PHP loads, and
+`appinfo/info.xml` has a summary and a description for the App Store in the language of
+each catalog."""
 why = """These checks keep what only this app has working: the browser of the end-to-end
 tests, the pictures and links of the documentation in English and German, the sections
 of the READMEs that the pages of the website include, its versions, the explanations of
@@ -208,6 +211,9 @@ requests of `.github/workflows/visual.yml`; for a picture of a German page, show
 there too, at the same place,
 with its alt text in German; for a screenshot of `README.md`, show it on the page of
 `docs/` about its topic and on its German twin; for a text of the code, add its translation to each `l10n/*.json`;
+for a language of a catalog without its texts of the App Store, add a `<summary lang>`
+and a `<description lang>` in that language to `appinfo/info.xml`, as
+[Translate](https://dennis-otto.github.io/paperless-unified-search/translate.html) shows;
 for a check without an explanation, add it to `.github/checks.project.toml`; for a
 pipe into `grep --quiet`, read the output into a variable first and search that,
 `grep --quiet … <<<"${output}"`, since the command before the pipe dies of SIGPIPE

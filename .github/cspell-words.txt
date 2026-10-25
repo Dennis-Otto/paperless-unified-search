@@ -14,3 +14,25 @@ benutzerbezogen
 benutzerbezogenen
 SIGPIPE
 pipefail
+# The French, Spanish and Dutch words that the pages about the languages quote.
+Rechercher
+dans
+les
+connectés
+vous
+tú
+Buscar
+servicios
+conectados
+Verbonden
+diensten
+zoeken
+utilisateur
+utilisateurs
+Español
+México
+Nouveau
+Fichiers
+partagés
+avec
+août

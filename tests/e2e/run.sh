@@ -669,10 +669,14 @@ if [[ "${PREVIEW_TYPE}" != image/* ]]; then
 	exit 1
 fi
 expect_status 404 "The preview of the result for e2e-other" --user "e2e-other:${PASSWORD}" "${PREVIEW}"
-# The date of the result in the language of the user.
+# The date of the result and the name of the provider in the language of the user, also
+# in one of the languages that came after German, French (#228).
 language de e2e-user
 search e2e-user 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/german.json"
 assert_response german "${TMP_DIR}/german.json"
+language fr e2e-user
+search e2e-user 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/french.json"
+assert_response french "${TMP_DIR}/french.json"
 language en e2e-user
 # The link that the smart picker inserts for this result, which Nextcloud renders as the
 # preview of the file for whoever can open it, and as a bare link for anyone else.
@@ -711,6 +715,16 @@ if (($(mock_requests) - requests != 1)); then
 	echo "The dashboards of a minute asked Paperless $(($(mock_requests) - requests)) times for its newest documents instead of once." >&2
 	exit 1
 fi
+# The widget speaks the language of the user, such as French (#228): its title, its link
+# to the files shared with the user and its message without documents.
+language fr e2e-other
+dashboard e2e-other widgets "${TMP_DIR}/widgets-french.json"
+assert_dashboard translated "${TMP_DIR}/widgets-french.json" 'Nouveau dans Paperless' 'Fichiers partagés avec vous'
+dashboard e2e-other items "${TMP_DIR}/widget-french.json"
+# The apostrophe of the French message is the typographic one that the catalog has.
+# shellcheck disable=SC1112
+assert_dashboard empty "${TMP_DIR}/widget-french.json" 'Aucun des documents Paperless les plus récents n’a de fichier que vous pouvez ouvrir.'
+language en e2e-other
 # occ names the reason of each document that the search leaves out (#136): the archive
 # account hasn't shared the file of 123 with e2e-other, and no file stands for 999.
 occ paperless_unified_search:search e2e-other mobiletest --explain --json >"${TMP_DIR}/explain-unshared.json"
@@ -981,4 +995,4 @@ phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed in ${SECONDS} s: the set-up, the repair step that removes the last failure of version 0.3.0, the test, the explained search and the check of occ, the warnings of occ and of the overview about a token of a superuser, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, the dashboard widget with the newest documents that a user can open at one request to Paperless a minute, trusted mode, the choice of a user to include Paperless in every search of their own, which the administrators can disallow, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date in English and German, its correspondent and its type, pages of results filled across pages of Paperless, the date filter in the timezone of the user, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, Try a search for administrators only with the IDs, titles and verdicts alone, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."
+echo "Docker E2E passed in ${SECONDS} s: the set-up, the repair step that removes the last failure of version 0.3.0, the test, the explained search and the check of occ, the warnings of occ and of the overview about a token of a superuser, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, the dashboard widget with the newest documents that a user can open at one request to Paperless a minute, also in French, trusted mode, the choice of a user to include Paperless in every search of their own, which the administrators can disallow, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date and the name of its provider in English, German and French, its correspondent and its type, pages of results filled across pages of Paperless, the date filter in the timezone of the user, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, Try a search for administrators only with the IDs, titles and verdicts alone, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."
