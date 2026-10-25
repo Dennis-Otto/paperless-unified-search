@@ -1,0 +1,40 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+---
+flowchart TB
+    accTitle: The upgrade from the last release
+    accDescr: upgrade.sh asks GitHub for the last release of the app; without one, it skips the test with a notice. It downloads the package of the App Store and fails before Docker starts unless the signature matches the certificate of the app at the App Store and the provenance names build-release.yml. It installs the release into a fresh Nextcloud, sets it up with occ and searches; package.sh packs the checkout as krankerl packs a release, with the next version. The package replaces the release, and occ upgrade runs each repair step of the app once. The test passes when the settings page shows the same settings, the app keeps every key, the same search finds the same file with the stored token, which still goes to its own server alone, and the log of Nextcloud holds no finding; otherwise it fails with what the upgrade lost.
+
+    latest{"A release?"}
+    skipped["skipped with a notice"]
+    download["the package of the App Store<br>of the last release, its signature<br>and its provenance"]
+    verify{"Both valid?"}
+    refused["fails before Docker starts"]
+    release["the release in custom_apps<br>of a fresh Nextcloud,<br>occ paperless_unified_search:setup<br>and a search"]
+    package["package.sh: the checkout<br>as krankerl packs a release,<br>with the next version"]
+    upgrade["the package in place of the release,<br>occ upgrade with each<br>repair step of the app once"]
+    checks["the settings page, the keys,<br>the same search, the token<br>for another server, the log"]
+    same{"All as before?"}
+    passed["passes"]
+    lost["fails with what<br>the upgrade lost"]
+
+    latest -- "no" --> skipped
+    latest -- "yes" --> download --> verify
+    verify -- "no" --> refused
+    verify -- "yes" --> release
+    release --> upgrade
+    package --> upgrade
+    upgrade --> checks --> same
+    same -- "yes" --> passed
+    same -- "no" --> lost
+
+    classDef bot fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef yours fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef fail fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class download,release,upgrade,checks bot
+    class package yours
+    class skipped,passed done
+    class refused,lost fail

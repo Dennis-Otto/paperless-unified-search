@@ -95,6 +95,10 @@ jobs:
           # Nextcloud, and on a laptop with every version; a push to main, the weekly
           # run and a start by hand test every size with every version (#108).
           E2E_PHONE: ${{ github.event_name == 'pull_request' && 'newest' || 'all' }}
+          # Beside them, the upgrade from the last release to the checkout
+          # (tests/e2e/upgrade.sh): in a pull request with the newest Nextcloud, and
+          # everywhere else with every version (#242).
+          E2E_UPGRADE: ${{ github.event_name == 'pull_request' && 'newest' || 'all' }}
         run: bash tests/e2e/run-all.sh
       # The PR coach: what failed, why it matters and how to fix it, in the summary
       # of the check and as its annotation, from .github/checks.project.toml.

@@ -40,7 +40,10 @@ services:
       - "${E2E_PORT:-18082}:80"
     volumes:
       - nextcloud_html:/var/www/html
-      - ../../:/var/www/html/custom_apps/paperless_unified_search:ro
+      # The checkout as the app, read-only. upgrade.sh mounts it where Nextcloud looks
+      # for no app, /opt/checkout, since it installs a release in this place first and
+      # then replaces it with the package of the checkout, as an update does.
+      - ../../:${E2E_APP_PATH:-/var/www/html/custom_apps/paperless_unified_search}:ro
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1/status.php >/dev/null || exit 1"]
       interval: 3s

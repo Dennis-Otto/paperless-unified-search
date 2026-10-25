@@ -13,6 +13,9 @@ Viewern
 benutzerbezogen
 benutzerbezogenen
 SIGPIPE
+krankerl
+nextcloudignore
+opcache
 pipefail
 # The French, Spanish and Dutch words that the pages about the languages quote.
 Rechercher
