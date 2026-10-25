@@ -2,9 +2,11 @@
 # SPDX-FileCopyrightText: 2026 Dennis Otto
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Takes the screenshots and the animation in screenshots/, which the README, the
-# website and the App Store show, and renders the social preview from the first of
-# them (scripts/social-preview.sh). Run it after a change of what users see:
+# Takes the screenshots in screenshots/, which the README, the website and the App
+# Store show, and the animation of the search in docs/images/, light and dark, with the
+# videos that the website plays in its place (scripts/screenshot-media.sh), and renders
+# the social preview from the first screenshot (scripts/social-preview.sh). Run it
+# after a change of what users see:
 #   bash scripts/screenshots.sh
 # The screenshot bot (.github/workflows/screenshot-bot.yml) runs it on main after a
 # change of a file of .github/screenshots-paths.txt, after each release and every week,
@@ -172,8 +174,15 @@ occ config:app:set paperless_unified_search diagnostics --type=array --lazy \
 
 browse "${PROJECT_NAME}_default" --env "E2E_PASSWORD=${PASSWORD}"
 
-cp "${TMP_DIR}"/*.png "${TMP_DIR}"/*.gif screenshots/
-ls -l screenshots/
+# The videos of the animations with their first frames, and every PNG at its smallest.
+bash scripts/screenshot-media.sh "${TMP_DIR}"
+
+# The animation of the README and of the home page of the website, light and dark, is a
+# file of the website, so that the website plays its video: the website loads the
+# screenshots from main, and no video of main.
+cp "${TMP_DIR}"/*.png screenshots/
+cp "${TMP_DIR}"/*.gif "${TMP_DIR}"/*.mp4 "${TMP_DIR}"/*.webp docs/images/
+ls -l screenshots/ docs/images/
 
 # The social preview shows the first screenshot.
 bash scripts/social-preview.sh

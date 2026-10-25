@@ -18,7 +18,10 @@
 
 Paperless Unified Search brings Paperless-ngx OCR and full-text search into Nextcloud's global search, without Elasticsearch, a second index or another container: Paperless answers, Nextcloud decides who sees the file. Search results open the matching synchronized file directly in Nextcloud's viewer.
 
-![A search for "invoice" in Nextcloud: the files whose names match, then, with Search connected services switched on, the Paperless documents whose text matches. The home insurance renewal opens in Nextcloud's viewer.](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/search-and-open.gif)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/search-and-open-dark.gif">
+  <img src="docs/images/search-and-open.gif" alt="The Paperless documents that a search for &quot;invoice&quot; finds in Nextcloud, in a frame: the electricity invoice, the home insurance renewal and the internet invoice. Then the search from the start: the files whose names match, then, with Search connected services switched on, the Paperless documents whose text matches. The home insurance renewal opens in Nextcloud's viewer.">
+</picture>
 
 <sub>The search of files finds the two invoices by their names. Paperless also finds the home insurance renewal: its text says "invoice", its name doesn't.</sub>
 
@@ -721,13 +724,13 @@ In the CI, the required check `nextcloud` runs the tests against every supported
 
 ### Screenshots
 
-The screenshots and the animation in `screenshots/` and the social preview `.github/social-preview.png`, which GitHub and chats show for a link to the repository, come from a script, so that they show what users see:
+The screenshots in `screenshots/`, the animation of the search in `docs/images/`, light and dark, and the social preview `.github/social-preview.png`, which GitHub and chats show for a link to the repository, come from a script, so that they show what users see:
 
 ```bash
 bash scripts/screenshots.sh
 ```
 
-It starts the Docker suite under a project of its own with a demo: the archive account `paperless`, whose synthetic documents are shared read-only with `jamie`, and a Paperless mock that finds three of them for "invoice". Chromium then searches, opens a result, narrows the search to July 2026 with the date filter, links a document from the smart picker in a note of Text, saves the settings and tries a search in them, light and dark, on a phone and as an animation. Each step checks what its picture shows: the search narrowed by date fails, for one, when a Paperless result outside July shows or the results land under *Partial matches*. The clock of the browser stands at the same morning in every run and the files of the demo were changed two days before it, so two runs render the same pixels. Set `KEEP_SCREENSHOTS=1` to look around in the demo afterwards.
+It starts the Docker suite under a project of its own with a demo: the archive account `paperless`, whose synthetic documents are shared read-only with `jamie`, and a Paperless mock that finds three of them for "invoice". Chromium then searches, opens a result, narrows the search to July 2026 with the date filter, links a document from the smart picker in a note of Text, saves the settings and tries a search in them, light and dark, on a phone and as an animation, which starts on its Paperless results in a frame. `scripts/screenshot-media.sh` then makes, in the image of `.github/screenshots/Dockerfile`, the video beside each animation, which the website plays in its place at a quarter of its size, with its first frame, which shows until the video plays, and shrinks every PNG by about a quarter without changing a pixel. Each step checks what its picture shows: the search narrowed by date fails, for one, when a Paperless result outside July shows or the results land under *Partial matches*. The clock of the browser stands at the same morning in every run and the files of the demo were changed two days before it, so two runs render the same pixels. Set `KEEP_SCREENSHOTS=1` to look around in the demo afterwards.
 
 The animation of [Try it in three minutes](#try-it-in-three-minutes) comes from the real Paperless-ngx and Nextcloud of the demo instead. With the demo running, `bash scripts/screenshots.sh --demo` signs in as `jamie` with the password of `demo/.env`, searches for *invoice*, opens the home insurance renewal and writes `screenshots/demo-search-and-open.gif` alone; it leaves the demo and the other pictures as they are. Two fresh demos render the same pixels here too: the clock starts two days after the last change of the archive, the search starts once the whole term is typed, the notifications are read, and Paperless ranks the documents by their text alone. The weekly run of the demo records it as well, compares it by its pixels and, when they changed, keeps one pull request, *docs: update the animation of the demo*, that merges itself once every check passes.
 

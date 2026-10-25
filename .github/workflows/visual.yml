@@ -42,6 +42,8 @@ on:
       - .github/social-preview.html
       - .github/social-preview/Dockerfile
       - scripts/social-preview.sh
+      - .github/screenshots/Dockerfile
+      - scripts/screenshot-media.sh
       # The check itself.
       - .github/screenshots-paths.txt
       - .github/screenshots-requirements.txt

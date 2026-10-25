@@ -32,6 +32,10 @@
 #   running demo of demo/seed.sh as jamie, with the password of demo/.env in the
 #   environment of the browser, never on a command line, and leaves the demo and every
 #   other picture alone; without the demo it says how to start it.
+# - scripts/screenshot-media.sh, with a fake docker: it makes the video and the first
+#   frame beside each animation and shrinks each PNG, in the image of
+#   .github/screenshots/, with the same bytes in every run; it says so when that image
+#   can't be built.
 #
 #   bash tests/e2e/selftest.sh
 
@@ -605,12 +609,87 @@ expect "the password of jamie on a command line" 0 \
 expect_in "the files of the browser" "browser files: demo.mjs package-lock.json package.json screenshots.mjs ui.mjs" "${WORK}/docker.log"
 expect "the demo after screenshots.sh --demo" 0 "$(grep --count --extended-regexp '^compose .*(down|stop|rm)( |$)' "${WORK}/docker.log" || true)"
 expect "the social preview after screenshots.sh --demo" 0 "$(grep --count --fixed-strings 'social preview' "${WORK}/docker.log" || true)"
+expect "the videos after screenshots.sh --demo" 0 "$(grep --count '^build ' "${WORK}/docker.log" || true)"
 echo 'NEXTCLOUD_ADMIN_PASSWORD=fake-admin-password' >"${shots}/demo/.env"
 expect "screenshots.sh --demo without the password of jamie" 1 "$(FAKE_RUNNING=nextcloud screenshots --demo)"
 expect_in "the way to the password of jamie" "demo/.env holds no DEMO_PASSWORD, the password of jamie" "${WORK}/log"
+
+## The videos of the animations and the PNGs at their smallest: scripts/screenshot-media.sh
+
+# In a copy of the repository with the script alone and a fake docker, which builds the
+# image of .github/screenshots/ and, as the container, makes NAME.mp4 and NAME-poster.webp of
+# each NAME.gif that it gets on standard input, shrinks each PNG and answers with all of
+# them on standard output.
+media="${WORK}/media"
+mkdir -p "${media}/scripts" "${media}/bin" "${media}/pictures"
+cp "${SCRIPT_DIR}/../../scripts/screenshot-media.sh" "${media}/scripts/screenshot-media.sh"
+cat >"${media}/bin/docker" <<'SCRIPT'
+#!/usr/bin/env bash
+# A fake of Docker: it notes each call with the command of the container, fails to
+# build with FAKE_BUILD_FAILS, and finishes the pictures as the container does.
+echo "$*" >>"${FAKE_DOCKER_LOG}"
+case "$1" in
+	build)
+		if [[ -n "${FAKE_BUILD_FAILS:-}" ]]; then
+			echo "ERROR: failed to build" >&2
+			exit 1
+		fi
+		echo "sha256:fake-media-image"
+		;;
+	run)
+		out="$(mktemp -d)"
+		tar -C "${out}" -xf -
+		for gif in "${out}"/*.gif; do
+			[[ -e "${gif}" ]] || continue
+			echo "video of $(cat "${gif}")" >"${gif%.gif}.mp4"
+			echo "first frame of $(cat "${gif}")" >"${gif%.gif}-poster.webp"
+		done
+		for png in "${out}"/*.png; do
+			[[ -e "${png}" ]] || continue
+			echo "smaller $(cat "${png}")" >"${png}"
+		done
+		tar -C "${out}" -cf - .
+		rm -rf "${out}"
+		;;
+esac
+SCRIPT
+chmod +x "${media}/bin/docker"
+
+# Runs the script in the copy with the arguments, from the folder of these tests, and
+# prints its exit status.
+finish() {
+	local status=0
+	: >"${WORK}/docker.log"
+	(cd "${WORK}" && PATH="${media}/bin:${PATH}" FAKE_DOCKER_LOG="${WORK}/docker.log" \
+		bash "${media}/scripts/screenshot-media.sh" "$@" >"${WORK}/log" 2>&1) || status=$?
+	echo "${status}"
+}
+
+expect "screenshot-media.sh without a folder" 2 "$(finish)"
+expect_in "the usage of screenshot-media.sh" "Usage: bash scripts/screenshot-media.sh FOLDER" "${WORK}/log"
+expect "screenshot-media.sh with a folder that isn't there" 2 "$(finish media/none)"
+echo "the search" >"${media}/pictures/search-and-open.gif"
+echo "the settings" >"${media}/pictures/03-admin-settings.png"
+expect "screenshot-media.sh when the image can't be built" 1 "$(FAKE_BUILD_FAILS=1 finish media/pictures)"
+expect_in "the reason when the image can't be built" "Building the image of .github/screenshots/Dockerfile failed." "${WORK}/log"
+expect "the container when the image can't be built" 0 "$(grep --count '^run ' "${WORK}/docker.log" || true)"
+expect "the PNG when the image can't be built" "the settings" "$(cat "${media}/pictures/03-admin-settings.png")"
+# A folder named from another one than the root of the repository, as screenshots.sh
+# names one of mktemp.
+expect "screenshot-media.sh" 0 "$(finish media/pictures)"
+expect_in "the image of .github/screenshots" "build --quiet .github/screenshots" "${WORK}/docker.log"
+expect_in "the container of that image" "run --rm --interactive sha256:fake-media-image" "${WORK}/docker.log"
+expect "the video beside the animation" "video of the search" "$(cat "${media}/pictures/search-and-open.mp4")"
+expect "the first frame beside the animation" "first frame of the search" "$(cat "${media}/pictures/search-and-open-poster.webp")"
+expect "the animation itself" "the search" "$(cat "${media}/pictures/search-and-open.gif")"
+expect "the smaller PNG" "smaller the settings" "$(cat "${media}/pictures/03-admin-settings.png")"
+# The same bytes in every run: one thread, and no version of the encoder in the file.
+expect_in "the video with one thread" "-threads 1" "${WORK}/docker.log"
+expect_in "the video without the version of its encoder" "-fflags +bitexact -flags:v +bitexact -map_metadata -1" "${WORK}/docker.log"
+expect_in "the PNGs without a changed pixel" "oxipng --quiet --opt 4 --strip safe" "${WORK}/docker.log"
 
 if ((failures > 0)); then
 	echo "${failures} of ${checks} checks of the scripts of the end-to-end tests failed." >&2
 	exit 1
 fi
-echo "The ${checks} checks of scope.sh, run-all.sh, the issue of the weekly run, the journal of the mock, the check of the log of Nextcloud, the pipes of the scripts and the animation of the demo pass."
+echo "The ${checks} checks of scope.sh, run-all.sh, the issue of the weekly run, the journal of the mock, the check of the log of Nextcloud, the pipes of the scripts, the animation of the demo and the videos of the animations pass."
