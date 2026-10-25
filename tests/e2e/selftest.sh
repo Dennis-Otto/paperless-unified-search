@@ -22,6 +22,10 @@
 #   holds each request right after its answer, and run.sh reads that journal; and it
 #   answers /api/ui_settings/ for the token of a view-only account and of a superuser
 #   as Paperless does.
+# - assert_log.py, with records of the log of Nextcloud of its own, when Python is
+#   installed: it fails on an error of the app, also one that Nextcloud logs for core
+#   with a trace through lib/, on a deprecation, notice or warning of PHP in a file of
+#   the app and on a warning of the app that no test provokes, and passes the rest.
 # - that no script here pipes a command into grep --quiet, which fails the pipe now
 #   and then under set -o pipefail.
 # - scripts/screenshots.sh --demo, with a fake docker: it records the animation of the
@@ -428,6 +432,74 @@ else
 	echo "Python 3.9 or newer is not installed here; the CI tests the journal of the mock."
 fi
 
+## The check of the log of Nextcloud
+
+# run.sh sets the log level of Nextcloud to debug and pipes the log into assert_log.py at
+# its end, which fails on an error of the app, a deprecation, notice or warning of PHP in
+# a file of the app, and a warning of the app that no test provokes. A record of the app
+# is one that the app wrote or whose message, exception or data names a file of the app
+# or its namespace: Nextcloud logs an uncaught exception for the app index, core or PHP,
+# with the trace through lib/ (#237). The records below are as Nextcloud writes them.
+# Runs assert_log.py on the records given, one per line, prints its exit status, and
+# keeps its output in ${WORK}/log-check.
+log_check() {
+	local status=0
+	printf '%s\n' "$@" | "${python}" -B "${SCRIPT_DIR}/assert_log.py" 2>&1 | tr -d '\r' >"${WORK}/log-check" || status=$?
+	echo "${status}"
+}
+if [[ -n "${python}" ]]; then
+	app_dir=/var/www/html/custom_apps/paperless_unified_search
+	# What passes: an error of core whose arguments, but no frame, name a file of the app,
+	# a deprecation of PHP in core, a warning of core during a request to a route of the
+	# app, an info and a debug message of the app, a warning that run.sh provokes, and
+	# lines that hold no record.
+	fine=(
+		'{"level":3,"app":"core","message":"The database went away","method":"GET","url":"/index.php/apps/files","exception":{"Exception":"RuntimeException","Message":"The database went away","Code":0,"File":"/var/www/html/lib/private/DB/Connection.php","Line":12,"Trace":[{"file":"/var/www/html/lib/private/AppFramework/App.php","line":3,"function":"run","args":["'"${app_dir}"'/appinfo/info.xml"]}]}}'
+		'{"level":0,"app":"PHP","message":"Constant E_STRICT is deprecated at /var/www/html/lib/base.php#12"}'
+		'{"level":2,"app":"core","message":"Login failed: e2e-other","url":"/index.php/apps/paperless_unified_search/settings"}'
+		'{"level":1,"app":"paperless_unified_search","message":"e2e-admin tried a search as e2e-other"}'
+		'{"level":0,"app":"paperless_unified_search","message":"Paperless rejected the query of a search with HTTP 400"}'
+		'{"level":2,"app":"paperless_unified_search","message":"Paperless unified search failed (OCA\\PaperlessUnifiedSearch\\Exception\\PaperlessRequestException)"}'
+		''
+		'PHP Warning: not a record'
+		'[]'
+	)
+	expect "the check of a log without a finding" 0 "$(log_check "${fine[@]}")"
+	expect_in "the levels of the whole log" "The log of Nextcloud holds 6 records: 2 debug, 1 info, 2 warning, 1 error, 0 fatal." "${WORK}/log-check"
+	expect_in "the levels of the app" "Of them, 3 records of the app: 1 debug, 1 info, 1 warning, 0 error, 0 fatal." "${WORK}/log-check"
+	expect_in "the lines that hold no record" "Lines of the log that hold no record in JSON, which the check leaves out: 2." "${WORK}/log-check"
+	expect_in "the count of an expected warning" "Seen 1 time: the expected warning /Paperless unified search failed \(/" "${WORK}/log-check"
+
+	# Each finding fails the check, among the records that pass, with its kind, its place
+	# in the files of the app and its request: kind|place|record.
+	# shellcheck disable=SC2016 # $term and $token are parameters of PHP in the messages.
+	findings=(
+		'an error of the app, for the app '"'"'index'"'"'|at lib/Search/PaperlessSearchProvider.php:42, during GET /ocs/v2.php/search/providers/paperless_unified_search/search|{"level":3,"app":"index","message":"Argument #1 ($term) must be of type string, null given","method":"GET","url":"/ocs/v2.php/search/providers/paperless_unified_search/search","exception":{"Exception":"TypeError","Message":"Argument #1 ($term) must be of type string, null given","Code":0,"File":"/var/www/html/lib/private/Search/SearchComposer.php","Line":20,"Trace":[{"file":"/var/www/html/lib/private/Search/SearchComposer.php","line":20,"function":"search","class":"OC\\Search\\SearchComposer","type":"->","args":[]},{"file":"'"${app_dir}"'/lib/Search/PaperlessSearchProvider.php","line":42,"function":"names","class":"OCA\\PaperlessUnifiedSearch\\Search\\PaperlessSearchProvider","type":"->","args":["secret argument"]}]}}'
+		'a deprecation of PHP in a file of the app, for the app '"'"'PHP'"'"'|at lib/Service/ConfigService.php:77, during occ paperless_unified_search:check|{"level":0,"app":"PHP","method":"","url":"--","occ_command":["occ","paperless_unified_search:check"],"message":"Implicitly marking parameter $token as nullable is deprecated at '"${app_dir}"'/lib/Service/ConfigService.php#77"}'
+		'a notice of PHP in a file of the app|at lib/Command/Check.php:9|{"level":1,"app":"PHP","message":"Only variables should be assigned by reference at '"${app_dir}"'/lib/Command/Check.php#9"}'
+		'a warning of PHP in a file of the app|at lib/Dashboard/RecentDocumentsWidget.php:5|{"level":2,"app":"PHP","message":"Undefined array key \"id\" at '"${app_dir}"'/lib/Dashboard/RecentDocumentsWidget.php#5"}'
+		'a warning of the app that no test expects, for the app '"'"'paperless_unified_search'"'"'|at no file of the app, during GET /ocs/v2.php/apps/dashboard/api/v2/widget-items|{"level":2,"app":"paperless_unified_search","method":"GET","url":"/ocs/v2.php/apps/dashboard/api/v2/widget-items","message":"The dashboard could not show the newest Paperless documents (RuntimeException)"}'
+		'an error of the app, for the app '"'"'paperless_unified_search'"'"'|at lib/Controller/SettingsController.php:9|{"level":3,"app":"paperless_unified_search","message":"The settings of Paperless Unified Search could not be saved","exception":{"Exception":"RuntimeException","Message":"Saving failed","File":"/var/www/html/lib/private/AppConfig.php","Line":1,"Trace":[],"Previous":{"Exception":"TypeError","Message":"Wrong type","File":"'"${app_dir}"'/lib/Controller/SettingsController.php","Line":9,"Trace":[]}}}'
+		'a fatal error of the app, for the app '"'"'PHP'"'"'|at lib/Service/PaperlessClient.php:5|{"level":4,"app":"PHP","message":"Allowed memory size exhausted at '"${app_dir}"'/lib/Service/PaperlessClient.php#5"}'
+		'an error of the app, for the app '"'"'core'"'"'|at no file of the app|{"level":3,"app":"core","message":"Could not load a search provider","data":{"class":"OCA\\PaperlessUnifiedSearch\\Search\\PaperlessSearchProvider"}}'
+		'a record of the app at the level '"'"'3'"'"', which Nextcloud never writes|at no file of the app, during no request that the record names|{"level":"3","app":"paperless_unified_search","message":"A level as text"}'
+	)
+	for sample in "${findings[@]}"; do
+		IFS='|' read -r kind where record <<<"${sample}"
+		expect "the check of a log with ${kind}" 1 "$(log_check "${fine[@]}" "${record}")"
+		expect_in "the finding ${kind}" "- ${kind}" "${WORK}/log-check"
+		expect_in "the place of ${kind}" "  ${where}" "${WORK}/log-check"
+		expect_in "the headline of ${kind}" "holds 1 record of the app that no test expects:" "${WORK}/log-check"
+	done
+	expect "the arguments of a trace in a finding" 0 \
+		"$(log_check "${fine[@]}" "${findings[0]##*|}" >/dev/null; grep --count --fixed-strings 'secret argument' "${WORK}/log-check" || true)"
+	expect_in "a frame of the trace in a finding" "${app_dir}/lib/Search/PaperlessSearchProvider.php:42 OCA\\\\PaperlessUnifiedSearch\\\\Search\\\\PaperlessSearchProvider->names" "${WORK}/log-check"
+	expect "the check of an empty log" 0 "$(log_check)"
+	expect_in "the levels of an empty log" "The log of Nextcloud holds 0 records: 0 debug, 0 info, 0 warning, 0 error, 0 fatal." "${WORK}/log-check"
+else
+	echo "Python 3.9 or newer is not installed here; the CI tests the check of the log of Nextcloud."
+fi
+
 ## Pipes into grep --quiet
 
 # grep --quiet stops reading at its first match, and the command that writes into the
@@ -536,4 +608,4 @@ if ((failures > 0)); then
 	echo "${failures} of ${checks} checks of the scripts of the end-to-end tests failed." >&2
 	exit 1
 fi
-echo "The ${checks} checks of scope.sh, run-all.sh, the issue of the weekly run, the journal of the mock, the pipes of the scripts and the animation of the demo pass."
+echo "The ${checks} checks of scope.sh, run-all.sh, the issue of the weekly run, the journal of the mock, the check of the log of Nextcloud, the pipes of the scripts and the animation of the demo pass."
