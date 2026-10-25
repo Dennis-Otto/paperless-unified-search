@@ -301,8 +301,8 @@ Die Suche braucht eines von einer Synchronisierung: jedes Dokument von Paperless
 
 ## Konfiguration
 
-1. Lege ein eigenes Paperless-Konto an, weder **Superuser** noch **Admin**, mit nur den Rechten zum Ansehen, die die Suche braucht: **Anzeigen** (*View*) für **Dokumente**, für **Korrespondenten** und **Dokumenttypen**, deren Namen die Treffer zeigen, und für **UI-Einstellungen** (*UI Settings*), aus denen der Test der Verbindung erfährt, was das Konto darf.
-2. Lege ein API-Token für dieses Konto an.
+1. Lege ein eigenes Paperless-Konto an, weder **Superuser** noch **Admin**, mit nur den Rechten zum Ansehen, die die Suche braucht: **Anzeigen** (*View*) für **Dokument** (*Document*), für **Korrespondent** (*Correspondent*) und **Dokumenttyp** (*DocumentType*), deren Namen die Treffer zeigen, und für **UI-Einstellungen** (*UISettings*), aus denen der Test der Verbindung erfährt, was das Konto darf. Lass es die Dokumente, Korrespondenten und Typen ansehen, die einem anderen Benutzer gehören, etwa einem Administrator, der sie anlegt; [Ein Paperless-Konto für die Suche](https://dennis-otto.github.io/paperless-unified-search/de/configure.html#ein-paperless-konto-für-die-suche) zeigt jeden Schritt in Paperless, mit einem Workflow, der es für jedes neue Dokument erledigt.
+2. Lege ein API-Token für dieses Konto an, in **Mein Profil** (*My Profile*) von Paperless, angemeldet als das Konto.
 3. Öffne in Nextcloud **Verwaltungseinstellungen → Paperless Unified Search**.
 4. Gib die Basis-URL von Paperless und das API-Token ein.
 5. Erreicht Nextcloud Paperless unter einer Adresse deines lokalen Netzwerks oder über den Namen seines Docker-Dienstes, etwa `http://192.168.1.20:8000` oder `http://paperless:8000`, wähle **Paperless läuft in meinem lokalen Netzwerk** ([unten](#paperless-in-deinem-lokalen-netzwerk)).

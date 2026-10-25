@@ -301,8 +301,8 @@ The search needs one thing from a synchronization: each document of Paperless-ng
 
 ## Configuration
 
-1. Create a dedicated Paperless account, neither **Superuser** nor **Admin**, with only the permissions to view that the search needs: **View** for **Documents**, for **Correspondents** and **Document Types**, whose names the results show, and for **UI Settings**, from which the test of the connection learns what the account may do.
-2. Create an API token for that account.
+1. Create a dedicated Paperless account, neither **Superuser** nor **Admin**, with only the permissions to view that the search needs: **View** for **Document**, for **Correspondent** and **DocumentType**, whose names the results show, and for **UISettings**, from which the test of the connection learns what the account may do. Let it view the documents, correspondents and types that another user owns, such as an administrator who adds them; [A Paperless account for the search](https://dennis-otto.github.io/paperless-unified-search/configure.html#a-paperless-account-for-the-search) shows each step in Paperless, with a workflow that does it for every new document.
+2. Create an API token for that account, in **My Profile** of Paperless, signed in as the account.
 3. In Nextcloud, open **Administration settings → Paperless Unified Search**.
 4. Enter the Paperless base URL and API token.
 5. When Nextcloud reaches Paperless at an address of your local network or by the name of its Docker service, such as `http://192.168.1.20:8000` or `http://paperless:8000`, select **Paperless runs in my local network** ([below](#paperless-in-your-local-network)).

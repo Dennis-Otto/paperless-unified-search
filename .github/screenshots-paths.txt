@@ -15,8 +15,10 @@ lib/**
 templates/**
 
 # The demo that the pictures show: Nextcloud, the mock of Paperless and its
-# documents, and the browser with the steps that it takes.
+# documents, the real Paperless in which the account of the search is set up, and the
+# browser with the steps that it takes.
 tests/e2e/compose.yaml
+tests/e2e/compose.paperless.yaml
 tests/e2e/mock_server.py
 tests/e2e/pdf.py
 tests/e2e/package.json
