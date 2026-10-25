@@ -37,13 +37,13 @@ Jede Zeile verbindet einen Text des Codes, auf Englisch, mit seiner Übersetzung
 
 ```json
 {
-	"translations": {
-		"Paperless documents": "Documents Paperless",
-		"The archive account %s does not exist.": "Le compte d’archive %s n’existe pas.",
-		"The request failed (HTTP {status}).": "La requête a échoué (HTTP {status}).",
-		"_%n user_::_%n users_": ["%n utilisateur", "%n d’utilisateurs", "%n utilisateurs"]
-	},
-	"pluralForm": "nplurals=3; plural=(n == 0 || n == 1) ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;"
+  "translations": {
+    "Paperless documents": "Documents Paperless",
+    "The archive account %s does not exist.": "Le compte d’archive %s n’existe pas.",
+    "The request failed (HTTP {status}).": "La requête a échoué (HTTP {status}).",
+    "_%n user_::_%n users_": ["%n utilisateur", "%n d’utilisateurs", "%n utilisateurs"]
+  },
+  "pluralForm": "nplurals=3; plural=(n == 0 || n == 1) ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;"
 }
 ```
 
