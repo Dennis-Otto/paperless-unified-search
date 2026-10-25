@@ -709,13 +709,13 @@ bash tests/e2e/run.sh       # one Nextcloud version
 bash tests/e2e/run-all.sh   # every supported version at the same time, as the CI does
 ```
 
-Die [Vertragstests](tests/e2e/README.md#against-a-real-paperless-ngx) lassen die App statt gegen den Mock gegen ein echtes Paperless-ngx 2.20 und 3.x laufen und prüfen, dass die Felder, Daten, Ausschnitte, Seiten und Fehler von Paperless so bleiben, wie die App sie liest:
+Die [Vertragstests](tests/e2e/README.md#against-a-real-paperless-ngx) lassen die App statt gegen den Mock gegen ein echtes Paperless-ngx 2.20 und 3.x laufen und prüfen, dass die Felder, Daten, Ausschnitte, Seiten und Fehler von Paperless, die neuesten Dokumente des Dashboards und die Namen der Korrespondenten und Dokumenttypen so bleiben, wie die App sie liest:
 
 ```bash
 PAPERLESS=3 bash tests/e2e/paperless-contract.sh   # or PAPERLESS=2
 ```
 
-In der CI führt die Pflichtprüfung `nextcloud` die Tests gegen jede unterstützte Version in einem Job aus. Ein Pull Request, der keine Datei ändert, die die Tests abdecken, etwa einer, der nur die Dokumentation ändert, besteht sie in Sekunden, ohne sie auszuführen. Jeden Montag läuft die Prüfung auch ohne eine Änderung der App, gegen das neueste Release hinter jedem Image von Nextcloud; bricht das die App, öffnet sie das Issue *A supported Nextcloud release breaks the app* mit den Versionen, die fehlschlagen, und schließt es, sobald sie wieder bestehen. Setze `KEEP_E2E=1`, um die Container zur Untersuchung laufen zu lassen. Die [Matrix der mobilen Tests](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/tests/e2e/MANUAL_MOBILE_TESTS.md) beschreibt die letzten Prüfungen mit den offiziellen Clients.
+In der CI führt die Pflichtprüfung `nextcloud` die Tests gegen jede unterstützte Version in einem Job aus. Ein Pull Request, der keine Datei ändert, die die Tests abdecken, etwa einer, der nur die Dokumentation ändert, besteht sie in Sekunden, ohne sie auszuführen. Die Vertragstests sind die Pflichtprüfungen `paperless (2)` und `paperless (3)` daneben: Sie laufen in jedem Pull Request, der die App oder den Mock von Paperless ändert, und bestehen sonst in Sekunden. Jeden Montag läuft die Prüfung `nextcloud` auch ohne eine Änderung der App, gegen das neueste Release hinter jedem Image von Nextcloud; bricht das die App, öffnet sie das Issue *A supported Nextcloud release breaks the app* mit den Versionen, die fehlschlagen, und schließt es, sobald sie wieder bestehen. Setze `KEEP_E2E=1`, um die Container zur Untersuchung laufen zu lassen. Die [Matrix der mobilen Tests](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/tests/e2e/MANUAL_MOBILE_TESTS.md) beschreibt die letzten Prüfungen mit den offiziellen Clients.
 
 ### Screenshots
 

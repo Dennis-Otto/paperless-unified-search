@@ -8,8 +8,10 @@
 # $GITHUB_OUTPUT. A pull request or push that changes no such file, such as one of the
 # documentation, of the CI or from the blueprint, passes the check without the tests.
 # With SCOPE=paperless, it decides the same for the contract tests against a real
-# Paperless-ngx (paperless-contract.sh), which cover only the code that talks to
-# Paperless and reads its answers.
+# Paperless-ngx (paperless-contract.sh), the required checks "paperless (2)" and
+# "paperless (3)": they cover the whole app in appinfo/ and lib/, whose search, names,
+# dashboard, settings and occ commands all talk to Paperless or read its answers, the
+# mock of Paperless, in whose container they run, and their own files.
 #
 #   EVENT=pull_request bash tests/e2e/scope.sh
 #   EVENT=push BEFORE=<commit before the push> bash tests/e2e/scope.sh
@@ -35,11 +37,14 @@ case "${SCOPE:-nextcloud}" in
 		FILES="the app (appinfo/, lib/, templates/, js/, css/, img/, l10n/), composer.json, composer.lock, tests/e2e/"
 		;;
 	paperless)
-		# The requests to Paperless, the reading of its answers, the contract tests, their
-		# containers and their workflow.
-		COVERED='^lib/(Service/PaperlessApiService\.php|Search/|Model/PaperlessVersion\.php|Model/TokenWarning\.php|Exception/)|^tests/e2e/(paperless-contract\.sh|assert_contract\.py|compose(\.paperless)?\.yaml|scope\.sh|contract/)|^\.github/workflows/e2e\.yml$'
+		# The code of the app, which talks to Paperless and reads its answers in many
+		# places: the search, the names of correspondents and types, the dashboard, the
+		# settings and the occ commands. A list of single files missed each new caller of
+		# PaperlessApiService. Besides, the mock, whose container runs the assertions, the
+		# contract tests, their containers and their workflow.
+		COVERED='^(appinfo|lib)/|^tests/e2e/(paperless-contract\.sh|assert_contract\.py|mock_server\.py|compose(\.paperless)?\.yaml|scope\.sh|contract/)|^\.github/workflows/e2e\.yml$'
 		TESTS="Contract tests"
-		FILES="lib/Service/PaperlessApiService.php, lib/Search/, lib/Model/PaperlessVersion.php, lib/Model/TokenWarning.php, lib/Exception/, the contract tests and their files in tests/e2e/"
+		FILES="the code of the app (appinfo/, lib/), tests/e2e/mock_server.py, the contract tests and their files in tests/e2e/"
 		;;
 	*)
 		echo "SCOPE is nextcloud or paperless, not ${SCOPE}." >&2

@@ -50,7 +50,7 @@ Melde dich als das Konto bei Paperless an, öffne **Mein Profil** (*My Profile*)
 | **Anzeigen** für **Notiz** (*Note*) | Nichts: Die Notizen eines Dokuments passen auch ohne sie | Es fehlt nichts |
 | **Hinzufügen**, **Ändern** oder **Löschen** | Nichts: Die Suche liest nur | Es fehlt nichts; die Einstellungen warnen vor jeder davon für Dokumente und davor, Benutzer hinzuzufügen oder zu ändern oder Gruppen zu ändern, da wer ein solches Token in die Hände bekommt, auch Dokumente ändern kann |
 
-Die Vertragstests prüfen diese Tabelle jede Woche gegen echtes Paperless-ngx 2.20 und 3.x, zusammen mit dem Workflow und den Berechtigungen der Schritte oben.
+Die Vertragstests prüfen diese Tabelle jede Woche und in jedem Pull Request, der die App ändert, gegen echtes Paperless-ngx 2.20 und 3.x, zusammen mit dem Workflow und den Berechtigungen der Schritte oben.
 
 Um zu sehen, was die Suche höchstens finden kann, melde dich als das Konto bei Paperless an und suche dort: Die Suche von Nextcloud findet dieselben Dokumente, von denen jeder Benutzer dann die sieht, deren Dateien er öffnen kann. Ein Token eines Superusers funktioniert auch, aber wer es in die Hände bekommt, kann auch jedes Dokument ändern und löschen: Ein Konto, das nur ansehen darf, ist die sicherere Wahl. Der Test der Verbindung sagt es dir: Die Einstellungen warnen unter dem Token vor einem Konto, das ein Superuser oder ein Admin ist oder Dokumente hinzufügen, ändern oder löschen darf, und vor einem, das keine Korrespondenten oder Dokumenttypen ansehen darf, und die [Fehlerbehebung](troubleshooting.de.md#warnungen-zum-api-token) sagt, was bei jeder Warnung zu tun ist.
 
