@@ -231,6 +231,7 @@ final class ArchiveSharesTest extends TestCase {
 		$this->share(IShare::TYPE_USER, 'sam', '/Paperless', Constants::PERMISSION_READ | Constants::PERMISSION_UPDATE);
 		$this->share(IShare::TYPE_GROUP, 'staff', '/Paperless', Constants::PERMISSION_READ | Constants::PERMISSION_CREATE);
 		$this->share(IShare::TYPE_CIRCLE, 'c1rcl3', '/Paperless', Constants::PERMISSION_READ | Constants::PERMISSION_DELETE, displayName: 'Accounting');
+		$this->share(IShare::TYPE_CIRCLE, 't34m', '/Paperless/2026', Constants::PERMISSION_READ | Constants::PERMISSION_UPDATE, displayName: 'Board');
 		$this->share(IShare::TYPE_ROOM, 'r00m', '/Paperless', self::ALL, displayName: 'Office');
 		$this->share(IShare::TYPE_LINK, 'token', '/Inbox', Constants::PERMISSION_CREATE);
 		$archiveShares = $this->archiveShares($this->writtenTexts('T:'));
@@ -241,8 +242,9 @@ final class ArchiveSharesTest extends TestCase {
 			'T:/Paperless is shared with the user sam with write permission, so the search shows sam none of the documents in it. Share it read-only.',
 			'T:/Paperless is shared with the group staff with write permission, so the search shows its members none of the documents in it. Share it read-only.',
 			'T:/Paperless is shared with Office with write permission, so the search shows its recipients none of the documents in it. Share it read-only.',
+			'T:/Paperless/2026 is shared with the team Board with write permission, so the search shows its members none of the documents in it. Share it read-only.',
 		], $archiveShares->warnings($overview));
-		self::assertSame('T:Shared: T:2 users, T:1 group, T:1 team, T:1 other share, T:1 public link.', $archiveShares->summarize($overview));
+		self::assertSame('T:Shared: T:2 users, T:1 group, T:2 teams, T:1 other share, T:1 public link.', $archiveShares->summarize($overview));
 	}
 
 	/**

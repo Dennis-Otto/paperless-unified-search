@@ -29,8 +29,12 @@ final class SetupTest extends TestCase {
 
 	private const ENVIRONMENT_VARIABLE = 'PAPERLESS_UNIFIED_SEARCH_TEST_TOKEN';
 
+	/** A variable that holds only blanks. */
+	private const BLANK_VARIABLE = 'PAPERLESS_UNIFIED_SEARCH_BLANK_TOKEN';
+
 	protected function tearDown(): void {
 		putenv(self::ENVIRONMENT_VARIABLE);
+		putenv(self::BLANK_VARIABLE);
 	}
 
 	/**
@@ -127,6 +131,7 @@ final class SetupTest extends TestCase {
 			'a blank line' => [['--token-stdin' => true], ['  '], 'The standard input holds no token.'],
 			'a variable that is not set' => [['--token-env' => 'PAPERLESS_UNIFIED_SEARCH_NO_TOKEN'], [], 'The environment variable "PAPERLESS_UNIFIED_SEARCH_NO_TOKEN" holds no token.'],
 			'a variable without a name' => [['--token-env' => ''], [], 'The environment variable "" holds no token.'],
+			'a variable of blanks' => [['--token-env' => self::BLANK_VARIABLE], [], 'The environment variable "' . self::BLANK_VARIABLE . '" holds no token.'],
 			'both sources' => [['--token-stdin' => true, '--token-env' => self::ENVIRONMENT_VARIABLE], ['TEST_VALUE'], 'Take the token either from the standard input or from an environment variable, not from both.'],
 			'no URL' => [['--token-stdin' => true, '--url' => null], ['TEST_VALUE'], 'Name the address of Paperless with --url, such as --url=https://paperless.example.com.'],
 			'a blank URL' => [['--token-stdin' => true, '--url' => ' '], ['TEST_VALUE'], 'Name the address of Paperless with --url, such as --url=https://paperless.example.com.'],
@@ -140,6 +145,7 @@ final class SetupTest extends TestCase {
 	#[DataProvider('sourcesWithoutAToken')]
 	public function testRefusesASourceWithoutAToken(array $options, array $inputs, string $message): void {
 		putenv(self::ENVIRONMENT_VARIABLE . '=TEST_VALUE');
+		putenv(self::BLANK_VARIABLE . "= \t ");
 		$tester = $this->tester();
 		$tester->setInputs($inputs);
 
@@ -262,6 +268,20 @@ final class SetupTest extends TestCase {
 			'Users may include Paperless in all their searches: yes',
 			'Paperless runs in the local network: no',
 		], self::lines($tester->getDisplay()));
+	}
+
+	/**
+	 * Where the terminal shows colours, an archive account that is gone shows in the
+	 * yellow of a warning, its name included.
+	 */
+	public function testShowsAnArchiveAccountThatIsGoneInTheColourOfAWarning(): void {
+		$this->settings['paperless_sync.target_user'] = 'gone';
+		$tester = $this->tester($this->documents([], headers: []));
+		$tester->setInputs(['TEST_VALUE']);
+
+		self::assertSame(Command::SUCCESS, $tester->execute(['--url' => 'https://paperless.example.com', '--token-stdin' => true], ['decorated' => true]));
+
+		self::assertStringContainsString("\nArchive account: \e[33mgone, which does not exist, so the search shows no Paperless documents\e[39m\n", $tester->getDisplay());
 	}
 
 	/**

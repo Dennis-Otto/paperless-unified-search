@@ -113,6 +113,31 @@ final class PaperlessNamesTest extends TestCase {
 	}
 
 	/**
+	 * A correspondent and a type of document may have the same ID, and each keeps its own
+	 * name: the cache keeps each name under a key of its own, of its kind, of the server
+	 * and of its ID, as it keeps the newest documents of the dashboard.
+	 */
+	public function testTheCacheKeepsTheNamesOfEachKindApart(): void {
+		$paperless = $this->paperless([
+			'correspondents' => [3 => 'ACME Energy'],
+			'document_types' => [3 => 'Invoice'],
+		]);
+		$documents = [['id' => 7, 'correspondent' => 3, 'document_type' => 3]];
+
+		$first = $this->names($paperless)->of($documents);
+		$second = $this->names($paperless)->of($documents);
+
+		self::assertSame(['correspondent' => [3 => 'ACME Energy'], 'document_type' => [3 => 'Invoice']], $first);
+		self::assertSame($first, $second);
+		self::assertCount(2, $this->requests);
+		$server = hash('sha256', 'https://paperless.example.com');
+		self::assertSame([
+			'name-correspondent-' . $server . '-3' => 'ACME Energy',
+			'name-document_type-' . $server . '-3' => 'Invoice',
+		], $this->cache->values());
+	}
+
+	/**
 	 * @return array<string, array{array<array-key, mixed>}>
 	 */
 	public static function documentsWithoutAnObject(): array {
@@ -162,6 +187,12 @@ final class PaperlessNamesTest extends TestCase {
 			'https://paperless.example.com/api/correspondents/?id__in=3&page_size=1',
 			'https://paperless.example.com/api/document_types/?id__in=1&page_size=1',
 		], $this->requests);
+		// Only the list of that kind on that server rests, under a key of its own.
+		$server = hash('sha256', 'https://paperless.example.com');
+		self::assertSame([
+			'names-resting-correspondent-' . $server => true,
+			'name-document_type-' . $server . '-1' => 'Invoice',
+		], $this->cache->values());
 	}
 
 	/**
@@ -320,8 +351,9 @@ final class PaperlessNamesTest extends TestCase {
 		$appManager = $this->createStub(IAppManager::class);
 		$appManager->method('getAppVersion')->willReturn('0.5.1');
 
+		// A lookup opens the cache of Nextcloud once, however many names it reads.
 		$cacheFactory = $this->createMock(ICacheFactory::class);
-		$cacheFactory->method('createDistributed')->with(AppConstants::APP_ID)->willReturn($cache ?? $this->cache);
+		$cacheFactory->expects(self::atMost(1))->method('createDistributed')->with(AppConstants::APP_ID)->willReturn($cache ?? $this->cache);
 
 		$configService = new ConfigService($config, $credentials, $this->createStub(IUserManager::class), $this->createStub(LoggerInterface::class));
 

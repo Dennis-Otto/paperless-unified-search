@@ -33,7 +33,7 @@ trait ReportsProblems {
 	}
 
 	private static function error(OutputInterface $output, string $message): void {
-		self::errors($output)->writeln('<error>' . OutputFormatter::escape($message) . '</error>');
+		self::errors($output)->writeln(sprintf('<error>%s</error>', OutputFormatter::escape($message)));
 	}
 
 	/**

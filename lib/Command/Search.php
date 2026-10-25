@@ -122,20 +122,20 @@ final class Search extends Command {
 			self::error($output, sprintf('Paperless refused the query (HTTP %d): it can\'t read it in its advanced syntax, as a range of dates that isn\'t complete, such as created:[2026 to.', (int)$rejection->status));
 
 			return self::FAILURE;
-		} catch (PaperlessRequestException $exception) {
-			self::requestFailed($output, $this->messages, $exception, [$this->configService->getToken(), $term]);
-
-			return self::FAILURE;
 		} catch (Throwable $error) {
-			self::requestFailed($output, $this->messages, PaperlessRequestException::unanswered($error), [$this->configService->getToken(), $term]);
+			// An answer of Paperless that isn't the documents, or a request without answer.
+			$exception = $error instanceof PaperlessRequestException ? $error : PaperlessRequestException::unanswered($error);
+			self::requestFailed($output, $this->messages, $exception, [$this->configService->getToken(), $term]);
 
 			return self::FAILURE;
 		}
 
+		// The explainer leaves out an ID that stands for no document, such as 0, as the
+		// search does.
 		/** @var array<int, string> $titles by document ID, in the order of Paperless */
 		$titles = [];
 		foreach (array_slice($response['results'], 0, (int)$limit) as $hit) {
-			if (isset($hit['id']) && is_numeric($hit['id']) && (int)$hit['id'] > 0) {
+			if (isset($hit['id']) && is_numeric($hit['id'])) {
 				$titles[(int)$hit['id']] = isset($hit['title']) && is_string($hit['title']) ? trim($hit['title']) : '';
 			}
 		}
@@ -221,12 +221,19 @@ final class Search extends Command {
 			return;
 		}
 
-		if (!$explained) {
+		if ($explained) {
+			$this->explainTheOthers($output, $explanations, $user, $archiveOwner);
+		} else {
 			$output->writeln('Add --explain to see why the others don\'t.');
-
-			return;
 		}
+	}
 
+	/**
+	 * Why the documents that don't show to the user don't, and what corrects it.
+	 *
+	 * @param list<Explanation> $explanations
+	 */
+	private function explainTheOthers(OutputInterface $output, array $explanations, IUser $user, string $archiveOwner): void {
 		// What each reason means and what corrects it, with the documents that it hides:
 		// %1$s is the user, %2$s the archive account, %3$s the IDs and %4$s the first marker.
 		$reasons = [

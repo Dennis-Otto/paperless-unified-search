@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Service;
 
+use LogicException;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Search\Files\SearchBinaryOperator;
 use OCA\PaperlessUnifiedSearch\Search\Files\SearchComparison;
@@ -160,6 +161,9 @@ final class NextcloudFileLocatorTest extends TestCase {
 		$folder->method('getPath')->willReturn('/dennis/files/Scans [P123]');
 
 		self::assertSame([], $this->locator([$folder])->findAllForUser($this->user(), [123], self::ARCHIVE)->files);
+		// A folder found first doesn't keep the files after it from counting.
+		$letter = $this->file('Letter [P7].pdf', '/dennis/files/Paperless/Letter [P7].pdf');
+		self::assertSame([7 => $letter], $this->locator([$folder, $letter])->findAllForUser($this->user(), [123, 7], self::ARCHIVE)->files);
 	}
 
 	/**
@@ -562,6 +566,9 @@ final class NextcloudFileLocatorTest extends TestCase {
 		$broken = $this->createStub(File::class);
 		$broken->method('getName')->willReturn('Broken [P9].pdf');
 		$broken->method('getOwner')->willThrowException(new RuntimeException('Storage unavailable'));
+		$alsoBroken = $this->createStub(File::class);
+		$alsoBroken->method('getName')->willReturn('Receipt [P8].pdf');
+		$alsoBroken->method('getOwner')->willThrowException(new LogicException('Another storage unavailable'));
 		$folder = $this->createStub(Folder::class);
 		$folder->method('getName')->willReturn('Scans [P5]');
 		$nodes = [
@@ -570,16 +577,20 @@ final class NextcloudFileLocatorTest extends TestCase {
 			$this->file('Again [P3].pdf', '/dennis/files/Again [P3].pdf', 'dennis'),
 			$this->file('Zero [P012].pdf', '/dennis/files/Zero [P012].pdf', 'dennis'),
 			$this->file('Shared [P7].pdf', '/dennis/files/Shared [P7].pdf', 'mallory'),
+			// A file of no account, as on some external storages, is no file that failed.
+			$this->file('External [P4].pdf', '/dennis/files/External [P4].pdf', null),
 			$this->file('Holiday.jpg', '/dennis/files/Holiday.jpg', 'dennis'),
 			$folder,
 			$broken,
+			$alsoBroken,
 		];
+		// The log names the error of the first file that failed.
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::once())
 			->method('warning')
 			->with('Paperless unified search skipped {count} file(s) it could not read ({errorType})', [
 				'app' => AppConstants::APP_ID,
-				'count' => 1,
+				'count' => 2,
 				'errorType' => RuntimeException::class,
 			]);
 

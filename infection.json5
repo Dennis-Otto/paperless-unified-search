@@ -39,13 +39,20 @@
         // The digits of a marker are the same key of an array as their number.
         "\\$documentId = \\(int\\)\\$digits;",
         // A count from the cache is numeric there, and compares with 0 as a number either way.
-        "if \\(\\$cache === null \\|\\| !is_numeric\\(\\$count\\) \\|\\| \\(int\\)\\$count <= 0\\) \\{"
+        "if \\(\\$cache === null \\|\\| !is_numeric\\(\\$count\\) \\|\\| \\(int\\)\\$count <= 0\\) \\{",
+        // A limit of digits alone compares with a number as the number that it spells.
+        "if \\(!is_string\\(\\$limit\\) \\|\\| !ctype_digit\\(\\$limit\\) \\|\\| \\(int\\)\\$limit < 1 \\|\\| \\(int\\)\\$limit > self::MAX_LIMIT\\) \\{"
       ]
     },
     "CastString": {
       "ignoreSourceCodeByRegex": [
         // The status goes into the translated text as %s, which writes a number the same way.
-        "\\$status = \\(string\\)\\$exception->status;"
+        "\\$status = \\(string\\)\\$exception->status;",
+        // occ hands every argument over as text.
+        "\\$uid = \\(string\\)\\$input->getArgument\\('user'\\);",
+        // array_map() calls escape() in the loose mode of PHP's own functions, which turns
+        // the number into the same text.
+        "\\(string\\)\\$explanation->documentId,"
       ]
     },
     "DecrementInteger": {
@@ -63,7 +70,10 @@
         // Every way out of the loop sets $more before it is read.
         "\\$more = false;",
         // true is no array either, and fails the URL as false does.
-        "\\$parts = .* \\? parse_url\\(\\$normalizedUrl\\) : false;"
+        "\\$parts = .* \\? parse_url\\(\\$normalizedUrl\\) : false;",
+        // Only a PHP without the functions of intl, which Nextcloud brings, comes here, and
+        // the mutation tests run with them: the unit tests without them check this branch.
+        "\\$asciiHost = function_exists\\('idn_to_ascii'\\) \\? idn_to_ascii\\(.*\\) : false;"
       ]
     },
     "IncrementInteger": {
@@ -105,10 +115,26 @@
         "parent::__construct\\(\\$appName, \\$request\\);"
       ]
     },
+    "NullSafeMethodCall": {
+      "ignoreSourceCodeByRegex": [
+        // A file of no account fails the call on null, which the catch around it takes for
+        // no owner as well.
+        "return \\$file->getOwner\\(\\)\\?->getUID\\(\\) \\?\\? '';"
+      ]
+    },
     "NullSafePropertyCall": {
       "ignoreSourceCodeByRegex": [
         // ?? reads a property of null as null, without a warning.
         "'paperless(Api)?Version' => \\$this->paperlessVersion\\?->(version|apiVersion) \\?\\? '',"
+      ]
+    },
+    "TrueValue": {
+      "ignoreSourceCodeByRegex": [
+        // The keys of a set are its members, whatever their value: array_keys(), count(),
+        // array_intersect_key() and isset() don't read it.
+        "\\$documentIds\\[\\$documentId\\] = true;",
+        "\\$granted\\[\\$permission\\] = true;",
+        "\\$recipients\\[\\$share->kind\\]\\[\\$share->kind === ArchiveShare::KIND_LINK \\? \\$index : \\$share->recipient\\] = true;"
       ]
     },
     "UnwrapArrayValues": {

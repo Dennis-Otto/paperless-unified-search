@@ -684,7 +684,7 @@ The production archive intentionally excludes tests, release tools, Composer dev
 
 ### Mutation tests
 
-Every line of `lib/` runs in a unit test, but a line that runs isn't checked yet. Every week, the Mutation workflow lets [Infection](https://infection.github.io/) change the code in small ways, one mutant at a time, and run the unit tests against each change. The tests notice every mutant except those that change nothing that the app does, 22 of 1,070 in October 2026, which [`infection.json5`](infection.json5) lists with the reason. So the score, the *covered code MSI*, is 100 %, and a mutant that escapes is a gap in the tests, or a change that makes no difference, to explain there.
+Every line of `lib/` runs in a unit test, but a line that runs isn't checked yet. Every week, the Mutation workflow lets [Infection](https://infection.github.io/) change the code in small ways, one mutant at a time, and run the unit tests against each change. The tests notice every mutant except those that change nothing that the app does, 34 of 2,187 in October 2026, which [`infection.json5`](infection.json5) lists with the reason. So the score, the *covered code MSI*, is 100 %, and a mutant that escapes is a gap in the tests, or a change that makes no difference, to explain there.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/the-mutation-tests.dark.svg">
@@ -697,6 +697,8 @@ To run them yourself, with PHP 8.3 or newer and pcov or Xdebug, and [the PHAR of
 composer install
 php infection.phar --threads=max
 ```
+
+While you work on one file, `--filter` changes only that one, such as `--filter=lib/Command/Search.php`, and checks its mutants in seconds. A mutant that escapes gets a test of what a user or an administrator would notice, such as a limit of exactly 50, or a correspondent and a type of document with the same ID that keep their own names; only a change that makes no difference goes into `infection.json5`, by its line and with the reason.
 
 The unit tests run the app against fakes of Nextcloud that behave as Nextcloud does: [`MemoryAppConfig`](tests/Unit/MemoryAppConfig.php) for the configuration of the apps, which, like Nextcloud, gives the default for a lazy value that a read without the lazy flag asks for, and [`MemoryCache`](tests/Unit/MemoryCache.php) for the distributed cache.
 
