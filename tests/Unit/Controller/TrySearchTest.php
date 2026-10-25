@@ -86,6 +86,18 @@ final class TrySearchTest extends TestCase {
 	}
 
 	/**
+	 * A file of the archive account that jamie may write shows no document: Try a search
+	 * names the share with write permission as the reason.
+	 */
+	public function testNamesAFileThatTheUserMayWrite(): void {
+		$this->file('/jamie/files/Upload/Receipt [P377].pdf', writable: true);
+
+		$payload = $this->payload($this->controller($this->documents([['id' => 377, 'title' => 'Receipt'], ...self::HITS], 12))->trySearch('invoice', 'jamie'));
+
+		self::assertSame(['id' => 377, 'title' => 'Receipt', 'verdict' => 'writable'], $payload['documents'][0]);
+	}
+
+	/**
 	 * Administrators learn which titles a user finds, and nothing more of the documents:
 	 * no content, no excerpt, no file and no account that owns one.
 	 */
@@ -122,6 +134,7 @@ final class TrySearchTest extends TestCase {
 	public function testSaysThatAFileFailedToAnswer(): void {
 		$broken = $this->createStub(File::class);
 		$broken->method('getName')->willReturn('Letter [P360].pdf');
+		$broken->method('getPath')->willReturn('/jamie/files/Letter [P360].pdf');
 		$broken->method('getOwner')->willThrowException(new RuntimeException('Storage unavailable'));
 		$this->visible['jamie'][] = $broken;
 

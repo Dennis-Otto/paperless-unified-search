@@ -14,6 +14,10 @@ argument:
                                   each with its ID, title and verdict and nothing more
   setupcheck SEVERITY TEXT        the JSON of occ setupchecks: the check of the app has
                                   this severity, and its description holds the text
+  shares SUMMARY WARNING ...      the text of paperless_unified_search:check: the line
+                                  SUMMARY of the shares of the archive account, such as
+                                  "✓ Shared read-only: 1 user.", and right after it
+                                  exactly these warnings about shares, each a line "! /…"
   token [WARNING ...]             the text of paperless_unified_search:check: right after
                                   the line of the connection, the warnings about the
                                   account of the API token, such as superuser, in this
@@ -21,6 +25,7 @@ argument:
                                   view what the results show when none is given
 """
 
+import itertools
 import json
 import sys
 
@@ -45,6 +50,17 @@ def fail(message):
 # occ writes UTF-8, such as the ✓ of check, whatever the locale of Python.
 text = sys.stdin.buffer.read().decode("utf-8")
 mode = sys.argv[1]
+
+if mode == "shares":
+    summary, expected = sys.argv[2], [f"! {warning}" for warning in sys.argv[3:]]
+    lines = text.splitlines()
+    if summary not in lines:
+        fail(f"Expected the line {summary!r} about the shares, got {text!r}")
+    following = lines[lines.index(summary) + 1:]
+    warnings = list(itertools.takewhile(lambda line: line.startswith("! /"), following))
+    if warnings != expected:
+        fail(f"Expected the warnings {expected!r} about the shares, got {warnings!r}")
+    sys.exit(0)
 
 if mode == "token":
     lines = text.splitlines()

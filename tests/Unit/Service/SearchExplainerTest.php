@@ -16,6 +16,7 @@ use OCA\PaperlessUnifiedSearch\Service\SearchExplainer;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Files;
 use OCP\Files\File;
+use OCP\Files\Folder;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use RuntimeException;
@@ -59,6 +60,31 @@ final class SearchExplainerTest extends TestCase {
 		[$explanations] = $this->explainer()->explain($this->user('jamie'), [389], 'archive');
 
 		self::assertSame(Verdict::NotShared, $explanations[0]->verdict);
+	}
+
+	/**
+	 * A file of the archive account that the user may change, or in a folder where the
+	 * user may add files, stands for no document: the share is what to correct, before
+	 * the file of the archive account in its own folders, in the same search as the
+	 * files that show.
+	 */
+	public function testAFileThatTheUserMayWriteIsSharedWithWritePermission(): void {
+		$this->file('/archive/files/Paperless/Insurance [P389].pdf');
+		$this->file('/jamie/files/Upload/Insurance [P389].pdf', writable: true);
+		$this->file('/jamie/files/Electricity [P412].pdf');
+
+		[$explanations, $error] = $this->explainer()->explain($this->user('jamie'), [412, 389], 'archive');
+
+		self::assertSame([
+			['id' => 412, 'verdict' => 'shown', 'path' => '/Electricity [P412].pdf', 'owner' => 'archive'],
+			['id' => 389, 'verdict' => 'writable', 'path' => '/Upload/Insurance [P389].pdf', 'owner' => 'archive'],
+		], self::serialized($explanations));
+		self::assertNull($error);
+		self::assertCount(1, $this->searches);
+
+		[$verdicts] = $this->explainer()->verdicts($this->user('jamie'), [412, 389], 'archive');
+
+		self::assertSame(['shown', 'hidden'], array_map(static fn (Explanation $explanation): string => $explanation->verdict->value, $verdicts));
 	}
 
 	/**
@@ -118,6 +144,7 @@ final class SearchExplainerTest extends TestCase {
 		$file->method('getName')->willReturn('Letter [P7].pdf');
 		$file->method('getPath')->willReturnCallback(self::onlyOnce('/jamie/files/Letter [P7].pdf'));
 		$file->method('getOwner')->willReturnCallback(self::onlyOnce($owner));
+		$file->method('getParent')->willReturn($this->createStub(Folder::class));
 		$this->visible['jamie'] = [$file];
 
 		[$explanations] = $this->explainer()->explain($this->user('jamie'), [7], 'archive');

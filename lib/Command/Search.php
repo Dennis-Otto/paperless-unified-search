@@ -47,6 +47,7 @@ final class Search extends Command {
 	private const LABELS = [
 		'shown' => 'shown',
 		'hidden' => 'hidden',
+		'writable' => 'writable',
 		'not_shared' => 'not shared',
 		'not_owned' => 'not owned',
 		'no_file' => 'no file',
@@ -196,6 +197,7 @@ final class Search extends Command {
 	 */
 	private function fileOf(Explanation $explanation, IUser $user): string {
 		return match ($explanation->verdict) {
+			Verdict::Writable => sprintf('%s of %s, %s may write it', $explanation->path, $explanation->owner, $user->getUID()),
 			Verdict::NotShared => sprintf('%s of %s, not shared with %s', $explanation->path, $explanation->owner, $user->getUID()),
 			Verdict::NotOwned => sprintf('%s of %s', $explanation->path, $explanation->owner !== '' ? $explanation->owner : 'no account'),
 			default => $explanation->path,
@@ -228,6 +230,7 @@ final class Search extends Command {
 		// What each reason means and what corrects it, with the documents that it hides:
 		// %1$s is the user, %2$s the archive account, %3$s the IDs and %4$s the first marker.
 		$reasons = [
+			[Verdict::Writable, 'Writable (%3$s): %1$s may change the file of the archive account %2$s, or add files to its folder, so anyone with that share could have given it the marker of the document. Share it read-only with %1$s.'],
 			[Verdict::NotShared, 'Not shared (%3$s): the archive account %2$s has the file, but hasn\'t shared it with %1$s. Share the file, or a folder that holds it, read-only with %1$s.'],
 			[Verdict::NotOwned, 'Not owned (%3$s): %1$s sees a file with the marker of the document, but only the files of the archive account %2$s stand for documents.'],
 			[Verdict::NoFile, 'No file (%3$s): no file of the archive account %2$s has the marker of the document, such as %4$s, in its name. The synchronization hasn\'t written it yet, or names files without it.'],
