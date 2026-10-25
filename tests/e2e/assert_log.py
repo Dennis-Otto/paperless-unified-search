@@ -4,8 +4,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Checks the log of Nextcloud, data/nextcloud.log, from standard input, at the end of
-# run.sh, which sets the log level to debug, 0, so that the log holds every deprecation
-# and notice of PHP as well. It fails on
+# run.sh, which sets log.condition to {"apps":["PHP","paperless_unified_search"]}, so that
+# Nextcloud logs every record of PHP and of the app at debug, 0, every deprecation and
+# notice of PHP as well, and everything else at its default level, warning. It fails on
 #
 # - an error, 3, or worse of the app: a record whose app is the app, or whose message,
 #   exception or data names a file of the app or its namespace, such as an uncaught
@@ -65,8 +66,15 @@ EXPECTED_WARNINGS = tuple(
             "the saves of e2e-wrong-token, which the mock refuses, in run.sh, accessibility.mjs and settings.mjs",
         ),
         (
-            r"Paperless unified search failed \(",
+            r"Paperless unified search failed \(OCA\\PaperlessUnifiedSearch\\Exception\\PaperlessRequestException\)\Z",
             "the search for e2e-error, which the mock answers with HTTP 500",
+        ),
+        (
+            r"Value type is set to zero \(0\) in database\. ",
+            (
+                "the saves of the settings in run.sh right after occ paperless_unified_search:setup, as Apache "
+                "still caches the configuration of the app for 3 seconds"
+            ),
         ),
     )
 )

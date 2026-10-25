@@ -434,8 +434,9 @@ fi
 
 ## The check of the log of Nextcloud
 
-# run.sh sets the log level of Nextcloud to debug and pipes the log into assert_log.py at
-# its end, which fails on an error of the app, a deprecation, notice or warning of PHP in
+# run.sh sets log.condition of Nextcloud to {"apps":["PHP","paperless_unified_search"]},
+# so that Nextcloud logs every record of PHP and of the app at debug and everything else
+# at its default level, warning, and pipes the log into assert_log.py at its end, which fails on an error of the app, a deprecation, notice or warning of PHP in
 # a file of the app, and a warning of the app that no test provokes. A record of the app
 # is one that the app wrote or whose message, exception or data names a file of the app
 # or its namespace: Nextcloud logs an uncaught exception for the app index, core or PHP,
@@ -451,7 +452,8 @@ if [[ -n "${python}" ]]; then
 	app_dir=/var/www/html/custom_apps/paperless_unified_search
 	# What passes: an error of core whose arguments, but no frame, name a file of the app,
 	# a deprecation of PHP in core, a warning of core during a request to a route of the
-	# app, an info and a debug message of the app, a warning that run.sh provokes, and
+	# app, an info and a debug message of the app, the two warnings that run.sh provokes,
+	# one of them the warning of the cache of AppConfig that core writes for the app, and
 	# lines that hold no record.
 	fine=(
 		'{"level":3,"app":"core","message":"The database went away","method":"GET","url":"/index.php/apps/files","exception":{"Exception":"RuntimeException","Message":"The database went away","Code":0,"File":"/var/www/html/lib/private/DB/Connection.php","Line":12,"Trace":[{"file":"/var/www/html/lib/private/AppFramework/App.php","line":3,"function":"run","args":["'"${app_dir}"'/appinfo/info.xml"]}]}}'
@@ -460,15 +462,17 @@ if [[ -n "${python}" ]]; then
 		'{"level":1,"app":"paperless_unified_search","message":"e2e-admin tried a search as e2e-other"}'
 		'{"level":0,"app":"paperless_unified_search","message":"Paperless rejected the query of a search with HTTP 400"}'
 		'{"level":2,"app":"paperless_unified_search","message":"Paperless unified search failed (OCA\\PaperlessUnifiedSearch\\Exception\\PaperlessRequestException)"}'
+		'{"level":2,"app":"paperless_unified_search","message":"Value type is set to zero (0) in database. This is fine only during the upgrade process from 28 to 29.","data":{"app":"paperless_unified_search","key":"archive_owner"},"method":"POST","url":"/apps/paperless_unified_search/settings"}'
 		''
 		'PHP Warning: not a record'
 		'[]'
 	)
 	expect "the check of a log without a finding" 0 "$(log_check "${fine[@]}")"
-	expect_in "the levels of the whole log" "The log of Nextcloud holds 6 records: 2 debug, 1 info, 2 warning, 1 error, 0 fatal." "${WORK}/log-check"
-	expect_in "the levels of the app" "Of them, 3 records of the app: 1 debug, 1 info, 1 warning, 0 error, 0 fatal." "${WORK}/log-check"
+	expect_in "the levels of the whole log" "The log of Nextcloud holds 7 records: 2 debug, 1 info, 3 warning, 1 error, 0 fatal." "${WORK}/log-check"
+	expect_in "the levels of the app" "Of them, 4 records of the app: 1 debug, 1 info, 2 warning, 0 error, 0 fatal." "${WORK}/log-check"
 	expect_in "the lines that hold no record" "Lines of the log that hold no record in JSON, which the check leaves out: 2." "${WORK}/log-check"
-	expect_in "the count of an expected warning" "Seen 1 time: the expected warning /Paperless unified search failed \(/" "${WORK}/log-check"
+	expect_in "the count of an expected warning" "Seen 1 time: the expected warning /Paperless unified search failed \(OCA" "${WORK}/log-check"
+	expect_in "the count of the warning of the cache of AppConfig" "Seen 1 time: the expected warning /Value type is set to zero" "${WORK}/log-check"
 
 	# Each finding fails the check, among the records that pass, with its kind, its place
 	# in the files of the app and its request: kind|place|record.
@@ -479,6 +483,7 @@ if [[ -n "${python}" ]]; then
 		'a notice of PHP in a file of the app|at lib/Command/Check.php:9|{"level":1,"app":"PHP","message":"Only variables should be assigned by reference at '"${app_dir}"'/lib/Command/Check.php#9"}'
 		'a warning of PHP in a file of the app|at lib/Dashboard/RecentDocumentsWidget.php:5|{"level":2,"app":"PHP","message":"Undefined array key \"id\" at '"${app_dir}"'/lib/Dashboard/RecentDocumentsWidget.php#5"}'
 		'a warning of the app that no test expects, for the app '"'"'paperless_unified_search'"'"'|at no file of the app, during GET /ocs/v2.php/apps/dashboard/api/v2/widget-items|{"level":2,"app":"paperless_unified_search","method":"GET","url":"/ocs/v2.php/apps/dashboard/api/v2/widget-items","message":"The dashboard could not show the newest Paperless documents (RuntimeException)"}'
+		'a warning of the app that no test expects, for the app '"'"'paperless_unified_search'"'"'|at no file of the app|{"level":2,"app":"paperless_unified_search","message":"Paperless unified search failed (TypeError)"}'
 		'an error of the app, for the app '"'"'paperless_unified_search'"'"'|at lib/Controller/SettingsController.php:9|{"level":3,"app":"paperless_unified_search","message":"The settings of Paperless Unified Search could not be saved","exception":{"Exception":"RuntimeException","Message":"Saving failed","File":"/var/www/html/lib/private/AppConfig.php","Line":1,"Trace":[],"Previous":{"Exception":"TypeError","Message":"Wrong type","File":"'"${app_dir}"'/lib/Controller/SettingsController.php","Line":9,"Trace":[]}}}'
 		'a fatal error of the app, for the app '"'"'PHP'"'"'|at lib/Service/PaperlessClient.php:5|{"level":4,"app":"PHP","message":"Allowed memory size exhausted at '"${app_dir}"'/lib/Service/PaperlessClient.php#5"}'
 		'an error of the app, for the app '"'"'core'"'"'|at no file of the app|{"level":3,"app":"core","message":"Could not load a search provider","data":{"class":"OCA\\PaperlessUnifiedSearch\\Search\\PaperlessSearchProvider"}}'
