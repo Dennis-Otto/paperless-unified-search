@@ -11,10 +11,11 @@
 // a note of Text with the link that it inserts, the settings and the share of the
 // archive, light and dark, Try a search of the settings, the dashboard, the personal
 // settings with the choice to always search Paperless, the search and the settings on
-// a phone, and the search as an animation. Last, in the real Paperless-ngx of
-// compose.paperless.yaml, it sets up the account of the search as docs/configure.md
-// does and takes its dialogs, light and dark. The images go to the folder of
-// SCREENSHOTS_OUT. A step fails when the app doesn't show what its picture is meant to
+// a phone, and the search as an animation, light and dark, which starts on its
+// Paperless results. Last, in the real Paperless-ngx of compose.paperless.yaml, it sets
+// up the account of the search as docs/configure.md does and takes its dialogs, light
+// and dark. The images go to the folder of SCREENSHOTS_OUT, where
+// scripts/screenshot-media.sh makes the videos of the animations. A step fails when the app doesn't show what its picture is meant to
 // show, such as a Paperless result that the date filter should have left out.
 //
 // With SCREENSHOTS_DEMO=1, which `bash scripts/screenshots.sh --demo` sets, it records
@@ -747,11 +748,12 @@ async function phone(browser, session) {
 	await page.context().close()
 }
 
-// The animation of the README, from the archive of the mock: its name, the moment of its
-// clock, the page that it starts on, whether the search waits for the whole term,
-// whether it switches on the connected services, as the search of Paperless needs
-// unless the administrator trusts it, the Paperless results that it waits for, a check
-// of them, and the result that it opens, by its title and the name of its file.
+// The animation of the README and of the home page of the website, from the archive of
+// the mock: its name, the moment of its clock, the page that it starts on, whether the
+// search waits for the whole term, whether it switches on the connected services, as
+// the search of Paperless needs unless the administrator trusts it, the Paperless
+// results that it waits for, a check of them, the result that it opens, by its title
+// and the name of its file, and how long it shows those results first, in milliseconds.
 const SEARCH_AND_OPEN = {
 	name: 'search-and-open.gif',
 	clock: NOW,
@@ -761,14 +763,51 @@ const SEARCH_AND_OPEN = {
 	results: [LAST_RESULT],
 	check: async () => {},
 	opened: { title: insurance.title, file: fileName(insurance) },
+	opening: 1500,
 }
 
-// An animation of a film such as SEARCH_AND_OPEN: the archive, the search for "invoice",
-// the switch for connected services where it needs it, and the insurance renewal, which
-// only Paperless finds by its text.
-async function animation(browser, session, film = SEARCH_AND_OPEN) {
+// The frame around a group of results, in the blue of Nextcloud, which the pointer of
+// the animation shares.
+const FRAMED = '3px solid #0082c9'
+
+// The picture of the page with the group of Paperless results in a frame, scrolled into
+// view as a whole, and without the pointer: where the animation leads, before it
+// starts. The page is as it was afterwards.
+async function framedResults(page) {
+	const group = resultGroup(page, 'Paperless documents')
+	// The list of results has the heading of its group just before it, inside the same
+	// element, and the results of the search scroll inside their dialog.
+	await group.evaluate((list, outline) => {
+		const box = list.parentElement
+		let scroller = box.parentElement
+		while (scroller && scroller.scrollHeight <= scroller.clientHeight) {
+			scroller = scroller.parentElement
+		}
+		window.framedResults = { box, scroller, top: scroller?.scrollTop }
+		Object.assign(box.style, { outline, outlineOffset: '2px', borderRadius: '8px', scrollMarginBlock: '8px' })
+		box.scrollIntoView({ block: 'nearest', behavior: 'instant' })
+		document.getElementById('demo-pointer').style.visibility = 'hidden'
+	}, FRAMED)
+	const png = await page.screenshot({ animations: 'disabled' })
+	await page.evaluate(() => {
+		const { box, scroller, top } = window.framedResults
+		Object.assign(box.style, { outline: '', outlineOffset: '', borderRadius: '', scrollMarginBlock: '' })
+		scroller?.scrollTo({ top, behavior: 'instant' })
+		document.getElementById('demo-pointer').style.visibility = ''
+		delete window.framedResults
+	})
+	return png
+}
+
+// An animation of a film such as SEARCH_AND_OPEN, in the light theme, or in the dark
+// one with -dark after its name: where the film says so, the Paperless results in a
+// frame first, which is also the picture that the website shows until its video plays;
+// then the archive, the search for "invoice", the switch for connected services where it
+// needs it, and the insurance renewal, which only Paperless finds by its text.
+async function animation(browser, session, film = SEARCH_AND_OPEN, theme = 'light') {
 	const frames = []
-	const page = await newPage(browser, session, { viewport: { width: 1280, height: 800 } }, { pointer: true, clock: film.clock })
+	const name = theme === 'dark' ? film.name.replace(/\.gif$/, '-dark.gif') : film.name
+	const page = await newPage(browser, session, { viewport: { width: 1280, height: 800 }, colorScheme: theme }, { pointer: true, clock: film.clock })
 	const frame = async (delay) => {
 		frames.push({ png: await page.screenshot({ animations: 'disabled' }), delay })
 	}
@@ -826,6 +865,9 @@ async function animation(browser, session, film = SEARCH_AND_OPEN) {
 	}
 	await settle(page, 300)
 	await film.check(page)
+	if (film.opening) {
+		frames.unshift({ png: await framedResults(page), delay: film.opening })
+	}
 	await frame(2600)
 	await click(paperlessResult(page, film.opened.title))
 	await waitForViewer(page, film.opened.file)
@@ -833,8 +875,8 @@ async function animation(browser, session, film = SEARCH_AND_OPEN) {
 	await steady(page)
 	await frame(3800)
 	await page.context().close()
-	writeGif(frames, join(OUT, film.name))
-	console.log(`Took ${film.name} with ${frames.length} frames.`)
+	writeGif(frames, join(OUT, name))
+	console.log(`Took ${name} with ${frames.length} frames.`)
 }
 
 // The animation of the demo of the README, from the real Paperless-ngx and Nextcloud of
@@ -1197,6 +1239,7 @@ async function everyPicture(browser) {
 	await phone(browser, reader)
 	await phoneSettings(browser, admin)
 	await animation(browser, reader)
+	await animation(browser, reader, SEARCH_AND_OPEN, 'dark')
 	await paperlessPictures(browser)
 }
 

@@ -32,3 +32,7 @@ tests/e2e/ui.mjs
 .github/social-preview.html
 .github/social-preview/Dockerfile
 scripts/social-preview.sh
+
+# The tools that make the videos of the animations and shrink the PNGs.
+.github/screenshots/Dockerfile
+scripts/screenshot-media.sh
