@@ -3,12 +3,11 @@
 
 from __future__ import annotations
 
-import base64
 import json
 import re
 import tomllib
 import urllib.parse
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -176,7 +175,16 @@ def apply_security(api: Api, repo: str, drift: list[Drift]) -> None:
         api.patch(f"repos/{repo}", {"security_and_analysis": analysis})
 
 
-def kept(repo: str, sent: list[Drift], have: list[Drift]) -> list[Drift]:
+def gated(private: bool) -> tuple[str, ...]:
+    """The switches of security_and_analysis that the plan of a repository decides:
+    on a private one every switch of secret scanning, which GitHub offers it only with
+    GitHub Secret Protection (decision 0082)."""
+    return ANALYSIS if private else PLAN_GATED
+
+
+def kept(
+    repo: str, sent: list[Drift], have: list[Drift], private: bool = False
+) -> list[Drift]:
     """The drift after an apply that sent `sent`, in which a switch of
     security_and_analysis that depends on the plan and that GitHub accepted but kept
     as it was is a notice.
@@ -189,7 +197,7 @@ def kept(repo: str, sent: list[Drift], have: list[Drift]) -> list[Drift]:
     tried = {
         item.setting
         for item in sent
-        if item.setting.removeprefix("security.") in PLAN_GATED and not item.notice
+        if item.setting.removeprefix("security.") in gated(private) and not item.notice
     }
     result = []
     for item in have:
@@ -222,16 +230,17 @@ GITHUB_OWNERS = ("actions", "github")
 # such a name may have: the file of an action that GitHub gives is no Markdown for the
 # summary of the settings bot.
 USES = re.compile(r"""^[ \t]*(?:-[ \t]+)?uses:[ \t]*["']?([\w.:/@+-]+)""", re.MULTILINE)
+# A step that runs an image of Docker. GitHub counts it as an action, which it refuses
+# unless every action may run, and no pattern of [actions.selected] names an image.
+DOCKER = "docker://"
 
 
 def references(text: str) -> list[str]:
-    """The actions and reusable workflows that a workflow or an action names: not
-    those of the repository itself, which every policy allows, nor the images of
-    Docker, which no pattern names and which are pinned by their digest instead."""
+    """The actions and reusable workflows that a workflow or an action names, and the
+    images of Docker that its steps run, which GitHub counts as actions: not those of
+    the repository itself, which every policy allows."""
     return [
-        reference
-        for reference in USES.findall(text)
-        if not reference.startswith(("./", "docker://"))
+        reference for reference in USES.findall(text) if not reference.startswith("./")
     ]
 
 
@@ -268,7 +277,10 @@ def matches(pattern: str, reference: str) -> bool:
 
 def allows(selected: dict[str, Json], reference: str) -> bool:
     """Whether [actions.selected] lets the action or reusable workflow run. A pattern
-    with ! in front blocks what it names, also an action of GitHub."""
+    with ! in front blocks what it names, also an action of GitHub. No pattern lets an
+    image of Docker run, not even *."""
+    if reference.startswith(DOCKER):
+        return False
     patterns = [str(pattern) for pattern in selected.get("patterns_allowed") or []]
     if any(
         matches(pattern[1:], reference) for pattern in patterns if pattern[:1] == "!"
@@ -280,9 +292,33 @@ def allows(selected: dict[str, Json], reference: str) -> bool:
     return any(matches(pattern, reference) for pattern in patterns)
 
 
-def run_by(api: Api, reference: str) -> list[str]:
-    """The actions and reusable workflows that an action or a reusable workflow runs in
-    turn, at the commit that it is pinned to: GitHub allows or blocks them as well."""
+# The actions and reusable workflows whose files one query of GraphQL reads: GitHub
+# counts such a query as one request, where its contents API took one for each file,
+# about 40 for a repository of the blueprint, of the 1,000 in an hour that the token of
+# a workflow has for every workflow of the repository.
+BATCH = 50
+# The file of each action or reusable workflow, which the query reads as text.
+BLOB = "... on Blob { text }"
+
+
+@dataclass(frozen=True)
+class Runs:
+    """Every action and reusable workflow that the workflows run: those that the
+    workflows name, and those that these run in turn."""
+
+    # Each, with what names it: the file of the repository, or the action or reusable
+    # workflow that runs it in turn.
+    found: dict[str, str]
+    # Each, with the one that a file of the repository names and that runs it, at last.
+    via: dict[str, str]
+    # Those whose file GitHub refused to give, with its answer: what they run in turn
+    # is unknown.
+    refused: dict[str, str]
+
+
+def action_files(reference: str) -> tuple[str, str, list[str]]:
+    """The owner and the name of the repository of an action or a reusable workflow,
+    and each place of its file at the commit that it is pinned to, as Git names it."""
     name, _, ref = reference.partition("@")
     owner, _, rest = name.partition("/")
     repo, _, path = rest.partition("/")
@@ -292,38 +328,203 @@ def run_by(api: Api, reference: str) -> list[str]:
         candidates = [
             f"{path}/{file}".lstrip("/") for file in ("action.yml", "action.yaml")
         ]
-    for candidate in candidates:
-        data = api.get(
-            f"repos/{owner}/{repo}/contents/{urllib.parse.quote(candidate)}"
-            f"?ref={urllib.parse.quote(ref, safe='')}"
+    return owner, repo, [f"{ref}:{candidate}" for candidate in candidates]
+
+
+def files_query(references: Sequence[str]) -> tuple[str, dict[str, str]]:
+    """The query of GraphQL of the files of the actions and reusable workflows, the
+    repository of each as r0, r1, ... and each place of its file as f0, f1, ...: the
+    names come as variables, never as text of the query."""
+    variables: dict[str, str] = {}
+    fields = []
+    for index, reference in enumerate(references):
+        owner, repo, places = action_files(reference)
+        variables[f"o{index}"], variables[f"n{index}"] = owner, repo
+        files = []
+        for number, place in enumerate(places):
+            variables[f"e{index}_{number}"] = place
+            files.append(
+                f"f{number}: object(expression: $e{index}_{number}) {{ {BLOB} }}"
+            )
+        fields.append(
+            f"r{index}: repository(owner: $o{index}, name: $n{index})"
+            f" {{ {' '.join(files)} }}"
         )
-        if isinstance(data, dict) and data.get("content"):
-            text = base64.b64decode(str(data["content"])).decode("utf-8", "replace")
-            return references(text)
-    return []
+    declared = ", ".join(f"${key}: String!" for key in variables)
+    return f"query({declared}) {{ {' '.join(fields)} }}", variables
 
 
-def actions_that_run(
-    api: Api, named: dict[str, str]
-) -> tuple[dict[str, str], dict[str, str]]:
-    """Every action and reusable workflow that the workflows run, with what names it:
-    those that the workflows name, and those that these run in turn; and those whose
-    file GitHub refused to give, with its answer."""
+def graphql_problems(answer: Json) -> dict[str, str]:
+    """Why GraphQL refused a part of a query, by the alias of the part, or by "" for
+    the whole query. A repository or a file that GitHub doesn't know is no refusal: the
+    contents API answers 404 to both, and an action that isn't there runs nothing."""
+    problems: dict[str, str] = {}
+    errors = answer.get("errors") if isinstance(answer, dict) else None
+    for error in errors if isinstance(errors, list) else []:
+        if not isinstance(error, dict) or error.get("type") == "NOT_FOUND":
+            continue
+        place = error.get("path") or [""]
+        kind = error.get("type") or "an error"
+        problems.setdefault(
+            str(place[0]), f"GitHub answered {kind}: {error.get('message', '')}"
+        )
+    return problems
+
+
+def file_text(found: Json, places: int) -> str:
+    """The text of the first file of an action that GitHub has, or none."""
+    if not isinstance(found, dict):
+        return ""
+    for number in range(places):
+        blob = found.get(f"f{number}")
+        if isinstance(blob, dict) and isinstance(blob.get("text"), str):
+            return str(blob["text"])
+    return ""
+
+
+def run_by(
+    api: Api, wanted: Sequence[str]
+) -> tuple[dict[str, list[str]], dict[str, str]]:
+    """What each action and reusable workflow runs in turn, at the commit that it is
+    pinned to: GitHub allows or blocks those as well; and those whose file GitHub
+    refused to give, with its answer. One query of GraphQL reads the files of BATCH of
+    them. An image of Docker runs none, and GitHub has no file of it."""
+    inner: dict[str, list[str]] = {}
+    refused: dict[str, str] = {}
+    files = []
+    for reference in wanted:
+        if reference.startswith(DOCKER):
+            inner[reference] = []
+        else:
+            files.append(reference)
+    for start in range(0, len(files), BATCH):
+        batch = files[start : start + BATCH]
+        query, variables = files_query(batch)
+        try:
+            # A query only reads: a gateway that timed out is asked once more.
+            answer = api.request(
+                "POST", "graphql", {"query": query, "variables": variables}, retry=True
+            ).data
+        except GitHubError as error:
+            refused.update(dict.fromkeys(batch, str(error)))
+            continue
+        problems = graphql_problems(answer)
+        data = answer.get("data") if isinstance(answer, dict) else None
+        data = data if isinstance(data, dict) else {}
+        for index, reference in enumerate(batch):
+            found = data.get(f"r{index}")
+            problem = problems.get(f"r{index}") or (
+                problems.get("") if found is None else None
+            )
+            if problem:
+                refused[reference] = problem
+                continue
+            places = len(action_files(reference)[2])
+            inner[reference] = references(file_text(found, places))
+    return inner, refused
+
+
+def actions_that_run(api: Api, named: dict[str, str]) -> Runs:
+    """Every action and reusable workflow that the workflows run: those that the
+    workflows name, and those that these run in turn, read one level after another."""
     found = dict(named)
-    refused = {}
+    via = {reference: reference for reference in named}
+    refused: dict[str, str] = {}
     todo = sorted(named)
     while todo:
-        reference = todo.pop()
-        try:
-            inner_references = run_by(api, reference)
-        except GitHubError as error:
-            refused[reference] = str(error)
-            continue
-        for inner in inner_references:
-            if inner not in found:
-                found[inner] = reference.partition("@")[0]
-                todo.append(inner)
-    return found, refused
+        inner, unread = run_by(api, todo)
+        refused.update(unread)
+        todo = []
+        for reference, items in sorted(inner.items()):
+            for item in items:
+                if item not in found:
+                    found[item] = reference.partition("@")[0]
+                    via[item] = via[reference]
+                    todo.append(item)
+    return Runs(found, via, refused)
+
+
+def lacking_patterns(selected: dict[str, Json], found: Iterable[str]) -> dict[str, str]:
+    """The pattern of each action and reusable workflow that runs but that
+    [actions.selected] doesn't allow, with the first one that needs it. An image of
+    Docker needs a step of its own, not a pattern."""
+    lacking: dict[str, str] = {}
+    for reference in sorted(found):
+        if not reference.startswith(DOCKER) and not allows(selected, reference):
+            lacking.setdefault(pattern_of(reference), reference)
+    return lacking
+
+
+@dataclass(frozen=True)
+class Unlisted:
+    """An action, a reusable workflow or an image of Docker that a workflow runs but
+    that GitHub won't start, or one whose file GitHub refused to give."""
+
+    reference: str
+    # What names it: a file of the repository, or the action that runs it in turn.
+    where: str
+    # The one that a file of the repository names and that runs it, at last.
+    via: str
+    # What to change.
+    fix: str
+
+
+def unlisted_actions(
+    api: Api, actions: dict[str, Json], named: dict[str, str], listed_in: str
+) -> list[Unlisted]:
+    """Every action and reusable workflow that the workflows run, also in turn, that
+    [actions] doesn't let start, from the files alone, not the settings on GitHub: a
+    pattern that a pull request leaves out stops every workflow that runs the action
+    once the list is on GitHub. The patterns go into the file listed_in."""
+    allowed = actions.get("allowed_actions", "all")
+    if allowed == "all":
+        return []
+    selected = actions.get("selected") if allowed == "selected" else None
+    selected = selected if isinstance(selected, dict) else {}
+    runs = actions_that_run(api, named)
+    found: list[Unlisted] = []
+    for pattern, reference in lacking_patterns(selected, runs.found).items():
+        fix = (
+            f"add {json.dumps(pattern)} to patterns_allowed of [actions.selected]"
+            f" in {listed_in}"
+        )
+        if allowed != "selected":
+            fix = f'set allowed_actions = "selected" in [actions] and {fix}'
+        found.append(
+            Unlisted(reference, runs.found[reference], runs.via[reference], fix)
+        )
+    found += [
+        Unlisted(
+            reference,
+            runs.found[reference],
+            runs.via[reference],
+            "run the image in a run: step instead, as docker run --rm --volume"
+            ' "$PWD:/github/workspace" --workdir /github/workspace'
+            f" {reference.removeprefix(DOCKER)}: GitHub refuses a step with docker://"
+            " whatever [actions.selected] lists",
+        )
+        for reference in sorted(runs.found)
+        if reference.startswith(DOCKER)
+    ]
+    found += [
+        Unlisted(
+            reference,
+            runs.found[reference],
+            runs.via[reference],
+            f"GitHub refused its file ({answer}), so what it runs in turn is unknown:"
+            " run the check again",
+        )
+        for reference, answer in sorted(runs.refused.items())
+    ]
+    return found
+
+
+def line_of(text: str, reference: str) -> int:
+    """The line of the first step or job that names the action, or 0."""
+    for match in USES.finditer(text):
+        if match[1] == reference:
+            return text.count("\n", 0, match.start(1)) + 1
+    return 0
 
 
 def check_actions(
@@ -346,7 +547,34 @@ def check_actions(
     if want.get("allowed_actions") == "selected" and isinstance(selected, dict):
         active = have["allowed_actions"] == "selected"
         drift += check_selected_actions(api, repo, selected, active, named or {})
+    elif want.get("allowed_actions") == "local_only":
+        drift += refused_images(named or {})
     return drift
+
+
+def refused_images(found: dict[str, str]) -> list[Drift]:
+    """Every image of Docker that a step runs with docker://, which GitHub refuses
+    unless every action may run. No pattern allows it, so the step itself changes: it
+    runs the image with docker run. Until then, the actions that may run on GitHub
+    never narrow, which would stop the workflow."""
+    return [
+        Drift(
+            f"actions.allowed_actions refuses {reference}",
+            "docker run",
+            DOCKER,
+            manual=(
+                f"{where} runs it, and GitHub refuses a step with docker:// unless"
+                " every action may run, whatever [actions.selected] lists: run the"
+                " image in a run: step instead, as docker run --rm --volume"
+                ' "$PWD:/github/workspace" --workdir /github/workspace'
+                f" {reference.removeprefix(DOCKER)} with the step's with: args after"
+                " it and its entrypoint as --entrypoint; until then the actions that"
+                " may run on GitHub never narrow"
+            ),
+        )
+        for reference, where in sorted(found.items())
+        if reference.startswith(DOCKER)
+    ]
 
 
 def check_selected_actions(
@@ -368,23 +596,21 @@ def check_selected_actions(
             same = sorted(map(str.casefold, value)) == sorted(map(str.casefold, have))
         if not same:
             drift.append(Drift(f"actions.selected.{key}", value, have))
-    found, refused = actions_that_run(api, named)
-    lacking: dict[str, str] = {}
-    for reference, where in sorted(found.items()):
-        if not allows(selected, reference):
-            lacking.setdefault(pattern_of(reference), where)
+    runs = actions_that_run(api, named)
+    found, refused = runs.found, runs.refused
     drift += [
         Drift(
             f"actions.selected.patterns_allowed lacks {pattern}",
             "listed",
             "missing",
             manual=(
-                f"{where} runs it: add {json.dumps(pattern)} to patterns_allowed of"
-                " [actions.selected] in .github/repository.project.toml; until then"
-                " the list of the allowed actions on GitHub only grows"
+                f"{found[reference]} runs it: add {json.dumps(pattern)} to"
+                " patterns_allowed of [actions.selected] in"
+                " .github/repository.project.toml; until then the list of the allowed"
+                " actions on GitHub only grows"
             ),
         )
-        for pattern, where in lacking.items()
+        for pattern, reference in lacking_patterns(selected, found).items()
     ]
     # What an action runs in turn that no one could read may be missing as well.
     drift += [
@@ -400,16 +626,17 @@ def check_selected_actions(
         )
         for reference, answer in sorted(refused.items())
     ]
-    return drift
+    return drift + refused_images(found)
 
 
-def widen_selected_actions(api: Api, repo: str, selected: dict[str, Json]) -> None:
+def widen_selected_actions(api: Api, repo: str, selected: dict[str, Json]) -> list[str]:
     """While a workflow runs an action that the list lacks, a list that GitHub already
     uses only grows by the configured patterns: that never stops a workflow, and the
-    actions of a newer release of the blueprint can still start."""
+    actions of a newer release of the blueprint can still start. The patterns that it
+    added, none when GitHub lets every action run."""
     permissions = api.get(f"repos/{repo}/actions/permissions") or {}
     if permissions.get("allowed_actions") != "selected":
-        return
+        return []
     path = f"repos/{repo}/actions/permissions/selected-actions"
     current = dict(api.get(path) or {})
     have = [str(pattern) for pattern in current.get("patterns_allowed") or []]
@@ -421,6 +648,7 @@ def widen_selected_actions(api: Api, repo: str, selected: dict[str, Json]) -> No
     ]
     if added:
         api.put(path, {**current, "patterns_allowed": have + added})
+    return added
 
 
 def apply_actions(
@@ -692,8 +920,16 @@ def rulesets(api: Api, repo: str) -> dict[str, Json]:
     return {item["name"]: item["id"] for item in api.get_all(f"repos/{repo}/rulesets")}
 
 
-def check_rulesets(api: Api, repo: str, wanted: list[dict[str, Json]]) -> list[Drift]:
-    existing = rulesets(api, repo)
+def check_rulesets(
+    api: Api, repo: str, wanted: list[dict[str, Json]], private: bool = False
+) -> list[Drift]:
+    try:
+        existing = rulesets(api, repo)
+    except GitHubError as error:
+        if not (private and refused_by_plan(error)):
+            raise
+        # A private repository on GitHub Free may have no rulesets to read.
+        return [lacking(repo, Drift("rulesets", "present", "not offered"), error)]
     drift = []
     for want in wanted:
         if want["name"] not in existing:
@@ -766,6 +1002,11 @@ def apply_variables(api: Api, repo: str, drift: list[Drift]) -> None:
 # --------------------------------------------------------------------------- environments
 
 MAIN_ONLY = {"protected_branches": False, "custom_branch_policies": True}
+# Whether an administrator may deploy past the rules of an environment, which GitHub
+# allows by default. The rules of every environment of the settings bind the
+# administrators too, so that a person who may administer the repository, or a token
+# of theirs, reaches its secrets only as a workflow on main does.
+BYPASS = "can_admins_bypass"
 
 
 def check_environments(
@@ -784,6 +1025,10 @@ def check_environments(
             )
             if policy != MAIN_ONLY or names != ["branch:main"]:
                 drift.append(Drift(f"environment {name}", "main only", names or policy))
+            # An answer without the field has GitHub's default.
+            bypass = environment.get(BYPASS, True)
+            if bypass is not False:
+                drift.append(Drift(f"environment {name}.{BYPASS}", False, bypass))
         present = {
             item["name"]
             for item in api.get_all(f"repos/{repo}/environments/{name}/secrets")
@@ -807,11 +1052,23 @@ def branch_policies(api: Api, repo: str, environment: str) -> list[Json]:
 
 
 def apply_environments(api: Api, repo: str, drift: list[Drift]) -> None:
-    for item in drift:
-        name = item.setting.removeprefix("environment ")
-        api.put(
-            f"repos/{repo}/environments/{name}", {"deployment_branch_policy": MAIN_ONLY}
-        )
+    # An environment may differ in its branches and in its bypass at once, and one
+    # write sets both.
+    names = dict.fromkeys(
+        item.setting.removeprefix("environment ").removesuffix(f".{BYPASS}")
+        for item in drift
+    )
+    for name in names:
+        path = f"repos/{repo}/environments/{name}"
+        try:
+            api.put(path, {"deployment_branch_policy": MAIN_ONLY, BYPASS: False})
+        except GitHubError as error:
+            # A private repository without GitHub Enterprise may refuse the bypass,
+            # which GitHub keeps to its protection rules there: the environment is
+            # still created for main only, and the next check names the bypass.
+            if error.status != 422:
+                raise
+            api.put(path, {"deployment_branch_policy": MAIN_ONLY})
         policies = branch_policies(api, repo, name)
         for policy in policies:
             if (policy.get("type", "branch"), policy["name"]) != ("branch", "main"):
@@ -1023,12 +1280,16 @@ class Settings:
         )
 
 
-def check(api: Api, repo: str, settings: Settings) -> list[Drift]:
+def check(
+    api: Api, repo: str, settings: Settings, private: bool = False
+) -> list[Drift]:
+    """The differences of GitHub from the settings; private says whether a refusal
+    that names the plan is one of what the plan of a private repository lacks."""
     return (
         check_repository(api, repo, settings.repository)
         + check_security(api, repo, settings.security)
         + check_actions(api, repo, settings.actions, settings.workflows)
-        + check_rulesets(api, repo, settings.rulesets)
+        + check_rulesets(api, repo, settings.rulesets, private)
         + check_variables(api, repo, settings.variables)
         + check_environments(api, repo, settings.environments)
         + check_pages(api, repo, settings.pages)
@@ -1037,24 +1298,163 @@ def check(api: Api, repo: str, settings: Settings) -> list[Drift]:
     )
 
 
-# The permission of the release app that each part of the settings needs.
+# --------------------------------------------------------------------------- plan
+
+# The variables that switch the workflows to what they do without a part of GitHub
+# that a private repository lacks on its plan, with the part. GitHub offers code
+# scanning and the dependency review to a private repository only with GitHub Code
+# Security, or with GitHub Advanced Security, which includes it (decision 0082):
+# without it, CodeQL, zizmor, OSV-Scanner and the Scorecard keep their findings out
+# of code scanning, and the dependency review leaves the vulnerabilities of the lock
+# files to OSV-Scanner.
+PLAN_VARIABLES = {
+    "CODE_SCANNING": "code scanning",
+    "DEPENDENCY_REVIEW": "the dependency review",
+}
+# The switches of security_and_analysis that bring both.
+CODE_SECURITY = ("advanced_security", "code_security")
+# How GitHub refuses a part that the plan of a private repository lacks, such as a
+# ruleset ("Upgrade to GitHub Pro or make this repository public to enable this
+# feature"), the website ("Your current plan does not support GitHub Pages for this
+# repository") or a switch that needs a product of GitHub Advanced Security.
+PLAN_REFUSAL = re.compile(
+    r"upgrade to github|make this repository public|current plan"
+    r"|advanced security|secret protection|code security",
+    re.IGNORECASE,
+)
+# The prefix of the differences of each part of the settings.
+PARTS = {
+    "repository": "repository.",
+    "security": "security.",
+    "actions": "actions.",
+    "rulesets": "ruleset",
+    "variables": "variable ",
+    "environments": "environment ",
+    "pages": "pages",
+    "labels": "label ",
+}
+
+
+@dataclass(frozen=True)
+class Plan:
+    """What GitHub offers the repository on its plan; a public one has everything."""
+
+    private: bool
+    # GitHub Code Security on a private repository; None where the token may not
+    # read security_and_analysis, which then decides nothing.
+    code_security: bool | None
+
+    @property
+    def offers_code_security(self) -> bool | None:
+        return True if not self.private else self.code_security
+
+
+def read_plan(api: Api, repo: str) -> Plan:
+    data = api.get(f"repos/{repo}") or {}
+    private = data.get("private") is True
+    analysis = data.get("security_and_analysis")
+    if not isinstance(analysis, dict):
+        return Plan(private, None)
+    return Plan(
+        private,
+        any(
+            isinstance(analysis.get(key), dict)
+            and analysis[key].get("status") == "enabled"
+            for key in CODE_SECURITY
+        ),
+    )
+
+
+def refused_by_plan(error: GitHubError) -> bool:
+    """Whether GitHub refused a part of the settings with an answer that names the
+    plan; the callers ask only for a private repository, since a public one has every
+    part, and such an answer there, as from a policy of an organization, still fails."""
+    return error.status in (403, 422) and bool(PLAN_REFUSAL.search(error.message))
+
+
+def lacking(repo: str, item: Drift, error: GitHubError) -> Drift:
+    """The difference of a part that the plan of the repository lacks, as a notice."""
+    return replace(
+        item,
+        notice=True,
+        manual=(
+            f"GitHub doesn't offer it to the private repository {repo} on its plan"
+            f' and answered "{error.message}"; the next run of the settings sets it'
+            " once the repository is public or on a plan that offers it"
+        ),
+    )
+
+
+def offered_only(
+    repo: str, drift: list[Drift], unoffered: dict[str, GitHubError]
+) -> list[Drift]:
+    """The drift after an apply, in which each difference of a part that GitHub
+    refused for the plan of the repository is a notice, which fails nothing."""
+    result = []
+    for item in drift:
+        part = next(
+            (name for name in unoffered if item.setting.startswith(PARTS[name])), None
+        )
+        if part is not None and not item.notice:
+            item = lacking(repo, item, unoffered[part])
+        result.append(item)
+    return result
+
+
+def fitted(api: Api, repo: str, settings: Settings, plan: Plan) -> Settings:
+    """The settings for what GitHub offers the repository: where a private repository
+    lacks GitHub Code Security, the variables of PLAN_VARIABLES are off, and the rule
+    of main asks for no alerts of code scanning, to which no tool can upload. One that
+    a repository no longer needs, after it became public or got Code Security, is on
+    again, and a variable that the settings as code set themselves wins."""
+    variables = dict(settings.variables)
+    offered = plan.offers_code_security
+    for name in PLAN_VARIABLES:
+        if name in settings.variables or offered is None:
+            continue
+        if not offered:
+            variables[name] = "off"
+            continue
+        have = api.get(f"repos/{repo}/actions/variables/{name}")
+        if have is not None and have.get("value") != "on":
+            variables[name] = "on"
+    rulesets = settings.rulesets
+    if variables.get("CODE_SCANNING") == "off":
+        rulesets = [
+            {
+                **ruleset,
+                "rules": [
+                    rule for rule in ruleset["rules"] if rule["type"] != "code_scanning"
+                ],
+            }
+            for ruleset in rulesets
+        ]
+    return replace(settings, variables=variables, rulesets=rulesets)
+
+
+# The permissions of the release app that each part of the settings needs to write,
+# as the settings page of the app names them. GitHub writes an environment and the
+# branches that may use it with Administration, and a website with Administration and
+# Pages; Environments only reads the names of the secrets of an environment.
 PERMISSIONS = {
-    "repository": "Administration",
-    "security": "Administration",
-    "actions": "Administration",
-    "rulesets": "Administration",
-    "variables": "Variables",
-    "environments": "Environments",
-    "pages": "Pages",
-    "labels": "Issues",
+    "repository": ("Administration",),
+    "security": ("Administration",),
+    "actions": ("Administration",),
+    "rulesets": ("Administration",),
+    "variables": ("Variables",),
+    "environments": ("Administration",),
+    "pages": ("Administration", "Pages"),
+    "labels": ("Issues",),
 }
 
 
 def apply(
-    api: Api, repo: str, settings: Settings, drift: list[Drift]
-) -> dict[str, str]:
+    api: Api, repo: str, settings: Settings, drift: list[Drift], private: bool = False
+) -> tuple[dict[str, str], dict[str, GitHubError]]:
     """Apply every part of the drift and return the parts that GitHub refused, each
-    with the reason.
+    with the reason, and those that it refused because the plan of a private
+    repository lacks them, such as the rulesets and the website on GitHub Free, each
+    with its answer.
 
     A part that GitHub refuses, such as one whose permission the release app lacks,
     doesn't keep the parts after it from being applied.
@@ -1080,14 +1480,18 @@ def apply(
         ("labels", lambda: apply_labels(api, repo, settings.labels, part("label "))),
     ]
     refused: dict[str, str] = {}
+    unoffered: dict[str, GitHubError] = {}
     for name, step in steps:
         try:
             step()
         except GitHubError as error:
+            if private and refused_by_plan(error):
+                unoffered[name] = error
+                continue
             refused[name] = (
                 f"the {name} could not be applied: {error}{hint(name, error)}"
             )
-    return refused
+    return refused, unoffered
 
 
 def hint(part: str, error: GitHubError) -> str:
@@ -1096,9 +1500,9 @@ def hint(part: str, error: GitHubError) -> str:
     if error.rate_limited:
         return "; that is the rate limit of GitHub; the next run tries again"
     if error.status in (403, 404):
-        return (
-            f"; the token may lack the permission {PERMISSIONS[part]} (read and write)"
-        )
+        names = PERMISSIONS[part]
+        noun = "permission" if len(names) == 1 else "permissions"
+        return f"; the token may lack the {noun} {' and '.join(names)} (read and write)"
     return ""
 
 

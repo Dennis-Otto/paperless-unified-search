@@ -9,7 +9,7 @@ name: Clean-up
 
 on:
   schedule:
-    - cron: "40 5 * * 0"
+    - cron: "13 5 * * 4"
   workflow_dispatch:
 
 permissions: {}
@@ -17,6 +17,10 @@ permissions: {}
 concurrency:
   group: cleanup
   cancel-in-progress: false
+
+# The GitHub CLI of the jobs sends no telemetry to GitHub.
+env:
+  GH_TELEMETRY: "false"
 
 jobs:
   cleanup:
@@ -29,10 +33,13 @@ jobs:
       contents: write
       pull-requests: read
     steps:
-      - name: Record the network traffic of the job
+      - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
       - name: Delete the branches that main holds
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -84,3 +91,13 @@ jobs:
           done < <(gh cache list --limit 1000 --json id,ref --jq '.[] | "\(.id) \(.ref)"')
           echo "### Caches" >> "$GITHUB_STEP_SUMMARY"
           echo "Deleted $count cache(s) of closed pull requests." >> "$GITHUB_STEP_SUMMARY"
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."

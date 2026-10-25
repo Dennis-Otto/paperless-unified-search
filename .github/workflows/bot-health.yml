@@ -17,13 +17,17 @@ name: Bot health
 on:
   workflow_run:
     # The bots and the scheduled workflows of every repository; the daily look covers those of the project.
-    workflows: [Blueprint update, Clean-up, Findings, Fuzzing, Issue lifecycle, Labels, Links, Mutation, OSV-Scanner, OpenSSF Scorecard, Property tests, Release, Release verification, SBOM, Screenshots, Settings, Update branches, Upstream, Workflow security]
+    workflows: [Blueprint update, Chrome Web Store, Clean-up, Findings, Fuzzing, Issue lifecycle, Labels, Links, Mutation, OSV-Scanner, OpenSSF Scorecard, Property tests, Release, Release verification, SBOM, Screenshots, Settings, Update branches, Upstream, Workflow security]
     types: [completed]
   schedule:
-    - cron: "47 1 * * *"
+    - cron: "20 1 * * *"
   workflow_dispatch:
 
 permissions: {}
+
+# The GitHub CLI of the jobs sends no telemetry to GitHub.
+env:
+  GH_TELEMETRY: "false"
 
 jobs:
   run:
@@ -49,10 +53,14 @@ jobs:
       contents: read
       issues: write
     steps:
-      - name: Record the network traffic of the job
+      - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -72,6 +80,16 @@ jobs:
             script=blueprint.py
           fi
           python3 "$script" --repo "$GITHUB_REPOSITORY" bot-health run "$RUN" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
 
   sweep:
     name: look after every workflow
@@ -89,10 +107,14 @@ jobs:
       contents: read
       issues: write
     steps:
-      - name: Record the network traffic of the job
+      - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -109,3 +131,13 @@ jobs:
             script=blueprint.py
           fi
           python3 "$script" --repo "$GITHUB_REPOSITORY" bot-health sweep | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."

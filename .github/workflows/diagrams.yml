@@ -25,7 +25,7 @@ on:
       - docs/images/diagrams/**
       - scripts/diagrams.sh
   schedule:
-    - cron: "45 4 * * 2"
+    - cron: "18 4 * * 6"
   workflow_dispatch:
 
 permissions: {}
@@ -36,6 +36,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # The GitHub CLI of the jobs sends no telemetry to GitHub.
+  GH_TELEMETRY: "false"
   # The branch of the pull request, and the first line of its commit and its title.
   BRANCH: bot/diagrams
   HEADLINE: "docs: draw the diagrams anew"
@@ -128,10 +130,15 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Record the network traffic of the job
+      - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
+            results-receiver.actions.githubusercontent.com:443
       # blueprint.py, which checks what the job draw kept.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -145,8 +152,46 @@ jobs:
         with:
           name: diagrams
           path: ${{ runner.temp }}/diagrams
+      # Without the release app of the owner, the run names what is missing rather than
+      # fail at the token; every workflow has this step, the same but for its variables.
+      - name: Check that the release app is set up
+        id: release-app
+        env:
+          CLIENT_ID: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          KEY_SET: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY != '' }}
+          # Who needs the app and for what, what happens without it, and whether the
+          # run fails then.
+          BOT: the diagram bot
+          TASK: open the pull request of the diagrams
+          WITHOUT: the artifact diagrams of the job draw holds them
+          REQUIRED: "false"
+        run: |
+          if [[ -z "$CLIENT_ID" ]]; then
+            missing="names no release app in the variable RELEASE_AUTOMATION_CLIENT_ID"
+          elif [[ "$KEY_SET" != true ]]; then
+            missing="has no private key of its release app in the secret RELEASE_AUTOMATION_PRIVATE_KEY of the environment release"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          level=warning
+          if [[ "$REQUIRED" == true ]]; then
+            level=error
+          fi
+          echo "::$level::This repository $missing, which $BOT needs to $TASK; $WITHOUT."
+          {
+            echo "### ${BOT^} needs the release app of the owner"
+            echo
+            echo "This repository $missing, which $BOT needs to $TASK; $WITHOUT. The release app is a GitHub App of the owner, whose token may do what the token of a job can't: start the checks of a pull request, change a workflow and apply the settings."
+            echo
+            echo "\`python3 .github/blueprint.py checklist\` shows the steps: a link that registers the app with its permissions filled in, the update of the answers of the blueprint that names it in \`.github/repository.toml\`, the settings and its private key. Once they are done, $BOT can $TASK in its next run."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$REQUIRED" == true ]]; then
+            exit 1
+          fi
       - name: Create a token of the release app
         id: app
+        if: steps.release-app.outputs.ready == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
@@ -160,6 +205,7 @@ jobs:
           permission-pull-requests: write
           permission-workflows: write
       - name: Open, update or close the pull request of the diagrams
+        if: steps.app.outputs.token != ''
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
@@ -220,6 +266,16 @@ jobs:
           fi
           gh pr merge "$BRANCH" --auto --squash
           echo "The pull request of the diagrams from $BRANCH has the commit $commit, and merges itself once every check passes." >> "$GITHUB_STEP_SUMMARY"
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
 
   # The issue of a failed run of the bot: a failure opens it or brings it up to date,
   # and the weekly run closes it once the bot passes again.
@@ -234,10 +290,13 @@ jobs:
     permissions:
       issues: write
     steps:
-      - name: Record the network traffic of the job
+      - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
       - name: Keep the issue of the diagram bot current
         env:
           GH_TOKEN: ${{ github.token }}
@@ -262,3 +321,13 @@ jobs:
           else
             gh issue create --title "$title" --label maintenance --body "$body"
           fi
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."

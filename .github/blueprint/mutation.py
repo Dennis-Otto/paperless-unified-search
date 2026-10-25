@@ -29,7 +29,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from blueprint.coach import code, fence, html_code
+from blueprint.coach import code, escape_data, fence, html_code
 from blueprint.github import Api
 
 # A part of the run gets about so many mutants: at the half a mutant a second of a slow
@@ -693,7 +693,8 @@ def no_mutant_ran(part: Mapping[str, Any]) -> str:
         lines += [
             "",
             "A test that can't pass in that copy, because it reads the code as text, "
-            "asks Git or starts the tool, gets the marker "
+            "asks Git, starts the tool or runs a copy of it in a folder of its own, "
+            "gets the marker "
             "`@pytest.mark.mutation_unsafe`; a test that runs under a cache of "
             "`functools` clears it with `cache_clear()`, since the stats of mutmut run "
             "every test in one process. mutmut stops at the first test that fails: "
@@ -707,6 +708,25 @@ def no_mutant_ran(part: Mapping[str, Any]) -> str:
         fence("text", part.get("last_words") or []),
     ]
     return "\n".join(lines)
+
+
+def no_mutant_ran_error(part: Mapping[str, Any]) -> str:
+    """The annotation of a part in which no mutant ran, with the test that failed
+    without any: GitHub shows it with the run, and the bot-health bot quotes it in its
+    issue, where the exit code of the step would say nothing."""
+    failing = list(part.get("failing") or [])
+    if failing:
+        more = f" and {len(failing) - 1} more" if len(failing) > 1 else ""
+        message = (
+            f"The tests fail without any mutant: {failing[0]}{more}. A test that can't "
+            "pass in the copy of mutmut, mutants/, gets the marker "
+            "@pytest.mark.mutation_unsafe; the summary of the job says why."
+        )
+    else:
+        message = (
+            "No mutant ran; the summary of the job has the end of the output of mutmut."
+        )
+    return f"::error title=No mutant ran::{escape_data(message)}"
 
 
 # ---------------------------------------------------------------- the whole run

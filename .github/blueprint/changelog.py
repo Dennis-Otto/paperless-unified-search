@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import codecs
 import difflib
 import re
 from collections.abc import Sequence
@@ -184,6 +185,90 @@ def shown(text: str) -> str:
     return f"`{text[:60].rstrip()}…`" if len(text) > 60 else f"`{text}`"
 
 
+# How close a heading is to a kind of change at least, by the ratio of difflib, to be
+# taken for a typo of it: the cutoff of difflib.get_close_matches.
+CLOSE = 0.6
+# How close a heading is to a kind of change at least for the fix to rename it to that
+# kind: much closer than a hint needs, so that `Improved` never turns into Removed,
+# `Removed features` into Features, or `Added and changed` into Breaking changes.
+HEAL = 0.8
+# A line of a fragment that may be meant as the heading of a kind of change: one, as
+# the release reads it, or one that would start a section of the changelog of its own.
+HEADING_LINE = re.compile(rf"{SUBHEADING.pattern}|{TOP_HEADING.pattern}", re.MULTILINE)
+
+
+def close_kinds(heading: str, known: Sequence[str]) -> list[tuple[float, str]]:
+    """The kinds of change that a heading is close to, each with how close, without
+    regard to case, as difflib.get_close_matches finds them: the closest first, and
+    those that are as close as each other in the order of known."""
+    folded = {kind.casefold(): kind for kind in known}
+    matcher = difflib.SequenceMatcher(b=heading.casefold())
+    close = []
+    for key, kind in folded.items():
+        matcher.set_seq1(key)
+        ratio = matcher.ratio()
+        if ratio >= CLOSE:
+            close.append((ratio, kind))
+    return sorted(close, key=lambda pair: pair[0], reverse=True)
+
+
+def meant_kind(heading: str, known: Sequence[str]) -> str | None:
+    """The kind of change that a heading surely means: the closest of the kinds that
+    are at least as close as HEAL, when no other is as close, such as Fixed for
+    `Fixes`; none for `Change`, as close to Changes as to Changed, and none for a
+    heading such as `Improved` that is only somewhat close to a kind (Removed)."""
+    close = [pair for pair in close_kinds(heading, known) if pair[0] >= HEAL]
+    if close and (len(close) == 1 or close[0][0] > close[1][0]):
+        return close[0][1]
+    return None
+
+
+def healed(text: str, known: Sequence[str]) -> tuple[str, list[tuple[str, str]]]:
+    """The text of a fragment with each heading that surely means a kind of change
+    written as the release reads it, and each heading that it renamed, before and
+    after: a typo, such as `### Fixes` for `### Fixed` or `### bug fixes`, and the
+    heading of a kind that would start a section of its own, such as `## Features`.
+    A heading that means no kind for sure, such as `### Change` or `## 1.4.0`, stays
+    for a person, and so does every other line, with its line ending."""
+    renamed: list[tuple[str, str]] = []
+
+    def rename(match: re.Match[str]) -> str:
+        line = match.group()
+        words = line.strip().lstrip("#").strip()
+        if line.startswith("### ") and words in known:
+            return line
+        kind = words if words in known else meant_kind(words, known)
+        if kind is None:
+            return line
+        renamed.append((line.strip(), f"### {kind}"))
+        return f"### {kind}" + ("\r" if line.endswith("\r") else "")
+
+    return HEADING_LINE.sub(rename, text), renamed
+
+
+def heal(folder: Path, changelog: str) -> list[str]:
+    """Renames each heading of the fragments in the folder that surely means a kind of
+    change of the changelog to that kind, as `healed` does, and says what it renamed.
+    A fragment keeps its byte order mark and its line endings."""
+    known = known_headings(changelog)
+    said = []
+    for fragment in read_fragments(folder):
+        # A folder, a fragment that says nothing and one that is no UTF-8 have no text.
+        if not fragment.text:
+            continue
+        path = folder / fragment.path.rsplit("/", 1)[-1]
+        raw = path.read_bytes()
+        mark = codecs.BOM_UTF8 if raw.startswith(codecs.BOM_UTF8) else b""
+        text, renamed = healed(raw[len(mark) :].decode("utf-8"), known)
+        if renamed:
+            path.write_bytes(mark + text.encode("utf-8"))
+        said += [
+            f"{fragment.path}: renamed `{before}` to `{after}`."
+            for before, after in renamed
+        ]
+    return said
+
+
 def fragment_problems(fragments: Sequence[Fragment], changelog: str) -> list[str]:
     """What keeps each fragment from the release, each with its fix: a wrong name, no
     entry, text outside a heading, a heading that would start a section of its own,
@@ -232,13 +317,12 @@ def problems_of(text: str, known: list[str]) -> list[str]:
         "as `### Features`."
         for match in TOP_HEADING.finditer(text)
     ]
-    folded = {heading.casefold(): heading for heading in known}
     ends = [match.start() for match in headings[1:]] + [len(text)]
     for match, end in zip(headings, ends, strict=True):
         heading = match.group()[4:].strip()
         if heading not in known:
-            close = difflib.get_close_matches(heading.casefold(), folded, n=1)
-            hint = f"Did you mean `### {folded[close[0]]}`? " if close else ""
+            close = close_kinds(heading, known)
+            hint = f"Did you mean `### {close[0][1]}`? " if close else ""
             problems.append(
                 f"{shown(match.group())} is no kind of change of the changelog. "
                 f"{hint}The kinds: {', '.join(known)}."
@@ -261,11 +345,15 @@ def checked(fragments: Sequence[Fragment], changelog: str) -> Sequence[Fragment]
 
 def fragment_sections(fragments: Sequence[Fragment]) -> list[tuple[str, str]]:
     """The headings and entries of the fragments: the kinds of change in their order,
-    other headings after them as they come, and each kind by the names of the files."""
+    other headings after them as they come, and each kind by the names of the files.
+    Text without a heading is none, as on the website, which shows the fragments
+    before the release checks them."""
     sections = []
     for fragment in fragments:
         headings = list(SUBHEADING.finditer(fragment.text))
         ends = [match.start() for match in headings[1:]] + [len(fragment.text)]
+        if not headings:
+            continue
         sections += [
             (kind_of(match), fragment.text[match.end() : end].strip("\n"))
             for match, end in zip(headings, ends, strict=True)
@@ -282,6 +370,23 @@ def unreleased_text(changelog: Changelog, fragments: Sequence[Fragment] = ()) ->
     parts += [f"{heading}\n\n{body}" for heading, body in fragment_sections(fragments)]
     text = "\n\n".join(part for part in parts if part.strip())
     return merge_headings(f"{text}\n") if text else ""
+
+
+def with_fragments(text: str, fragments: Sequence[Fragment]) -> str:
+    """The changelog as the next release will have it, for the website: the entries of
+    the fragments joined to the text of Unreleased, each kind of change under one
+    heading, as the release groups them, and Unreleased first when the changelog has
+    none. A changelog without entries in fragments stays as it is."""
+    if not fragment_sections(fragments):
+        return text
+    changelog = Changelog.parse(text)
+    body = block(unreleased_text(changelog, fragments))
+    found = changelog.find(UNRELEASED)
+    if found is None:
+        changelog.sections.insert(0, ("## Unreleased", body))
+    else:
+        changelog.sections[found] = (changelog.sections[found][0], body)
+    return changelog.render()
 
 
 def release_changelog(

@@ -1,6 +1,6 @@
 # The settings of the repository as code. `blueprint.py settings check` compares them
 # with GitHub, and `blueprint.py settings apply` sets them:
-# https://github.com/Dennis-Otto/repo-blueprint#settings-as-code
+# https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/features/settings.md#settings-as-code
 
 [repository]
 description = "OCR-powered Paperless-ngx search, seamlessly integrated into Nextcloud"
@@ -41,13 +41,16 @@ sha_pinning_required = true
 # Workflows of pull requests from forks wait for the maintainer's approval.
 fork_pr_approval = "all_external_contributors"
 # Only the actions of GitHub and those of [actions.selected] may run, also in a
-# workflow that a pull request changes; those of this repository always may.
+# workflow that a pull request changes; those of this repository always may. A step
+# that runs an image with docker:// is an action that no pattern allows: it runs the
+# image with docker run instead.
 allowed_actions = "selected"
 
 # The actions and reusable workflows that the workflows name, and those that these run
-# in turn. `blueprint.py settings check` names each one that a workflow runs and this
-# list lacks, and the settings bot only adds to the list on GitHub until it's added;
-# add those of this project alone in .github/repository.project.toml.
+# in turn. The check lint of every pull request (`blueprint.py settings actions`) and
+# `blueprint.py settings check` name each one that a workflow runs and this list lacks,
+# and the settings bot only adds to the list on GitHub until it's added; add those of
+# this project alone in .github/repository.project.toml.
 [actions.selected]
 github_owned_allowed = true
 verified_allowed = false
@@ -68,7 +71,6 @@ patterns_allowed = [
   "docker/metadata-action@*",
   "docker/setup-buildx-action@*",
   "docker/setup-qemu-action@*",
-  "fsfe/reuse-action@*",
   "gitleaks/gitleaks-action@*",
   "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@*",
   "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@*",
@@ -106,8 +108,12 @@ required_checks = [
 # A new alert of a tool of code scanning in a pull request stops its merge from these
 # thresholds on; an alert that main has already doesn't. Only a tool that analyzes
 # every pull request belongs here, because a missing analysis stops the merge too.
+# zizmor writes its high findings as errors, its medium ones as warnings and the rest
+# as notes, with no security severity yet; the Findings workflow fails main on each
+# one, so every new one stops the merge, with a security severity as well.
 code_scanning_tools = [
   { tool = "CodeQL", alerts_threshold = "errors", security_alerts_threshold = "high_or_higher" },
+  { tool = "zizmor", alerts_threshold = "all", security_alerts_threshold = "all" },
 ]
 
 [variables]

@@ -8,18 +8,24 @@ name: After the checks
 # runs out of time, it runs the failed jobs once more. A job that passes then failed
 # without a change of the code: its test is flaky, and the bot reports it in one
 # issue, with the step, the test and the error that failed, so that it gets fixed
-# instead of failing pull requests at random. A job that fails again is a real
+# instead of failing pull requests at random: a comment for each run, and in the body
+# how often each job and test flaked, and when it last did. The test is one that
+# pytest names in the log, or else the step or test that the log names last before
+# the failure, after the answer test_marker of the blueprint, such as "Browser step:"
+# before each step of the tests of a browser. A job that fails again is a real
 # failure and stays red, and so does one that failed the same way for the commit
 # before: running it again would only keep a runner busy. A pull request names its
 # jobs and steps and writes its logs, so the issue shows them only as code, and the
 # branch of a fork not at all.
 #
 # The bot for cancelled checks: a newer run of a workflow cancels the one still running
-# for the same pull request. GitHub doesn't always create the runs in the order of the
-# commits, so a late run for an older commit can cancel the run for the head of the
-# pull request; its required checks then stay cancelled and block the merge. When a
-# run for the head of an open pull request was cancelled that way and no newer run of
-# its workflow for the same commit exists, the bot starts it again. A run that a
+# for the same pull request, and that of a check or a scanner for the push to main
+# before. GitHub doesn't always create the runs in the order of the commits, so a late
+# run for an older commit can cancel the run for the head of the pull request, whose
+# required checks then stay cancelled and block the merge, or that for the head of
+# main, whose coverage, alerts of code scanning and fixes the bots read. When a run for
+# the head of an open pull request or of main was cancelled that way and no newer run
+# of its workflow for the same commit exists, the bot starts it again. A run that a
 # person cancelled, or one whose commit a newer push replaced, stays cancelled. The
 # quick checks avoid the race: their runs for different commits never cancel each
 # other.
@@ -41,12 +47,16 @@ name: After the checks
 # the API and shows their text only as code, and waits up to three minutes for the
 # checks of other apps, such as the alerts of code scanning, which end after the last
 # workflow. The scanners, which run in the pull requests that change what they read,
-# start it as well. On a pull request of a person, the comment also says what the
+# start it as well, and so does the check of the rules of Renovate where Renovate
+# runs in the repository. On a pull request of a person, the comment also says what the
 # pull request makes: the next version, from its title and the release-please files
 # of main, and the entry that it adds to the changelog; the coverage of its tests
 # against that of main, file by file, from the coverage reports that the checks keep
 # as the artifact "coverage", which a pull request from a fork writes as it likes;
-# and the website that the check docs built, with the pages that it changes. A pull
+# the website that the check docs built, with the pages that it changes; and the part
+# that a workflow of the project adds, such as one of visual tests: the report.md of
+# its artifact pr-report-<name> for the head, under the title that [report.<name>] of
+# .github/checks.project.toml of main gives it, with its text only as code. A pull
 # request whose checks never failed gets the comment only when it has something of
 # this to say, and one of a bot never.
 #
@@ -80,17 +90,21 @@ on:
   workflow_run:
     # The checks of this repository, its end-to-end tests if a workflow of its own named Docker E2E runs them,
     # and the workflows of its other tests that the answer test_workflows of the blueprint names.
-    # Then those of the other required checks and of the scanners, the same in every repository, and the release.
+    # Then those of the other required checks and of the scanners, the same in every repository, Renovate for the check of its rules where it runs in the repository, and the release.
     workflows: [CI (php), Docker E2E, Demo, Visual check, CodeQL, Dependency review, Docs, Lint, Pull request title, Secret scan, Fuzzing, Links, OSV-Scanner, Workflow security, Release]
     types: [completed]
 
 permissions: {}
 
+# The GitHub CLI of the jobs sends no telemetry to GitHub.
+env:
+  GH_TELEMETRY: "false"
+
 jobs:
   rerun:
     name: run the failed jobs again
-    # The tests only; the other required checks fail the same way again, and the
-    # release has a bot of its own.
+    # The tests only; the other checks fail the same way again, and the release has
+    # a bot of its own.
     if: >-
       !github.event.repository.fork &&
       !contains(fromJSON('["CodeQL", "Dependency review", "Docs", "Lint", "Pull request title", "Secret scan", "Fuzzing", "Links", "OSV-Scanner", "Workflow security", "Release"]'), github.event.workflow_run.name) &&
@@ -105,10 +119,13 @@ jobs:
       actions: write
       checks: read
     steps:
-      - name: Record the network traffic of the job
+      - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
       - name: Run the failed jobs once more
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -161,12 +178,37 @@ jobs:
           fi
           # A failure that the commit before ended with as well is a real one: the same
           # jobs broke in the last attempt of the run for the previous commit of the
-          # branch, after the bot had run them once more. When that can't be read, the
-          # jobs run once more.
-          previous="$(gh api --method GET "repos/$GH_REPO/actions/workflows/$WORKFLOW/runs" \
+          # branch, after the bot had run them once more. A run that a newer push
+          # cancelled ran too little to tell, so the run before it counts. When that
+          # can't be read, the jobs run once more.
+          superseded() {
+            local ids id messages
+            ids="$(gh api "repos/$GH_REPO/actions/runs/$1/jobs" --paginate \
+              --jq '.jobs[] | select(.conclusion == "cancelled") | .id')" || return 1
+            while read -r -u 5 id; do
+              if [[ -z "$id" ]]; then
+                continue
+              fi
+              messages="$(gh api "repos/$GH_REPO/check-runs/$id/annotations" --paginate --jq '.[].message')" ||
+                return 1
+              if grep -q "higher priority waiting request" <<<"$messages"; then
+                return 0
+              fi
+            done 5<<<"$ids"
+            return 1
+          }
+          candidates="$(gh api --method GET "repos/$GH_REPO/actions/workflows/$WORKFLOW/runs" \
             -f branch="$BRANCH" -f event="$EVENT" -f status=completed -f per_page=30 \
-            --jq ".workflow_runs | map(select(.id < $RUN and .head_sha != \"$SHA\" and .head_repository.full_name == \"$HEAD_REPO\")) | .[0] // empty | [.id, .conclusion] | @tsv" ||
+            --jq ".workflow_runs | map(select(.id < $RUN and .head_sha != \"$SHA\" and .head_repository.full_name == \"$HEAD_REPO\")) | .[:5][] | [.id, .conclusion] | @tsv" ||
             true)"
+          previous=""
+          while IFS=$'\t' read -r -u 6 id conclusion; do
+            if [[ -z "$id" ]] || { [[ "$conclusion" == cancelled ]] && superseded "$id"; }; then
+              continue
+            fi
+            previous="$id"$'\t'"$conclusion"
+            break
+          done 6<<<"$candidates"
           if [[ -n "$previous" ]] &&
             [[ "$(broken "${previous%%$'\t'*}" "${previous#*$'\t'}" "$now" | sort)" == "$(sort <<<"$now")" ]]; then
             mapfile -t jobs <<<"$now"
@@ -178,6 +220,16 @@ jobs:
           fi
           gh run rerun "$RUN" --failed
           echo "The failed jobs of $NAME run once more: a flaky test passes now." >> "$GITHUB_STEP_SUMMARY"
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
 
   report:
     name: report the flaky tests
@@ -196,10 +248,13 @@ jobs:
       checks: read
       issues: write
     steps:
-      - name: Record the network traffic of the job
+      - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
       - name: Add the jobs that failed at first to the issue of flaky tests
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -207,9 +262,13 @@ jobs:
           RUN: ${{ github.event.workflow_run.id }}
           NAME: ${{ github.event.workflow_run.name }}
           URL: ${{ github.event.workflow_run.html_url }}
+          WHEN: ${{ github.event.workflow_run.updated_at }}
           BRANCH: ${{ github.event.workflow_run.head_branch }}
           HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
           SHA: ${{ github.event.workflow_run.head_sha }}
+          # The text before the name of each test or step in a log that pytest didn't
+          # write, such as "Browser step:"; the answer test_marker of the blueprint sets it.
+          MARKER: ""
         run: |
           # Lengths in characters, not bytes, so that a cut keeps every character whole.
           export LC_ALL=C.UTF-8
@@ -231,15 +290,17 @@ jobs:
             fi
           }
           # Each job that failed in the first attempt, or ran out of time there, with
-          # the step that broke, the tests that pytest names in its log, and the first
-          # error that it reported. An attempt that a newer run cancelled, as one that
-          # the bot for cancelled checks started again, failed in no test. In one that
-          # a person or a time limit cancelled, only the jobs that ran out of time
-          # broke: a job that waits for the others fails when they are cancelled.
+          # the step that broke, its tests and the first error that it reported. An
+          # attempt that a newer run cancelled, as one that the bot for cancelled checks
+          # started again, failed in no test. In one that a person or a time limit
+          # cancelled, only the jobs that ran out of time broke: a job that waits for the
+          # others fails when they are cancelled.
           first="$(gh api "repos/$GH_REPO/actions/runs/$RUN/attempts/1" --jq .conclusion)"
           jobs="$(gh api "repos/$GH_REPO/actions/runs/$RUN/attempts/1/jobs" --paginate \
             --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | [.id, .conclusion, .html_url, .name, ([.steps[]? | select(.conclusion == "failure" or .conclusion == "cancelled") | .name] | join(", "))] | @tsv')"
           rows=""
+          # Each job with each of its tests, one to a line, for the count in the issue.
+          counted=""
           while IFS=$'\t' read -r -u 3 id conclusion url name steps; do
             if [[ -z "$id" ]] || [[ "$conclusion" == failure && "$first" == cancelled ]]; then
               continue
@@ -248,23 +309,76 @@ jobs:
               --jq '.[] | select(.annotation_level == "failure") | .message | gsub("\\s+"; " ")' || true)"
             if grep -q "higher priority waiting request" <<<"$errors"; then
               rows=""
+              counted=""
               break
             fi
             if [[ "$conclusion" == cancelled ]] && ! grep -q "has exceeded the maximum execution time" <<<"$errors"; then
               continue
             fi
-            failed="$(gh api "repos/$GH_REPO/actions/jobs/$id/logs" 2>/dev/null |
-              sed -E 's/\x1b\[[0-9;]*m//g; s/^[0-9-]+T[0-9:.]+Z //' |
-              grep -E '^(FAILED|ERROR) [^ ]+\.py(::| |$)' | head -n 3)"
-            tests="$(sed -nE 's/^[A-Z]+ ([^ ]+).*/\1/p' <<<"$failed" | awk 'NR > 1 { printf ", " } { printf "%s", $0 }')"
+            log="$(gh api "repos/$GH_REPO/actions/jobs/$id/logs" 2>/dev/null |
+              sed -E 's/\x1b\[[0-9;]*m//g; s/^[0-9-]+T[0-9:.]+Z //')"
+            # The tests that pytest names in the log. Other tests, such as those of a
+            # browser, write the marker and the name of each test or step as it starts:
+            # the one that the log names last before its first error failed, and the
+            # first exception after that line is its error. Only the step of the job
+            # that failed counts, not one that passed before it. Workers that run side
+            # by side put a prefix of their own before their lines, such as "[1/4] " or
+            # "browser-1  | ": the first exception before the error names the worker
+            # that failed, and so the last step of that worker, not of one that kept
+            # going and passed. Without an exception, the last step that any of them
+            # started counts.
+            failed="$(grep -E '^(FAILED|ERROR) [^ ]+\.py(::| |$)' <<<"$log" | head -n 3)"
+            names="$(sed -nE 's/^[A-Z]+ ([^ ]+).*/\1/p' <<<"$failed")"
+            thrown=""
+            if [[ -z "$names" && -n "$MARKER" ]]; then
+              since="$(awk '
+                /^##\[error\]/ { exit }
+                /^##\[group\]Run / { split("", kept); split("", known); n = 0; last = ""; picked = 0; next }
+                {
+                  at = index($0, ENVIRON["MARKER"])
+                  if (at) {
+                    own = substr($0, 1, at - 1)
+                    if (!(own in kept)) { known[++n] = own }
+                    if (!(picked && own == chosen)) { kept[own] = "" }
+                    last = own
+                  } else {
+                    found = 0
+                    for (i = 1; i <= n; i++) {
+                      if (substr($0, 1, length(known[i])) == known[i] && (!found || length(known[i]) > length(own))) {
+                        own = known[i]
+                        found = 1
+                      }
+                    }
+                    if (!found) { next }
+                    if (!picked && $0 ~ /Traceback \(most recent call last\)|(Error|Exception|Failure): /) {
+                      chosen = own
+                      picked = 1
+                    }
+                  }
+                  kept[own] = kept[own] $0 "\n"
+                }
+                END { printf "%s", kept[picked ? chosen : last] }
+              ' <<<"$log")"
+              step="$(head -n 1 <<<"$since")"
+              # A step that names itself again when it passed adds its seconds.
+              names="$(sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//; s/[[:space:]]*\([0-9]+(\.[0-9]+)? ?(ms|s|min)\)$//' <<<"${step#*"$MARKER"}")"
+              thrown="$(grep -oE '([A-Za-z_][A-Za-z0-9_]*\.)*[A-Za-z0-9_]*(Error|Exception|Failure): .*[^[:space:]]' <<<"$since" | head -n 1)"
+            fi
+            tests="$(awk 'NR > 1 { printf ", " } { printf "%s", $0 }' <<<"$names")"
             error="$(grep -v -e '^Process completed with exit code' -e '^The operation was canceled' <<<"$errors" | head -n 1)"
             if [[ -z "$error" ]]; then
               error="$(sed -nE '1s/^[A-Z]+ [^ ]+ - //p' <<<"$failed")"
             fi
             if [[ -z "$error" ]]; then
+              error="$thrown"
+            fi
+            if [[ -z "$error" ]]; then
               error="$(head -n 1 <<<"$errors")"
             fi
             rows+="| [$(cell "$name")]($url) | $(cell "$steps") | $(cell "$tests") | $(cell "$error") |"$'\n'
+            while IFS= read -r test; do
+              counted+="$(cell "$NAME / $name") | $(cell "$test")"$'\n'
+            done <<<"$names"
           done 3<<<"$jobs"
           if [[ -z "$rows" ]]; then
             echo "No job failed or ran out of time at first; nothing to report." >> "$GITHUB_STEP_SUMMARY"
@@ -277,18 +391,89 @@ jobs:
             where="$(cell "$BRANCH")"
           fi
           title="Flaky tests"
-          body="$(printf '**%s** failed at first and passed when it ran again, on %s at %s ([the run](%s)):\n\n%s\n%s\n%s' \
+          report="$(printf '**%s** failed at first and passed when it ran again, on %s at %s ([the run](%s)):\n\n%s\n%s\n%s' \
             "$NAME" "$where" "${SHA:0:7}" "$URL" \
             "| Job | Step | Test | Error |" "| --- | --- | --- | --- |" "$rows")"
           number="$(gh issue list --state open --search "in:title \"$title\"" --json number,title \
             --jq "map(select(.title == \"$title\")) | .[0].number // empty")"
+          # Each run gets a comment, and the body of the issue counts how often each job
+          # and test flaked, and when it last did, the latest first. The bot rewrites the
+          # table between its two comments, which it adds to an issue that has none, and
+          # keeps the 100 latest rows, well within the 65,536 characters of a body. A body
+          # that a person edited in the browser ends its lines with CRLF. Two reports at
+          # the same moment may miss a count, never a comment.
           if [[ -n "$number" ]]; then
-            gh issue comment "$number" --body "$body"
+            gh issue comment "$number" --body "$report"
+            body="$(gh issue view "$number" --json body --jq .body)"
           else
-            printf '%s\n\n%s\n' \
-              "The flaky-test bot lists here every job that failed and then passed without a change of the code, with the step, the test and the error that failed. Fix its test, then close this issue." \
-              "$body" > "$RUNNER_TEMP/issue.md"
-            gh issue create --title "$title" --label maintenance --body-file "$RUNNER_TEMP/issue.md"
+            body="The flaky-test bot counts here every job and test that failed at first and then passed without a change of the code, and describes each run in a comment, with the step, the test and the error that failed. Fix the test, then close this issue."
+          fi
+          printf '%s\n' "$body" | tr -d '\r' |
+            COUNTED="$counted" LAST="[${WHEN:0:10}]($URL)" \
+            FROM="<!-- The flaky-test bot rewrites the counts from here to the next comment. -->" \
+            UNTIL="<!-- The end of the counts. -->" \
+            awk '
+              function table(  i) {
+                print ""
+                print "**How often each job and test flaked**, the latest first:"
+                print ""
+                print "| Job | Test | Times | Last run |"
+                print "| --- | --- | --- | --- |"
+                for (i = 1; i <= n; i++) {
+                  printf "| %s | %d | %s |\n", order[i], times[order[i]] + 1, ENVIRON["LAST"]
+                }
+                for (i = 1; i <= m && n + i <= 100; i++) {
+                  print older[i]
+                }
+                print ""
+              }
+              # The jobs and tests of this run first, each once, then the older rows.
+              BEGIN {
+                count = split(ENVIRON["COUNTED"], lines, "\n")
+                for (i = 1; i <= count; i++) {
+                  if (lines[i] != "" && !(lines[i] in now)) {
+                    now[lines[i]] = 1
+                    order[++n] = lines[i]
+                  }
+                }
+              }
+              state == 0 && $0 == ENVIRON["FROM"] { state = 1; print; next }
+              state == 1 && $0 == ENVIRON["UNTIL"] { state = 2; table(); print; next }
+              state == 1 && /^\| (`|–)/ {
+                split(substr($0, 3, length($0) - 4), cells, " [|] ")
+                key = cells[1] " | " cells[2]
+                if (key in now) {
+                  times[key] = cells[3]
+                } else {
+                  older[++m] = $0
+                }
+                next
+              }
+              # Without the end comment, which a person may have deleted, the text after
+              # the table is still theirs: it follows the new table.
+              state == 1 && $0 != "" && $0 !~ /^\*\*How often each job and test flaked\*\*/ && $0 !~ /^\| (Job|---) \|/ {
+                held = held $0 "\n"
+              }
+              state != 1 { print }
+              END {
+                if (state == 0) {
+                  print ""
+                  print ENVIRON["FROM"]
+                }
+                if (state != 2) {
+                  table()
+                  print ENVIRON["UNTIL"]
+                }
+                if (state == 1) {
+                  printf "%s", held
+                }
+              }
+            ' > "$RUNNER_TEMP/issue.md"
+          if [[ -n "$number" ]]; then
+            gh issue edit "$number" --body-file "$RUNNER_TEMP/issue.md"
+          else
+            created="$(gh issue create --title "$title" --label maintenance --body-file "$RUNNER_TEMP/issue.md")"
+            gh issue comment "$created" --body "$report"
           fi
           {
             echo "### Flaky"
@@ -297,6 +482,16 @@ jobs:
             echo "| --- | --- | --- | --- |"
             printf '%s' "$rows"
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
 
   release:
     name: run the failed release again
@@ -316,10 +511,13 @@ jobs:
     permissions:
       actions: write
     steps:
-      - name: Record the network traffic of the job
+      - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
       - name: Run the failed jobs of the release once more
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -350,13 +548,26 @@ jobs:
           fi
           printf '%s\n' "$output"
           echo "The failed jobs of the release of ${SHA:0:7} run once more, where they stopped." >> "$GITHUB_STEP_SUMMARY"
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
 
   cancelled:
     name: run the cancelled checks again
     if: >-
       !github.event.repository.fork &&
       github.event.workflow_run.conclusion == 'cancelled' &&
-      contains(fromJSON('["pull_request", "pull_request_target"]'), github.event.workflow_run.event) &&
+      (contains(fromJSON('["pull_request", "pull_request_target"]'), github.event.workflow_run.event) ||
+      (github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == github.event.repository.default_branch &&
+      github.event.workflow_run.head_repository.full_name == github.repository)) &&
       github.event.workflow_run.run_attempt < 3
     concurrency:
       group: ${{ github.workflow }}-cancelled-${{ github.event.workflow_run.id }}
@@ -366,13 +577,17 @@ jobs:
     permissions:
       actions: write
       checks: read
+      contents: read # the head of main
       pull-requests: read
     steps:
-      - name: Record the network traffic of the job
+      - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
-          egress-policy: audit
-      - name: Run the checks of the head of the pull request again
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+      - name: Run the checks of the head of a pull request or of main again
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -381,19 +596,32 @@ jobs:
           WORKFLOW: ${{ github.event.workflow_run.workflow_id }}
           NAME: ${{ github.event.workflow_run.name }}
           SHA: ${{ github.event.workflow_run.head_sha }}
+          EVENT: ${{ github.event.workflow_run.event }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
-          # Only the runs for the head of a pull request report its checks.
-          number="$(gh api "repos/$GH_REPO/commits/$SHA/pulls" \
-            --jq "map(select(.state == \"open\" and .head.sha == \"$SHA\")) | .[0].number // empty")"
-          if [[ -z "$number" ]]; then
-            echo "${SHA:0:7} is not the head of an open pull request; its run of $NAME stays cancelled." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+          # Only the runs for the head of a pull request report its checks, and only
+          # those for the head of main tell the state of main.
+          if [[ "$EVENT" == push ]]; then
+            tip="$(gh api "repos/$GH_REPO/git/ref/heads/$BRANCH" --jq .object.sha)"
+            if [[ "$tip" != "$SHA" ]]; then
+              echo "${SHA:0:7} is no longer the head of $BRANCH; its run of $NAME stays cancelled." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            head="$BRANCH"
+          else
+            number="$(gh api "repos/$GH_REPO/commits/$SHA/pulls" \
+              --jq "map(select(.state == \"open\" and .head.sha == \"$SHA\")) | .[0].number // empty")"
+            if [[ -z "$number" ]]; then
+              echo "${SHA:0:7} is not the head of an open pull request; its run of $NAME stays cancelled." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            head="#$number"
           fi
           # A newer run of the same commit reports the checks itself.
           newer="$(gh api "repos/$GH_REPO/actions/workflows/$WORKFLOW/runs?head_sha=$SHA" --paginate \
             --jq ".workflow_runs[] | select(.id > $RUN) | .id")"
           if [[ -n "$newer" ]]; then
-            echo "A newer run of $NAME for ${SHA:0:7} reports the checks of #$number." >> "$GITHUB_STEP_SUMMARY"
+            echo "A newer run of $NAME for ${SHA:0:7} reports the checks of $head." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           # Cancelled by the concurrency of the workflow, which says so on the job.
@@ -412,7 +640,17 @@ jobs:
             exit 0
           fi
           gh run rerun "$RUN"
-          echo "A run for an older commit cancelled $NAME for the head of #$number; it runs again." >> "$GITHUB_STEP_SUMMARY"
+          echo "A run for an older commit cancelled $NAME for the head of $head; it runs again." >> "$GITHUB_STEP_SUMMARY"
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
 
   coach:
     name: PR coach
@@ -430,15 +668,19 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
-      actions: read # the coverage reports and the website that the checks kept
+      actions: read # the coverage reports, the website and the parts that the workflows kept
       checks: read
       contents: read
       pull-requests: write
     steps:
-      - name: Record the network traffic of the job
+      - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
       # The default branch, for blueprint.py, the explanations and the versions of
       # release-please; nothing of the pull request is checked out or run, its checks
       # only come from the API.
@@ -482,6 +724,9 @@ jobs:
             echo "head=$RUNNER_TEMP/head/$report"
             echo "base=$RUNNER_TEMP/base/$report"
           } >> "$GITHUB_OUTPUT"
+      # The coach also downloads the artifact pr-report-<name> of each part that the
+      # catalog of main declares, into a folder of its own, and reads its report.md
+      # as data; a workflow that ends after this run shows its part in the next one.
       - name: Keep the one report of the PR coach up to date
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -496,6 +741,16 @@ jobs:
           [[ -f "$script" ]] || script=blueprint.py
           python3 "$script" --repo "$GH_REPO" coach report "$SHA" --pull "$NUMBER" \
             --coverage "$COVERAGE" --coverage-base "$COVERAGE_BASE" >> "$GITHUB_STEP_SUMMARY"
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
 
   fixes:
     name: the fix bot
@@ -527,10 +782,14 @@ jobs:
       issues: write # the issue of the fix bot of main, when it fails
       pull-requests: write # the suggestions on a pull request from a fork, and the comment when the bot fails
     steps:
-      - name: Record the network traffic of the job
+      - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
       # The tool of main, never the code of the pull request; the fixes are data.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -567,15 +826,47 @@ jobs:
           [[ -f "$tool" ]] || tool=blueprint.py
           python3 "$tool" --repo "$GH_REPO" fix suggest --sha "$SHA" --pull "$PULL" \
             --folder "$RUNNER_TEMP/fixes" >> "$GITHUB_STEP_SUMMARY"
-      - name: Say that no bot commits the fixes without the release app
-        if: >-
-          contains(fromJSON('["commit", "pull-request", "close"]'), steps.collect.outputs.action) &&
-          vars.RELEASE_AUTOMATION_CLIENT_ID == ''
+      # Without the release app of the owner, the run names what is missing rather than
+      # fail at the token; every workflow has this step, the same but for its variables.
+      - name: Check that the release app is set up
+        id: release-app
+        if: contains(fromJSON('["commit", "pull-request", "close"]'), steps.collect.outputs.action)
+        env:
+          CLIENT_ID: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          KEY_SET: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY != '' }}
+          # Who needs the app and for what, what happens without it, and whether the
+          # run fails then.
+          BOT: the fix bot
+          TASK: commit the fixes that the checks found
+          WITHOUT: the PR coach names the command of each check that failed, and the artifacts fixes-* of the checks hold the files
+          REQUIRED: "false"
         run: |
-          echo "::warning::The checks found what a command fixes, but without the release app no bot commits the fixes. The PR coach names the command of each check that failed, and the artifacts fixes-* of the checks hold the files."
+          if [[ -z "$CLIENT_ID" ]]; then
+            missing="names no release app in the variable RELEASE_AUTOMATION_CLIENT_ID"
+          elif [[ "$KEY_SET" != true ]]; then
+            missing="has no private key of its release app in the secret RELEASE_AUTOMATION_PRIVATE_KEY of the environment release"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          level=warning
+          if [[ "$REQUIRED" == true ]]; then
+            level=error
+          fi
+          echo "::$level::This repository $missing, which $BOT needs to $TASK; $WITHOUT."
+          {
+            echo "### ${BOT^} needs the release app of the owner"
+            echo
+            echo "This repository $missing, which $BOT needs to $TASK; $WITHOUT. The release app is a GitHub App of the owner, whose token may do what the token of a job can't: start the checks of a pull request, change a workflow and apply the settings."
+            echo
+            echo "\`python3 .github/blueprint.py checklist\` shows the steps: a link that registers the app with its permissions filled in, the update of the answers of the blueprint that names it in \`.github/repository.toml\`, the settings and its private key. Once they are done, $BOT can $TASK in its next run."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$REQUIRED" == true ]]; then
+            exit 1
+          fi
       - name: Create a token of the release app for the branch
         id: branch-app
-        if: steps.collect.outputs.action == 'commit' && vars.RELEASE_AUTOMATION_CLIENT_ID != ''
+        if: steps.collect.outputs.action == 'commit' && steps.release-app.outputs.ready == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
@@ -602,7 +893,7 @@ jobs:
         id: main-app
         if: >-
           contains(fromJSON('["pull-request", "close"]'), steps.collect.outputs.action) &&
-          vars.RELEASE_AUTOMATION_CLIENT_ID != ''
+          steps.release-app.outputs.ready == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
@@ -668,6 +959,16 @@ jobs:
           else
             gh issue create --title "$title" --label maintenance --body "$body"
           fi
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
 
   diagrams:
     name: commit the diagrams
@@ -694,10 +995,14 @@ jobs:
       # The first line of the bot's commits.
       HEADLINE: "docs: draw the diagrams anew"
     steps:
-      - name: Record the network traffic of the job
+      - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
       - name: Fetch the diagrams that the check drew
         id: drawn
         env:
@@ -725,9 +1030,47 @@ jobs:
           sparse-checkout: |
             .github/blueprint
             blueprint
+      # Without the release app of the owner, the run names what is missing rather than
+      # fail at the token; every workflow has this step, the same but for its variables.
+      - name: Check that the release app is set up
+        id: release-app
+        if: steps.drawn.outputs.found == 'true'
+        env:
+          CLIENT_ID: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          KEY_SET: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY != '' }}
+          # Who needs the app and for what, what happens without it, and whether the
+          # run fails then.
+          BOT: the diagram bot
+          TASK: commit the diagrams onto the branch of the pull request
+          WITHOUT: the artifact diagrams of the check diagrams holds them, and bash scripts/diagrams.sh --extract draws them
+          REQUIRED: "false"
+        run: |
+          if [[ -z "$CLIENT_ID" ]]; then
+            missing="names no release app in the variable RELEASE_AUTOMATION_CLIENT_ID"
+          elif [[ "$KEY_SET" != true ]]; then
+            missing="has no private key of its release app in the secret RELEASE_AUTOMATION_PRIVATE_KEY of the environment release"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          level=warning
+          if [[ "$REQUIRED" == true ]]; then
+            level=error
+          fi
+          echo "::$level::This repository $missing, which $BOT needs to $TASK; $WITHOUT."
+          {
+            echo "### ${BOT^} needs the release app of the owner"
+            echo
+            echo "This repository $missing, which $BOT needs to $TASK; $WITHOUT. The release app is a GitHub App of the owner, whose token may do what the token of a job can't: start the checks of a pull request, change a workflow and apply the settings."
+            echo
+            echo "\`python3 .github/blueprint.py checklist\` shows the steps: a link that registers the app with its permissions filled in, the update of the answers of the blueprint that names it in \`.github/repository.toml\`, the settings and its private key. Once they are done, $BOT can $TASK in its next run."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$REQUIRED" == true ]]; then
+            exit 1
+          fi
       - name: Create a token of the release app
         id: app
-        if: steps.drawn.outputs.found == 'true' && vars.RELEASE_AUTOMATION_CLIENT_ID != ''
+        if: steps.release-app.outputs.ready == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
@@ -770,6 +1113,16 @@ jobs:
           if [[ -s "$RUNNER_TEMP/comment.md" ]]; then
             gh pr comment "${NUMBER:-$BRANCH}" --body-file "$RUNNER_TEMP/comment.md"
           fi
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
       # The failed check of the pull request promises the bot's commit; when the bot
       # can't make it, the pull request learns so, with the command that fixes it.
       - name: Say on the pull request that the bot failed

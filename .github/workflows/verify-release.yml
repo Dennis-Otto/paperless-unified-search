@@ -17,7 +17,7 @@ on:
         type: string
         required: false
   schedule:
-    - cron: "17 5 * * 3"
+    - cron: "49 5 * * 0"
   workflow_dispatch:
     inputs:
       tag:
@@ -25,6 +25,10 @@ on:
         required: false
 
 permissions: {}
+
+# The GitHub CLI of the jobs sends no telemetry to GitHub.
+env:
+  GH_TELEMETRY: "false"
 
 jobs:
   verify:
@@ -36,10 +40,23 @@ jobs:
       attestations: read
       contents: read
     steps:
-      - name: Record the network traffic of the job
+      - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
+            release-assets.githubusercontent.com:443
+            rekor.sigstore.dev:443
+            tuf-repo-cdn.sigstore.dev:443
+            tuf-repo.github.com:443
+            tmaproduction.blob.core.windows.net:443
+            ${{ vars.PUBLISH_TO == 'pypi' && 'pypi.org:443' || '' }}
+            ${{ vars.PUBLISH_TO == 'npm' && 'registry.npmjs.org:443' || '' }}
+            ${{ vars.PUBLISH_TO == 'ghcr' && 'ghcr.io:443 pkg-containers.githubusercontent.com:443' || '' }}
+            ${{ vars.PUBLISH_TO == 'nextcloud-appstore' && 'apps.nextcloud.com:443' || '' }}
       - name: Verify the release as its users can
         env:
           GH_TOKEN: ${{ github.token }}
@@ -232,6 +249,78 @@ jobs:
                 fail "$image has no valid provenance."
               fi
               ;;
+            hacs)
+              # HACS installs the zip that hacs.json at the tag names, unpacked into
+              # custom_components/<domain>/, where Home Assistant reads the domain and
+              # the version of its manifest.json. It offers the latest release to every
+              # user, and a prerelease only to those who show its betas.
+              hacs="$(gh api -H "Accept: application/vnd.github.raw+json" \
+                "repos/$GH_REPO/contents/hacs.json?ref=$TAG" 2>/dev/null || true)"
+              zip="$(jq -r 'if .zip_release == true then .filename // "" else "" end' \
+                <<<"$hacs" 2>/dev/null || true)"
+              domain="$(gh api "repos/$GH_REPO/contents/custom_components?ref=$TAG" \
+                --jq '[.[] | select(.type == "dir") | .name] | join(" ")' 2>/dev/null || true)"
+              if [[ -z "$zip" ]]; then
+                fail "hacs.json at $TAG names no zip_release and filename, so HACS installs the files of the tag, not the asset with the provenance."
+              elif [[ ! -f "$zip" ]]; then
+                fail "The release has no $zip, the zip that hacs.json names for HACS."
+              else
+                manifest="$(python3 -c 'import sys, zipfile; print(zipfile.ZipFile(sys.argv[1]).read("manifest.json").decode())' \
+                  "$zip" 2>/dev/null || true)"
+                zipped_domain="$(jq -r '.domain // ""' <<<"$manifest" 2>/dev/null || true)"
+                zipped_version="$(jq -r '.version // ""' <<<"$manifest" 2>/dev/null || true)"
+                if [[ -z "$manifest" ]]; then
+                  fail "$zip has no manifest.json at its root, so HACS unpacks the integration one folder too deep."
+                elif [[ -n "$domain" && "$zipped_domain" == "$domain" ]]; then
+                  pass "$zip holds the integration $domain at its root, as HACS unpacks it into custom_components/$domain/."
+                else
+                  fail "The manifest.json of $zip has the domain ${zipped_domain:-none}, not that of custom_components/${domain:-?}/ at $TAG."
+                fi
+                if [[ -n "$manifest" && "$zipped_version" == "$version" ]]; then
+                  pass "Its manifest.json has the version $version, which Home Assistant shows."
+                elif [[ -n "$manifest" ]]; then
+                  fail "The manifest.json of $zip has the version ${zipped_version:-none}, not $version."
+                fi
+              fi
+              latest="$(gh api "repos/$GH_REPO/releases/latest" --jq .tag_name 2>/dev/null || true)"
+              prerelease="$(jq -r .prerelease <<<"$release")"
+              if [[ "$version" == *-* && "$prerelease" == true ]]; then
+                pass "HACS offers the prerelease $TAG only to those who show its betas."
+              elif [[ "$version" == *-* ]]; then
+                fail "$TAG has the version of a prerelease but isn't marked as one, so HACS offers it to every user."
+              elif [[ "$prerelease" == true ]]; then
+                fail "$TAG is marked as a prerelease, so HACS offers it only to those who show its betas."
+              elif [[ "$latest" == "$TAG" ]]; then
+                pass "HACS offers $TAG to every user, as the latest release."
+              elif [[ -n "$latest" && "$(printf '%s\n' "$version" "${latest#v}" | sort -V | tail -n 1)" != "$version" ]]; then
+                pass "HACS offers the newer release $latest; $TAG stays for those who choose it."
+              else
+                fail "The latest release is ${latest:-none}, not $TAG, so HACS doesn't offer it."
+              fi
+              ;;
+            chrome-web-store)
+              # publish-store.yml uploads this zip to the Chrome Web Store, which reads
+              # the manifest.json at its root; a manifest takes only the numbers of a
+              # version, so a beta, such as 1.3.0-beta.2, has 1.3.0.
+              numbers="$(grep -oE '^[0-9]+([.][0-9]+)*' <<<"$version")"
+              zips=(./*.zip)
+              if [[ ${#zips[@]} -ne 1 || ! -f "${zips[0]}" ]]; then
+                if [[ "$WEEKLY" == true ]]; then
+                  echo "::notice::The release is older than the zip of the extension for the Chrome Web Store."
+                else
+                  fail "The release has no single zip of the extension for the Chrome Web Store."
+                fi
+              else
+                manifest="$(python3 -c 'import sys, zipfile; print(zipfile.ZipFile(sys.argv[1]).read("manifest.json").decode())' \
+                  "${zips[0]}" 2>/dev/null || true)"
+                zipped="$(jq -r '"\(.manifest_version) \(.version)"' <<<"$manifest" 2>/dev/null || true)"
+                if [[ "$zipped" == "3 $numbers" ]]; then
+                  pass "${zips[0]} holds the manifest.json of Manifest V3 and the version $numbers at its root, as the Chrome Web Store takes it."
+                else
+                  fail "${zips[0]} has no manifest.json of Manifest V3 and the version $numbers at its root."
+                fi
+              fi
+              ;;
             nextcloud-appstore)
               app_id="$(gh api -H "Accept: application/vnd.github.raw+json" \
                 "repos/$GH_REPO/contents/appinfo/info.xml?ref=$TAG" |
@@ -277,3 +366,13 @@ jobs:
             exit 1
           fi
           echo "The release $TAG verifies." >> "$GITHUB_STEP_SUMMARY"
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."

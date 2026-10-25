@@ -192,7 +192,7 @@
   "osps_vm_04_02_status": "Met",
   "osps_vm_04_02_justification": "When the project accepts an advisory in osv-scanner.toml, with its reason, the release carries an OpenVEX document that tells scanners that the advisory doesn't affect it: https://github.com/Dennis-Otto/paperless-unified-search/blob/main/SECURITY.md#verify-a-release",
   "osps_vm_06_01_status": "Met",
-  "osps_vm_06_01_justification": "SECURITY.md sets the threshold: a new alert of CodeQL of high or critical severity, or a new error, stops the merge, and the Findings workflow fails while a finding is open that isn't accepted with its reason: https://github.com/Dennis-Otto/paperless-unified-search/blob/main/SECURITY.md#findings-of-code-scanning",
+  "osps_vm_06_01_justification": "SECURITY.md sets the threshold: a new alert of CodeQL of high or critical severity, or a new error, stops the merge, and so does every new alert of zizmor, and the Findings workflow fails while a finding is open that isn't accepted with its reason: https://github.com/Dennis-Otto/paperless-unified-search/blob/main/SECURITY.md#findings-of-code-scanning",
   "osps_vm_06_02_status": "Met",
   "osps_vm_06_02_justification": "CodeQL analyzes every pull request as a required check, and the ruleset of main stops the merge of one that adds an alert of high or critical severity; a finding is accepted only with its reason in .github/findings.toml: https://github.com/Dennis-Otto/paperless-unified-search/blob/main/.github/findings.toml"
 }

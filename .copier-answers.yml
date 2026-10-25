@@ -1,7 +1,7 @@
 # The answers of the blueprint (https://github.com/Dennis-Otto/repo-blueprint);
 # `copier update` reads them to bring the repository up to the latest release.
 # Change them only with `copier update --data name=value`.
-_commit: v1.0.8
+_commit: v1.1.0
 _src_path: https://github.com/Dennis-Otto/repo-blueprint.git
 author: Dennis Otto
 copyright: 2026 Dennis Otto
@@ -25,6 +25,7 @@ renovate_runner: hub
 sample_code: false
 sponsor: Dennis-Otto
 successor: true
+test_marker: ''
 test_workflows: Demo, Visual check
 topics: document-management, full-text-search, nextcloud, ocr, paperless-ngx, php,
     search

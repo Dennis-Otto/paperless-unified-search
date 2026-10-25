@@ -9,7 +9,7 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "47 3 * * 0"
+    - cron: "20 3 * * 4"
   workflow_dispatch:
 
 # Published Scorecard results require read-all here and only the job permissions below.
@@ -44,8 +44,10 @@ jobs:
           name: scorecard-sarif
           path: results.sarif
           retention-days: 5
+      # Not to a private repository without GitHub Code Security, which keeps the
+      # results in the artifact above.
       - name: Upload results to code scanning
-        if: always()
+        if: always() && vars.CODE_SCANNING != 'off'
         uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           sarif_file: results.sarif
