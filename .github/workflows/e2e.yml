@@ -38,10 +38,10 @@ name: Docker E2E
 # (tests/e2e/scope.sh with SCOPE=paperless); otherwise it passes in seconds. Its two
 # jobs, "paperless (2)" and "paperless (3)", are required checks: they always run in a
 # pull request, so auto-merge waits for the contract, and with about two minutes they
-# end before the job "nextcloud" beside them, so they cost no time. A failure of the weekly run opens the issue
-# "Paperless-ngx breaks the app", or adds the run to it, and the next run that passes
-# closes it. Renovate brings every new release of Paperless-ngx as a pull request,
-# which runs the contract against it.
+# end before the job "nextcloud" beside them, so they cost no time. A failure of the
+# weekly run opens the issue "Paperless-ngx breaks the app", or adds the run to it,
+# and the next run that passes closes it. Renovate brings every new release of
+# Paperless-ngx as a pull request, which runs the contract against it.
 
 on:
   push:
@@ -267,7 +267,7 @@ jobs:
           {
             printf 'The weekly contract tests fail against a real Paperless-ngx: %s\n\n' "$RUN_URL"
             cat <<'TEXT'
-          The job `paperless` of `.github/workflows/e2e.yml` runs `tests/e2e/paperless-contract.sh` against the last release of Paperless-ngx 2 and the newest release: it checks the fields, dates, excerpts, pages and errors of the API of Paperless that the app relies on, directly and through Nextcloud. The summary of the run names the version of Paperless and the promise that it breaks, such as a field of another type or another markup of the excerpt; users of that Paperless see the same in their search.
+          The job `paperless` of `.github/workflows/e2e.yml` runs `tests/e2e/paperless-contract.sh` against the last release of Paperless-ngx 2 and the newest release: it checks the fields, dates, excerpts, pages and errors of the API of Paperless that the app relies on, the newest documents of the dashboard and the names of correspondents and document types, directly and through Nextcloud. The summary of the run names the version of Paperless and the promise that it breaks, such as a field of another type or another markup of the excerpt; users of that Paperless see the same in their search.
 
           `PAPERLESS=2 bash tests/e2e/paperless-contract.sh` or `PAPERLESS=3 …` runs the same tests locally with Docker.
 
