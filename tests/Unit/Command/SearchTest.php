@@ -133,6 +133,94 @@ final class SearchTest extends TestCase {
 	}
 
 	/**
+	 * The JSON is for people as well as for scripts: indented, with the slashes of a path
+	 * and the letters of a title as they are. A term that a shell sent in another encoding
+	 * than UTF-8 gets the replacement character, instead of leaving no JSON at all.
+	 */
+	public function testWritesJsonThatAPersonCanRead(): void {
+		$tester = $this->tester($this->documents([['id' => 412, 'title' => 'Stromrechnung März']], 1));
+
+		self::assertSame(Command::SUCCESS, $tester->execute(['user' => 'jamie', 'term' => "M\xE4rz", '--json' => true]));
+
+		self::assertSame(<<<JSON
+			{
+			    "user": "jamie",
+			    "term": "M\u{FFFD}rz",
+			    "count": 1,
+			    "documents": [
+			        {
+			            "title": "Stromrechnung März",
+			            "id": 412,
+			            "verdict": "shown",
+			            "path": "/Electricity [P412].pdf",
+			            "owner": "archive"
+			        }
+			    ]
+			}
+			JSON . "\n", $tester->getDisplay());
+	}
+
+	/**
+	 * A hit without the ID of a document, a whole number above 0, stands for none, as in
+	 * the search; a title that isn't text shows as none.
+	 */
+	public function testReadsTheHitsAsTheSearchDoes(): void {
+		$tester = $this->tester($this->documents([
+			['id' => 0, 'title' => 'Zero'],
+			['id' => -3, 'title' => 'Negative'],
+			['id' => 0.5, 'title' => 'A fraction'],
+			['id' => 'none', 'title' => 'Text'],
+			['title' => 'No ID'],
+			['id' => '412', 'title' => 'Electricity invoice'],
+			['id' => '389.0', 'title' => 7],
+		], 7));
+
+		self::assertSame(Command::SUCCESS, $tester->execute(['user' => 'jamie', 'term' => 'invoice']));
+
+		self::assertSame([
+			'| ID  | Title               | Verdict | File                    |',
+			'| 412 | Electricity invoice | shown   | /Electricity [P412].pdf |',
+			'| 389 |                     | hidden  |                         |',
+			'Paperless found 7 document(s) for "invoice"; 1 of the 2 above show to jamie.',
+			'Add --explain to see why the others don\'t.',
+		], self::rows($tester->getDisplay()));
+	}
+
+	/**
+	 * The limit counts from 1 to the 50 hits of a page of Paperless, both included.
+	 *
+	 * @return array<string, array{string, list<string>}>
+	 */
+	public static function limits(): array {
+		return [
+			'the first document' => ['1', [
+				'| 412 | Electricity invoice | shown   | /Electricity [P412].pdf |',
+				'Paperless found 12 document(s) for "invoice"; 1 of the 1 above show to jamie.',
+			]],
+			'a page of Paperless' => ['50', [
+				'| 412 | Electricity invoice | shown   | /Electricity [P412].pdf |',
+				'| 389 | Home insurance      | hidden  |                         |',
+				'| 371 | Internet invoice    | hidden  |                         |',
+				'| 360 | Letter              | hidden  |                         |',
+				'Paperless found 12 document(s) for "invoice"; 1 of the 4 above show to jamie.',
+			]],
+		];
+	}
+
+	/**
+	 * @param list<string> $rows
+	 */
+	#[DataProvider('limits')]
+	public function testGoesThroughAsManyDocumentsAsTheLimitSays(string $limit, array $rows): void {
+		$tester = $this->tester($this->documents(self::HITS, 12));
+
+		self::assertSame(Command::SUCCESS, $tester->execute(['user' => 'jamie', 'term' => 'invoice', '--limit' => $limit]));
+
+		self::assertSame((int)$limit, $this->requests[0][1]['query']['page_size']);
+		self::assertSame($rows, array_slice(self::rows($tester->getDisplay()), 1, count($rows)));
+	}
+
+	/**
 	 * Titles from Paperless and names of files are text, not markup of the console.
 	 */
 	public function testShowsTitlesAsText(): void {
@@ -176,6 +264,7 @@ final class SearchTest extends TestCase {
 			'a limit of 0' => [['--limit' => '0'], Command::INVALID, 'The limit is a number from 1 to 50.'],
 			'a limit above a page' => [['--limit' => '51'], Command::INVALID, 'The limit is a number from 1 to 50.'],
 			'a limit that is no number' => [['--limit' => 'ten'], Command::INVALID, 'The limit is a number from 1 to 50.'],
+			'a limit that is no whole number' => [['--limit' => '2.5'], Command::INVALID, 'The limit is a number from 1 to 50.'],
 			'a blank term' => [['term' => ' '], Command::INVALID, 'Name a term to search for.'],
 			'an account that does not exist' => [['user' => 'nobody'], Command::FAILURE, 'There is no account "nobody".'],
 		];
@@ -200,7 +289,19 @@ final class SearchTest extends TestCase {
 
 		self::assertSame(Command::FAILURE, $tester->execute(['user' => 'jamie', 'term' => 'invoice'], ['capture_stderr_separately' => true]));
 
-		self::assertStringStartsWith("Paperless Unified Search isn't connected to Paperless yet.", $tester->getErrorOutput());
+		self::assertSame("Paperless Unified Search isn't connected to Paperless yet. Connect it with occ paperless_unified_search:setup.\n", $tester->getErrorOutput());
+		self::assertSame([], $this->requests);
+	}
+
+	/**
+	 * occ shows an error in its colours, white on red, where the terminal shows colours.
+	 */
+	public function testShowsAnErrorInTheColoursOfAnError(): void {
+		$tester = $this->tester();
+
+		self::assertSame(Command::INVALID, $tester->execute(['user' => 'jamie', 'term' => 'invoice', '--limit' => '0'], ['capture_stderr_separately' => true, 'decorated' => true]));
+
+		self::assertSame("\e[37;41mThe limit is a number from 1 to 50.\e[39;49m\n", $tester->getErrorOutput());
 	}
 
 	public function testNeedsAnArchiveAccount(): void {
@@ -242,6 +343,23 @@ final class SearchTest extends TestCase {
 	}
 
 	/**
+	 * An error may repeat what the request sent, as a proxy may with its headers: the
+	 * error shows without the token and the term.
+	 */
+	public function testNamesARequestWithoutAnswerWithoutTheTokenAndTheTerm(): void {
+		$error = new RuntimeException('cURL error 56: Recv failure: the proxy refused "Authorization: Token TEST_VALUE" for invoice');
+		$tester = $this->tester($error, $error);
+
+		self::assertSame(Command::FAILURE, $tester->execute(['user' => 'jamie', 'term' => 'invoice'], [
+			'capture_stderr_separately' => true,
+			'verbosity' => OutputInterface::VERBOSITY_VERBOSE,
+		]));
+
+		self::assertSame('unreachable, RuntimeException: cURL error 56: Recv failure: the proxy refused "Authorization: Token …" for …', self::rows($tester->getErrorOutput())[1]);
+		self::assertStringNotContainsString('TEST_VALUE', $tester->getErrorOutput());
+	}
+
+	/**
 	 * Paperless 2 refuses a query in its advanced syntax that it can't read, and has no
 	 * simple mode of its search that would take it instead.
 	 */
@@ -259,6 +377,7 @@ final class SearchTest extends TestCase {
 		self::assertSame('paperless_unified_search:search', $command->getName());
 		self::assertSame(['user', 'term'], array_keys($command->getDefinition()->getArguments()));
 		self::assertSame('10', $command->getDefinition()->getOption('limit')->getDefault());
+		self::assertSame('How many documents of the ranking of Paperless to go through, up to 50', $command->getDefinition()->getOption('limit')->getDescription());
 	}
 
 	private function tester(IResponse|Throwable ...$answers): CommandTester {

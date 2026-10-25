@@ -139,7 +139,7 @@ final class Setup extends Command {
 		}
 
 		if (is_string($variable)) {
-			$token = $variable !== '' ? getenv($variable) : false;
+			$token = getenv($variable);
 			if (!is_string($token) || trim($token) === '') {
 				throw new UnexpectedValueException(sprintf('The environment variable "%s" holds no token.', $variable));
 			}

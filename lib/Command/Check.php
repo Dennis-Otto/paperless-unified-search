@@ -152,7 +152,7 @@ final class Check extends Command {
 			return self::showsDocuments($output, $archive, $archived !== [] || $status->documents === 0);
 		}
 
-		$missing = array_values(array_diff($status->documentIds, $archived));
+		$missing = array_diff($status->documentIds, $archived);
 		$covered = count($status->documentIds) - count($missing);
 		$coverage = sprintf('Coverage: %s of %s Paperless document(s) have a file of the archive account.', number_format($covered), number_format(count($status->documentIds)));
 		if ($missing === []) {

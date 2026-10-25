@@ -211,6 +211,18 @@ final class PaperlessSetupCheckTest extends TestCase {
 				},
 				'T:A search failed on formatted 1791400000 while looking for the files of the documents in Nextcloud, and none has worked since. Search problems in {section} shows what failed.',
 			],
+			// The history keeps the newest events: retries since may push the failure out.
+			'a failure that retries pushed out of the history' => [
+				static function (self $test): void {
+					$test->connected();
+					$history = DiagnosticsHistory::start(1791300000)->with($test->event(SearchEvent::KIND_FAILED, SearchEvent::STEP_FILES));
+					for ($retry = 0; $retry < DiagnosticsHistory::SIZE; $retry++) {
+						$history = $history->with($test->event(SearchEvent::KIND_RETRIED, SearchEvent::STEP_PAPERLESS));
+					}
+					$test->history($history);
+				},
+				'T:A search failed on formatted 1791400000 while asking Paperless, and none has worked since. Search problems in {section} shows what failed.',
+			],
 		];
 	}
 

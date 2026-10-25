@@ -163,7 +163,7 @@ final class PaperlessNames {
 	 * The IDs that a field names in these documents, each once, in their order.
 	 *
 	 * @param list<array<array-key, mixed>> $documents
-	 * @return list<int>
+	 * @return array<int, int> the IDs, each by itself
 	 */
 	private static function idsOf(array $documents, string $field): array {
 		$ids = [];
@@ -174,7 +174,7 @@ final class PaperlessNames {
 			}
 		}
 
-		return array_values($ids);
+		return $ids;
 	}
 
 	private function getCache(): ICache {
