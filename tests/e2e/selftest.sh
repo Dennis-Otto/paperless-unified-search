@@ -6,10 +6,11 @@
 # The tests of the scripts around the end-to-end tests, in a few seconds and without
 # Docker; scripts/check-project.sh runs them.
 #
-# - scope.sh, which decides whether the required check "nextcloud" runs the tests at
-#   all: in throwaway Git repositories, with real merge commits and pushes. A mistake
-#   there would let every pull request pass the check without the tests, and the pull
-#   request that makes it would still run them, as it changes tests/e2e/.
+# - scope.sh, which decides whether the required checks "nextcloud", "paperless (2)"
+#   and "paperless (3)" run their tests at all: in throwaway Git repositories, with real
+#   merge commits and pushes. A mistake there would let every pull request pass the
+#   check without the tests, and the pull request that makes it would still run them,
+#   as it changes tests/e2e/.
 # - run-all.sh, with a fake docker and a fake run.sh: a version that passes, one that
 #   fails and one that hangs, each in a group of its own, the table of the summary,
 #   the versions that broke as an output of the step, one download of the browser, the
@@ -124,18 +125,31 @@ expect "a pull request of a path that only looks like the app" false "$(pull_req
 expect "a pull request that moves a file out of the app" true "$(pull_request 'git mv lib/Search.php docs/Search.php')"
 expect "a pull request of the README and the roadmap" false "$(pull_request 'echo second >README.md && echo second >docs/roadmap.md')"
 
-# The contract tests against a real Paperless-ngx cover only the code that talks to
-# Paperless and reads its answers, and their own files.
+# The contract tests against a real Paperless-ngx cover the code of the app, which
+# talks to Paperless and reads its answers in many places, the mock of Paperless, in
+# whose container they run, and their own files.
 export SCOPE=paperless
 expect "a contract run for the requests to Paperless" true "$(pull_request 'mkdir -p lib/Service && echo new >lib/Service/PaperlessApiService.php')"
 expect "a contract run for the search" true "$(pull_request 'mkdir -p lib/Search && echo new >lib/Search/Provider.php')"
 expect "a contract run for the reading of what the token may do" true "$(pull_request 'mkdir -p lib/Model && echo new >lib/Model/TokenWarning.php')"
+expect "a contract run for the names of correspondents and types" true "$(pull_request 'mkdir -p lib/Service && echo new >lib/Service/PaperlessNames.php')"
+expect "a contract run for the newest documents of the dashboard" true "$(pull_request 'mkdir -p lib/Service && echo new >lib/Service/RecentDocuments.php')"
+expect "a contract run for the test of the connection in the settings" true "$(pull_request 'mkdir -p lib/Controller && echo new >lib/Controller/SettingsController.php')"
+expect "a contract run for the commands of occ" true "$(pull_request 'mkdir -p lib/Command && echo new >lib/Command/Check.php')"
+expect "a contract run for another file of the app" true "$(pull_request 'echo second >lib/Search.php')"
+expect "a contract run for the metadata of the app" true "$(pull_request 'mkdir -p appinfo && echo new >appinfo/info.xml')"
+expect "a contract run for the mock of Paperless" true "$(pull_request 'mkdir -p tests/e2e && echo new >tests/e2e/mock_server.py')"
 expect "a contract run for a document of the contract" true "$(pull_request 'mkdir -p tests/e2e/contract && echo new >tests/e2e/contract/letter.txt')"
 expect "a contract run for the workflow of the tests" true "$(pull_request 'echo second >.github/workflows/e2e.yml')"
-expect "no contract run for another file of the app" false "$(pull_request 'echo second >lib/Search.php')"
+expect "a contract run that moves a file out of the app" true "$(pull_request 'git mv lib/Search.php docs/Search.php')"
+expect "no contract run for the pages of the app" false "$(pull_request 'mkdir -p templates && echo new >templates/settings.php')"
 expect_in "the notice of a skipped contract run" "::notice title=Contract tests skipped::" "${WORK}/log"
+expect_in "the summary of a skipped contract run" "The check passes without running them." "${WORK}/summary"
 expect "no contract run for the other end-to-end tests" false "$(pull_request 'echo second >tests/e2e/README.md')"
 expect "no contract run for composer.json" false "$(pull_request 'echo second >composer.json')"
+expect "no contract run for the documentation" false "$(pull_request 'echo second >docs/roadmap.md')"
+expect "no contract run for a path that only looks like the app" false "$(pull_request 'echo second >docs/lib/notes.md')"
+expect "no contract run for another workflow" false "$(pull_request 'echo second >.github/workflows/lint.yml')"
 export SCOPE=unknown
 expect "an unknown scope" error "$(pull_request 'echo second >lib/Search.php')"
 unset SCOPE

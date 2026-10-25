@@ -10,9 +10,11 @@
 description = "Nextcloud app: Paperless-ngx OCR full-text search in Nextcloud's unified search, with no extra index; results open in the Nextcloud viewer"
 topics = ["nextcloud-app", "paperless", "unified-search", "self-hosted", "selfhosted", "homelab", "dms", "document-search"]
 
-# The end-to-end tests against every supported Nextcloud version (e2e.yml).
+# The end-to-end tests against every supported Nextcloud version, and the contract
+# with a real Paperless-ngx 2 and 3 (e2e.yml): auto-merge waits for them too. Each
+# passes in seconds in a pull request that changes no file it covers.
 [branch]
-required_checks = ["nextcloud"]
+required_checks = ["nextcloud", "paperless (2)", "paperless (3)"]
 
 # An environment of this project and the secrets it needs:
 # [environments.deploy]

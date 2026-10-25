@@ -707,13 +707,13 @@ bash tests/e2e/run.sh       # one Nextcloud version
 bash tests/e2e/run-all.sh   # every supported version at the same time, as the CI does
 ```
 
-The [contract tests](tests/e2e/README.md#against-a-real-paperless-ngx) run the app against a real Paperless-ngx 2.20 and 3.x instead of the mock, and check that the fields, dates, excerpts, pages and errors of Paperless stay as the app reads them:
+The [contract tests](tests/e2e/README.md#against-a-real-paperless-ngx) run the app against a real Paperless-ngx 2.20 and 3.x instead of the mock, and check that the fields, dates, excerpts, pages and errors of Paperless, the newest documents of the dashboard and the names of correspondents and document types stay as the app reads them:
 
 ```bash
 PAPERLESS=3 bash tests/e2e/paperless-contract.sh   # or PAPERLESS=2
 ```
 
-In the CI, the required check `nextcloud` runs the tests against every supported version in one job. A pull request that changes no file the tests cover, such as one that changes only the documentation, passes it in seconds without running them. Every Monday the check also runs without a change of the app, against the newest release behind each image of Nextcloud; when that breaks the app, it opens the issue *A supported Nextcloud release breaks the app* with the versions that broke, and closes it once they pass again. Set `KEEP_E2E=1` to leave the containers running for inspection. See [the mobile test matrix](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/tests/e2e/MANUAL_MOBILE_TESTS.md) for the final checks performed with official clients.
+In the CI, the required check `nextcloud` runs the tests against every supported version in one job. A pull request that changes no file the tests cover, such as one that changes only the documentation, passes it in seconds without running them. The contract tests are the required checks `paperless (2)` and `paperless (3)` beside it: they run in every pull request that changes the app or the mock of Paperless, and pass in seconds otherwise. Every Monday the check also runs without a change of the app, against the newest release behind each image of Nextcloud; when that breaks the app, it opens the issue *A supported Nextcloud release breaks the app* with the versions that broke, and closes it once they pass again. Set `KEEP_E2E=1` to leave the containers running for inspection. See [the mobile test matrix](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/tests/e2e/MANUAL_MOBILE_TESTS.md) for the final checks performed with official clients.
 
 ### Screenshots
 

@@ -78,19 +78,22 @@ fix the code or the test."""
 title = "The contract with a real Paperless-ngx"
 problem = """`tests/e2e/paperless-contract.sh` found that a real Paperless-ngx, of the
 line that the name of the check names, no longer answers as the app reads it: a field
-of another type, a date, the markup of an excerpt, a page or an error, directly or
-through Nextcloud. The summary of the check names the version of Paperless and the
+of another type, a date, the markup of an excerpt, a page, an error, the newest
+documents of the dashboard or the names of correspondents and document types, directly
+or through Nextcloud. The summary of the check names the version of Paperless and the
 promise that it broke."""
 why = """The end-to-end tests run against a mock of Paperless-ngx, and this check
-makes sure that the mock still answers as Paperless does, so that a new release of
-Paperless can't break the search of users unnoticed. It runs in a pull request that
-changes the code that talks to Paperless or reads its answers, such as one of Renovate
-with a new release of Paperless-ngx, and every week. It is no required check and blocks
-no merge."""
+makes sure that the app and the mock still read and answer as Paperless does, so that
+neither a change of the app nor a new release of Paperless can break the search of
+users unnoticed. It runs in every pull request that changes the app, `appinfo/` or
+`lib/`, the mock or the contract tests, such as one of Renovate with a new release of
+Paperless-ngx, and every week. The check is required, so auto-merge waits for it; a
+pull request that changes no file that it covers passes it in seconds."""
 fix = """Run the contract with Docker against the same line of Paperless-ngx. When
 Paperless changed, let the app read the answers of both lines, and let the mock,
 `tests/e2e/mock_server.py`, answer as Paperless does now; when the app changed, keep it
-to the contract:"""
+to the contract. `KEEP_E2E=1` leaves the containers running, so that you can look
+inside them:"""
 commands = [
   "PAPERLESS=3 bash tests/e2e/paperless-contract.sh",
   "PAPERLESS=2 bash tests/e2e/paperless-contract.sh",

@@ -31,13 +31,17 @@ name: Docker E2E
 # The job "paperless" checks the contract with a real Paperless-ngx
 # (tests/e2e/paperless-contract.sh), for the last release of Paperless-ngx 2 and the
 # newest release: the fields, dates, excerpts, pages and errors that the app relies on,
-# directly and through Nextcloud, with the version of the API that the app asks for.
-# It runs every Monday, when started by hand, and in a pull request that changes the
-# code that talks to Paperless or reads its answers (tests/e2e/scope.sh with
-# SCOPE=paperless); otherwise it passes in seconds. It is no required check either. A
-# failure of the weekly run opens the issue "Paperless-ngx breaks the app", or adds the
-# run to it, and the next run that passes closes it. Renovate brings every new release
-# of Paperless-ngx as a pull request, which runs the contract against it.
+# the newest documents of the dashboard and the names of correspondents and document
+# types, directly and through Nextcloud, with the version of the API that the app asks
+# for. It runs every Monday, when started by hand, and in a pull request that changes
+# the app, appinfo/ or lib/, the mock of Paperless or the contract tests
+# (tests/e2e/scope.sh with SCOPE=paperless); otherwise it passes in seconds. Its two
+# jobs, "paperless (2)" and "paperless (3)", are required checks: they always run in a
+# pull request, so auto-merge waits for the contract, and with about two minutes they
+# end before the job "nextcloud" beside them, so they cost no time. A failure of the weekly run opens the issue
+# "Paperless-ngx breaks the app", or adds the run to it, and the next run that passes
+# closes it. Renovate brings every new release of Paperless-ngx as a pull request,
+# which runs the contract against it.
 
 on:
   push:

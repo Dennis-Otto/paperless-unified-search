@@ -50,7 +50,7 @@ Sign in to Paperless as the account, open **My Profile** in the menu of the acco
 | **View** for **Note** | Nothing: the notes of a document match without it | Nothing is missing |
 | **Add**, **Change** or **Delete** | Nothing: the search only reads | Nothing is missing; the settings warn about any of them for documents, and about adding or changing users or changing groups, since whoever gets hold of such a token may change documents too |
 
-The contract tests check this table against real Paperless-ngx 2.20 and 3.x every week, together with the workflow and the permissions of the steps above.
+The contract tests check this table against real Paperless-ngx 2.20 and 3.x every week and in every pull request that changes the app, together with the workflow and the permissions of the steps above.
 
 To see what the search can find at most, sign in to Paperless as the account and search there: the search of Nextcloud finds the same documents, of which each user then sees those whose files they can open. A token of a superuser works as well, but whoever gets hold of it may also change and delete every document: a view-only account is the safer choice. The test of the connection says so: the settings warn below the token about an account that is a superuser or an admin, or may add, change or delete documents, and about one that may not view correspondents or document types, and [Troubleshooting](troubleshooting.md#warnings-about-the-api-token) says what to do about each warning.
 

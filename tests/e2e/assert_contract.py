@@ -13,8 +13,10 @@ with the version of the API and the fields that the app asks for, and what
 /api/ui_settings/ says of the account of a token, of a superuser and of an account that
 may only view, then through Nextcloud with the app set up for this Paperless, first with
 the token of the account that may only view and then with that of the superuser. Last, it
-checks what each permission of the account of the token gives the search, as the table of
-docs/configure.md says, directly and in the results of Nextcloud. It prints a report in Markdown, which
+gives the invoice a correspondent and a type, checks their names as the app asks for them
+with id__in, and what each permission of the account of the token gives the search, as the
+table of docs/configure.md says, directly and in the results of Nextcloud, where the names
+show. It prints a report in Markdown, which
 paperless-contract.sh adds to the summary of the job, and fails with the first broken
 promise.
 
@@ -75,6 +77,11 @@ CHANGING_DOCUMENTS = {"add_document", "change_document", "delete_document"}
 # with a word of its own, which only a search of the notes finds.
 CORRESPONDENT = "Contract Energy"
 DOCUMENT_TYPE = "Contract bill"
+# A second correspondent and type, which no document names: a list filtered by id__in
+# leaves them out unless the app asks for them. And an ID that no object of Paperless
+# has, the largest that its tables hold, which a list leaves out as well.
+OTHER_NAMES = {"correspondents": "Contract Water", "document_types": "Contract reminder"}
+UNKNOWN_ID = 2**31 - 1
 NOTE_TERM = "remittance"
 NOTE = f"Paid by {NOTE_TERM} on the due date."
 # A document that a workflow lets the account view as Paperless adds it, as step 2 of
@@ -527,11 +534,48 @@ def until(what, found):
 
 def names(paperless, token, path, ids):
     """The names of these correspondents or types that the account of a token may view,
-    as the app asks for them, or the status of a refusal."""
-    answer = paperless.as_account(token, f"/api/{path}/", id__in=",".join(map(str, ids)), page_size=len(ids))
+    by their ID, or the status of a refusal. It asks as PaperlessApiService::findNames
+    does, with id__in and as many on a page as it asks for, and checks the answer as the
+    app reads it: one page of results, each with its id as a number and its name as a
+    text, and none that it didn't ask for."""
+    query = {"id__in": ",".join(map(str, ids)), "page_size": len(ids)}
+    asked = f"/api/{path}/?id__in={query['id__in']}&page_size={len(ids)}"
+    answer = paperless.as_account(token, f"/api/{path}/", **query)
     if answer.status != 200:
         return answer.status
-    return sorted(result.get("name") for result in answer.json(f"/api/{path}/").get("results", []))
+    data = answer.json(asked)
+    results = data.get("results") if isinstance(data, dict) else None
+    expect(isinstance(results, list), f"{asked} answered without a list results, from which the app reads the names: {answer.body[:300]!r}")
+    expect(data.get("next") is None, f"{asked} doesn't fit on the one page that the app reads: next is {data.get('next')!r}")
+    found = {}
+    for result in results:
+        expect(
+            isinstance(result, dict) and isinstance(result.get("id"), int) and isinstance(result.get("name"), str),
+            f"{asked} sent an object without its id as a number and its name as a text, which the app reads, so a result shows no name: {result!r}",
+        )
+        found[result["id"]] = result["name"]
+    expect(set(found) <= set(ids), f"{asked} sent the IDs {sorted(found)}, also those that it wasn't asked for.")
+    return found
+
+
+def check_names(paperless, named, report):
+    """The names of the correspondents and the types of documents that a result shows next
+    to its date: Paperless sends only their IDs with the documents of a search, and the app
+    asks for their names with one request per kind (lib/Service/PaperlessNames.php). named
+    holds the ID and the name of the correspondent and the type of the invoice, by the path
+    of their list; a second object of each kind, which nothing asks for, and an ID that
+    Paperless doesn't know stay out of the answer."""
+    for path, (known, name) in named.items():
+        other = paperless.named(path, OTHER_NAMES[path])
+        found = names(paperless, paperless.token, path, [known, UNKNOWN_ID])
+        expect(found == {known: name}, f"/api/{path}/ names {found!r} for the IDs {known} and {UNKNOWN_ID}, not {name!r} alone.")
+        found = names(paperless, paperless.token, path, [other, known])
+        expected = {other: OTHER_NAMES[path], known: name}
+        expect(found == expected, f"/api/{path}/ names {found!r} for the IDs {other} and {known}, not {expected!r}.")
+    report.passed(
+        f"The names of correspondents and document types ({code('id__in')} with {code('page_size')}, as the app asks)",
+        f"one page with {code('id')} and {code('name')} of each object asked for, without the others and an ID that Paperless doesn't know",
+    )
 
 
 def check_permissions(paperless, ids, viewer_id, viewer, report):
@@ -546,6 +590,7 @@ def check_permissions(paperless, ids, viewer_id, viewer, report):
     document_type = paperless.named("document_types", DOCUMENT_TYPE)
     paperless.bulk_edit([invoice], "set_correspondent", {"correspondent": correspondent})
     paperless.bulk_edit([invoice], "set_document_type", {"document_type": document_type})
+    check_names(paperless, {"correspondents": (correspondent, CORRESPONDENT), "document_types": (document_type, DOCUMENT_TYPE)}, report)
     notes = paperless.get(f"/api/documents/{invoice}/notes/").json("The notes of the invoice")
     if not any(note.get("note") == NOTE for note in notes):
         answer = paperless.send(f"/api/documents/{invoice}/notes/", {"note": NOTE})
@@ -566,11 +611,12 @@ def check_permissions(paperless, ids, viewer_id, viewer, report):
         refused = names(paperless, documents_only, path, [correspondent, document_type])
         expect(refused == 403, f"/api/{path}/ answered an account without the permission to view them with {refused!r}, not HTTP 403.")
     owned = (names(paperless, viewer, "correspondents", [correspondent]), names(paperless, viewer, "document_types", [document_type]))
-    expect(owned == ([], []), f"An account names the correspondent and the type of the superuser before it may view them: {owned!r}")
+    expect(owned == ({}, {}), f"An account names the correspondent and the type of the superuser before it may view them: {owned!r}")
     paperless.let_view([viewer_id], objects=("correspondents", [correspondent]))
     paperless.let_view([viewer_id], objects=("document_types", [document_type]))
     shown = (names(paperless, viewer, "correspondents", [correspondent]), names(paperless, viewer, "document_types", [document_type]))
-    expect(shown == ([CORRESPONDENT], [DOCUMENT_TYPE]), f"The account names {shown!r} once it may view the correspondent and the type.")
+    expected = ({correspondent: CORRESPONDENT}, {document_type: DOCUMENT_TYPE})
+    expect(shown == expected, f"The account names {shown!r} once it may view the correspondent and the type, not {expected!r}.")
     report.passed(
         "View for correspondents and document types",
         "HTTP 403 without it; with it, the names of those that the account may view, so of another owner only once Permissions of the bulk editor lets it",
