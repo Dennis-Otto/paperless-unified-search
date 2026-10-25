@@ -115,8 +115,12 @@ async function searchAlways(browser, session, size) {
 		await page.goto(`${BASE_URL}${PERSONAL}`, { waitUntil: 'domcontentloaded' })
 		await page.locator(PERSONAL_SCOPE).waitFor()
 		await chooseAlwaysSearch(page, true)
+		// The dialog searches only the providers that it has loaded: a term typed before
+		// they arrive starts no search, and nothing else here would start one later.
+		const providers = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith('/search/providers'))
 		await page.goto(`${BASE_URL}${START}`, { waitUntil: 'domcontentloaded' })
 		await searchButton(page).click()
+		await providers
 		await search(page, (input) => input.fill(TERM))
 		await resultGroup(page, 'Paperless documents').getByRole('link', { name: RESULT, exact: true }).waitFor()
 		console.log(`Search dialog on a ${size.name} after choosing to always search Paperless: ${TITLE} without the switch.`)
