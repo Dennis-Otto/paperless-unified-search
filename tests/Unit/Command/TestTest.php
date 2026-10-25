@@ -15,7 +15,9 @@ use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppServices;
 use OCP\Http\Client\IResponse;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Tester\CommandTester;
 use Throwable;
 
@@ -81,6 +83,21 @@ final class TestTest extends TestCase {
 
 		self::assertSame('', $tester->getDisplay());
 		self::assertSame("Paperless rejected the API token (HTTP 403). Check the token, and that its account may view documents.\n", $tester->getErrorOutput());
+	}
+
+	/**
+	 * An error may repeat what the request sent, as a proxy may with its headers: -v shows
+	 * it without the token.
+	 */
+	public function testNamesARequestWithoutAnswerWithoutTheToken(): void {
+		$this->connected();
+		$error = new RuntimeException('cURL error 56: Recv failure: the proxy refused "Authorization: Token TEST_VALUE"');
+		$tester = $this->tester($error, $error);
+
+		self::assertSame(Command::FAILURE, $tester->execute([], ['capture_stderr_separately' => true, 'verbosity' => OutputInterface::VERBOSITY_VERBOSE]));
+
+		self::assertStringEndsWith("\nunreachable, RuntimeException: cURL error 56: Recv failure: the proxy refused \"Authorization: Token …\"\n", $tester->getErrorOutput());
+		self::assertStringNotContainsString('TEST_VALUE', $tester->getErrorOutput());
 	}
 
 	public function testFailsWithoutAConnection(): void {

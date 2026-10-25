@@ -25,6 +25,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use RuntimeException;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Tester\CommandTester;
 use Throwable;
 
@@ -103,6 +104,19 @@ final class CheckTest extends TestCase {
 		self::assertSame(Command::SUCCESS, $tester->execute([]));
 
 		self::assertStringContainsString("! Coverage: 1 of 3 Paperless document(s) have a file of the archive account. Without one: 2, 3.\n", $tester->getDisplay());
+	}
+
+	/**
+	 * Ten documents without a file are all that the check names, without others among them.
+	 */
+	public function testNamesTenDocumentsWithoutAFileAsAll(): void {
+		$this->connected();
+		$this->file('/archive/files/Paperless/Document [P1].pdf');
+		$tester = $this->tester($this->documents([['id' => 1]], 11, range(1, 11)));
+
+		self::assertSame(Command::SUCCESS, $tester->execute([]));
+
+		self::assertStringContainsString("! Coverage: 1 of 11 Paperless document(s) have a file of the archive account. Without one: 2, 3, 4, 5, 6, 7, 8, 9, 10, 11.\n", $tester->getDisplay());
 	}
 
 	/**
@@ -198,6 +212,21 @@ final class CheckTest extends TestCase {
 		// The shares still say who would find the documents.
 		self::assertSame("✓ The archive account is archive.\n" . self::NO_SHARES, $tester->getDisplay());
 		self::assertSame("Paperless answered with an error (HTTP 502). Check its log, or try again later.\n", $tester->getErrorOutput());
+	}
+
+	/**
+	 * An error may repeat what the request sent, as a proxy may with its headers: -v shows
+	 * it without the token.
+	 */
+	public function testNamesARequestWithoutAnswerWithoutTheToken(): void {
+		$this->connected();
+		$error = new RuntimeException('cURL error 56: Recv failure: the proxy refused "Authorization: Token TEST_VALUE"');
+		$tester = $this->tester($error, $error);
+
+		self::assertSame(Command::FAILURE, $tester->execute([], ['capture_stderr_separately' => true, 'verbosity' => OutputInterface::VERBOSITY_VERBOSE]));
+
+		self::assertStringEndsWith("\nunreachable, RuntimeException: cURL error 56: Recv failure: the proxy refused \"Authorization: Token …\"\n", $tester->getErrorOutput());
+		self::assertStringNotContainsString('TEST_VALUE', $tester->getErrorOutput());
 	}
 
 	/**

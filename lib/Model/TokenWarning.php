@@ -51,10 +51,8 @@ enum TokenWarning: string {
 	 *                     permissions of the account
 	 */
 	public static function of(mixed $uiSettings): ?array {
-		if (!is_array($uiSettings)) {
-			return null;
-		}
-
+		// An answer that isn't an object says as little as an empty one.
+		$uiSettings = is_array($uiSettings) ? $uiSettings : [];
 		/** @psalm-suppress MixedAssignment The answer of Paperless, checked before use. */
 		$user = $uiSettings['user'] ?? null;
 		/** @psalm-suppress MixedAssignment The same. */

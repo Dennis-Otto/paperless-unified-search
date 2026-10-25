@@ -684,7 +684,7 @@ Das Archiv für den Betrieb lässt Tests, Werkzeuge für Releases, die Entwicklu
 
 ### Mutationstests
 
-Jede Zeile von `lib/` läuft in einem Unit-Test, aber eine Zeile, die läuft, ist damit noch nicht geprüft. Jede Woche lässt der Workflow Mutation [Infection](https://infection.github.io/) den Code in kleinen Schritten ändern, einen Mutanten nach dem anderen, und die Unit-Tests gegen jede Änderung laufen. Die Tests bemerken jeden Mutanten außer denen, die nichts an dem ändern, was die App tut, 22 von 1.070 im Oktober 2026, die [`infection.json5`](infection.json5) mit dem Grund aufführt. Also ist die Punktzahl, das *covered code MSI*, 100 %, und ein Mutant, der entkommt, ist eine Lücke in den Tests oder eine Änderung ohne Unterschied, die dort zu erklären ist.
+Jede Zeile von `lib/` läuft in einem Unit-Test, aber eine Zeile, die läuft, ist damit noch nicht geprüft. Jede Woche lässt der Workflow Mutation [Infection](https://infection.github.io/) den Code in kleinen Schritten ändern, einen Mutanten nach dem anderen, und die Unit-Tests gegen jede Änderung laufen. Die Tests bemerken jeden Mutanten außer denen, die nichts an dem ändern, was die App tut, 34 von 2.187 im Oktober 2026, die [`infection.json5`](infection.json5) mit dem Grund aufführt. Also ist die Punktzahl, das *covered code MSI*, 100 %, und ein Mutant, der entkommt, ist eine Lücke in den Tests oder eine Änderung ohne Unterschied, die dort zu erklären ist.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/the-mutation-tests.de.dark.svg">
@@ -697,6 +697,8 @@ Um sie selbst auszuführen, mit PHP 8.3 oder neuer und pcov oder Xdebug und [dem
 composer install
 php infection.phar --threads=max
 ```
+
+Während du an einer Datei arbeitest, ändert `--filter` nur diese, etwa `--filter=lib/Command/Search.php`, und prüft ihre Mutanten in Sekunden. Ein Mutant, der entkommt, bekommt einen Test dessen, was Nutzer oder Administratoren bemerken würden, etwa ein Limit von genau 50 oder ein Korrespondent und ein Dokumenttyp mit derselben ID, die jeweils ihren eigenen Namen behalten; nur eine Änderung ohne Unterschied kommt in `infection.json5`, über ihre Zeile und mit dem Grund.
 
 Die Unit-Tests lassen die App gegen Nachbildungen von Nextcloud laufen, die sich wie Nextcloud verhalten: [`MemoryAppConfig`](tests/Unit/MemoryAppConfig.php) für die Konfiguration der Apps, die wie Nextcloud den Standardwert für einen Lazy-Wert liefert, nach dem ein Lesen ohne das Lazy-Flag fragt, und [`MemoryCache`](tests/Unit/MemoryCache.php) für den verteilten Cache.
 

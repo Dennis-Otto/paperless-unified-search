@@ -259,22 +259,20 @@ final class NextcloudFileLocator {
 	 * The IDs of the documents whose markers a name carries, each once: only the exact
 	 * marker, so [P012] is none of document 12, and [p12] none either.
 	 *
-	 * @return list<int>
+	 * @return array<int, int> the IDs, each by itself
 	 */
 	private static function documentIdsIn(string $name): array {
-		if (preg_match_all('/\[P(\d+)\]/', $name, $matches) < 1) {
-			return [];
-		}
+		preg_match_all('/\[P(\d+)\]/', $name, $matches);
 
 		$documentIds = [];
-		foreach ($matches[1] as $digits) {
+		foreach ($matches[1] ?? [] as $digits) {
 			$documentId = (int)$digits;
 			if ((string)$documentId === $digits) {
 				$documentIds[$documentId] = $documentId;
 			}
 		}
 
-		return array_values($documentIds);
+		return $documentIds;
 	}
 
 	/**
