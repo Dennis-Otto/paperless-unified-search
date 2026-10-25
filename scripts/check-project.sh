@@ -329,11 +329,14 @@ says docs/install.de.md "| **PHP** | $php_min oder neuer"
 says docs/faq.de.md "Nextcloud $nextcloud_min bis $nextcloud_max"
 says docs/reference.de.md "| $columns"
 says docs/reference.de.md "**PHP:** $php_min oder neuer"
-says appinfo/info.xml "- Nextcloud $nextcloud_min to $nextcloud_max"
-says appinfo/info.xml "- Nextcloud $nextcloud_min bis $nextcloud_max"
-says appinfo/info.xml "- Nextcloud $nextcloud_min a $nextcloud_max"
-says appinfo/info.xml "- Nextcloud $nextcloud_min à $nextcloud_max"
-says appinfo/info.xml "- Nextcloud $nextcloud_min tot $nextcloud_max"
+# Every description of the App Store, in whatever language, names the versions in
+# one line "- Nextcloud <min> <word> <max>", such as "to", "bis", "à" or "tot".
+descriptions="$(grep -c '<description' appinfo/info.xml || true)"
+named="$(grep -cE "^- Nextcloud $nextcloud_min [^ ]+ $nextcloud_max\$" appinfo/info.xml || true)"
+if [[ "$descriptions" != "$named" ]]; then
+  echo "appinfo/info.xml has $descriptions description(s) for the App Store, but only $named line(s) \"- Nextcloud $nextcloud_min <to> $nextcloud_max\": write the versions of appinfo/info.xml in each description."
+  version_problems=$((version_problems + 1))
+fi
 if ((version_problems > 0)); then
   exit 1
 fi

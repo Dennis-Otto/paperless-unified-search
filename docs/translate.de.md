@@ -41,7 +41,7 @@ Jede Zeile verbindet einen Text des Codes, auf Englisch, mit seiner Übersetzung
     "Paperless documents": "Documents Paperless",
     "The archive account %s does not exist.": "Le compte d’archive %s n’existe pas.",
     "The request failed (HTTP {status}).": "La requête a échoué (HTTP {status}).",
-    "_%n user_::_%n users_": ["%n utilisateur", "%n d’utilisateurs", "%n utilisateurs"]
+    "_%n user_::_%n users_": ["%n utilisateur", "%n utilisateurs", "%n utilisateurs"]
   },
   "pluralForm": "nplurals=3; plural=(n == 0 || n == 1) ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;"
 }
@@ -49,7 +49,7 @@ Jede Zeile verbindet einen Text des Codes, auf Englisch, mit seiner Übersetzung
 
 - **Der englische Text links bleibt, wie er ist,** Zeichen für Zeichen: Der Code sucht die Übersetzung über ihn. Ändere nur den Text rechts.
 - **Platzhalter bleiben,** etwa `%s`, `%1$s`, `%n`, `{status}` und `{account}`: Die App setzt dort einen Namen, eine Zahl oder einen Link ein. Die Wörter um sie herum dürfen wandern, und `%1$s` und `%2$s` dürfen die Plätze tauschen.
-- **Ein Plural,** dessen Text `_singular_::_plural_` lautet, hat so viele Formen, wie `pluralForm` mit `nplurals` nennt, in der Reihenfolge seiner Regel: Französisch und Spanisch eins, viele (für Millionen, etwa *1 000 000 d’utilisateurs*) und andere, Deutsch und Niederländisch eins und andere. `pluralForm` ist die des Katalogs von Nextcloud selbst für die Sprache.
+- **Ein Plural,** dessen Text `_singular_::_plural_` lautet, hat so viele Formen, wie `pluralForm` mit `nplurals` nennt: Deutsch und Niederländisch eins und andere, Französisch und Spanisch drei. Nextcloud wählt für Französisch und Spanisch aber nur *eins* oder *andere* (Form 0 oder 1), nie die dritte Form für Millionen. Darum wiederholt die mittlere Form die Form *andere*, wie in Nextclouds eigenen Katalogen; sonst schlägt `scripts/check-l10n.mjs` fehl. `pluralForm` ist die des Katalogs von Nextcloud selbst für die Sprache.
 - **Die Wörter von Nextcloud:** Ein Wort, das auch Nextcloud zeigt, bekommt die Übersetzung von Nextcloud, etwa *Search connected services*, auf Französisch *Rechercher dans les services connectés*, auf Spanisch *Buscar servicios conectados* und auf Niederländisch *Verbonden diensten zoeken*; die [Kataloge des Servers von Nextcloud](https://github.com/nextcloud/server/tree/master/core/l10n) haben sie. Die Wörter von Paperless, etwa die Berechtigung *View* für *Correspondents*, bekommen die von Paperless-ngx in der Sprache.
 - **Französische Typografie:** ein geschütztes Leerzeichen vor `:`, `;`, `?` und `!` und innerhalb von `«` und `»`, wie Nextcloud Französisch schreibt.
 

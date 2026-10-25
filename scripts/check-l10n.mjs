@@ -6,7 +6,9 @@
 // Checks the translations of the app against its code, for every catalog in l10n/:
 // each text that the code translates has a translation, none is left that it doesn't,
 // a translation keeps the placeholders of its text, such as %s and {account}, a plural
-// has as many forms as the "pluralForm" of its catalog names, the JavaScript catalog
+// has as many forms as the "pluralForm" of its catalog names (and, where the third one is
+// for millions, repeats the form for many in the middle, the only one besides the first
+// that Nextcloud shows), the JavaScript catalog
 // that the browser loads holds the same as the JSON one that PHP loads, and
 // appinfo/info.xml gives the App Store a summary and a description in the language of
 // each catalog. The texts come from the calls ->t('…') and ->n('…', '…') in lib/ and
@@ -220,6 +222,7 @@ for (const file of catalogs) {
 	if (pluralForms === null) {
 		problems.push(`${name} has a "pluralForm" without the number of its forms, such as "nplurals=2; plural=(n != 1);".`)
 	}
+	const millions = catalog.pluralForm.replace(/\s/g, '').includes('n%1000000==0')
 
 	if (write) {
 		writeFileSync(javaScriptPath, javaScriptCatalog(catalog))
@@ -243,6 +246,13 @@ for (const file of catalogs) {
 		const count = Array.isArray(translation) ? translation.length : 1
 		if (plural && pluralForms !== null && count !== Number(pluralForms[1])) {
 			problems.push(`${name} translates ${JSON.stringify(text)} with ${count} form(s) instead of the ${pluralForms[1]} of its "pluralForm".`)
+		}
+		// Nextcloud picks a plural form by its own rules, not by "pluralForm": for a
+		// language whose third form is the one for millions (French, Spanish, ...) only
+		// form 0 (one) or 1 (other), so form 1 must be the "other" form, as in Nextcloud's
+		// own catalogs.
+		if (plural && millions && count === 3 && translation[1] !== translation[2]) {
+			problems.push(`${name} translates ${JSON.stringify(text)} with a middle form ${JSON.stringify(translation[1])} that Nextcloud shows for every count but one, though it is not the form ${JSON.stringify(translation[2])} for many; repeat that form in the middle.`)
 		}
 		for (const [source, form] of forms(text, translation)) {
 			if (typeof form !== 'string' || form.trim() === '') {

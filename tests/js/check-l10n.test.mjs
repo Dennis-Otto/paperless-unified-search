@@ -212,6 +212,26 @@ test('fails on a plural with another number of forms than its "pluralForm" names
 	assert.match(result.output, /l10n\/fr\.json translates "_%n problem_::_%n problems_" with 2 form\(s\) instead of the 3 of its "pluralForm"/)
 })
 
+test('fails on a middle plural form for millions, which Nextcloud would show for every count above one', function() {
+	const root = app({ 'lib/Settings/AdminSettings.php': '<?php $l->n(\'%n user\', \'%n users\', $count);', 'appinfo/info.xml': info('fr') }, {})
+	mkdirSync(join(root, 'l10n'))
+	const catalog = (forms) => JSON.stringify({
+		translations: { 'Paperless URL': 'URL de Paperless', '_%n user_::_%n users_': forms },
+		pluralForm: 'nplurals=3; plural=(n == 0 || n == 1) ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;',
+	})
+	writeFileSync(join(root, 'l10n/fr.json'), catalog(['%n utilisateur', '%n d’utilisateurs', '%n utilisateurs']))
+	written(root)
+
+	const result = check(root)
+
+	assert.equal(result.status, 1)
+	assert.match(result.output, /l10n\/fr\.json translates "_%n user_::_%n users_" with a middle form "%n d’utilisateurs" that Nextcloud shows for every count but one/)
+
+	writeFileSync(join(root, 'l10n/fr.json'), catalog(['%n utilisateur', '%n utilisateurs', '%n utilisateurs']))
+	written(root)
+	assert.equal(check(root).status, 0)
+})
+
 test('fails on a "pluralForm" that names no number of forms', function() {
 	const root = app({})
 	writeFileSync(join(root, 'l10n/de.json'), JSON.stringify({ translations: { 'Paperless URL': 'Paperless-URL' }, pluralForm: 'plural=(n != 1);' }))

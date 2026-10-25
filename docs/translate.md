@@ -41,7 +41,7 @@ Each line pairs a text of the code, in English, with its translation:
     "Paperless documents": "Documents Paperless",
     "The archive account %s does not exist.": "Le compte d’archive %s n’existe pas.",
     "The request failed (HTTP {status}).": "La requête a échoué (HTTP {status}).",
-    "_%n user_::_%n users_": ["%n utilisateur", "%n d’utilisateurs", "%n utilisateurs"]
+    "_%n user_::_%n users_": ["%n utilisateur", "%n utilisateurs", "%n utilisateurs"]
   },
   "pluralForm": "nplurals=3; plural=(n == 0 || n == 1) ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;"
 }
@@ -49,7 +49,7 @@ Each line pairs a text of the code, in English, with its translation:
 
 - **The English text on the left stays as it is,** character for character: the code looks the translation up by it. Change only the text on the right.
 - **Placeholders stay,** such as `%s`, `%1$s`, `%n`, `{status}` and `{account}`: the app puts a name, a number or a link there. The words around them may move, and `%1$s` and `%2$s` may swap places.
-- **A plural,** whose text reads `_singular_::_plural_`, has as many forms as `pluralForm` names with `nplurals`, in the order of its rule: French and Spanish one, many (for millions, such as *1 000 000 d’utilisateurs*) and other, German and Dutch one and other. `pluralForm` is the one of Nextcloud's own catalog of the language.
+- **A plural,** whose text reads `_singular_::_plural_`, has as many forms as `pluralForm` names with `nplurals`: German and Dutch one and other, French and Spanish three. Nextcloud, however, picks only *one* or *other* for French and Spanish (form 0 or 1), never the third form for millions, so the middle form repeats the *other* form, as in Nextcloud's own catalogs; `scripts/check-l10n.mjs` fails otherwise. `pluralForm` is the one of Nextcloud's own catalog of the language.
 - **Nextcloud's words:** a word that Nextcloud shows as well takes Nextcloud's translation, such as *Search connected services*, which is *Rechercher dans les services connectés*, *Buscar servicios conectados* and *Verbonden diensten zoeken*; the [catalogs of Nextcloud's server](https://github.com/nextcloud/server/tree/master/core/l10n) have them. The words of Paperless, such as the permission *View* of *Correspondents*, take those of Paperless-ngx in the language.
 - **French typography:** a no-break space before `:`, `;`, `?` and `!` and inside `«` and `»`, as Nextcloud writes French.
 
