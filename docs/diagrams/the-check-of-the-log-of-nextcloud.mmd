@@ -1,0 +1,35 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+---
+flowchart TB
+    accTitle: The check of the log of Nextcloud
+    accDescr: At its end, run.sh pipes the log of Nextcloud, which holds every record of PHP and of the app at debug, into assert_log.py, which counts the records at each level. A record that the app didn't write and whose message, exception and data name neither a file of the app nor its namespace passes. A record of the app fails the check when it is a deprecation, notice or warning of PHP in a file of the app, an error or a fatal error, or a warning that no test provokes on purpose; every other record of the app passes. Each finding names its place in the files of the app, its request and the record.
+
+    log["data/nextcloud.log<br>every record of PHP and of the app<br>at debug, through log.condition"]
+    check["assert_log.py<br>counts the records at each level"]
+    app{"A record<br>of the app?"}
+    other["passes:<br>a record of core<br>or of another app"]
+    php{"A deprecation, notice<br>or warning of PHP<br>in a file of the app?"}
+    error{"An error or<br>a fatal error?"}
+    warning{"A warning that<br>no test provokes?"}
+    fine["passes"]
+    failed["the check fails<br>with the place in the files of the app,<br>the request and the record"]
+
+    log --> check --> app
+    app -- "no" --> other
+    app -- "yes" --> php
+    php -- "yes" --> failed
+    php -- "no" --> error
+    error -- "yes" --> failed
+    error -- "no" --> warning
+    warning -- "yes" --> failed
+    warning -- "no" --> fine
+
+    classDef bot fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef fail fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class log,check bot
+    class other,fine done
+    class failed fail
