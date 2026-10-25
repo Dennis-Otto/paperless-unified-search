@@ -55,7 +55,6 @@ docs/reference.de.md  ^- **PHP:** {php} oder neuer
 appinfo/info.xml      ^- Nextcloud {min} {word} {max}$
 '
 
-
 # The places through every file of them, in one run of a POSIX awk, such as mawk of the
 # runners of Ubuntu, the gawk of Git for Windows and the awk of macOS. It writes each
 # file with the versions of appinfo/info.xml into outdir/<number>, lists the number and
@@ -190,7 +189,7 @@ function row(s, number,    n, v, out) {
   return out
 }
 
-# Line number of file f with the versions of appinfo/info.xml.
+# The line s, the line number of file f, with the versions of appinfo/info.xml.
 function written_line(s, number,    t, v) {
   if (columns && substr(s, 1, 1) == "|") {
     s = row(s, number)

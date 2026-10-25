@@ -6,7 +6,7 @@ This file belongs to the project: the blueprint wrote it once, and its updates l
 
 ## Where things are
 
-- The app is in `lib/`, its metadata, version and supported Nextcloud versions in `appinfo/info.xml`.
+- The app is in `lib/`, its metadata, version and supported Nextcloud versions in `appinfo/info.xml`. After a change of `min-version` or `max-version` of Nextcloud or of the `min-version` of PHP there, `bash scripts/versions.sh --write` writes them into every place of the documentation and the descriptions of the App Store that names them, the tables of compatibility included; the fix bot runs it too.
 - `README.md` documents installation, configuration and use, `docs/` holds the pages of the website, and `CHANGELOG.md` lists the changes of every release.
 - The tests are in `tests/`; `scripts/check.sh` runs every check.
 
