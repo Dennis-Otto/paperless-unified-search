@@ -45,7 +45,6 @@ final class PaperlessApiServiceTest extends TestCase {
 	private const PAPERLESS_2 = ['X-Version' => '2.20.13', 'X-Api-Version' => '9'];
 	/** The keys of the version of Paperless and of its API, as the app stores them. */
 	private const VERSION_KEYS = [AppConstants::APP_ID . '.paperless_version', AppConstants::APP_ID . '.paperless_api_version'];
-	/** How Paperless 3.3.0 refuses the query created:[2026 to, measured. */
 	/**
 	 * The answer of /api/ui_settings/ to the token of an account that may view documents,
 	 * correspondents, document types and its UI settings, and nothing else, as
@@ -56,6 +55,7 @@ final class PaperlessApiServiceTest extends TestCase {
 	/** The same of a superuser, abridged: Paperless names every permission of Django. */
 	private const SUPERUSER = '{"user":{"id":1,"username":"admin","is_staff":true,"is_superuser":true,"groups":[]},"settings":{},"permissions":["add_document","change_document","delete_document","view_document","view_correspondent","view_documenttype","view_uisettings"]}';
 
+	/** How Paperless 3.3.0 refuses the query created:[2026 to, measured. */
 	private const INVALID_DATE = '{"query":["Invalid date value \'[2026\' for field \'created\'."]}';
 
 	/** The configuration of the apps, with the settings and what the app stores. */

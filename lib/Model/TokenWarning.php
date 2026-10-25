@@ -22,7 +22,10 @@ enum TokenWarning: string {
 	case Superuser = 'superuser';
 	/** A staff account of Paperless, which may also read the logs of Paperless. */
 	case Staff = 'staff';
-	/** An account that may add, change or delete documents. */
+	/**
+	 * An account that may add, change or delete documents, or that may give itself or a
+	 * new account of its own that permission.
+	 */
 	case ChangesDocuments = 'changes_documents';
 	/** An account that may not view correspondents, so results show without them. */
 	case HidesCorrespondents = 'hides_correspondents';
@@ -31,9 +34,12 @@ enum TokenWarning: string {
 
 	/**
 	 * The permissions of Django on documents beyond viewing them, as Paperless names them
-	 * without the label of their app.
+	 * without the label of their app, and the ones that lead to them: Paperless-ngx keeps
+	 * an account that may add or change users or change groups only from making users
+	 * superusers or staff, so it may grant its own account, its own group or a new account
+	 * the permission to change documents.
 	 */
-	private const CHANGING_DOCUMENTS = ['add_document', 'change_document', 'delete_document'];
+	private const CHANGING_DOCUMENTS = ['add_document', 'change_document', 'delete_document', 'add_user', 'change_user', 'change_group'];
 
 	/**
 	 * The warnings of an answer of /api/ui_settings/: the user of the token, with whether it

@@ -129,6 +129,7 @@ expect "a pull request of the README and the roadmap" false "$(pull_request 'ech
 export SCOPE=paperless
 expect "a contract run for the requests to Paperless" true "$(pull_request 'mkdir -p lib/Service && echo new >lib/Service/PaperlessApiService.php')"
 expect "a contract run for the search" true "$(pull_request 'mkdir -p lib/Search && echo new >lib/Search/Provider.php')"
+expect "a contract run for the reading of what the token may do" true "$(pull_request 'mkdir -p lib/Model && echo new >lib/Model/TokenWarning.php')"
 expect "a contract run for a document of the contract" true "$(pull_request 'mkdir -p tests/e2e/contract && echo new >tests/e2e/contract/letter.txt')"
 expect "a contract run for the workflow of the tests" true "$(pull_request 'echo second >.github/workflows/e2e.yml')"
 expect "no contract run for another file of the app" false "$(pull_request 'echo second >lib/Search.php')"

@@ -78,7 +78,7 @@ The test of the connection also asks Paperless what the account of the API token
 | --- | --- |
 | The API token belongs to a Superuser of Paperless | Add an account of its own for the search, as [Configure](configure.md#a-paperless-account-for-the-search) shows, and enter its token: whoever gets hold of the token of a superuser can change and delete every document |
 | The API token belongs to an Admin of Paperless | Clear **Admin** of the account, or use the token of another one: an admin may also read the logs and the status of Paperless |
-| The account of the API token may add, change or delete documents | Leave the account only **View** for **Documents**, in its own permissions and in those of its groups, which count as well |
+| The account of the API token may add, change or delete documents | Leave the account only **View** for **Documents**, in its own permissions and in those of its groups, which count as well. Adding or changing **Users** and changing **Groups** count too, since Paperless lets such an account give itself the permission to change documents |
 | The account of the API token may not view correspondents | Give the account **View** for **Correspondents**; until then the results and the dashboard show no correspondent |
 | The account of the API token may not view document types | Give the account **View** for **Document Types**; until then the results and the dashboard show no type |
 | Paperless doesn't say what the account of the API token may do (`occ paperless_unified_search:check` alone) | Give the account **View** for **UI Settings**: Paperless tells what an account may do only to one that may view its UI settings, and without it the settings warn about nothing |

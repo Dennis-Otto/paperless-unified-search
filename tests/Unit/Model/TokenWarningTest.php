@@ -38,6 +38,12 @@ final class TokenWarningTest extends TestCase {
 			'one that may add documents' => [['user' => $user, 'permissions' => [...self::VIEWS, 'add_document']], [TokenWarning::ChangesDocuments]],
 			'one that may change documents' => [['user' => $user, 'permissions' => ['change_document', ...self::VIEWS]], [TokenWarning::ChangesDocuments]],
 			'one that may delete documents' => [['user' => $user, 'permissions' => [...self::VIEWS, 'delete_document']], [TokenWarning::ChangesDocuments]],
+			// Paperless lets them grant the permission to change documents.
+			'one that may add users' => [['user' => $user, 'permissions' => [...self::VIEWS, 'add_user']], [TokenWarning::ChangesDocuments]],
+			'one that may change users' => [['user' => $user, 'permissions' => [...self::VIEWS, 'change_user']], [TokenWarning::ChangesDocuments]],
+			'one that may change groups' => [['user' => $user, 'permissions' => [...self::VIEWS, 'change_group']], [TokenWarning::ChangesDocuments]],
+			// Viewing users and groups, or adding a group of no member, grants nothing.
+			'one that may view users and add groups' => [['user' => $user, 'permissions' => [...self::VIEWS, 'view_user', 'view_group', 'add_group']], []],
 			// Changing a tag or a note changes no document of the search.
 			'one that may change tags and notes' => [['user' => $user, 'permissions' => [...self::VIEWS, 'change_tag', 'add_note']], []],
 			'one that may not view correspondents' => [['user' => $user, 'permissions' => ['view_document', 'view_documenttype']], [TokenWarning::HidesCorrespondents]],
