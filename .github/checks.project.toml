@@ -207,9 +207,12 @@ in `docs/`; *German pages*, that `README.de.md` marks each section of `README.md
 German page shows the pictures of its English twin in the same order, a German one,
 `NAME.de.svg`, in place of `NAME.svg`; *Screenshots of the website*, that a page of
 the website shows each screenshot of `README.md` that main has, itself or through a
-section of `README.md` that it includes; that the documentation and the descriptions
-of `appinfo/info.xml` in every language name the versions of Nextcloud and PHP of
-`appinfo/info.xml`; a description of its own for every page of the
+section of `README.md` that it includes; *Versions in the documentation*, with
+`scripts/versions.sh`, that the READMEs and the pages of the website in both languages,
+with a column for each version in their tables of compatibility, and the descriptions
+of the App Store in `appinfo/info.xml` in every language name the versions of Nextcloud
+and PHP of `appinfo/info.xml`, also after the upstream bot raised `max-version`; a
+description of its own for every page of the
 website; that every Mermaid diagram runs from top to bottom with `accTitle` and
 `accDescr`; that every required check and every step of `scripts/check.sh` has its
 explanation for the PR coach; and the JavaScript of the settings with its tests, every
@@ -226,7 +229,13 @@ the checks, and the JavaScript and the translations of the settings, which have 
 step. The link check skips the links into `demo/` on main (`.lycheeignore`), because a
 pull request links them before main has them, so this check is the only one that finds
 a broken one."""
-fix = """Fix what the last line of the output names: for a link on main, correct the
+fix = """Fix what the last line of the output names: for the versions of Nextcloud and
+PHP, the second command below writes those of `appinfo/info.xml` into each line that
+the output names, with a column for a new `max-version` in each table of compatibility,
+whose cells are those of the newest column, and without the oldest column for a new
+`min-version`, and it names what only a person can fix: a place that is gone, a row of
+a table without a cell for each column, and a description of the App Store without its
+versions; for a link on main, correct the
 path of the link, or add the file that it links; for a section, mark it in both READMEs
 with the same name; for a picture from main that is missing, correct its path in the file that the
 output names, or add it to `scripts/screenshots.sh` and run that; for the social
@@ -243,9 +252,15 @@ for a check without an explanation, add it to `.github/checks.project.toml`; for
 pipe into `grep --quiet`, read the output into a variable first and search that,
 `grep --quiet … <<<"${output}"`, since the command before the pipe dies of SIGPIPE
 once grep stops reading at its first match. A
-JavaScript catalog that lags its JSON catalog is written anew by the second command;
-run it yourself for now, the fix bot runs it too once Dennis-Otto/repo-blueprint#351
-ships. Then run the checks again:"""
-commands = ["bash scripts/check-project.sh", "node scripts/check-l10n.mjs --write"]
+JavaScript catalog that lags its JSON catalog is written anew by the third command.
+The fix bot runs the second and the third command on a pull request of this
+repository, such as the one of the upstream bot for a new Nextcloud, which then fixes
+itself, and suggests their fixes on a pull request from a fork. Then run the checks
+again:"""
+commands = [
+  "bash scripts/check-project.sh",
+  "bash scripts/versions.sh --write",
+  "node scripts/check-l10n.mjs --write",
+]
 docs = "CONTRIBUTING.md#checks"
-autofix = ["node scripts/check-l10n.mjs --write"]
+autofix = ["bash scripts/versions.sh --write", "node scripts/check-l10n.mjs --write"]
