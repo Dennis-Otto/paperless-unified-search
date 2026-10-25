@@ -39,3 +39,105 @@
 .md-typeset figure.phones > figcaption {
   flex-basis: 100%;
 }
+
+/* The hero of the home page, in English and German: the icon, the name, what the app
+   does in one line and the two buttons, centered, and the animation of the search
+   below them. The website plays each GIF of the animation, light and dark, as the
+   video beside it, NAME.mp4, which the hooks of the blueprint put in its place and
+   the script of the blueprint plays once half of it is in view, unless the reader
+   asks for less motion; the reader can pause it. javascripts/hero.js gives the video
+   that shows its first frame as its poster. */
+.md-typeset .pus-hero {
+  text-align: center;
+}
+
+.md-typeset .pus-hero__logo {
+  display: block;
+  margin: 0 auto 0.4rem;
+}
+
+.md-typeset .pus-hero h1 {
+  margin-bottom: 0.2rem;
+  color: var(--md-default-fg-color);
+  font-weight: 700;
+}
+
+.md-typeset .pus-hero__tagline {
+  margin-top: 0;
+  color: var(--md-default-fg-color--light);
+  font-size: 1.25em;
+  line-height: 1.4;
+}
+
+.md-typeset .pus-hero__media {
+  margin: 0.8rem 0 0.6rem;
+}
+
+/* A little narrower than the column, so that half of it is in view below the buttons
+   on most screens of a computer, and it plays at once. */
+.md-typeset .pus-hero__light,
+.md-typeset .pus-hero__dark {
+  max-width: 50rem;
+  margin-inline: auto;
+}
+
+.md-typeset .pus-hero__media video {
+  height: auto;
+  border: 0.05rem solid var(--md-default-fg-color--lightest);
+  border-radius: 0.4rem;
+  box-shadow: var(--md-shadow-z2);
+}
+
+.md-typeset .pus-hero__dark,
+.md-typeset .pus-hero__phone {
+  display: none;
+}
+
+/* The video of the scheme that the reader chose, or, until the script of Material has
+   chosen one on a first visit, of the scheme of the system: before that, the page
+   has the light scheme, and the light video would load in a dark system as well. */
+[data-md-color-media][data-md-color-scheme="slate"] .pus-hero__light {
+  display: none;
+}
+
+[data-md-color-media][data-md-color-scheme="slate"] .pus-hero__dark {
+  display: block;
+}
+
+@media (prefers-color-scheme: dark) {
+  body:not([data-md-color-media]) .pus-hero__light {
+    display: none;
+  }
+
+  body:not([data-md-color-media]) .pus-hero__dark {
+    display: block;
+  }
+}
+
+.md-typeset .pus-hero__caption {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.9em;
+  text-align: center;
+}
+
+/* On a phone, the window of a computer would shrink to a third of its size: the
+   search on a phone shows in its place, no higher than most screens, and neither
+   video loads. */
+@media screen and (max-width: 37.4375em) {
+  .md-typeset .pus-hero__media .pus-hero__light,
+  .md-typeset .pus-hero__media .pus-hero__dark {
+    display: none;
+  }
+
+  .md-typeset .pus-hero__media .pus-hero__phone {
+    display: block;
+    text-align: center;
+  }
+
+  .md-typeset .pus-hero__phone img {
+    width: auto;
+    max-height: 30rem;
+    border: 0.05rem solid var(--md-default-fg-color--lightest);
+    border-radius: 0.8rem;
+  }
+}

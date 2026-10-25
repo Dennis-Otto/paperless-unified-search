@@ -39,3 +39,4 @@ Fichiers
 partagés
 avec
 août
+oxipng

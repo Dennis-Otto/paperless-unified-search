@@ -1,0 +1,3 @@
+### Performance
+
+- **A lighter home page with an animation you can pause:** the home page of the website loaded the animation of the search as a GIF of almost 400 KB, which looped without end and started on a list of files without a single Paperless result. It now plays a video of about a quarter of that size, which you can pause, in the light or the dark theme of the website. It starts on the Paperless results, in a frame, and shows only that picture when your system asks for less motion; on a phone, the search on a phone takes its place. The screenshots below it no longer move the page as they load, and every PNG is about a quarter smaller, without a changed pixel. The README shows the animation in the dark theme of GitHub too.

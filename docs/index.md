@@ -6,18 +6,30 @@ hide:
   - toc
 ---
 
-<!-- The title of the front matter is the one that search engines and the browser show; the heading is the name of the app. -->
+<!-- The hero of the home page: the icon, the name, what the app does in one line and the two buttons, then the animation of the search, which the website plays as a video, light or dark as the website, and in its place the search on a phone on a narrow screen (stylesheets/extra.css, javascripts/hero.js). The title of the front matter is the one that search engines and the browser show; the heading is the name of the app. -->
+<div class="pus-hero" markdown>
+
+<img class="pus-hero__logo off-glb" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/img/app.svg" width="48" height="48" alt="">
+
 <!-- markdownlint-disable-next-line MD025 -->
 # Paperless Unified Search
 
-A Nextcloud app that brings the OCR and full-text search of Paperless-ngx into Nextcloud's global search, without Elasticsearch, a second index or another container: Paperless answers, Nextcloud decides who sees the file. A result opens the matching synchronized file directly in Nextcloud's viewer.
+<p class="pus-hero__tagline">Find Paperless-ngx documents by the words inside them, right in Nextcloud's search.</p>
 
 [Get it from the App Store](https://apps.nextcloud.com/apps/paperless_unified_search){ .md-button .md-button--primary }
 [Quick start](#quick-start){ .md-button }
 
-![A search for "invoice" in Nextcloud: the files whose names match, then, with Search connected services switched on, the Paperless documents whose text matches. The home insurance renewal opens in Nextcloud's viewer.](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/search-and-open.gif)
+</div>
 
-The search of files finds the two invoices by their names. Paperless also finds the home insurance renewal: its text says "invoice", its name doesn't.
+<div class="pus-hero__media" markdown>
+<div class="pus-hero__light" markdown="span">![The Paperless documents that a search for "invoice" finds in Nextcloud, in a frame: the electricity invoice, the home insurance renewal and the internet invoice. Then the search from the start: the files whose names match, then, with Search connected services switched on, the Paperless documents whose text matches. The home insurance renewal opens in Nextcloud's viewer.](images/search-and-open.gif)</div>
+<div class="pus-hero__dark" markdown="span">![The Paperless documents that a search for "invoice" finds in Nextcloud, in a frame: the electricity invoice, the home insurance renewal and the internet invoice. Then the search from the start: the files whose names match, then, with Search connected services switched on, the Paperless documents whose text matches. The home insurance renewal opens in Nextcloud's viewer.](images/search-and-open-dark.gif)</div>
+<div class="pus-hero__phone" markdown="span">![Paperless results in the global search of Nextcloud on a phone](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/04-mobile-search.png){ width="780" height="1688" loading="lazy" decoding="async" }</div>
+</div>
+
+<p class="pus-hero__caption">The search of files finds the two invoices by their names. Paperless also finds the home insurance renewal: its text says "invoice", its name doesn't.</p>
+
+A Nextcloud app that brings the OCR and full-text search of Paperless-ngx into Nextcloud's global search, without Elasticsearch, a second index or another container: Paperless answers, Nextcloud decides who sees the file. A result opens the matching synchronized file directly in Nextcloud's viewer.
 
 --8<-- "README.md:two-apps"
 
@@ -90,63 +102,63 @@ Each picture follows the light or dark theme of this website. Select one to enla
 <div class="grid" markdown>
 
 <figure markdown="span">
-  ![Paperless results in Nextcloud's global search](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/01-unified-search.png#only-light)
-  ![Paperless results in Nextcloud's global search](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/01-unified-search-dark.png#only-dark)
+  ![Paperless results in Nextcloud's global search](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/01-unified-search.png#only-light){ width="1600" height="900" }
+  ![Paperless results in Nextcloud's global search](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/01-unified-search-dark.png#only-dark){ width="1600" height="900" }
   <figcaption>Paperless results in Nextcloud's global search</figcaption>
 </figure>
 
 <figure markdown="span">
-  ![A synchronized Paperless document opened in Nextcloud's PDF viewer](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/02-nextcloud-pdf-viewer.png#only-light)
-  ![A synchronized Paperless document opened in Nextcloud's PDF viewer](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/02-nextcloud-pdf-viewer-dark.png#only-dark)
+  ![A synchronized Paperless document opened in Nextcloud's PDF viewer](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/02-nextcloud-pdf-viewer.png#only-light){ width="1600" height="900" }
+  ![A synchronized Paperless document opened in Nextcloud's PDF viewer](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/02-nextcloud-pdf-viewer-dark.png#only-dark){ width="1600" height="900" }
   <figcaption>A result opened in Nextcloud's viewer</figcaption>
 </figure>
 
 <figure markdown="span">
-  ![The search for invoice with Search connected services switched on and the date filter set to the custom range from 7/1/2026 to 7/31/2026: Paperless documents lists the home insurance renewal of Jul 21, 2026 and the internet invoice of Jul 3, 2026, but not the electricity invoice of August, and Files finds none of the files, which were added later](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/12-date-filter.png#only-light)
-  ![The search for invoice with Search connected services switched on and the date filter set to the custom range from 7/1/2026 to 7/31/2026: Paperless documents lists the home insurance renewal of Jul 21, 2026 and the internet invoice of Jul 3, 2026, but not the electricity invoice of August, and Files finds none of the files, which were added later](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/12-date-filter-dark.png#only-dark)
+  ![The search for invoice with Search connected services switched on and the date filter set to the custom range from 7/1/2026 to 7/31/2026: Paperless documents lists the home insurance renewal of Jul 21, 2026 and the internet invoice of Jul 3, 2026, but not the electricity invoice of August, and Files finds none of the files, which were added later](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/12-date-filter.png#only-light){ width="1600" height="900" }
+  ![The search for invoice with Search connected services switched on and the date filter set to the custom range from 7/1/2026 to 7/31/2026: Paperless documents lists the home insurance renewal of Jul 21, 2026 and the internet invoice of Jul 3, 2026, but not the electricity invoice of August, and Files finds none of the files, which were added later](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/12-date-filter-dark.png#only-dark){ width="1600" height="900" }
   <figcaption>Paperless results narrowed by date</figcaption>
 </figure>
 
 <figure markdown="span">
-  ![The smart picker in a note of Text: under Paperless documents, the search for invoice lists the electricity invoice, the home insurance renewal and the internet invoice](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/07-smart-picker.png#only-light)
-  ![The smart picker in a note of Text: under Paperless documents, the search for invoice lists the electricity invoice, the home insurance renewal and the internet invoice](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/07-smart-picker-dark.png#only-dark)
+  ![The smart picker in a note of Text: under Paperless documents, the search for invoice lists the electricity invoice, the home insurance renewal and the internet invoice](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/07-smart-picker.png#only-light){ width="1280" height="800" }
+  ![The smart picker in a note of Text: under Paperless documents, the search for invoice lists the electricity invoice, the home insurance renewal and the internet invoice](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/07-smart-picker-dark.png#only-dark){ width="1280" height="800" }
   <figcaption>Paperless documents in the smart picker of Text</figcaption>
 </figure>
 
 <figure markdown="span">
-  ![The dashboard of Jamie with the widget New in Paperless: the car service, the electricity invoice, the home insurance renewal, the internet invoice and the property tax notice, newest first, each with the icon of its PDF file and a line with the day that Paperless added it, its correspondent and its type, such as Sep 3, 2026 · Example Motors · Receipt](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/11-dashboard.png#only-light)
-  ![The dashboard of Jamie with the widget New in Paperless: the car service, the electricity invoice, the home insurance renewal, the internet invoice and the property tax notice, newest first, each with the icon of its PDF file and a line with the day that Paperless added it, its correspondent and its type, such as Sep 3, 2026 · Example Motors · Receipt](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/11-dashboard-dark.png#only-dark)
+  ![The dashboard of Jamie with the widget New in Paperless: the car service, the electricity invoice, the home insurance renewal, the internet invoice and the property tax notice, newest first, each with the icon of its PDF file and a line with the day that Paperless added it, its correspondent and its type, such as Sep 3, 2026 · Example Motors · Receipt](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/11-dashboard.png#only-light){ width="1280" height="720" }
+  ![The dashboard of Jamie with the widget New in Paperless: the car service, the electricity invoice, the home insurance renewal, the internet invoice and the property tax notice, newest first, each with the icon of its PDF file and a line with the day that Paperless added it, its correspondent and its type, such as Sep 3, 2026 · Example Motors · Receipt](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/11-dashboard-dark.png#only-dark){ width="1280" height="720" }
   <figcaption>The newest documents on the dashboard</figcaption>
 </figure>
 
 <figure markdown="span">
-  ![Paperless Unified Search administration settings in Nextcloud](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/03-admin-settings.png#only-light)
-  ![Paperless Unified Search administration settings in Nextcloud](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/03-admin-settings-dark.png#only-dark)
+  ![Paperless Unified Search administration settings in Nextcloud](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/03-admin-settings.png#only-light){ width="1600" height="1000" }
+  ![Paperless Unified Search administration settings in Nextcloud](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/03-admin-settings-dark.png#only-dark){ width="1600" height="1000" }
   <figcaption>The settings, for administrators only</figcaption>
 </figure>
 
 <figure markdown="span">
-  ![The tab Sharing of the folder Paperless of the archive account in Files: the folder is shared with Jamie Example, View only](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-share-read-only.png#only-light)
-  ![The tab Sharing of the folder Paperless of the archive account in Files: the folder is shared with Jamie Example, View only](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-share-read-only-dark.png#only-dark)
+  ![The tab Sharing of the folder Paperless of the archive account in Files: the folder is shared with Jamie Example, View only](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-share-read-only.png#only-light){ width="1600" height="900" }
+  ![The tab Sharing of the folder Paperless of the archive account in Files: the folder is shared with Jamie Example, View only](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-share-read-only-dark.png#only-dark){ width="1600" height="900" }
   <figcaption>The archive shared read-only with a user</figcaption>
 </figure>
 
 <figure markdown="span">
-  ![The history of the problems of the search in the settings](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/06-search-problems.png#only-light)
-  ![The history of the problems of the search in the settings](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/06-search-problems-dark.png#only-dark)
+  ![The history of the problems of the search in the settings](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/06-search-problems.png#only-light){ width="660" height="837" }
+  ![The history of the problems of the search in the settings](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/06-search-problems-dark.png#only-dark){ width="660" height="837" }
   <figcaption>The problems of the search, without the log of Nextcloud</figcaption>
 </figure>
 
 <figure markdown="span">
-  ![Try a search in the settings: the administrator searches for invoice as the account e2e-admin, and a table lists the three documents that Paperless ranks first with their IDs and titles, the electricity invoice shown, the insurance renewal and the internet invoice not shared with that account, above the reasons why a document does not show](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-try-a-search.png#only-light)
-  ![Try a search in the settings: the administrator searches for invoice as the account e2e-admin, and a table lists the three documents that Paperless ranks first with their IDs and titles, the electricity invoice shown, the insurance renewal and the internet invoice not shared with that account, above the reasons why a document does not show](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-try-a-search-dark.png#only-dark)
+  ![Try a search in the settings: the administrator searches for invoice as the account e2e-admin, and a table lists the three documents that Paperless ranks first with their IDs and titles, the electricity invoice shown, the insurance renewal and the internet invoice not shared with that account, above the reasons why a document does not show](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-try-a-search.png#only-light){ width="660" height="788" }
+  ![Try a search in the settings: the administrator searches for invoice as the account e2e-admin, and a table lists the three documents that Paperless ranks first with their IDs and titles, the electricity invoice shown, the insurance renewal and the internet invoice not shared with that account, above the reasons why a document does not show](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/10-try-a-search-dark.png#only-dark){ width="660" height="788" }
   <figcaption>Try a search: why a document doesn't show to a user</figcaption>
 </figure>
 
 <figure markdown="span" class="phones">
-  ![Paperless results in the global search of Nextcloud on a phone](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/04-mobile-search.png){ width="120" }
-  ![The electricity invoice opened in Nextcloud's viewer on a phone](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/05-mobile-viewer.png){ width="120" }
-  ![The settings on a phone at the problems of the search: the counts, and below them the latest problems as cards, each with the time, the event, the step, the error and how long it took](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/09-admin-settings-mobile.png){ width="120" }
+  ![Paperless results in the global search of Nextcloud on a phone](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/04-mobile-search.png){ width="120" height="260" }
+  ![The electricity invoice opened in Nextcloud's viewer on a phone](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/05-mobile-viewer.png){ width="120" height="260" }
+  ![The settings on a phone at the problems of the search: the counts, and below them the latest problems as cards, each with the time, the event, the step, the error and how long it took](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/09-admin-settings-mobile.png){ width="120" height="260" }
   <figcaption>On a phone, in the browser</figcaption>
 </figure>
 

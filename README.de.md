@@ -18,7 +18,10 @@
 
 Paperless Unified Search bringt die OCR- und Volltextsuche von Paperless-ngx in die globale Suche von Nextcloud, ohne Elasticsearch, zweiten Index oder weiteren Container: Paperless antwortet, Nextcloud entscheidet, wer die Datei sieht. Treffer öffnen die passende synchronisierte Datei direkt im Viewer von Nextcloud.
 
-![Eine Suche nach „invoice“ in Nextcloud: die Dateien, deren Namen passen, dann, mit eingeschaltetem Verbundene Dienste durchsuchen, die Paperless-Dokumente, deren Text passt. Die Verlängerung der Hausratversicherung öffnet sich im Viewer von Nextcloud.](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/search-and-open.gif)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/search-and-open-dark.gif">
+  <img src="docs/images/search-and-open.gif" alt="Die Paperless-Dokumente, die eine Suche nach „invoice“ in Nextcloud findet, in einem Rahmen: die Stromrechnung, die Verlängerung der Hausratversicherung und die Internetrechnung. Dann die Suche von vorn: die Dateien, deren Namen passen, dann, mit eingeschaltetem Verbundene Dienste durchsuchen, die Paperless-Dokumente, deren Text passt. Die Verlängerung der Hausratversicherung öffnet sich im Viewer von Nextcloud.">
+</picture>
 
 <sub>Die Suche nach Dateien findet die beiden Rechnungen an ihren Namen. Paperless findet auch die Verlängerung der Hausratversicherung: Ihr Text sagt „invoice“, ihr Name nicht.</sub>
 
@@ -722,13 +725,13 @@ In der CI führt die Pflichtprüfung `nextcloud` die Tests gegen jede unterstüt
 
 ### Screenshots
 
-Die Screenshots und die Animation in `screenshots/` und die Social Preview `.github/social-preview.png`, die GitHub und Chats zu einem Link auf das Repository zeigen, kommen aus einem Skript, damit sie zeigen, was Benutzer sehen:
+Die Screenshots in `screenshots/`, die Animation der Suche in `docs/images/`, hell und dunkel, und die Social Preview `.github/social-preview.png`, die GitHub und Chats zu einem Link auf das Repository zeigen, kommen aus einem Skript, damit sie zeigen, was Benutzer sehen:
 
 ```bash
 bash scripts/screenshots.sh
 ```
 
-Es startet die Docker-Suite unter einem eigenen Projekt mit einer Demo: dem Archiv-Konto `paperless`, dessen synthetische Dokumente nur lesend mit `jamie` geteilt sind, und einem Mock von Paperless, der drei davon für „invoice“ findet. Chromium sucht dann, öffnet einen Treffer, grenzt die Suche mit dem Datumsfilter auf Juli 2026 ein, verlinkt ein Dokument aus dem Smart Picker in einer Notiz von Text, speichert die Einstellungen und probiert darin eine Suche aus, hell und dunkel, auf einem Smartphone und als Animation. Jeder Schritt prüft, was sein Bild zeigt: Die nach Datum eingegrenzte Suche schlägt etwa fehl, wenn ein Paperless-Treffer außerhalb des Juli erscheint oder die Treffer unter *Teilübereinstimmungen* landen. Die Uhr des Browsers steht in jedem Lauf auf demselben Morgen, und die Dateien der Demo wurden zwei Tage davor geändert, also ergeben zwei Läufe dieselben Pixel. Setze `KEEP_SCREENSHOTS=1`, um dich danach in der Demo umzusehen.
+Es startet die Docker-Suite unter einem eigenen Projekt mit einer Demo: dem Archiv-Konto `paperless`, dessen synthetische Dokumente nur lesend mit `jamie` geteilt sind, und einem Mock von Paperless, der drei davon für „invoice“ findet. Chromium sucht dann, öffnet einen Treffer, grenzt die Suche mit dem Datumsfilter auf Juli 2026 ein, verlinkt ein Dokument aus dem Smart Picker in einer Notiz von Text, speichert die Einstellungen und probiert darin eine Suche aus, hell und dunkel, auf einem Smartphone und als Animation, die mit ihren Paperless-Treffern in einem Rahmen beginnt. `scripts/screenshot-media.sh` macht dann im Image von `.github/screenshots/Dockerfile` neben jeder Animation das Video, das die Website an ihrer Stelle in einem Viertel ihrer Größe abspielt, mit seinem ersten Bild, das bis zum Abspielen zu sehen ist, und verkleinert jedes PNG um etwa ein Viertel, ohne ein Pixel zu ändern. Jeder Schritt prüft, was sein Bild zeigt: Die nach Datum eingegrenzte Suche schlägt etwa fehl, wenn ein Paperless-Treffer außerhalb des Juli erscheint oder die Treffer unter *Teilübereinstimmungen* landen. Die Uhr des Browsers steht in jedem Lauf auf demselben Morgen, und die Dateien der Demo wurden zwei Tage davor geändert, also ergeben zwei Läufe dieselben Pixel. Setze `KEEP_SCREENSHOTS=1`, um dich danach in der Demo umzusehen.
 
 Die Animation von [In drei Minuten ausprobieren](#in-drei-minuten-ausprobieren) kommt dagegen aus dem echten Paperless-ngx und Nextcloud der Demo. Während die Demo läuft, meldet sich `bash scripts/screenshots.sh --demo` als `jamie` mit dem Passwort aus `demo/.env` an, sucht nach *invoice*, öffnet die Verlängerung der Hausratversicherung und schreibt nur `screenshots/demo-search-and-open.gif`; die Demo und die anderen Bilder bleiben, wie sie sind. Auch hier ergeben zwei frische Demos dieselben Pixel: Die Uhr beginnt zwei Tage nach der letzten Änderung des Archivs, die Suche startet erst, wenn der ganze Begriff getippt ist, die Benachrichtigungen sind gelesen, und Paperless ordnet die Dokumente allein nach ihrem Text. Der wöchentliche Lauf der Demo nimmt sie ebenfalls auf, vergleicht sie nach ihren Pixeln und hält, wenn sie sich geändert haben, einen Pull Request, *docs: update the animation of the demo*, der sich selbst mergt, sobald jede Prüfung besteht.
 
