@@ -13,6 +13,7 @@ use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
+use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
 use OCP\IDateTimeFormatter;
 use OCP\IL10N;
 use OCP\IURLGenerator;
@@ -22,11 +23,13 @@ use OCP\SetupCheck\SetupResult;
 /**
  * The state of the search in the overview of the administration settings and in
  * occ setupchecks: a warning when the search shows no Paperless documents for a reason
- * that an administrator can correct, with a link to the settings of the app, and else the
+ * that an administrator can correct, or when the account of the API token may do more or
+ * less than the search needs, with a link to the settings of the app, and else the
  * Paperless that it is connected to. It reads only what the app stored, and sends no
  * request to Paperless, so that the overview opens as fast as without it; the last answer
- * of Paperless named the version, and the history of the problems of the search tells
- * whether searches work.
+ * of Paperless named the version, the last test of the connection what the account of the
+ * token may do, and the history of the problems of the search tells whether searches
+ * work.
  */
 final class PaperlessSetupCheck implements ISetupCheck {
 	/** @psalm-suppress PossiblyUnusedMethod */
@@ -36,6 +39,7 @@ final class PaperlessSetupCheck implements ISetupCheck {
 		private IL10N $l10n,
 		private IURLGenerator $urlGenerator,
 		private IDateTimeFormatter $dateTimeFormatter,
+		private SettingsMessages $messages,
 	) {
 	}
 
@@ -77,6 +81,14 @@ final class PaperlessSetupCheck implements ISetupCheck {
 			return $this->warning($failure?->step === SearchEvent::STEP_FILES
 				? $this->l10n->t('A search failed on %s while looking for the files of the documents in Nextcloud, and none has worked since. Search problems in {section} shows what failed.', [$failedAt])
 				: $this->l10n->t('A search failed on %s while asking Paperless, and none has worked since. Search problems in {section} shows what failed.', [$failedAt]));
+		}
+
+		$tokenWarnings = $this->configService->getTokenWarnings();
+		if ($tokenWarnings !== []) {
+			// The search works, so these come after every reason that it shows nothing.
+			return $this->warning($this->l10n->t('%s Then test the connection again in {section}.', [
+				implode(' ', array_map($this->messages->forTokenWarning(...), $tokenWarnings)),
+			]));
 		}
 
 		$url = $this->configService->getUrl();

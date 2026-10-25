@@ -117,6 +117,26 @@
 		}
 	}
 
+	// The warnings about the account of the API token, by the value of each that the
+	// server names, as lib/Service/SettingsMessages.php words them. They keep nothing from
+	// being saved.
+	const TOKEN_WARNINGS = {
+		superuser: () => translate('The API token belongs to a Superuser of Paperless: whoever gets hold of it can change and delete every document. Use the token of an account that may only view documents.'),
+		staff: () => translate('The API token belongs to an Admin of Paperless, who may also read its logs: whoever gets hold of the token can too. Use the token of an account that is neither Admin nor Superuser.'),
+		changes_documents: () => translate('The account of the API token may add, change or delete documents in Paperless: whoever gets hold of the token can too. Use the token of an account that may only view documents.'),
+		hides_correspondents: () => translate('The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents.'),
+		hides_document_types: () => translate('The account of the API token may not view document types in Paperless, so results show without them. Give the account the permission View for Document Types.'),
+	}
+
+	// The text of the warnings of the settings about the account of the token, without a
+	// value that this version of the page doesn't know.
+	function tokenWarningsOf(config) {
+		return (config.tokenWarnings || [])
+			.filter((warning) => Object.hasOwn(TOKEN_WARNINGS, warning))
+			.map((warning) => TOKEN_WARNINGS[warning]())
+			.join(' ')
+	}
+
 	document.addEventListener('DOMContentLoaded', function() {
 		const root = document.getElementById('paperless-unified-search-settings')
 		if (!root) {
@@ -128,6 +148,7 @@
 		const allowLocalInput = document.getElementById('paperless-unified-search-allow-local')
 		const tokenInput = document.getElementById('paperless-unified-search-token')
 		const tokenUnreadable = document.getElementById('paperless-unified-search-token-unreadable')
+		const tokenWarnings = document.getElementById('paperless-unified-search-token-warnings')
 		const alwaysSearchInput = document.getElementById('paperless-unified-search-always-search')
 		const personalAlwaysSearchInput = document.getElementById('paperless-unified-search-users-always-search')
 		const archiveOwnerInput = document.getElementById('paperless-unified-search-archive-owner')
@@ -182,6 +203,7 @@
 			tokenUnreadable.textContent = config.tokenUnreadable
 				? translate('The stored API token can\'t be decrypted, for example because the secret in config.php changed. Enter it again.')
 				: ''
+			tokenWarnings.textContent = tokenWarningsOf(config)
 			alwaysSearchInput.checked = Boolean(config.alwaysSearch)
 			personalAlwaysSearchInput.checked = Boolean(config.personalAlwaysSearch)
 			archiveOwnerInput.value = config.archiveOwner || ''

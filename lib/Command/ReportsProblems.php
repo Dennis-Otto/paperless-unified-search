@@ -11,6 +11,7 @@ namespace OCA\PaperlessUnifiedSearch\Command;
 
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
 use OCA\PaperlessUnifiedSearch\Exception\RequestFailure;
+use OCA\PaperlessUnifiedSearch\Model\TokenWarning;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
@@ -43,6 +44,18 @@ trait ReportsProblems {
 		self::error($output, $configService->isTokenUnreadable()
 			? 'The stored API token can\'t be decrypted, as after a move or a restore of Nextcloud with another secret in config.php. Enter it again with occ paperless_unified_search:setup.'
 			: 'Paperless Unified Search isn\'t connected to Paperless yet. Connect it with occ paperless_unified_search:setup.');
+	}
+
+	/**
+	 * Warns, with what to change, when the account of the API token may do more than the
+	 * search needs, or less than the results show; the command still passes.
+	 *
+	 * @param list<TokenWarning> $warnings
+	 */
+	private static function warnAboutTheToken(OutputInterface $output, SettingsMessages $messages, array $warnings): void {
+		foreach ($warnings as $warning) {
+			$output->writeln('<comment>Warning:</comment> ' . OutputFormatter::escape($messages->forTokenWarning($warning)));
+		}
 	}
 
 	/**

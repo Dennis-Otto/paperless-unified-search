@@ -301,7 +301,7 @@ The search needs one thing from a synchronization: each document of Paperless-ng
 
 ## Configuration
 
-1. Create a dedicated Paperless account with the minimum read permissions required for document search: to view the documents, and to view the correspondents and the document types, whose names the results show.
+1. Create a dedicated Paperless account, neither **Superuser** nor **Admin**, with only the permissions to view that the search needs: **View** for **Documents**, for **Correspondents** and **Document Types**, whose names the results show, and for **UI Settings**, from which the test of the connection learns what the account may do.
 2. Create an API token for that account.
 3. In Nextcloud, open **Administration settings → Paperless Unified Search**.
 4. Enter the Paperless base URL and API token.
@@ -312,6 +312,8 @@ The search needs one thing from a synchronization: each document of Paperless-ng
 9. Select **Test connection and save**. Nextcloud asks for your password when you haven't confirmed it in the last 30 minutes, as for its own settings of this kind; so does **Disconnect**.
 
 Leave the token blank to keep the stored one. The stored token goes only to the Paperless server it was saved for: when the URL names another server, with another scheme, host or port, the settings ask for the token again, so that the token never reaches a server it wasn't meant for. Another path on the same server keeps it. When Nextcloud can no longer decrypt the stored token, as after a move or a restore with another `secret` in `config.php`, the settings say so and ask for it again, and until then the search shows no Paperless documents.
+
+The test of the connection also asks Paperless what the account of the token may do. The settings save the token in any case, and warn below it when the account is a superuser or an admin of Paperless or may add, change or delete documents, since whoever gets hold of such a token may do the same, and when it may not view correspondents or document types, whose names the results then lack. Paperless says this only to an account that may view its UI settings; for any other, the settings warn about nothing. `occ paperless_unified_search:check` and the overview of the administration settings repeat the warnings until the next test, and [Troubleshooting](https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html) says what to do about each.
 
 The configuration is global. Access control remains user-specific because the app discards every Paperless hit for which the searching Nextcloud user can't open a matching file of the archive account. Share the archive read-only with the users who may see its documents. Without an archive account, the search shows no Paperless documents.
 
@@ -344,7 +346,7 @@ The URL may name a Docker service with an underscore, such as `http://paperless_
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/what-the-test-of-the-connection-checks.dark.svg">
-  <img src="docs/images/diagrams/what-the-test-of-the-connection-checks.svg" alt="What the test of the connection checks: Test connection and save asks Paperless for one document. First Nextcloud has to reach Paperless at the URL: find its host, be allowed to connect to its address, connect within 3 seconds, trust its certificate and get an answer within 10 seconds; otherwise the message names which of these failed. Then Paperless has to answer with a status of 2xx; a refused token, a wrong path, a redirect or an error of the server each have their own message. Last, the answer has to be a list of documents of Paperless-ngx. Only then are the settings saved.">
+  <img src="docs/images/diagrams/what-the-test-of-the-connection-checks.svg" alt="What the test of the connection checks: Test connection and save asks Paperless for one document. First Nextcloud has to reach Paperless at the URL: find its host, be allowed to connect to its address, connect within 3 seconds, trust its certificate and get an answer within 10 seconds; otherwise the message names which of these failed. Then Paperless has to answer with a status of 2xx; a refused token, a wrong path, a redirect or an error of the server each have their own message. Last, the answer has to be a list of documents of Paperless-ngx. Only then are the settings saved. Last, Paperless says what the account of the token may do, when it may view its UI settings, and the settings warn below the token about a superuser, an admin, an account that may change documents or one that may not view correspondents or document types.">
 </picture>
 
 | The message says | What failed | What to do |
@@ -420,7 +422,7 @@ Each result shows the preview of its file, as the results of *Files* do, or else
 </picture>
 
 - **Preview.** Nextcloud draws previews of images and office documents, but of PDF files only once an administrator turns them on, as its [documentation of previews](https://docs.nextcloud.com/server/latest/admin_manual/configuration_files/previews_configuration.html) describes. Until then a result shows the icon of PDF files, as the results of *Files* do.
-- **Correspondent and type.** Paperless sends them as numbers. The app asks Paperless for their names with one request for all correspondents and one for all types of a page, and keeps the names for ten minutes, so a name changed in Paperless shows in the results within ten minutes. When the account of the API token may not view correspondents or types, or Paperless doesn't answer in time, the results show without them, and the search works as before.
+- **Correspondent and type.** Paperless sends them as numbers. The app asks Paperless for their names with one request for all correspondents and one for all types of a page, and keeps the names for ten minutes, so a name changed in Paperless shows in the results within ten minutes. When the account of the API token may not view correspondents or types, or Paperless doesn't answer in time, the results show without them, and the search works as before; the settings, `occ paperless_unified_search:check` and the overview warn about such an account.
 - **Text.** The words around the term come as Paperless marks them up, and the result shows them as plain text. Text of a document in angle brackets, such as `<GmbH>`, shows with a space after `<`, as `< GmbH>`, so that no part of a result can ever act as HTML.
 
 <!-- --8<-- [end:what-a-result-shows] -->
@@ -521,9 +523,9 @@ Four commands of `occ` do without a browser what the settings do, and more: they
 | Command | What it does | Exit code |
 | --- | --- | --- |
 | `paperless_unified_search:setup` | Tests the connection with the URL and the token, then saves the settings, as **Test connection and save** does | 0 once saved, 1 when Paperless doesn't answer or a setting is wrong, 2 for a wrong call, such as a missing `--url` or an empty token source |
-| `paperless_unified_search:test` | Tests the connection with the stored settings and names the version of Paperless | 0 when Paperless answers, 1 otherwise |
+| `paperless_unified_search:test` | Tests the connection with the stored settings, names the version of Paperless and warns about a token that may do more than the search needs or less than the results show | 0 when Paperless answers, 1 otherwise |
 | `paperless_unified_search:search <user> <term>` | Searches as the user and says for each document whether it shows to them, with `--explain` why not | 0 once Paperless answered |
-| `paperless_unified_search:check` | Tests the connection and the archive account, and counts the documents of Paperless that have a file | 0 when the search can show documents, 1 otherwise |
+| `paperless_unified_search:check` | Tests the connection, what the account of the API token may do and the archive account, and counts the documents of Paperless that have a file | 0 when the search can show documents, 1 otherwise |
 
 ### Set up the app
 
@@ -597,20 +599,21 @@ Without `--explain`, `search` decides as the search itself does, with one search
 
 ### Check the whole set-up
 
-`check` tests the connection and the archive account, and compares the documents that the account of the API token sees in Paperless with the files of the archive account whose names carry their markers:
+`check` tests the connection, what the account of the API token may do and the archive account, and compares the documents that the account of the API token sees in Paperless with the files of the archive account whose names carry their markers:
 
 ```console
 $ occ paperless_unified_search:check
 ✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.
+✓ The account of the API token may change no document, and may view correspondents and document types.
 ✓ The archive account is paperless, the account of Paperless Sync.
 ! Coverage: 1,180 of 1,234 Paperless document(s) have a file of the archive account. Without one, among others: 17, 18, 19, 20, 23, 31, 40, 41, 42, 57.
 ```
 
-Documents without a file are no failure, as long as the search can show others: the synchronization may not have written them yet, or leaves some out on purpose. When not one document has a file, as with an archive account that owns none of the synchronized files, `check` exits with 1 and says what to correct. `search --explain` with a term of such a document says why it doesn't show.
+Documents without a file are no failure, as long as the search can show others: the synchronization may not have written them yet, or leaves some out on purpose. When not one document has a file, as with an archive account that owns none of the synchronized files, `check` exits with 1 and says what to correct. `search --explain` with a term of such a document says why it doesn't show. An account of the token that may change documents, or may not view correspondents or document types, gets a line with `!` and what to change, and so does one of which Paperless doesn't say what it may do, without the permission to view its UI settings; neither fails the check.
 
 ### In the administration overview
 
-**Administration settings → Overview** checks the app among the other setup checks of Nextcloud, and so does `occ setupchecks`. It warns when the search shows no Paperless documents for a reason that an administrator corrects, and links to the settings of the app: a token that Nextcloud can no longer decrypt, no archive account or one that doesn't exist, or a search that failed with none working since. Otherwise it names the Paperless that the app is connected to, with the version of its last answer. It reads only what the app stored and sends no request to Paperless, so the overview opens as fast as without it.
+**Administration settings → Overview** checks the app among the other setup checks of Nextcloud, and so does `occ setupchecks`. It warns when the search shows no Paperless documents for a reason that an administrator corrects, and links to the settings of the app: a token that Nextcloud can no longer decrypt, no archive account or one that doesn't exist, or a search that failed with none working since. After these, it warns when the last test of the connection found that the account of the token may change documents, or may not view correspondents or document types. Otherwise it names the Paperless that the app is connected to, with the version of its last answer. It reads only what the app stored and sends no request to Paperless, so the overview opens as fast as without it.
 
 <!-- --8<-- [end:automation] -->
 <!-- --8<-- [start:security-and-privacy] -->

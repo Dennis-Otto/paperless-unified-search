@@ -112,6 +112,18 @@ final class SettingsTemplateTest extends TestCase {
 	}
 
 	/**
+	 * The warnings that the last test of the connection found about the account of the
+	 * token show next to the token, one after the other, and nothing without them.
+	 */
+	public function testTheWarningsAboutTheTokenShowNextToIt(): void {
+		[, $page] = $this->render(new PublicConfig(self::STORED, true, false), tokenWarnings: ['A Superuser <b>token</b>.', 'No correspondents.']);
+		self::assertSame('A Superuser <b>token</b>. No correspondents.', $this->text($this->element($page, 'paperless-unified-search-token-warnings')));
+
+		[, $page] = $this->render(new PublicConfig(self::STORED, true, false));
+		self::assertSame('', $this->text($this->element($page, 'paperless-unified-search-token-warnings')));
+	}
+
+	/**
 	 * Screen readers read the hint of a field with the field, among them the hint that the
 	 * trusted mode sends every search term to Paperless.
 	 */
@@ -130,7 +142,7 @@ final class SettingsTemplateTest extends TestCase {
 
 		self::assertSame([
 			'paperless-unified-search-allow-local' => ['paperless-unified-search-allow-local-hint'],
-			'paperless-unified-search-token' => ['paperless-unified-search-token-unreadable', 'paperless-unified-search-token-hint'],
+			'paperless-unified-search-token' => ['paperless-unified-search-token-unreadable', 'paperless-unified-search-token-warnings', 'paperless-unified-search-token-hint'],
 			'paperless-unified-search-archive-owner' => ['paperless-unified-search-archive-owner-missing', 'paperless-unified-search-archive-owner-hint'],
 			'paperless-unified-search-always-search' => ['paperless-unified-search-always-search-hint'],
 			'paperless-unified-search-users-always-search' => ['paperless-unified-search-users-always-search-hint'],
@@ -319,15 +331,17 @@ final class SettingsTemplateTest extends TestCase {
 	 * browser reads from it.
 	 *
 	 * @param ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, durationMs: int}>} $history
+	 * @param list<string> $tokenWarnings the warnings about the account of the API token, as AdminSettings words them
 	 * @return array{string, DOMDocument}
 	 */
-	private function render(PublicConfig $config, ?array $history = null, string $saveUrl = '/settings/save'): array {
+	private function render(PublicConfig $config, ?array $history = null, string $saveUrl = '/settings/save', array $tokenWarnings = []): array {
 		$l10n = $this->createStub(IL10N::class);
 		$l10n->method('t')->willReturnCallback(
 			static fn (string $text, array $parameters = []): string => vsprintf($text, $parameters),
 		);
 		$parameters = [
 			'config' => $config,
+			'tokenWarnings' => $tokenWarnings,
 			'saveUrl' => $saveUrl,
 			'resetUrl' => '/settings/reset',
 			'clearDiagnosticsUrl' => '/settings/diagnostics',

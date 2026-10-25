@@ -14,6 +14,11 @@ argument:
                                   each with its ID, title and verdict and nothing more
   setupcheck SEVERITY TEXT        the JSON of occ setupchecks: the check of the app has
                                   this severity, and its description holds the text
+  token [WARNING ...]             the text of paperless_unified_search:check: right after
+                                  the line of the connection, the warnings about the
+                                  account of the API token, such as superuser, in this
+                                  order, or the line that it may change nothing and may
+                                  view what the results show when none is given
 """
 
 import json
@@ -21,17 +26,49 @@ import sys
 
 SETUP_CHECK = "OCA\\PaperlessUnifiedSearch\\SetupCheck\\PaperlessSetupCheck"
 
+# What occ says about the account of the API token, in English, as
+# lib/Service/SettingsMessages.php and lib/Command/Check.php word it.
+TOKEN_FINE = "✓ The account of the API token may change no document, and may view correspondents and document types."
+TOKEN_WARNINGS = {
+    "superuser": "The API token belongs to a Superuser of Paperless: whoever gets hold of it can change and delete every document. Use the token of an account that may only view documents.",
+    "staff": "The API token belongs to an Admin of Paperless, who may also read its logs: whoever gets hold of the token can too. Use the token of an account that is neither Admin nor Superuser.",
+    "changes_documents": "The account of the API token may add, change or delete documents in Paperless: whoever gets hold of the token can too. Use the token of an account that may only view documents.",
+    "hides_correspondents": "The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents.",
+    "hides_document_types": "The account of the API token may not view document types in Paperless, so results show without them. Give the account the permission View for Document Types.",
+}
+
 
 def fail(message):
     raise AssertionError(message)
 
 
-text = sys.stdin.read()
+# occ writes UTF-8, such as the ✓ of check, whatever the locale of Python.
+text = sys.stdin.buffer.read().decode("utf-8")
+mode = sys.argv[1]
+
+if mode == "token":
+    lines = text.splitlines()
+    connection = next((index for index, line in enumerate(lines) if line.startswith("✓ Paperless ") and " answers at " in line), None)
+    if connection is None:
+        fail(f"occ checked no connection to Paperless: {text!r}")
+    unknown = [warning for warning in sys.argv[2:] if warning not in TOKEN_WARNINGS]
+    if unknown:
+        fail(f"Unknown warnings about the token: {unknown!r}")
+    expected = [f"! {TOKEN_WARNINGS[warning]}" for warning in sys.argv[2:]] or [TOKEN_FINE]
+    # The lines about the token follow the connection, and the archive account follows them.
+    actual = []
+    for line in lines[connection + 1:]:
+        if line.startswith("✓ The archive account"):
+            break
+        actual.append(line)
+    if actual != expected:
+        fail(f"Expected the lines {expected!r} about the API token after the connection, got {actual!r} in {text!r}")
+    sys.exit(0)
+
 try:
     payload = json.loads(text)
 except json.JSONDecodeError as error:
     fail(f"occ wrote no JSON ({error}): {text!r}")
-mode = sys.argv[1]
 
 if mode == "verdicts":
     expected = []

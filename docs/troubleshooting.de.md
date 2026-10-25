@@ -8,6 +8,7 @@ Warum Paperless-Dokumente nicht erscheinen, und wie du es behebst. Fang dort an,
 
 - [Keine Paperless-Dokumente in der Suche](#keine-paperless-dokumente-in-der-suche), oder nicht das, das du suchst.
 - [Der Test der Verbindung schlägt fehl](#wenn-der-test-der-verbindung-fehlschlägt), wenn du die Einstellungen speicherst.
+- [Eine Warnung zum API-Token](#warnungen-zum-api-token) erscheint unter dem Token.
 - [Probleme der Suche](#probleme-der-suche) am Ende der Einstellungen listet fehlgeschlagene Suchen.
 - [Die Suche ist langsam](#die-suche-ist-langsam).
 
@@ -68,6 +69,19 @@ Vor dem Test prüfen die Einstellungen, was du eingegeben hast. Diese Meldungen 
 | Das Archiv-Konto … existiert nicht | Gib die ID eines vorhandenen Nextcloud-Kontos ein, oder lass das Feld für das Konto von Paperless Sync leer |
 
 Die [Referenz](reference.de.md#die-routen-der-einstellungen) listet den Code, mit dem die Route der Einstellungen jede Meldung beantwortet, für Skripte, die die Einstellungen speichern.
+
+## Warnungen zum API-Token
+
+Der Test der Verbindung fragt Paperless auch, was das Konto des API-Tokens darf, wie **Verbindung testen und speichern**, `occ paperless_unified_search:setup`, `test` und `check` ihn ausführen. Die Einstellungen zeigen eine Warnung unter dem Token, `occ` eine Zeile mit `Warning:` oder `!`, und die Übersicht der Verwaltungseinstellungen wiederholt sie bis zum nächsten Test. Keine davon hindert die Einstellungen am Speichern oder die Suche am Funktionieren. Ändere das Konto in Paperless unter **Benutzer & Gruppen** (*Users & Groups*), oder gib das Token eines anderen ein, und teste dann die Verbindung erneut.
+
+| Die Warnung sagt | Was zu tun ist |
+| --- | --- |
+| Das API-Token gehört einem Superuser von Paperless | Lege ein eigenes Konto für die Suche an, wie [Konfigurieren](configure.de.md#ein-paperless-konto-für-die-suche) zeigt, und gib sein Token ein: Wer das Token eines Superusers in die Hände bekommt, kann jedes Dokument ändern und löschen |
+| Das API-Token gehört einem Admin von Paperless | Nimm dem Konto **Admin**, oder verwende das Token eines anderen: Ein Admin darf auch die Protokolle und den Status von Paperless lesen |
+| Das Konto des API-Tokens darf in Paperless Dokumente hinzufügen, ändern oder löschen | Lass dem Konto nur **Anzeigen** (*View*) für **Dokumente**, in seinen eigenen Berechtigungen und in denen seiner Gruppen, die ebenso zählen. **Benutzer** hinzufügen oder ändern und **Gruppen** ändern zählen auch, denn Paperless lässt ein solches Konto sich selbst das Recht geben, Dokumente zu ändern |
+| Das Konto des API-Tokens darf in Paperless keine Korrespondenten ansehen | Gib dem Konto **Anzeigen** für **Korrespondenten**; bis dahin zeigen die Treffer und das Dashboard keinen Korrespondenten |
+| Das Konto des API-Tokens darf in Paperless keine Dokumenttypen ansehen | Gib dem Konto **Anzeigen** für **Dokumenttypen**; bis dahin zeigen die Treffer und das Dashboard keinen Typ |
+| Paperless doesn't say what the account of the API token may do (nur `occ paperless_unified_search:check`, auf Englisch) | Gib dem Konto **Anzeigen** für **UI-Einstellungen** (*UI Settings*): Paperless sagt nur einem Konto, das seine UI-Einstellungen ansehen darf, was es darf, und ohne das warnen die Einstellungen vor nichts |
 
 ## Paperless in deinem lokalen Netzwerk
 

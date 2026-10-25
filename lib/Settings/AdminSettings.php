@@ -13,6 +13,7 @@ use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
+use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\IDateTimeFormatter;
 use OCP\IURLGenerator;
@@ -25,12 +26,17 @@ final class AdminSettings implements ISettings {
 		private IURLGenerator $urlGenerator,
 		private SearchDiagnostics $diagnostics,
 		private IDateTimeFormatter $dateTimeFormatter,
+		private SettingsMessages $messages,
 	) {
 	}
 
 	public function getForm(): TemplateResponse {
+		$config = $this->configService->getPublicConfig();
+
 		return new TemplateResponse(AppConstants::APP_ID, 'settings', [
-			'config' => $this->configService->getPublicConfig(),
+			'config' => $config,
+			// What the account of the API token may do, as the last test found it.
+			'tokenWarnings' => array_map($this->messages->forTokenWarning(...), $config->tokenWarnings),
 			'saveUrl' => $this->urlGenerator->linkToRoute(AppConstants::APP_ID . '.settings.save'),
 			'resetUrl' => $this->urlGenerator->linkToRoute(AppConstants::APP_ID . '.settings.reset'),
 			'clearDiagnosticsUrl' => $this->urlGenerator->linkToRoute(AppConstants::APP_ID . '.settings.clearDiagnostics'),

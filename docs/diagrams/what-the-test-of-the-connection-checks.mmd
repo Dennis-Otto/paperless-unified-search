@@ -1,12 +1,15 @@
 flowchart TB
     accTitle: What the test of the connection checks
-    accDescr: Test connection and save asks Paperless for one document. First Nextcloud has to reach Paperless at the URL: find its host, be allowed to connect to its address, connect within 3 seconds, trust its certificate and get an answer within 10 seconds; otherwise the message names which of these failed. Then Paperless has to answer with a status of 2xx; a refused token, a wrong path, a redirect or an error of the server each have their own message. Last, the answer has to be a list of documents of Paperless-ngx. Only then are the settings saved.
+    accDescr: Test connection and save asks Paperless for one document. First Nextcloud has to reach Paperless at the URL: find its host, be allowed to connect to its address, connect within 3 seconds, trust its certificate and get an answer within 10 seconds; otherwise the message names which of these failed. Then Paperless has to answer with a status of 2xx; a refused token, a wrong path, a redirect or an error of the server each have their own message. Last, the answer has to be a list of documents of Paperless-ngx. Only then are the settings saved. Last, Paperless says what the account of the token may do, when it may view its UI settings, and the settings warn below the token about a superuser, an admin, an account that may change documents or one that may not view correspondents or document types.
 
     test(["`**Test connection and save**`"])
     reach{"Does Nextcloud reach<br>Paperless at the URL?"}
     status{"Does Paperless<br>answer with 2xx?"}
     list{"Is the answer a list<br>of documents?"}
     saved["Saved"]
+    may{"What may the account<br>of the token do?"}
+    viewing["No warning"]
+    warned["A warning below the token"]
     network["Host not found, local address,<br>not reached, certificate,<br>encryption or no answer in time"]
     refused["Token refused, wrong path,<br>redirect or error of the server"]
     other["Not like Paperless-ngx"]
@@ -18,8 +21,13 @@ flowchart TB
     status -- "no" --> refused
     list -- "yes" --> saved
     list -- "no" --> other
+    saved --> may
+    may -- "view what the search needs,<br>or Paperless doesn't say" --> viewing
+    may -- "more, or less" --> warned
 
     classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
     classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
-    class saved yes
+    classDef warn fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    class saved,viewing yes
+    class warned warn
     class network,refused,other no

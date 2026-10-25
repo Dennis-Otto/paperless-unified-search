@@ -43,6 +43,7 @@ $ bash demo/seed.sh
 …
 == 136 s: Check the set-up, and search as jamie
 ✓ Paperless 3.3.1 (API 10) answers at http://paperless:8000.
+! The API token belongs to a Superuser of Paperless: …
 ✓ The archive account is paperless.
 ✓ Coverage: 5 of 5 Paperless document(s) have a file of the archive account.
 +----+-----------------------------------+---------+---------------------------------------------------------------------------------------------+
@@ -115,7 +116,7 @@ The weekly run of the demo (`.github/workflows/demo.yml`) records the animation 
 
 The demo shows the app at work with the least that it takes, and leaves out what a server needs:
 
-- **One account of Paperless for both apps.** Paperless Sync and this app use the API token of the administrator of Paperless. On a server, give the search [an account that may only read](../docs/configure.md#a-paperless-account-for-the-search), and Paperless Sync one of its own.
+- **One account of Paperless for both apps.** Paperless Sync and this app use the API token of the administrator of Paperless, so the settings, `occ` and the overview of the demo warn that the token belongs to a superuser. On a server, give the search [an account that may only read](../docs/configure.md#a-paperless-account-for-the-search), and Paperless Sync one of its own.
 - **HTTP on 127.0.0.1, without TLS,** which suits one person trying it on their own machine. [Install](../docs/install.md) sets the app up on a server.
 - **The app from your checkout.** Nextcloud runs the code of the working copy, read-only, so a change of the code shows at the next request. To try a release, check out its tag first, such as `git checkout v<version>`, and run `bash demo/seed.sh` again, which upgrades the app in Nextcloud. Only the releases that include `demo/` have the demo, and Nextcloud doesn't go back to an older version of an app: before an older release, remove the demo with `docker compose -f demo/compose.yaml down --volumes`.
 

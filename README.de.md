@@ -301,7 +301,7 @@ Die Suche braucht eines von einer Synchronisierung: jedes Dokument von Paperless
 
 ## Konfiguration
 
-1. Lege ein eigenes Paperless-Konto mit den geringsten Leserechten an, die die Suche nach Dokumenten braucht: Dokumente ansehen und die Korrespondenten und die Dokumenttypen ansehen, deren Namen die Treffer zeigen.
+1. Lege ein eigenes Paperless-Konto an, weder **Superuser** noch **Admin**, mit nur den Rechten zum Ansehen, die die Suche braucht: **Anzeigen** (*View*) für **Dokumente**, für **Korrespondenten** und **Dokumenttypen**, deren Namen die Treffer zeigen, und für **UI-Einstellungen** (*UI Settings*), aus denen der Test der Verbindung erfährt, was das Konto darf.
 2. Lege ein API-Token für dieses Konto an.
 3. Öffne in Nextcloud **Verwaltungseinstellungen → Paperless Unified Search**.
 4. Gib die Basis-URL von Paperless und das API-Token ein.
@@ -312,6 +312,8 @@ Die Suche braucht eines von einer Synchronisierung: jedes Dokument von Paperless
 9. Wähle **Verbindung testen und speichern**. Nextcloud fragt nach deinem Passwort, wenn du es in den letzten 30 Minuten nicht bestätigt hast, wie bei seinen eigenen Einstellungen dieser Art; ebenso **Verbindung trennen**.
 
 Lass das Token leer, um das gespeicherte zu behalten. Das gespeicherte Token geht nur an den Paperless-Server, für den es gespeichert wurde: Nennt die URL einen anderen Server, mit anderem Schema, Host oder Port, fragen die Einstellungen erneut nach dem Token, damit das Token nie einen Server erreicht, für den es nicht gedacht war. Ein anderer Pfad auf demselben Server behält es. Kann Nextcloud das gespeicherte Token nicht mehr entschlüsseln, wie nach einem Umzug oder einer Wiederherstellung mit einem anderen `secret` in der `config.php`, sagen die Einstellungen das und fragen erneut danach, und bis dahin zeigt die Suche keine Paperless-Dokumente.
+
+Der Test der Verbindung fragt Paperless auch, was das Konto des Tokens darf. Die Einstellungen speichern das Token in jedem Fall und warnen darunter, wenn das Konto ein Superuser oder ein Admin von Paperless ist oder Dokumente hinzufügen, ändern oder löschen darf, denn wer ein solches Token in die Hände bekommt, darf das auch, und wenn es keine Korrespondenten oder Dokumenttypen ansehen darf, deren Namen den Treffern dann fehlen. Paperless sagt das nur einem Konto, das seine UI-Einstellungen ansehen darf; bei jedem anderen warnen die Einstellungen vor nichts. `occ paperless_unified_search:check` und die Übersicht der Verwaltungseinstellungen wiederholen die Warnungen bis zum nächsten Test, und die [Fehlerbehebung](https://dennis-otto.github.io/paperless-unified-search/de/troubleshooting.html) sagt, was bei jeder zu tun ist.
 
 Die Konfiguration gilt global. Die Zugriffssteuerung bleibt benutzerbezogen, weil die App jeden Paperless-Treffer verwirft, für den der suchende Nextcloud-Benutzer keine passende Datei des Archiv-Kontos öffnen kann. Teile das Archiv nur lesend mit den Benutzern, die seine Dokumente sehen dürfen. Ohne Archiv-Konto zeigt die Suche keine Paperless-Dokumente.
 
@@ -344,7 +346,7 @@ Die URL darf einen Docker-Dienst mit Unterstrich nennen, etwa `http://paperless_
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/what-the-test-of-the-connection-checks.de.dark.svg">
-  <img src="docs/images/diagrams/what-the-test-of-the-connection-checks.de.svg" alt="Was der Test der Verbindung prüft: Verbindung testen und speichern fragt Paperless nach einem Dokument. Zuerst muss Nextcloud Paperless unter der URL erreichen: seinen Host finden, sich mit seiner Adresse verbinden dürfen, sich innerhalb von 3 Sekunden verbinden, seinem Zertifikat vertrauen und innerhalb von 10 Sekunden eine Antwort bekommen; sonst nennt die Meldung, was davon fehlgeschlagen ist. Dann muss Paperless mit einem Status 2xx antworten; ein abgelehntes Token, ein falscher Pfad, eine Weiterleitung oder ein Fehler des Servers haben je eine eigene Meldung. Zuletzt muss die Antwort eine Liste von Dokumenten von Paperless-ngx sein. Erst dann werden die Einstellungen gespeichert.">
+  <img src="docs/images/diagrams/what-the-test-of-the-connection-checks.de.svg" alt="Was der Test der Verbindung prüft: Verbindung testen und speichern fragt Paperless nach einem Dokument. Zuerst muss Nextcloud Paperless unter der URL erreichen: seinen Host finden, sich mit seiner Adresse verbinden dürfen, sich innerhalb von 3 Sekunden verbinden, seinem Zertifikat vertrauen und innerhalb von 10 Sekunden eine Antwort bekommen; sonst nennt die Meldung, was davon fehlgeschlagen ist. Dann muss Paperless mit einem Status 2xx antworten; ein abgelehntes Token, ein falscher Pfad, eine Weiterleitung oder ein Fehler des Servers haben je eine eigene Meldung. Zuletzt muss die Antwort eine Liste von Dokumenten von Paperless-ngx sein. Erst dann werden die Einstellungen gespeichert. Zuletzt sagt Paperless, was das Konto des Tokens darf, wenn es seine UI-Einstellungen ansehen darf, und die Einstellungen warnen unter dem Token vor einem Superuser, einem Admin, einem Konto, das Dokumente ändern darf, oder einem, das keine Korrespondenten oder Dokumenttypen ansehen darf.">
 </picture>
 
 | Die Meldung sagt | Was fehlgeschlagen ist | Was zu tun ist |
@@ -420,7 +422,7 @@ Jeder Treffer zeigt die Vorschau seiner Datei, wie es die Treffer von *Dateien* 
 </picture>
 
 - **Vorschau.** Nextcloud zeichnet Vorschauen von Bildern und Office-Dokumenten, von PDF-Dateien aber erst, wenn ein Administrator sie einschaltet, wie seine [Dokumentation der Vorschauen](https://docs.nextcloud.com/server/latest/admin_manual/configuration_files/previews_configuration.html) beschreibt. Bis dahin zeigt ein Treffer das Symbol von PDF-Dateien, wie es die Treffer von *Dateien* tun.
-- **Korrespondent und Typ.** Paperless schickt sie als Zahlen. Die App fragt Paperless mit einer Anfrage für alle Korrespondenten und einer für alle Typen einer Seite nach ihren Namen und behält die Namen zehn Minuten lang, also erscheint ein in Paperless geänderter Name innerhalb von zehn Minuten in den Treffern. Darf das Konto des API-Tokens keine Korrespondenten oder Typen ansehen, oder antwortet Paperless nicht rechtzeitig, erscheinen die Treffer ohne sie, und die Suche funktioniert wie zuvor.
+- **Korrespondent und Typ.** Paperless schickt sie als Zahlen. Die App fragt Paperless mit einer Anfrage für alle Korrespondenten und einer für alle Typen einer Seite nach ihren Namen und behält die Namen zehn Minuten lang, also erscheint ein in Paperless geänderter Name innerhalb von zehn Minuten in den Treffern. Darf das Konto des API-Tokens keine Korrespondenten oder Typen ansehen, oder antwortet Paperless nicht rechtzeitig, erscheinen die Treffer ohne sie, und die Suche funktioniert wie zuvor; die Einstellungen, `occ paperless_unified_search:check` und die Übersicht warnen vor einem solchen Konto.
 - **Text.** Die Wörter um den Begriff kommen so, wie Paperless sie auszeichnet, und der Treffer zeigt sie als einfachen Text. Text eines Dokuments in spitzen Klammern, etwa `<GmbH>`, erscheint mit einem Leerzeichen nach `<`, als `< GmbH>`, damit kein Teil eines Treffers je als HTML wirken kann.
 
 <!-- --8<-- [end:what-a-result-shows] -->
@@ -521,9 +523,9 @@ Vier Befehle von `occ` erledigen ohne Browser, was die Einstellungen tun, und me
 | Befehl | Was er tut | Exit-Code |
 | --- | --- | --- |
 | `paperless_unified_search:setup` | Testet die Verbindung mit der URL und dem Token und speichert dann die Einstellungen, wie es **Verbindung testen und speichern** tut | 0, sobald gespeichert, 1, wenn Paperless nicht antwortet oder eine Einstellung falsch ist, 2 bei einem falschen Aufruf, etwa einer fehlenden `--url` oder einer leeren Quelle des Tokens |
-| `paperless_unified_search:test` | Testet die Verbindung mit den gespeicherten Einstellungen und nennt die Version von Paperless | 0, wenn Paperless antwortet, sonst 1 |
+| `paperless_unified_search:test` | Testet die Verbindung mit den gespeicherten Einstellungen, nennt die Version von Paperless und warnt vor einem Token, das mehr darf, als die Suche braucht, oder weniger, als die Treffer zeigen | 0, wenn Paperless antwortet, sonst 1 |
 | `paperless_unified_search:search <user> <term>` | Sucht als der Benutzer und sagt für jedes Dokument, ob es ihm angezeigt wird, mit `--explain` auch, warum nicht | 0, sobald Paperless geantwortet hat |
-| `paperless_unified_search:check` | Testet die Verbindung und das Archiv-Konto und zählt die Dokumente von Paperless, die eine Datei haben | 0, wenn die Suche Dokumente zeigen kann, sonst 1 |
+| `paperless_unified_search:check` | Testet die Verbindung, was das Konto des API-Tokens darf, und das Archiv-Konto und zählt die Dokumente von Paperless, die eine Datei haben | 0, wenn die Suche Dokumente zeigen kann, sonst 1 |
 
 ### Die App einrichten
 
@@ -597,20 +599,21 @@ Ohne `--explain` entscheidet `search` so wie die Suche selbst, mit einer Suche i
 
 ### Die ganze Einrichtung prüfen
 
-`check` testet die Verbindung und das Archiv-Konto und vergleicht die Dokumente, die das Konto des API-Tokens in Paperless sieht, mit den Dateien des Archiv-Kontos, deren Namen ihre Kennungen tragen:
+`check` testet die Verbindung, was das Konto des API-Tokens darf, und das Archiv-Konto und vergleicht die Dokumente, die das Konto des API-Tokens in Paperless sieht, mit den Dateien des Archiv-Kontos, deren Namen ihre Kennungen tragen:
 
 ```console
 $ occ paperless_unified_search:check
 ✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.
+✓ The account of the API token may change no document, and may view correspondents and document types.
 ✓ The archive account is paperless, the account of Paperless Sync.
 ! Coverage: 1,180 of 1,234 Paperless document(s) have a file of the archive account. Without one, among others: 17, 18, 19, 20, 23, 31, 40, 41, 42, 57.
 ```
 
-Dokumente ohne Datei sind kein Fehler, solange die Suche andere zeigen kann: Die Synchronisierung hat sie vielleicht noch nicht geschrieben oder lässt manche absichtlich weg. Hat kein einziges Dokument eine Datei, etwa bei einem Archiv-Konto, dem keine der synchronisierten Dateien gehört, endet `check` mit 1 und sagt, was zu korrigieren ist. `search --explain` mit einem Begriff eines solchen Dokuments sagt, warum es nicht angezeigt wird.
+Dokumente ohne Datei sind kein Fehler, solange die Suche andere zeigen kann: Die Synchronisierung hat sie vielleicht noch nicht geschrieben oder lässt manche absichtlich weg. Hat kein einziges Dokument eine Datei, etwa bei einem Archiv-Konto, dem keine der synchronisierten Dateien gehört, endet `check` mit 1 und sagt, was zu korrigieren ist. `search --explain` mit einem Begriff eines solchen Dokuments sagt, warum es nicht angezeigt wird. Ein Konto des Tokens, das Dokumente ändern oder keine Korrespondenten oder Dokumenttypen ansehen darf, bekommt eine Zeile mit `!` und was zu ändern ist, ebenso eines, von dem Paperless nicht sagt, was es darf, ohne das Recht, seine UI-Einstellungen anzusehen; keines von beiden lässt die Prüfung fehlschlagen.
 
 ### In der Übersicht der Verwaltung
 
-**Verwaltungseinstellungen → Übersicht** prüft die App unter den anderen Prüfungen der Einrichtung von Nextcloud, ebenso `occ setupchecks`. Sie warnt, wenn die Suche aus einem Grund, den ein Administrator beheben kann, keine Paperless-Dokumente zeigt, und verlinkt die Einstellungen der App: ein Token, das Nextcloud nicht mehr entschlüsseln kann, kein Archiv-Konto oder eines, das nicht existiert, oder eine fehlgeschlagene Suche, nach der keine mehr funktioniert hat. Sonst nennt sie das Paperless, mit dem die App verbunden ist, mit der Version seiner letzten Antwort. Sie liest nur, was die App gespeichert hat, und sendet keine Anfrage an Paperless, also öffnet sich die Übersicht so schnell wie ohne sie.
+**Verwaltungseinstellungen → Übersicht** prüft die App unter den anderen Prüfungen der Einrichtung von Nextcloud, ebenso `occ setupchecks`. Sie warnt, wenn die Suche aus einem Grund, den ein Administrator beheben kann, keine Paperless-Dokumente zeigt, und verlinkt die Einstellungen der App: ein Token, das Nextcloud nicht mehr entschlüsseln kann, kein Archiv-Konto oder eines, das nicht existiert, oder eine fehlgeschlagene Suche, nach der keine mehr funktioniert hat. Danach warnt sie, wenn der letzte Test der Verbindung ergab, dass das Konto des Tokens Dokumente ändern oder keine Korrespondenten oder Dokumenttypen ansehen darf. Sonst nennt sie das Paperless, mit dem die App verbunden ist, mit der Version seiner letzten Antwort. Sie liest nur, was die App gespeichert hat, und sendet keine Anfrage an Paperless, also öffnet sich die Übersicht so schnell wie ohne sie.
 
 <!-- --8<-- [end:automation] -->
 <!-- --8<-- [start:security-and-privacy] -->

@@ -18,7 +18,9 @@
 #   Nextcloud versions, with a fake gh: it opens the issue with the versions that
 #   broke, adds a further failed run to it and closes it once the tests pass again.
 # - mock_server.py, with requests of its own, when Python is installed: its journal
-#   holds each request right after its answer, and run.sh reads that journal.
+#   holds each request right after its answer, and run.sh reads that journal; and it
+#   answers /api/ui_settings/ for the token of a view-only account and of a superuser
+#   as Paperless does.
 # - that no script here pipes a command into grep --quiet, which fails the pipe now
 #   and then under set -o pipefail.
 # - scripts/screenshots.sh --demo, with a fake docker: it records the animation of the
@@ -127,6 +129,7 @@ expect "a pull request of the README and the roadmap" false "$(pull_request 'ech
 export SCOPE=paperless
 expect "a contract run for the requests to Paperless" true "$(pull_request 'mkdir -p lib/Service && echo new >lib/Service/PaperlessApiService.php')"
 expect "a contract run for the search" true "$(pull_request 'mkdir -p lib/Search && echo new >lib/Search/Provider.php')"
+expect "a contract run for the reading of what the token may do" true "$(pull_request 'mkdir -p lib/Model && echo new >lib/Model/TokenWarning.php')"
 expect "a contract run for a document of the contract" true "$(pull_request 'mkdir -p tests/e2e/contract && echo new >tests/e2e/contract/letter.txt')"
 expect "a contract run for the workflow of the tests" true "$(pull_request 'echo second >.github/workflows/e2e.yml')"
 expect "no contract run for another file of the app" false "$(pull_request 'echo second >lib/Search.php')"
@@ -350,9 +353,11 @@ for candidate in python3 python py; do
 done
 if [[ -n "${python}" ]]; then
 	# Prints the file that the mock writes its journal to, and then the journal right
-	# after each answer: one with documents and one to a wrong token. Python on Windows
-	# ends its lines with CR LF. -B leaves the checkout without a cache of bytecode.
+	# after each answer: one with documents and one to a wrong token; then what the mock
+	# says of the account of each of its tokens. Python on Windows ends its lines with
+	# CR LF. -B leaves the checkout without a cache of bytecode.
 	"${python}" -B - "${SCRIPT_DIR}" "${WORK}/requests.log" 2>&1 <<'PYTHON' | tr -d '\r' >"${WORK}/journal" || true
+import json
 import sys
 import threading
 import urllib.error
@@ -388,6 +393,12 @@ for path, token in (
         error.read()
     with open(mock_server.REQUESTS, encoding="utf-8") as journal:
         print(journal.read(), end="")
+for token in (mock_server.TOKEN, mock_server.SUPERUSER_TOKEN):
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{server.server_port}/api/ui_settings/", headers={"Authorization": f"Token {token}"}
+    )
+    answer = json.loads(opener.open(request).read())
+    print(f"account superuser={answer['user']['is_superuser']} staff={answer['user']['is_staff']} {','.join(answer['permissions'])}")
 server.shutdown()
 PYTHON
 	journal="$(head -n 1 "${WORK}/journal")"
@@ -395,7 +406,10 @@ PYTHON
 	expect "run.sh reads the journal of the mock" 1 "$(grep --count --fixed-strings "cat ${journal}" "${SCRIPT_DIR}/run.sh")"
 	expect "the journal of the mock right after each answer" \
 		"GET /api/documents/?query=mobiletest&fields=id&created__date__gte=2026-08-01 HTTP/1.1 200|GET /api/documents/?query=mobiletest&fields=id&created__date__gte=2026-08-01 HTTP/1.1 200|GET /api/documents/?query=mobiletest&fields=id HTTP/1.1 401" \
-		"$(tail -n +2 "${WORK}/journal" | paste -s -d "|")"
+		"$(tail -n +2 "${WORK}/journal" | grep --invert-match '^account ' | paste -s -d "|")"
+	expect "the accounts of the tokens of the mock, as /api/ui_settings/ names them" \
+		"account superuser=False staff=False view_document,view_correspondent,view_documenttype,view_uisettings|account superuser=True staff=True add_document,change_document,delete_document,view_document,view_correspondent,view_documenttype,view_uisettings" \
+		"$(grep '^account ' "${WORK}/journal" | paste -s -d "|")"
 else
 	echo "Python 3.9 or newer is not installed here; the CI tests the journal of the mock."
 fi

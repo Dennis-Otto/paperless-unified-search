@@ -27,10 +27,11 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 /**
  * occ paperless_unified_search:check: everything that the search needs, in one go. The
- * connection to Paperless, the archive account, and how many documents of Paperless have
- * a file of the archive account, which the search can show. It exits with 1 when the
- * search can show no document at all, also when no document has a file, and with 0
- * otherwise.
+ * connection to Paperless, what the account of the API token may do, the archive account,
+ * and how many documents of Paperless have a file of the archive account, which the
+ * search can show. It exits with 1 when the search can show no document at all, also
+ * when no document has a file, and with 0 otherwise: an account that may do more or less
+ * than the search needs gets a warning, and the search works with it.
  */
 final class Check extends Command {
 	use ReportsProblems;
@@ -52,8 +53,8 @@ final class Check extends Command {
 
 	protected function configure(): void {
 		$this->setName('paperless_unified_search:check')
-			->setDescription('Check the connection to Paperless-ngx, the archive account and how many documents have a file')
-			->setHelp('Tests the connection to Paperless, checks that the archive account exists, and compares the documents of Paperless with the files of the archive account whose names carry their markers, such as [P412]. Exits with 1 when the search can show no Paperless document, and with 0 otherwise.');
+			->setDescription('Check the connection to Paperless-ngx, the API token, the archive account and how many documents have a file')
+			->setHelp('Tests the connection to Paperless, warns when the account of the API token may change documents or may not view correspondents and document types, checks that the archive account exists, and compares the documents of Paperless with the files of the archive account whose names carry their markers, such as [P412]. Exits with 1 when the search can show no Paperless document, and with 0 otherwise.');
 	}
 
 	protected function execute(InputInterface $input, OutputInterface $output): int {
@@ -84,8 +85,28 @@ final class Check extends Command {
 		self::passed($output, $status->version === null
 			? sprintf('Paperless answers at %s.', $url)
 			: sprintf('Paperless %s (API %s) answers at %s.', $status->version->version, $status->version->apiVersion, $url));
+		$this->checkTheToken($output, $status);
 
 		return $status;
+	}
+
+	/**
+	 * What the account of the API token may do beyond what the search needs, or may not do
+	 * of what the results show, as Paperless named it after the test of the connection.
+	 */
+	private function checkTheToken(OutputInterface $output, PaperlessStatus $status): void {
+		if ($status->tokenWarnings === null) {
+			self::noted($output, 'Paperless doesn\'t say what the account of the API token may do, so the check can\'t tell whether it may change documents. Give the account the permission View for UI Settings in Paperless, so that the check can tell.');
+
+			return;
+		}
+
+		if ($status->tokenWarnings === []) {
+			self::passed($output, 'The account of the API token may change no document, and may view correspondents and document types.');
+		}
+		foreach ($status->tokenWarnings as $warning) {
+			self::noted($output, $this->messages->forTokenWarning($warning));
+		}
 	}
 
 	private function checkTheArchiveAccount(OutputInterface $output): ?IUser {

@@ -771,6 +771,23 @@ assert_occ try "${TMP_DIR}/answer.json" e2e-other 123=shown 999=no_file
 occ paperless_unified_search:check >"${TMP_DIR}/check.txt"
 expect_text 'Coverage: 1 of 7 Paperless document(s) have a file of the archive account. Without one: 999, 412, 389, 371, 402, 356.' \
 	"${TMP_DIR}/check.txt" "occ checked the coverage wrongly: $(cat "${TMP_DIR}/check.txt")"
+# The check also says what the account of the API token may do, as /api/ui_settings/ of
+# the mock names it: the token of the mock may view documents, correspondents and types
+# and change nothing. A token of a superuser works as well, with a warning in occ and in
+# the overview of the administration settings; then back to the token of the mock.
+assert_occ token "${TMP_DIR}/check.txt"
+printf '%s\n' 'e2e-superuser-token' \
+	| occ paperless_unified_search:setup --url=http://paperless-mock:8080 --token-stdin >"${TMP_DIR}/setup-superuser.txt"
+expect_text 'Warning: The API token belongs to a Superuser of Paperless' "${TMP_DIR}/setup-superuser.txt" \
+	"occ saved the token of a superuser without a warning: $(cat "${TMP_DIR}/setup-superuser.txt")"
+occ paperless_unified_search:check >"${TMP_DIR}/check-superuser.txt"
+assert_occ token "${TMP_DIR}/check-superuser.txt" superuser
+occ setupchecks --output=json >"${TMP_DIR}/setupchecks-superuser.json" || true
+assert_occ setupcheck "${TMP_DIR}/setupchecks-superuser.json" warning 'The API token belongs to a Superuser of Paperless'
+printf '%s\n' 'e2e-only-token' \
+	| occ paperless_unified_search:setup --url=http://paperless-mock:8080 --token-stdin >/dev/null
+occ paperless_unified_search:check >"${TMP_DIR}/check-viewer.txt"
+assert_occ token "${TMP_DIR}/check-viewer.txt"
 resolve e2e-other "${LINK}" "${TMP_DIR}/link-shared.json"
 assert_response file-link "${TMP_DIR}/link-shared.json"
 
@@ -922,4 +939,4 @@ phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed in ${SECONDS} s: the set-up, the repair step that removes the last failure of version 0.3.0, the test, the explained search and the check of occ, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, the dashboard widget with the newest documents that a user can open at one request to Paperless a minute, trusted mode, the choice of a user to include Paperless in every search of their own, which the administrators can disallow, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date in English and German, its correspondent and its type, pages of results filled across pages of Paperless, the date filter in the timezone of the user, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, Try a search for administrators only with the IDs, titles and verdicts alone, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."
+echo "Docker E2E passed in ${SECONDS} s: the set-up, the repair step that removes the last failure of version 0.3.0, the test, the explained search and the check of occ, the warnings of occ and of the overview about a token of a superuser, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, the dashboard widget with the newest documents that a user can open at one request to Paperless a minute, trusted mode, the choice of a user to include Paperless in every search of their own, which the administrators can disallow, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date in English and German, its correspondent and its type, pages of results filled across pages of Paperless, the date filter in the timezone of the user, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, Try a search for administrators only with the IDs, titles and verdicts alone, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."

@@ -9,8 +9,10 @@ It runs in the container of the mock, in the network of the Compose project, whe
 Paperless answers as http://paperless:8000 and Nextcloud as http://nextcloud. It gets a
 token of the API, gives Paperless the synthetic documents of contract/documents/ and
 waits until it has read them, and then checks what the app relies on: first directly,
-with the version of the API and the fields that the app asks for, then through Nextcloud
-with the app set up for this Paperless. It prints a report in Markdown, which
+with the version of the API and the fields that the app asks for, and what
+/api/ui_settings/ says of the account of a token, of a superuser and of an account that
+may only view, then through Nextcloud with the app set up for this Paperless, first with
+the token of the account that may only view and then with that of the superuser. It prints a report in Markdown, which
 paperless-contract.sh adds to the summary of the job, and fails with the first broken
 promise.
 
@@ -25,6 +27,7 @@ import html
 import json
 import os
 import re
+import secrets
 import sys
 import time
 import uuid
@@ -57,6 +60,13 @@ RARE_TERM = "electricity"
 UNFINISHED = "invoice created:[2026 to"
 # The longest that Paperless may take to read the documents and to index them.
 DEADLINE = 240
+
+# The permissions of the account that the documentation recommends for the token: to view
+# documents, the names of correspondents and types that the results show, and its UI
+# settings, without which Paperless doesn't say what the account may do. And those that
+# change documents, which the app warns about (lib/Model/TokenWarning.php).
+VIEWER_PERMISSIONS = ["view_document", "view_correspondent", "view_documenttype", "view_uisettings"]
+CHANGING_DOCUMENTS = {"add_document", "change_document", "delete_document"}
 
 # The fields of a document that a result of the app shows.
 SHOWN = {"id", "title", "created", "__search_hit__"}
@@ -158,15 +168,39 @@ class Paperless:
         return self.documents(what, ordering="-added", page=1, page_size=25, fields=",".join(self.recent_fields))
 
     def log_in(self):
+        self.token = self.token_of(*PAPERLESS_USER)
+
+    @staticmethod
+    def token_of(username, password):
+        """The API token of an account, as its profile in Paperless creates it."""
         answer = request(
             f"{PAPERLESS}/api/token/",
             method="POST",
             headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"},
-            data=urlencode({"username": PAPERLESS_USER[0], "password": PAPERLESS_USER[1]}).encode(),
+            data=urlencode({"username": username, "password": password}).encode(),
         )
         token = answer.json("/api/token/").get("token")
-        expect(answer.status == 200 and isinstance(token, str) and token, f"/api/token/ gave no token (HTTP {answer.status}).")
-        self.token = token
+        expect(answer.status == 200 and isinstance(token, str) and token, f"/api/token/ gave no token for {username} (HTTP {answer.status}).")
+        return token
+
+    def account(self, permissions):
+        """The token of a new account that is neither superuser nor staff, with these
+        permissions, as an administrator of Paperless adds it under Users & Groups; a name
+        of its own in each run, so that a kept Paperless takes it as well."""
+        username = f"contract-viewer-{secrets.token_hex(4)}"
+        password = secrets.token_urlsafe(18)
+        answer = request(
+            f"{PAPERLESS}/api/users/",
+            method="POST",
+            headers={"Accept": self.accept, "Authorization": f"Token {self.token}", "Content-Type": "application/json"},
+            data=json.dumps({"username": username, "password": password, "is_active": True, "is_staff": False, "is_superuser": False, "user_permissions": permissions}).encode(),
+        )
+        expect(answer.status == 201, f"Paperless didn't add the account {username} (HTTP {answer.status}): {answer.body[:300]!r}")
+        return self.token_of(username, password)
+
+    def ui_settings(self, token):
+        """The answer of /api/ui_settings/ to a token, which the app asks what the account may do."""
+        return request(f"{PAPERLESS}/api/ui_settings/", headers={"Accept": self.accept, "Authorization": f"Token {token}"})
 
     def titles(self):
         answer = self.documents("The list of the documents", page_size=100, fields="id,title,created")
@@ -303,6 +337,33 @@ def check_paperless(paperless, line, report):
     return version, api_version, shown
 
 
+def check_privileges(paperless, report):
+    """What /api/ui_settings/ says of the account of a token, from which the app warns
+    about a token that may change documents or may not view what the results show."""
+    answer = paperless.ui_settings(paperless.token)
+    expect(answer.status == 200, f"/api/ui_settings/ answered the superuser with HTTP {answer.status}: {answer.body[:300]!r}")
+    data = answer.json("/api/ui_settings/")
+    user, permissions = data.get("user"), data.get("permissions")
+    expect(isinstance(user, dict) and user.get("is_superuser") is True and isinstance(user.get("is_staff"), bool), f"/api/ui_settings/ names no superuser: {user!r}")
+    expect(isinstance(permissions, list) and all(isinstance(permission, str) for permission in permissions), f"/api/ui_settings/ names no list of permissions: {permissions!r}")
+    expect(CHANGING_DOCUMENTS <= set(permissions), f"The permissions of the superuser lack {sorted(CHANGING_DOCUMENTS - set(permissions))}: {sorted(permissions)}")
+    report.passed("What the account of a superuser may do (/api/ui_settings/)", f"{code('is_superuser')} true, {len(permissions)} permissions without the label of their app, such as {code('change_document')}")
+
+    viewer = paperless.account(VIEWER_PERMISSIONS)
+    data = paperless.ui_settings(viewer).json("/api/ui_settings/ of the viewer")
+    user, permissions = data.get("user", {}), set(data.get("permissions", []))
+    expect(user.get("is_superuser") is False and user.get("is_staff") is False, f"The account that may only view is a superuser or staff: {user!r}")
+    expect(set(VIEWER_PERMISSIONS) <= permissions and not permissions & CHANGING_DOCUMENTS, f"The account that may only view has the permissions {sorted(permissions)}.")
+    report.passed("What an account that may only view may do", f"{code(', '.join(sorted(permissions)))}")
+
+    # Without the permission to view its UI settings, Paperless doesn't say: the app then
+    # warns about nothing, and occ says that it can't tell.
+    refused = paperless.ui_settings(paperless.account(["view_document"]))
+    expect(refused.status == 403, f"/api/ui_settings/ answered an account without view_uisettings with HTTP {refused.status}, not 403: {refused.body[:300]!r}")
+    report.passed("An account that may not view its UI settings", f"HTTP {refused.status}")
+    return viewer
+
+
 def nextcloud(path, *, method="GET", data=None, headers=None):
     credentials = base64.b64encode(":".join(NEXTCLOUD_USER).encode()).decode()
     return request(
@@ -321,21 +382,33 @@ def search_nextcloud(term):
     return entries
 
 
-def check_nextcloud(paperless, line, ids, version, api_version, shown, report):
-    """The same Paperless through the app in Nextcloud."""
+def save_settings(token):
+    """The settings of the app saved with this token, as the settings page saves them."""
     answer = nextcloud(
         "/apps/paperless_unified_search/settings",
         method="POST",
         headers={"Content-Type": "application/x-www-form-urlencoded"},
-        data=urlencode({"url": PAPERLESS, "token": paperless.token, "allowLocal": "1", "archiveOwner": NEXTCLOUD_USER[0]}).encode(),
+        data=urlencode({"url": PAPERLESS, "token": token, "allowLocal": "1", "archiveOwner": NEXTCLOUD_USER[0]}).encode(),
     )
     saved = answer.json("The settings")
     expect(answer.status == 200, f"The test of the connection failed (HTTP {answer.status}): {saved!r}")
+    return saved
+
+
+def check_nextcloud(paperless, line, ids, version, api_version, shown, viewer, report):
+    """The same Paperless through the app in Nextcloud."""
+    saved = save_settings(viewer)
+    expect(saved.get("tokenWarnings") == [], f"The settings warn about the token of an account that may only view: {saved.get('tokenWarnings')!r}")
+    report.passed("The token of an account that may only view, in the settings", "saved without a warning")
+
+    saved = save_settings(paperless.token)
     expect(
         (saved.get("paperlessVersion"), saved.get("paperlessApiVersion")) == (version, api_version),
         f"The settings name Paperless {saved.get('paperlessVersion')!r} with API {saved.get('paperlessApiVersion')!r}, not {version!r} with {api_version!r}.",
     )
     report.passed("The test of the connection in the settings", f"Paperless {code(version)}, API {code(api_version)}")
+    expect(saved.get("tokenWarnings") == ["superuser"], f"The settings don't warn about the token of the superuser: {saved.get('tokenWarnings')!r}")
+    report.passed("The token of a superuser, in the settings", f"saved with the warning {code('superuser')}")
 
     folder = f"/remote.php/dav/files/{NEXTCLOUD_USER[0]}/Paperless"
     answer = nextcloud(folder, method="MKCOL")
@@ -395,7 +468,8 @@ def main():
         report.passed("Documents", f"{len(ids)} synthetic text files, read and indexed")
         version, api_version, shown = check_paperless(paperless, line, report)
         heading = f"### The contract with Paperless-ngx {version} (newest API version {api_version})"
-        check_nextcloud(paperless, line, ids, version, api_version, shown, report)
+        viewer = check_privileges(paperless, report)
+        check_nextcloud(paperless, line, ids, version, api_version, shown, viewer, report)
     except Broken as broken:
         status = 1
         report.failed(broken)

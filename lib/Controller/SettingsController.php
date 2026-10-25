@@ -71,7 +71,9 @@ final class SettingsController extends Controller {
 	}
 
 	/**
-	 * Saves the settings once Paperless answers at the URL with the token. Like
+	 * Saves the settings once Paperless answers at the URL with the token, with what the
+	 * account of the token may do beyond what the search needs, or may not do of what the
+	 * results show, which the answer names as warnings and saving doesn't refuse. Like
 	 * Disconnect, it asks for the password of the administrator when it wasn't confirmed
 	 * in the last 30 minutes. $allowLocal lets Nextcloud reach this Paperless, and only
 	 * this one, at an address of the local network, and $personalAlwaysSearch lets users
@@ -91,9 +93,9 @@ final class SettingsController extends Controller {
 			$normalizedUrl = $this->configService->normalizeUrl($url);
 			$effectiveToken = $this->configService->resolveToken($token, $normalizedUrl);
 			$owner = $this->configService->resolveArchiveOwner($archiveOwner);
-			$version = $this->paperlessApi->testConnection($normalizedUrl, $effectiveToken, $allowLocal);
+			$status = $this->paperlessApi->probe($normalizedUrl, $effectiveToken, $allowLocal);
 
-			return new JSONResponse($this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner, $allowLocal, $version, $personalAlwaysSearch ?? $this->configService->isPersonalAlwaysSearchAllowed()));
+			return new JSONResponse($this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner, $allowLocal, $status->version, $personalAlwaysSearch ?? $this->configService->isPersonalAlwaysSearchAllowed(), $status->tokenWarnings));
 		} catch (InvalidSettingException $exception) {
 			return $this->refusal($this->messages->forSetting($exception->problem, trim($archiveOwner)), $exception->problem->value);
 		} catch (PaperlessRequestException $exception) {

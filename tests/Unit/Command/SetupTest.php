@@ -77,11 +77,34 @@ final class SetupTest extends TestCase {
 			AppConstants::APP_ID . '.paperless_version' => '3.3.0',
 			AppConstants::APP_ID . '.paperless_api_version' => '10',
 		], $this->settings);
-		self::assertCount(1, $this->requests);
+		self::assertCount(2, $this->requests);
 		[$url, $options] = $this->requests[0];
 		self::assertSame('http://paperless:8000/api/documents/', $url);
 		self::assertSame('Token TEST_VALUE', $options['headers']['Authorization']);
 		self::assertSame(['allow_local_address' => true], $options['nextcloud']);
+		// Then what the account of the token may do, which this one may.
+		self::assertSame('http://paperless:8000/api/ui_settings/', $this->requests[1][0]);
+	}
+
+	/**
+	 * A token that may do more than the search needs is saved, with a warning, and the
+	 * warning is stored for the settings page and the overview.
+	 */
+	public function testSavesATokenThatMayDoMoreWithAWarning(): void {
+		$this->privileges = $this->uiSettings(['view_document', 'view_documenttype', 'add_document']);
+		$tester = $this->tester($this->documents([]));
+		$tester->setInputs(['TEST_VALUE']);
+
+		$status = $tester->execute(['--url' => 'https://paperless.example.com', '--token-stdin' => true, '--archive-account' => 'archive'], ['capture_stderr_separately' => true]);
+
+		self::assertSame(Command::SUCCESS, $status, $tester->getErrorOutput());
+		self::assertSame([
+			'Paperless 3.3.0 (API 10) answers at https://paperless.example.com. The settings are saved.',
+			'Warning: The account of the API token may add, change or delete documents in Paperless: whoever gets hold of the token can too. Use the token of an account that may only view documents.',
+			'Warning: The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents.',
+			'Archive account: archive',
+		], array_slice(self::lines($tester->getDisplay()), 0, 4));
+		self::assertSame('changes_documents,hides_correspondents', $this->settings[AppConstants::APP_ID . '.token_warnings']);
 	}
 
 	public function testTakesTheTokenFromAnEnvironmentVariable(): void {
@@ -160,7 +183,7 @@ final class SetupTest extends TestCase {
 			'Enter the API token again: a stored token is only sent to the Paperless server it was saved for.',
 			'Pass the token with --token-stdin or --token-env=NAME.',
 		], self::lines($tester->getErrorOutput()));
-		self::assertCount(1, $this->requests);
+		self::assertCount(2, $this->requests);
 		self::assertSame('https://paperless.example.com', $this->settings[AppConstants::APP_ID . '.paperless_url']);
 	}
 

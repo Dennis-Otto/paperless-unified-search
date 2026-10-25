@@ -37,7 +37,7 @@ final class Test extends Command {
 	protected function configure(): void {
 		$this->setName('paperless_unified_search:test')
 			->setDescription('Test the connection to Paperless-ngx with the stored settings')
-			->setHelp('Asks Paperless for one document with the stored URL and API token, and exits with 0 when it answers, or names what failed and exits with 1.');
+			->setHelp('Asks Paperless for one document with the stored URL and API token, and exits with 0 when it answers, or names what failed and exits with 1. It also warns, without failing, when the account of the token may change documents, or may not view the correspondents and the document types that results show.');
 	}
 
 	protected function execute(InputInterface $input, OutputInterface $output): int {
@@ -60,6 +60,7 @@ final class Test extends Command {
 			? sprintf('Paperless answers at %s.', $url)
 			: sprintf('Paperless %s (API %s) answers at %s.', $status->version->version, $status->version->apiVersion, $url)));
 		$output->writeln(sprintf('The account of the API token may view %s document(s).', number_format($status->documents)));
+		self::warnAboutTheToken($output, $this->messages, $status->tokenWarnings ?? []);
 
 		return self::SUCCESS;
 	}
