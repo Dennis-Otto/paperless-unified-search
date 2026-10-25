@@ -1,3 +1,0 @@
-### Features
-
-- **French, Spanish and Dutch:** the search, its results, the widget *New in Paperless* on the dashboard, the personal and the administration settings and the warnings of the overview now speak French, Spanish and Dutch to accounts set to these languages, with the words that Nextcloud itself uses there, such as *Rechercher dans les services connectés*, and the listing in the App Store has a summary and a description in each. The texts were drafted with the help of an AI: native speakers are welcome to correct them, and the new page [Translate](https://dennis-otto.github.io/paperless-unified-search/translate.html) shows how, and how to add a language.
