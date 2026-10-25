@@ -433,6 +433,7 @@ bash scripts/versions.sh
   grep -v '^- Nextcloud [0-9]* tot ' "$copy/appinfo/info.xml" >"$work/info.xml"
   mv "$work/info.xml" "$copy/appinfo/info.xml"
   printf '%s\n' "| **C** | c34 |" >>"$copy/docs/reference.md"
+  descriptions="$(grep -c '<description' "$copy/appinfo/info.xml")"
   for mode in check --write; do
     if [[ "$mode" == check ]]; then
       versions
@@ -442,7 +443,7 @@ bash scripts/versions.sh
     ends 1 "with $mode where a place is gone"
     printed "docs/faq.md has no line that says \"Nextcloud 34 to 36\""
     printed "has 2 cell(s) in its row of the table of compatibility, and the header 4"
-    printed "appinfo/info.xml has 5 description(s) for the App Store, but 4 line(s)"
+    printed "appinfo/info.xml has $descriptions description(s) for the App Store, but $((descriptions - 1)) line(s)"
   done
   versions --force
   ends 2 "with an argument that it doesn't know"
