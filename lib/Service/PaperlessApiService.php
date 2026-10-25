@@ -9,12 +9,14 @@ declare(strict_types=1);
 
 namespace OCA\PaperlessUnifiedSearch\Service;
 
+use Exception;
 use JsonException;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessQueryRejected;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
 use OCA\PaperlessUnifiedSearch\Model\PaperlessStatus;
 use OCA\PaperlessUnifiedSearch\Model\PaperlessVersion;
+use OCA\PaperlessUnifiedSearch\Model\TokenWarning;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Http\Client\IClient;
@@ -72,6 +74,12 @@ final class PaperlessApiService {
 	private const NAMES_TIMEOUT = 3;
 
 	/**
+	 * The seconds that the request for what the account of the token may do may take in
+	 * all: Paperless has just answered the test of the connection, which passes without it.
+	 */
+	private const PRIVILEGES_TIMEOUT = 3;
+
+	/**
 	 * The seconds that the request for the newest documents may take in all: the
 	 * dashboard waits for it, and Paperless answers it from its database alone.
 	 */
@@ -107,20 +115,10 @@ final class PaperlessApiService {
 	}
 
 	/**
-	 * @param bool $allowLocal whether Nextcloud may reach this Paperless at an address of
-	 *                         the local network
-	 * @return ?PaperlessVersion the version of Paperless, null when its answer names none
-	 * @throws PaperlessRequestException whatever failed, with the reason that the settings
-	 *                                   name: also when the request got no answer
-	 */
-	public function testConnection(string $url, string $token, bool $allowLocal): ?PaperlessVersion {
-		return $this->probe($url, $token, $allowLocal)->version;
-	}
-
-	/**
 	 * The test of the connection to the Paperless of the settings, as occ and its checks
-	 * run it. The version that Paperless names replaces the stored one, which the overview
-	 * of the administration settings shows.
+	 * run it. The version that Paperless names replaces the stored one, and so do the
+	 * warnings about the account of the token, which the overview of the administration
+	 * settings and the settings page show.
 	 *
 	 * @throws PaperlessRequestException whatever failed, also when the request got no answer
 	 */
@@ -131,6 +129,7 @@ final class PaperlessApiService {
 			$this->configService->isLocalNetworkAllowed(),
 		);
 		$this->configService->rememberPaperlessVersion($status->version);
+		$this->configService->rememberTokenWarnings($status->tokenWarnings);
 
 		return $status;
 	}
@@ -138,8 +137,12 @@ final class PaperlessApiService {
 	/**
 	 * Asks Paperless for its first document, which tells whether it answers, its version
 	 * and how many documents the account of the token may view, with their IDs in the field
-	 * all, which Paperless-ngx adds to every list for the selection of all documents.
+	 * all, which Paperless-ngx adds to every list for the selection of all documents. Once
+	 * Paperless has answered, it asks what the account of the token may do, for the
+	 * warnings about it.
 	 *
+	 * @param bool $allowLocal whether Nextcloud may reach this Paperless at an address of
+	 *                         the local network
 	 * @throws PaperlessRequestException whatever failed, with the reason that the settings
 	 *                                   name: also when the request got no answer
 	 */
@@ -151,12 +154,47 @@ final class PaperlessApiService {
 				'page_size' => 1,
 				'fields' => 'id',
 			]);
-
-			return new PaperlessStatus($version, self::documentsOf($data)['count'], self::idsOf($data['all'] ?? null));
 		} catch (PaperlessRequestException $exception) {
 			throw $exception;
 		} catch (Throwable $error) {
 			throw PaperlessRequestException::unanswered($error);
+		}
+
+		return new PaperlessStatus(
+			$version,
+			self::documentsOf($data)['count'],
+			self::idsOf($data['all'] ?? null),
+			$this->findTokenWarnings($url, $token, $allowLocal),
+		);
+	}
+
+	/**
+	 * What the account of the token may do beyond what the search needs, or may not do of
+	 * what the results show, as /api/ui_settings/ of Paperless names it: the user of the
+	 * token and the permissions of its account and its groups. Paperless answers it only to
+	 * an account that may view its UI settings, and refuses it with HTTP 403 otherwise. The
+	 * warnings only add to a test that Paperless has passed, so the request gets one try, a
+	 * short time and no place in the history of the problems of the search, and a request
+	 * without an answer, an answer other than HTTP 200 and one that isn't JSON leave the
+	 * warnings unknown.
+	 *
+	 * @return ?list<TokenWarning> null when Paperless doesn't say what the account may do
+	 */
+	private function findTokenWarnings(string $url, string $token, bool $allowLocal): ?array {
+		try {
+			$response = $this->client->get(
+				rtrim($url, '/') . '/api/ui_settings/',
+				$this->options($token, $allowLocal, [], self::PRIVILEGES_TIMEOUT),
+			);
+			$body = $response->getBody();
+			if ($response->getStatusCode() !== 200 || !is_string($body)) {
+				return null;
+			}
+
+			return TokenWarning::of(json_decode($body, true, flags: JSON_THROW_ON_ERROR));
+		} catch (Exception) {
+			// The errors of the client of Nextcloud, such as a timeout, and of JSON.
+			return null;
 		}
 	}
 

@@ -68,6 +68,7 @@ final class ConfigServiceTest extends TestCase {
 			'paperlessVersion' => '3.3.0',
 			'paperlessApiVersion' => '10',
 			'personalAlwaysSearch' => true,
+			'tokenWarnings' => [],
 		], $serialized);
 		self::assertStringNotContainsString('TEST_VALUE', json_encode($serialized, JSON_THROW_ON_ERROR));
 	}
@@ -613,7 +614,7 @@ final class ConfigServiceTest extends TestCase {
 	public function testResetDeletesTheUrlTheSwitchesTheArchiveAccountAndTheToken(): void {
 		$deletedKeys = [];
 		$config = $this->createMock(IAppConfig::class);
-		$config->expects(self::exactly(7))
+		$config->expects(self::exactly(8))
 			->method('deleteKey')
 			->willReturnCallback(static function (string $app, string $key) use (&$deletedKeys): void {
 				$deletedKeys[] = $app . '.' . $key;
@@ -636,6 +637,7 @@ final class ConfigServiceTest extends TestCase {
 			AppConstants::APP_ID . '.personal_always_search',
 			AppConstants::APP_ID . '.paperless_version',
 			AppConstants::APP_ID . '.paperless_api_version',
+			AppConstants::APP_ID . '.token_warnings',
 		], $deletedKeys);
 		self::assertSame([
 			'url' => '',
@@ -649,6 +651,7 @@ final class ConfigServiceTest extends TestCase {
 			'paperlessVersion' => '',
 			'paperlessApiVersion' => '',
 			'personalAlwaysSearch' => true,
+			'tokenWarnings' => [],
 		], $result->jsonSerialize());
 		self::assertSame('', $service->getToken());
 	}

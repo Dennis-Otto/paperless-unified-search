@@ -101,7 +101,7 @@ class Element {
 // keeps; `history: false` leaves out the button of the history, as without problems.
 function page({ url = '', tokenConfigured = false, history = true } = {}) {
 	const ids = [
-		'form', 'url', 'allow-local', 'token', 'token-unreadable', 'always-search', 'users-always-search', 'archive-owner',
+		'form', 'url', 'allow-local', 'token', 'token-unreadable', 'token-warnings', 'always-search', 'users-always-search', 'archive-owner',
 		'archive-owner-missing', 'save', 'reset', 'status', 'diagnostics',
 		'try-form', 'try-term', 'try-user', 'try', 'try-status', 'try-result',
 	]
@@ -282,6 +282,7 @@ test('saving sends the form, shows the progress, and then the settings as stored
 	assert.equal(get('users-always-search').checked, false)
 	assert.equal(get('archive-owner').value, 'archive')
 	assert.equal(get('token-unreadable').textContent, '')
+	assert.equal(get('token-warnings').textContent, '')
 	assert.equal(get('archive-owner-missing').textContent, '')
 })
 
@@ -388,6 +389,27 @@ test('the settings show the warnings that the stored settings call for', async f
 	await get('form').dispatch('submit')
 	assert.equal(get('token-unreadable').textContent, '')
 	assert.equal(get('archive-owner-missing').textContent, 'The archive account sync does not exist.')
+})
+
+test('the settings show the warnings about the account of the token, which keep nothing from being saved', async function() {
+	const { get } = load(page(), {
+		answers: [
+			json({ ...CONFIG, tokenWarnings: ['superuser'] }),
+			// A value that a newer server names, which this page doesn't know, shows nothing.
+			json({ ...CONFIG, tokenWarnings: ['staff', 'changes_documents', 'retired', 'hides_correspondents', 'hides_document_types'] }),
+			json({ ...CONFIG, tokenWarnings: [] }),
+		],
+	})
+
+	await get('form').dispatch('submit')
+	assert.equal(get('token-warnings').textContent, 'The API token belongs to a Superuser of Paperless: whoever gets hold of it can change and delete every document. Use the token of an account that may only view documents.')
+	assert.equal(get('status').textContent, 'Connection successful. Settings saved.')
+
+	await get('form').dispatch('submit')
+	assert.equal(get('token-warnings').textContent, 'The API token belongs to an Admin of Paperless, who may also read its logs: whoever gets hold of the token can too. Use the token of an account that is neither Admin nor Superuser. The account of the API token may add, change or delete documents in Paperless: whoever gets hold of the token can too. Use the token of an account that may only view documents. The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents. The account of the API token may not view document types in Paperless, so results show without them. Give the account the permission View for Document Types.')
+
+	await get('form').dispatch('submit')
+	assert.equal(get('token-warnings').textContent, '')
 })
 
 test('a placeholder without its value stays as it is', async function() {

@@ -32,6 +32,7 @@ final class PublicConfigTest extends TestCase {
 			'paperlessApiVersion' => '',
 			// Users may choose to include Paperless in every search of their own.
 			'personalAlwaysSearch' => true,
+			'tokenWarnings' => [],
 		], (new PublicConfig('https://paperless.example.com', true, false))->jsonSerialize());
 	}
 

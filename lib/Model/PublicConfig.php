@@ -23,6 +23,10 @@ final class PublicConfig implements JsonSerializable {
 	 *                                            as its last answer named them
 	 * @param bool $personalAlwaysSearch users may include Paperless in every search of their
 	 *                                   own, in their personal settings
+	 * @param list<TokenWarning> $tokenWarnings what the account of the API token may do
+	 *                                          beyond what the search needs, or may not do
+	 *                                          of what the results show, as the last test of
+	 *                                          the connection found it
 	 */
 	public function __construct(
 		public readonly string $url,
@@ -35,11 +39,12 @@ final class PublicConfig implements JsonSerializable {
 		public readonly bool $allowLocal = false,
 		public readonly ?PaperlessVersion $paperlessVersion = null,
 		public readonly bool $personalAlwaysSearch = true,
+		public readonly array $tokenWarnings = [],
 	) {
 	}
 
 	/**
-	 * @return array{url: string, tokenConfigured: bool, alwaysSearch: bool, archiveOwner: string, syncAccount: string, tokenUnreadable: bool, archiveOwnerMissing: bool, allowLocal: bool, paperlessVersion: string, paperlessApiVersion: string, personalAlwaysSearch: bool}
+	 * @return array{url: string, tokenConfigured: bool, alwaysSearch: bool, archiveOwner: string, syncAccount: string, tokenUnreadable: bool, archiveOwnerMissing: bool, allowLocal: bool, paperlessVersion: string, paperlessApiVersion: string, personalAlwaysSearch: bool, tokenWarnings: list<string>}
 	 */
 	public function jsonSerialize(): array {
 		return [
@@ -55,6 +60,8 @@ final class PublicConfig implements JsonSerializable {
 			'paperlessVersion' => $this->paperlessVersion?->version ?? '',
 			'paperlessApiVersion' => $this->paperlessVersion?->apiVersion ?? '',
 			'personalAlwaysSearch' => $this->personalAlwaysSearch,
+			// Their values, such as superuser, which the settings page names.
+			'tokenWarnings' => array_map(static fn (TokenWarning $warning): string => $warning->value, $this->tokenWarnings),
 		];
 	}
 }

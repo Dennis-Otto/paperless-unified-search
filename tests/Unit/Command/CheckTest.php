@@ -55,6 +55,7 @@ final class CheckTest extends TestCase {
 
 		self::assertSame(
 			"✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.\n"
+			. "✓ The account of the API token may change no document, and may view correspondents and document types.\n"
 			. "✓ The archive account is archive.\n"
 			. "✓ Coverage: 3 of 3 Paperless document(s) have a file of the archive account.\n"
 			. "✓ Shared read-only: 1 user, 1 group.\n",
@@ -83,6 +84,7 @@ final class CheckTest extends TestCase {
 
 		self::assertSame(
 			"✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.\n"
+			. "✓ The account of the API token may change no document, and may view correspondents and document types.\n"
 			. "✓ The archive account is archive.\n"
 			. "! Coverage: 3 of 1,234 Paperless document(s) have a file of the archive account. Without one, among others: 4, 5, 6, 7, 8, 9, 10, 11, 12, 13.\n"
 			. "! 1 document(s) have a file of the archive account, but the account of the API token doesn't see them in Paperless, maybe because they were deleted there.\n"
@@ -118,6 +120,7 @@ final class CheckTest extends TestCase {
 
 		self::assertSame(
 			"✓ Paperless answers at https://paperless.example.com.\n"
+			. "✓ The account of the API token may change no document, and may view correspondents and document types.\n"
 			. "✓ The archive account is archive, the account of Paperless Sync.\n"
 			. "! Coverage: 1 document(s) have a file of the archive account; Paperless has 1,180 document(s), without naming them.\n"
 			. self::NO_SHARES,
@@ -140,6 +143,7 @@ final class CheckTest extends TestCase {
 
 		self::assertSame(
 			"✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.\n"
+			. "✓ The account of the API token may change no document, and may view correspondents and document types.\n"
 			. "✓ The archive account is archive.\n"
 			. "! Coverage: 0 of 2 Paperless document(s) have a file of the archive account. Without one: 1, 2.\n"
 			. "! 1 document(s) have a file of the archive account, but the account of the API token doesn't see them in Paperless, maybe because they were deleted there.\n"
@@ -196,13 +200,65 @@ final class CheckTest extends TestCase {
 		self::assertSame("Paperless answered with an error (HTTP 502). Check its log, or try again later.\n", $tester->getErrorOutput());
 	}
 
+	/**
+	 * An account of the token that may do more than the search needs, or less than the
+	 * results show, gets a warning with what to change, and the search still works.
+	 */
+	public function testWarnsAboutWhatTheAccountOfTheTokenMayDo(): void {
+		$this->connected();
+		$this->file('/archive/files/Paperless/Document [P1].pdf');
+		$this->privileges = $this->uiSettings(['view_document', 'change_document'], staff: true);
+		$tester = $this->tester($this->documents([['id' => 1]], 1, [1]));
+
+		self::assertSame(Command::SUCCESS, $tester->execute([]));
+
+		self::assertSame(
+			"✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.\n"
+			. "! The API token belongs to an Admin of Paperless, who may also read its logs: whoever gets hold of the token can too. Use the token of an account that is neither Admin nor Superuser.\n"
+			. "! The account of the API token may add, change or delete documents in Paperless: whoever gets hold of the token can too. Use the token of an account that may only view documents.\n"
+			. "! The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents.\n"
+			. "! The account of the API token may not view document types in Paperless, so results show without them. Give the account the permission View for Document Types.\n"
+			. "✓ The archive account is archive.\n"
+			. "✓ Coverage: 1 of 1 Paperless document(s) have a file of the archive account.\n"
+			. "! The archive account shares none of its files, so only it finds its documents.\n",
+			$tester->getDisplay(),
+		);
+		self::assertSame('https://paperless.example.com/api/ui_settings/', $this->requests[1][0]);
+		// The overview of the administration settings warns until the next test.
+		self::assertSame('staff,changes_documents,hides_correspondents,hides_document_types', $this->settings[AppConstants::APP_ID . '.token_warnings']);
+	}
+
+	/**
+	 * Paperless tells what the account may do only when it may view its UI settings; the
+	 * check says that it can't tell, and passes.
+	 */
+	public function testSaysWhenPaperlessDoesNotTellWhatTheAccountOfTheTokenMayDo(): void {
+		$this->connected();
+		$this->file('/archive/files/Paperless/Document [P1].pdf');
+		$this->privileges = $this->answer(403, '{"detail":"You do not have permission to perform this action."}');
+		$tester = $this->tester($this->documents([['id' => 1]], 1, [1]));
+
+		self::assertSame(Command::SUCCESS, $tester->execute([]));
+
+		self::assertStringContainsString(
+			"✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.\n"
+			. "! Paperless doesn't say what the account of the API token may do, so the check can't tell whether it may change documents. Give the account the permission View for UI Settings in Paperless, so that the check can tell.\n"
+			. "✓ The archive account is archive.\n",
+			$tester->getDisplay(),
+		);
+	}
+
 	public function testFailsWithoutAnArchiveAccount(): void {
 		$this->connected('');
 		$tester = $this->tester($this->documents([], 0, []));
 
 		self::assertSame(Command::FAILURE, $tester->execute([], ['capture_stderr_separately' => true]));
 
-		self::assertSame("✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.\n", $tester->getDisplay());
+		self::assertSame(
+			"✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.\n"
+			. "✓ The account of the API token may change no document, and may view correspondents and document types.\n",
+			$tester->getDisplay(),
+		);
 		self::assertSame("No archive account is set, and Paperless Sync names none, so the search shows no Paperless documents. Name the account that owns the synchronized files with occ paperless_unified_search:setup --archive-account.\n", $tester->getErrorOutput());
 	}
 

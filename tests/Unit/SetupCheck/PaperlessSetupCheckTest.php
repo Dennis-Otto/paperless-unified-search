@@ -178,6 +178,30 @@ final class PaperlessSetupCheckTest extends TestCase {
 				},
 				'T:The archive account archive shares /Inbox, /Paperless with write permission, so whoever may write there can give a file the marker of any document. Share the archive read-only: {section} lists each share.',
 			],
+			// The search works with such a token, so this warning comes after the others.
+			'a token that may change documents and may not view correspondents' => [
+				static function (self $test): void {
+					$test->connected();
+					$test->settings[AppConstants::APP_ID . '.token_warnings'] = 'changes_documents,hides_correspondents';
+				},
+				'T:The account of the API token may add, change or delete documents in Paperless: whoever gets hold of the token can too. Use the token of an account that may only view documents. The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents. Then test the connection again in {section}.',
+			],
+			'a token that cannot be decrypted, after warnings about it' => [
+				static function (self $test): void {
+					$test->connected();
+					$test->settings[AppConstants::APP_ID . '.token_warnings'] = 'superuser';
+					$test->storedToken = false;
+				},
+				'T:The stored Paperless API token can\'t be decrypted, as after a move or a restore of Nextcloud with another secret in config.php, so the search shows no Paperless documents. Enter the token again in {section}.',
+			],
+			'a failure in Paperless, with a warning about the token' => [
+				static function (self $test): void {
+					$test->connected();
+					$test->settings[AppConstants::APP_ID . '.token_warnings'] = 'staff';
+					$test->history(DiagnosticsHistory::start(1791300000)->with($test->event(SearchEvent::KIND_FAILED, SearchEvent::STEP_PAPERLESS)));
+				},
+				'T:A search failed on formatted 1791400000 while asking Paperless, and none has worked since. Search problems in {section} shows what failed.',
+			],
 			'a failure of the files, with retries since' => [
 				static function (self $test): void {
 					$test->connected();
@@ -239,6 +263,7 @@ final class PaperlessSetupCheckTest extends TestCase {
 			$urlGenerator,
 			$dateTimeFormatter,
 			$this->archiveShares($l10n),
+			$this->messages(),
 		);
 	}
 

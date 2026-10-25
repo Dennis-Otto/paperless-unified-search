@@ -15,6 +15,7 @@ use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCA\PaperlessUnifiedSearch\Service\ArchiveShares;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
+use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
 use OCP\IDateTimeFormatter;
 use OCP\IL10N;
 use OCP\IURLGenerator;
@@ -25,11 +26,13 @@ use OCP\SetupCheck\SetupResult;
  * The state of the search in the overview of the administration settings and in
  * occ setupchecks: a warning when the search shows no Paperless documents for a reason
  * that an administrator can correct, or when the archive account shares files with write
- * permission, with a link to the settings of the app, and else the Paperless that it is
- * connected to and how the archive is shared. It reads only what the app stored and the
- * shares in the database of Nextcloud, and sends no request to Paperless, so that the
- * overview opens as fast as without it; the last answer of Paperless named the version,
- * and the history of the problems of the search tells whether searches work.
+ * permission or the account of the API token may do more or less than the search needs,
+ * with a link to the settings of the app, and else the Paperless that it is connected to
+ * and how the archive is shared. It reads only what the app stored and the shares in the
+ * database of Nextcloud, and sends no request to Paperless, so that the overview opens as
+ * fast as without it; the last answer of Paperless named the version, the last test of
+ * the connection what the account of the token may do, and the history of the problems
+ * of the search tells whether searches work.
  */
 final class PaperlessSetupCheck implements ISetupCheck {
 	/** @psalm-suppress PossiblyUnusedMethod */
@@ -40,6 +43,7 @@ final class PaperlessSetupCheck implements ISetupCheck {
 		private IURLGenerator $urlGenerator,
 		private IDateTimeFormatter $dateTimeFormatter,
 		private ArchiveShares $archiveShares,
+		private SettingsMessages $messages,
 	) {
 	}
 
@@ -88,6 +92,14 @@ final class PaperlessSetupCheck implements ISetupCheck {
 		$writable = array_unique(array_map(static fn (ArchiveShare $share): string => $share->path, $shares->writable()));
 		if ($writable !== []) {
 			return $this->warning($this->l10n->t('The archive account %1$s shares %2$s with write permission, so whoever may write there can give a file the marker of any document. Share the archive read-only: {section} lists each share.', [$archiveOwner, implode(', ', $writable)]));
+		}
+
+		$tokenWarnings = $this->configService->getTokenWarnings();
+		if ($tokenWarnings !== []) {
+			// The search works, so these come after every reason that it shows nothing.
+			return $this->warning($this->l10n->t('%s Then test the connection again in {section}.', [
+				implode(' ', array_map($this->messages->forTokenWarning(...), $tokenWarnings)),
+			]));
 		}
 
 		$url = $this->configService->getUrl();

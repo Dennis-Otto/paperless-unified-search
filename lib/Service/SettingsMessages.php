@@ -12,12 +12,14 @@ namespace OCA\PaperlessUnifiedSearch\Service;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
 use OCA\PaperlessUnifiedSearch\Exception\RequestFailure;
 use OCA\PaperlessUnifiedSearch\Exception\SettingProblem;
+use OCA\PaperlessUnifiedSearch\Model\TokenWarning;
 use OCP\IL10N;
 
 /**
  * What the settings page and occ say when the settings can't be saved or Paperless can't
- * be reached: what failed and what to correct, in the language of the administrator, or
- * of Nextcloud for occ. Each text stands in a call of t() of its own, where
+ * be reached, or when the account of the API token may do more or less than the search
+ * needs: what failed and what to correct, in the language of the administrator, or of
+ * Nextcloud for occ. Each text stands in a call of t() of its own, where
  * scripts/check-l10n.mjs finds it.
  */
 final class SettingsMessages {
@@ -61,6 +63,20 @@ final class SettingsMessages {
 			RequestFailure::UnknownHost => $this->l10n->t('Nextcloud could not find the host of this URL. Check its spelling; the name of a Docker service only works when Nextcloud runs in the same Docker network.'),
 			RequestFailure::Timeout => $this->l10n->t('Paperless did not answer in time. Check that it runs and is not overloaded, then try again.'),
 			RequestFailure::Unreachable => $this->l10n->t('Nextcloud could not reach Paperless at this URL. Check the address and the port, and that Paperless runs.'),
+		};
+	}
+
+	/**
+	 * The warning about what the account of the API token may do, or may not do, with what
+	 * to change; saving and the search work either way.
+	 */
+	public function forTokenWarning(TokenWarning $warning): string {
+		return match ($warning) {
+			TokenWarning::Superuser => $this->l10n->t('The API token belongs to a Superuser of Paperless: whoever gets hold of it can change and delete every document. Use the token of an account that may only view documents.'),
+			TokenWarning::Staff => $this->l10n->t('The API token belongs to an Admin of Paperless, who may also read its logs: whoever gets hold of the token can too. Use the token of an account that is neither Admin nor Superuser.'),
+			TokenWarning::ChangesDocuments => $this->l10n->t('The account of the API token may add, change or delete documents in Paperless: whoever gets hold of the token can too. Use the token of an account that may only view documents.'),
+			TokenWarning::HidesCorrespondents => $this->l10n->t('The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents.'),
+			TokenWarning::HidesDocumentTypes => $this->l10n->t('The account of the API token may not view document types in Paperless, so results show without them. Give the account the permission View for Document Types.'),
 		};
 	}
 }

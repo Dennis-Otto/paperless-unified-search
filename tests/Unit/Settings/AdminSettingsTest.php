@@ -15,6 +15,7 @@ use OCA\PaperlessUnifiedSearch\Model\PublicConfig;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
+use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
 use OCA\PaperlessUnifiedSearch\Settings\AdminSection;
 use OCA\PaperlessUnifiedSearch\Settings\AdminSettings;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
@@ -83,9 +84,11 @@ final class AdminSettingsTest extends TestCase {
 			'paperlessVersion' => '',
 			'paperlessApiVersion' => '',
 			'personalAlwaysSearch' => true,
+			'tokenWarnings' => [],
 		], $params['config']->jsonSerialize());
 		self::assertStringNotContainsString('TEST_VALUE', json_encode($params, JSON_THROW_ON_ERROR));
 		self::assertNull($params['history']);
+		self::assertSame([], $params['tokenWarnings']);
 		// The shares of the account of Paperless Sync, the archive account in use.
 		self::assertSame(['summary' => 'The archive account shares none of its files, so only it finds its documents.', 'warnings' => []], $params['shares']);
 		self::assertSame(['sync'], $this->askedForSharesOf);
@@ -107,6 +110,30 @@ final class AdminSettingsTest extends TestCase {
 			'summary' => 'Shared: 1 user, 1 group.',
 			'warnings' => ['/Paperless is shared with the user sam with write permission, so the search shows sam none of the documents in it. Share it read-only.'],
 		], $params['shares']);
+	}
+
+	/**
+	 * The page shows the warnings about the account of the token that the last test of the
+	 * connection found, in the language of the administrator.
+	 */
+	public function testTheFormNamesTheWarningsAboutTheToken(): void {
+		$config = $this->createStub(IAppConfig::class);
+		$config->method('getValueString')->willReturnCallback(static fn (string $app, string $key, string $default = '', bool $lazy = false): string => match ($app . '.' . $key) {
+			AppConstants::APP_ID . '.paperless_url' => 'https://paperless.example.com',
+			AppConstants::APP_ID . '.token_warnings' => $lazy ? 'superuser,hides_correspondents' : '',
+			default => '',
+		});
+		$credentials = $this->createStub(ICredentialsManager::class);
+		$credentials->method('retrieve')->willReturn('TEST_VALUE');
+
+		$params = $this->settings($config, $credentials, $this->createStub(IURLGenerator::class))->getForm()->getParams();
+
+		self::assertSame([
+			'The API token belongs to a Superuser of Paperless: whoever gets hold of it can change and delete every document. Use the token of an account that may only view documents.',
+			'The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents.',
+		], $params['tokenWarnings']);
+		self::assertInstanceOf(PublicConfig::class, $params['config']);
+		self::assertSame(['superuser', 'hides_correspondents'], $params['config']->jsonSerialize()['tokenWarnings']);
 	}
 
 	/**
@@ -208,6 +235,8 @@ final class AdminSettingsTest extends TestCase {
 	}
 
 	private function settings(IAppConfig $config, ICredentialsManager $credentials, IURLGenerator $urlGenerator): AdminSettings {
+		$l10n = $this->createStub(IL10N::class);
+		$l10n->method('t')->willReturnCallback(static fn (string $text, array $parameters = []): string => vsprintf($text, $parameters));
 		$formatter = $this->createStub(IDateTimeFormatter::class);
 		$formatter->method('formatDateTime')->willReturnCallback(static function (mixed $timestamp, string $date, string $time): string {
 			self::assertIsInt($timestamp);
@@ -222,6 +251,7 @@ final class AdminSettingsTest extends TestCase {
 			new SearchDiagnostics($config, $this->createStub(ITimeFactory::class), $this->createStub(ICacheFactory::class)),
 			$formatter,
 			$this->archiveShares(),
+			new SettingsMessages($l10n),
 		);
 	}
 }

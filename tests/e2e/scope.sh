@@ -37,9 +37,9 @@ case "${SCOPE:-nextcloud}" in
 	paperless)
 		# The requests to Paperless, the reading of its answers, the contract tests, their
 		# containers and their workflow.
-		COVERED='^lib/(Service/PaperlessApiService\.php|Search/|Model/PaperlessVersion\.php|Exception/)|^tests/e2e/(paperless-contract\.sh|assert_contract\.py|compose(\.paperless)?\.yaml|scope\.sh|contract/)|^\.github/workflows/e2e\.yml$'
+		COVERED='^lib/(Service/PaperlessApiService\.php|Search/|Model/PaperlessVersion\.php|Model/TokenWarning\.php|Exception/)|^tests/e2e/(paperless-contract\.sh|assert_contract\.py|compose(\.paperless)?\.yaml|scope\.sh|contract/)|^\.github/workflows/e2e\.yml$'
 		TESTS="Contract tests"
-		FILES="lib/Service/PaperlessApiService.php, lib/Search/, lib/Model/PaperlessVersion.php, lib/Exception/, the contract tests and their files in tests/e2e/"
+		FILES="lib/Service/PaperlessApiService.php, lib/Search/, lib/Model/PaperlessVersion.php, lib/Model/TokenWarning.php, lib/Exception/, the contract tests and their files in tests/e2e/"
 		;;
 	*)
 		echo "SCOPE is nextcloud or paperless, not ${SCOPE}." >&2

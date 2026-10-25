@@ -28,6 +28,10 @@ Nein, nur die, deren Dateien sie öffnen können, wie jeder Benutzer. Administra
 
 Nur wenn der Benutzer es will: mit eingeschaltetem **Verbundene Dienste durchsuchen**, nachdem er im Smart Picker **Paperless-Dokumente** gewählt hat, oder wenn ein Skript diese Suche über die API anfragt. Ein Administrator kann Paperless auch mit **Paperless immer in die globale Suche einbeziehen** vertrauen; dann geht jeder Begriff jeder Suche an Paperless. Die Begriffe reisen vom Nextcloud-Server zu Paperless, nie vom Browser, und die App protokolliert keinen davon.
 
+## Kann ich das API-Token meines eigenen Paperless-Kontos verwenden?
+
+Es funktioniert, aber wer das Token eines Administrators von Paperless in die Hände bekommt, kann jedes Dokument ändern und löschen, und die Einstellungen warnen davor unter dem Token. Gib der Suche ein eigenes Konto, das nur Dokumente, Korrespondenten, Dokumenttypen und seine UI-Einstellungen ansehen darf, wie [Konfigurieren](configure.de.md#ein-paperless-konto-für-die-suche) zeigt: Der Test der Verbindung warnt dann vor nichts, und das Konto findet weiterhin jedes Dokument, das du es ansehen lässt.
+
 ## Funktioniert es in den Nextcloud-Apps für iOS und Android?
 
 Ja. Die Apps zeigen Paperless-Dokumente in ihrer Suche, und ein Treffer öffnet die Datei im Viewer der App. Im Browser eines Smartphones funktioniert die Suche wie auf einem Computer. [Auf dem Smartphone](usage.de.md#auf-dem-smartphone) zeigt es.
