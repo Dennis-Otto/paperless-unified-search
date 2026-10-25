@@ -10,7 +10,8 @@ name: Docker E2E
 # (tests/e2e/run-all.sh): no queue between jobs, and one download of the browser. In
 # a pull request, the search dialog runs on a phone only against the newest version,
 # which saves the others 16 to 19 seconds each; everywhere else every size runs against
-# every version.
+# every version. Beside them, tests/e2e/upgrade.sh upgrades the last release to the
+# checkout, on the newest version in a pull request and on every version elsewhere.
 #
 # A pull request or push that changes no file the tests cover, such as one of the
 # documentation, of the CI or from the blueprint, passes the check in seconds without

@@ -135,6 +135,9 @@ expect "a pull request of a new file of the app" true "$(pull_request 'mkdir -p 
 expect "a pull request of the end-to-end tests" true "$(pull_request 'echo second >tests/e2e/README.md')"
 expect "a pull request of composer.json" true "$(pull_request 'echo second >composer.json')"
 expect "a pull request of a new composer.lock" true "$(pull_request 'echo new >composer.lock')"
+expect "a pull request of the files that the package leaves out" true "$(pull_request 'echo new >.nextcloudignore')"
+expect "a pull request of the rules of krankerl" true "$(pull_request 'echo new >krankerl.toml')"
+expect "a pull request of a .nextcloudignore in another folder" false "$(pull_request 'mkdir -p docs && echo new >docs/.nextcloudignore')"
 expect "a pull request of the workflow of the tests" true "$(pull_request 'echo second >.github/workflows/e2e.yml')"
 expect "a pull request of another workflow" false "$(pull_request 'echo second >.github/workflows/lint.yml')"
 expect "a pull request of a path that only looks like the app" false "$(pull_request 'echo second >docs/lib/notes.md')"
@@ -418,7 +421,7 @@ while (($# > 0)); do
 done
 echo "curl ${url}" >>"${FAKE_DOCKER_LOG}"
 if ((redirect == 1)); then
-	printf '%s' "${FAKE_LATEST:-}"
+	printf '%s %s' "${FAKE_LATEST_STATUS:-302}" "${FAKE_LATEST:-}"
 	exit 0
 fi
 if [[ ! -f "${FAKE_RELEASE}/${url##*/}" ]]; then
@@ -448,8 +451,11 @@ SCRIPT
 	}
 	certificate paperless_unified_search
 	certificate another_app
-	printf 'The release.\n' >"${WORK}/release.txt"
-	tar -C "${WORK}" -czf "${release}/paperless_unified_search.tar.gz" release.txt
+	# The release, which supports Nextcloud 33 to 35.
+	mkdir -p "${WORK}/packed/paperless_unified_search/appinfo"
+	printf '<info>\n\t<dependencies>\n\t\t<nextcloud min-version="33" max-version="35"/>\n\t</dependencies>\n</info>\n' \
+		>"${WORK}/packed/paperless_unified_search/appinfo/info.xml"
+	tar -C "${WORK}/packed" -czf - paperless_unified_search >"${release}/paperless_unified_search.tar.gz"
 	openssl dgst -sha512 -sign "${WORK}/paperless_unified_search.key" \
 		-out "${release}/paperless_unified_search.tar.gz.sig" "${release}/paperless_unified_search.tar.gz"
 	cp "${WORK}/paperless_unified_search.crt" "${release}/paperless_unified_search.crt"
@@ -460,7 +466,7 @@ SCRIPT
 		: >"${WORK}/docker.log"
 		(cd "${app}" && PATH="${fakes}:${PATH}" DOCKER_BIN="${fakes}/docker" FAKE_DOCKER_LOG="${WORK}/docker.log" \
 			FAKE_RELEASE="${release}" FAKE_LATEST="https://github.com/o/r/releases/tag/v1.0.0" \
-			"$@" bash tests/e2e/upgrade.sh >"${WORK}/log" 2>&1) || status=$?
+			NEXTCLOUD_IMAGE=nextcloud:35-apache "$@" bash tests/e2e/upgrade.sh >"${WORK}/log" 2>&1) || status=$?
 		echo "${status}"
 	}
 
@@ -477,6 +483,26 @@ SCRIPT
 	expect "upgrade.sh without a release" 0 "$(upgrade env FAKE_LATEST=https://github.com/o/r/releases)"
 	expect_in "the notice without a release" "The upgrade test is skipped: o/r has no release yet to upgrade from." "${WORK}/log"
 	expect "Docker without a release" 0 "$(grep --count '^docker ' "${WORK}/docker.log" || true)"
+	# A lookup that GitHub refuses, such as with a 429, fails rather than skip the test.
+	expect "upgrade.sh when GitHub refuses the lookup of the last release" 1 "$(upgrade env FAKE_LATEST_STATUS=429 FAKE_LATEST=)"
+	expect_in "the message about the refused lookup" "GitHub answered the request for the last release of o/r with HTTP 429, not with a redirect" "${WORK}/log"
+	expect "upgrade.sh with a redirect elsewhere" 1 "$(upgrade env FAKE_LATEST=https://github.com/login)"
+	expect "Docker when GitHub refuses the lookup" 0 "$(grep --count '^docker ' "${WORK}/docker.log" || true)"
+	# A Nextcloud that the release doesn't support, as the pull request of the upstream
+	# bot for a new version meets: app:enable would refuse the release, so the test skips.
+	expect "upgrade.sh on a Nextcloud newer than the release supports" 0 "$(upgrade env NEXTCLOUD_IMAGE=nextcloud:36-apache)"
+	expect_in "the notice about a newer Nextcloud" "The upgrade test is skipped: v1.0.0 supports Nextcloud 33 to 35, not 36." "${WORK}/log"
+	expect "Docker on a Nextcloud newer than the release supports" 0 "$(grep --count '^docker ' "${WORK}/docker.log" || true)"
+	expect "upgrade.sh on a Nextcloud older than the release supports" 0 "$(upgrade env NEXTCLOUD_IMAGE=nextcloud:32.0.1-apache)"
+	expect_in "the notice about an older Nextcloud" "supports Nextcloud 33 to 35, not 32." "${WORK}/log"
+	expect "upgrade.sh with an image without a version" 1 "$(upgrade env NEXTCLOUD_IMAGE=nextcloud:apache)"
+	expect_in "the message about an image without a version" "The image nextcloud:apache names no major version of Nextcloud" "${WORK}/log"
+	# Without NEXTCLOUD_IMAGE, the image of compose.yaml, pinned by its digest.
+	# shellcheck disable=SC2016 # the text of compose.yaml, with its variable unexpanded
+	printf 'services:\n  nextcloud:\n    image: ${NEXTCLOUD_IMAGE:-nextcloud:34.0.2-apache@sha256:0123}\n' >"${app}/tests/e2e/compose.yaml"
+	expect "upgrade.sh with the image of compose.yaml" 1 "$(upgrade env NEXTCLOUD_IMAGE=)"
+	expect_in "the major version of the image of compose.yaml" "v1.0.0 supports Nextcloud 33 to 35, 34 among them." "${WORK}/log"
+	rm "${app}/tests/e2e/compose.yaml"
 	expect "upgrade.sh with a tag that isn't one" 1 "$(upgrade env E2E_UPGRADE_FROM=latest)"
 	expect_in "the message about a tag that isn't one" "latest is no tag of a release, such as v1.1.1." "${WORK}/log"
 	expect "upgrade.sh with the provenance refused" 1 "$(upgrade env FAKE_GH_STATUS=1)"

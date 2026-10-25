@@ -209,14 +209,22 @@ fi
 from="${E2E_UPGRADE_FROM:-}"
 if [[ -z "${from}" ]]; then
 	# GitHub answers /releases/latest with a redirect to the tag of the newest release
-	# that is neither a draft nor a pre-release, without the API and its rate limit.
-	latest="$(curl --silent --show-error --retry 3 --retry-all-errors --connect-timeout 15 --max-time 60 \
-		--output /dev/null --write-out '%{redirect_url}' "https://github.com/${repository}/releases/latest")"
-	if [[ "${latest}" != */releases/tag/* ]]; then
+	# that is neither a draft nor a pre-release, without the API and its rate limit. A
+	# repository without a release redirects to /releases instead. Any other answer, such
+	# as a 429 of the shared addresses of the runners, fails the test rather than skip it
+	# unnoticed.
+	answer="$(curl --silent --show-error --retry 3 --retry-all-errors --connect-timeout 15 --max-time 60 \
+		--output /dev/null --write-out '%{http_code} %{redirect_url}' "https://github.com/${repository}/releases/latest" || true)"
+	latest_status="${answer%% *}"
+	latest="${answer#* }"
+	if [[ "${latest_status}" == 302 && "${latest}" == */releases/tag/* ]]; then
+		from="${latest##*/releases/tag/}"
+	elif [[ "${latest_status}" == 302 && "${latest}" == */releases ]]; then
 		notice "The upgrade test is skipped: ${repository} has no release yet to upgrade from."
 		exit 0
+	else
+		fail "GitHub answered the request for the last release of ${repository} with HTTP ${latest_status:-000}${latest:+ to ${latest}}, not with a redirect to a tag or to its releases; run the test again later."
 	fi
-	from="${latest##*/releases/tag/}"
 fi
 if [[ ! "${from}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 	fail "${from} is no tag of a release, such as v1.1.1."
@@ -269,6 +277,26 @@ else
 	fail "${APP_ID}.tar.gz of ${from} has no valid provenance of build-release.yml of ${repository}."
 fi
 
+# occ app:enable refuses a release whose range of Nextcloud versions leaves out the
+# server, as the pull request of the upstream bot for a new Nextcloud meets before a
+# release supports it: the test skips then, and runs again with that release.
+range="$(tar -xzOf "${release}/${APP_ID}.tar.gz" "${APP_ID}/appinfo/info.xml" 2>/dev/null \
+	| sed -nE 's#.*<nextcloud[^>]*min-version="([0-9]+)"[^>]*max-version="([0-9]+)".*#\1 \2#p' | head -n 1 || true)"
+if [[ ! "${range}" =~ ^[0-9]+\ [0-9]+$ ]]; then
+	fail "${APP_ID}.tar.gz of ${from} has no appinfo/info.xml that names its Nextcloud versions, as <nextcloud min-version=\"33\" max-version=\"35\"/>."
+fi
+read -r min_version max_version <<<"${range}"
+image="${NEXTCLOUD_IMAGE:-$(sed -nE 's#.*image: \$\{NEXTCLOUD_IMAGE:-([^}]+)\}.*#\1#p' "${SCRIPT_DIR}/compose.yaml" 2>/dev/null | head -n 1 || true)}"
+server_major="$(sed -nE 's#^(.*/)?nextcloud:([0-9]+)([.-].*)?$#\2#p' <<<"${image%%@*}")"
+if [[ -z "${server_major}" ]]; then
+	fail "The image ${image:-of compose.yaml} names no major version of Nextcloud, as nextcloud:35-apache, to check the versions of ${from} against."
+fi
+if ((server_major < min_version || server_major > max_version)); then
+	notice "The upgrade test is skipped: ${from} supports Nextcloud ${min_version} to ${max_version}, not ${server_major}."
+	exit 0
+fi
+echo "${from} supports Nextcloud ${min_version} to ${max_version}, ${server_major} among them."
+
 phase "Pack the checkout as version ${package_version}"
 bash "${SCRIPT_DIR}/package.sh" "${TMP_DIR}/package.tar.gz" "${package_version}"
 
@@ -304,11 +332,17 @@ curl --silent --show-error --output /dev/null --user "e2e-user:${PASSWORD}" --re
 		"${BASE_URL}/remote.php/dav/files/e2e-user/Documents/Mobile%20viewer%20test%20%5BP123%5D.pdf" >/dev/null
 
 phase "Set up the release ${from} and search"
-# Every setting other than its default, so that one that the upgrade resets shows.
-printf '%s\n' "${TOKEN}" \
-	| occ "${APP_ID}:setup" --url=http://paperless-mock:8080 \
-		--archive-account=e2e-user --allow-local --always-search --token-stdin \
-		>"${TMP_DIR}/setup.txt"
+# Every setting other than its default, so that one that the upgrade resets shows: a
+# key renamed without a migration leaves the old one in the database, and only the
+# settings page tells. The switch of the personal settings is on by default; a release
+# whose setup can't turn it off, such as v1.1.1, leaves it on.
+setup_options=(--url=http://paperless-mock:8080 --archive-account=e2e-user --allow-local --always-search --token-stdin)
+expected_before=(url=http://paperless-mock:8080 archiveOwner=e2e-user allowLocal=on alwaysSearch=on token=stored)
+if occ "${APP_ID}:setup" --help | grep --fixed-strings -- '--personal-always-search' >/dev/null; then
+	setup_options+=(--no-personal-always-search)
+	expected_before+=(personalAlwaysSearch=off)
+fi
+printf '%s\n' "${TOKEN}" | occ "${APP_ID}:setup" "${setup_options[@]}" >"${TMP_DIR}/setup.txt"
 cat "${TMP_DIR}/setup.txt"
 # The last failed search that version 0.3.0 kept, as lazy values, which the repair step
 # of the app removes on the upgrade.
@@ -320,7 +354,7 @@ fi
 if ! until_passes "${TMP_DIR}/settings-before.txt" shown_settings; then
 	fail "The release ${from} shows no administration settings."
 fi
-for expected in url=http://paperless-mock:8080 archiveOwner=e2e-user allowLocal=on alwaysSearch=on token=stored; do
+for expected in "${expected_before[@]}"; do
 	if ! grep --fixed-strings --line-regexp --regexp="${expected}" "${TMP_DIR}/settings-before.txt" >/dev/null; then
 		fail "The release ${from} doesn't show ${expected} after its setup: $(cat "${TMP_DIR}/settings-before.txt")"
 	fi

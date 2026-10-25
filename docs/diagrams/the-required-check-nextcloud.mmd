@@ -5,7 +5,7 @@ config:
 ---
 flowchart TB
     accTitle: The required check nextcloud
-    accDescr: A pull request or a push to main that changes no file the end-to-end tests cover passes the check nextcloud in seconds, with a notice. Otherwise, and in the weekly run and a run started by hand, run-all.sh tests every Nextcloud version from min-version to max-version at the same time in one job, and the check passes only when every version passes; the log of each version is a group of its own. When the weekly run or a run started by hand on main fails, the job issue about the supported Nextcloud opens the issue A supported Nextcloud release breaks the app with the versions that broke, or adds the run to it; when such a run passes, it closes the issue. A pull request or a push never touches the issue.
+    accDescr: A pull request or a push to main that changes no file the end-to-end tests cover passes the check nextcloud in seconds, with a notice. Otherwise, and in the weekly run and a run started by hand, run-all.sh tests every Nextcloud version from min-version to max-version at the same time in one job, and beside them upgrade.sh upgrades the last release to the checkout, on the newest version in a pull request and on every version elsewhere; the check passes only when every version and every upgrade passes, and the log of each is a group of its own. When the weekly run or a run started by hand on main fails, the job issue about the supported Nextcloud opens the issue A supported Nextcloud release breaks the app with the versions that broke, or adds the run to it; when such a run passes, it closes the issue. A pull request or a push never touches the issue.
 
     change["Pull request<br>or push to main"]
     timed["Weekly run<br>or a start by hand"]
@@ -15,7 +15,8 @@ flowchart TB
     low["`Nextcloud *min-version*`"]
     middle["every version<br>in between"]
     high["`Nextcloud *max-version*`"]
-    every{"Every version<br>passes?"}
+    upgrade["upgrade.sh: from the last release<br>newest version on a pull request,<br>every version elsewhere"]
+    every{"Every version and<br>every upgrade passes?"}
     passed["nextcloud passes"]
     failed["nextcloud fails<br>the log of each version<br>in a group of its own"]
     opened["opens the issue<br>A supported Nextcloud<br>release breaks the app<br>or adds the run to it,<br>with the versions that broke"]
@@ -25,7 +26,7 @@ flowchart TB
     scope -- "no" --> skipped
     scope -- "yes" --> all
     timed --> all
-    all --> low & middle & high --> every
+    all --> low & middle & high & upgrade --> every
     every -- "yes" --> passed
     every -- "no" --> failed
     failed -- "weekly run or<br>by hand on main" --> opened
@@ -36,6 +37,6 @@ flowchart TB
     classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
     classDef fail fill:#dc26262e,stroke:#dc2626,stroke-width:2px
     class change person
-    class timed,all,low,middle,high,opened bot
+    class timed,all,low,middle,high,upgrade,opened bot
     class skipped,passed,closed done
     class failed fail

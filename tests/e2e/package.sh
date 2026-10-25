@@ -76,5 +76,6 @@ if [[ -n "${version}" ]]; then
 	cat "${STAGING}/info.xml" >"${info}"
 fi
 
-tar -C "${STAGING}" -czf "${archive}" "${APP_ID}"
+# Through standard output: GNU tar would take the drive of F:/pkg.tar.gz for a host.
+tar -C "${STAGING}" -czf - "${APP_ID}" >"${archive}"
 echo "Packed ${count} files of the checkout${version:+ as version ${version}} into ${archive}."
