@@ -100,8 +100,8 @@ final class Setup extends Command {
 			$normalizedUrl = $this->configService->normalizeUrl($url);
 			$effectiveToken = $this->configService->resolveToken($token, $normalizedUrl);
 			$owner = $this->configService->resolveArchiveOwner($archiveOwner);
-			$version = $this->paperlessApi->testConnection($normalizedUrl, $effectiveToken, $allowLocal);
-			$config = $this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner, $allowLocal, $version, $personalAlwaysSearch);
+			$status = $this->paperlessApi->probe($normalizedUrl, $effectiveToken, $allowLocal);
+			$config = $this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner, $allowLocal, $status->version, $personalAlwaysSearch, $status->tokenWarnings);
 		} catch (InvalidSettingException $exception) {
 			self::error($output, $this->messages->forSetting($exception->problem, trim($archiveOwner)));
 			if (in_array($exception->problem, [SettingProblem::TokenRequired, SettingProblem::TokenForOtherServer], true)) {
@@ -115,9 +115,11 @@ final class Setup extends Command {
 			return self::FAILURE;
 		}
 
+		$version = $config->paperlessVersion;
 		$output->writeln(OutputFormatter::escape($version === null
 			? sprintf('Paperless answers at %s. The settings are saved.', $config->url)
 			: sprintf('Paperless %s (API %s) answers at %s. The settings are saved.', $version->version, $version->apiVersion, $config->url)));
+		self::warnAboutTheToken($output, $this->messages, $config->tokenWarnings);
 		$this->describe($output, $config);
 
 		return self::SUCCESS;

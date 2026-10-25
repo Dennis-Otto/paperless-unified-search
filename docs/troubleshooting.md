@@ -8,6 +8,7 @@ Why Paperless documents don't show, and how to fix it. Start where your problem 
 
 - [No Paperless documents in the search](#no-paperless-documents-in-the-search), or not the one you look for.
 - [The test of the connection fails](#when-the-test-of-the-connection-fails) when you save the settings.
+- [A warning about the API token](#warnings-about-the-api-token) shows below the token.
 - [Search problems](#search-problems) at the end of the settings lists failed searches.
 - [The search is slow](#the-search-is-slow).
 
@@ -68,6 +69,19 @@ Before the test, the settings check what you entered. These messages name what t
 | The archive account … does not exist | Enter the ID of an existing Nextcloud account, or leave the field blank for the account of Paperless Sync |
 
 [Reference](reference.md#the-routes-of-the-settings) lists the code that the settings route answers with each message, for scripts that save the settings.
+
+## Warnings about the API token
+
+The test of the connection also asks Paperless what the account of the API token may do, as **Test connection and save**, `occ paperless_unified_search:setup`, `test` and `check` run it. The settings show a warning below the token, `occ` a line with `Warning:` or `!`, and the overview of the administration settings repeats it until the next test. None of them keeps the settings from being saved or the search from working. Change the account in Paperless, under **Users & Groups**, or enter the token of another one, then test the connection again.
+
+| The warning says | What to do |
+| --- | --- |
+| The API token belongs to a Superuser of Paperless | Add an account of its own for the search, as [Configure](configure.md#a-paperless-account-for-the-search) shows, and enter its token: whoever gets hold of the token of a superuser can change and delete every document |
+| The API token belongs to an Admin of Paperless | Clear **Admin** of the account, or use the token of another one: an admin may also read the logs and the status of Paperless |
+| The account of the API token may add, change or delete documents | Leave the account only **View** for **Documents**, in its own permissions and in those of its groups, which count as well |
+| The account of the API token may not view correspondents | Give the account **View** for **Correspondents**; until then the results and the dashboard show no correspondent |
+| The account of the API token may not view document types | Give the account **View** for **Document Types**; until then the results and the dashboard show no type |
+| Paperless doesn't say what the account of the API token may do (`occ paperless_unified_search:check` alone) | Give the account **View** for **UI Settings**: Paperless tells what an account may do only to one that may view its UI settings, and without it the settings warn about nothing |
 
 ## Paperless in your local network
 

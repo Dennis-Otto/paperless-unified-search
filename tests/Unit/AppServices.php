@@ -37,6 +37,13 @@ trait AppServices {
 	/** @var list<array{string, array<string, mixed>}> the requests to Paperless so far, with their options */
 	private array $requests = [];
 
+	/**
+	 * What Paperless answers to /api/ui_settings/, what the account of the token may do,
+	 * or the error of that request: by default, that it may view documents,
+	 * correspondents and document types, and nothing else.
+	 */
+	private IResponse|Throwable|null $privileges = null;
+
 	/** The headers with which Paperless-ngx 3.3.0 names its version. */
 	private const VERSION_HEADERS = ['X-Version' => '3.3.0', 'X-Api-Version' => '10'];
 
@@ -68,13 +75,17 @@ trait AppServices {
 
 	/**
 	 * A Paperless that gives these answers to the requests in turn, and throws an error
-	 * instead of answering for a Throwable. The requests land in $this->requests.
+	 * instead of answering for a Throwable; it answers the question of the test of the
+	 * connection for what the account of the token may do with $this->privileges. The
+	 * requests land in $this->requests.
 	 */
 	private function paperless(IResponse|Throwable ...$answers): IClient {
 		$client = $this->createStub(IClient::class);
 		$client->method('get')->willReturnCallback(function (string $url, array $options) use (&$answers): IResponse {
 			$this->requests[] = [$url, $options];
-			$answer = array_shift($answers);
+			$answer = str_ends_with($url, '/api/ui_settings/')
+				? $this->privileges ?? $this->uiSettings(['view_document', 'view_correspondent', 'view_documenttype'])
+				: array_shift($answers);
 			self::assertNotNull($answer, 'Paperless got more requests than the test expects.');
 			if ($answer instanceof Throwable) {
 				throw $answer;
@@ -101,6 +112,20 @@ trait AppServices {
 		}
 
 		return $this->answer(200, (string)json_encode($body), $headers);
+	}
+
+	/**
+	 * The answer of /api/ui_settings/ for an account with these permissions, as Paperless
+	 * names them, which is a superuser or staff when the flags say so.
+	 *
+	 * @param list<string> $permissions
+	 */
+	private function uiSettings(array $permissions, bool $superuser = false, bool $staff = false): IResponse {
+		return $this->answer(200, (string)json_encode([
+			'user' => ['id' => 3, 'username' => 'nextcloud', 'is_staff' => $staff, 'is_superuser' => $superuser, 'groups' => []],
+			'settings' => [],
+			'permissions' => $permissions,
+		]));
 	}
 
 	/**

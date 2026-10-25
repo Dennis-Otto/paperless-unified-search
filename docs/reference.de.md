@@ -48,6 +48,7 @@ occ config:app:get paperless_unified_search paperless_url
 | `always_search` | Ob jede Suche Paperless fragt |
 | `personal_always_search` | Ob Benutzer wählen dürfen, Paperless in jede ihrer Suchen einzubeziehen; fehlt er, dürfen sie es |
 | `paperless_version`, `paperless_api_version` | Die Versionen von Paperless und seiner API, etwa `3.3.0` und `10`, wie seine letzte Antwort sie genannt hat |
+| `token_warnings` | Die Warnungen zum Konto des API-Tokens, die der letzte Test der Verbindung gefunden hat, durch Kommas getrennt: `superuser`, `staff`, `changes_documents`, `hides_correspondents` und `hides_document_types`; fehlt, wenn es keine gibt oder Paperless es nicht gesagt hat. Ein Lazy-Schlüssel |
 | `diagnostics` | Der Verlauf der Probleme der Suche, als JSON; ein Lazy-Schlüssel, den Nextcloud erst lädt, wenn er gelesen wird |
 | `diagnostics_pending` | Ob ein Fehler im Verlauf noch auf eine Suche wartet, die funktioniert |
 
@@ -119,13 +120,13 @@ Die [Fehlerbehebung](troubleshooting.de.md#wenn-der-test-der-verbindung-fehlschl
 
 ## Anfragen an Paperless
 
-Jede Anfrage der App an Paperless ist ein `GET` von `<URL>/api/documents/`, oder von `/api/correspondents/` und `/api/document_types/` für die Namen der Korrespondenten und Typen einer Seite, vom Nextcloud-Server aus:
+Jede Anfrage der App an Paperless ist ein `GET` von `<URL>/api/documents/`, von `/api/correspondents/` und `/api/document_types/` für die Namen der Korrespondenten und Typen einer Seite oder von `/api/ui_settings/` dafür, was das Konto des Tokens darf, vom Nextcloud-Server aus:
 
 | | |
 | --- | --- |
 | **Header** | `Authorization: Token …`, `Accept: application/json` und `User-Agent: Nextcloud-Paperless-Unified-Search/<version>` |
 | **Eine Suche** | `query` mit dem Begriff, `page`, `page_size=25` und `fields=id,title,created,correspondent,document_type,__search_hit__`; bei Paperless 3 eine Anfrage, die es noch nicht verarbeiten kann, noch einmal mit `text` statt `query` |
-| **Der Test der Verbindung** | `page_size=1` und `fields=id` |
+| **Der Test der Verbindung** | `page_size=1` und `fields=id`; sobald Paperless antwortet, `/api/ui_settings/` ohne Parameter, mit 3 Sekunden für die Antwort und ohne zweiten Versuch, für die Warnungen zum Konto des Tokens. Von der Antwort liest die App nur `user.is_superuser`, `user.is_staff` und `permissions`; einem Konto, das seine UI-Einstellungen nicht ansehen darf, antwortet Paperless mit HTTP 403, und die Warnungen bleiben unbekannt |
 | **Die neuesten Dokumente des Dashboards** | `ordering=-added`, `page=1`, `page_size=25` und `fields=id,title,added,correspondent,document_type`, höchstens einmal in der Minute für alle Benutzer, mit 5 Sekunden für die Antwort und ohne zweiten Versuch |
 | **Zeit** | 3 Sekunden zum Verbinden, 10 Sekunden für die Antwort |
 | **Ein zweiter Versuch** | Nur für eine Anfrage, die innerhalb von 3,5 Sekunden fehlgeschlagen ist, bevor sie eine Verbindung hatte, und deren Adresse Nextcloud nicht verweigert hat |
@@ -149,6 +150,8 @@ Jede Anfrage der App an Paperless ist ein `GET` von `<URL>/api/documents/`, oder
 | Der Browser oder eine App des Benutzers | Nextcloud | Der Suchbegriff | Immer, wenn der Benutzer sucht |
 | Nextcloud | Paperless | Der Begriff, die Seite und die Felder, mit denen zu antworten ist, und das API-Token | Mit eingeschaltetem **Verbundene Dienste durchsuchen**, nach der Wahl von **Paperless-Dokumente** im Smart Picker, über die API oder immer, wenn Paperless vertraut wird |
 | Paperless | Nextcloud | Von jedem Dokument, das das Konto des Tokens ansehen darf: seine ID, sein Titel, sein Datum, die IDs seines Korrespondenten und seines Typs und der Ausschnitt um den Begriff; die Versionen von Paperless und seiner API | In jeder Antwort |
+| Nextcloud | Paperless | Die Anfrage danach, was das Konto des Tokens darf, mit dem API-Token | Bei jedem Test der Verbindung: **Verbindung testen und speichern**, `occ paperless_unified_search:setup`, `test` und `check` |
+| Paperless | Nextcloud | Der Benutzer des Tokens mit seiner ID und seinem Namen, ob er ein Superuser oder Staff ist, seine Gruppen, seine Berechtigungen und die seiner Gruppen und die Einstellungen der Weboberfläche von Paperless für ihn; die App behält nur die Warnungen, die daraus folgen, ob er ein Superuser oder Staff ist, und aus seinen Berechtigungen | In jeder Antwort an ein Konto, das seine UI-Einstellungen ansehen darf |
 | Nextcloud | Der Browser oder eine App des Benutzers | Von jedem Dokument, dessen Datei der Benutzer öffnen kann: sein Titel, sein Datum und sein Ausschnitt und der Link, die ID und der Pfad seiner Datei | In jeder Antwort |
 | Nextcloud | Paperless | Die Anfrage nach den 25 Dokumenten, die Paperless zuletzt hinzugefügt hat, mit den Feldern, die das Dashboard zeigt, und das API-Token | Höchstens einmal in der Minute, wenn das Dashboard eines Benutzers das Widget zeigt |
 | Paperless | Nextcloud | Von jedem dieser Dokumente, das das Konto des Tokens ansehen darf: seine ID, sein Titel, der Moment, an dem Paperless es hinzugefügt hat, und die IDs seines Korrespondenten und seines Typs | In jeder Antwort |
@@ -163,7 +166,7 @@ Jede Anfrage der App an Paperless ist ein `GET` von `<URL>/api/documents/`, oder
 
 </div>
 
-Nextcloud speichert die Einstellungen in seiner App-Konfiguration, das Token verschlüsselt in seinem Zugangsdatenmanager und den Verlauf der letzten 20 Probleme, ohne den Begriff, das Token und die Abfrage einer URL. Sein verteilter Cache behält die Namen der Korrespondenten und Typen zehn Minuten lang und von den 25 neuesten Dokumenten ihre IDs, Titel, die Momente, an denen Paperless sie hinzugefügt hat, und die IDs ihrer Korrespondenten und Typen eine Minute lang, für alle Benutzer; vom Text der Dokumente wird nichts gespeichert. Die [Architecture](architecture.md#data-flow) erklärt jeden Schritt und das [Sicherheitsdesign](security.md), was jeden davon schützt.
+Nextcloud speichert die Einstellungen in seiner App-Konfiguration, mit den Warnungen zum Konto des Tokens, die der letzte Test gefunden hat, das Token verschlüsselt in seinem Zugangsdatenmanager und den Verlauf der letzten 20 Probleme, ohne den Begriff, das Token und die Abfrage einer URL. Sein verteilter Cache behält die Namen der Korrespondenten und Typen zehn Minuten lang und von den 25 neuesten Dokumenten ihre IDs, Titel, die Momente, an denen Paperless sie hinzugefügt hat, und die IDs ihrer Korrespondenten und Typen eine Minute lang, für alle Benutzer; vom Text der Dokumente wird nichts gespeichert. Die [Architecture](architecture.md#data-flow) erklärt jeden Schritt und das [Sicherheitsdesign](security.md), was jeden davon schützt.
 
 --8<-- "README.de.md:security-and-privacy"
 

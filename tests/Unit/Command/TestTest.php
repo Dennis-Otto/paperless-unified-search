@@ -45,6 +45,25 @@ final class TestTest extends TestCase {
 		self::assertSame('3.3.0', $this->settings[AppConstants::APP_ID . '.paperless_version']);
 	}
 
+	/**
+	 * A token of a superuser works, with a warning; monitoring still reads 0.
+	 */
+	public function testWarnsAboutATokenThatMayChangeDocuments(): void {
+		$this->connected();
+		$this->privileges = $this->uiSettings([], superuser: true);
+		$tester = $this->tester($this->documents([['id' => 1]], 1));
+
+		self::assertSame(Command::SUCCESS, $tester->execute([]));
+
+		self::assertSame(
+			"Paperless 3.3.0 (API 10) answers at https://paperless.example.com.\n"
+			. "The account of the API token may view 1 document(s).\n"
+			. "Warning: The API token belongs to a Superuser of Paperless: whoever gets hold of it can change and delete every document. Use the token of an account that may only view documents.\n",
+			$tester->getDisplay(),
+		);
+		self::assertSame('superuser', $this->settings[AppConstants::APP_ID . '.token_warnings']);
+	}
+
 	public function testPassesWithoutAVersion(): void {
 		$this->connected();
 		$tester = $this->tester($this->documents([], headers: []));

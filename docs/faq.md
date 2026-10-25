@@ -28,6 +28,10 @@ No, only those whose files they can open, as any user. Being an administrator op
 
 Only when the user asks for it: with **Search connected services** switched on, after choosing **Paperless documents** in the smart picker, or when a script asks for this search through the API. An administrator can also trust Paperless with **Always include Paperless in global search**; then every term of every search goes to Paperless. The terms travel from the Nextcloud server to Paperless, never from the browser, and the app logs none of them.
 
+## Can I use the API token of my own Paperless account?
+
+It works, but whoever gets hold of the token of an administrator of Paperless can change and delete every document, and the settings warn about it below the token. Give the search an account of its own that may only view documents, correspondents, document types and its UI settings, as [Configure](configure.md#a-paperless-account-for-the-search) shows: the test of the connection then warns about nothing, and the account still finds every document that you allow it to view.
+
 ## Does it work in the Nextcloud apps for iOS and Android?
 
 Yes. The apps show Paperless documents in their search, and a result opens the file in the viewer of the app. In the browser of a phone, the search works as on a computer. [On a phone](usage.md#on-a-phone) shows it.

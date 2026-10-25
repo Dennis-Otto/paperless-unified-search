@@ -13,6 +13,32 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 TOKEN = "e2e-only-token"
 
+# The token of a superuser, which the mock accepts as well, so that the end-to-end tests see
+# the app warn about it: in occ, in the settings and in the overview.
+SUPERUSER_TOKEN = "e2e-superuser-token"
+
+# Like Paperless, the mock answers /api/ui_settings/ with the user of the token and the
+# permissions of its account, as Paperless-ngx 3.3.1 does without the settings of its UI:
+# TOKEN belongs to an account that may view documents, correspondents, document types and
+# its UI settings, the account that the documentation recommends, and SUPERUSER_TOKEN to a
+# superuser, for whom Paperless names every permission of Django.
+UI_SETTINGS_PATH = "/api/ui_settings/"
+ACCOUNTS = {
+    TOKEN: {
+        "user": {"id": 3, "username": "nextcloud", "is_staff": False, "is_superuser": False, "groups": []},
+        "settings": {},
+        "permissions": ["view_document", "view_correspondent", "view_documenttype", "view_uisettings"],
+    },
+    SUPERUSER_TOKEN: {
+        "user": {"id": 1, "username": "admin", "is_staff": True, "is_superuser": True, "groups": []},
+        "settings": {},
+        "permissions": [
+            "add_document", "change_document", "delete_document", "view_document",
+            "view_correspondent", "view_documenttype", "view_uisettings",
+        ],
+    },
+}
+
 # Terms that make the mock fail as a real Paperless or its network does, so that the
 # end-to-end tests see the app record the problem in the history of its diagnostics:
 # Paperless fails with HTTP 500 for the first, and the connection of the first request
@@ -230,15 +256,21 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"status": "ok"})
             return
 
-        if parsed.path != API_PATH and parsed.path not in LISTS:
+        if parsed.path not in (API_PATH, UI_SETTINGS_PATH) and parsed.path not in LISTS:
             self._json(404, {"detail": "Not found"})
             return
 
-        if self.headers.get("Authorization") != f"Token {TOKEN}":
+        authorization = self.headers.get("Authorization", "")
+        token = authorization.removeprefix("Token ")
+        if not authorization.startswith("Token ") or token not in ACCOUNTS:
             self._json(401, {"detail": "Invalid token"})
             return
 
         self.versioned = True
+        if parsed.path == UI_SETTINGS_PATH:
+            self._json(200, ACCOUNTS[token])
+            return
+
         parameters = parse_qs(parsed.query)
         if parsed.path in LISTS:
             self._list(LISTS[parsed.path], parameters)

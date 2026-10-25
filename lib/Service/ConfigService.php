@@ -14,6 +14,7 @@ use OCA\PaperlessUnifiedSearch\Exception\InvalidSettingException;
 use OCA\PaperlessUnifiedSearch\Exception\SettingProblem;
 use OCA\PaperlessUnifiedSearch\Model\PaperlessVersion;
 use OCA\PaperlessUnifiedSearch\Model\PublicConfig;
+use OCA\PaperlessUnifiedSearch\Model\TokenWarning;
 use OCP\IAppConfig;
 use OCP\IUserManager;
 use OCP\Security\ICredentialsManager;
@@ -37,6 +38,12 @@ final class ConfigService {
 	 */
 	private const VERSION_KEY = 'paperless_version';
 	private const API_VERSION_KEY = 'paperless_api_version';
+	/**
+	 * The warnings about the account of the API token, as the last test of the connection
+	 * found them, separated by commas. Lazy, since only the settings page and the overview
+	 * of the administration settings read them.
+	 */
+	private const TOKEN_WARNINGS_KEY = 'token_warnings';
 	private const TOKEN_IDENTIFIER = AppConstants::APP_ID . '.api-token';
 	// Paperless Sync writes the archive into the files of this account.
 	private const SYNC_APP_ID = 'paperless_sync';
@@ -88,6 +95,7 @@ final class ConfigService {
 			$this->isLocalNetworkAllowed(),
 			$this->getPaperlessVersion(),
 			$this->isPersonalAlwaysSearchAllowed(),
+			$this->getTokenWarnings(),
 		);
 	}
 
@@ -221,6 +229,30 @@ final class ConfigService {
 	}
 
 	/**
+	 * What the account of the API token may do beyond what the search needs, or may not do
+	 * of what the results show, as the last test of the connection found it: when the
+	 * settings were saved, or occ tested them since.
+	 *
+	 * @return list<TokenWarning>
+	 */
+	public function getTokenWarnings(): array {
+		return TokenWarning::fromStored($this->config->getValueString(AppConstants::APP_ID, self::TOKEN_WARNINGS_KEY, '', lazy: true));
+	}
+
+	/**
+	 * Stores the warnings that a test of the connection with the stored settings found.
+	 * A test after which Paperless didn't say what the account may do keeps the stored
+	 * ones, as an answer without a version keeps the stored version.
+	 *
+	 * @param ?list<TokenWarning> $warnings null when Paperless didn't say
+	 */
+	public function rememberTokenWarnings(?array $warnings): void {
+		if ($warnings !== null) {
+			$this->storeTokenWarnings($warnings);
+		}
+	}
+
+	/**
 	 * The token to test and save with a URL: the one entered, or else the stored one, but
 	 * only for the Paperless server that it was saved for. Otherwise whoever can use the
 	 * session of an administrator could send the stored token to a server of their own,
@@ -271,9 +303,12 @@ final class ConfigService {
 	 *                                            found, null when Paperless named none
 	 * @param bool $personalAlwaysSearch whether users may include Paperless in every search
 	 *                                   of their own
+	 * @param ?list<TokenWarning> $tokenWarnings the warnings about the account of the token
+	 *                                           that the test of the connection found, null
+	 *                                           when Paperless didn't say
 	 * @throws InvalidSettingException when the URL is invalid or the token blank
 	 */
-	public function save(string $url, #[SensitiveParameter] string $token, bool $alwaysSearch = false, string $archiveOwner = '', bool $allowLocal = false, ?PaperlessVersion $paperlessVersion = null, bool $personalAlwaysSearch = true): PublicConfig {
+	public function save(string $url, #[SensitiveParameter] string $token, bool $alwaysSearch = false, string $archiveOwner = '', bool $allowLocal = false, ?PaperlessVersion $paperlessVersion = null, bool $personalAlwaysSearch = true, ?array $tokenWarnings = null): PublicConfig {
 		$normalizedUrl = $this->normalizeUrl($url);
 		$normalizedToken = trim($token);
 		if ($normalizedToken === '') {
@@ -293,8 +328,10 @@ final class ConfigService {
 		$this->credentialsManager->store('', self::TOKEN_IDENTIFIER, $normalizedToken);
 		$this->token = $normalizedToken;
 		$this->tokenUnreadable = false;
-		// The version of another server, or of an older answer, would be wrong now.
+		// The version of another server, or of an older answer, would be wrong now, and so
+		// would the warnings about another token.
 		$this->storePaperlessVersion($paperlessVersion);
+		$this->storeTokenWarnings($tokenWarnings ?? []);
 
 		$syncAccount = $this->getSyncAccount();
 
@@ -309,6 +346,7 @@ final class ConfigService {
 			$allowLocal,
 			$paperlessVersion,
 			$personalAlwaysSearch,
+			$tokenWarnings ?? [],
 		);
 	}
 
@@ -319,6 +357,7 @@ final class ConfigService {
 		$this->config->deleteKey(AppConstants::APP_ID, self::ALLOW_LOCAL_KEY);
 		$this->config->deleteKey(AppConstants::APP_ID, self::PERSONAL_ALWAYS_SEARCH_KEY);
 		$this->storePaperlessVersion(null);
+		$this->storeTokenWarnings([]);
 		$this->credentialsManager->delete('', self::TOKEN_IDENTIFIER);
 		$this->token = '';
 		$this->tokenUnreadable = false;
@@ -414,6 +453,19 @@ final class ConfigService {
 
 		$this->config->setValueString(AppConstants::APP_ID, self::VERSION_KEY, $version->version);
 		$this->config->setValueString(AppConstants::APP_ID, self::API_VERSION_KEY, $version->apiVersion);
+	}
+
+	/**
+	 * @param list<TokenWarning> $warnings
+	 */
+	private function storeTokenWarnings(array $warnings): void {
+		if ($warnings === []) {
+			$this->config->deleteKey(AppConstants::APP_ID, self::TOKEN_WARNINGS_KEY);
+
+			return;
+		}
+
+		$this->config->setValueString(AppConstants::APP_ID, self::TOKEN_WARNINGS_KEY, TokenWarning::toStored($warnings), lazy: true);
 	}
 
 	/**

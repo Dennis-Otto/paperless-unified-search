@@ -15,6 +15,7 @@ use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessQueryRejected;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
 use OCA\PaperlessUnifiedSearch\Exception\RequestFailure;
+use OCA\PaperlessUnifiedSearch\Model\TokenWarning;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
@@ -45,6 +46,16 @@ final class PaperlessApiServiceTest extends TestCase {
 	/** The keys of the version of Paperless and of its API, as the app stores them. */
 	private const VERSION_KEYS = [AppConstants::APP_ID . '.paperless_version', AppConstants::APP_ID . '.paperless_api_version'];
 	/** How Paperless 3.3.0 refuses the query created:[2026 to, measured. */
+	/**
+	 * The answer of /api/ui_settings/ to the token of an account that may view documents,
+	 * correspondents, document types and its UI settings, and nothing else, as
+	 * Paperless-ngx 3.3.1 sends it, without the settings of the UI.
+	 */
+	private const VIEWER = '{"user":{"id":3,"username":"nextcloud","is_staff":false,"is_superuser":false,"groups":[]},"settings":{},"permissions":["view_document","view_correspondent","view_documenttype","view_uisettings"]}';
+
+	/** The same of a superuser, abridged: Paperless names every permission of Django. */
+	private const SUPERUSER = '{"user":{"id":1,"username":"admin","is_staff":true,"is_superuser":true,"groups":[]},"settings":{},"permissions":["add_document","change_document","delete_document","view_document","view_correspondent","view_documenttype","view_uisettings"]}';
+
 	private const INVALID_DATE = '{"query":["Invalid date value \'[2026\' for field \'created\'."]}';
 
 	/** The configuration of the apps, with the settings and what the app stores. */
@@ -59,43 +70,62 @@ final class PaperlessApiServiceTest extends TestCase {
 
 	/**
 	 * The connection test needs no field of the document, so Paperless sends none but its ID.
+	 * Then it asks what the account of the token may do, with the same settings and a
+	 * shorter time.
 	 */
 	public function testTheConnectionTestAsksForOneDocumentWithTheGivenSettings(): void {
+		$headers = [
+			'Authorization' => 'Token TEST_VALUE',
+			'Accept' => 'application/json; version=9',
+			'User-Agent' => 'Nextcloud-Paperless-Unified-Search/0.5.1',
+		];
+		$requests = [];
 		$client = $this->createMock(IClient::class);
-		$client->expects(self::once())
+		$client->expects(self::exactly(2))
 			->method('get')
-			->with('https://paperless.example.com/api/documents/', [
-				'headers' => [
-					'Authorization' => 'Token TEST_VALUE',
-					'Accept' => 'application/json; version=9',
-					'User-Agent' => 'Nextcloud-Paperless-Unified-Search/0.5.1',
-				],
+			->willReturnCallback(function (string $url, array $options) use (&$requests): IResponse {
+				$requests[] = [$url, $options];
+
+				return $this->response(200, count($requests) === 1 ? self::NO_DOCUMENTS : self::VIEWER);
+			});
+
+		$this->service($client, '', null, true)->probe('https://paperless.example.com/', 'TEST_VALUE', false);
+
+		self::assertSame([
+			['https://paperless.example.com/api/documents/', [
+				'headers' => $headers,
 				'connect_timeout' => 3,
 				'timeout' => 10,
 				'http_errors' => false,
 				'query' => ['page' => 1, 'page_size' => 1, 'fields' => 'id'],
 				'nextcloud' => ['allow_local_address' => false],
-			])
-			->willReturn($this->response(200, self::NO_DOCUMENTS));
-
-		$this->service($client, '', null, true)->testConnection('https://paperless.example.com/', 'TEST_VALUE', false);
+			]],
+			['https://paperless.example.com/api/ui_settings/', [
+				'headers' => $headers,
+				'connect_timeout' => 3,
+				'timeout' => 3,
+				'http_errors' => false,
+				'query' => [],
+				'nextcloud' => ['allow_local_address' => false],
+			]],
+		], $requests);
 	}
 
 	/**
 	 * The test of a connection allows the local network as the form says, not as the
-	 * stored settings do (#117).
+	 * stored settings do (#117), for both of its requests.
 	 */
 	public function testTheConnectionTestAllowsTheLocalNetworkAsTheFormSays(): void {
 		$client = $this->createMock(IClient::class);
-		$client->expects(self::once())
+		$client->expects(self::exactly(2))
 			->method('get')
-			->with('http://paperless_ngx:8000/api/documents/', self::callback(
+			->with(self::stringStartsWith('http://paperless_ngx:8000/api/'), self::callback(
 				static fn (array $options): bool => $options['nextcloud'] === ['allow_local_address' => true]
 					&& $options['allow_redirects'] === false,
 			))
 			->willReturn($this->response(200, self::NO_DOCUMENTS));
 
-		$this->service($client, '', null, false)->testConnection('http://paperless_ngx:8000', 'TEST_VALUE', true);
+		$this->service($client, '', null, false)->probe('http://paperless_ngx:8000', 'TEST_VALUE', true);
 	}
 
 	/**
@@ -873,7 +903,7 @@ final class PaperlessApiServiceTest extends TestCase {
 		$client = $this->createStub(IClient::class);
 		$client->method('get')->willReturn($this->response(200, self::NO_DOCUMENTS, self::PAPERLESS_3));
 
-		$version = $this->service($client)->testConnection('https://paperless.example.com', 'TEST_VALUE', false);
+		$version = $this->service($client)->probe('https://paperless.example.com', 'TEST_VALUE', false)->version;
 
 		self::assertNotNull($version);
 		self::assertSame('3.3.0', $version->version);
@@ -884,7 +914,7 @@ final class PaperlessApiServiceTest extends TestCase {
 		$client = $this->createStub(IClient::class);
 		$client->method('get')->willReturn($this->response(200, self::NO_DOCUMENTS));
 
-		self::assertNull($this->service($client)->testConnection('https://paperless.example.com', 'TEST_VALUE', false));
+		self::assertNull($this->service($client)->probe('https://paperless.example.com', 'TEST_VALUE', false)->version);
 	}
 
 	/**
@@ -922,25 +952,133 @@ final class PaperlessApiServiceTest extends TestCase {
 
 	/**
 	 * occ tests the stored settings, and the overview of the administration settings then
-	 * shows the version of the answer.
+	 * shows the version of the answer and the warnings about the account of the token.
 	 */
-	public function testProbingTheSettingsUsesThemAndRemembersTheVersion(): void {
+	public function testProbingTheSettingsUsesThemAndRemembersTheVersionAndTheWarnings(): void {
 		$client = $this->createMock(IClient::class);
-		$client->expects(self::once())
+		$client->expects(self::exactly(2))
 			->method('get')
 			->with(
-				'http://paperless:8000/api/documents/',
+				self::stringStartsWith('http://paperless:8000/api/'),
 				self::callback(static fn (array $options): bool => $options['headers']['Authorization'] === 'Token TEST_VALUE'
-					&& $options['query'] === ['page' => 1, 'page_size' => 1, 'fields' => 'id']
 					&& $options['nextcloud'] === ['allow_local_address' => true]),
 			)
-			->willReturn($this->response(200, self::NO_DOCUMENTS, self::PAPERLESS_3));
+			->willReturnCallback(fn (string $url, array $options): IResponse => $url === 'http://paperless:8000/api/documents/'
+				&& $options['query'] === ['page' => 1, 'page_size' => 1, 'fields' => 'id']
+				? $this->response(200, self::NO_DOCUMENTS, self::PAPERLESS_3)
+				: $this->response(200, self::SUPERUSER, self::PAPERLESS_3));
 
 		$status = $this->service($client, 'http://paperless:8000', 'TEST_VALUE', true)->probeTheSettings();
 
 		self::assertSame(0, $status->documents);
-		self::assertSame(self::VERSION_KEYS, $this->config->calls('setValueString'));
+		self::assertSame([TokenWarning::Superuser], $status->tokenWarnings);
+		self::assertSame([...self::VERSION_KEYS, AppConstants::APP_ID . '.token_warnings'], $this->config->calls('setValueString'));
 		self::assertSame('3.3.0', $this->config->stored(AppConstants::APP_ID, 'paperless_version'));
+		self::assertSame('superuser', $this->config->stored(AppConstants::APP_ID, 'token_warnings'));
+	}
+
+	/**
+	 * A test of the stored settings after which Paperless doesn't say what the account of
+	 * the token may do keeps the warnings that an earlier test found, and one that finds
+	 * none forgets them.
+	 */
+	public function testProbingTheSettingsKeepsTheWarningsWhenPaperlessDoesNotSay(): void {
+		$privileges = $this->response(403, '{"detail":"You do not have permission to perform this action."}');
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url) use (&$privileges): IResponse {
+			return str_ends_with($url, '/api/documents/') ? $this->response(200, self::NO_DOCUMENTS) : $privileges;
+		});
+		$this->config->seed(AppConstants::APP_ID, 'token_warnings', 'staff', true);
+		$service = $this->service($client);
+
+		self::assertNull($service->probeTheSettings()->tokenWarnings);
+		self::assertSame('staff', $this->config->stored(AppConstants::APP_ID, 'token_warnings'));
+
+		$privileges = $this->response(200, self::VIEWER);
+		self::assertSame([], $service->probeTheSettings()->tokenWarnings);
+		self::assertNull($this->config->stored(AppConstants::APP_ID, 'token_warnings'));
+	}
+
+	/**
+	 * @return array<string, array{int, ?string, ?list<TokenWarning>}>
+	 */
+	public static function privileges(): array {
+		return [
+			'an account that may only view' => [200, self::VIEWER, []],
+			'a superuser' => [200, self::SUPERUSER, [TokenWarning::Superuser]],
+			// Paperless answers it only to an account that may view its UI settings.
+			'an account that may not view its UI settings' => [403, '{"detail":"You do not have permission to perform this action."}', null],
+			'a Paperless without the list, or a proxy that hides it' => [404, '{"detail":"Not found."}', null],
+			'a refusal with the answer of a superuser' => [500, self::SUPERUSER, null],
+			'another answer of success' => [204, self::SUPERUSER, null],
+			'a page of HTML' => [200, '<!doctype html><title>Sign in</title>', null],
+			'an answer without the permissions' => [200, '{"user":{"is_superuser":true}}', null],
+			'no answer at all' => [200, null, null],
+		];
+	}
+
+	/**
+	 * After Paperless has answered the test of the connection, the test asks what the
+	 * account of the token may do; whatever answer doesn't say leaves it unknown, and the
+	 * test passes either way.
+	 *
+	 * @param ?list<TokenWarning> $warnings
+	 */
+	#[DataProvider('privileges')]
+	public function testTheProbeNamesWhatTheAccountOfTheTokenMayDo(int $status, ?string $body, ?array $warnings): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(fn (string $url): IResponse => str_ends_with($url, '/api/documents/')
+			? $this->response(200, self::NO_DOCUMENTS, self::PAPERLESS_3)
+			: $this->response($status, $body, self::PAPERLESS_3));
+
+		$probed = $this->service($client)->probe('https://paperless.example.com', 'TEST_VALUE', false);
+
+		self::assertSame('3.3.0', $probed->version?->version);
+		self::assertSame($warnings, $probed->tokenWarnings);
+	}
+
+	/**
+	 * A request for the privileges that gets no answer, such as one that times out, gets no
+	 * second try and leaves them unknown, and the test of the connection still passes.
+	 */
+	public function testAQuestionForThePrivilegesWithoutAnswerLeavesThemUnknown(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::exactly(2))->method('get')->willReturnCallback(function (string $url): IResponse {
+			if (str_ends_with($url, '/api/ui_settings/')) {
+				throw new RuntimeException('cURL error 28: Operation timed out after 3001 milliseconds');
+			}
+
+			return $this->response(200, self::NO_DOCUMENTS);
+		});
+
+		self::assertNull($this->service($client)->probe('https://paperless.example.com', 'TEST_VALUE', false)->tokenWarnings);
+	}
+
+	/**
+	 * A body that the client of Nextcloud hands over as a stream, which it doesn't for
+	 * these requests, says nothing either.
+	 */
+	public function testAnAnswerWithoutATextLeavesThePrivilegesUnknown(): void {
+		$stream = fopen('php://memory', 'rb');
+		$privileges = $this->createStub(IResponse::class);
+		$privileges->method('getStatusCode')->willReturn(200);
+		$privileges->method('getBody')->willReturn($stream);
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(fn (string $url): IResponse => str_ends_with($url, '/api/documents/')
+			? $this->response(200, self::NO_DOCUMENTS)
+			: $privileges);
+
+		self::assertNull($this->service($client)->probe('https://paperless.example.com', 'TEST_VALUE', false)->tokenWarnings);
+	}
+
+	/**
+	 * A test of the connection that fails asks nothing more.
+	 */
+	public function testAFailedTestOfTheConnectionAsksForNoPrivileges(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())->method('get')->willReturn($this->response(401, '{"detail":"Invalid token."}'));
+
+		self::assertSame(RequestFailure::Unauthorized, $this->failedConnectionTest($client)->reason);
 	}
 
 	/**
@@ -1272,7 +1410,7 @@ final class PaperlessApiServiceTest extends TestCase {
 	 */
 	private function failedConnectionTest(IClient $client): PaperlessRequestException {
 		try {
-			$this->service($client)->testConnection('https://paperless.example.com', 'TEST_VALUE', false);
+			$this->service($client)->probe('https://paperless.example.com', 'TEST_VALUE', false);
 		} catch (PaperlessRequestException $exception) {
 			return $exception;
 		}

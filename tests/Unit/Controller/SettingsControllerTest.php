@@ -50,17 +50,8 @@ final class SettingsControllerTest extends TestCase {
 	private const STORED_URL = 'https://paperless.example.com';
 
 	public function testSaveStoresTheSettingsOnceTheConnectionWorks(): void {
-		$client = $this->createMock(IClient::class);
-		$client->expects(self::once())
-			->method('get')
-			->with(
-				'https://paperless.example.com/api/documents/',
-				self::callback(static fn (array $options): bool => $options['headers']['Authorization'] === 'Token TEST_VALUE'
-					&& $options['query'] === ['page' => 1, 'page_size' => 1, 'fields' => 'id']
-					&& $options['nextcloud'] === ['allow_local_address' => false]
-					&& !isset($options['allow_redirects'])),
-			)
-			->willReturn($this->response(200, self::NO_DOCUMENTS));
+		$requests = [];
+		$client = $this->paperless($requests);
 
 		$config = $this->createMock(IAppConfig::class);
 		$config->expects(self::once())
@@ -102,6 +93,7 @@ final class SettingsControllerTest extends TestCase {
 			'paperlessVersion' => '',
 			'paperlessApiVersion' => '',
 			'personalAlwaysSearch' => true,
+			'tokenWarnings' => [],
 		], json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR));
 		self::assertStringNotContainsString('TEST_VALUE', $response->render());
 		self::assertNotContains(AppConstants::APP_ID . '.diagnostics', $deleted);
@@ -110,6 +102,38 @@ final class SettingsControllerTest extends TestCase {
 			AppConstants::APP_ID . '.allow_local' => false,
 			AppConstants::APP_ID . '.personal_always_search' => true,
 		], $switches);
+		// The test of the connection, then what the account of the token may do, which
+		// Paperless doesn't say to this one: the warnings of an earlier token are gone.
+		self::assertSame(['https://paperless.example.com/api/documents/', 'https://paperless.example.com/api/ui_settings/'], array_column($requests, 0));
+		$options = $requests[0][1];
+		self::assertSame('Token TEST_VALUE', $options['headers']['Authorization']);
+		self::assertSame(['page' => 1, 'page_size' => 1, 'fields' => 'id'], $options['query']);
+		self::assertSame(['allow_local_address' => false], $options['nextcloud']);
+		self::assertArrayNotHasKey('allow_redirects', $options);
+		self::assertContains(AppConstants::APP_ID . '.token_warnings', $deleted);
+	}
+
+	/**
+	 * A token that may do more than the search needs, or less than the results show, is
+	 * saved, and the answer names the warnings, which the settings page shows and the
+	 * overview of the administration settings repeats until the next test.
+	 */
+	public function testSaveNamesTheWarningsAboutTheAccountOfTheToken(): void {
+		$requests = [];
+		$client = $this->paperless($requests, $this->response(200, (string)json_encode([
+			'user' => ['id' => 1, 'username' => 'admin', 'is_staff' => true, 'is_superuser' => true, 'groups' => []],
+			'settings' => [],
+			'permissions' => ['change_document', 'view_document', 'view_correspondent', 'view_documenttype'],
+		])));
+		$config = new MemoryAppConfig();
+
+		$response = $this->controller($config, $this->createStub(ICredentialsManager::class), $client)
+			->save('https://paperless.example.com', 'TEST_VALUE');
+
+		self::assertSame(Http::STATUS_OK, $response->getStatus());
+		self::assertSame(['superuser'], json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR)['tokenWarnings']);
+		self::assertSame('superuser', $config->stored(AppConstants::APP_ID, 'token_warnings'));
+		self::assertTrue($config->isLazy(AppConstants::APP_ID, 'token_warnings'));
 	}
 
 	/**
@@ -182,10 +206,10 @@ final class SettingsControllerTest extends TestCase {
 	#[DataProvider('localNetwork')]
 	public function testSaveAllowsTheLocalNetworkForThisPaperlessOnlyWhenAsked(bool $allowLocal): void {
 		$client = $this->createMock(IClient::class);
-		$client->expects(self::once())
+		$client->expects(self::exactly(2))
 			->method('get')
 			->with(
-				'http://paperless_ngx:8000/api/documents/',
+				self::stringStartsWith('http://paperless_ngx:8000/api/'),
 				self::callback(static fn (array $options): bool => $options['nextcloud'] === ['allow_local_address' => $allowLocal]),
 			)
 			->willReturn($this->response(200, self::NO_DOCUMENTS));
@@ -283,10 +307,10 @@ final class SettingsControllerTest extends TestCase {
 	#[DataProvider('sameServers')]
 	public function testSaveWithoutATokenKeepsTheStoredOneForTheSameServer(string $url, string $request): void {
 		$client = $this->createMock(IClient::class);
-		$client->expects(self::once())
+		$client->expects(self::exactly(2))
 			->method('get')
 			->with(
-				$request,
+				self::logicalOr($request, str_replace('/api/documents/', '/api/ui_settings/', $request)),
 				self::callback(static fn (array $options): bool => $options['headers']['Authorization'] === 'Token STORED_TEST_VALUE'),
 			)
 			->willReturn($this->response(200, self::NO_DOCUMENTS));
@@ -341,10 +365,10 @@ final class SettingsControllerTest extends TestCase {
 
 	public function testSaveSendsANewTokenToANewServer(): void {
 		$client = $this->createMock(IClient::class);
-		$client->expects(self::once())
+		$client->expects(self::exactly(2))
 			->method('get')
 			->with(
-				'https://paperless.other.example/api/documents/',
+				self::stringStartsWith('https://paperless.other.example/api/'),
 				self::callback(static fn (array $options): bool => $options['headers']['Authorization'] === 'Token NEW_TEST_VALUE'),
 			)
 			->willReturn($this->response(200, self::NO_DOCUMENTS));
@@ -633,6 +657,7 @@ final class SettingsControllerTest extends TestCase {
 			'paperlessVersion' => '',
 			'paperlessApiVersion' => '',
 			'personalAlwaysSearch' => true,
+			'tokenWarnings' => [],
 		], json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR));
 		self::assertContains(AppConstants::APP_ID . '.diagnostics', $deleted);
 	}
@@ -723,6 +748,26 @@ final class SettingsControllerTest extends TestCase {
 
 	private function response(int $status, string $body): IResponse {
 		return self::answer($status, $body);
+	}
+
+	/**
+	 * A Paperless that answers the test of the connection with no documents and the
+	 * question for what the account of the token may do with $privileges, by default as
+	 * to an account that may not view its UI settings, and that records the requests.
+	 *
+	 * @param list<array{string, array<string, mixed>}> $requests
+	 */
+	private function paperless(array &$requests, ?IResponse $privileges = null): IClient {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options) use (&$requests, $privileges): IResponse {
+			$requests[] = [$url, $options];
+
+			return str_ends_with($url, '/api/ui_settings/')
+				? $privileges ?? $this->response(403, '{"detail":"You do not have permission to perform this action."}')
+				: $this->response(200, self::NO_DOCUMENTS);
+		});
+
+		return $client;
 	}
 
 	/**

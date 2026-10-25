@@ -6,7 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2026 Dennis Otto
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * @var array{config: \OCA\PaperlessUnifiedSearch\Model\PublicConfig, saveUrl: string, resetUrl: string, clearDiagnosticsUrl: string, tryUrl: string, history: ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, durationMs: int}>}} $_
+ * @var array{config: \OCA\PaperlessUnifiedSearch\Model\PublicConfig, tokenWarnings: list<string>, saveUrl: string, resetUrl: string, clearDiagnosticsUrl: string, tryUrl: string, history: ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, durationMs: int}>}} $_
  */
 
 script('paperless_unified_search', 'settings');
@@ -68,7 +68,7 @@ $archiveAccount = $config->archiveOwner !== '' ? $config->archiveOwner : $config
 				name="token"
 				type="password"
 				autocomplete="new-password"
-				aria-describedby="paperless-unified-search-token-unreadable paperless-unified-search-token-hint"
+				aria-describedby="paperless-unified-search-token-unreadable paperless-unified-search-token-warnings paperless-unified-search-token-hint"
 				placeholder="<?php p($config->tokenConfigured ? $l->t('Configured — leave blank to keep it') : $l->t('Required')); ?>"
 				<?php if (!$config->tokenConfigured) {
 					print_unescaped('required');
@@ -78,6 +78,8 @@ $archiveAccount = $config->archiveOwner !== '' ? $config->archiveOwner : $config
 		<p id="paperless-unified-search-token-unreadable" class="paperless-unified-search-warning"><?php if ($config->tokenUnreadable) {
 			p($l->t('The stored API token can\'t be decrypted, for example because the secret in config.php changed. Enter it again.'));
 		} ?></p>
+
+		<p id="paperless-unified-search-token-warnings" class="paperless-unified-search-warning"><?php p(implode(' ', $_['tokenWarnings'])); ?></p>
 
 		<p id="paperless-unified-search-token-hint" class="settings-hint">
 			<?php p($l->t('Use a dedicated, read-only Paperless account. The token is encrypted by Nextcloud and is never returned to the browser. It is only sent to the server it was saved for, so another server needs it entered again.')); ?>
