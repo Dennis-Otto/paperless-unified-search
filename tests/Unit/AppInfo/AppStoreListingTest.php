@@ -94,14 +94,43 @@ final class AppStoreListingTest extends TestCase {
 	public function testEveryDescriptionLinksTheDocumentationInItsLanguage(): void {
 		$info = self::appInfo();
 		$website = (string)$info->website;
-		// The website in English, and its German pages in de/.
-		$documentation = ['en' => $website, 'de' => $website . 'de/index.html'];
+		// The website in English, and its German pages in de/. The website has no pages in
+		// Spanish, French or Dutch, so their descriptions link the English ones.
+		$documentation = [
+			'en' => $website,
+			'de' => $website . 'de/index.html',
+			'es' => $website,
+			'fr' => $website,
+			'nl' => $website,
+		];
 
-		self::assertCount(2, $info->description);
+		self::assertCount(count($documentation), $info->description);
 		foreach ($info->description as $description) {
 			$language = (string)($description['lang'] ?? 'en');
 			self::assertArrayHasKey($language, $documentation);
 			self::assertStringContainsString('<' . $documentation[$language] . '>', (string)$description);
 		}
+	}
+
+	/**
+	 * The App Store shows the summary and the description in the language of its visitor,
+	 * and in English where the listing has none in it, so each language has both.
+	 * scripts/check-l10n.mjs holds them to the languages of l10n/.
+	 */
+	public function testEveryLanguageHasASummaryAndADescription(): void {
+		$info = self::appInfo();
+		$languages = static function (SimpleXMLElement $elements): array {
+			$found = [];
+			foreach ($elements as $element) {
+				self::assertNotSame('', trim((string)$element));
+				$found[] = (string)($element['lang'] ?? 'en');
+			}
+			sort($found);
+
+			return $found;
+		};
+
+		self::assertSame(['de', 'en', 'es', 'fr', 'nl'], $languages($info->summary));
+		self::assertSame(['de', 'en', 'es', 'fr', 'nl'], $languages($info->description));
 	}
 }

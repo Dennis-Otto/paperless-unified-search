@@ -1,0 +1,36 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: How a translation reaches its readers
+    accDescr: A translator corrects or adds a text in l10n/fr.json, the catalog of French, and the summary and the description in French in appinfo/info.xml. node scripts/check-l10n.mjs --write writes l10n/fr.js, which the browser loads, from the catalog. The check of the translations then asks whether every text of the code has its translation, with its placeholders and the forms of its plurals, whether l10n/fr.js holds the same as l10n/fr.json, and whether appinfo/info.xml has a summary and a description in French. If not, its output names each problem and its fix. If so, the pull request is merged and released, and Nextcloud shows the search, the dashboard and the settings in French to every account set to French, and the App Store shows the summary and the description in French.
+
+    translator["A translator corrects l10n/fr.json<br>and the texts in French of appinfo/info.xml"]
+    write["node scripts/check-l10n.mjs --write<br>writes l10n/fr.js from l10n/fr.json"]
+    check{"node scripts/check-l10n.mjs: every text<br>with its placeholders and plural forms,<br>l10n/fr.js like l10n/fr.json, a summary<br>and a description in French?"}
+    problems["The output names each problem<br>and how to fix it"]
+    release["The pull request is merged and released"]
+    nextcloud(["`**Nextcloud** in French for every account set to French:
+    the search, the dashboard and the settings`"])
+    store(["`**The App Store** in French:
+    the summary and the description`"])
+
+    translator --> write
+    write --> check
+    check -- "no" --> problems
+    problems --> translator
+    check -- "yes" --> release
+    release --> nextcloud
+    release --> store
+
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class translator person
+    class write,check,release app
+    class nextcloud,store yes
+    class problems no
