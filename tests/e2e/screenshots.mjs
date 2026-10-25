@@ -11,7 +11,9 @@
 // a note of Text with the link that it inserts, the settings and the share of the
 // archive, light and dark, Try a search of the settings, the dashboard, the personal
 // settings with the choice to always search Paperless, the search and the settings on
-// a phone, and the search as an animation. The images go to the folder of
+// a phone, and the search as an animation. Last, in the real Paperless-ngx of
+// compose.paperless.yaml, it sets up the account of the search as docs/configure.md
+// does and takes its dialogs, light and dark. The images go to the folder of
 // SCREENSHOTS_OUT. A step fails when the app doesn't show what its picture is meant to
 // show, such as a Paperless result that the date filter should have left out.
 //
@@ -996,7 +998,180 @@ function writeGif(frames, path) {
 	writeFileSync(path, gif.bytes())
 }
 
-// Every picture of the README, the website and the App Store, from the mock.
+// The real Paperless-ngx of compose.paperless.yaml, which shows how docs/configure.md
+// sets up the account of the search in Paperless: the account with its permissions, the
+// workflow that lets it view each new document, the permission to view the
+// correspondents that an administrator added, and its token. The administrator of the
+// tests adds Alex Admin, who takes the pictures, and the rest as Alex, in the same order
+// in every run, so that the IDs that the dialogs show stay the same. The dialogs are
+// those of a phone, at the size that the pages show them.
+const PAPERLESS = 'http://paperless:8000'
+const PAPERLESS_ROOT = ['contract-admin', 'contract-only-password']
+const PAPERLESS_ADMIN = 'admin'
+// The account of the search, as docs/configure.md names it, with the permissions that it
+// recommends (VIEWER_PERMISSIONS of assert_contract.py, which checks what they give).
+const SEARCH_ACCOUNT = 'nextcloud'
+const SEARCH_PERMISSIONS = ['view_document', 'view_correspondent', 'view_documenttype', 'view_uisettings']
+const WORKFLOW = 'Let the Nextcloud search view new documents'
+// The correspondents of the demo, which Alex adds and so owns.
+const CORRESPONDENTS = ['Fiberlink', 'Harbor Mutual', 'Northstar Energy']
+// The token that the profile shows: the one of the test of the settings, in place of
+// the random one that Paperless makes, so that the picture stays the same.
+const PROFILE_TOKEN = 'e2e-only-token'
+// As wide as a large phone, which lays the dialogs out in one column, and so tall that
+// the browser draws each of them in full: Chromium leaves a part below the window blank.
+const PAPERLESS_PHONE = { viewport: { width: 480, height: 2000 }, deviceScaleFactor: 2 }
+
+async function paperlessRequest(token, method, path, body) {
+	const response = await fetch(`${PAPERLESS}${path}`, {
+		method,
+		body: body === undefined ? undefined : JSON.stringify(body),
+		headers: { Accept: 'application/json; version=9', Authorization: `Token ${token}`, 'Content-Type': 'application/json' },
+	})
+	const text = await response.text()
+	if (!response.ok) {
+		throw new Error(`Paperless answered ${method} ${path} with ${response.status}: ${text}`)
+	}
+	return text ? JSON.parse(text) : null
+}
+
+async function paperlessToken(username, password) {
+	const response = await fetch(`${PAPERLESS}/api/token/`, { method: 'POST', body: new URLSearchParams({ username, password }) })
+	const { token } = await response.json()
+	if (!response.ok || !token) {
+		throw new Error(`Paperless gave no token for ${username}: ${response.status}`)
+	}
+	return token
+}
+
+// Sets up Paperless as docs/configure.md does, with Alex Admin as its administrator.
+async function setUpPaperless() {
+	const root = await paperlessToken(...PAPERLESS_ROOT)
+	await paperlessRequest(root, 'POST', '/api/users/', {
+		username: PAPERLESS_ADMIN, password: PASSWORD, first_name: 'Alex', last_name: 'Admin', is_active: true, is_staff: true, is_superuser: true,
+	})
+	const admin = await paperlessToken(PAPERLESS_ADMIN, PASSWORD)
+	const account = await paperlessRequest(admin, 'POST', '/api/users/', {
+		username: SEARCH_ACCOUNT, password: PASSWORD, is_active: true, is_staff: false, is_superuser: false, user_permissions: SEARCH_PERMISSIONS,
+	})
+	// The trigger Document Added and the action Assignment, by their numbers in the API.
+	await paperlessRequest(admin, 'POST', '/api/workflows/', {
+		name: WORKFLOW,
+		order: 1,
+		enabled: true,
+		triggers: [{ type: 2 }],
+		actions: [{ type: 1, assign_view_users: [account.id], assign_view_groups: [] }],
+	})
+	for (const name of CORRESPONDENTS) {
+		await paperlessRequest(admin, 'POST', '/api/correspondents/', { name })
+	}
+}
+
+async function signInToPaperless(browser, user) {
+	const context = await browser.newContext({ locale: 'en-US' })
+	try {
+		const page = await context.newPage()
+		await page.goto(`${PAPERLESS}/accounts/login/`)
+		await page.locator('input[name="login"]').fill(user)
+		await page.locator('input[name="password"]').fill(PASSWORD)
+		await page.locator('input[name="password"]').press('Enter')
+		await page.waitForURL((url) => !url.pathname.startsWith('/accounts/login'), { waitUntil: 'commit' })
+		return await context.storageState()
+	} finally {
+		await context.close()
+	}
+}
+
+// The open dialog of a page of Paperless, from its top down to the bottom of the
+// element that last names and margin pixels more, or to its own bottom, without the
+// focus of a field.
+async function saveDialog(page, name, last, margin = 0) {
+	const dialog = page.locator('.modal-content')
+	await dialog.waitFor()
+	await page.evaluate(() => document.activeElement?.blur())
+	await page.mouse.move(0, 0)
+	await settle(page)
+	const box = await dialog.boundingBox()
+	const end = last ? await last.boundingBox() : box
+	const bottom = Math.min(box.y + box.height, end.y + end.height + margin)
+	await page.screenshot({ path: join(OUT, name), animations: 'disabled', clip: { x: box.x, y: box.y, width: box.width, height: bottom - box.y } })
+	console.log(`Took ${name}.`)
+}
+
+// Users & Groups: the account of the search with its permissions to view, down to the
+// UI settings.
+async function paperlessAccount(browser, session, suffix, options) {
+	const page = await newPage(browser, session, options)
+	await page.goto(`${PAPERLESS}/usersgroups`)
+	await page.getByText(SEARCH_ACCOUNT, { exact: true }).click()
+	await saveDialog(page, `14-paperless-account${suffix}.png`, page.locator('.modal-content li').filter({ has: page.locator('#UISettings_View') }), 1)
+	await page.context().close()
+}
+
+// Workflows: the workflow with the trigger Document Added and the action Assignment,
+// open down to the account that it lets view each new document.
+async function paperlessWorkflow(browser, session, suffix, options) {
+	const page = await newPage(browser, session, options)
+	await page.goto(`${PAPERLESS}/workflows`)
+	await page.getByText(WORKFLOW, { exact: true }).click()
+	const dialog = page.locator('.modal-content')
+	for (const section of ['Triggers', 'Actions']) {
+		await dialog.getByRole('button', { name: section, exact: true }).click()
+	}
+	// The left end of the heading of the action opens it: its middle holds Delete.
+	await dialog.getByText('1. Assignment').click({ position: { x: 4, y: 4 } })
+	await saveDialog(page, `15-paperless-workflow${suffix}.png`, dialog.locator('ng-select').filter({ hasText: SEARCH_ACCOUNT }), 16)
+	await page.context().close()
+}
+
+// Correspondents: all of them selected, and Permissions, which lets the account view
+// them.
+async function paperlessNames(browser, session, suffix, options) {
+	const page = await newPage(browser, session, options)
+	await page.goto(`${PAPERLESS}/correspondents`)
+	await page.getByText(CORRESPONDENTS[0], { exact: true }).waitFor()
+	await page.locator('thead input[type="checkbox"]').check({ force: true })
+	await page.getByRole('button', { name: 'Permissions' }).click()
+	const dialog = page.locator('.modal-content')
+	const users = dialog.locator('ng-select').nth(1)
+	await users.locator('input').fill(SEARCH_ACCOUNT)
+	await users.locator('input').press('Enter')
+	await saveDialog(page, `16-paperless-names${suffix}.png`)
+	await page.context().close()
+}
+
+// My Profile of the account of the search, with its API token.
+async function paperlessProfile(browser, session, suffix, options) {
+	const page = await newPage(browser, session, options)
+	await page.route('**/api/profile/', async (route) => {
+		const response = await route.fetch()
+		await route.fulfill({ response, json: { ...(await response.json()), auth_token: PROFILE_TOKEN } })
+	})
+	await page.goto(`${PAPERLESS}/dashboard`)
+	await page.locator('#userDropdown').click()
+	await page.getByRole('button', { name: 'My Profile' }).click()
+	await page.waitForFunction((token) => [...document.querySelectorAll('.modal-content input')].some((input) => input.value === token), PROFILE_TOKEN)
+	await saveDialog(page, `17-paperless-token${suffix}.png`)
+	await page.context().close()
+}
+
+// Every picture of the set-up in Paperless, light and dark.
+async function paperlessPictures(browser) {
+	await setUpPaperless()
+	const admin = await signInToPaperless(browser, PAPERLESS_ADMIN)
+	const account = await signInToPaperless(browser, SEARCH_ACCOUNT)
+	for (const theme of ['light', 'dark']) {
+		const suffix = theme === 'dark' ? '-dark' : ''
+		const options = { ...PAPERLESS_PHONE, colorScheme: theme }
+		await paperlessAccount(browser, admin, suffix, options)
+		await paperlessWorkflow(browser, admin, suffix, options)
+		await paperlessNames(browser, admin, suffix, options)
+		await paperlessProfile(browser, account, suffix, options)
+	}
+}
+
+// Every picture of the README, the website and the App Store, from the mock, and those
+// of the set-up in the real Paperless.
 async function everyPicture(browser) {
 	await createArchive(browser)
 	// In the time zone of the pages, which Nextcloud keeps as the user's: the times that
@@ -1022,6 +1197,7 @@ async function everyPicture(browser) {
 	await phone(browser, reader)
 	await phoneSettings(browser, admin)
 	await animation(browser, reader)
+	await paperlessPictures(browser)
 }
 
 // Chromium draws the same pixels in every run and on every processor: Skia without

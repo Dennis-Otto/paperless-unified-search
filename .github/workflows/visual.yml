@@ -30,6 +30,7 @@ on:
       - lib/**
       - templates/**
       - tests/e2e/compose.yaml
+      - tests/e2e/compose.paperless.yaml
       - tests/e2e/mock_server.py
       - tests/e2e/pdf.py
       - tests/e2e/package.json
