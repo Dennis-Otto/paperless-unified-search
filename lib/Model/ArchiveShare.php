@@ -28,13 +28,6 @@ final class ArchiveShare {
 	/** A public link, also one sent by mail, which needs no account of Nextcloud. */
 	public const KIND_LINK = 'link';
 
-	/** What a share may allow besides reading, by its permission of Nextcloud. */
-	private const CHANGES = [
-		Constants::PERMISSION_CREATE => 'create',
-		Constants::PERMISSION_UPDATE => 'update',
-		Constants::PERMISSION_DELETE => 'delete',
-	];
-
 	/**
 	 * @param self::KIND_* $kind
 	 * @param string $recipient the ID of the user or the group, the name of the team or the
@@ -51,27 +44,11 @@ final class ArchiveShare {
 	}
 
 	/**
-	 * What the share allows besides reading and sharing, in the order create, update and
-	 * delete: nothing for a share that is read-only.
-	 *
-	 * @return list<'create'|'update'|'delete'>
-	 */
-	public function changes(): array {
-		$changes = [];
-		foreach (self::CHANGES as $permission => $change) {
-			if (($this->permissions & $permission) !== 0) {
-				$changes[] = $change;
-			}
-		}
-
-		return $changes;
-	}
-
-	/**
-	 * Whether the recipients may write into the shared file or folder: create files in it,
-	 * change them or delete them.
+	 * Whether the recipients may write into the shared file or folder: create files in it
+	 * or change them, and so give a file the marker of any document. Deleting a file names
+	 * none, so a share that allows only that is no reason for a warning.
 	 */
 	public function allowsChanges(): bool {
-		return $this->changes() !== [];
+		return ($this->permissions & (Constants::PERMISSION_CREATE | Constants::PERMISSION_UPDATE)) !== 0;
 	}
 }

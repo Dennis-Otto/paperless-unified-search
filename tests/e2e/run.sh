@@ -775,44 +775,41 @@ resolve e2e-other "${LINK}" "${TMP_DIR}/link-shared.json"
 assert_response file-link "${TMP_DIR}/link-shared.json"
 
 # Whoever may write into a folder of the archive account can give a file of that account
-# the marker of any document (#222). The archive account shares its folder Inbox with
-# e2e-writer with write permission, and e2e-writer names a file there after document
-# 999: the search leaves it out for e2e-writer, occ and Try a search name the share with
-# write permission, e2e-other still finds 123 in its share that allows only reading, and
-# the check of occ and the overview warn about the share until it is gone.
-INBOX="${BASE_URL}/remote.php/dav/files/e2e-user/Inbox"
-expect_status 201 'Creating the folder Inbox' --user "e2e-user:${PASSWORD}" --request MKCOL "${INBOX}"
-expect_status 200 'Sharing the folder Inbox with e2e-writer with write permission' \
-	--user "e2e-user:${PASSWORD}" \
-	--request POST \
-	--data-urlencode 'path=/Inbox' \
-	--data-urlencode 'shareType=0' \
-	--data-urlencode 'shareWith=e2e-writer' \
-	--data-urlencode 'permissions=15' \
-	"${BASE_URL}/ocs/v2.php/apps/files_sharing/api/v1/shares"
-WRITER_SHARE="$("${COMPOSE[@]}" exec -T paperless-mock python -c 'import json, sys; print(json.load(sys.stdin)["ocs"]["data"]["id"])' <"${TMP_DIR}/answer.json")"
-printf '%s\n' 'Not document 999.' \
-	| curl --fail-with-body --silent --show-error \
-		--user "e2e-writer:${PASSWORD}" \
-		--upload-file - \
-		"${BASE_URL}/remote.php/dav/files/e2e-writer/Inbox/Forged%20%5BP999%5D.txt" >/dev/null
+# the marker of any document (#222). The archive account shares its folder Base with
+# e2e-writer read-only and the folder Inbox in it with write permission, as Paperless Sync
+# lays out its base folder, and e2e-writer names a file in Inbox after document 999. It
+# reaches that one file through both shares: the search leaves it out for e2e-writer
+# through either, occ and Try a search name the share with write permission, e2e-other
+# still finds 123 in its share that allows only reading, and the check of occ and the
+# overview warn about the share until it is gone.
+BASE="${BASE_URL}/remote.php/dav/files/e2e-user/Base"
+INBOX="${BASE}/Inbox"
+expect_status 201 'Creating the folder Base' --user "e2e-user:${PASSWORD}" --request MKCOL "${BASE}"
+expect_status 201 'Creating the folder Base/Inbox' --user "e2e-user:${PASSWORD}" --request MKCOL "${INBOX}"
+share_id() {
+	"${COMPOSE[@]}" exec -T paperless-mock python -c 'import json, sys; print(json.load(sys.stdin)["ocs"]["data"]["id"])' <"${TMP_DIR}/answer.json"
+}
+expect_status 200 'Sharing the folder Base with e2e-writer read-only' 	--user "e2e-user:${PASSWORD}" 	--request POST 	--data-urlencode 'path=/Base' 	--data-urlencode 'shareType=0' 	--data-urlencode 'shareWith=e2e-writer' 	--data-urlencode 'permissions=1' 	"${BASE_URL}/ocs/v2.php/apps/files_sharing/api/v1/shares"
+BASE_SHARE="$(share_id)"
+expect_status 200 'Sharing the folder Base/Inbox with e2e-writer with write permission' 	--user "e2e-user:${PASSWORD}" 	--request POST 	--data-urlencode 'path=/Base/Inbox' 	--data-urlencode 'shareType=0' 	--data-urlencode 'shareWith=e2e-writer' 	--data-urlencode 'permissions=15' 	"${BASE_URL}/ocs/v2.php/apps/files_sharing/api/v1/shares"
+WRITER_SHARE="$(share_id)"
+printf '%s
+' 'Not document 999.' 	| curl --fail-with-body --silent --show-error 		--user "e2e-writer:${PASSWORD}" 		--upload-file - 		"${BASE_URL}/remote.php/dav/files/e2e-writer/Inbox/Forged%20%5BP999%5D.txt" >/dev/null
 search e2e-writer 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/writable.json"
 assert_response no-results "${TMP_DIR}/writable.json"
 occ paperless_unified_search:search e2e-writer mobiletest --explain --json >"${TMP_DIR}/explain-writable.json"
-assert_occ verdicts "${TMP_DIR}/explain-writable.json" '123=not_shared=/Documents/Mobile viewer test [P123].pdf' '999=writable=/Inbox/Forged [P999].txt'
+assert_occ verdicts "${TMP_DIR}/explain-writable.json" '123=not_shared=/Documents/Mobile viewer test [P123].pdf' '999=writable'
 try_search 200 e2e-writer
 assert_occ try "${TMP_DIR}/answer.json" e2e-writer 123=not_shared 999=writable
 search e2e-other 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/still-shared.json"
 assert_response shared "${TMP_DIR}/still-shared.json"
 occ paperless_unified_search:check >"${TMP_DIR}/check-writable.txt"
-assert_occ shares "${TMP_DIR}/check-writable.txt" '! Shared: 2 users.' \
-	'/Inbox is shared with the user e2e-writer with write permission, so the search shows e2e-writer none of the documents in it. Share it read-only.'
+assert_occ shares "${TMP_DIR}/check-writable.txt" '! Shared: 2 users.' 	'/Base/Inbox is shared with the user e2e-writer with write permission, so the search shows e2e-writer none of the documents in it. Share it read-only.'
 occ setupchecks --output=json >"${TMP_DIR}/setupchecks-writable.json" || true
-assert_occ setupcheck "${TMP_DIR}/setupchecks-writable.json" warning 'The archive account e2e-user shares /Inbox with write permission'
-expect_status 200 'Removing the share of Inbox with e2e-writer' \
-	--user "e2e-user:${PASSWORD}" \
-	--request DELETE \
-	"${BASE_URL}/ocs/v2.php/apps/files_sharing/api/v1/shares/${WRITER_SHARE}"
+assert_occ setupcheck "${TMP_DIR}/setupchecks-writable.json" warning 'The archive account e2e-user shares /Base/Inbox with write permission'
+for share in "${WRITER_SHARE}" "${BASE_SHARE}"; do
+	expect_status 200 "Removing the share ${share} with e2e-writer" 		--user "e2e-user:${PASSWORD}" 		--request DELETE 		"${BASE_URL}/ocs/v2.php/apps/files_sharing/api/v1/shares/${share}"
+done
 expect_status 204 'Deleting the forged file' --user "e2e-user:${PASSWORD}" --request DELETE "${INBOX}/Forged%20%5BP999%5D.txt"
 occ paperless_unified_search:check >"${TMP_DIR}/check-read-only.txt"
 assert_occ shares "${TMP_DIR}/check-read-only.txt" '✓ Shared read-only: 1 user.'

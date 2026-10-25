@@ -228,6 +228,95 @@ final class NextcloudFileLocatorTest extends TestCase {
 	}
 
 	/**
+	 * The user may reach one file through two shares, a folder shared read-only and a
+	 * folder in it shared with write permission: the file that the user may write counts
+	 * through neither, whichever comes first.
+	 */
+	public function testAFileThatTheUserMayWriteThroughAnotherShareStandsForNoDocument(): void {
+		$writable = $this->file('Forged [P999].pdf', '/dennis/files/Inbox/Forged [P999].pdf', updateable: true, id: 42);
+		$readOnly = $this->file('Forged [P999].pdf', '/dennis/files/Paperless/Inbox/Forged [P999].pdf', id: 42);
+
+		foreach ([[$writable, $readOnly], [$readOnly, $writable]] as $nodes) {
+			$found = $this->locator($nodes)->findAllForUser($this->user(), [999], self::ARCHIVE);
+
+			self::assertSame([], $found->files);
+			self::assertSame([999 => $writable], $found->writable);
+		}
+	}
+
+	/**
+	 * A file whose ID fails to answer, once the user may write another file, counts for
+	 * neither and costs only itself: another file of its document still counts, and the
+	 * log counts it with the files that failed before, whose error comes first.
+	 */
+	public function testAFileWhoseIdFailsCostsOnlyItself(): void {
+		$writable = $this->file('Letter [P7].pdf', '/dennis/files/Inbox/Letter [P7].pdf', updateable: true);
+		$failsFirst = $this->createStub(File::class);
+		$failsFirst->method('getName')->willReturn('Receipt [P8].pdf');
+		$failsFirst->method('getOwner')->willThrowException(new RuntimeException('Storage unavailable'));
+		$broken = $this->createStub(File::class);
+		$broken->method('getName')->willReturn('Invoice [P123].pdf');
+		$broken->method('getPath')->willReturn('/dennis/files/Paperless/Invoice [P123].pdf');
+		$account = $this->createStub(IUser::class);
+		$account->method('getUID')->willReturn(self::ARCHIVE);
+		$broken->method('getOwner')->willReturn($account);
+		$broken->method('getParent')->willReturn($this->parentFolder(self::ARCHIVE, false));
+		$broken->method('getId')->willThrowException(new RuntimeException('ID unavailable'));
+		$invoice = $this->file('Invoice [P123].pdf', '/dennis/files/Zzz/Invoice [P123].pdf');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())
+			->method('warning')
+			->with('Paperless unified search skipped {count} file(s) it could not read ({errorType})', [
+				'app' => AppConstants::APP_ID,
+				'count' => 2,
+				'errorType' => RuntimeException::class,
+			]);
+
+		$found = $this->locator([$failsFirst, $broken, $invoice, $writable], $logger)->findAllForUser($this->user(), [7, 8, 123], self::ARCHIVE);
+
+		self::assertSame([123 => $invoice], $found->files);
+		self::assertSame([7 => $writable], $found->writable);
+		self::assertInstanceOf(RuntimeException::class, $found->error);
+		self::assertSame('Storage unavailable', $found->error->getMessage());
+	}
+
+	/**
+	 * A file shared on its own bears the name that the recipient gives it, even one who may
+	 * only read it, so the markers come from the name that the archive account gave it.
+	 *
+	 * @return array<string, array{?string, array<int, string>}>
+	 */
+	public static function namesOfTheArchive(): array {
+		return [
+			'the name of the archive' => ['Invoice [P5].pdf', [5 => 'Invoice [P5] [P999].pdf']],
+			'a file that the archive no longer has' => [null, []],
+		];
+	}
+
+	/**
+	 * @param array<int, string> $expected the name of the file found for each document
+	 */
+	#[DataProvider('namesOfTheArchive')]
+	public function testAFileSharedOnItsOwnCountsByTheNameThatTheArchiveGaveIt(?string $nameOfTheArchive, array $expected): void {
+		$renamed = $this->file('Invoice [P5] [P999].pdf', '/dennis/files/Invoice [P5] [P999].pdf', id: 42, shareRoot: true);
+		$archiveFolder = $this->createStub(Folder::class);
+		if ($nameOfTheArchive === null) {
+			$archiveFolder->method('getFirstNodeById')->willReturn(null);
+		} else {
+			$original = $this->file($nameOfTheArchive, '/archive/files/Paperless/' . $nameOfTheArchive, id: 42);
+			$archiveFolder->method('getFirstNodeById')->willReturnCallback(static fn (int $id): ?Node => $id === 42 ? $original : null);
+		}
+		$root = $this->createStub(IRootFolder::class);
+		$root->method('getUserFolder')->willReturnCallback(fn (string $uid): Folder => $uid === self::ARCHIVE ? $archiveFolder : $this->userFolder([$renamed]));
+
+		$found = (new NextcloudFileLocator($root, $this->createStub(LoggerInterface::class)))->findAllForUser($this->user(), [5, 999], self::ARCHIVE);
+
+		self::assertSame($expected, array_map(static fn (File $file): string => $file->getName(), $found->files));
+		self::assertSame([], $found->writable);
+		self::assertNull($found->error);
+	}
+
+	/**
 	 * The archive account writes its own files, and finds them all.
 	 */
 	public function testTheArchiveAccountFindsTheFilesThatItMayWrite(): void {
@@ -601,10 +690,14 @@ final class NextcloudFileLocatorTest extends TestCase {
 	 * A file that the user may only read, unless $updateable, in a folder of the archive
 	 * account where the user may add no file, unless $folder is another one.
 	 */
-	private function file(string $name, string $path, ?string $owner = self::ARCHIVE, bool $updateable = false, ?Folder $folder = null): File {
+	private function file(string $name, string $path, ?string $owner = self::ARCHIVE, bool $updateable = false, ?Folder $folder = null, ?int $id = null, bool $shareRoot = false): File {
 		$file = $this->createStub(File::class);
 		$file->method('getName')->willReturn($name);
 		$file->method('getPath')->willReturn($path);
+		// Another path is another file, unless the file is the same through another share.
+		$file->method('getId')->willReturn($id ?? crc32($path));
+		// The root of a share, a file shared on its own, has no path within the share.
+		$file->method('getInternalPath')->willReturn($shareRoot ? '' : basename($path));
 		$file->method('isUpdateable')->willReturn($updateable);
 		$file->method('getParent')->willReturn($folder ?? $this->parentFolder(self::ARCHIVE, false));
 		if ($owner !== null) {

@@ -144,28 +144,28 @@ final class ArchiveSharesTest extends TestCase {
 	}
 
 	/**
-	 * @return array<string, array{int, list<string>}>
+	 * @return array<string, array{int, bool}>
 	 */
 	public static function permissions(): array {
 		return [
-			'read-only' => [Constants::PERMISSION_READ, []],
-			'read and share' => [Constants::PERMISSION_READ | Constants::PERMISSION_SHARE, []],
-			'everything' => [Constants::PERMISSION_ALL, ['create', 'update', 'delete']],
-			'a file drop' => [Constants::PERMISSION_CREATE, ['create']],
-			'changes' => [Constants::PERMISSION_READ | Constants::PERMISSION_UPDATE, ['update']],
-			'deletions' => [Constants::PERMISSION_READ | Constants::PERMISSION_DELETE, ['delete']],
+			'read-only' => [Constants::PERMISSION_READ, false],
+			'read and share' => [Constants::PERMISSION_READ | Constants::PERMISSION_SHARE, false],
+			'everything' => [Constants::PERMISSION_ALL, true],
+			'a file drop' => [Constants::PERMISSION_CREATE, true],
+			'changes' => [Constants::PERMISSION_READ | Constants::PERMISSION_UPDATE, true],
+			'deletions' => [Constants::PERMISSION_READ | Constants::PERMISSION_DELETE, false],
 		];
 	}
 
 	/**
-	 * @param list<string> $changes
+	 * A share allows changes when its recipients may create or change files, and so give
+	 * one the marker of any document; deleting a file names none.
 	 */
 	#[DataProvider('permissions')]
-	public function testAShareAllowsChangesWithAnyPermissionButToReadAndShare(int $permissions, array $changes): void {
+	public function testAShareAllowsChangesWhenItsRecipientsMayCreateOrChangeFiles(int $permissions, bool $allowsChanges): void {
 		$share = new ArchiveShare(ArchiveShare::KIND_USER, 'jamie', '/Paperless', $permissions);
 
-		self::assertSame($changes, $share->changes());
-		self::assertSame($changes !== [], $share->allowsChanges());
+		self::assertSame($allowsChanges, $share->allowsChanges());
 	}
 
 	/**
@@ -182,6 +182,7 @@ final class ArchiveSharesTest extends TestCase {
 				[[IShare::TYPE_USER, 1], [IShare::TYPE_USER, 1], [IShare::TYPE_GROUP, 1], [IShare::TYPE_GROUP, 1], [IShare::TYPE_CIRCLE, 1], [IShare::TYPE_CIRCLE, 1], [IShare::TYPE_DECK, 1], [IShare::TYPE_REMOTE, 1], [IShare::TYPE_LINK, 1], [IShare::TYPE_EMAIL, 1]],
 				'Shared read-only: 2 users, 2 groups, 2 teams, 2 other shares, 2 public links.',
 			],
+			'one that allows only deletions' => [[[IShare::TYPE_USER, Constants::PERMISSION_READ | Constants::PERMISSION_DELETE]], 'Shared read-only: 1 user.'],
 			'one that allows changes' => [[[IShare::TYPE_GROUP, 1], [IShare::TYPE_USER, Constants::PERMISSION_ALL]], 'Shared: 1 user, 1 group.'],
 		];
 	}
@@ -222,7 +223,8 @@ final class ArchiveSharesTest extends TestCase {
 
 	/**
 	 * Each share that allows changes says what goes wrong and how to correct it, in the
-	 * order of the shares, and the summary counts in the language of the administrator.
+	 * order of the shares, and the summary counts in the language of the administrator. A
+	 * share that allows only deletions warns of nothing.
 	 */
 	public function testWarnsOfEachShareThatAllowsChanges(): void {
 		$this->share(IShare::TYPE_USER, 'jamie', '/Paperless');
@@ -238,7 +240,6 @@ final class ArchiveSharesTest extends TestCase {
 			'T:/Inbox has a public link that allows uploads or changes, so whoever has the link can add a file with the marker of any document. Make the link read-only.',
 			'T:/Paperless is shared with the user sam with write permission, so the search shows sam none of the documents in it. Share it read-only.',
 			'T:/Paperless is shared with the group staff with write permission, so the search shows its members none of the documents in it. Share it read-only.',
-			'T:/Paperless is shared with the team Accounting with write permission, so the search shows its members none of the documents in it. Share it read-only.',
 			'T:/Paperless is shared with Office with write permission, so the search shows its recipients none of the documents in it. Share it read-only.',
 		], $archiveShares->warnings($overview));
 		self::assertSame('T:Shared: T:2 users, T:1 group, T:1 team, T:1 other share, T:1 public link.', $archiveShares->summarize($overview));
