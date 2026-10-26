@@ -58,7 +58,7 @@ jobs:
       SBOM_SYFT_SHA256: c069905b391cc4c20a5ba65ad5c10be2a7ba074f8ea6ad203e24d14e303dad47
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
           disable-sudo-and-containers: ${{ vars.PUBLISH_TO != 'nextcloud-appstore' }}
