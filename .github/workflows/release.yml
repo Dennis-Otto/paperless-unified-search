@@ -15,7 +15,8 @@ name: Release
 # repository variable PUBLISH_TO says: pypi, npm, ghcr, hacs, nextcloud-appstore,
 # github-action, chrome-web-store, which publish-store.yml takes over once this
 # workflow has passed, or none. Last, verify-release.yml checks the release as its
-# users can. A release that only updates dependencies merges itself once its checks pass.
+# users can. A release that only updates dependencies merges itself once its checks pass,
+# once a day, or at once with a fix of a vulnerability.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -24,7 +25,8 @@ on:
   # Every merge into main is a push of the release app or of a person, which starts
   # the release bot at once. The schedule is only a safety net, for a push that GitHub
   # lost and a tag that a failed run left to sign: GitHub runs schedules as it can,
-  # often hours late, and the bot-health bot starts a run that it missed.
+  # often hours late, and the bot-health bot starts a run that it missed. It is also
+  # the daily run that merges a release of dependency updates.
   schedule:
     - cron: "57 5 * * *"
   workflow_dispatch:
@@ -310,14 +312,30 @@ jobs:
                       + if $deletions == [] then {} else {deletions: $deletions} end)}}}' |
                 gh api graphql --input - --jq .data.createCommitOnBranch.commit.oid
             done
+      # A release of nothing but dependency updates merges itself, bundled: the daily
+      # run of the schedule, or a run started by hand, sets its auto-merge, so that the
+      # updates of a day make one release and not one each, which the Rollout of the
+      # blueprint would bring to every repository (decision 0087). A release with the
+      # fix of a vulnerability, which Renovate marks with [security], merges at once.
       - name: Merge a release of dependency updates once its checks pass
-        if: steps.release.outputs.pr != '' && steps.app.outputs.token != ''
+        if: steps.app.outputs.token != '' && steps.release.outputs.release_created != 'true'
         env:
           # Merged by the app, the release starts this workflow again and is created.
           GH_TOKEN: ${{ steps.app.outputs.token }}
           PR: ${{ steps.release.outputs.pr }}
         run: |
-          number="$(jq -r .number <<<"$PR")"
+          set -euo pipefail
+          # The pull request that release-please has just updated, or else the open one,
+          # which a run of the schedule finds unchanged.
+          number="$(jq -r '.number // empty' <<<"${PR:-null}")"
+          if [[ -z "$number" ]]; then
+            number="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --label "autorelease: pending" \
+              --json number --jq '.[0].number // ""')"
+          fi
+          if [[ -z "$number" ]]; then
+            echo "No release pull request is open."
+            exit 0
+          fi
           latest="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>/dev/null || true)"
           if [[ -z "$latest" ]]; then
             echo "The first release waits for the maintainer."
@@ -331,7 +349,14 @@ jobs:
             echo "$others"
             exit 0
           fi
-          gh pr merge --repo "$GITHUB_REPOSITORY" --auto --squash "$number"
+          if [[ "$GITHUB_EVENT_NAME" == push ]] && ! grep -qi '\[security\]' <<<"$subjects"; then
+            echo "The release of dependency updates merges in the daily run of the release bot, with the updates of the day."
+            exit 0
+          fi
+          # GitHub sets no auto-merge on a pull request whose checks have all passed
+          # already; that one merges now. The rules of main still hold for the merge.
+          gh pr merge --repo "$GITHUB_REPOSITORY" --auto --squash "$number" ||
+            gh pr merge --repo "$GITHUB_REPOSITORY" --squash "$number"
       - name: Publish a beta of the next release
         id: beta
         # Where the repository variable BETA_CHANNEL is true, every change for users
