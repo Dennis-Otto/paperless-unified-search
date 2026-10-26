@@ -155,7 +155,7 @@ jobs:
       - name: Create a token of the settings app
         id: settings-token
         if: steps.settings-app.outputs.ready == 'true'
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         env:
           # The action has no input for Variables, which GitHub calls actions_variables,
           # and takes every INPUT_PERMISSION-* of its environment, as the runner passes
@@ -173,7 +173,7 @@ jobs:
       - name: Create a token of the release app
         id: app
         if: steps.release-app.outputs.ready == 'true'
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         env:
           # The action has no input for Variables, which GitHub calls actions_variables,
           # and takes every INPUT_PERMISSION-* of its environment, as the runner passes

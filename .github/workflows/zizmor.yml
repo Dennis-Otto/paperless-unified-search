@@ -55,7 +55,7 @@ jobs:
       # audited alike: an update of the action brings a newer one, and its pull request
       # shows what the newer audits find.
       - name: Check the workflows
-        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        uses: zizmorcore/zizmor-action@85b2b9fb8e3325e7a23d7d0a9d7ba5ae0f999e3e # v0.7.1
         with:
           # Without code scanning, which a private repository lacks without GitHub
           # Code Security, every finding is an annotation and fails the check.
