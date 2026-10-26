@@ -30,7 +30,7 @@ Every change reaches `main` through a pull request that passes all required chec
 Bots do the routine work, each with the least permissions it needs:
 
 - **Renovate** updates the dependencies, the actions and the images, and Dependabot the Features of the dev container; routine updates merge on their own when every check passes.
-- **The release bot** keeps a pull request for the next release, from the titles of the merged pull requests. A release of dependency updates merges and publishes itself; every other release waits for the maintainer.
+- **The release bot** keeps a pull request for the next release, from the titles of the merged pull requests. A release of dependency updates merges and publishes itself, once a day or at once with the fix of a vulnerability; every other release waits for the maintainer.
 - **The branch bot** brings the pull requests that wait for auto-merge up to date with `main` one at a time, in the order in which their auto-merge was turned on, so that each merges once its checks pass again.
 - **The issue assistant** analyzes new issues, keeps their labels and lifecycle, and closes fixed issues with the release that ships the fix.
 - **The Findings workflow** keeps the findings of code scanning either fixed or accepted with a reason.

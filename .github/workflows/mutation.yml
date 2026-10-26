@@ -85,8 +85,8 @@ jobs:
         include: ${{ fromJSON(needs.plan.outputs.parts) }}
     env:
       # renovate: datasource=github-releases depName=infection/infection
-      INFECTION_VERSION: 0.35.6
-      INFECTION_SHA256: 3fd4216875260b8e47c48ec1a92473f500d88bd36d8ffec21cc0d24e18d7f0ea
+      INFECTION_VERSION: 0.35.8
+      INFECTION_SHA256: b2049ae1bff43d9dc82831c2833005005eb62d5180cd518892af93fc8e23ddc5
       # The time of mutmut, which keeps the mutants it reached: a pull request tries
       # them for 25 minutes, of which the copy of the code and the first run of the
       # tests take about 13 in each part of the blueprint. Infection, which reports at
