@@ -61,6 +61,13 @@ rules:
       # merges the default branch into one of them through the API.
       - update-branches.yml
       # The issue assistant's templates, which its check keeps equal to the action's.
+      # The issue assistant starts on issue_comment so that it may answer a new
+      # comment, which it reads only as text: it checks out only the default branch
+      # and the action at the commit of its release, never the code of a pull
+      # request; event and apply run no AI, analyze runs the engine with a token
+      # that only reads and read-only tools on the egress-firewall runner, and apply
+      # checks the engine's answer before it writes labels or one comment.
+      - issue-assistant.yml
       - findings.yml
       - issue-lifecycle.yml
   self-repository:
