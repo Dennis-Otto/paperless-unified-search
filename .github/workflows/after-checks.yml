@@ -120,7 +120,7 @@ jobs:
       checks: read
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
           disable-sudo-and-containers: true
@@ -249,7 +249,7 @@ jobs:
       issues: write
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
           disable-sudo-and-containers: true
@@ -512,7 +512,7 @@ jobs:
       actions: write
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
           disable-sudo-and-containers: true
@@ -581,7 +581,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
           disable-sudo-and-containers: true
@@ -674,7 +674,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
           disable-sudo-and-containers: true
@@ -783,7 +783,7 @@ jobs:
       pull-requests: write # the suggestions on a pull request from a fork, and the comment when the bot fails
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
           disable-sudo-and-containers: true
@@ -996,7 +996,7 @@ jobs:
       HEADLINE: "docs: draw the diagrams anew"
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
           disable-sudo-and-containers: true
