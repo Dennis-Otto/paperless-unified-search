@@ -63,14 +63,14 @@ jobs:
           echo "$message" >> "$GITHUB_STEP_SUMMARY"
       - name: Initialize the analysis
         if: vars.CODE_SCANNING != 'off'
-        uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           languages: javascript-typescript, actions
           build-mode: none
           queries: security-extended
       - name: Analyze
         if: vars.CODE_SCANNING != 'off'
-        uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           # The results of each language as <language>.sarif, uploaded below.
           output: ${{ runner.temp }}/codeql
@@ -104,7 +104,7 @@ jobs:
           done
       - name: Upload the results
         if: vars.CODE_SCANNING != 'off'
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           sarif_file: ${{ runner.temp }}/codeql
       # The PR coach: what failed, why it matters and how to fix it, in the summary
