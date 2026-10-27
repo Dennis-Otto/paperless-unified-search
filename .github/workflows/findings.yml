@@ -34,6 +34,6 @@ jobs:
     permissions:
       contents: read
       security-events: write
-    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-findings.yml@1f78330598c545784358643ceda2b720014ebb42 # v1.6.1
+    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-findings.yml@eec0af47d18a67f27e83af79a2f41d8f3df7c9de # v1.8.0
     with:
       dry_run: ${{ inputs.dry_run || false }}
