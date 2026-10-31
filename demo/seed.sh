@@ -38,8 +38,8 @@ EXPECTED_RESULTS=3
 # release as a pull request, which runs the demo (.github/workflows/demo.yml), so that
 # a release that breaks the demo never reaches it unseen.
 # renovate: datasource=github-release-attachments depName=Dennis-Otto/paperless-sync
-PAPERLESS_SYNC_VERSION="v0.4.0"
-PAPERLESS_SYNC_SHA256="54162f57a2e3dbb445cb28186a68119a152f68c327f7666904b8e7670428561d"
+PAPERLESS_SYNC_VERSION="v1.2.0"
+PAPERLESS_SYNC_SHA256="1041313905b7d31460c78805b107504f79f56b0bc5fbe36ff6230d8e8e3e60b3"
 # Git Bash on Windows: keep the paths in the containers as they are.
 export MSYS2_ARG_CONV_EXCL="/demo/${MSYS2_ARG_CONV_EXCL:+;${MSYS2_ARG_CONV_EXCL}}"
 
