@@ -396,7 +396,7 @@ test('the settings show the warnings about the account of the token, which keep 
 		answers: [
 			json({ ...CONFIG, tokenWarnings: ['superuser'] }),
 			// A value that a newer server names, which this page doesn't know, shows nothing.
-			json({ ...CONFIG, tokenWarnings: ['staff', 'changes_documents', 'retired', 'hides_correspondents', 'hides_document_types', 'hides_tags'] }),
+			json({ ...CONFIG, tokenWarnings: ['staff', 'changes_documents', 'retired', 'hides_correspondents', 'hides_document_types', 'hides_tags', 'hides_names_of_others'] }),
 			json({ ...CONFIG, tokenWarnings: [] }),
 		],
 	})
@@ -406,7 +406,7 @@ test('the settings show the warnings about the account of the token, which keep 
 	assert.equal(get('status').textContent, 'Connection successful. Settings saved.')
 
 	await get('form').dispatch('submit')
-	assert.equal(get('token-warnings').textContent, 'The API token belongs to an Admin of Paperless, who may also read its logs: whoever gets hold of the token can too. Use the token of an account that is neither Admin nor Superuser. The account of the API token may add, change or delete documents in Paperless: whoever gets hold of the token can too. Use the token of an account that may only view documents. The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents. The account of the API token may not view document types in Paperless, so results show without them. Give the account the permission View for Document Types. The account of the API token may not view tags in Paperless, so results show without them. Give the account the permission View for Tags.')
+	assert.equal(get('token-warnings').textContent, 'The API token belongs to an Admin of Paperless, who may also read its logs: whoever gets hold of the token can too. Use the token of an account that is neither Admin nor Superuser. The account of the API token may add, change or delete documents in Paperless: whoever gets hold of the token can too. Use the token of an account that may only view documents. The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents. The account of the API token may not view document types in Paperless, so results show without them. Give the account the permission View for Document Types. The account of the API token may not view tags in Paperless, so results show without them. Give the account the permission View for Tags. The account of the API token may not view some correspondents, document types or tags in Paperless, which another user owns, so results show without them. Select them in their lists in Paperless and add the account under Permissions, View.')
 
 	await get('form').dispatch('submit')
 	assert.equal(get('token-warnings').textContent, '')

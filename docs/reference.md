@@ -48,7 +48,7 @@ occ config:app:get paperless_unified_search paperless_url
 | `always_search` | Whether every search asks Paperless |
 | `personal_always_search` | Whether users may choose to include Paperless in every search of their own; missing means yes |
 | `paperless_version`, `paperless_api_version` | The versions of Paperless and of its API, such as `3.3.0` and `10`, as its last answer named them |
-| `token_warnings` | The warnings about the account of the API token that the last test of the connection found, separated by commas: `superuser`, `staff`, `changes_documents`, `hides_correspondents`, `hides_document_types` and `hides_tags`; missing when there are none, or Paperless didn't say. A lazy key |
+| `token_warnings` | The warnings about the account of the API token that the last test of the connection found, separated by commas: `superuser`, `staff`, `changes_documents`, `hides_correspondents`, `hides_document_types`, `hides_tags` and `hides_names_of_others`; missing when there are none, or Paperless didn't say. A lazy key |
 | `diagnostics` | The history of the problems of the search, as JSON; a lazy key, which Nextcloud loads only when it is read |
 | `diagnostics_pending` | Whether a failure in the history still waits for a search that works |
 
@@ -120,14 +120,14 @@ curl -u admin -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
 
 ## Requests to Paperless
 
-Every request of the app to Paperless is one `GET` of `<URL>/api/documents/`, of `/api/correspondents/`, `/api/document_types/` and `/api/tags/` for the names of the correspondents, types and tags of a page, or of `/api/ui_settings/` for what the account of the token may do, from the Nextcloud server:
+Every request of the app to Paperless is one `GET` of `<URL>/api/documents/`, of `/api/correspondents/`, `/api/document_types/` and `/api/tags/` for the names of the correspondents, types and tags of a page and, in a test of the connection, of its newest documents, or of `/api/ui_settings/` for what the account of the token may do, from the Nextcloud server:
 
 | | |
 | --- | --- |
 | **Headers** | `Authorization: Token …`, `Accept: application/json` and `User-Agent: Nextcloud-Paperless-Unified-Search/<version>` |
 | **The account of the token** | **View** for documents, correspondents, document types, tags and UI settings, and nothing else. Every answer holds only the documents, correspondents, types and tags that the account may view: those that it owns, those without an owner, and those whose permissions let it or one of its groups view them; a note of a document matches without the permission to view notes. [What each permission gives the search](configure.md#what-each-permission-gives-the-search) says what each of them does |
 | **A search** | `query` with the term, `page`, `page_size=25` and `fields=id,title,created,correspondent,document_type,tags,__search_hit__`; on Paperless 3, a query that it can't parse yet once more with `text` in place of `query` |
-| **The test of the connection** | `page_size=1` and `fields=id`; once Paperless answers, `/api/ui_settings/` without parameters, with 3 seconds for the answer and no second try, for the warnings about the account of the token. Of its answer, the app reads only `user.is_superuser`, `user.is_staff` and `permissions`; Paperless answers HTTP 403 to an account that may not view its UI settings, and the warnings stay unknown |
+| **The test of the connection** | `page_size=1` and `fields=id`; once Paperless answers, `/api/ui_settings/` without parameters, with 3 seconds for the answer and no second try, for the warnings about the account of the token. Of its answer, the app reads only `user.is_superuser`, `user.is_staff` and `permissions`; Paperless answers HTTP 403 to an account that may not view its UI settings, and the warnings stay unknown. Of an account that isn't a superuser and may view documents, it then asks for the 25 newest with `ordering=-added`, `page=1` and `fields=id,correspondent,document_type,tags`, and for the names of their correspondents, types and tags, again with 3 seconds and no second try, for the warning about those that another user owns |
 | **The newest documents of the dashboard** | `ordering=-added`, `page=1`, `page_size=25` and `fields=id,title,added,correspondent,document_type,tags`, at most once a minute for all users, with 5 seconds for the answer and no second try |
 | **Time** | 3 seconds to connect, 10 seconds for the answer |
 | **A second try** | Only for a request that failed within 3.5 seconds, before it had a connection, and whose address Nextcloud didn't refuse |
@@ -151,7 +151,7 @@ Every request of the app to Paperless is one `GET` of `<URL>/api/documents/`, of
 | The browser or an app of the user | Nextcloud | The search term | Whenever the user searches |
 | Nextcloud | Paperless | The term, the page and the fields to answer with, and the API token | With **Search connected services** on, after choosing **Paperless documents** in the smart picker, through the API, or always when Paperless is trusted |
 | Paperless | Nextcloud | Of each document that the account of the token may view: its ID, title, date, the IDs of its correspondent, its type and its tags, and the excerpt around the term; the versions of Paperless and of its API | In every answer |
-| Nextcloud | Paperless | The request for what the account of the token may do, with the API token | With every test of the connection: **Test connection and save**, `occ paperless_unified_search:setup`, `test` and `check` |
+| Nextcloud | Paperless | The request for what the account of the token may do, and for the IDs and names of the correspondents, types and tags of its newest documents, with the API token | With every test of the connection: **Test connection and save**, `occ paperless_unified_search:setup`, `test` and `check` |
 | Paperless | Nextcloud | The user of the token with its ID and name, whether it is a superuser or staff, its groups, its permissions and those of its groups, and the settings of the web interface of Paperless for it; the app keeps only the warnings that follow from whether it is a superuser or staff and from its permissions | In every answer to an account that may view its UI settings |
 | Nextcloud | The browser or an app of the user | Of each document whose file the user can open: its title, date, the names of its correspondent, its type and up to two of its tags, and its excerpt, and the link, the ID and the path of its file | In every answer |
 | Nextcloud | Paperless | The request for the 25 documents that Paperless added last, with the fields that the dashboard shows, and the API token | At most once a minute, when the dashboard of a user shows the widget |

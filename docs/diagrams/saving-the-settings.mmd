@@ -7,7 +7,7 @@ config:
 ---
 sequenceDiagram
     accTitle: Saving the settings
-    accDescr: The administrator enters the URL, whether Paperless runs in the local network, the token and the archive account. When the password wasn't confirmed in the last 30 minutes, Nextcloud asks for it first. The settings page sends them with the CSRF token to the settings controller, which checks the URL, the token and the archive account: a blank token keeps the stored one only for its server, the same scheme, host and port, and otherwise the answer is HTTP 400. Then the controller has the Paperless client test the connection with a request to Paperless-ngx, which Nextcloud lets reach an address of the local network only with the switch, and then without redirects. Only when Paperless answers does the client also ask /api/ui_settings/ what the account of the token may do, with one try in 3 seconds that never fails the save; Paperless refuses it with HTTP 403 to an account that may not view its UI settings, which leaves the warnings unknown. Then the configuration saves the URL, the switches, the archive account and the warnings about the token in the app configuration and the token in the credentials manager. The page gets the settings back with the warnings, without the token.
+    accDescr: The administrator enters the URL, whether Paperless runs in the local network, the token and the archive account. When the password wasn't confirmed in the last 30 minutes, Nextcloud asks for it first. The settings page sends them with the CSRF token to the settings controller, which checks the URL, the token and the archive account: a blank token keeps the stored one only for its server, the same scheme, host and port, and otherwise the answer is HTTP 400. Then the controller has the Paperless client test the connection with a request to Paperless-ngx, which Nextcloud lets reach an address of the local network only with the switch, and then without redirects. Only when Paperless answers does the client also ask /api/ui_settings/ what the account of the token may do, with one try in 3 seconds that never fails the save; Paperless refuses it with HTTP 403 to an account that may not view its UI settings, which leaves the warnings unknown. Of an account that isn't a superuser and may view documents, it then asks for the 25 newest documents and for the lists of their correspondents, types and tags, under the same terms, for the warning about those that another user owns. Then the configuration saves the URL, the switches, the archive account and the warnings about the token in the app configuration and the token in the credentials manager. The page gets the settings back with the warnings, without the token.
 
     actor Admin as Administrator
     participant Page as Settings page
@@ -28,7 +28,11 @@ sequenceDiagram
     Paperless-->>Client: 200
     Client->>Paperless: GET /api/ui_settings/
     Paperless-->>Client: the user and its permissions (403: unknown)
-    Note over Client,Paperless: one try in 3 seconds, which never fails the save
+    Client->>Paperless: GET /api/documents/<br>?ordering=-added&page_size=25<br>&fields=id,correspondent,<br>document_type,tags
+    Paperless-->>Client: the 25 newest documents
+    Client->>Paperless: GET /api/correspondents/, /api/document_types/, /api/tags/<br>?id__in=...
+    Paperless-->>Client: those that the account may view
+    Note over Client,Paperless: one try in 3 seconds each, which never fails the save
     Controller->>Config: save
     Config->>Config: URL, switches, archive account and the warnings about the token to the app configuration, the token to the credentials manager
     Controller-->>Page: the settings with the warnings, without the token

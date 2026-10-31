@@ -127,6 +127,7 @@
 		hides_correspondents: () => translate('The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents.'),
 		hides_document_types: () => translate('The account of the API token may not view document types in Paperless, so results show without them. Give the account the permission View for Document Types.'),
 		hides_tags: () => translate('The account of the API token may not view tags in Paperless, so results show without them. Give the account the permission View for Tags.'),
+		hides_names_of_others: () => translate('The account of the API token may not view some correspondents, document types or tags in Paperless, which another user owns, so results show without them. Select them in their lists in Paperless and add the account under Permissions, View.'),
 	}
 
 	// The text of the warnings of the settings about the account of the token, without a
