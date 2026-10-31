@@ -30,7 +30,7 @@ Only when the user asks for it: with **Search connected services** switched on, 
 
 ## Can I use the API token of my own Paperless account?
 
-It works, but whoever gets hold of the token of an administrator of Paperless can change and delete every document, and the settings warn about it below the token. Give the search an account of its own that may only view documents, correspondents, document types and its UI settings, as [Configure](configure.md#a-paperless-account-for-the-search) shows: the test of the connection then warns about nothing, and the account still finds every document that you allow it to view.
+It works, but whoever gets hold of the token of an administrator of Paperless can change and delete every document, and the settings warn about it below the token. Give the search an account of its own that may only view documents, correspondents, document types, tags and its UI settings, as [Configure](configure.md#a-paperless-account-for-the-search) shows: the test of the connection then warns about nothing, and the account still finds every document that you allow it to view.
 
 ## Does it work in the Nextcloud apps for iOS and Android?
 
@@ -46,7 +46,7 @@ Nextcloud turns it off at every reload of the page, so that a search term never 
 
 ## Can I see new documents without searching?
 
-Yes: add **New in Paperless** to your dashboard. It lists the documents that Paperless added last and that you can open, newest first, each with the day that Paperless added it, its correspondent and its type, and opens a document's file in Files. [On the dashboard](usage.md#on-the-dashboard) has the details.
+Yes: add **New in Paperless** to your dashboard. It lists the documents that Paperless added last and that you can open, newest first, each with the day that Paperless added it, its correspondent, its type and up to two of its tags, and opens a document's file in Files. [On the dashboard](usage.md#on-the-dashboard) has the details.
 
 ## How much load does it put on Paperless?
 

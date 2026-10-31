@@ -159,7 +159,7 @@ export SCOPE=paperless
 expect "a contract run for the requests to Paperless" true "$(pull_request 'mkdir -p lib/Service && echo new >lib/Service/PaperlessApiService.php')"
 expect "a contract run for the search" true "$(pull_request 'mkdir -p lib/Search && echo new >lib/Search/Provider.php')"
 expect "a contract run for the reading of what the token may do" true "$(pull_request 'mkdir -p lib/Model && echo new >lib/Model/TokenWarning.php')"
-expect "a contract run for the names of correspondents and types" true "$(pull_request 'mkdir -p lib/Service && echo new >lib/Service/PaperlessNames.php')"
+expect "a contract run for the names of correspondents, types and tags" true "$(pull_request 'mkdir -p lib/Service && echo new >lib/Service/PaperlessNames.php')"
 expect "a contract run for the newest documents of the dashboard" true "$(pull_request 'mkdir -p lib/Service && echo new >lib/Service/RecentDocuments.php')"
 expect "a contract run for the test of the connection in the settings" true "$(pull_request 'mkdir -p lib/Controller && echo new >lib/Controller/SettingsController.php')"
 expect "a contract run for the commands of occ" true "$(pull_request 'mkdir -p lib/Command && echo new >lib/Command/Check.php')"
@@ -682,7 +682,7 @@ PYTHON
 		"GET /api/documents/?query=mobiletest&fields=id&created__date__gte=2026-08-01 HTTP/1.1 200|GET /api/documents/?query=mobiletest&fields=id&created__date__gte=2026-08-01 HTTP/1.1 200|GET /api/documents/?query=mobiletest&fields=id HTTP/1.1 401" \
 		"$(tail -n +2 "${WORK}/journal" | grep --invert-match '^account ' | paste -s -d "|")"
 	expect "the accounts of the tokens of the mock, as /api/ui_settings/ names them" \
-		"account superuser=False staff=False view_document,view_correspondent,view_documenttype,view_uisettings|account superuser=True staff=True add_document,change_document,delete_document,view_document,view_correspondent,view_documenttype,view_uisettings" \
+		"account superuser=False staff=False view_document,view_correspondent,view_documenttype,view_tag,view_uisettings|account superuser=True staff=True add_document,change_document,delete_document,view_document,view_correspondent,view_documenttype,view_tag,view_uisettings" \
 		"$(grep '^account ' "${WORK}/journal" | paste -s -d "|")"
 else
 	echo "Python 3.9 or newer is not installed here; the CI tests the journal of the mock."

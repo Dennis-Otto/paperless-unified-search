@@ -143,7 +143,7 @@ final class RecentDocumentsWidgetTest extends TestCase {
 	/**
 	 * The documents that Paperless added last, newest first, of which the user sees those
 	 * whose file of the archive account they can open, each with the preview of its file,
-	 * the day that Paperless added it, its correspondent and its type.
+	 * the day that Paperless added it, its correspondent, its type and its tags.
 	 */
 	public function testListsTheNewestDocumentsThatTheUserCanOpen(): void {
 		$items = $this->widget($this->paperless(...$this->answers(self::DOCUMENTS)))->getItemsV2('jamie')->jsonSerialize();
@@ -416,6 +416,24 @@ final class RecentDocumentsWidgetTest extends TestCase {
 		$item = $this->widget($this->paperless(...$this->answers([$document], $names)))->getItemsV2('jamie')->jsonSerialize()['items'][0];
 
 		self::assertSame([$title, $subtitle, $sinceId], [$item['title'], $item['subtitle'], $item['sinceId']]);
+	}
+
+	/**
+	 * The line of an item shows up to two tags of its document after its type, then how
+	 * many more there are, as a result of the search does.
+	 */
+	public function testAnItemShowsUpToTwoTagsOfItsDocument(): void {
+		$document = ['tags' => [4, 2, 6]] + self::DOCUMENTS[0];
+		$names = [
+			'correspondents' => [3 => 'Northstar Energy'],
+			'document_types' => [1 => 'Bill'],
+			'tags' => [2 => 'tax 2026', 4 => 'unpaid', 6 => 'warranty'],
+		];
+
+		$item = $this->widget($this->paperless(...$this->answers([$document], $names)))->getItemsV2('jamie')->jsonSerialize()['items'][0];
+
+		self::assertSame('Aug 13, 2026 · Northstar Energy · Bill · unpaid · tax 2026 · +1', $item['subtitle']);
+		self::assertStringStartsWith('https://paperless.example.com/api/tags/', $this->requests[3][0]);
 	}
 
 	/**

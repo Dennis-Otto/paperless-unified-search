@@ -39,7 +39,7 @@ use UnexpectedValueException;
 final class PaperlessApiServiceTest extends TestCase {
 	private const NOW = 1791500000;
 	private const NO_DOCUMENTS = '{"count":0,"next":null,"results":[]}';
-	private const FIELDS = 'id,title,created,correspondent,document_type,__search_hit__';
+	private const FIELDS = 'id,title,created,correspondent,document_type,tags,__search_hit__';
 	/** The headers of an answer of Paperless 3.3.0, as it names its version. */
 	private const PAPERLESS_3 = ['X-Version' => '3.3.0', 'X-Api-Version' => '10'];
 	private const PAPERLESS_2 = ['X-Version' => '2.20.13', 'X-Api-Version' => '9'];
@@ -47,13 +47,13 @@ final class PaperlessApiServiceTest extends TestCase {
 	private const VERSION_KEYS = [AppConstants::APP_ID . '.paperless_version', AppConstants::APP_ID . '.paperless_api_version'];
 	/**
 	 * The answer of /api/ui_settings/ to the token of an account that may view documents,
-	 * correspondents, document types and its UI settings, and nothing else, as
+	 * correspondents, document types, tags and its UI settings, and nothing else, as
 	 * Paperless-ngx 3.3.1 sends it, without the settings of the UI.
 	 */
-	private const VIEWER = '{"user":{"id":3,"username":"nextcloud","is_staff":false,"is_superuser":false,"groups":[]},"settings":{},"permissions":["view_document","view_correspondent","view_documenttype","view_uisettings"]}';
+	private const VIEWER = '{"user":{"id":3,"username":"nextcloud","is_staff":false,"is_superuser":false,"groups":[]},"settings":{},"permissions":["view_document","view_correspondent","view_documenttype","view_tag","view_uisettings"]}';
 
 	/** The same of a superuser, abridged: Paperless names every permission of Django. */
-	private const SUPERUSER = '{"user":{"id":1,"username":"admin","is_staff":true,"is_superuser":true,"groups":[]},"settings":{},"permissions":["add_document","change_document","delete_document","view_document","view_correspondent","view_documenttype","view_uisettings"]}';
+	private const SUPERUSER = '{"user":{"id":1,"username":"admin","is_staff":true,"is_superuser":true,"groups":[]},"settings":{},"permissions":["add_document","change_document","delete_document","view_document","view_correspondent","view_documenttype","view_tag","view_uisettings"]}';
 
 	/** How Paperless 3.3.0 refuses the query created:[2026 to, measured. */
 	private const INVALID_DATE = '{"query":["Invalid date value \'[2026\' for field \'created\'."]}';
@@ -220,7 +220,7 @@ final class PaperlessApiServiceTest extends TestCase {
 						'query' => 'invoice',
 						'page' => $expectedPage,
 						'page_size' => $expectedPageSize,
-						'fields' => 'id,title,created,correspondent,document_type,__search_hit__',
+						'fields' => 'id,title,created,correspondent,document_type,tags,__search_hit__',
 					]),
 			)
 			->willReturn($this->response(200, self::NO_DOCUMENTS));
@@ -1181,6 +1181,32 @@ final class PaperlessApiServiceTest extends TestCase {
 	}
 
 	/**
+	 * The tags come in one request as well, and the tag of the inbox has no name: it marks
+	 * every document that nobody has looked at yet. Only true makes a tag that of the inbox.
+	 */
+	public function testTheTagOfTheInboxHasNoNameInTheList(): void {
+		$tag = static fn (int $id, string $name, mixed $inbox): array => [
+			'id' => $id, 'slug' => strtolower($name), 'name' => $name, 'color' => '#a6cee3', 'text_color' => '#000000',
+			'match' => '', 'matching_algorithm' => 6, 'is_insensitive' => true, 'is_inbox_tag' => $inbox,
+			'document_count' => 1, 'owner' => 2, 'user_can_change' => true, 'parent' => null, 'children' => [],
+		];
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with('https://paperless.example.com/api/tags/', self::callback(
+				static fn (array $options): bool => $options['query'] === ['id__in' => '1,2,3,4', 'page_size' => 4] && $options['timeout'] === 3,
+			))
+			->willReturn($this->response(200, json_encode(['count' => 4, 'next' => null, 'previous' => null, 'results' => [
+				$tag(1, 'Inbox', true),
+				$tag(2, 'unpaid', false),
+				$tag(3, 'paid', 'true'),
+				$tag(4, 'warranty', null),
+			]], JSON_THROW_ON_ERROR)));
+
+		self::assertSame([2 => 'unpaid', 3 => 'paid', 4 => 'warranty'], $this->service($client)->findNames('tags', [1, 2, 3, 4]));
+	}
+
+	/**
 	 * @return array<string, array{list<int>, string, ?string}>
 	 */
 	public static function lookupsWithoutRequest(): array {
@@ -1265,7 +1291,7 @@ final class PaperlessApiServiceTest extends TestCase {
 					'ordering' => '-added',
 					'page' => 1,
 					'page_size' => 25,
-					'fields' => 'id,title,added,correspondent,document_type',
+					'fields' => 'id,title,added,correspondent,document_type,tags',
 				]
 					&& $options['headers'] === [
 						'Authorization' => 'Token TEST_VALUE',

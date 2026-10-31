@@ -126,7 +126,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 					return $options['headers']['Authorization'] === 'Token TEST_VALUE'
 						&& $options['headers']['User-Agent'] === 'Nextcloud-Paperless-Unified-Search/0.5.1'
 						&& $options['query']['query'] === 'gross salary'
-						&& $options['query']['fields'] === 'id,title,created,correspondent,document_type,__search_hit__';
+						&& $options['query']['fields'] === 'id,title,created,correspondent,document_type,tags,__search_hit__';
 				}),
 			)
 			->willReturn($response);
@@ -448,7 +448,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 					'query' => 'invoice',
 					'page' => $page,
 					'page_size' => 25,
-					'fields' => 'id,title,created,correspondent,document_type,__search_hit__',
+					'fields' => 'id,title,created,correspondent,document_type,tags,__search_hit__',
 				]),
 			)
 			->willReturn($this->response(['count' => 0, 'next' => null, 'results' => []]));
@@ -1376,6 +1376,55 @@ final class PaperlessSearchProviderTest extends TestCase {
 	}
 
 	/**
+	 * Two invoices of the same correspondent differ by their tags: a result shows up to two
+	 * of them after the type, then how many more there are, and never the tag of the inbox.
+	 * One request names the tags of the whole page.
+	 */
+	public function testAResultShowsUpToTwoTagsOfItsDocument(): void {
+		$client = $this->paperlessWithLists(['count' => 3, 'next' => null, 'results' => [
+			['id' => 7, 'title' => 'Invoice', 'created' => '2026-08-12', 'correspondent' => 3, 'document_type' => 1, 'tags' => [1, 4, 2]],
+			['id' => 8, 'title' => 'Invoice', 'created' => '2026-07-12', 'correspondent' => 3, 'document_type' => 1, 'tags' => [5, 2, 6, 8]],
+			['id' => 9, 'title' => 'Letter', 'created' => '2026-06-01', 'tags' => [1]],
+		]], [
+			'correspondents' => [3 => 'ACME Energy'],
+			'document_types' => [1 => 'Invoice'],
+			'tags' => [1 => ['name' => 'Inbox', 'is_inbox_tag' => true], 2 => 'tax 2026', 4 => 'unpaid', 5 => 'paid', 6 => 'warranty', 8 => 'scanned'],
+		]);
+		$files = [7 => $this->file(7, 'Invoice [P7].pdf'), 8 => $this->file(8, 'Invoice [P8].pdf'), 9 => $this->file(9, 'Letter [P9].pdf')];
+
+		$result = $this->provider($client, $files)->search($this->user(), $this->query('invoice'))->jsonSerialize();
+
+		self::assertSame([
+			'Aug 12, 2026 · ACME Energy · Invoice · unpaid · tax 2026 — Invoice [P7].pdf',
+			'Jul 12, 2026 · ACME Energy · Invoice · paid · tax 2026 · +2 — Invoice [P8].pdf',
+			'Jun 1, 2026 — Letter [P9].pdf',
+		], self::sublines($result['entries']));
+		self::assertSame([
+			['correspondents', ['id__in' => '3', 'page_size' => 1]],
+			['document_types', ['id__in' => '1', 'page_size' => 1]],
+			['tags', ['id__in' => '1,4,2,5,6,8', 'page_size' => 6]],
+		], $this->nameRequests);
+	}
+
+	/**
+	 * A token that may not view tags gets HTTP 403 for them: the result shows as before,
+	 * without tags, and the search has no problem.
+	 */
+	public function testTagsThatPaperlessRefusesLeaveTheResultAsBefore(): void {
+		$client = $this->paperlessWithLists(
+			['count' => 1, 'next' => null, 'results' => [['id' => 7, 'title' => 'Invoice', 'created' => '2026-08-12', 'correspondent' => 3, 'document_type' => 1, 'tags' => [4]]]],
+			['correspondents' => [3 => 'ACME Energy'], 'document_types' => [1 => 'Invoice'], 'tags' => 403],
+		);
+
+		$result = $this->provider($client, [7 => $this->file(7, 'Invoice [P7].pdf')])
+			->search($this->user(), $this->query('invoice'))
+			->jsonSerialize();
+
+		self::assertSame(['Aug 12, 2026 · ACME Energy · Invoice — Invoice [P7].pdf'], self::sublines($result['entries']));
+		self::assertSame(self::NO_PROBLEM, $this->problems());
+	}
+
+	/**
 	 * The next search takes the names from the cache, also the knowledge that Paperless
 	 * has none for an ID, and asks only for the names that the cache doesn't hold.
 	 */
@@ -1830,14 +1879,15 @@ final class PaperlessSearchProviderTest extends TestCase {
 	}
 
 	/**
-	 * A Paperless that answers a search with this answer and its lists of correspondents
-	 * and types as Paperless-ngx 3.3.0 does: with the names of the IDs of the parameter
-	 * id__in. A list is the names by ID, the body of an answer, the status of an answer
-	 * that refuses it, or an error of a request without answer. The list and the query of
-	 * every request for names land in $this->nameRequests.
+	 * A Paperless that answers a search with this answer and its lists of correspondents,
+	 * types and tags as Paperless-ngx 3.3.0 does: with the names of the IDs of the
+	 * parameter id__in. A list is the names by ID, or the fields of each object by ID, such
+	 * as is_inbox_tag of a tag, the body of an answer, the status of an answer that refuses
+	 * it, or an error of a request without answer. The list and the query of every request
+	 * for names land in $this->nameRequests.
 	 *
 	 * @param array<string, mixed>|string $answer the answer, or its body
-	 * @param array<string, array<int, string>|string|int|Throwable> $lists by path
+	 * @param array<string, array<int, string|array<string, mixed>>|string|int|Throwable> $lists by path
 	 */
 	private function paperlessWithLists(array|string $answer, array $lists): IClient {
 		$client = $this->createStub(IClient::class);
@@ -1863,7 +1913,8 @@ final class PaperlessSearchProviderTest extends TestCase {
 			$results = [];
 			foreach (array_map('intval', explode(',', (string)$options['query']['id__in'])) as $id) {
 				if (isset($names[$id])) {
-					$results[] = ['id' => $id, 'slug' => 'slug-' . $id, 'name' => $names[$id], 'document_count' => 1];
+					$fields = is_array($names[$id]) ? $names[$id] : ['name' => $names[$id]];
+					$results[] = ['id' => $id, 'slug' => 'slug-' . $id] + $fields + ['document_count' => 1];
 				}
 			}
 

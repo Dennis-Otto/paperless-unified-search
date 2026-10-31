@@ -19,22 +19,22 @@ SUPERUSER_TOKEN = "e2e-superuser-token"
 
 # Like Paperless, the mock answers /api/ui_settings/ with the user of the token and the
 # permissions of its account, as Paperless-ngx 3.3.1 does without the settings of its UI:
-# TOKEN belongs to an account that may view documents, correspondents, document types and
-# its UI settings, the account that the documentation recommends, and SUPERUSER_TOKEN to a
-# superuser, for whom Paperless names every permission of Django.
+# TOKEN belongs to an account that may view documents, correspondents, document types, tags
+# and its UI settings, the account that the documentation recommends, and SUPERUSER_TOKEN to
+# a superuser, for whom Paperless names every permission of Django.
 UI_SETTINGS_PATH = "/api/ui_settings/"
 ACCOUNTS = {
     TOKEN: {
         "user": {"id": 3, "username": "nextcloud", "is_staff": False, "is_superuser": False, "groups": []},
         "settings": {},
-        "permissions": ["view_document", "view_correspondent", "view_documenttype", "view_uisettings"],
+        "permissions": ["view_document", "view_correspondent", "view_documenttype", "view_tag", "view_uisettings"],
     },
     SUPERUSER_TOKEN: {
         "user": {"id": 1, "username": "admin", "is_staff": True, "is_superuser": True, "groups": []},
         "settings": {},
         "permissions": [
             "add_document", "change_document", "delete_document", "view_document",
-            "view_correspondent", "view_documenttype", "view_uisettings",
+            "view_correspondent", "view_documenttype", "view_tag", "view_uisettings",
         ],
     },
 }
@@ -87,6 +87,7 @@ DEMO_DOCUMENTS = [
         "added": "2026-08-13T09:12:45.118731+02:00",
         "correspondent": 3,
         "document_type": 1,
+        "tags": [1, 2, 3],
         "content": "Invoice E-2026-0812 for the electricity of August 2026. " * 200,
         "__search_hit__": {"highlights": "<b>Invoice</b> E-2026-0812. Total due 84.30 EUR by September 2."},
     },
@@ -97,6 +98,7 @@ DEMO_DOCUMENTS = [
         "added": "2026-07-22T10:04:12.502311+02:00",
         "correspondent": 5,
         "document_type": 2,
+        "tags": [4, 3, 5, 6],
         "content": "Your annual insurance invoice covers August 2026 through July 2027. " * 200,
         "__search_hit__": {"highlights": "Your annual insurance <b>invoice</b> covers August 2026 through July 2027."},
     },
@@ -107,6 +109,7 @@ DEMO_DOCUMENTS = [
         "added": "2026-07-04T08:41:57.990120+02:00",
         "correspondent": 4,
         "document_type": 1,
+        "tags": [4],
         "content": "Monthly fiber internet invoice. Customer reference EX-2048. " * 200,
         "__search_hit__": {"highlights": "Monthly fiber internet <b>invoice</b>. Customer reference EX-2048."},
     },
@@ -122,6 +125,7 @@ DEMO_ARCHIVE_ONLY = [
         "added": "2026-09-03T08:27:31.204417+02:00",
         "correspondent": 6,
         "document_type": 4,
+        "tags": [1, 7],
         "content": "Annual inspection, oil and filter, wiper blades. Total paid 218.40 EUR. " * 200,
     },
     {
@@ -131,6 +135,7 @@ DEMO_ARCHIVE_ONLY = [
         "added": "2026-05-15T17:03:09.660152+02:00",
         "correspondent": 8,
         "document_type": 5,
+        "tags": [2, 3, 5],
         "content": "Property tax and waste collection for 2026. Amount due 698.40 EUR. " * 200,
     },
 ]
@@ -162,6 +167,7 @@ MOBILE_DOCUMENTS = [
         "added": "2026-08-27T14:00:00.000000+02:00",
         "correspondent": 7,
         "document_type": 3,
+        "tags": [1, 4],
         "content": "Synthetic OCR mobiletest result. " * 1000,
         "notes": [],
         "__search_hit__": {
@@ -185,8 +191,10 @@ MOBILE_DOCUMENTS = [
 # the demo. The dashboard asks for the newest of them, and occ for the IDs of them all.
 ARCHIVE = MOBILE_DOCUMENTS + DEMO_DOCUMENTS + DEMO_ARCHIVE_ONLY
 
-# The names of the correspondents and the types of the documents above, which the app
-# asks for by their IDs, as Paperless lists them: /api/correspondents/?id__in=3,5.
+# The names of the correspondents, the types and the tags of the documents above, which
+# the app asks for by their IDs, as Paperless lists them: /api/correspondents/?id__in=3,5.
+# Tag 1 is the tag of the inbox, which Paperless gives every new document, and which no
+# result shows.
 LISTS = {
     "/api/correspondents/": {
         3: "Northstar Energy",
@@ -198,7 +206,10 @@ LISTS = {
         9: "Hidden correspondent",
     },
     "/api/document_types/": {1: "Bill", 2: "Insurance", 3: "Letter", 4: "Receipt", 5: "Tax"},
+    "/api/tags/": {1: "Inbox", 2: "unpaid", 3: "tax 2026", 4: "paid", 5: "house", 6: "renewal", 7: "warranty"},
 }
+INBOX_TAG = 1
+TAGS_PATH = "/api/tags/"
 
 API_PATH = "/api/documents/"
 
@@ -273,7 +284,7 @@ class Handler(BaseHTTPRequestHandler):
 
         parameters = parse_qs(parsed.query)
         if parsed.path in LISTS:
-            self._list(LISTS[parsed.path], parameters)
+            self._list(LISTS[parsed.path], parameters, tags=parsed.path == TAGS_PATH)
             return
 
         fields = set(parameters.get("fields", [""])[0].split(",")) - {""}
@@ -349,21 +360,25 @@ class Handler(BaseHTTPRequestHandler):
             },
         )
 
-    def _list(self, names, parameters):
+    def _list(self, names, parameters, *, tags=False):
         """A page of a list of Paperless, such as its correspondents, with every field of an
-        object as Paperless sends them, filtered by the IDs of id__in."""
+        object as Paperless sends them, filtered by the IDs of id__in; a tag also with its
+        colors, whether it is the tag of the inbox, and its place in the tree of tags."""
         wanted = {int(value) for value in parameters.get("id__in", [""])[0].split(",") if value.isdigit()}
         results = [
             {
                 "id": object_id,
                 "slug": name.lower().replace(" ", "-"),
                 "name": name,
+                **({"color": "#a6cee3", "text_color": "#000000"} if tags else {}),
                 "match": "",
                 "matching_algorithm": 1,
                 "is_insensitive": True,
+                **({"is_inbox_tag": object_id == INBOX_TAG} if tags else {}),
                 "document_count": 1,
                 "owner": 2,
                 "user_can_change": True,
+                **({"parent": None, "children": []} if tags else {}),
             }
             for object_id, name in sorted(names.items())
             if object_id in wanted
