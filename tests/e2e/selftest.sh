@@ -48,6 +48,10 @@
 #   frame beside each animation and shrinks each PNG, in the image of
 #   .github/screenshots/, with the same bytes in every run; it says so when that image
 #   can't be built.
+# - demo/seed.sh, with a fake docker that plays the containers of the demo: Paperless
+#   Sync runs with occ, which waits until the archive is written, and only then the
+#   archive is shared; it waits for a run of the background jobs that is working, gives
+#   up after five minutes, and stops at a run with errors.
 #
 #   bash tests/e2e/selftest.sh
 
@@ -981,8 +985,99 @@ expect_in "the video with one thread" "-threads 1" "${WORK}/docker.log"
 expect_in "the video without the version of its encoder" "-fflags +bitexact -flags:v +bitexact -map_metadata -1" "${WORK}/docker.log"
 expect_in "the PNGs without a changed pixel" "oxipng --quiet --opt 4 --strip safe" "${WORK}/docker.log"
 
+## The demo: demo/seed.sh
+
+# In a copy of the demo, with a fake docker that plays its containers, up to the search
+# as jamie: Paperless Sync must have written the archive before it can be shared, as
+# Nextcloud answers 404 for a folder that doesn't exist yet. The button "Synchronize now"
+# of Paperless Sync and its route, POST /sync/run, only queue a run since v0.4.0, for the
+# background jobs up to five minutes later, which stopped the demo right here.
+seeding="${WORK}/seeding"
+mkdir -p "${seeding}/demo" "${seeding}/bin" "${seeding}/state"
+cp "${SCRIPT_DIR}/../../demo/seed.sh" "${seeding}/demo/seed.sh"
+cat >"${seeding}/bin/docker" <<'SCRIPT'
+#!/usr/bin/env bash
+# A fake of Docker and of the containers of the demo. It notes each call. occ
+# paperless_sync:run needs the settings of the step connect of seed.py and ends with the
+# next status in the file sync-status, and with the last one again and again; its status 0 or 1
+# leaves the archive, which the step share of seed.py needs.
+echo "$*" >>"${FAKE_DOCKER_LOG}"
+case " $* " in
+	*" occ paperless_sync:run "*)
+		[[ -f "${FAKE_STATE}/connected" ]] || exit 2
+		read -r status rest <"${FAKE_STATE}/sync-status"
+		[[ -z "${rest}" ]] || echo "${rest}" >"${FAKE_STATE}/sync-status"
+		if [[ "${status}" -le 1 ]]; then
+			touch "${FAKE_STATE}/archive"
+		fi
+		exit "${status}"
+		;;
+	*"/seed.py connect "*) touch "${FAKE_STATE}/connected" ;;
+	*"/seed.py share "*)
+		[[ -f "${FAKE_STATE}/archive" ]] && exit 0
+		echo "Nextcloud answered the shares with HTTP 404: Wrong path, file/folder does not exist" >&2
+		exit 1
+		;;
+	*"/seed.py documents "*) ;;
+	*"/seed.py token "*) echo "fake-token" ;;
+	*"/seed.py "*)
+		echo "Usage: python3 seed.py documents|token|connect|share" >&2
+		exit 2
+		;;
+	*" config:app:get paperless_sync installed_version "*) echo "${PAPERLESS_SYNC_VERSION#v}" ;;
+	*" config:app:get "*" enabled "*) echo "yes" ;;
+	*" --token-stdin "*) cat >/dev/null ;;
+	*" paperless_unified_search:search "*" --json "*) printf '"verdict": "shown"\n"verdict": "shown"\n"verdict": "shown"\n' ;;
+esac
+SCRIPT
+chmod +x "${seeding}/bin/docker"
+# The waits of the script take no time here.
+printf '#!/usr/bin/env bash\n' >"${seeding}/bin/sleep"
+chmod +x "${seeding}/bin/sleep"
+
+# Runs the script in the copy, with a new demo and the given statuses of the runs of Paperless
+# Sync, and prints its exit status.
+seeded() {
+	local status=0
+	: >"${WORK}/docker.log"
+	rm -f "${seeding}/state/"*
+	echo "$1" >"${seeding}/state/sync-status"
+	(PATH="${seeding}/bin:${PATH}" FAKE_DOCKER_LOG="${WORK}/docker.log" FAKE_STATE="${seeding}/state" \
+		bash "${seeding}/demo/seed.sh" >"${WORK}/log" 2>&1) || status=$?
+	echo "${status}"
+}
+
+expect "seed.sh" 0 "$(seeded 0)"
+expect_in "the end of the demo" "The demo is ready after" "${WORK}/log"
+expect "the steps of Paperless Sync, one after the other" "connect run share token" \
+	"$(sed -n -E 's/.*(seed\.py (connect|share|token)|occ paperless_sync:(run)).*/\2\3/p' "${WORK}/docker.log" | paste -s -d ' ')"
+expect "the accounts in the environment of the step connect, and not more" 1 \
+	"$(grep --count -- '--env NEXTCLOUD_ADMIN_USER --env NEXTCLOUD_ADMIN_PASSWORD --env ARCHIVE_USER paperless python3 /demo/seed.py connect' "${WORK}/docker.log" || true)"
+expect "the accounts in the environment of the step share, and not more" 1 \
+	"$(grep --count -- '--env ARCHIVE_USER --env ARCHIVE_PASSWORD --env DEMO_USER paperless python3 /demo/seed.py share' "${WORK}/docker.log" || true)"
+expect "seed.py and the route that only queues a run" 0 \
+	"$(grep --count 'sync/run' "${SCRIPT_DIR}/../../demo/seed.py" || true)"
+
+# A run of the background jobs may just be working: occ says so with the status 3.
+expect "seed.sh while the background jobs run Paperless Sync" 0 "$(seeded "3 3 0")"
+expect "the runs until the one of the background jobs has ended" 3 "$(grep --count 'occ paperless_sync:run' "${WORK}/docker.log" || true)"
+expect_in "the end of the demo after the wait" "The demo is ready after" "${WORK}/log"
+
+expect "seed.sh when the background jobs never end" 3 "$(seeded 3)"
+expect "the runs before it gives up" 60 "$(grep --count 'occ paperless_sync:run' "${WORK}/docker.log" || true)"
+expect_in "the way out when the background jobs never end" "occ paperless_sync:status" "${WORK}/log"
+expect_in "the end of the logs when the background jobs never end" "The demo stopped after" "${WORK}/log"
+expect "the share of an archive that isn't complete" 0 "$(grep --count 'seed.py share' "${WORK}/docker.log" || true)"
+
+expect "seed.sh when a document fails" 1 "$(seeded 1)"
+expect_in "the end of the logs when a document fails" "The demo stopped after" "${WORK}/log"
+expect "the share after a run with errors" 0 "$(grep --count 'seed.py share' "${WORK}/docker.log" || true)"
+
+expect "seed.sh when the run fails" 2 "$(seeded 2)"
+expect "the share after a failed run" 0 "$(grep --count 'seed.py share' "${WORK}/docker.log" || true)"
+
 if ((failures > 0)); then
 	echo "${failures} of ${checks} checks of the scripts of the end-to-end tests failed." >&2
 	exit 1
 fi
-echo "The ${checks} checks of scope.sh, run-all.sh, package.sh, upgrade.sh up to Docker, the issue of the weekly run, the journal of the mock, the check of the log of Nextcloud, what the upgrade compares, the pipes of the scripts, the animation of the demo and the videos of the animations pass."
+echo "The ${checks} checks of scope.sh, run-all.sh, package.sh, upgrade.sh up to Docker, the issue of the weekly run, the journal of the mock, the check of the log of Nextcloud, what the upgrade compares, the pipes of the scripts, the animation of the demo, the videos of the animations and the steps of the demo pass."
