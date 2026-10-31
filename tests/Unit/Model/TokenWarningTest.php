@@ -20,8 +20,8 @@ use PHPUnit\Framework\TestCase;
  * among them.
  */
 final class TokenWarningTest extends TestCase {
-	/** What the search needs: to view documents, correspondents and document types. */
-	private const VIEWS = ['view_document', 'view_correspondent', 'view_documenttype'];
+	/** What the search needs: to view documents, correspondents, document types and tags. */
+	private const VIEWS = ['view_document', 'view_correspondent', 'view_documenttype', 'view_tag'];
 
 	/**
 	 * @return array<string, array{array<string, mixed>, list<TokenWarning>}>
@@ -31,7 +31,7 @@ final class TokenWarningTest extends TestCase {
 
 		return [
 			'an account that may view what the search needs' => [['user' => $user, 'permissions' => self::VIEWS], []],
-			'one that may also view tags and its UI settings' => [['user' => $user, 'permissions' => [...self::VIEWS, 'view_tag', 'view_uisettings']], []],
+			'one that may also view its UI settings and notes' => [['user' => $user, 'permissions' => [...self::VIEWS, 'view_uisettings', 'view_note']], []],
 			// A superuser may do everything, so the other warnings would only repeat it.
 			'a superuser' => [['user' => ['is_staff' => true, 'is_superuser' => true] + $user, 'permissions' => []], [TokenWarning::Superuser]],
 			'a staff account' => [['user' => ['is_staff' => true] + $user, 'permissions' => self::VIEWS], [TokenWarning::Staff]],
@@ -46,12 +46,13 @@ final class TokenWarningTest extends TestCase {
 			'one that may view users and add groups' => [['user' => $user, 'permissions' => [...self::VIEWS, 'view_user', 'view_group', 'add_group']], []],
 			// Changing a tag or a note changes no document of the search.
 			'one that may change tags and notes' => [['user' => $user, 'permissions' => [...self::VIEWS, 'change_tag', 'add_note']], []],
-			'one that may not view correspondents' => [['user' => $user, 'permissions' => ['view_document', 'view_documenttype']], [TokenWarning::HidesCorrespondents]],
-			'one that may not view document types' => [['user' => $user, 'permissions' => ['view_document', 'view_correspondent']], [TokenWarning::HidesDocumentTypes]],
-			'one that may view documents alone' => [['user' => $user, 'permissions' => ['view_document']], [TokenWarning::HidesCorrespondents, TokenWarning::HidesDocumentTypes]],
+			'one that may not view correspondents' => [['user' => $user, 'permissions' => ['view_document', 'view_documenttype', 'view_tag']], [TokenWarning::HidesCorrespondents]],
+			'one that may not view document types' => [['user' => $user, 'permissions' => ['view_document', 'view_correspondent', 'view_tag']], [TokenWarning::HidesDocumentTypes]],
+			'one that may not view tags' => [['user' => $user, 'permissions' => ['view_document', 'view_correspondent', 'view_documenttype']], [TokenWarning::HidesTags]],
+			'one that may view documents alone' => [['user' => $user, 'permissions' => ['view_document']], [TokenWarning::HidesCorrespondents, TokenWarning::HidesDocumentTypes, TokenWarning::HidesTags]],
 			'a staff account that may change documents and view nothing else' => [
 				['user' => ['is_staff' => true] + $user, 'permissions' => ['change_document']],
-				[TokenWarning::Staff, TokenWarning::ChangesDocuments, TokenWarning::HidesCorrespondents, TokenWarning::HidesDocumentTypes],
+				[TokenWarning::Staff, TokenWarning::ChangesDocuments, TokenWarning::HidesCorrespondents, TokenWarning::HidesDocumentTypes, TokenWarning::HidesTags],
 			],
 			// Only true makes a superuser or staff, and only a text names a permission.
 			'a user without the flags' => [['user' => [], 'permissions' => self::VIEWS], []],

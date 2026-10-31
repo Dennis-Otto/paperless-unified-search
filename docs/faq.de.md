@@ -30,7 +30,7 @@ Nur wenn der Benutzer es will: mit eingeschaltetem **Verbundene Dienste durchsuc
 
 ## Kann ich das API-Token meines eigenen Paperless-Kontos verwenden?
 
-Es funktioniert, aber wer das Token eines Administrators von Paperless in die Hände bekommt, kann jedes Dokument ändern und löschen, und die Einstellungen warnen davor unter dem Token. Gib der Suche ein eigenes Konto, das nur Dokumente, Korrespondenten, Dokumenttypen und seine UI-Einstellungen ansehen darf, wie [Konfigurieren](configure.de.md#ein-paperless-konto-für-die-suche) zeigt: Der Test der Verbindung warnt dann vor nichts, und das Konto findet weiterhin jedes Dokument, das du es ansehen lässt.
+Es funktioniert, aber wer das Token eines Administrators von Paperless in die Hände bekommt, kann jedes Dokument ändern und löschen, und die Einstellungen warnen davor unter dem Token. Gib der Suche ein eigenes Konto, das nur Dokumente, Korrespondenten, Dokumenttypen, Tags und seine UI-Einstellungen ansehen darf, wie [Konfigurieren](configure.de.md#ein-paperless-konto-für-die-suche) zeigt: Der Test der Verbindung warnt dann vor nichts, und das Konto findet weiterhin jedes Dokument, das du es ansehen lässt.
 
 ## Funktioniert es in den Nextcloud-Apps für iOS und Android?
 
@@ -42,7 +42,7 @@ Weil dort jeder, der das Dokument findet, es öffnen kann: Die Freigaben von Nex
 
 ## Kann ich neue Dokumente sehen, ohne zu suchen?
 
-Ja: Füge **Neu in Paperless** zu deinem Dashboard hinzu. Es listet die Dokumente, die Paperless zuletzt hinzugefügt hat und die du öffnen kannst, die neuesten zuerst, jedes mit dem Tag, an dem Paperless es hinzugefügt hat, seinem Korrespondenten und seinem Typ, und öffnet die Datei eines Dokuments in Dateien. [Auf dem Dashboard](usage.de.md#auf-dem-dashboard) hat die Details.
+Ja: Füge **Neu in Paperless** zu deinem Dashboard hinzu. Es listet die Dokumente, die Paperless zuletzt hinzugefügt hat und die du öffnen kannst, die neuesten zuerst, jedes mit dem Tag, an dem Paperless es hinzugefügt hat, seinem Korrespondenten, seinem Typ und bis zu zwei seiner Tags, und öffnet die Datei eines Dokuments in Dateien. [Auf dem Dashboard](usage.de.md#auf-dem-dashboard) hat die Details.
 
 ## Warum schaltet sich der Schalter Verbundene Dienste durchsuchen von selbst aus?
 

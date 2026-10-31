@@ -319,8 +319,13 @@
 	width: 12%;
 }
 
-.paperless-unified-search-documents th:nth-child(3) {
+.paperless-unified-search-documents th:last-child {
 	width: 38%;
+}
+
+/* The column of the tags, between the title and the verdict, when a document has tags. */
+.paperless-unified-search-documents th:nth-child(3):not(:last-child) {
+	width: 20%;
 }
 
 .paperless-unified-search-documents caption {

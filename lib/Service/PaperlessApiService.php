@@ -27,19 +27,27 @@ use UnexpectedValueException;
 
 final class PaperlessApiService {
 	/**
-	 * The fields of a document that a result shows, its correspondent and its type as IDs,
-	 * and __search_hit__ with the excerpt. Without them, Paperless sends the whole OCR text
-	 * of every document, with its notes, custom fields, permissions and versions, half a
-	 * megabyte for a long document, and runs queries of its own for them.
+	 * The fields of a document that a result shows, its correspondent, its type and its
+	 * tags as IDs, and __search_hit__ with the excerpt. Without them, Paperless sends the
+	 * whole OCR text of every document, with its notes, custom fields, permissions and
+	 * versions, half a megabyte for a long document, and runs queries of its own for them.
 	 */
-	private const SEARCH_FIELDS = 'id,title,created,correspondent,document_type,__search_hit__';
+	private const SEARCH_FIELDS = 'id,title,created,correspondent,document_type,tags,__search_hit__';
 
 	/**
 	 * The fields of a document that the dashboard shows, with the moment that Paperless
 	 * added it, by which the dashboard lists the newest documents, instead of the date of
 	 * the document and the excerpt of a search.
 	 */
-	private const RECENT_FIELDS = 'id,title,added,correspondent,document_type';
+	private const RECENT_FIELDS = 'id,title,added,correspondent,document_type,tags';
+
+	/**
+	 * How many of the newest documents the test of the connection looks at for names that
+	 * the account of the token can't see, as many as a page of a search, and the only
+	 * fields of a document that it reads for them.
+	 */
+	private const NAMES_CHECK_DOCUMENTS = 25;
+	private const NAMES_CHECK_FIELDS = 'id,correspondent,document_type,tags';
 
 	/**
 	 * The filter of Paperless for the documents of a day and later, by the date of the
@@ -68,8 +76,8 @@ final class PaperlessApiService {
 	private const TIMEOUT = 10;
 
 	/**
-	 * The seconds that a request for the names of correspondents or types may take in
-	 * all: Paperless has just answered the search, and a result shows without the names.
+	 * The seconds that a request for the names of correspondents, types or tags may take
+	 * in all: Paperless has just answered the search, and a result shows without the names.
 	 */
 	private const NAMES_TIMEOUT = 3;
 
@@ -139,7 +147,7 @@ final class PaperlessApiService {
 	 * and how many documents the account of the token may view, with their IDs in the field
 	 * all, which Paperless-ngx adds to every list for the selection of all documents. Once
 	 * Paperless has answered, it asks what the account of the token may do, for the
-	 * warnings about it.
+	 * warnings about it, and whether it can see the names of what it may view.
 	 *
 	 * @param bool $allowLocal whether Nextcloud may reach this Paperless at an address of
 	 *                         the local network
@@ -160,11 +168,13 @@ final class PaperlessApiService {
 			throw PaperlessRequestException::unanswered($error);
 		}
 
+		$documents = self::documentsOf($data)['count'];
+
 		return new PaperlessStatus(
 			$version,
-			self::documentsOf($data)['count'],
+			$documents,
 			self::idsOf($data['all'] ?? null),
-			$this->findTokenWarnings($url, $token, $allowLocal),
+			$this->findTokenWarnings($url, $token, $allowLocal, $documents),
 		);
 	}
 
@@ -178,9 +188,10 @@ final class PaperlessApiService {
 	 * without an answer, an answer other than HTTP 200 and one that isn't JSON leave the
 	 * warnings unknown.
 	 *
+	 * @param int $documents how many documents the account of the token may view
 	 * @return ?list<TokenWarning> null when Paperless doesn't say what the account may do
 	 */
-	private function findTokenWarnings(string $url, string $token, bool $allowLocal): ?array {
+	private function findTokenWarnings(string $url, string $token, bool $allowLocal, int $documents): ?array {
 		try {
 			$response = $this->client->get(
 				rtrim($url, '/') . '/api/ui_settings/',
@@ -191,10 +202,67 @@ final class PaperlessApiService {
 				return null;
 			}
 
-			return TokenWarning::of(json_decode($body, true, flags: JSON_THROW_ON_ERROR));
+			$warnings = TokenWarning::of(json_decode($body, true, flags: JSON_THROW_ON_ERROR));
 		} catch (Exception) {
 			// The errors of the client of Nextcloud, such as a timeout, and of JSON.
 			return null;
+		}
+
+		// A superuser sees every name, and an account without documents misses none.
+		if ($warnings === null || $documents === 0 || in_array(TokenWarning::Superuser, $warnings, true)) {
+			return $warnings;
+		}
+
+		return $this->hidesNamesOfOthers($url, $token, $allowLocal) ? [...$warnings, TokenWarning::HidesNamesOfOthers] : $warnings;
+	}
+
+	/**
+	 * Whether the account of the token can't see the name of a correspondent, a type or a
+	 * tag of the newest documents that it may view. The permission to view them, which
+	 * /api/ui_settings/ names, doesn't tell: Paperless applies the permissions of each
+	 * object to them as it does to documents, and whoever adds one in its web interface
+	 * owns it. A document names the ID of such an object all the same, while the
+	 * list of the objects leaves it out, so asking for both tells. Like the question for
+	 * the privileges, it only adds to a test that Paperless has passed: its requests get
+	 * one try, a short time and no place in the history of the problems of the search, and
+	 * one that fails finds nothing.
+	 */
+	private function hidesNamesOfOthers(string $url, string $token, bool $allowLocal): bool {
+		try {
+			[$data] = $this->requestDocuments($url, $token, $allowLocal, [
+				'ordering' => '-added',
+				'page' => 1,
+				'page_size' => self::NAMES_CHECK_DOCUMENTS,
+				'fields' => self::NAMES_CHECK_FIELDS,
+			], timeout: self::PRIVILEGES_TIMEOUT, retry: false);
+		} catch (Exception) {
+			return false;
+		}
+
+		$documents = self::documentsOf($data)['results'];
+		foreach (PaperlessNames::FIELDS as $field => $list) {
+			$ids = PaperlessNames::idsIn($documents, $field);
+			if ($ids !== [] && $this->lacksNames($url, $token, $allowLocal, $list, $ids)) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Whether a list of Paperless leaves out one of these IDs. A list that fails says
+	 * nothing, as one that the account may not view at all, which has its own warning. The
+	 * tag of the inbox counts as seen: the app leaves its name out, not Paperless.
+	 *
+	 * @param string $list the path of the list in the API of Paperless: correspondents, document_types or tags
+	 * @param non-empty-array<int, int> $ids
+	 */
+	private function lacksNames(string $url, string $token, bool $allowLocal, string $list, array $ids): bool {
+		try {
+			return array_diff($ids, array_keys($this->namesFrom($url, $token, $allowLocal, $list, $ids, withInbox: true))) !== [];
+		} catch (Exception) {
+			return false;
 		}
 	}
 
@@ -374,9 +442,11 @@ final class PaperlessApiService {
 	 * correspondents, in one request. The names only add to results that Paperless has
 	 * just sent, so the request gets one try, a shorter time and no place in the history
 	 * of the problems of the search. An object that the account of the token may not
-	 * view, or that no longer exists, has no name.
+	 * view, or that no longer exists, has no name, and neither has a tag of the inbox,
+	 * which Paperless gives every new document until someone has looked at it: it says
+	 * nothing about the document, and most documents of a busy archive have it.
 	 *
-	 * @param string $list the path of the list in the API of Paperless: correspondents or document_types
+	 * @param string $list the path of the list in the API of Paperless: correspondents, document_types or tags
 	 * @param list<int> $ids
 	 * @return array<int, string> the names, by ID
 	 * @throws PaperlessRequestException when Paperless answers, but not with a list
@@ -389,11 +459,23 @@ final class PaperlessApiService {
 			return [];
 		}
 
+		return $this->namesFrom($url, $token, $this->configService->isLocalNetworkAllowed(), $list, $ids);
+	}
+
+	/**
+	 * @param string $list the path of the list in the API of Paperless: correspondents, document_types or tags
+	 * @param non-empty-array<int, int> $ids
+	 * @param bool $withInbox whether the tag of the inbox, which no result shows, keeps its name
+	 * @return array<int, string> the names, by ID
+	 * @throws PaperlessRequestException when Paperless answers, but not with a list
+	 * @throws Throwable the error of a request without answer
+	 */
+	private function namesFrom(string $url, string $token, bool $allowLocal, string $list, array $ids, bool $withInbox = false): array {
 		// Paperless-ngx 2 and 3 filter their lists by id__in; they send every field of an
 		// object, also when asked for fewer, which for a correspondent is a few hundred bytes.
 		$response = $this->client->get(
 			rtrim($url, '/') . '/api/' . $list . '/',
-			$this->options($token, $this->configService->isLocalNetworkAllowed(), [
+			$this->options($token, $allowLocal, [
 				'id__in' => implode(',', $ids),
 				'page_size' => count($ids),
 			], self::NAMES_TIMEOUT),
@@ -418,7 +500,8 @@ final class PaperlessApiService {
 		foreach ($data['results'] as $object) {
 			$id = is_array($object) ? ($object['id'] ?? null) : null;
 			$name = is_array($object) ? ($object['name'] ?? null) : null;
-			if (is_int($id) && is_string($name)) {
+			$inbox = is_array($object) && ($object['is_inbox_tag'] ?? null) === true;
+			if (is_int($id) && is_string($name) && ($withInbox || !$inbox)) {
 				$names[$id] = $name;
 			}
 		}

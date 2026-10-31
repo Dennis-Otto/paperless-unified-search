@@ -12,15 +12,18 @@ namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Controller;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Controller\SettingsController;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
+use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
 use OCA\PaperlessUnifiedSearch\Service\SearchExplainer;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppServices;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Files;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryCache;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\JSONResponse;
 use OCP\EventDispatcher\IEventDispatcher;
 use OCP\Files\File;
 use OCP\Http\Client\IResponse;
+use OCP\ICacheFactory;
 use OCP\IL10N;
 use OCP\IRequest;
 use OCP\IUserSession;
@@ -73,10 +76,10 @@ final class TrySearchTest extends TestCase {
 			'archiveAccount' => 'archive',
 			'count' => 12,
 			'documents' => [
-				['id' => 412, 'title' => 'Electricity invoice', 'verdict' => 'shown'],
-				['id' => 389, 'title' => 'Home insurance', 'verdict' => 'not_shared'],
-				['id' => 371, 'title' => 'Internet invoice', 'verdict' => 'not_owned'],
-				['id' => 360, 'title' => 'Letter', 'verdict' => 'no_file'],
+				['id' => 412, 'title' => 'Electricity invoice', 'tags' => [], 'verdict' => 'shown'],
+				['id' => 389, 'title' => 'Home insurance', 'tags' => [], 'verdict' => 'not_shared'],
+				['id' => 371, 'title' => 'Internet invoice', 'tags' => [], 'verdict' => 'not_owned'],
+				['id' => 360, 'title' => 'Letter', 'tags' => [], 'verdict' => 'no_file'],
 			],
 			'fileError' => false,
 		], $this->payload($response));
@@ -94,7 +97,7 @@ final class TrySearchTest extends TestCase {
 
 		$payload = $this->payload($this->controller($this->documents([['id' => 377, 'title' => 'Receipt'], ...self::HITS], 12))->trySearch('invoice', 'jamie'));
 
-		self::assertSame(['id' => 377, 'title' => 'Receipt', 'verdict' => 'writable'], $payload['documents'][0]);
+		self::assertSame(['id' => 377, 'title' => 'Receipt', 'tags' => [], 'verdict' => 'writable'], $payload['documents'][0]);
 	}
 
 	/**
@@ -107,6 +110,44 @@ final class TrySearchTest extends TestCase {
 		foreach (['DE00', 'secret', 'number', '<b>', '[P', 'Paperless/', 'sam', '.pdf'] as $hidden) {
 			self::assertStringNotContainsString($hidden, $answer);
 		}
+	}
+
+	/**
+	 * The tags tell two documents with one title apart: all of them, without the tag of the
+	 * inbox, with one request for the page and none for the correspondents and the types,
+	 * which the table doesn't show.
+	 */
+	public function testTheAnswerNamesTheTagsOfEachDocument(): void {
+		$hits = [
+			['id' => 412, 'title' => 'Invoice', 'correspondent' => 3, 'document_type' => 1, 'tags' => [1, 4, 2, 6]],
+			['id' => 389, 'title' => 'Invoice', 'tags' => []],
+			['id' => 412, 'title' => 'Again', 'tags' => [6]],
+		];
+		$tags = [
+			['id' => 1, 'name' => 'Inbox', 'is_inbox_tag' => true],
+			['id' => 2, 'name' => 'tax 2026', 'is_inbox_tag' => false],
+			['id' => 4, 'name' => 'unpaid', 'is_inbox_tag' => false],
+			['id' => 6, 'name' => 'warranty', 'is_inbox_tag' => false],
+		];
+
+		$payload = $this->payload($this->controller($this->documents($hits), null, 'alex', $this->documents($tags))->trySearch('invoice', 'jamie'));
+
+		self::assertSame([['unpaid', 'tax 2026', 'warranty'], []], array_column($payload['documents'], 'tags'));
+		self::assertCount(2, $this->requests);
+		self::assertSame('https://paperless.example.com/api/tags/', $this->requests[1][0]);
+		self::assertSame(['id__in' => '1,4,2,6', 'page_size' => 4], $this->requests[1][1]['query']);
+	}
+
+	/**
+	 * The names of the tags only add to the answer: without them, it still says which
+	 * documents show to the user.
+	 */
+	public function testAnAnswerWithoutTheNamesOfTheTagsStillNamesTheDocuments(): void {
+		$hits = [['id' => 412, 'title' => 'Electricity invoice', 'tags' => [4]]];
+
+		$payload = $this->payload($this->controller($this->documents($hits), null, 'alex', new RuntimeException('timeout'))->trySearch('invoice', 'jamie'));
+
+		self::assertSame([['id' => 412, 'title' => 'Electricity invoice', 'tags' => [], 'verdict' => 'shown']], $payload['documents']);
 	}
 
 	public function testGoesThroughTheFirstDocumentsOfTheRankingEachOnce(): void {
@@ -285,11 +326,15 @@ final class TrySearchTest extends TestCase {
 		$l10n = $this->createStub(IL10N::class);
 		$l10n->method('t')->willReturnCallback(static fn (string $text, array $parameters = []): string => vsprintf($text, $parameters));
 
+		$api = $this->paperlessApi($configService, $this->paperless(...($answer === null ? [] : [$answer, ...$more])));
+		$cacheFactory = $this->createStub(ICacheFactory::class);
+		$cacheFactory->method('createDistributed')->willReturn(new MemoryCache(static fn (): int => 1791500000));
+
 		return new SettingsController(
 			AppConstants::APP_ID,
 			$this->createStub(IRequest::class),
 			$configService,
-			$this->paperlessApi($configService, $this->paperless(...($answer === null ? [] : [$answer, ...$more]))),
+			$api,
 			$this->diagnostics(),
 			$this->messages(),
 			$l10n,
@@ -298,6 +343,7 @@ final class TrySearchTest extends TestCase {
 			$accounts,
 			$session,
 			$this->events ?? $this->createStub(IEventDispatcher::class),
+			new PaperlessNames($api, $configService, $cacheFactory, $this->createStub(LoggerInterface::class)),
 		);
 	}
 

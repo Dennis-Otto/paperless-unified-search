@@ -81,13 +81,15 @@ final class SetupTest extends TestCase {
 			AppConstants::APP_ID . '.paperless_version' => '3.3.0',
 			AppConstants::APP_ID . '.paperless_api_version' => '10',
 		], $this->settings);
-		self::assertCount(2, $this->requests);
+		self::assertCount(3, $this->requests);
 		[$url, $options] = $this->requests[0];
 		self::assertSame('http://paperless:8000/api/documents/', $url);
 		self::assertSame('Token TEST_VALUE', $options['headers']['Authorization']);
 		self::assertSame(['allow_local_address' => true], $options['nextcloud']);
-		// Then what the account of the token may do, which this one may.
+		// Then what the account of the token may do, which this one may, and whether it sees
+		// the names of its newest documents, of which these name none.
 		self::assertSame('http://paperless:8000/api/ui_settings/', $this->requests[1][0]);
+		self::assertSame('http://paperless:8000/api/documents/', $this->requests[2][0]);
 	}
 
 	/**
@@ -95,7 +97,7 @@ final class SetupTest extends TestCase {
 	 * warning is stored for the settings page and the overview.
 	 */
 	public function testSavesATokenThatMayDoMoreWithAWarning(): void {
-		$this->privileges = $this->uiSettings(['view_document', 'view_documenttype', 'add_document']);
+		$this->privileges = $this->uiSettings(['view_document', 'view_documenttype', 'view_tag', 'add_document']);
 		$tester = $this->tester($this->documents([]));
 		$tester->setInputs(['TEST_VALUE']);
 

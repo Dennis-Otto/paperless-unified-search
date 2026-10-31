@@ -118,6 +118,8 @@
 		"The account of the API token may add, change or delete documents in Paperless: whoever gets hold of the token can too. Use the token of an account that may only view documents.": "Le compte du jeton d’API peut ajouter, modifier ou supprimer des documents dans Paperless : quiconque s’empare du jeton le peut aussi. Utilisez le jeton d’un compte qui ne peut qu’afficher des documents.",
 		"The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents.": "Le compte du jeton d’API ne peut pas afficher les correspondants dans Paperless : les résultats s’affichent donc sans eux. Donnez au compte la permission Afficher pour les Correspondants.",
 		"The account of the API token may not view document types in Paperless, so results show without them. Give the account the permission View for Document Types.": "Le compte du jeton d’API ne peut pas afficher les types de document dans Paperless : les résultats s’affichent donc sans eux. Donnez au compte la permission Afficher pour les Types de document.",
+		"The account of the API token may not view tags in Paperless, so results show without them. Give the account the permission View for Tags.": "Le compte du jeton d’API ne peut pas afficher les étiquettes dans Paperless : les résultats s’affichent donc sans elles. Donnez au compte la permission Afficher pour les Étiquettes.",
+		"The account of the API token may not view some correspondents, document types or tags in Paperless, which another user owns, so results show without them. Select them in their lists in Paperless and add the account under Permissions, View.": "Le compte du jeton d’API ne peut pas afficher certains correspondants, types de document ou étiquettes dans Paperless, qui appartiennent à un autre utilisateur : les résultats s’affichent donc sans eux. Sélectionnez-les dans leurs listes dans Paperless et ajoutez le compte sous Permissions, Afficher.",
 		"The settings could not be saved. The log of Nextcloud has the details.": "Les paramètres n’ont pas pu être enregistrés. Le journal de Nextcloud contient les détails.",
 		"Disconnect Paperless and delete the stored API token?": "Déconnecter Paperless et supprimer le jeton d’API enregistré ?",
 		"Disconnecting Paperless…": "Déconnexion de Paperless…",
@@ -130,7 +132,7 @@
 		"No archive account exists, so the search shows no Paperless documents. Name the account that owns the synchronized files above.": "Aucun compte d’archive n’existe : la recherche n’affiche donc aucun document Paperless. Indiquez ci-dessus le compte qui possède les fichiers synchronisés.",
 		"Paperless can't read this term in its advanced syntax, such as a range of dates that isn't complete like created:[2026 to. Correct the term and try again.": "Paperless ne peut pas lire ce terme dans sa syntaxe avancée, par exemple une plage de dates incomplète comme created:[2026 to. Corrigez le terme et réessayez.",
 		"Try a search": "Essayer une recherche",
-		"See which Paperless documents a user finds for a term, and why the others don't show to them. The answer lists the first %s documents that Paperless ranks for the term, by their titles, without their content. The audit log of Nextcloud records who tried a search as whom.": "Voyez quels documents Paperless un utilisateur trouve pour un terme, et pourquoi les autres ne lui sont pas affichés. La réponse liste les %s premiers documents que Paperless classe pour le terme, par leurs titres, sans leur contenu. Le journal d’audit de Nextcloud enregistre qui a essayé une recherche au nom de qui.",
+		"See which Paperless documents a user finds for a term, and why the others don't show to them. The answer lists the first %s documents that Paperless ranks for the term, by their titles and tags, without their content. The audit log of Nextcloud records who tried a search as whom.": "Voyez quels documents Paperless un utilisateur trouve pour un terme, et pourquoi les autres ne lui sont pas affichés. La réponse liste les %s premiers documents que Paperless classe pour le terme, par leurs titres et étiquettes, sans leur contenu. Le journal d’audit de Nextcloud enregistre qui a essayé une recherche au nom de qui.",
 		"Search term": "Terme de recherche",
 		"Search as the user": "Rechercher en tant qu’utilisateur",
 		"User ID": "Identifiant utilisateur",
@@ -152,6 +154,7 @@
 		"The documents that Paperless ranks first": "Les documents que Paperless classe en premier",
 		"ID": "ID",
 		"Title": "Titre",
+		"Tags": "Étiquettes",
 		"Shown or why not": "Affiché ou pourquoi pas"
 	},
 	"pluralForm": "nplurals=3; plural=(n == 0 || n == 1) ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;"

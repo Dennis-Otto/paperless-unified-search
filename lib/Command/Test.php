@@ -37,7 +37,7 @@ final class Test extends Command {
 	protected function configure(): void {
 		$this->setName('paperless_unified_search:test')
 			->setDescription('Test the connection to Paperless-ngx with the stored settings')
-			->setHelp('Asks Paperless for one document with the stored URL and API token, and exits with 0 when it answers, or names what failed and exits with 1. It also warns, without failing, when the account of the token may change documents, or may not view the correspondents and the document types that results show.');
+			->setHelp('Asks Paperless for one document with the stored URL and API token, and exits with 0 when it answers, or names what failed and exits with 1. It also warns, without failing, when the account of the token may change documents, or may not view the correspondents, the document types and the tags that results show.');
 	}
 
 	protected function execute(InputInterface $input, OutputInterface $output): int {

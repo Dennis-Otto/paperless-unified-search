@@ -61,7 +61,7 @@ final class RecentDocumentsTest extends TestCase {
 			'ordering' => '-added',
 			'page' => 1,
 			'page_size' => RecentDocuments::COUNT,
-			'fields' => 'id,title,added,correspondent,document_type',
+			'fields' => 'id,title,added,correspondent,document_type,tags',
 		], $options['query']);
 		self::assertSame(25, RecentDocuments::COUNT);
 		// The documents of each Paperless under a key of its own.

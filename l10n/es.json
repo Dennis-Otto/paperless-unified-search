@@ -118,6 +118,8 @@
 		"The account of the API token may add, change or delete documents in Paperless: whoever gets hold of the token can too. Use the token of an account that may only view documents.": "La cuenta del token de API puede añadir, cambiar o eliminar documentos en Paperless: quien se haga con el token también puede. Usa el token de una cuenta que solo pueda ver documentos.",
 		"The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents.": "La cuenta del token de API no puede ver interlocutores en Paperless, así que los resultados se muestran sin ellos. Da a la cuenta el permiso Ver para Interlocutores.",
 		"The account of the API token may not view document types in Paperless, so results show without them. Give the account the permission View for Document Types.": "La cuenta del token de API no puede ver tipos de documento en Paperless, así que los resultados se muestran sin ellos. Da a la cuenta el permiso Ver para Tipos de documento.",
+		"The account of the API token may not view tags in Paperless, so results show without them. Give the account the permission View for Tags.": "La cuenta del token de API no puede ver etiquetas en Paperless, así que los resultados se muestran sin ellas. Da a la cuenta el permiso Ver para Etiquetas.",
+		"The account of the API token may not view some correspondents, document types or tags in Paperless, which another user owns, so results show without them. Select them in their lists in Paperless and add the account under Permissions, View.": "La cuenta del token de API no puede ver algunos interlocutores, tipos de documento o etiquetas en Paperless, que pertenecen a otro usuario, así que los resultados se muestran sin ellos. Selecciónalos en sus listas de Paperless y añade la cuenta en Permisos, Ver.",
 		"The settings could not be saved. The log of Nextcloud has the details.": "No se pudo guardar la configuración. El registro de Nextcloud tiene los detalles.",
 		"Disconnect Paperless and delete the stored API token?": "¿Desconectar Paperless y eliminar el token de API guardado?",
 		"Disconnecting Paperless…": "Desconectando Paperless…",
@@ -130,7 +132,7 @@
 		"No archive account exists, so the search shows no Paperless documents. Name the account that owns the synchronized files above.": "No existe ninguna cuenta de archivo, así que la búsqueda no muestra documentos de Paperless. Indica arriba la cuenta propietaria de los archivos sincronizados.",
 		"Paperless can't read this term in its advanced syntax, such as a range of dates that isn't complete like created:[2026 to. Correct the term and try again.": "Paperless no puede leer este término en su sintaxis avanzada, como un rango de fechas incompleto del tipo created:[2026 to. Corrige el término y vuelve a intentarlo.",
 		"Try a search": "Probar una búsqueda",
-		"See which Paperless documents a user finds for a term, and why the others don't show to them. The answer lists the first %s documents that Paperless ranks for the term, by their titles, without their content. The audit log of Nextcloud records who tried a search as whom.": "Mira qué documentos de Paperless encuentra un usuario para un término y por qué no se le muestran los demás. La respuesta enumera los primeros %s documentos que Paperless clasifica para el término, por sus títulos, sin su contenido. El registro de auditoría de Nextcloud anota quién probó una búsqueda como quién.",
+		"See which Paperless documents a user finds for a term, and why the others don't show to them. The answer lists the first %s documents that Paperless ranks for the term, by their titles and tags, without their content. The audit log of Nextcloud records who tried a search as whom.": "Mira qué documentos de Paperless encuentra un usuario para un término y por qué no se le muestran los demás. La respuesta enumera los primeros %s documentos que Paperless clasifica para el término, por sus títulos y etiquetas, sin su contenido. El registro de auditoría de Nextcloud anota quién probó una búsqueda como quién.",
 		"Search term": "Término de búsqueda",
 		"Search as the user": "Buscar como el usuario",
 		"User ID": "ID de usuario",
@@ -152,6 +154,7 @@
 		"The documents that Paperless ranks first": "Los documentos que Paperless clasifica primero",
 		"ID": "ID",
 		"Title": "Título",
+		"Tags": "Etiquetas",
 		"Shown or why not": "Mostrado o por qué no"
 	},
 	"pluralForm": "nplurals=3; plural=n == 1 ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;"

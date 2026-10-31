@@ -126,6 +126,8 @@
 		changes_documents: () => translate('The account of the API token may add, change or delete documents in Paperless: whoever gets hold of the token can too. Use the token of an account that may only view documents.'),
 		hides_correspondents: () => translate('The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents.'),
 		hides_document_types: () => translate('The account of the API token may not view document types in Paperless, so results show without them. Give the account the permission View for Document Types.'),
+		hides_tags: () => translate('The account of the API token may not view tags in Paperless, so results show without them. Give the account the permission View for Tags.'),
+		hides_names_of_others: () => translate('The account of the API token may not view some correspondents, document types or tags in Paperless, which another user owns, so results show without them. Select them in their lists in Paperless and add the account under Permissions, View.'),
 	}
 
 	// The text of the warnings of the settings about the account of the token, without a
@@ -296,8 +298,8 @@
 		}
 
 		// Try a search: the documents that Paperless ranks first for a term, each with
-		// whether it shows to the user and why not. The answer names them by their IDs and
-		// titles, which the page shows as text.
+		// whether it shows to the user and why not. The answer names them by their IDs, titles
+		// and tags, which the page shows as text.
 		const tryForm = document.getElementById('paperless-unified-search-try-form')
 		const tryTerm = document.getElementById('paperless-unified-search-try-term')
 		const tryUser = document.getElementById('paperless-unified-search-try-user')
@@ -336,10 +338,16 @@
 			return made
 		}
 
+		// The tags of a document, for the column that the table has when one has any.
+		function tagsOf(found) {
+			return Array.isArray(found.tags) ? found.tags : []
+		}
+
 		// The documents as a table, which a phone shows as cards whose cells name their
 		// column, as the history of the problems does.
 		function documentsTable(documents, user) {
-			const columns = [translate('ID'), translate('Title'), translate('Shown or why not')]
+			const tagged = documents.some(function(found) { return tagsOf(found).length > 0 })
+			const columns = [translate('ID'), translate('Title'), ...(tagged ? [translate('Tags')] : []), translate('Shown or why not')]
 			const table = element('table', '', 'table')
 			table.classList.add('paperless-unified-search-documents')
 			const caption = document.createElement('caption')
@@ -352,7 +360,8 @@
 			})))
 			const body = element('tbody', '', 'rowgroup')
 			body.append(...documents.map(function(found) {
-				return row([String(found.id), found.title, verdictOf(found, user)].map(function(text, index) {
+				const tags = tagged ? [tagsOf(found).join(', ')] : []
+				return row([String(found.id), found.title, ...tags, verdictOf(found, user)].map(function(text, index) {
 					const cell = element('td', text, 'cell')
 					cell.dataset.label = columns[index]
 					return cell

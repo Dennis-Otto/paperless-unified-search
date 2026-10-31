@@ -37,9 +37,9 @@ use Throwable;
 /**
  * "New in Paperless" on Nextcloud's dashboard, on the web and in the apps for
  * phones: the documents that Paperless added last, newest first, each with the preview
- * of its file, the day that Paperless added it, its correspondent and its type. As in
- * the search, a user sees only the documents whose file of the archive account they can
- * open. Nextcloud draws the widget from its items alone, so it needs no script.
+ * of its file, the day that Paperless added it, its correspondent, its type and its tags.
+ * As in the search, a user sees only the documents whose file of the archive account they
+ * can open. Nextcloud draws the widget from its items alone, so it needs no script.
  */
 final class RecentDocumentsWidget implements IAPIWidgetV2, IIconWidget, IButtonWidget, IConditionalWidget {
 	public const ID = AppConstants::APP_ID . '-recent';
@@ -172,7 +172,7 @@ final class RecentDocumentsWidget implements IAPIWidgetV2, IIconWidget, IButtonW
 
 	/**
 	 * The items of the documents that the user can open, in their order, at most as many
-	 * as wanted, with the names of their correspondents and types.
+	 * as wanted, with the names of their correspondents, types and tags.
 	 *
 	 * @param list<array<array-key, mixed>> $documents
 	 * @return list<WidgetItem>
@@ -222,12 +222,12 @@ final class RecentDocumentsWidget implements IAPIWidgetV2, IIconWidget, IButtonW
 
 	/**
 	 * The item of a document: its title, a line with the day that Paperless added it, its
-	 * correspondent and its type, such as "Aug 27, 2026 · ACME Energy · Invoice", the link
-	 * of its file in Files, the preview of the file, and the moment that Paperless added
-	 * it as its sinceId.
+	 * correspondent, its type and its tags, such as "Aug 27, 2026 · ACME Energy · Invoice ·
+	 * unpaid", the link of its file in Files, the preview of the file, and the moment that
+	 * Paperless added it as its sinceId.
 	 *
 	 * @param array<array-key, mixed> $document
-	 * @param array<string, array<int, string>> $names the names of correspondents and types, as PaperlessNames finds them
+	 * @param array<string, array<int, string>> $names the names of correspondents, types and tags, as PaperlessNames finds them
 	 */
 	private function createItem(array $document, File $file, array $names): WidgetItem {
 		/** @psalm-suppress MixedAssignment The title is checked before use. */
@@ -243,13 +243,7 @@ final class RecentDocumentsWidget implements IAPIWidgetV2, IIconWidget, IButtonW
 		if ($moment !== null) {
 			$facts[] = $this->dateTimeFormatter->formatDate($moment, 'medium');
 		}
-		foreach (array_keys(PaperlessNames::FIELDS) as $field) {
-			$id = PaperlessNames::idOf($document, $field);
-			$name = $id === null ? '' : PlainText::oneLine($names[$field][$id] ?? '');
-			if ($name !== '') {
-				$facts[] = $name;
-			}
-		}
+		array_push($facts, ...PaperlessNames::shownOf($document, $names));
 
 		return new WidgetItem(
 			$title,

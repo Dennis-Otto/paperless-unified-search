@@ -176,8 +176,8 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 				// The files of all documents of the page, in one search of the file cache.
 				$found = $this->fileLocator->findAllForUser($user, $this->getDocumentIds($hits), $archiveOwner);
 
-				// The names of the correspondents and the types of the documents with a file,
-				// with one request per kind at most, which never fails the search.
+				// The names of the correspondents, the types and the tags of the documents with
+				// a file, with one request per kind at most, which never fails the search.
 				$names = $this->names->of(self::withFiles($hits, $found->files));
 
 				$pages++;
@@ -341,7 +341,7 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 	 *
 	 * @param list<array<array-key, mixed>> $hits
 	 * @param array<int, File> $files by document ID
-	 * @param array<string, array<int, string>> $names the names of correspondents and types, as PaperlessNames finds them
+	 * @param array<string, array<int, string>> $names the names of correspondents, types and tags, as PaperlessNames finds them
 	 * @return array{list<SearchResultEntry>, int, int, ?Throwable} the entries, how many
 	 *                                                              hits they went through, how many entries their files cost, and the
 	 *                                                              error of the first of these files
@@ -424,9 +424,10 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 
 	/**
 	 * The line below the title: what Paperless knows of the document, its date, its
-	 * correspondent and its type, then the text that Paperless found, or else the name of
-	 * the file, such as "Aug 12, 2026 · ACME Energy · Invoice — Electricity invoice …".
-	 * It is text without any tag of HTML, also where Paperless or the document has one.
+	 * correspondent, its type and its tags, then the text that Paperless found, or else the
+	 * name of the file, such as "Aug 12, 2026 · ACME Energy · Invoice · unpaid — Electricity
+	 * invoice …". It is text without any tag of HTML, also where Paperless or the document
+	 * has one.
 	 *
 	 * @param array<array-key, mixed> $document
 	 * @param array<string, array<int, string>> $names
@@ -436,13 +437,7 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 		if (isset($document['created']) && is_string($document['created']) && $document['created'] !== '') {
 			$facts[] = $this->formatDate($document['created']);
 		}
-		foreach (array_keys(PaperlessNames::FIELDS) as $field) {
-			$id = PaperlessNames::idOf($document, $field);
-			$name = $id === null ? '' : PlainText::oneLine($names[$field][$id] ?? '');
-			if ($name !== '') {
-				$facts[] = $name;
-			}
-		}
+		array_push($facts, ...PaperlessNames::shownOf($document, $names));
 
 		$text = $this->getExcerpt($document);
 		if ($text === '') {

@@ -9,9 +9,10 @@ from urllib.parse import parse_qs, urlparse
 
 
 # The line below the title of the result for "mobiletest": the date of the document in
-# the language of the user, its correspondent and its type, which the mock lists, and its
-# excerpt, which Paperless sends marked up and escaped as HTML, as text without a tag.
-SUBLINE = "Aug 26, 2026 · Example Mobile · Letter — Synthetic OCR mobiletest result for O'Brien & \"Sons\" < GmbH>"
+# the language of the user, its correspondent, its type and its tag paid, which the mock
+# lists, without the tag of the inbox, and its excerpt, which Paperless sends marked up and
+# escaped as HTML, as text without a tag.
+SUBLINE = "Aug 26, 2026 · Example Mobile · Letter · paid — Synthetic OCR mobiletest result for O'Brien & \"Sons\" < GmbH>"
 # The same for a user whose language is German, and for one whose language is French.
 GERMAN_SUBLINE = SUBLINE.replace("Aug 26, 2026", "26.08.2026")
 FRENCH_SUBLINE = SUBLINE.replace("Aug 26, 2026", "26 août 2026")
