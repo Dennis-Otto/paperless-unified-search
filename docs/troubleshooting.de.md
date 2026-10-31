@@ -53,6 +53,7 @@ Fehlt es immer noch? [Bitte um Hilfe](#um-hilfe-bitten), mit dem, was jeder dies
 | Paperless-Dokumente sind verschwunden, nachdem `allow_local_remote_servers` aus der `config.php` entfernt wurde | Nextcloud verweigert die Adresse von Paperless im lokalen Netzwerk | Wähle **Paperless läuft in meinem lokalen Netzwerk** und speichere |
 | Eine Anfrage in der Syntax von Paperless findet nichts, während du sie noch tippst | Paperless kann sie noch nicht verarbeiten, etwa `created:[2026 to` | Tippe die Anfrage zu Ende; Paperless 3 findet solange ihre Wörter |
 | Nur wenige Treffer und kein *Weitere Ergebnisse laden* | Der Benutzer kann die Dateien nur weniger der Dokumente öffnen, die Paperless zuerst einordnet | Normal: Die Suche geht für jede Seite mit Treffern bis zu 4 Seiten mit 25 Dokumenten von Paperless durch |
+| Gar keine Ergebnisse, nicht einmal aus Dateien, wenn du auf einem langsamen Server gleich nach dem Öffnen der Suche tippst | Nextcloud 33 und 34 suchen erst, wenn sie ihre Suchanbieter kennen, und versuchen es nicht noch einmal | Ändere den Suchbegriff. Nextcloud 35 sucht von selbst |
 
 ## Wenn der Test der Verbindung fehlschlägt
 

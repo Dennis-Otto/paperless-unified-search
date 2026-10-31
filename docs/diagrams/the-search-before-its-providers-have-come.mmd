@@ -1,0 +1,32 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+---
+flowchart TB
+    accTitle: The search before its providers have come
+    accDescr: The search asks Nextcloud for its providers and its contacts when it first opens on a page, at once when a button opens it, with the first key in the field of Nextcloud 35. Nextcloud searches 300 milliseconds after the last key. When both answers have come by then, it searches. When they haven't, on a busy server, Nextcloud 35 searches once they come, while Nextcloud 33 and 34 search nothing, not even Files, and don't try again. So where a button opens the search, openSearch of ui.mjs waits for both answers before anything is typed, and flow.mjs holds the answer with the providers back for three seconds, so that a step that doesn't wait fails in every run.
+
+    open["The search opens for the first time on the page,<br>with a button or the first key in the field of 35:<br>it asks for its providers and its contacts"]
+    typed["The term is typed:<br>300 ms after the last key, Nextcloud searches"]
+    here{"Have both<br>answers come?"}
+    results["It searches<br>and shows the results"]
+    version{"Nextcloud 35?"}
+    late35["It searches<br>once the answers come"]
+    lost["Nextcloud 33 and 34 search nothing,<br>not even Files, and don't try again"]
+    wait["Where a button opens the search,<br>openSearch of ui.mjs waits for both<br>answers before anything is typed"]
+    late["flow.mjs holds the providers back for 3 s:<br>a step that doesn't wait fails in every run"]
+
+    open --> typed --> here
+    here -- "yes" --> results
+    here -- "no" --> version
+    version -- "yes" --> late35
+    version -- "no" --> lost
+    lost -- "so" --> wait --> late
+
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef fail fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class open,typed person
+    class results,late35,wait,late done
+    class lost fail

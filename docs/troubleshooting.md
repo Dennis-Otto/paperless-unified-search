@@ -53,6 +53,7 @@ Still missing? [Ask for help](#ask-for-help), with what each of these steps show
 | Paperless documents vanished after `allow_local_remote_servers` was removed from `config.php` | Nextcloud refuses the address of Paperless in the local network | Select **Paperless runs in my local network** and save |
 | A query in the syntax of Paperless finds nothing while you still type it | Paperless can't parse it yet, such as `created:[2026 to` | Finish the query; Paperless 3 finds the words of it meanwhile |
 | Only a few results, and no *Load more results* | The user can open the files of only a few of the documents that Paperless ranks first | Normal: the search goes through up to 4 pages of 25 documents of Paperless for each page of results |
+| No results at all, not even from Files, when you type right after opening the search on a slow server | Nextcloud 33 and 34 search only once they know their search providers, and don't try again | Change the term. Nextcloud 35 searches by itself |
 
 ## When the test of the connection fails
 
