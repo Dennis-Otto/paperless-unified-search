@@ -52,6 +52,15 @@ final class PaperlessApiServiceTest extends TestCase {
 	 */
 	private const VIEWER = '{"user":{"id":3,"username":"nextcloud","is_staff":false,"is_superuser":false,"groups":[]},"settings":{},"permissions":["view_document","view_correspondent","view_documenttype","view_uisettings"]}';
 
+	/** The first document of the test of the connection, of three that the account may view. */
+	private const FIRST_DOCUMENT = '{"count":3,"next":null,"results":[{"id":3}]}';
+
+	/** The newest documents, with the IDs of their correspondents and types. */
+	private const NEWEST = '{"count":3,"next":null,"results":[{"id":3,"correspondent":7,"document_type":2},{"id":2,"correspondent":7,"document_type":null},{"id":1,"correspondent":8}]}';
+
+	/** The list of the type of the newest documents. */
+	private const NEWEST_TYPE = '{"count":1,"next":null,"results":[{"id":2,"name":"Two"}]}';
+
 	/** The same of a superuser, abridged: Paperless names every permission of Django. */
 	private const SUPERUSER = '{"user":{"id":1,"username":"admin","is_staff":true,"is_superuser":true,"groups":[]},"settings":{},"permissions":["add_document","change_document","delete_document","view_document","view_correspondent","view_documenttype","view_uisettings"]}';
 
@@ -1035,6 +1044,179 @@ final class PaperlessApiServiceTest extends TestCase {
 
 		self::assertSame('3.3.0', $probed->version?->version);
 		self::assertSame($warnings, $probed->tokenWarnings);
+	}
+
+	/**
+	 * @return array<string, array{array{int, ?string}, array{int, ?string}, array{int, ?string}, list<TokenWarning>}>
+	 */
+	public static function namesOfOthers(): array {
+		$newest = [200, self::NEWEST];
+		$refused = [403, '{"detail":"You do not have permission to perform this action."}'];
+		$correspondents = [200, '{"count":2,"next":null,"results":[{"id":7,"name":"Seven"},{"id":8,"name":"Eight"}]}'];
+		$types = [200, self::NEWEST_TYPE];
+		$none = [200, self::NO_DOCUMENTS];
+
+		return [
+			'every name' => [$newest, $correspondents, $types, []],
+			'a correspondent of another owner' => [$newest, [200, '{"count":1,"next":null,"results":[{"id":7,"name":"Seven"}]}'], $types, [TokenWarning::HidesNamesOfOthers]],
+			'every correspondent of another owner' => [$newest, $none, $types, [TokenWarning::HidesNamesOfOthers]],
+			'a type of another owner' => [$newest, $correspondents, $none, [TokenWarning::HidesNamesOfOthers]],
+			// A list that fails says nothing, and the other can still tell.
+			'correspondents that fail, and a type of another owner' => [$newest, $refused, $none, [TokenWarning::HidesNamesOfOthers]],
+			'correspondents that fail, and every type' => [$newest, $refused, $types, []],
+			'correspondents that are no JSON, and every type' => [$newest, [200, '<!doctype html>'], $types, []],
+			'correspondents without a list, and every type' => [$newest, [200, '{"detail":"Not a list."}'], $types, []],
+			'newest documents that Paperless refuses' => [$refused, $none, $none, []],
+			'newest documents that are no JSON' => [[200, '<!doctype html>'], $none, $none, []],
+		];
+	}
+
+	/**
+	 * The permission to view correspondents and types says nothing about one that another
+	 * user owns (#229): Paperless names it on the document and leaves it out of the list,
+	 * so the test of the connection compares the two for the newest documents. Whatever
+	 * doesn't answer finds nothing, and the test passes either way.
+	 *
+	 * @param array{int, ?string} $newest
+	 * @param array{int, ?string} $correspondents
+	 * @param array{int, ?string} $types
+	 * @param list<TokenWarning> $warnings
+	 */
+	#[DataProvider('namesOfOthers')]
+	public function testTheProbeWarnsAboutNamesThatTheAccountCanNotSee(array $newest, array $correspondents, array $types, array $warnings): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(fn (string $url, array $options): IResponse => match (true) {
+			str_ends_with($url, '/api/ui_settings/') => $this->response(200, self::VIEWER),
+			str_ends_with($url, '/api/correspondents/') => $this->response(...$correspondents),
+			str_ends_with($url, '/api/document_types/') => $this->response(...$types),
+			$options['query']['fields'] === 'id' => $this->response(200, self::FIRST_DOCUMENT),
+			default => $this->response(...$newest),
+		});
+
+		self::assertSame($warnings, $this->service($client)->probe('https://paperless.example.com', 'TEST_VALUE', false)->tokenWarnings);
+	}
+
+	/**
+	 * An account that may not view correspondents at all keeps that warning, and one about
+	 * a type that another user owns comes after it.
+	 */
+	public function testTheWarningAboutTheNamesOfOthersComesAfterTheOthers(): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(fn (string $url, array $options): IResponse => match (true) {
+			str_ends_with($url, '/api/ui_settings/') => $this->response(200, '{"user":{"is_staff":false,"is_superuser":false},"permissions":["view_document","view_documenttype","view_uisettings"]}'),
+			str_ends_with($url, '/api/correspondents/') => $this->response(403, '{"detail":"You do not have permission to perform this action."}'),
+			str_ends_with($url, '/api/document_types/') => $this->response(200, self::NO_DOCUMENTS),
+			$options['query']['fields'] === 'id' => $this->response(200, self::FIRST_DOCUMENT),
+			default => $this->response(200, self::NEWEST),
+		});
+
+		self::assertSame(
+			[TokenWarning::HidesCorrespondents, TokenWarning::HidesNamesOfOthers],
+			$this->service($client)->probe('https://paperless.example.com', 'TEST_VALUE', false)->tokenWarnings,
+		);
+	}
+
+	/**
+	 * The test of the connection asks for the newest documents with only the fields that it
+	 * needs, then for each list with each ID once, each with the short time of a question
+	 * that only adds to the test, and allows the local network as the form says.
+	 */
+	public function testTheQuestionForTheNamesAsksWhatItNeeds(): void {
+		$requests = [];
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options) use (&$requests): IResponse {
+			$requests[] = [$url, $options['query'], $options['timeout'], $options['nextcloud']];
+
+			return $this->response(200, match (true) {
+				str_ends_with($url, '/api/ui_settings/') => self::VIEWER,
+				str_ends_with($url, '/api/correspondents/') => '{"count":2,"next":null,"results":[{"id":7,"name":"Seven"},{"id":8,"name":"Eight"}]}',
+				str_ends_with($url, '/api/document_types/') => self::NEWEST_TYPE,
+				$options['query']['fields'] === 'id' => self::FIRST_DOCUMENT,
+				default => self::NEWEST,
+			});
+		});
+
+		$this->service($client)->probe('http://paperless:8000/', 'TEST_VALUE', true);
+
+		$local = ['allow_local_address' => true];
+		self::assertSame([
+			['http://paperless:8000/api/documents/', ['page' => 1, 'page_size' => 1, 'fields' => 'id'], 10, $local],
+			['http://paperless:8000/api/ui_settings/', [], 3, $local],
+			['http://paperless:8000/api/documents/', ['ordering' => '-added', 'page' => 1, 'page_size' => 25, 'fields' => 'id,correspondent,document_type'], 3, $local],
+			['http://paperless:8000/api/correspondents/', ['id__in' => '7,8', 'page_size' => 2], 3, $local],
+			['http://paperless:8000/api/document_types/', ['id__in' => '2', 'page_size' => 1], 3, $local],
+		], $requests);
+	}
+
+	/**
+	 * A superuser sees every name, and documents that name no correspondent and no type
+	 * have no name to miss: neither costs a request for a list.
+	 *
+	 * @param list<string> $paths
+	 */
+	#[DataProvider('answersWithoutNames')]
+	public function testTheProbeAsksForNoNamesThatCanNotBeMissing(string $account, string $newest, array $paths): void {
+		$asked = [];
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options) use ($account, $newest, &$asked): IResponse {
+			$asked[] = substr($url, strlen('https://paperless.example.com'));
+
+			return $this->response(200, match (true) {
+				str_ends_with($url, '/api/ui_settings/') => $account,
+				$options['query']['fields'] === 'id' => self::FIRST_DOCUMENT,
+				default => $newest,
+			});
+		});
+
+		$this->service($client)->probe('https://paperless.example.com', 'TEST_VALUE', false);
+
+		self::assertSame($paths, $asked);
+	}
+
+	/**
+	 * @return array<string, array{string, string, list<string>}>
+	 */
+	public static function answersWithoutNames(): array {
+		return [
+			'a superuser' => [self::SUPERUSER, self::NEWEST, ['/api/documents/', '/api/ui_settings/']],
+			'documents without a name' => [self::VIEWER, '{"count":1,"next":null,"results":[{"id":3,"correspondent":null,"document_type":null},"no document"]}', ['/api/documents/', '/api/ui_settings/', '/api/documents/']],
+		];
+	}
+
+	/**
+	 * A question for the names without answer, such as one that times out, gets no second
+	 * try, finds nothing, and the test of the connection passes.
+	 */
+	#[DataProvider('pathsWithoutAnswer')]
+	public function testAQuestionForTheNamesWithoutAnswerFindsNothing(string $path, int $requests): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::exactly($requests))->method('get')->willReturnCallback(function (string $url, array $options) use ($path): IResponse {
+			if (str_ends_with($url, '/api/ui_settings/')) {
+				return $this->response(200, self::VIEWER);
+			}
+			if (($options['query']['fields'] ?? '') === 'id') {
+				return $this->response(200, self::FIRST_DOCUMENT);
+			}
+			if (str_ends_with($url, $path)) {
+				throw new RuntimeException('cURL error 28: Operation timed out after 3001 milliseconds');
+			}
+
+			return $this->response(200, str_ends_with($url, '/api/document_types/') ? self::NEWEST_TYPE : self::NEWEST);
+		});
+
+		self::assertSame([], $this->service($client)->probe('https://paperless.example.com', 'TEST_VALUE', false)->tokenWarnings);
+	}
+
+	/**
+	 * The path that gets no answer, and how many requests the test of the connection sends.
+	 *
+	 * @return array<string, array{string, int}>
+	 */
+	public static function pathsWithoutAnswer(): array {
+		return [
+			'the newest documents' => ['/api/documents/', 3],
+			'the correspondents' => ['/api/correspondents/', 5],
+		];
 	}
 
 	/**

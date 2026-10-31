@@ -165,7 +165,7 @@ final class PaperlessNames {
 	 * @param list<array<array-key, mixed>> $documents
 	 * @return array<int, int> the IDs, each by itself
 	 */
-	private static function idsOf(array $documents, string $field): array {
+	public static function idsOf(array $documents, string $field): array {
 		$ids = [];
 		foreach ($documents as $document) {
 			$id = self::idOf($document, $field);

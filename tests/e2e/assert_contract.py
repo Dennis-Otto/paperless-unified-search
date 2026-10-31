@@ -582,7 +582,8 @@ def check_permissions(paperless, ids, viewer_id, viewer, report):
     """What each permission of the account of the token gives the search, as the table
     "What each permission gives the search" of docs/configure.md says: View for documents
     finds the documents that the account may view, View for correspondents and document
-    types shows the names of those that it may view, a note matches without View for
+    types shows the names of those that it may view, the settings warn about those that
+    the newest documents name and that it can't see, a note matches without View for
     notes, and a workflow with the trigger Document Added and an action Assignment lets
     the account view each new document. The table and this check change together."""
     invoice = ids["Contract invoice"]
@@ -612,6 +613,12 @@ def check_permissions(paperless, ids, viewer_id, viewer, report):
         expect(refused == 403, f"/api/{path}/ answered an account without the permission to view them with {refused!r}, not HTTP 403.")
     owned = (names(paperless, viewer, "correspondents", [correspondent]), names(paperless, viewer, "document_types", [document_type]))
     expect(owned == ({}, {}), f"An account names the correspondent and the type of the superuser before it may view them: {owned!r}")
+    saved = save_settings(viewer)
+    expect(
+        saved.get("tokenWarnings") == ["hides_names_of_others"],
+        f"The settings don't warn about the correspondent and the type that the account can't see: {saved.get('tokenWarnings')!r}",
+    )
+    report.passed("A correspondent and a type of another owner, in the settings", f"saved with the warning {code('hides_names_of_others')}, until the account may view them")
     paperless.let_view([viewer_id], objects=("correspondents", [correspondent]))
     paperless.let_view([viewer_id], objects=("document_types", [document_type]))
     shown = (names(paperless, viewer, "correspondents", [correspondent]), names(paperless, viewer, "document_types", [document_type]))

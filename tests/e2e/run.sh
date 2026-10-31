@@ -520,9 +520,11 @@ for url in http://other-host:8080 http://paperless-mock:8080; do
 		--data-urlencode 'archiveOwner=e2e-user' \
 		"${SETTINGS_URL}"
 done
+# Each save asks for the first document, and for the newest ones for the warning about
+# names that the account of the token can't see.
 received=$(($(mock_requests) - requests))
-if [[ "${received}" -ne 2 ]]; then
-	echo "The mock received ${received} request(s) instead of the 2 of the saves with a token." >&2
+if [[ "${received}" -ne 4 ]]; then
+	echo "The mock received ${received} request(s) instead of the 4 of the 2 saves with a token." >&2
 	exit 1
 fi
 # The test of the connection stores the version that the answer of Paperless names, which

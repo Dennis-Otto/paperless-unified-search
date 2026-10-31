@@ -15,11 +15,11 @@ Three things make Paperless documents show in Nextcloud's search: a Paperless ac
 
 ## A Paperless account for the search
 
-The search asks Paperless with the API token of one Paperless account, and Paperless answers with the documents that this account may view, and no others. The account thus sets the limit of what anyone in Nextcloud can find: a document that it can't view never shows, whoever searches. Give it a Paperless account of its own that may only view documents, so that a token that leaks can change nothing. Four steps in Paperless set it up.
+The search asks Paperless with the API token of one Paperless account, and Paperless answers with the documents that this account may view, and no others. The account thus sets the limit of what anyone in Nextcloud can find: a document that it can't view never shows, whoever searches. Give it a Paperless account of its own that may only view documents, so that a token that leaks can change nothing. Four steps in Paperless set it up, and the pictures show them in Paperless-ngx 3.
 
 ### The account
 
-As an administrator of Paperless, open **Users & Groups** and add a user, such as `nextcloud`, that is neither **Superuser** nor **Admin** (staff). Under **Permissions**, give it **View** for **Document**, **Correspondent**, **DocumentType** and **UISettings**, and nothing else. The search reads nothing else: it asks for the documents of a term and, of each, only the ID, the title, the date, the IDs of its correspondent and its type, and the excerpt around the term; for the names of these correspondents and types, which the results show; and, when the connection is tested, for what the account may do, which Paperless tells only an account that may view its UI settings. [What each permission gives the search](#what-each-permission-gives-the-search) says what each of them does.
+As an administrator of Paperless, open **Users & Groups** and add a user, such as `nextcloud`, that is neither **Superuser** nor **Admin** (staff). Under **Permissions**, give it **View** for **Document**, **Correspondent**, **DocumentType** and **UISettings**, and nothing else, as the picture of step 1 of *Configuration*, below, shows. The search reads nothing else: it asks for the documents of a term and, of each, only the ID, the title, the date, the IDs of its correspondent and its type, and the excerpt around the term; for the names of these correspondents and types, which the results show; and, when the connection is tested, for what the account may do, which Paperless tells only an account that may view its UI settings. [What each permission gives the search](#what-each-permission-gives-the-search) says what each of them does.
 
 ### Its documents
 
@@ -28,16 +28,34 @@ Paperless lets a user view its own documents, those without an owner, and those 
 - **New documents:** open **Workflows** and add a workflow with the trigger *Document Added* and an action *Assignment* that names the account, or its group, under **Assign view permissions**. Paperless then lets the account view each document as it adds it.
 - **The documents that Paperless has:** select them in the list of documents and grant the account the permission to view them with the bulk editor, under **Permissions**, with **Merge with existing permissions** on, which keeps the permissions that they have.
 
+<figure markdown="span">
+  ![The dialog Edit workflow of Paperless-ngx: the workflow Let the Nextcloud search view new documents, enabled, with the trigger Document Added and the action Assignment, whose Assign view permissions name the user nextcloud](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/15-paperless-workflow.png#only-light){ width="360" }
+  ![The dialog Edit workflow of Paperless-ngx: the workflow Let the Nextcloud search view new documents, enabled, with the trigger Document Added and the action Assignment, whose Assign view permissions name the user nextcloud](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/15-paperless-workflow-dark.png#only-dark){ width="360" }
+  <figcaption>A workflow that lets the account view each new document</figcaption>
+</figure>
+
 ### The names of correspondents and types
 
-The permission to view correspondents and document types works as the one for documents: the account sees the names of those that it owns, that have no owner, and those that it may view. Whoever adds a correspondent or a type in the web interface of Paperless owns it, so until the account may view them, the results and the dashboard show no correspondent and no type, and the settings can't warn about it:
+The permission to view correspondents and document types works as the one for documents: the account sees the names of those that it owns, that have no owner, and those that it may view. Whoever adds a correspondent or a type in the web interface of Paperless owns it, so until the account may view them, the results and the dashboard show no correspondent and no type. The settings warn about it when the newest documents name one that the account can't see:
 
 - **The correspondents and types that Paperless has:** open **Correspondents**, select all of them, select **Permissions**, add the account under **View**, **Users**, and select **Confirm** with **Merge with existing permissions** on. Then do the same under **Document types**.
 - **New ones:** each administrator of Paperless adds the account under **Settings**, **Permissions**, **Default View Permissions**, **Users**. Paperless then lets it view each correspondent and type that they add in the web interface.
 
+<figure markdown="span">
+  ![The dialog Set permissions of Paperless-ngx for all selected correspondents: no owner, View for the user nextcloud, no Edit, and Merge with existing permissions switched on](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/16-paperless-names.png#only-light){ width="360" }
+  ![The dialog Set permissions of Paperless-ngx for all selected correspondents: no owner, View for the user nextcloud, no Edit, and Merge with existing permissions switched on](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/16-paperless-names-dark.png#only-dark){ width="360" }
+  <figcaption>The correspondents that Paperless has, for the account to view</figcaption>
+</figure>
+
 ### Its token
 
 Sign in to Paperless as the account, open **My Profile** in the menu of the account, and create the token with the button next to **API Auth Token**; the button before it copies the token. An administrator of Paperless can also create it for the account in the Django administration of Paperless, at `/admin/`, under *Auth Token*.
+
+<figure markdown="span">
+  ![The dialog Edit Profile of the account nextcloud in Paperless-ngx: its API Auth Token, with the buttons that copy it and that create a new one](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/17-paperless-token.png#only-light){ width="360" }
+  ![The dialog Edit Profile of the account nextcloud in Paperless-ngx: its API Auth Token, with the buttons that copy it and that create a new one](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/17-paperless-token-dark.png#only-dark){ width="360" }
+  <figcaption>The API token of the account, in My Profile</figcaption>
+</figure>
 
 ### What each permission gives the search
 
@@ -52,7 +70,7 @@ Sign in to Paperless as the account, open **My Profile** in the menu of the acco
 
 The contract tests check this table against real Paperless-ngx 2.20 and 3.x every week and in every pull request that changes the app, together with the workflow and the permissions of the steps above.
 
-To see what the search can find at most, sign in to Paperless as the account and search there: the search of Nextcloud finds the same documents, of which each user then sees those whose files they can open. A token of a superuser works as well, but whoever gets hold of it may also change and delete every document: a view-only account is the safer choice. The test of the connection says so: the settings warn below the token about an account that is a superuser or an admin, or may add, change or delete documents, and about one that may not view correspondents or document types, and [Troubleshooting](troubleshooting.md#warnings-about-the-api-token) says what to do about each warning.
+To see what the search can find at most, sign in to Paperless as the account and search there: the search of Nextcloud finds the same documents, of which each user then sees those whose files they can open. A token of a superuser works as well, but whoever gets hold of it may also change and delete every document: a view-only account is the safer choice. The test of the connection says so: the settings warn below the token about an account that is a superuser or an admin, or may add, change or delete documents, and about one that may not view correspondents or document types, or those of the newest documents that another user owns, and [Troubleshooting](troubleshooting.md#warnings-about-the-api-token) says what to do about each warning.
 
 --8<-- "README.md:configuration"
 

@@ -40,6 +40,7 @@ TOKEN_WARNINGS = {
     "changes_documents": "The account of the API token may add, change or delete documents in Paperless: whoever gets hold of the token can too. Use the token of an account that may only view documents.",
     "hides_correspondents": "The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents.",
     "hides_document_types": "The account of the API token may not view document types in Paperless, so results show without them. Give the account the permission View for Document Types.",
+    "hides_names_of_others": "The account of the API token may not view some correspondents or document types in Paperless, which another user owns, so results show without them. Select them in their lists in Paperless and add the account under Permissions, View.",
 }
 
 

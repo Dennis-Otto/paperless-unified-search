@@ -31,6 +31,13 @@ enum TokenWarning: string {
 	case HidesCorrespondents = 'hides_correspondents';
 	/** An account that may not view document types, so results show without them. */
 	case HidesDocumentTypes = 'hides_document_types';
+	/**
+	 * An account that may view correspondents and document types, but not all of those of
+	 * the newest documents, which another user owns, so results show without them. The
+	 * test of the connection finds it by asking for their names, not in
+	 * /api/ui_settings/, which of() reads: the permission is there.
+	 */
+	case HidesNamesOfOthers = 'hides_names_of_others';
 
 	/**
 	 * The permissions of Django on documents beyond viewing them, as Paperless names them
