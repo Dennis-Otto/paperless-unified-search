@@ -49,7 +49,7 @@ const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const SEARCH = /^(Unified search|Search apps, files, tags, messages|Apps, files, messages, and more)/
 
 // What opens the search in the header of Nextcloud.
-export const searchButton = (page) => {
+const searchButton = (page) => {
 	const header = page.locator('#header')
 	return header.getByRole('button', { name: SEARCH }).or(header.getByRole('combobox', { name: SEARCH }))
 }
@@ -75,6 +75,9 @@ export async function openSearch(page, click = (button) => button.click()) {
 		return
 	}
 	const answer = (path) => page.waitForResponse((response) => new URL(response.url()).pathname.endsWith(path))
+		.catch((error) => {
+			throw new Error(`No answer to ${path}: ${error.message}`, { cause: error })
+		})
 	const [answers] = await Promise.all([
 		Promise.all([answer(SEARCH_PROVIDERS), answer(SEARCH_CONTACTS)]),
 		click(opener),

@@ -165,5 +165,8 @@ test('a request that gets no answer fails the step', async function() {
 	const opened = openSearch(page)
 	await settled(opened)
 	listeners[0].reject(timeout)
-	await assert.rejects(opened, timeout)
+	await assert.rejects(opened, {
+		message: `No answer to /ocs/v2.php/search/providers: ${timeout.message}`,
+		cause: timeout,
+	})
 })
