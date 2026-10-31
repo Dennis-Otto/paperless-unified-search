@@ -56,7 +56,7 @@ final class CheckTest extends TestCase {
 
 		self::assertSame(
 			"✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.\n"
-			. "✓ The account of the API token may change no document, and may view correspondents and document types.\n"
+			. "✓ The account of the API token may change no document, and may view correspondents, document types and tags.\n"
 			. "✓ The archive account is archive.\n"
 			. "✓ Coverage: 3 of 3 Paperless document(s) have a file of the archive account.\n"
 			. "✓ Shared read-only: 1 user, 1 group.\n",
@@ -85,7 +85,7 @@ final class CheckTest extends TestCase {
 
 		self::assertSame(
 			"✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.\n"
-			. "✓ The account of the API token may change no document, and may view correspondents and document types.\n"
+			. "✓ The account of the API token may change no document, and may view correspondents, document types and tags.\n"
 			. "✓ The archive account is archive.\n"
 			. "! Coverage: 3 of 1,234 Paperless document(s) have a file of the archive account. Without one, among others: 4, 5, 6, 7, 8, 9, 10, 11, 12, 13.\n"
 			. "! 1 document(s) have a file of the archive account, but the account of the API token doesn't see them in Paperless, maybe because they were deleted there.\n"
@@ -134,7 +134,7 @@ final class CheckTest extends TestCase {
 
 		self::assertSame(
 			"✓ Paperless answers at https://paperless.example.com.\n"
-			. "✓ The account of the API token may change no document, and may view correspondents and document types.\n"
+			. "✓ The account of the API token may change no document, and may view correspondents, document types and tags.\n"
 			. "✓ The archive account is archive, the account of Paperless Sync.\n"
 			. "! Coverage: 1 document(s) have a file of the archive account; Paperless has 1,180 document(s), without naming them.\n"
 			. self::NO_SHARES,
@@ -157,7 +157,7 @@ final class CheckTest extends TestCase {
 
 		self::assertSame(
 			"✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.\n"
-			. "✓ The account of the API token may change no document, and may view correspondents and document types.\n"
+			. "✓ The account of the API token may change no document, and may view correspondents, document types and tags.\n"
 			. "✓ The archive account is archive.\n"
 			. "! Coverage: 0 of 2 Paperless document(s) have a file of the archive account. Without one: 1, 2.\n"
 			. "! 1 document(s) have a file of the archive account, but the account of the API token doesn't see them in Paperless, maybe because they were deleted there.\n"
@@ -247,6 +247,7 @@ final class CheckTest extends TestCase {
 			. "! The account of the API token may add, change or delete documents in Paperless: whoever gets hold of the token can too. Use the token of an account that may only view documents.\n"
 			. "! The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents.\n"
 			. "! The account of the API token may not view document types in Paperless, so results show without them. Give the account the permission View for Document Types.\n"
+			. "! The account of the API token may not view tags in Paperless, so results show without them. Give the account the permission View for Tags.\n"
 			. "✓ The archive account is archive.\n"
 			. "✓ Coverage: 1 of 1 Paperless document(s) have a file of the archive account.\n"
 			. "! The archive account shares none of its files, so only it finds its documents.\n",
@@ -254,7 +255,7 @@ final class CheckTest extends TestCase {
 		);
 		self::assertSame('https://paperless.example.com/api/ui_settings/', $this->requests[1][0]);
 		// The overview of the administration settings warns until the next test.
-		self::assertSame('staff,changes_documents,hides_correspondents,hides_document_types', $this->settings[AppConstants::APP_ID . '.token_warnings']);
+		self::assertSame('staff,changes_documents,hides_correspondents,hides_document_types,hides_tags', $this->settings[AppConstants::APP_ID . '.token_warnings']);
 	}
 
 	/**
@@ -285,7 +286,7 @@ final class CheckTest extends TestCase {
 
 		self::assertSame(
 			"✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.\n"
-			. "✓ The account of the API token may change no document, and may view correspondents and document types.\n",
+			. "✓ The account of the API token may change no document, and may view correspondents, document types and tags.\n",
 			$tester->getDisplay(),
 		);
 		self::assertSame("No archive account is set, and Paperless Sync names none, so the search shows no Paperless documents. Name the account that owns the synchronized files with occ paperless_unified_search:setup --archive-account.\n", $tester->getErrorOutput());

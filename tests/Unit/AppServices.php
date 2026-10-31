@@ -40,7 +40,7 @@ trait AppServices {
 	/**
 	 * What Paperless answers to /api/ui_settings/, what the account of the token may do,
 	 * or the error of that request: by default, that it may view documents,
-	 * correspondents and document types, and nothing else.
+	 * correspondents, document types and tags, and nothing else.
 	 */
 	private IResponse|Throwable|null $privileges = null;
 
@@ -84,7 +84,7 @@ trait AppServices {
 		$client->method('get')->willReturnCallback(function (string $url, array $options) use (&$answers): IResponse {
 			$this->requests[] = [$url, $options];
 			$answer = str_ends_with($url, '/api/ui_settings/')
-				? $this->privileges ?? $this->uiSettings(['view_document', 'view_correspondent', 'view_documenttype'])
+				? $this->privileges ?? $this->uiSettings(['view_document', 'view_correspondent', 'view_documenttype', 'view_tag'])
 				: array_shift($answers);
 			self::assertNotNull($answer, 'Paperless got more requests than the test expects.');
 			if ($answer instanceof Throwable) {

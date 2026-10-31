@@ -39,8 +39,8 @@ Paperless documents show in the global search of Nextcloud for every user who ca
 --8<-- "README.md:dashboard"
 
 <figure markdown="span">
-  ![The dashboard of Jamie with the widget New in Paperless: the car service, the electricity invoice, the home insurance renewal, the internet invoice and the property tax notice, newest first, each with the icon of its PDF file and a line with the day that Paperless added it, its correspondent and its type, such as Sep 3, 2026 · Example Motors · Receipt](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/11-dashboard.png#only-light)
-  ![The dashboard of Jamie with the widget New in Paperless: the car service, the electricity invoice, the home insurance renewal, the internet invoice and the property tax notice, newest first, each with the icon of its PDF file and a line with the day that Paperless added it, its correspondent and its type, such as Sep 3, 2026 · Example Motors · Receipt](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/11-dashboard-dark.png#only-dark)
+  ![The dashboard of Jamie with the widget New in Paperless: the car service, the electricity invoice, the home insurance renewal, the internet invoice and the property tax notice, newest first, each with the icon of its PDF file and a line with the day that Paperless added it, its correspondent, its type and its tags, such as Sep 3, 2026 · Example Motors · Receipt · warranty](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/11-dashboard.png#only-light)
+  ![The dashboard of Jamie with the widget New in Paperless: the car service, the electricity invoice, the home insurance renewal, the internet invoice and the property tax notice, newest first, each with the icon of its PDF file and a line with the day that Paperless added it, its correspondent, its type and its tags, such as Sep 3, 2026 · Example Motors · Receipt · warranty](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/11-dashboard-dark.png#only-dark)
   <figcaption>New in Paperless on the dashboard of Nextcloud</figcaption>
 </figure>
 

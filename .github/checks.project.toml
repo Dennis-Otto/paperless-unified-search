@@ -101,7 +101,7 @@ title = "The contract with a real Paperless-ngx"
 problem = """`tests/e2e/paperless-contract.sh` found that a real Paperless-ngx, of the
 line that the name of the check names, no longer answers as the app reads it: a field
 of another type, a date, the markup of an excerpt, a page, an error, the newest
-documents of the dashboard or the names of correspondents and document types, directly
+documents of the dashboard or the names of correspondents, document types and tags, directly
 or through Nextcloud. The summary of the check names the version of Paperless and the
 promise that it broke."""
 why = """The end-to-end tests run against a mock of Paperless-ngx, and this check

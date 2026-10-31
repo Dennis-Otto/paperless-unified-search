@@ -17,6 +17,7 @@ use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
+use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCA\PaperlessUnifiedSearch\Service\SearchExplainer;
 use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
@@ -123,7 +124,7 @@ final class SettingsControllerTest extends TestCase {
 		$client = $this->paperless($requests, $this->response(200, (string)json_encode([
 			'user' => ['id' => 1, 'username' => 'admin', 'is_staff' => true, 'is_superuser' => true, 'groups' => []],
 			'settings' => [],
-			'permissions' => ['change_document', 'view_document', 'view_correspondent', 'view_documenttype'],
+			'permissions' => ['change_document', 'view_document', 'view_correspondent', 'view_documenttype', 'view_tag'],
 		])));
 		$config = new MemoryAppConfig();
 
@@ -703,11 +704,13 @@ final class SettingsControllerTest extends TestCase {
 			static fn (string $text, array $parameters = []): string => 'DE:' . vsprintf($text, $parameters),
 		);
 
+		$api = new PaperlessApiService($configService, $clientService, $diagnostics, $clock, $appManager);
+
 		return new SettingsController(
 			AppConstants::APP_ID,
 			$this->createStub(IRequest::class),
 			$configService,
-			new PaperlessApiService($configService, $clientService, $diagnostics, $clock, $appManager),
+			$api,
 			$diagnostics,
 			new SettingsMessages($l10n),
 			$l10n,
@@ -716,6 +719,7 @@ final class SettingsControllerTest extends TestCase {
 			$accounts,
 			$this->createStub(IUserSession::class),
 			$this->createStub(IEventDispatcher::class),
+			new PaperlessNames($api, $configService, $this->createStub(ICacheFactory::class), $this->createStub(LoggerInterface::class)),
 		);
 	}
 
