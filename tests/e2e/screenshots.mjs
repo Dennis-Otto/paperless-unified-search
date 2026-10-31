@@ -38,10 +38,10 @@ import {
 	SETTINGS_SCOPE,
 	chooseAlwaysSearch,
 	connectedServices,
+	openSearch,
 	paperlessResult,
 	resultGroup,
 	search,
-	searchButton,
 	searchConnectedServices,
 	searchField,
 	signIn,
@@ -403,7 +403,7 @@ async function searchAndOpen(browser, session, theme) {
 	const suffix = theme === 'dark' ? '-dark' : ''
 	const page = await newPage(browser, session, { viewport: { width: 1600, height: 900 }, colorScheme: theme })
 	await openArchive(page)
-	await searchButton(page).click()
+	await openSearch(page)
 	await search(page, (input) => input.fill(TERM), 'Files')
 	await searchConnectedServices(page, LAST_RESULT)
 	await save(page, `01-unified-search${suffix}.png`)
@@ -453,7 +453,7 @@ async function dateFilter(browser, session, theme) {
 	const suffix = theme === 'dark' ? '-dark' : ''
 	const page = await newPage(browser, session, { viewport: { width: 1600, height: 900 }, colorScheme: theme })
 	await openArchive(page)
-	await searchButton(page).click()
+	await openSearch(page)
 	await search(page, (input) => input.fill(TERM), 'Files')
 	await searchConnectedServices(page, LAST_RESULT)
 	await page.getByRole('button', { name: 'Date', exact: true }).click()
@@ -738,7 +738,7 @@ async function phone(browser, session) {
 		hasTouch: true,
 	})
 	await openArchive(page)
-	await searchButton(page).click()
+	await openSearch(page)
 	await search(page, (input) => input.fill(TERM), 'Files')
 	await searchConnectedServices(page, LAST_RESULT)
 	await save(page, '04-mobile-search.png')
@@ -834,7 +834,7 @@ async function animation(browser, session, film = SEARCH_AND_OPEN, theme = 'ligh
 	await page.mouse.move(...position)
 	await settle(page)
 	await frame(1600)
-	await click(searchButton(page))
+	await openSearch(page, click)
 	await search(page, async (input) => {
 		await settle(page, 300)
 		// The filters below the field, such as Places, come a moment after the dialog,

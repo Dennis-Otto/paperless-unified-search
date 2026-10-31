@@ -18,11 +18,12 @@ import {
 	BASE_URL,
 	PERSONAL,
 	PERSONAL_SCOPE,
+	SEARCH_PROVIDERS,
 	chooseAlwaysSearch,
 	connectedServices,
+	openSearch,
 	resultGroup,
 	search,
-	searchButton,
 	signIn,
 	waitForViewer,
 } from './ui.mjs'
@@ -44,6 +45,9 @@ const RUN = flowSizes(process.env.E2E_FLOW_SIZES)
 // A step waits this long, in milliseconds: on a runner of the CI, the three versions of
 // Nextcloud and their browsers share four CPUs, and a page of Files takes seconds there.
 const TIMEOUT = 60000
+// How late the providers of the search come in searchAlways, in milliseconds: well past
+// the 300 after the last key at which Nextcloud searches.
+const LATE = 3000
 
 async function searchAndOpen(browser, session, size) {
 	const started = Date.now()
@@ -69,7 +73,7 @@ async function searchAndOpen(browser, session, size) {
 		// which load in half the time of Files: the result opens Files anyway, and on a
 		// runner of the CI every page of Files costs seconds.
 		await page.goto(`${BASE_URL}${START}`, { waitUntil: 'domcontentloaded' })
-		await searchButton(page).click()
+		await openSearch(page)
 		await search(page, (input) => input.fill(TERM))
 		await connectedServices(page).click()
 
@@ -115,23 +119,17 @@ async function searchAlways(browser, session, size) {
 		await page.goto(`${BASE_URL}${PERSONAL}`, { waitUntil: 'domcontentloaded' })
 		await page.locator(PERSONAL_SCOPE).waitFor()
 		await chooseAlwaysSearch(page, true)
-		// Now and then, on a busy runner of the CI, the dialog of Nextcloud starts no search
-		// for a term typed while it is still getting ready, and nothing here types again,
-		// as the switch of the other flows does: up to three tries, each on a fresh page.
-		for (let attempt = 1; ; attempt++) {
-			try {
-				await page.goto(`${BASE_URL}${START}`, { waitUntil: 'domcontentloaded' })
-				await searchButton(page).click()
-				await search(page, (input) => input.fill(TERM))
-				await resultGroup(page, 'Paperless documents').getByRole('link', { name: RESULT, exact: true }).waitFor({ timeout: TIMEOUT / 3 })
-				break
-			} catch (error) {
-				if (attempt === 3) {
-					throw error
-				}
-				console.log(`Search dialog on a ${size.name} after choosing to always search Paperless: try ${attempt} found no result (${error.message.split(String.fromCharCode(10))[0]}), trying again.`)
-			}
-		}
+		await page.goto(`${BASE_URL}${START}`, { waitUntil: 'domcontentloaded' })
+		// The providers come late, as on a busy server, and no switch starts the search
+		// again here: in Nextcloud 33 and 34, a term typed before they came would find
+		// nothing, so a step that doesn't wait fails in every run, not in one of many (#223).
+		await page.route((url) => url.pathname === SEARCH_PROVIDERS, async (route) => {
+			await new Promise((resolve) => setTimeout(resolve, LATE))
+			await route.continue()
+		})
+		await openSearch(page)
+		await search(page, (input) => input.fill(TERM))
+		await resultGroup(page, 'Paperless documents').getByRole('link', { name: RESULT, exact: true }).waitFor()
 		console.log(`Search dialog on a ${size.name} after choosing to always search Paperless: ${TITLE} without the switch.`)
 	} catch (error) {
 		throw new Error(`On a ${size.name}, with the choice to always search Paperless, at ${page.url()}: ${error.message}`, { cause: error })

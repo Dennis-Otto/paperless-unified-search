@@ -49,9 +49,40 @@ const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const SEARCH = /^(Unified search|Search apps, files, tags, messages|Apps, files, messages, and more)/
 
 // What opens the search in the header of Nextcloud.
-export const searchButton = (page) => {
+const searchButton = (page) => {
 	const header = page.locator('#header')
 	return header.getByRole('button', { name: SEARCH }).or(header.getByRole('combobox', { name: SEARCH }))
+}
+
+// What the search asks Nextcloud for when it first opens on a page, and needs to search:
+// its providers, and the contacts of its filter People.
+export const SEARCH_PROVIDERS = '/ocs/v2.php/search/providers'
+const SEARCH_CONTACTS = '/contactsmenu/contacts'
+
+// Opens the search with click(), a plain click by default, and waits until it can
+// search, which a person can't see. A button opens a search that asks for what it needs
+// at once, and Nextcloud 33 and 34 search 300 milliseconds after the last key among the
+// providers that they know by then: without them, as on a busy server, they search
+// nothing, not even Files, and don't try again until the term or the switch changes
+// (#223). The field of Nextcloud 35 asks with the first key, and searches once the
+// answers come, so nothing has to wait for them. The search asks only when it first
+// opens on a page, so a page opens it this way once.
+export async function openSearch(page, click = (button) => button.click()) {
+	const opener = searchButton(page)
+	await opener.waitFor()
+	if (await page.locator('#header').getByRole('combobox', { name: SEARCH }).isVisible()) {
+		await click(opener)
+		return
+	}
+	const answer = (path) => page.waitForResponse((response) => new URL(response.url()).pathname.endsWith(path))
+		.catch((error) => {
+			throw new Error(`No answer to ${path}: ${error.message}`, { cause: error })
+		})
+	const [answers] = await Promise.all([
+		Promise.all([answer(SEARCH_PROVIDERS), answer(SEARCH_CONTACTS)]),
+		click(opener),
+	])
+	await Promise.all(answers.map((response) => response.finished()))
 }
 
 // The field of the open search, into which the term goes.
