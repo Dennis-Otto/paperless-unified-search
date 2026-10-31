@@ -13,13 +13,15 @@ http://nextcloud. It needs the standard library alone, and every step may run ag
                                 files with their correspondent, type and tags, and waits
                                 until Paperless has read and indexed them
     python3 seed.py token       prints the API token of the administrator of Paperless
-    python3 seed.py archive     sets up Paperless Sync, which writes every document into the
-                                archive account, and shares the archive with the demo user
+    python3 seed.py connect     saves the settings of Paperless Sync, with which occ
+                                paperless_sync:run writes every document into the archive
+                                account, as seed.sh then runs it in the container of Nextcloud
+    python3 seed.py share       shares the archive, once it is written, with the demo user
 
 The administrator of Paperless comes from the environment of the container,
 PAPERLESS_ADMIN_USER and PAPERLESS_ADMIN_PASSWORD; seed.sh hands the accounts of Nextcloud
-to the step archive alone: NEXTCLOUD_ADMIN_USER, NEXTCLOUD_ADMIN_PASSWORD, ARCHIVE_USER,
-ARCHIVE_PASSWORD and DEMO_USER.
+to the steps that need them alone: NEXTCLOUD_ADMIN_USER, NEXTCLOUD_ADMIN_PASSWORD and
+ARCHIVE_USER to connect, ARCHIVE_USER, ARCHIVE_PASSWORD and DEMO_USER to share.
 """
 
 import base64
@@ -282,9 +284,7 @@ class Nextcloud:
         return answer
 
 
-def archive():
-    archive_user = os.environ["ARCHIVE_USER"]
-    demo_user = os.environ["DEMO_USER"]
+def connect():
     admin = Nextcloud(os.environ["NEXTCLOUD_ADMIN_USER"], os.environ["NEXTCLOUD_ADMIN_PASSWORD"])
     # The settings of Paperless Sync, as its administration settings save them, with the
     # token, which it keeps in the credentials store of Nextcloud.
@@ -292,29 +292,26 @@ def archive():
         "paperless_url": "http://paperless:8000",
         "paperless_local_network": "1",
         "enabled": "1",
-        "target_user": archive_user,
+        "target_user": os.environ["ARCHIVE_USER"],
         "base_path": BASE_PATH,
         "archive_folder": ARCHIVE_FOLDER,
     }
     form = {f"settings[{key}]": value for key, value in settings.items()}
     form["token"] = Paperless().log_in()
     admin.call("/apps/paperless_sync/settings", method="POST", form=form)
-    report = admin.call("/apps/paperless_sync/sync/run", method="POST", form={"dryRun": "false"})
-    if report.get("errors"):
-        # The texts of the errors, and the actions of the run only when it has none.
-        raise Failed(
-            f"Paperless Sync reported {report['errors']} error(s): "
-            f"{report.get('errorMessages') or report.get('actions')}"
-        )
-    print(f"Paperless Sync wrote {report.get('exported', 0)} new document(s) into the files of {archive_user}.")
+    print("Paperless Sync knows Paperless and the archive account.")
 
+
+def share():
+    archive_user = os.environ["ARCHIVE_USER"]
+    demo_user = os.environ["DEMO_USER"]
     # The archive, shared read-only with the demo user, as an administrator shares it
     # with the people who may find its documents.
     owner = Nextcloud(archive_user, os.environ["ARCHIVE_PASSWORD"])
     shares = "/ocs/v2.php/apps/files_sharing/api/v1/shares"
     folder = f"/{BASE_PATH}/{ARCHIVE_FOLDER}"
     existing = owner.call(f"{shares}?{urlencode({'path': folder, 'format': 'json'})}")["ocs"]["data"]
-    if any(share.get("share_with") == demo_user for share in existing):
+    if any(entry.get("share_with") == demo_user for entry in existing):
         print(f"{archive_user} shares {folder} with {demo_user} already.")
         return
     owner.call(f"{shares}?format=json", method="POST", form={"path": folder, "shareType": 0, "shareWith": demo_user, "permissions": 1})
@@ -322,7 +319,7 @@ def archive():
 
 
 def main():
-    steps = {"documents": documents, "token": token, "archive": archive}
+    steps = {"documents": documents, "token": token, "connect": connect, "share": share}
     if len(sys.argv) != 2 or sys.argv[1] not in steps:
         print(f"Usage: python3 seed.py {'|'.join(steps)}", file=sys.stderr)
         return 2

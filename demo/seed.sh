@@ -74,6 +74,24 @@ seed() {
 	"${COMPOSE[@]}" exec -T "${@:2}" paperless python3 /demo/seed.py "$1"
 }
 
+# A run of Paperless Sync, as a script on a server starts it: occ ends with the run, while
+# "Synchronize now" of its settings only queues one for the background jobs, up to five
+# minutes later. These may be running it just now, which occ answers with the status 3: that
+# run writes the same documents, so wait for it, and look again.
+synchronize() {
+	local status
+	for _ in {1..60}; do
+		status=0
+		occ paperless_sync:run || status=$?
+		if [[ "${status}" -ne 3 ]]; then
+			return "${status}"
+		fi
+		sleep 5
+	done
+	echo "A run of Paperless Sync is still active after five minutes; occ paperless_sync:status says what it does." >&2
+	return 3
+}
+
 failed() {
 	status=$?
 	trap - EXIT
@@ -193,8 +211,9 @@ phase "Give Paperless the five documents of the demo"
 seed documents
 
 phase "Synchronize them into Nextcloud with Paperless Sync, and share the archive"
-seed archive --env NEXTCLOUD_ADMIN_USER --env NEXTCLOUD_ADMIN_PASSWORD \
-	--env ARCHIVE_USER --env ARCHIVE_PASSWORD --env DEMO_USER
+seed connect --env NEXTCLOUD_ADMIN_USER --env NEXTCLOUD_ADMIN_PASSWORD --env ARCHIVE_USER
+synchronize
+seed share --env ARCHIVE_USER --env ARCHIVE_PASSWORD --env DEMO_USER
 
 phase "Connect Paperless Unified Search to Paperless with occ"
 # The token goes from one container to the other through this pipe alone: never on a
