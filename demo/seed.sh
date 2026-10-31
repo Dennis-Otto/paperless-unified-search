@@ -38,8 +38,8 @@ EXPECTED_RESULTS=3
 # release as a pull request, which runs the demo (.github/workflows/demo.yml), so that
 # a release that breaks the demo never reaches it unseen.
 # renovate: datasource=github-release-attachments depName=Dennis-Otto/paperless-sync
-PAPERLESS_SYNC_VERSION="v0.4.0"
-PAPERLESS_SYNC_SHA256="54162f57a2e3dbb445cb28186a68119a152f68c327f7666904b8e7670428561d"
+PAPERLESS_SYNC_VERSION="v1.2.0"
+PAPERLESS_SYNC_SHA256="1041313905b7d31460c78805b107504f79f56b0bc5fbe36ff6230d8e8e3e60b3"
 # Git Bash on Windows: keep the paths in the containers as they are.
 export MSYS2_ARG_CONV_EXCL="/demo/${MSYS2_ARG_CONV_EXCL:+;${MSYS2_ARG_CONV_EXCL}}"
 
@@ -72,6 +72,24 @@ upgrade() {
 # seed.py in the container of Paperless, in the network of the demo.
 seed() {
 	"${COMPOSE[@]}" exec -T "${@:2}" paperless python3 /demo/seed.py "$1"
+}
+
+# A run of Paperless Sync, as a script on a server starts it: occ ends with the run, while
+# "Synchronize now" of its settings only queues one for the background jobs, up to five
+# minutes later. These may be running it just now, which occ answers with the status 3: that
+# run writes the same documents, so wait for it, and look again.
+synchronize() {
+	local status
+	for _ in {1..60}; do
+		status=0
+		occ paperless_sync:run || status=$?
+		if [[ "${status}" -ne 3 ]]; then
+			return "${status}"
+		fi
+		sleep 5
+	done
+	echo "A run of Paperless Sync is still active after five minutes; occ paperless_sync:status says what it does." >&2
+	return 3
 }
 
 failed() {
@@ -193,8 +211,9 @@ phase "Give Paperless the five documents of the demo"
 seed documents
 
 phase "Synchronize them into Nextcloud with Paperless Sync, and share the archive"
-seed archive --env NEXTCLOUD_ADMIN_USER --env NEXTCLOUD_ADMIN_PASSWORD \
-	--env ARCHIVE_USER --env ARCHIVE_PASSWORD --env DEMO_USER
+seed connect --env NEXTCLOUD_ADMIN_USER --env NEXTCLOUD_ADMIN_PASSWORD --env ARCHIVE_USER
+synchronize
+seed share --env ARCHIVE_USER --env ARCHIVE_PASSWORD --env DEMO_USER
 
 phase "Connect Paperless Unified Search to Paperless with occ"
 # The token goes from one container to the other through this pipe alone: never on a
