@@ -6,13 +6,13 @@ config:
 ---
 flowchart TB
     accTitle: The newest documents on the dashboard
-    accDescr: The dashboard of jamie asks the widget New in Paperless for its items. The app takes the 25 documents that Paperless-ngx added last from Nextcloud's distributed cache, or else asks Paperless for them, newest first, and keeps them for a minute for every user, since every request carries the token of the settings. Of these, jamie sees the documents whose file of the archive account jamie can open, found by their markers in one search of the file cache, at most seven, with the names of their correspondents and types. Each item shows the preview of its file, its title, and the day that Paperless added it, its correspondent and its type, such as Sep 3, 2026 · Example Motors · Receipt, and opens the file in Files.
+    accDescr: The dashboard of jamie asks the widget New in Paperless for its items. The app takes the 25 documents that Paperless-ngx added last from Nextcloud's distributed cache, or else asks Paperless for them, newest first, and keeps them for a minute for every user, since every request carries the token of the settings. Of these, jamie sees the documents whose file of the archive account jamie can open, found by their markers in one search of the file cache, at most seven, with the names of their correspondents, types and tags. Each item shows the preview of its file, its title, and the day that Paperless added it, its correspondent, its type and up to two of its tags, such as Sep 3, 2026 · Example Motors · Receipt · warranty, and opens the file in Files.
 
     dashboard["The dashboard of jamie asks<br>New in Paperless for its items"]
     cache{"The newest documents<br>in the cache of Nextcloud?"}
     paperless[("Paperless-ngx: the 25 documents<br>added last, newest first,<br>at most once a minute for every user")]
     files["The files of the archive account<br>that jamie can open, by their markers,<br>in one search of the file cache"]
-    names["The names of their correspondents and types,<br>kept for ten minutes"]
+    names["The names of their correspondents, types and tags,<br>kept for ten minutes"]
     widget(["`**The newest documents of jamie**, at most seven:
     the preview of the file, the title,
     Sep 3, 2026 · Example Motors · Receipt

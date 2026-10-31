@@ -6,13 +6,13 @@ config:
 ---
 flowchart TB
     accTitle: Die neuesten Dokumente auf dem Dashboard
-    accDescr: Das Dashboard von jamie fragt das Widget Neu in Paperless nach seinen Einträgen. Die App nimmt die 25 Dokumente, die Paperless-ngx zuletzt hinzugefügt hat, aus dem verteilten Cache von Nextcloud, oder fragt sonst Paperless danach, die neuesten zuerst, und behält sie eine Minute lang für jeden Benutzer, denn jede Anfrage trägt das Token der Einstellungen. Davon sieht jamie die Dokumente, deren Datei des Archiv-Kontos jamie öffnen kann, gefunden an ihren Kennungen mit einer Suche im Datei-Cache, höchstens sieben, mit den Namen ihrer Korrespondenten und Typen. Jeder Eintrag zeigt die Vorschau seiner Datei, seinen Titel und den Tag, an dem Paperless ihn hinzugefügt hat, seinen Korrespondenten und seinen Typ, etwa 03.09.2026 · Example Motors · Receipt, und öffnet die Datei in Dateien.
+    accDescr: Das Dashboard von jamie fragt das Widget Neu in Paperless nach seinen Einträgen. Die App nimmt die 25 Dokumente, die Paperless-ngx zuletzt hinzugefügt hat, aus dem verteilten Cache von Nextcloud, oder fragt sonst Paperless danach, die neuesten zuerst, und behält sie eine Minute lang für jeden Benutzer, denn jede Anfrage trägt das Token der Einstellungen. Davon sieht jamie die Dokumente, deren Datei des Archiv-Kontos jamie öffnen kann, gefunden an ihren Kennungen mit einer Suche im Datei-Cache, höchstens sieben, mit den Namen ihrer Korrespondenten, Typen und Tags. Jeder Eintrag zeigt die Vorschau seiner Datei, seinen Titel und den Tag, an dem Paperless ihn hinzugefügt hat, seinen Korrespondenten, seinen Typ und bis zu zwei seiner Tags, etwa 03.09.2026 · Example Motors · Receipt · warranty, und öffnet die Datei in Dateien.
 
     dashboard["Das Dashboard von jamie fragt<br>Neu in Paperless nach seinen Einträgen"]
     cache{"Die neuesten Dokumente<br>im Cache von Nextcloud?"}
     paperless[("Paperless-ngx: die 25 zuletzt<br>hinzugefügten Dokumente, die neuesten zuerst,<br>höchstens einmal in der Minute für alle Benutzer")]
     files["Die Dateien des Archiv-Kontos,<br>die jamie öffnen kann, an ihren Kennungen,<br>mit einer Suche im Datei-Cache"]
-    names["Die Namen ihrer Korrespondenten und Typen,<br>zehn Minuten lang behalten"]
+    names["Die Namen ihrer Korrespondenten, Typen und Tags,<br>zehn Minuten lang behalten"]
     widget(["`**Die neuesten Dokumente von jamie**, höchstens sieben:
     die Vorschau der Datei, der Titel,
     03.09.2026 · Example Motors · Receipt

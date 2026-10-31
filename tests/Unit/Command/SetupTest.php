@@ -97,7 +97,7 @@ final class SetupTest extends TestCase {
 	 * warning is stored for the settings page and the overview.
 	 */
 	public function testSavesATokenThatMayDoMoreWithAWarning(): void {
-		$this->privileges = $this->uiSettings(['view_document', 'view_documenttype', 'add_document']);
+		$this->privileges = $this->uiSettings(['view_document', 'view_documenttype', 'view_tag', 'add_document']);
 		$tester = $this->tester($this->documents([]));
 		$tester->setInputs(['TEST_VALUE']);
 

@@ -33,14 +33,15 @@ SETUP_CHECK = "OCA\\PaperlessUnifiedSearch\\SetupCheck\\PaperlessSetupCheck"
 
 # What occ says about the account of the API token, in English, as
 # lib/Service/SettingsMessages.php and lib/Command/Check.php word it.
-TOKEN_FINE = "✓ The account of the API token may change no document, and may view correspondents and document types."
+TOKEN_FINE = "✓ The account of the API token may change no document, and may view correspondents, document types and tags."
 TOKEN_WARNINGS = {
     "superuser": "The API token belongs to a Superuser of Paperless: whoever gets hold of it can change and delete every document. Use the token of an account that may only view documents.",
     "staff": "The API token belongs to an Admin of Paperless, who may also read its logs: whoever gets hold of the token can too. Use the token of an account that is neither Admin nor Superuser.",
     "changes_documents": "The account of the API token may add, change or delete documents in Paperless: whoever gets hold of the token can too. Use the token of an account that may only view documents.",
     "hides_correspondents": "The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents.",
     "hides_document_types": "The account of the API token may not view document types in Paperless, so results show without them. Give the account the permission View for Document Types.",
-    "hides_names_of_others": "The account of the API token may not view some correspondents or document types in Paperless, which another user owns, so results show without them. Select them in their lists in Paperless and add the account under Permissions, View.",
+    "hides_tags": "The account of the API token may not view tags in Paperless, so results show without them. Give the account the permission View for Tags.",
+    "hides_names_of_others": "The account of the API token may not view some correspondents, document types or tags in Paperless, which another user owns, so results show without them. Select them in their lists in Paperless and add the account under Permissions, View.",
 }
 
 
@@ -107,8 +108,8 @@ if mode == "try":
     if payload.get("user") != user or [(str(item.get("id")), item.get("verdict")) for item in documents] != expected:
         fail(f"Expected the verdicts {expected!r} for {user}, got {payload!r}")
     for item in documents:
-        if sorted(item) != ["id", "title", "verdict"]:
-            fail(f"Try a search tells more of a document than its ID, title and verdict: {item!r}")
+        if sorted(item) != ["id", "tags", "title", "verdict"]:
+            fail(f"Try a search tells more of a document than its ID, title, tags and verdict: {item!r}")
     sys.exit(0)
 
 if mode == "setupcheck":

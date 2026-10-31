@@ -39,7 +39,7 @@ use UnexpectedValueException;
 final class PaperlessApiServiceTest extends TestCase {
 	private const NOW = 1791500000;
 	private const NO_DOCUMENTS = '{"count":0,"next":null,"results":[]}';
-	private const FIELDS = 'id,title,created,correspondent,document_type,__search_hit__';
+	private const FIELDS = 'id,title,created,correspondent,document_type,tags,__search_hit__';
 	/** The headers of an answer of Paperless 3.3.0, as it names its version. */
 	private const PAPERLESS_3 = ['X-Version' => '3.3.0', 'X-Api-Version' => '10'];
 	private const PAPERLESS_2 = ['X-Version' => '2.20.13', 'X-Api-Version' => '9'];
@@ -47,10 +47,10 @@ final class PaperlessApiServiceTest extends TestCase {
 	private const VERSION_KEYS = [AppConstants::APP_ID . '.paperless_version', AppConstants::APP_ID . '.paperless_api_version'];
 	/**
 	 * The answer of /api/ui_settings/ to the token of an account that may view documents,
-	 * correspondents, document types and its UI settings, and nothing else, as
+	 * correspondents, document types, tags and its UI settings, and nothing else, as
 	 * Paperless-ngx 3.3.1 sends it, without the settings of the UI.
 	 */
-	private const VIEWER = '{"user":{"id":3,"username":"nextcloud","is_staff":false,"is_superuser":false,"groups":[]},"settings":{},"permissions":["view_document","view_correspondent","view_documenttype","view_uisettings"]}';
+	private const VIEWER = '{"user":{"id":3,"username":"nextcloud","is_staff":false,"is_superuser":false,"groups":[]},"settings":{},"permissions":["view_document","view_correspondent","view_documenttype","view_tag","view_uisettings"]}';
 
 	/** The first document of the test of the connection, of three that the account may view. */
 	private const FIRST_DOCUMENT = '{"count":3,"next":null,"results":[{"id":3}]}';
@@ -62,7 +62,7 @@ final class PaperlessApiServiceTest extends TestCase {
 	private const NEWEST_TYPE = '{"count":1,"next":null,"results":[{"id":2,"name":"Two"}]}';
 
 	/** The same of a superuser, abridged: Paperless names every permission of Django. */
-	private const SUPERUSER = '{"user":{"id":1,"username":"admin","is_staff":true,"is_superuser":true,"groups":[]},"settings":{},"permissions":["add_document","change_document","delete_document","view_document","view_correspondent","view_documenttype","view_uisettings"]}';
+	private const SUPERUSER = '{"user":{"id":1,"username":"admin","is_staff":true,"is_superuser":true,"groups":[]},"settings":{},"permissions":["add_document","change_document","delete_document","view_document","view_correspondent","view_documenttype","view_tag","view_uisettings"]}';
 
 	/** How Paperless 3.3.0 refuses the query created:[2026 to, measured. */
 	private const INVALID_DATE = '{"query":["Invalid date value \'[2026\' for field \'created\'."]}';
@@ -229,7 +229,7 @@ final class PaperlessApiServiceTest extends TestCase {
 						'query' => 'invoice',
 						'page' => $expectedPage,
 						'page_size' => $expectedPageSize,
-						'fields' => 'id,title,created,correspondent,document_type,__search_hit__',
+						'fields' => 'id,title,created,correspondent,document_type,tags,__search_hit__',
 					]),
 			)
 			->willReturn($this->response(200, self::NO_DOCUMENTS));
@@ -1097,13 +1097,44 @@ final class PaperlessApiServiceTest extends TestCase {
 	}
 
 	/**
+	 * @return array<string, array{string, list<TokenWarning>}>
+	 */
+	public static function tagsOfOthers(): array {
+		return [
+			'every tag, also that of the inbox, whose name no result shows' => ['{"count":2,"next":null,"results":[{"id":1,"name":"Inbox","is_inbox_tag":true},{"id":2,"name":"Two","is_inbox_tag":false}]}', []],
+			'a tag of another owner' => ['{"count":1,"next":null,"results":[{"id":1,"name":"Inbox","is_inbox_tag":true}]}', [TokenWarning::HidesNamesOfOthers]],
+			'the tag of the inbox of another owner' => ['{"count":1,"next":null,"results":[{"id":2,"name":"Two","is_inbox_tag":false}]}', [TokenWarning::HidesNamesOfOthers]],
+		];
+	}
+
+	/**
+	 * A tag of another owner hides its name as a correspondent does. The search leaves out
+	 * the name of the tag of the inbox on purpose, which doesn't make it one that the
+	 * account can't see.
+	 *
+	 * @param list<TokenWarning> $warnings
+	 */
+	#[DataProvider('tagsOfOthers')]
+	public function testTheProbeWarnsAboutTagsThatTheAccountCanNotSee(string $tags, array $warnings): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(fn (string $url, array $options): IResponse => match (true) {
+			str_ends_with($url, '/api/ui_settings/') => $this->response(200, self::VIEWER),
+			str_ends_with($url, '/api/tags/') => $this->response(200, $tags),
+			$options['query']['fields'] === 'id' => $this->response(200, self::FIRST_DOCUMENT),
+			default => $this->response(200, '{"count":1,"next":null,"results":[{"id":3,"correspondent":null,"document_type":null,"tags":[1,2]}]}'),
+		});
+
+		self::assertSame($warnings, $this->service($client)->probe('https://paperless.example.com', 'TEST_VALUE', false)->tokenWarnings);
+	}
+
+	/**
 	 * An account that may not view correspondents at all keeps that warning, and one about
 	 * a type that another user owns comes after it.
 	 */
 	public function testTheWarningAboutTheNamesOfOthersComesAfterTheOthers(): void {
 		$client = $this->createStub(IClient::class);
 		$client->method('get')->willReturnCallback(fn (string $url, array $options): IResponse => match (true) {
-			str_ends_with($url, '/api/ui_settings/') => $this->response(200, '{"user":{"is_staff":false,"is_superuser":false},"permissions":["view_document","view_documenttype","view_uisettings"]}'),
+			str_ends_with($url, '/api/ui_settings/') => $this->response(200, '{"user":{"is_staff":false,"is_superuser":false},"permissions":["view_document","view_documenttype","view_tag","view_uisettings"]}'),
 			str_ends_with($url, '/api/correspondents/') => $this->response(403, '{"detail":"You do not have permission to perform this action."}'),
 			str_ends_with($url, '/api/document_types/') => $this->response(200, self::NO_DOCUMENTS),
 			$options['query']['fields'] === 'id' => $this->response(200, self::FIRST_DOCUMENT),
@@ -1142,7 +1173,7 @@ final class PaperlessApiServiceTest extends TestCase {
 		self::assertSame([
 			['http://paperless:8000/api/documents/', ['page' => 1, 'page_size' => 1, 'fields' => 'id'], 10, $local],
 			['http://paperless:8000/api/ui_settings/', [], 3, $local],
-			['http://paperless:8000/api/documents/', ['ordering' => '-added', 'page' => 1, 'page_size' => 25, 'fields' => 'id,correspondent,document_type'], 3, $local],
+			['http://paperless:8000/api/documents/', ['ordering' => '-added', 'page' => 1, 'page_size' => 25, 'fields' => 'id,correspondent,document_type,tags'], 3, $local],
 			['http://paperless:8000/api/correspondents/', ['id__in' => '7,8', 'page_size' => 2], 3, $local],
 			['http://paperless:8000/api/document_types/', ['id__in' => '2', 'page_size' => 1], 3, $local],
 		], $requests);
@@ -1363,6 +1394,32 @@ final class PaperlessApiServiceTest extends TestCase {
 	}
 
 	/**
+	 * The tags come in one request as well, and the tag of the inbox has no name: it marks
+	 * every document that nobody has looked at yet. Only true makes a tag that of the inbox.
+	 */
+	public function testTheTagOfTheInboxHasNoNameInTheList(): void {
+		$tag = static fn (int $id, string $name, mixed $inbox): array => [
+			'id' => $id, 'slug' => strtolower($name), 'name' => $name, 'color' => '#a6cee3', 'text_color' => '#000000',
+			'match' => '', 'matching_algorithm' => 6, 'is_insensitive' => true, 'is_inbox_tag' => $inbox,
+			'document_count' => 1, 'owner' => 2, 'user_can_change' => true, 'parent' => null, 'children' => [],
+		];
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with('https://paperless.example.com/api/tags/', self::callback(
+				static fn (array $options): bool => $options['query'] === ['id__in' => '1,2,3,4', 'page_size' => 4] && $options['timeout'] === 3,
+			))
+			->willReturn($this->response(200, json_encode(['count' => 4, 'next' => null, 'previous' => null, 'results' => [
+				$tag(1, 'Inbox', true),
+				$tag(2, 'unpaid', false),
+				$tag(3, 'paid', 'true'),
+				$tag(4, 'warranty', null),
+			]], JSON_THROW_ON_ERROR)));
+
+		self::assertSame([2 => 'unpaid', 3 => 'paid', 4 => 'warranty'], $this->service($client)->findNames('tags', [1, 2, 3, 4]));
+	}
+
+	/**
 	 * @return array<string, array{list<int>, string, ?string}>
 	 */
 	public static function lookupsWithoutRequest(): array {
@@ -1447,7 +1504,7 @@ final class PaperlessApiServiceTest extends TestCase {
 					'ordering' => '-added',
 					'page' => 1,
 					'page_size' => 25,
-					'fields' => 'id,title,added,correspondent,document_type',
+					'fields' => 'id,title,added,correspondent,document_type,tags',
 				]
 					&& $options['headers'] === [
 						'Authorization' => 'Token TEST_VALUE',

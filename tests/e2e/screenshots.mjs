@@ -1053,7 +1053,7 @@ const PAPERLESS_ADMIN = 'admin'
 // The account of the search, as docs/configure.md names it, with the permissions that it
 // recommends (VIEWER_PERMISSIONS of assert_contract.py, which checks what they give).
 const SEARCH_ACCOUNT = 'nextcloud'
-const SEARCH_PERMISSIONS = ['view_document', 'view_correspondent', 'view_documenttype', 'view_uisettings']
+const SEARCH_PERMISSIONS = ['view_document', 'view_correspondent', 'view_documenttype', 'view_tag', 'view_uisettings']
 const WORKFLOW = 'Let the Nextcloud search view new documents'
 // The correspondents of the demo, which Alex adds and so owns.
 const CORRESPONDENTS = ['Fiberlink', 'Harbor Mutual', 'Northstar Energy']

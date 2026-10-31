@@ -15,7 +15,7 @@ Find invoices, contracts, letters, statements, and any text recognized inside yo
 ### Search in Paperless. Work in Nextcloud.
 
 - Uses Paperless-ngx's native OCR and full-text search, with no index of its own to build or keep current
-- Shows results directly in Nextcloud's global search, each with a preview of the document, its date in your language, its correspondent and its type
+- Shows results directly in Nextcloud's global search, each with a preview of the document, its date in your language, its correspondent, its type and its tags
 - Finds documents from the smart picker in Talk, Text, Deck, and Mail, and inserts a link to their file
 - Lists the newest Paperless documents you can open on Nextcloud's dashboard, with the widget New in Paperless
 - Opens the synchronized file in Nextcloud's built-in viewer on web, iOS, and Android
@@ -55,7 +55,7 @@ Rechnungen, Verträge, Briefe, Bescheide und beliebige Inhalte der Dokumente fin
 ### In Paperless suchen. In Nextcloud weiterarbeiten.
 
 - Verwendet die native OCR- und Volltextsuche von Paperless-ngx, ohne eigenen Index, der aufgebaut oder aktuell gehalten werden muss
-- Zeigt Treffer direkt in der globalen Nextcloud-Suche, jeden mit einer Vorschau des Dokuments, seinem Datum in der Sprache des Benutzers, seinem Korrespondenten und seinem Dokumenttyp
+- Zeigt Treffer direkt in der globalen Nextcloud-Suche, jeden mit einer Vorschau des Dokuments, seinem Datum in der Sprache des Benutzers, seinem Korrespondenten, seinem Dokumenttyp und seinen Tags
 - Findet Dokumente auch über den Smart Picker in Talk, Text, Deck und Mail und fügt einen Link auf ihre Datei ein
 - Zeigt die neuesten Paperless-Dokumente, die der Benutzer öffnen darf, im Dashboard von Nextcloud, mit dem Widget „Neu in Paperless“
 - Öffnet die synchronisierte Datei im integrierten Nextcloud-Viewer in Web, iOS und Android
@@ -95,7 +95,7 @@ Encuentra facturas, contratos, cartas, extractos y cualquier texto reconocido de
 ### Busca en Paperless. Trabaja en Nextcloud.
 
 - Usa el OCR y la búsqueda de texto completo nativos de Paperless-ngx, sin un índice propio que construir o mantener al día
-- Muestra los resultados directamente en la búsqueda global de Nextcloud, cada uno con una vista previa del documento, su fecha en tu idioma, su interlocutor y su tipo
+- Muestra los resultados directamente en la búsqueda global de Nextcloud, cada uno con una vista previa del documento, su fecha en tu idioma, su interlocutor, su tipo y sus etiquetas
 - Encuentra documentos desde el selector inteligente de Talk, Text, Deck y Mail, e inserta un enlace a su archivo
 - Muestra en el Dashboard de Nextcloud los documentos más recientes de Paperless que puedes abrir, con el widget Nuevo en Paperless
 - Abre el archivo sincronizado en el visor integrado de Nextcloud en la web, iOS y Android
@@ -135,7 +135,7 @@ Trouvez factures, contrats, lettres, relevés et tout texte reconnu dans vos doc
 ### Rechercher dans Paperless. Travailler dans Nextcloud.
 
 - Utilise l’OCR et la recherche plein texte natives de Paperless-ngx, sans index propre à construire ou à tenir à jour
-- Affiche les résultats directement dans la recherche globale de Nextcloud, chacun avec un aperçu du document, sa date dans votre langue, son correspondant et son type
+- Affiche les résultats directement dans la recherche globale de Nextcloud, chacun avec un aperçu du document, sa date dans votre langue, son correspondant, son type et ses étiquettes
 - Trouve des documents depuis le sélecteur intelligent de Talk, Text, Deck et Mail, et insère un lien vers leur fichier
 - Liste sur le tableau de bord de Nextcloud les documents Paperless les plus récents que vous pouvez ouvrir, avec le widget Nouveau dans Paperless
 - Ouvre le fichier synchronisé dans la visionneuse intégrée de Nextcloud, sur le web, iOS et Android
@@ -175,7 +175,7 @@ Vind facturen, contracten, brieven, afschriften en elke tekst die in je document
 ### Zoeken in Paperless. Werken in Nextcloud.
 
 - Gebruikt de eigen OCR en volledige-tekstzoekfunctie van Paperless-ngx, zonder een eigen index die opgebouwd of bijgehouden moet worden
-- Toont resultaten direct in de globale zoekfunctie van Nextcloud, elk met een voorbeeld van het document, de datum in je taal, de correspondent en het type
+- Toont resultaten direct in de globale zoekfunctie van Nextcloud, elk met een voorbeeld van het document, de datum in je taal, de correspondent, het type en de labels
 - Vindt documenten vanuit de slimme kiezer in Talk, Text, Deck en Mail, en voegt een link naar hun bestand in
 - Toont op het dashboard van Nextcloud de nieuwste Paperless-documenten die je kunt openen, met de widget Nieuw in Paperless
 - Opent het gesynchroniseerde bestand in de ingebouwde viewer van Nextcloud op het web, iOS en Android

@@ -57,7 +57,7 @@ final class Check extends Command {
 	protected function configure(): void {
 		$this->setName('paperless_unified_search:check')
 			->setDescription('Check the connection to Paperless-ngx, the API token, the archive account, how many documents have a file and how the archive is shared')
-			->setHelp('Tests the connection to Paperless, warns when the account of the API token may change documents or may not view correspondents and document types, checks that the archive account exists, compares the documents of Paperless with the files of the archive account whose names carry their markers, such as [P412], and lists with whom the archive account shares its files, with a warning for each share that allows changes. Exits with 1 when the search can show no Paperless document, and with 0 otherwise.');
+			->setHelp('Tests the connection to Paperless, warns when the account of the API token may change documents or may not view correspondents, document types and tags, checks that the archive account exists, compares the documents of Paperless with the files of the archive account whose names carry their markers, such as [P412], and lists with whom the archive account shares its files, with a warning for each share that allows changes. Exits with 1 when the search can show no Paperless document, and with 0 otherwise.');
 	}
 
 	protected function execute(InputInterface $input, OutputInterface $output): int {
@@ -108,7 +108,7 @@ final class Check extends Command {
 		}
 
 		if ($status->tokenWarnings === []) {
-			self::passed($output, 'The account of the API token may change no document, and may view correspondents and document types.');
+			self::passed($output, 'The account of the API token may change no document, and may view correspondents, document types and tags.');
 		}
 		foreach ($status->tokenWarnings as $warning) {
 			self::noted($output, $this->messages->forTokenWarning($warning));

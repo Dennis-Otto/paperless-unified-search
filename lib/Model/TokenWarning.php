@@ -13,9 +13,9 @@ namespace OCA\PaperlessUnifiedSearch\Model;
  * What the account of the API token may do in Paperless beyond what the search needs, or
  * may not do of what the results show, as Paperless names it in its answer to
  * /api/ui_settings/. The search only reads: it needs to view documents, and to view
- * correspondents and document types for their names in the results. A token that may do
- * more lets whoever gets hold of it do the same; one that may do less shows results
- * without the names. Each is a warning, never an error: the search works either way.
+ * correspondents, document types and tags for their names in the results. A token that
+ * may do more lets whoever gets hold of it do the same; one that may do less shows
+ * results without the names. Each is a warning, never an error: the search works either way.
  */
 enum TokenWarning: string {
 	/** A superuser of Paperless, who may change and delete every document. */
@@ -31,8 +31,10 @@ enum TokenWarning: string {
 	case HidesCorrespondents = 'hides_correspondents';
 	/** An account that may not view document types, so results show without them. */
 	case HidesDocumentTypes = 'hides_document_types';
+	/** An account that may not view tags, so results show without them. */
+	case HidesTags = 'hides_tags';
 	/**
-	 * An account that may view correspondents and document types, but not all of those of
+	 * An account that may view correspondents, document types and tags, but not all of those of
 	 * the newest documents, which another user owns, so results show without them. The
 	 * test of the connection finds it by asking for their names, not in
 	 * /api/ui_settings/, which of() reads: the permission is there.
@@ -91,6 +93,9 @@ enum TokenWarning: string {
 		}
 		if (!isset($granted['view_documenttype'])) {
 			$warnings[] = self::HidesDocumentTypes;
+		}
+		if (!isset($granted['view_tag'])) {
+			$warnings[] = self::HidesTags;
 		}
 
 		return $warnings;

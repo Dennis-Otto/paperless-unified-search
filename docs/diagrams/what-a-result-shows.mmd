@@ -6,14 +6,14 @@ config:
 ---
 flowchart TB
     accTitle: What a result shows
-    accDescr: The search of Paperless-ngx sends the title of document 412, its date 2026-08-12, the IDs of its correspondent and its type, 3 and 1, and the words around the term. Paperless names correspondent 3 Northstar Energy and type 1 Bill, with one request per kind for all documents of the page, which the app keeps for ten minutes. The file of the document in Nextcloud gives the preview, when Nextcloud draws previews of its type, or else the icon of the type, as the search of files shows them. The result shows that picture, the title Electricity invoice - August 2026, and below it Aug 12, 2026 · Northstar Energy · Bill — Invoice E-2026-0812. Total due 84.30 EUR by September 2, with the date in the language of the user, such as 12.08.2026 in German.
+    accDescr: The search of Paperless-ngx sends the title of document 412, its date 2026-08-12, the IDs of its correspondent and its type, 3 and 1, of its tags, 1, 2 and 3, and the words around the term. Paperless names correspondent 3 Northstar Energy, type 1 Bill and tags 2 and 3 unpaid and tax 2026; tag 1 is the inbox, which no result shows. It takes one request per kind for all documents of the page, which the app keeps for ten minutes, and a result shows up to two tags, then +1 for each more. The file of the document in Nextcloud gives the preview, when Nextcloud draws previews of its type, or else the icon of the type, as the search of files shows them. The result shows that picture, the title Electricity invoice - August 2026, and below it Aug 12, 2026 · Northstar Energy · Bill · unpaid · tax 2026 — Invoice E-2026-0812. Total due 84.30 EUR by September 2, with the date in the language of the user, such as 12.08.2026 in German.
 
     paperless[("Paperless-ngx")]
-    search["The search: the title, the date 2026-08-12,<br>correspondent 3, type 1<br>and the words around the term"]
-    names["The names: correspondent 3 is Northstar Energy,<br>type 1 is Bill, with one request per kind<br>for the page, kept for ten minutes"]
+    search["The search: the title, the date 2026-08-12,<br>correspondent 3, type 1, tags 1, 2 and 3<br>and the words around the term"]
+    names["The names: correspondent 3 is Northstar Energy,<br>type 1 is Bill, tags 2 and 3 are unpaid and tax 2026,<br>tag 1 is the inbox, which no result shows;<br>one request per kind for the page, kept for ten minutes,<br>and up to two tags, then +1 for each more"]
     file["The file in Nextcloud: its preview,<br>when Nextcloud draws previews of its type,<br>or else the icon of its type"]
     result(["`**Electricity invoice - August 2026**
-    Aug 12, 2026 · Northstar Energy · Bill —
+    Aug 12, 2026 · Northstar Energy · Bill · unpaid · tax 2026 —
     Invoice E-2026-0812. Total due 84.30 EUR by September 2
     *the date in the language of the user: 12.08.2026 in German*`"])
 

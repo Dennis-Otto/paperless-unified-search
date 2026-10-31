@@ -16,6 +16,7 @@ use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
 use OCA\PaperlessUnifiedSearch\Model\Explanation;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
+use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCA\PaperlessUnifiedSearch\Service\SearchExplainer;
 use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
@@ -66,6 +67,7 @@ final class SettingsController extends Controller {
 		private IUserManager $userManager,
 		private IUserSession $userSession,
 		private IEventDispatcher $events,
+		private PaperlessNames $names,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -143,8 +145,10 @@ final class SettingsController extends Controller {
 	 * Try a search: the documents that Paperless ranks first for the term, each with
 	 * whether it shows to the user and, if not, why, as occ paperless_unified_search:search
 	 * --explain finds it, for administrators without a shell. The answer names each
-	 * document by its ID and its title alone, without its content, an excerpt or its file,
-	 * and the log and the audit log record which administrator tried a search as whom, without the term.
+	 * document by its ID, its title and its tags alone, without its content, an excerpt or
+	 * its file, and the log and the audit log record which administrator tried a search as
+	 * whom, without the term. The names of the tags only add to the answer, as they do to a
+	 * result: without them, the answer holds no tags.
 	 */
 	#[FrontpageRoute(verb: 'POST', url: '/settings/try')]
 	public function trySearch(string $term = '', string $user = ''): JSONResponse {
@@ -191,8 +195,9 @@ final class SettingsController extends Controller {
 			return $this->refusal($this->messages->forFailure($exception), $exception->reason->value);
 		}
 
-		$titles = self::titlesOf($response['results']);
-		[$explanations, $fileError] = $this->explainer->explain($account, array_keys($titles), $archiveOwner);
+		$hits = self::hitsOf($response['results']);
+		[$explanations, $fileError] = $this->explainer->explain($account, array_keys($hits), $archiveOwner);
+		$names = $this->names->of($hits, PaperlessNames::TAGS);
 
 		return new JSONResponse([
 			'user' => $account->getUID(),
@@ -201,7 +206,8 @@ final class SettingsController extends Controller {
 			'documents' => array_map(
 				static fn (Explanation $explanation): array => [
 					'id' => $explanation->documentId,
-					'title' => $titles[$explanation->documentId] ?? '',
+					'title' => self::titleOf($hits[$explanation->documentId] ?? []),
+					'tags' => PaperlessNames::namesOf($hits[$explanation->documentId] ?? [], 'tags', $names),
 					'verdict' => $explanation->verdict->value,
 				],
 				$explanations,
@@ -211,23 +217,30 @@ final class SettingsController extends Controller {
 	}
 
 	/**
-	 * The titles of the documents that Paperless found, by their IDs, in its order: the
-	 * first ones of its ranking, each with its first title. The explainer leaves out an ID
-	 * below 1, which no document has.
+	 * The documents that Paperless found, by their IDs, in its order: the first ones of its
+	 * ranking, each as it first sent it. The explainer leaves out an ID below 1, which no
+	 * document has.
 	 *
 	 * @param list<array<array-key, mixed>> $results
-	 * @return array<int, string>
+	 * @return array<int, array<array-key, mixed>>
 	 */
-	private static function titlesOf(array $results): array {
-		$titles = [];
+	private static function hitsOf(array $results): array {
+		$hits = [];
 		foreach (array_slice($results, 0, self::TRY_LIMIT) as $hit) {
 			$id = filter_var($hit['id'] ?? null, FILTER_VALIDATE_INT);
 			if ($id !== false) {
-				$titles[$id] ??= isset($hit['title']) && is_string($hit['title']) ? trim($hit['title']) : '';
+				$hits[$id] ??= $hit;
 			}
 		}
 
-		return $titles;
+		return $hits;
+	}
+
+	/**
+	 * @param array<array-key, mixed> $hit
+	 */
+	private static function titleOf(array $hit): string {
+		return isset($hit['title']) && is_string($hit['title']) ? trim($hit['title']) : '';
 	}
 
 	/**
