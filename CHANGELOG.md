@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [1.2.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.2.0...v1.2.1) (2026-10-31)
+
+### Bug fixes
+
+- **The demo runs again:** `bash demo/seed.sh` stopped with *Wrong path, file/folder does not exist* right after Paperless Sync, since Paperless Sync 0.4.0 only queues a run that a request starts. The demo now runs it with `occ paperless_sync:run` and shares the archive once it is written.
+
 ## [1.2.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.1.1...v1.2.0) (2026-10-25)
 
 ### Features

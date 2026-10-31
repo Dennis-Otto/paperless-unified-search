@@ -207,7 +207,7 @@ De onafhankelijke Nextcloud-app [Paperless Sync](https://github.com/Dennis-Otto/
 
 Documentatie (in het Engels): <https://dennis-otto.github.io/paperless-unified-search/>
 ]]></description>
-	<version>1.2.0</version>
+	<version>1.2.1</version>
 	<licence>AGPL-3.0-or-later</licence>
 	<author homepage="https://github.com/Dennis-Otto">Dennis Otto</author>
 	<namespace>PaperlessUnifiedSearch</namespace>
@@ -223,13 +223,13 @@ Documentatie (in het Engels): <https://dennis-otto.github.io/paperless-unified-s
 	<discussion>https://github.com/Dennis-Otto/paperless-unified-search/discussions</discussion>
 	<bugs>https://github.com/Dennis-Otto/paperless-unified-search/issues</bugs>
 	<repository type="git">https://github.com/Dennis-Otto/paperless-unified-search.git</repository>
-	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.2.0/screenshots/01-unified-search.png</screenshot><!-- x-release-please-version -->
-	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.2.0/screenshots/02-nextcloud-pdf-viewer.png</screenshot><!-- x-release-please-version -->
-	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.2.0/screenshots/07-smart-picker.png</screenshot><!-- x-release-please-version -->
-	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.2.0/screenshots/11-dashboard.png</screenshot><!-- x-release-please-version -->
-	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.2.0/screenshots/03-admin-settings.png</screenshot><!-- x-release-please-version -->
-	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.2.0/screenshots/04-mobile-search.png</screenshot><!-- x-release-please-version -->
-	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.2.0/screenshots/06-search-problems.png</screenshot><!-- x-release-please-version -->
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.2.1/screenshots/01-unified-search.png</screenshot><!-- x-release-please-version -->
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.2.1/screenshots/02-nextcloud-pdf-viewer.png</screenshot><!-- x-release-please-version -->
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.2.1/screenshots/07-smart-picker.png</screenshot><!-- x-release-please-version -->
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.2.1/screenshots/11-dashboard.png</screenshot><!-- x-release-please-version -->
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.2.1/screenshots/03-admin-settings.png</screenshot><!-- x-release-please-version -->
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.2.1/screenshots/04-mobile-search.png</screenshot><!-- x-release-please-version -->
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.2.1/screenshots/06-search-problems.png</screenshot><!-- x-release-please-version -->
 	<donation type="other" title="GitHub Sponsors">https://github.com/sponsors/Dennis-Otto</donation>
 	<dependencies>
 		<php min-version="8.2"/>
