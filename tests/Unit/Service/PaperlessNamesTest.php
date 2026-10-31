@@ -46,34 +46,140 @@ final class PaperlessNamesTest extends TestCase {
 		$this->cache = new MemoryCache(fn (): int => $this->time);
 	}
 
-	public function testDocumentsWithoutCorrespondentAndTypeCostNoRequest(): void {
+	public function testDocumentsWithoutCorrespondentTypeAndTagsCostNoRequest(): void {
 		$names = $this->names($this->paperless([]))->of([
 			['id' => 7, 'title' => 'Invoice'],
-			['id' => 8, 'correspondent' => null, 'document_type' => null],
+			['id' => 8, 'correspondent' => null, 'document_type' => null, 'tags' => null],
+			['id' => 9, 'tags' => []],
 		]);
 
-		self::assertSame(['correspondent' => [], 'document_type' => []], $names);
+		self::assertSame(['correspondent' => [], 'document_type' => [], 'tags' => []], $names);
 		self::assertSame([], $this->requests);
 	}
 
+	/**
+	 * One request per kind names all documents of a page, the tags as well, however many
+	 * each document has.
+	 */
 	public function testOneRequestPerKindNamesEveryDocument(): void {
 		$names = $this->names($this->paperless([
 			'correspondents' => [3 => 'ACME Energy', 5 => 'Harbor Mutual'],
 			'document_types' => [1 => 'Invoice'],
+			'tags' => [2 => 'tax 2026', 4 => 'unpaid'],
 		]))->of([
-			['id' => 7, 'correspondent' => 3, 'document_type' => 1],
-			['id' => 8, 'correspondent' => 5, 'document_type' => 1],
+			['id' => 7, 'correspondent' => 3, 'document_type' => 1, 'tags' => [4, 2]],
+			['id' => 8, 'correspondent' => 5, 'document_type' => 1, 'tags' => [2]],
 			['id' => 9, 'correspondent' => 3],
 		]);
 
 		self::assertSame([
 			'correspondent' => [3 => 'ACME Energy', 5 => 'Harbor Mutual'],
 			'document_type' => [1 => 'Invoice'],
+			'tags' => [4 => 'unpaid', 2 => 'tax 2026'],
 		], $names);
 		self::assertSame([
 			'https://paperless.example.com/api/correspondents/?id__in=3,5&page_size=2',
 			'https://paperless.example.com/api/document_types/?id__in=1&page_size=1',
+			'https://paperless.example.com/api/tags/?id__in=4,2&page_size=2',
 		], $this->requests);
+	}
+
+	/**
+	 * @return array<string, array{mixed, list<int>}>
+	 */
+	public static function tagsOfADocument(): array {
+		return [
+			'two tags' => [[4, 2], [4, 2]],
+			'a tag twice' => [[4, 2, 4], [4, 2]],
+			'none' => [[], []],
+			'null' => [null, []],
+			// Only a positive number is the ID of a tag.
+			'IDs that are none' => [[0, -1, '2', null, [3], 2.0, 5], [5]],
+			// The tags are a list, never a single ID.
+			'a single ID' => [4, []],
+			'a text' => ['4,2', []],
+		];
+	}
+
+	/**
+	 * @param list<int> $ids
+	 */
+	#[DataProvider('tagsOfADocument')]
+	public function testTheTagsOfADocumentAreAListOfIds(mixed $tags, array $ids): void {
+		$names = ['tags' => [2 => 'tag 2', 3 => 'tag 3', 4 => 'tag 4', 5 => 'tag 5']];
+
+		self::assertSame(
+			array_map(static fn (int $id): string => 'tag ' . $id, $ids),
+			PaperlessNames::namesOf(['id' => 7, 'tags' => $tags], 'tags', $names),
+		);
+	}
+
+	/**
+	 * The tag of the inbox, which Paperless gives every new document until someone has
+	 * looked at it, says nothing about a document: it has no name, which the cache keeps.
+	 */
+	public function testTheTagOfTheInboxHasNoName(): void {
+		$paperless = $this->paperless(['tags' => [1 => ['name' => 'Inbox', 'is_inbox_tag' => true], 4 => ['name' => 'unpaid', 'is_inbox_tag' => false]]]);
+		$documents = [['id' => 7, 'tags' => [1, 4]]];
+
+		$first = $this->names($paperless)->of($documents);
+		$second = $this->names($paperless)->of($documents);
+
+		self::assertSame(['correspondent' => [], 'document_type' => [], 'tags' => [4 => 'unpaid']], $first);
+		self::assertSame($first, $second);
+		self::assertSame(['https://paperless.example.com/api/tags/?id__in=1,4&page_size=2'], $this->requests);
+	}
+
+	/**
+	 * @return array<string, array{array<array-key, mixed>, list<string>}>
+	 */
+	public static function shownNames(): array {
+		return [
+			'all of them' => [['correspondent' => 3, 'document_type' => 1, 'tags' => [4, 2]], ['ACME Energy', 'Invoice', 'unpaid', 'tax 2026']],
+			'a tag alone' => [['tags' => [2]], ['tax 2026']],
+			'three tags' => [['correspondent' => 3, 'tags' => [4, 2, 6]], ['ACME Energy', 'unpaid', 'tax 2026', '+1']],
+			'five tags' => [['tags' => [6, 4, 2, 8, 9]], ['warranty', 'unpaid', '+3']],
+			// Only a tag with a name counts, so the tag of the inbox and an unknown one not.
+			'three tags of five with a name' => [['tags' => [1, 6, 99, 4, 2]], ['warranty', 'unpaid', '+1']],
+			'two tags of four with a name' => [['tags' => [1, 6, 99, 4]], ['warranty', 'unpaid']],
+			'names on one line' => [['correspondent' => 5, 'tags' => [8]], ['Harbor Mutual', 'tax 2025']],
+			'IDs without a name' => [['correspondent' => 99, 'document_type' => 99, 'tags' => [99, 1]], []],
+			'none' => [['id' => 7], []],
+		];
+	}
+
+	/**
+	 * A result shows the names of the correspondent, the type and up to two tags of its
+	 * document, then how many more tags it has.
+	 *
+	 * @param array<array-key, mixed> $document
+	 * @param list<string> $shown
+	 */
+	#[DataProvider('shownNames')]
+	public function testAResultShowsTheCorrespondentTheTypeAndUpToTwoTags(array $document, array $shown): void {
+		$names = [
+			'correspondent' => [3 => 'ACME Energy', 5 => "Harbor\n Mutual "],
+			'document_type' => [1 => 'Invoice'],
+			'tags' => [1 => '', 2 => 'tax 2026', 4 => 'unpaid', 6 => 'warranty', 8 => "\ttax  2025", 9 => 'paid'],
+		];
+
+		self::assertSame($shown, PaperlessNames::shownOf($document, $names));
+	}
+
+	/**
+	 * Try a search of the settings shows the tags of a document alone, and every one of them.
+	 */
+	public function testOnlyTheFieldsAskedForCostARequest(): void {
+		$names = $this->names($this->paperless(['tags' => [4 => 'unpaid', 2 => 'tax 2026', 6 => 'paid']]))
+			->of([['id' => 7, 'correspondent' => 3, 'document_type' => 1, 'tags' => [4, 2, 6]]], PaperlessNames::TAGS);
+
+		self::assertSame(['tags' => [4 => 'unpaid', 2 => 'tax 2026', 6 => 'paid']], $names);
+		self::assertSame(['https://paperless.example.com/api/tags/?id__in=4,2,6&page_size=3'], $this->requests);
+		self::assertSame(['unpaid', 'tax 2026', 'paid'], PaperlessNames::namesOf(['tags' => [4, 2, 6]], 'tags', $names));
+	}
+
+	public function testAResultWithoutNamesShowsNone(): void {
+		self::assertSame([], PaperlessNames::shownOf(['correspondent' => 3, 'document_type' => 1, 'tags' => [4]], []));
 	}
 
 	/**
@@ -90,7 +196,7 @@ final class PaperlessNamesTest extends TestCase {
 		$this->time += 1;
 		$this->names($paperless)->of($documents);
 
-		self::assertSame(['correspondent' => [3 => 'ACME Energy'], 'document_type' => []], $first);
+		self::assertSame(['correspondent' => [3 => 'ACME Energy'], 'document_type' => [], 'tags' => []], $first);
 		self::assertSame($first, $second);
 		self::assertSame([
 			'https://paperless.example.com/api/correspondents/?id__in=3,4&page_size=2',
@@ -127,7 +233,7 @@ final class PaperlessNamesTest extends TestCase {
 		$first = $this->names($paperless)->of($documents);
 		$second = $this->names($paperless)->of($documents);
 
-		self::assertSame(['correspondent' => [3 => 'ACME Energy'], 'document_type' => [3 => 'Invoice']], $first);
+		self::assertSame(['correspondent' => [3 => 'ACME Energy'], 'document_type' => [3 => 'Invoice'], 'tags' => []], $first);
 		self::assertSame($first, $second);
 		self::assertCount(2, $this->requests);
 		$server = hash('sha256', 'https://paperless.example.com');
@@ -156,8 +262,8 @@ final class PaperlessNamesTest extends TestCase {
 	 */
 	#[DataProvider('documentsWithoutAnObject')]
 	public function testOnlyAPositiveNumberNamesAnObject(array $document): void {
-		self::assertNull(PaperlessNames::idOf($document, 'correspondent'));
-		self::assertSame(['correspondent' => [], 'document_type' => []], $this->names($this->paperless([]))->of([$document]));
+		self::assertSame([], PaperlessNames::namesOf($document, 'correspondent', ['correspondent' => [3 => 'ACME Energy']]));
+		self::assertSame(['correspondent' => [], 'document_type' => [], 'tags' => []], $this->names($this->paperless([]))->of([$document]));
 		self::assertSame([], $this->requests);
 	}
 
@@ -179,7 +285,7 @@ final class PaperlessNamesTest extends TestCase {
 		$this->time += 1;
 		$this->names($paperless, logger: $logger)->of($documents);
 
-		self::assertSame(['correspondent' => [], 'document_type' => [1 => 'Invoice']], $first);
+		self::assertSame(['correspondent' => [], 'document_type' => [1 => 'Invoice'], 'tags' => []], $first);
 		self::assertSame($first, $second);
 		self::assertSame([
 			'https://paperless.example.com/api/correspondents/?id__in=3&page_size=1',
@@ -206,7 +312,7 @@ final class PaperlessNamesTest extends TestCase {
 		$first = $this->names($paperless)->of($documents);
 		$this->names($paperless)->of($documents);
 
-		self::assertSame(['correspondent' => [], 'document_type' => []], $first);
+		self::assertSame(['correspondent' => [], 'document_type' => [], 'tags' => []], $first);
 		self::assertCount(4, $this->requests);
 	}
 
@@ -229,7 +335,7 @@ final class PaperlessNamesTest extends TestCase {
 			'document_types' => [1 => 'Invoice'],
 		]), logger: $logger)->of([['id' => 7, 'correspondent' => 3, 'document_type' => 1]]);
 
-		self::assertSame(['correspondent' => [], 'document_type' => []], $names);
+		self::assertSame(['correspondent' => [], 'document_type' => [], 'tags' => []], $names);
 		self::assertSame(['https://paperless.example.com/api/correspondents/?id__in=3&page_size=1'], $this->requests);
 	}
 
@@ -259,8 +365,8 @@ final class PaperlessNamesTest extends TestCase {
 		$this->time += 1;
 		$third = $this->names($paperless, logger: $logger)->of($documents);
 
-		self::assertSame(['correspondent' => [], 'document_type' => []], $first);
-		self::assertSame(['correspondent' => [], 'document_type' => [1 => 'Invoice']], $second);
+		self::assertSame(['correspondent' => [], 'document_type' => [], 'tags' => []], $first);
+		self::assertSame(['correspondent' => [], 'document_type' => [1 => 'Invoice'], 'tags' => []], $second);
 		self::assertSame($second, $third);
 		self::assertSame([
 			'https://paperless.example.com/api/correspondents/?id__in=3&page_size=1',
@@ -278,7 +384,7 @@ final class PaperlessNamesTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::once())
 			->method('warning')
-			->with('The names of the correspondents and types of search results failed ({errorType})', [
+			->with('The names of the correspondents, types and tags of search results failed ({errorType})', [
 				'app' => AppConstants::APP_ID,
 				'errorType' => RuntimeException::class,
 			]);
@@ -290,12 +396,72 @@ final class PaperlessNamesTest extends TestCase {
 	}
 
 	/**
-	 * A Paperless whose lists of correspondents and types hold these names by ID, and
-	 * answer as Paperless-ngx 3.3.0 does: only with the IDs of the parameter id__in. A list
-	 * is the names by ID, the status of an answer that refuses it, the body of an answer,
-	 * or the error of a request without answer.
+	 * A token that may not view tags gets HTTP 403 for them: the correspondent and the
+	 * type are still named, the results show without tags, and Paperless isn't asked for
+	 * the tags again for ten minutes.
+	 */
+	public function testTagsThatPaperlessRefusesAreNotAskedForAgainForTenMinutes(): void {
+		$paperless = $this->paperless(['correspondents' => [3 => 'ACME Energy'], 'document_types' => [1 => 'Invoice'], 'tags' => 403]);
+		$documents = [['id' => 7, 'correspondent' => 3, 'document_type' => 1, 'tags' => [4, 2]]];
+
+		$first = $this->names($paperless)->of($documents);
+		$this->time += 599;
+		$second = $this->names($paperless)->of($documents);
+		$this->time += 1;
+		$this->names($paperless)->of($documents);
+
+		self::assertSame(['correspondent' => [3 => 'ACME Energy'], 'document_type' => [1 => 'Invoice'], 'tags' => []], $first);
+		self::assertSame($first, $second);
+		self::assertSame(['ACME Energy', 'Invoice'], PaperlessNames::shownOf($documents[0], $first));
+		self::assertSame([
+			'https://paperless.example.com/api/correspondents/?id__in=3&page_size=1',
+			'https://paperless.example.com/api/document_types/?id__in=1&page_size=1',
+			'https://paperless.example.com/api/tags/?id__in=4,2&page_size=2',
+			// Ten minutes later, the cache has forgotten the names as well.
+			'https://paperless.example.com/api/correspondents/?id__in=3&page_size=1',
+			'https://paperless.example.com/api/document_types/?id__in=1&page_size=1',
+			'https://paperless.example.com/api/tags/?id__in=4,2&page_size=2',
+		], $this->requests);
+	}
+
+	/**
+	 * Tags that take longer than the timeout rest for a minute, while the correspondents
+	 * and the types are still named; and after correspondents without answer, the tags
+	 * aren't asked for either.
+	 */
+	public function testTagsWithoutAnswerAreNotAskedForAgainForAMinute(): void {
+		$timeout = new RuntimeException('cURL error 28: Operation timed out');
+		$documents = [['id' => 7, 'correspondent' => 3, 'tags' => [4]]];
+
+		$first = $this->names($this->paperless(['correspondents' => [3 => 'ACME Energy'], 'tags' => $timeout]))->of($documents);
+		$this->time += 59;
+		$second = $this->names($this->paperless(['correspondents' => [3 => 'ACME Energy'], 'tags' => [4 => 'unpaid']]))->of($documents);
+		$this->time += 1;
+		$third = $this->names($this->paperless(['correspondents' => [3 => 'ACME Energy'], 'tags' => [4 => 'unpaid']]))->of($documents);
+		// Once the cache has forgotten every name.
+		$this->time += 700;
+		$fourth = $this->names($this->paperless(['correspondents' => $timeout, 'tags' => [4 => 'unpaid']]))->of($documents);
+
+		self::assertSame(['correspondent' => [3 => 'ACME Energy'], 'document_type' => [], 'tags' => []], $first);
+		self::assertSame($first, $second);
+		self::assertSame(['correspondent' => [3 => 'ACME Energy'], 'document_type' => [], 'tags' => [4 => 'unpaid']], $third);
+		self::assertSame(['correspondent' => [], 'document_type' => [], 'tags' => []], $fourth);
+		self::assertSame([
+			'https://paperless.example.com/api/correspondents/?id__in=3&page_size=1',
+			'https://paperless.example.com/api/tags/?id__in=4&page_size=1',
+			'https://paperless.example.com/api/tags/?id__in=4&page_size=1',
+			'https://paperless.example.com/api/correspondents/?id__in=3&page_size=1',
+		], $this->requests);
+	}
+
+	/**
+	 * A Paperless whose lists of correspondents, types and tags hold these names by ID,
+	 * and answer as Paperless-ngx 3.3.0 does: only with the IDs of the parameter id__in. A
+	 * list is the names by ID, or the fields of each object by ID, such as is_inbox_tag of
+	 * a tag, the status of an answer that refuses it, the body of an answer, or the error
+	 * of a request without answer.
 	 *
-	 * @param array<string, array<int, string>|int|string|RuntimeException> $lists by path
+	 * @param array<string, array<int, string|array<string, mixed>>|int|string|RuntimeException> $lists by path
 	 */
 	private function paperless(array $lists, string $url = 'https://paperless.example.com'): IClient {
 		$client = $this->createStub(IClient::class);
@@ -317,7 +483,8 @@ final class PaperlessNamesTest extends TestCase {
 			$results = [];
 			foreach (array_map('intval', explode(',', (string)$query['id__in'])) as $id) {
 				if (isset($names[$id])) {
-					$results[] = ['id' => $id, 'slug' => 'slug-' . $id, 'name' => $names[$id], 'document_count' => 1];
+					$fields = is_array($names[$id]) ? $names[$id] : ['name' => $names[$id]];
+					$results[] = ['id' => $id, 'slug' => 'slug-' . $id] + $fields + ['document_count' => 1];
 				}
 			}
 

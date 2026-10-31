@@ -39,7 +39,7 @@ case "${SCOPE:-nextcloud}" in
 		;;
 	paperless)
 		# The code of the app, which talks to Paperless and reads its answers in many
-		# places: the search, the names of correspondents and types, the dashboard, the
+		# places: the search, the names of correspondents, types and tags, the dashboard, the
 		# settings and the occ commands. A list of single files missed each new caller of
 		# PaperlessApiService. Besides, the mock, whose container runs the assertions, the
 		# contract tests, their containers and their workflow.

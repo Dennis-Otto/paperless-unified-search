@@ -138,7 +138,8 @@ try {
 	expectForm(await form(page), CONFIGURED, 'The settings as accessibility.mjs left them')
 
 	// Try a search as the archive account e2e-user, which has the file of 123; no file
-	// stands for 999. The page shows the titles as Paperless sends them, as text.
+	// stands for 999. The page shows the titles as Paperless sends them, as text, and the
+	// tags of the mock without the tag of the inbox.
 	await page.locator('#paperless-unified-search-try-term').fill('mobiletest')
 	await page.locator('#paperless-unified-search-try-user').fill('e2e-user')
 	await page.locator('#paperless-unified-search-try').click()
@@ -149,7 +150,7 @@ try {
 	}), TRY_STATUS)
 	expectEqual(JSON.stringify(tried), JSON.stringify({
 		status: 'Shown to e2e-user: 1 of the first 2. Found by Paperless: 2.',
-		rows: [['123', 'Mobile viewer test', 'Shown'], ['999', 'Inaccessible document', 'No file with [P999]']],
+		rows: [['123', 'Mobile viewer test', 'paid', 'Shown'], ['999', 'Inaccessible document', '', 'No file with [P999]']],
 	}), 'The result of Try a search')
 
 	// Each answer that isn't the app's gives one short sentence, and the settings stay

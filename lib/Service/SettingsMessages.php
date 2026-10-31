@@ -77,6 +77,7 @@ final class SettingsMessages {
 			TokenWarning::ChangesDocuments => $this->l10n->t('The account of the API token may add, change or delete documents in Paperless: whoever gets hold of the token can too. Use the token of an account that may only view documents.'),
 			TokenWarning::HidesCorrespondents => $this->l10n->t('The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents.'),
 			TokenWarning::HidesDocumentTypes => $this->l10n->t('The account of the API token may not view document types in Paperless, so results show without them. Give the account the permission View for Document Types.'),
+			TokenWarning::HidesTags => $this->l10n->t('The account of the API token may not view tags in Paperless, so results show without them. Give the account the permission View for Tags.'),
 		};
 	}
 }

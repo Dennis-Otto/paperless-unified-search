@@ -28,10 +28,11 @@ from urllib.parse import parse_qs, urlparse
 WIDGET = "paperless_unified_search-recent"
 
 # What the widget shows of a document of the mock: the line below its title, with the day
-# that the mock added it in the language of the user, its correspondent and its type, and
-# the moment that the mock added it, as the sinceId of the item.
+# that the mock added it in the language of the user, its correspondent, its type and its
+# tags without the tag of the inbox, and the moment that the mock added it, as the sinceId
+# of the item.
 DOCUMENTS = {
-    "Mobile viewer test": ("Aug 27, 2026 · Example Mobile · Letter", "2026-08-27T14:00:00.000000+02:00"),
+    "Mobile viewer test": ("Aug 27, 2026 · Example Mobile · Letter · paid", "2026-08-27T14:00:00.000000+02:00"),
 }
 
 

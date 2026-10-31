@@ -396,7 +396,7 @@ test('the settings show the warnings about the account of the token, which keep 
 		answers: [
 			json({ ...CONFIG, tokenWarnings: ['superuser'] }),
 			// A value that a newer server names, which this page doesn't know, shows nothing.
-			json({ ...CONFIG, tokenWarnings: ['staff', 'changes_documents', 'retired', 'hides_correspondents', 'hides_document_types'] }),
+			json({ ...CONFIG, tokenWarnings: ['staff', 'changes_documents', 'retired', 'hides_correspondents', 'hides_document_types', 'hides_tags'] }),
 			json({ ...CONFIG, tokenWarnings: [] }),
 		],
 	})
@@ -406,7 +406,7 @@ test('the settings show the warnings about the account of the token, which keep 
 	assert.equal(get('status').textContent, 'Connection successful. Settings saved.')
 
 	await get('form').dispatch('submit')
-	assert.equal(get('token-warnings').textContent, 'The API token belongs to an Admin of Paperless, who may also read its logs: whoever gets hold of the token can too. Use the token of an account that is neither Admin nor Superuser. The account of the API token may add, change or delete documents in Paperless: whoever gets hold of the token can too. Use the token of an account that may only view documents. The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents. The account of the API token may not view document types in Paperless, so results show without them. Give the account the permission View for Document Types.')
+	assert.equal(get('token-warnings').textContent, 'The API token belongs to an Admin of Paperless, who may also read its logs: whoever gets hold of the token can too. Use the token of an account that is neither Admin nor Superuser. The account of the API token may add, change or delete documents in Paperless: whoever gets hold of the token can too. Use the token of an account that may only view documents. The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents. The account of the API token may not view document types in Paperless, so results show without them. Give the account the permission View for Document Types. The account of the API token may not view tags in Paperless, so results show without them. Give the account the permission View for Tags.')
 
 	await get('form').dispatch('submit')
 	assert.equal(get('token-warnings').textContent, '')
@@ -626,6 +626,30 @@ test('Try a search sends the term and the user, and shows why each document show
 			['ID: 7', 'Title: Old', 'Shown or why not: Hidden'],
 		],
 	})
+})
+
+test('Try a search has a column of the tags when a document has any, as text', async () => {
+	const { get } = load(page(), {
+		answers: [json({
+			...TRIED,
+			count: 3,
+			documents: [
+				{ id: 412, title: 'Invoice', tags: ['unpaid', '<b>tax</b> 2026', 'warranty'], verdict: 'shown' },
+				{ id: 389, title: 'Invoice', tags: [], verdict: 'not_shared' },
+				{ id: 377, title: 'Receipt', verdict: 'no_file' },
+			],
+		})],
+	})
+
+	await get('try-form').dispatch('submit')
+
+	const { headings, rows } = rowsOf(get('try-result').children[0])
+	assert.deepEqual(headings.map(([text]) => text), ['ID', 'Title', 'Tags', 'Shown or why not'])
+	assert.deepEqual(rows, [
+		['ID: 412', 'Title: Invoice', 'Tags: unpaid, <b>tax</b> 2026, warranty', 'Shown or why not: Shown'],
+		['ID: 389', 'Title: Invoice', 'Tags: ', 'Shown or why not: Not shared with jamie'],
+		['ID: 377', 'Title: Receipt', 'Tags: ', 'Shown or why not: No file with [P377]'],
+	])
 })
 
 test('Try a search says when Paperless finds nothing', async function() {
