@@ -69,6 +69,27 @@ final class PaperlessVersionTest extends TestCase {
 	 * Paperless names its versions in the headers X-Version and X-Api-Version of every
 	 * answer to a request with a valid token.
 	 */
+	/**
+	 * @return array<string, array{string, bool}>
+	 */
+	public static function checksOfASimilarDocument(): array {
+		return [
+			'the oldest supported' => ['2.16.0', false],
+			'the last without the check' => ['2.20.12', false],
+			'the first with the check' => ['2.20.13', true],
+			'a later release of 2.20' => ['2.20.15', true],
+			'Paperless 3' => ['3.3.0', true],
+		];
+	}
+
+	#[DataProvider('checksOfASimilarDocument')]
+	public function testPaperlessChecksASimilarDocumentSince22013(string $version, bool $checks): void {
+		$paperless = PaperlessVersion::of($version, '9');
+
+		self::assertNotNull($paperless);
+		self::assertSame($checks, $paperless->checksSimilarDocument());
+	}
+
 	public function testTheVersionComesFromTheHeadersOfAnAnswer(): void {
 		$response = $this->createStub(IResponse::class);
 		$response->method('getHeader')->willReturnMap([

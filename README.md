@@ -489,6 +489,17 @@ Nextcloud hands the words of a search to Paperless-ngx as they are typed, so its
 | `type:invoice tag:unpaid` | Unpaid invoices, by their type and their tag |
 | `created:[2024 to 2025]` | Documents created from 2024 to 2025 |
 | `added:yesterday` | Documents that Paperless received yesterday |
+| `title:invoice` | Documents with the word in their title; `content:` looks in their text alone |
+| `asn:1234` | The document with this archive serial number |
+| `notes:callback` | Documents with the word in a note |
+| `path:binders` | Documents with this storage path, by its name |
+| `custom_fields:gold` | Documents with the word in the value of a custom field |
+| `original_filename:scan-0412.pdf` | The document of this file, as Paperless received it, by its whole name |
+| `like:[P412]` | Documents similar to the one with the marker `[P412]` in its file name |
+
+`like:` finds the other letters of a case from one of them: Paperless looks for the documents most similar to this one, as **More like this** does in its web interface. The term is `like:` with the ID of the document alone, in the marker of its file or without it, such as `like:[P412]`, `like:P412` or `like:412`, in capitals or not; with a further word or anything else after the colon, such as `like:abc` or `like:[P012]`, it is a search like any other. It works wherever the search does, in the global search, the smart picker and the API, with the date filter and every page of the results, and leaves the document itself out. An ID that Paperless doesn't know, or of a document that its account may not view, finds nothing. Before Paperless-ngx 2.20.13, Paperless doesn't check whether its account may view that document, so one that it may not view still finds similar documents, of those that its account may view. Paperless 3 sends no excerpt for a similar document, so its result names its file instead.
+
+Paperless-ngx 2 also knows `owner:jamie`, the account that owns a document; Paperless-ngx 3 has no such field. [The contract tests](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/tests/e2e/README.md#against-a-real-paperless-ngx) check every row of this table against both.
 
 A field or a quote that is still being typed, such as `tag:` alone, can find nothing; the results come once the search is complete. Paperless 3 refuses a query that it can't parse yet, such as `created:[2026 to` while the range is still being typed; the search then finds the documents of its words in the simple search of Paperless until the query is complete. Neither that nor a page past the last result counts as a problem of the search. Each result is still a document whose file the searching user can open.
 

@@ -301,6 +301,31 @@ final class TrySearchTest extends TestCase {
 		self::assertSame(['message' => $message, 'code' => $code], $this->payload($response));
 	}
 
+	/**
+	 * @return array<string, array{string}>
+	 */
+	public static function refusedDocuments(): array {
+		return [
+			'a document that Paperless does not have' => ['Invalid more_like_id'],
+			'a document that the account may not view' => ['Insufficient permissions.'],
+		];
+	}
+
+	/**
+	 * A marker that is wrong or of a document that the account may not view is no query that
+	 * Paperless can't read.
+	 */
+	#[DataProvider('refusedDocuments')]
+	public function testNamesADocumentThatPaperlessRefusesToFindSimilarOnesOf(string $body): void {
+		$response = $this->controller(self::reply(403, $body))->trySearch('like:[P412]', 'jamie');
+
+		self::assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
+		self::assertSame([
+			'message' => 'Paperless has no document with this ID that its account may view, so it can\'t find similar ones. Correct the term and try again.',
+			'code' => 'unknown_document',
+		], $this->payload($response));
+	}
+
 	public function testNamesARequestWithoutAnswer(): void {
 		$error = new RuntimeException('cURL error 28: Operation timed out after 3001 ms for https://paperless.example.com/api/documents/?query=invoice');
 

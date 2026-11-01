@@ -371,6 +371,18 @@ final class SearchTest extends TestCase {
 		self::assertSame("Paperless refused the query (HTTP 400): it can't read it in its advanced syntax, as a range of dates that isn't complete, such as created:[2026 to.\n", $tester->getErrorOutput());
 	}
 
+	/**
+	 * A marker that is wrong or of a document that the account may not view is no query that
+	 * Paperless can't read.
+	 */
+	public function testSaysWhenPaperlessRefusesTheDocumentToFindSimilarOnesOf(): void {
+		$tester = $this->tester($this->answer(403, 'Invalid more_like_id'));
+
+		self::assertSame(Command::FAILURE, $tester->execute(['user' => 'jamie', 'term' => 'like:[P412]'], ['capture_stderr_separately' => true]));
+
+		self::assertSame("Paperless has no document with this ID that its account may view, so it can't find similar ones.\n", $tester->getErrorOutput());
+	}
+
 	public function testIsTheSearchOfTheApp(): void {
 		$command = $this->command();
 

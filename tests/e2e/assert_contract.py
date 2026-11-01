@@ -16,14 +16,15 @@ the token of the account that may only view and then with that of the superuser.
 gives the invoice a correspondent, a type and two tags, one of them the tag of the inbox,
 checks their names as the app asks for them with id__in, and what each permission of the account of the token gives the search, as the
 table of docs/configure.md says, directly and in the results of Nextcloud, where the names
-show. It prints a report in Markdown, which
-paperless-contract.sh adds to the summary of the job, and fails with the first broken
-promise.
+show, and every row of the table of the search syntax of README.md. It prints a report in
+Markdown, which paperless-contract.sh adds to the summary of the job, and fails with the
+first broken promise.
 
-    ACCEPT='application/json; version=9' FIELDS=id,title,… RECENT_FIELDS=id,title,added,… LINE=3 python assert_contract.py
+    ACCEPT='application/json; version=9' FIELDS=id,title,… RECENT_FIELDS=id,title,added,… UNKNOWN_DOCUMENT=… HIDDEN_DOCUMENT=… LINE=3 python assert_contract.py
 
-ACCEPT, FIELDS and RECENT_FIELDS come from lib/Service/PaperlessApiService.php, so that
-the contract checks what the app sends; LINE is the line of Paperless-ngx, 2 or 3.
+ACCEPT, FIELDS, RECENT_FIELDS, UNKNOWN_DOCUMENT and HIDDEN_DOCUMENT come from
+lib/Service/PaperlessApiService.php, so that the contract checks what the app sends and
+reads; LINE is the line of Paperless-ngx, 2 or 3.
 """
 
 import base64
@@ -35,7 +36,7 @@ import secrets
 import sys
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import quote, urlencode
@@ -94,6 +95,15 @@ RECEIPT = ("contract-receipt.txt", "Contract receipt", "2026-04-02")
 # Document Added, and Assignment.
 DOCUMENT_ADDED = 2
 ASSIGNMENT = 1
+
+# What only the search syntax of README.md looks for: a single word as a tag, which
+# Paperless-ngx 2 keeps whole, and removes again, the archive serial number, the storage
+# path and the custom field of the letter, by the value of the field.
+SYNTAX_TAG = "overdue"
+SYNTAX_ASN = 4711
+SYNTAX_PATH = "binders"
+SYNTAX_FIELD = "Contract policy"
+SYNTAX_VALUE = "gold8812"
 
 # The fields of a document that a result of the app shows.
 SHOWN = {"id", "title", "created", "__search_hit__"}
@@ -238,16 +248,16 @@ class Paperless:
             data=None if body is None else json.dumps(body).encode(),
         )
 
-    def named(self, path, name, **fields):
-        """The ID of the correspondent, the type or the tag of this name, which the superuser
-        adds once with these other fields, such as is_inbox_tag, and therefore owns, as
-        Paperless makes whoever adds one its owner."""
-        found = self.get(f"/api/{path}/", name__iexact=name).json(f"/api/{path}/").get("results", [])
+    def named(self, kind, name, **fields):
+        """The ID of the correspondent, the type, the tag or another object of this name,
+        which the superuser adds once with these other fields, such as is_inbox_tag, and
+        therefore owns, as Paperless makes whoever adds one its owner."""
+        found = self.get(f"/api/{kind}/", name__iexact=name).json(f"/api/{kind}/").get("results", [])
         if found:
             return found[0]["id"]
-        answer = self.send(f"/api/{path}/", {"name": name, **fields})
-        expect(answer.status == 201, f"Paperless didn't add {name} to /api/{path}/ (HTTP {answer.status}): {answer.body[:300]!r}")
-        return answer.json(f"/api/{path}/")["id"]
+        answer = self.send(f"/api/{kind}/", {"name": name, **fields})
+        expect(answer.status == 201, f"Paperless didn't add {name} to /api/{kind}/ (HTTP {answer.status}): {answer.body[:300]!r}")
+        return answer.json(f"/api/{kind}/")["id"]
 
     def bulk_edit(self, documents, method, parameters):
         answer = self.send("/api/documents/bulk_edit/", {"documents": documents, "method": method, "parameters": parameters})
@@ -433,6 +443,46 @@ def check_privileges(paperless, report):
     return viewer_id, viewer
 
 
+def check_similar(paperless, ids, viewer, unknown, hidden, report):
+    """The documents similar to one, as the app asks for them for a term such as
+    like:[P412]: the ID in more_like_id in place of the term, with the fields, the pages and
+    the filters by date of a search, and without the document itself. The invoice shares
+    the word invoice with the insurance. A document that Paperless doesn't have, and one
+    that the account of the token may not view, it refuses in the words that the app takes
+    for no problem of the search; check_permissions sees that it refuses an account that
+    may view no documents at all in others."""
+    invoice, insurance = ids["Contract invoice"], ids["Contract insurance"]
+    what = "Documents similar to the invoice"
+    data = paperless.search(what, more_like_id=invoice).json(what)
+    results = data.get("results")
+    expect(isinstance(results, list), f"{what} are no list: {data!r}")
+    found = [result.get("id") for result in results]
+    expect(insurance in found, f"{what} are {found}, without the insurance {insurance}, which shares a word with it.")
+    expect(invoice not in found, f"{what} are {found}, with the invoice {invoice} itself.")
+    expect(data.get("next") is None, f"{len(found)} documents don't fit on the first page: next is {data.get('next')!r}")
+    for result in results:
+        expect(set(result) == set(paperless.fields), f"Paperless ignored the fields {paperless.fields}: a similar document has {sorted(result)}.")
+        hit = result["__search_hit__"]
+        expect(isinstance(hit, dict) and isinstance(hit.get("highlights"), str), f"__search_hit__ of a similar document has no highlights as text: {hit!r}")
+    report.passed(f"Documents similar to one ({code('more_like_id')})", f"the invoice {invoice} finds {found}: only the fields of a result, and never the document itself")
+
+    within = {"created__date__gte": "2025-01-01", "created__date__lte": "2025-12-31"}
+    found = [result["id"] for result in paperless.search(f"{what} within dates", more_like_id=invoice, **within).json(what)["results"]]
+    expect(found == [insurance], f"{what} within 2025 are {found}, not the insurance {insurance} alone.")
+    within = {"created__date__gte": "2026-01-01", "created__date__lte": "2026-12-31"}
+    found = paperless.search(f"{what} within dates", more_like_id=invoice, **within).json(what)["results"]
+    expect(found == [], f"{what} within 2026, the year of the invoice alone, are {found}.")
+    past = paperless.documents(f"A page past the last of {what}", 404, page=2, page_size=25, fields="id", more_like_id=invoice)
+    report.passed("Documents similar to one, as any search", f"{code('created__date__gte')} and {code('created__date__lte')} narrow them, a page past the last answers HTTP {past.status}")
+
+    query = {"page": 1, "page_size": 25, "fields": ",".join(paperless.fields)}
+    answer = paperless.get("/api/documents/", more_like_id=UNKNOWN_ID, **query)
+    expect((answer.status, answer.body.decode()) == (403, unknown), f"Documents similar to one that Paperless doesn't have get HTTP {answer.status} and {answer.body[:300]!r}, not HTTP 403 and {unknown!r}, which the app takes for no problem of the search.")
+    answer = paperless.as_account(viewer, "/api/documents/", more_like_id=invoice, **query)
+    expect((answer.status, answer.body.decode()) == (403, hidden), f"Documents similar to one that the account may not view get HTTP {answer.status} and {answer.body[:300]!r}, not HTTP 403 and {hidden!r}, which the app takes for no problem of the search.")
+    report.passed("A document that Paperless refuses", f"HTTP 403 and {code(unknown)} for an unknown ID, {code(hidden)} for one that the account may not view")
+
+
 def nextcloud(path, *, method="GET", data=None, headers=None):
     credentials = base64.b64encode(":".join(NEXTCLOUD_USER).encode()).decode()
     return request(
@@ -496,6 +546,16 @@ def check_nextcloud(paperless, line, ids, version, api_version, shown, viewer, r
     expect(beginning in subline, f"The result shows {subline!r}, without the excerpt {beginning!r}.")
     expect(not MARKUP.search(subline), f"The result shows markup or an entity of HTML: {subline!r}")
     report.passed("Results in Nextcloud's search", f"{code(subline[:120])}")
+
+    # A term like:[P…] finds the documents similar to that one, in whichever way it is
+    # written, and one for an ID that Paperless doesn't have finds nothing.
+    invoice = ids["Contract invoice"]
+    for term in (f"like:[P{invoice}]", f"like:P{invoice}", f"like:{invoice}", f"LIKE:[p{invoice}]"):
+        titles = [entry.get("title") for entry in search_nextcloud(term)]
+        expect("Contract insurance" in titles and "Contract invoice" not in titles, f"Nextcloud's search for {term!r} shows {titles}, not the insurance without the invoice.")
+    titles = [entry.get("title") for entry in search_nextcloud(f"like:{UNKNOWN_ID}")]
+    expect(titles == [], f"Nextcloud's search for documents similar to one that Paperless doesn't have shows {titles}.")
+    report.passed("Documents similar to one, in Nextcloud's search", f"{code(f'like:[P{invoice}]')} and its other forms show the insurance without the invoice, an unknown ID nothing")
 
     # The dashboard lists the same documents, newest first, each with the file that the
     # archive account has of it.
@@ -623,9 +683,15 @@ def check_permissions(paperless, ids, viewer_id, viewer, report):
         expect([result["id"] for result in found] == [invoice], f"The account finds {found!r} for {RARE_TERM!r}, not the invoice {invoice}.")
         expect((found[0]["correspondent"], found[0]["document_type"]) == (correspondent, document_type), f"The invoice names the correspondent and the type {found[0]!r} for the account.")
         expect(sorted(found[0]["tags"]) == sorted([inbox, tag]), f"The invoice names the tags {found[0]['tags']!r} for the account, not {sorted([inbox, tag])}.")
-    refused = paperless.as_account(paperless.account(["view_uisettings"])[1], "/api/documents/", page_size=1, fields="id")
+    without_documents = paperless.account(["view_uisettings"])[1]
+    refused = paperless.as_account(without_documents, "/api/documents/", page_size=1, fields="id")
     expect(refused.status == 403, f"/api/documents/ answered an account without the permission to view documents with HTTP {refused.status}, not 403, which fails the test of the connection.")
-    report.passed("View for documents", "HTTP 403 without it; with it, a document of another owner only once the account may view it, as Permissions of the bulk editor lets it")
+    # Not in the words of a document that it refuses, which the app takes for no problem of
+    # the search: this account has to show up as one.
+    refused = paperless.as_account(without_documents, "/api/documents/", page_size=1, fields="id", more_like_id=invoice)
+    what = "The question of an account without the permission to view documents for similar ones"
+    expect(refused.status == 403 and "detail" in refused.json(what), f"{what} got HTTP {refused.status} and {refused.body[:300]!r}, not HTTP 403 and the field detail.")
+    report.passed("View for documents", "HTTP 403 without it, also for similar ones in the field detail; with it, a document of another owner only once the account may view it, as Permissions of the bulk editor lets it")
 
     for path in ("correspondents", "document_types", "tags"):
         refused = names(paperless, documents_only, path, [correspondent, document_type, tag])
@@ -708,13 +774,85 @@ def check_workflow(paperless, viewer_id, viewer, report):
         paperless.send(f"/api/workflows/{workflow}/", None, method="DELETE")
 
 
+def check_syntax(paperless, ids, line, report):
+    """Every row of the table of "Search like in Paperless" in README.md, for the search
+    syntax that the app hands to Paperless, with words of the synthetic documents in place
+    of its examples: what the row promises finds the documents that it says, and no others.
+    The table and this check change together. It removes the tag again, which the settings
+    would warn about as one that another account can't see, so that a kept Paperless passes
+    the contract once more."""
+    invoice, letter = ids["Contract invoice"], ids["Contract letter"]
+    invoice_title, insurance_title, letter_title = "Contract invoice", "Contract insurance", "Contract letter"
+    tag = paperless.named("tags", SYNTAX_TAG)
+    paperless.bulk_edit([invoice], "modify_tags", {"add_tags": [tag], "remove_tags": []})
+    paperless.bulk_edit([letter], "set_storage_path", {"storage_path": paperless.named("storage_paths", SYNTAX_PATH, path="{{ title }}")})
+    field = paperless.named("custom_fields", SYNTAX_FIELD, data_type="string")
+    answer = paperless.send(f"/api/documents/{letter}/", {"archive_serial_number": SYNTAX_ASN, "custom_fields": [{"field": field, "value": SYNTAX_VALUE}]}, method="PATCH")
+    expect(answer.status == 200, f"Paperless didn't take the archive serial number and the custom field of the letter (HTTP {answer.status}): {answer.body[:300]!r}")
+
+    def titles(query):
+        what = f"The search for {query}"
+        return sorted(result["title"] for result in paperless.search(what, query=query).json(what)["results"])
+
+    def seeks(query, expected):
+        found = until(f"Paperless found nothing for {query!r}", lambda: titles(query))
+        expect(found == sorted(expected), f"The search for {query!r} finds {found}, not {sorted(expected)}, as README.md says.")
+
+    try:
+        rows = [
+            ("invoice 2025", [insurance_title]),
+            ('"annual insurance"', [insurance_title]),
+            ("insur*", [insurance_title]),
+            ("invoice NOT electricity", [insurance_title]),
+            ("correspondent:energy", [invoice_title]),
+            (f"type:bill tag:{SYNTAX_TAG}", [invoice_title]),
+            ("created:[2024 to 2025]", [insurance_title, letter_title]),
+            ("title:letter", [letter_title]),
+            ("content:garden", [letter_title]),
+            (f"asn:{SYNTAX_ASN}", [letter_title]),
+            (f"notes:{NOTE_TERM}", [invoice_title]),
+            (f"path:{SYNTAX_PATH}", [letter_title]),
+            (f"custom_fields:{SYNTAX_VALUE}", [letter_title]),
+            ("original_filename:contract-letter.txt", [letter_title]),
+        ]
+        for query, expected in rows:
+            seeks(query, expected)
+    finally:
+        paperless.bulk_edit([invoice], "modify_tags", {"add_tags": [], "remove_tags": [tag]})
+    report.passed("The rows of the table of the search syntax", ", ".join(code(query) for query, _ in rows))
+
+    # Near midnight in UTC, what the contract added today is from yesterday by now, and a
+    # kept Paperless keeps the documents that it added days ago, which neither finds.
+    today = datetime.now(timezone.utc).date()
+    what = "The newest documents, with the moment that Paperless added them"
+    recent = {
+        result["title"]
+        for result in paperless.newest(what).json(what)["results"]
+        if today - datetime.fromisoformat(result["added"]).astimezone(timezone.utc).date() <= timedelta(days=1)
+    }
+    expected = {title for title, _ in SEED.values()} & recent
+    added = set(titles("added:today")) | set(titles("added:yesterday"))
+    expect(expected <= added, f"added:today and added:yesterday find {sorted(added)}, not {sorted(expected)}, which the contract added then.")
+    report.passed("The moment that Paperless added a document", f"{code('added:today')} and {code('added:yesterday')} find the documents that the contract added then")
+
+    # The field of the owner, which the table leaves out and its text names: only Paperless-ngx 2 has it.
+    if line == "2":
+        seeks("owner:admin", [title for title, _ in SEED.values()])
+    else:
+        found = titles("owner:admin")
+        expect(found == [], f"Paperless-ngx 3 finds {found} for owner:admin; README.md says that it has no such field.")
+    report.passed("The owner of a document", f"{code('owner:')} finds the documents of an account in Paperless-ngx 2 alone" if line == "2" else f"{code('owner:')} is no field of Paperless-ngx 3")
+
+
 def main():
     accept = os.environ.get("ACCEPT", "")
     fields = [field for field in os.environ.get("FIELDS", "").split(",") if field]
     recent_fields = [field for field in os.environ.get("RECENT_FIELDS", "").split(",") if field]
+    unknown = os.environ.get("UNKNOWN_DOCUMENT", "")
+    hidden = os.environ.get("HIDDEN_DOCUMENT", "")
     line = os.environ.get("LINE", "")
-    if not accept or not fields or not recent_fields or line not in ("2", "3"):
-        print("ACCEPT, FIELDS, RECENT_FIELDS and LINE (2 or 3) are missing; paperless-contract.sh sets them.", file=sys.stderr)
+    if not accept or not fields or not recent_fields or not unknown or not hidden or line not in ("2", "3"):
+        print("ACCEPT, FIELDS, RECENT_FIELDS, UNKNOWN_DOCUMENT, HIDDEN_DOCUMENT and LINE (2 or 3) are missing; paperless-contract.sh sets them.", file=sys.stderr)
         return 2
 
     report = Report()
@@ -728,8 +866,10 @@ def main():
         version, api_version, shown = check_paperless(paperless, line, report)
         heading = f"### The contract with Paperless-ngx {version} (newest API version {api_version})"
         viewer_id, viewer = check_privileges(paperless, report)
+        check_similar(paperless, ids, viewer, unknown, hidden, report)
         check_nextcloud(paperless, line, ids, version, api_version, shown, viewer, report)
         check_permissions(paperless, ids, viewer_id, viewer, report)
+        check_syntax(paperless, ids, line, report)
     except Broken as broken:
         status = 1
         report.failed(broken)

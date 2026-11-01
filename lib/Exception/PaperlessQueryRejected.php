@@ -15,19 +15,25 @@ use OCA\PaperlessUnifiedSearch\Model\PaperlessVersion;
  * An answer of Paperless that refuses what a user searches for, while Paperless itself
  * works: HTTP 400 with the errors of the field query, which Paperless 3 answers to a query
  * in its advanced syntax that it can't parse, such as the range of dates in
- * created:[2026 to that is still being typed, or to one longer than 4096 characters; and
- * HTTP 404 for a page past the last one. Nextcloud searches while the user types, so the
- * search finds nothing for it, and the history of the problems of the search doesn't
- * count it.
+ * created:[2026 to that is still being typed, or to one longer than 4096 characters;
+ * HTTP 403 with its own words for documents similar to one that it doesn't have or that
+ * the account of the token may not view, or HTTP 400 with the words of its error before
+ * Paperless-ngx 2.20.13, which didn't check the ID yet; and HTTP 404 for a page past the
+ * last one.
+ * Nextcloud searches while the user types, so the search finds nothing for it, and the
+ * history of the problems of the search doesn't count it.
  */
 final class PaperlessQueryRejected extends PaperlessRequestException {
 	/**
-	 * @param int $status 400 or 404
+	 * @param int $status 400, 403 or 404
 	 * @param ?PaperlessVersion $version the version that the answer names, null without one
+	 *                                   or for a refusal that the simple mode can't take
+	 * @param bool $refusedDocument whether Paperless refused the document of the term
 	 */
 	public function __construct(
 		int $status,
 		public readonly ?PaperlessVersion $version = null,
+		private readonly bool $refusedDocument = false,
 	) {
 		parent::__construct(
 			$status === 404 ? RequestFailure::NotFound : RequestFailure::Http,
@@ -42,5 +48,13 @@ final class PaperlessQueryRejected extends PaperlessRequestException {
 	 */
 	public function allowsSimpleSearch(): bool {
 		return $this->status === 400 && $this->version !== null && $this->version->hasSimpleSearch();
+	}
+
+	/**
+	 * Whether Paperless refused the document that the term asks for similar ones of: it has
+	 * no such document, or the account of the token may not view it.
+	 */
+	public function refusesTheDocument(): bool {
+		return $this->refusedDocument;
 	}
 }

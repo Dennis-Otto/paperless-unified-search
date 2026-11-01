@@ -489,6 +489,17 @@ Nextcloud gibt die Wörter einer Suche so an Paperless-ngx weiter, wie sie getip
 | `type:invoice tag:unpaid` | Unbezahlte Rechnungen, nach ihrem Typ und ihrem Tag |
 | `created:[2024 to 2025]` | Dokumente, die von 2024 bis 2025 erstellt wurden |
 | `added:yesterday` | Dokumente, die Paperless gestern erhalten hat |
+| `title:invoice` | Dokumente mit dem Wort im Titel; `content:` sucht nur in ihrem Text |
+| `asn:1234` | Das Dokument mit dieser Archivseriennummer |
+| `notes:callback` | Dokumente mit dem Wort in einer Notiz |
+| `path:binders` | Dokumente mit diesem Speicherpfad, nach seinem Namen |
+| `custom_fields:gold` | Dokumente mit dem Wort im Wert eines benutzerdefinierten Felds |
+| `original_filename:scan-0412.pdf` | Das Dokument dieser Datei, wie Paperless sie erhalten hat, nach ihrem ganzen Namen |
+| `like:[P412]` | Dokumente, die dem mit der Kennung `[P412]` im Dateinamen ähneln |
+
+`like:` findet von einem Brief aus die übrigen Briefe eines Vorgangs: Paperless sucht die Dokumente, die diesem am ähnlichsten sind, wie **More like this** in seiner Weboberfläche. Der Begriff ist `like:` mit der ID des Dokuments allein, in der Kennung seiner Datei oder ohne sie, etwa `like:[P412]`, `like:P412` oder `like:412`, in Groß- oder Kleinbuchstaben; mit einem weiteren Wort oder etwas anderem nach dem Doppelpunkt, etwa `like:abc` oder `like:[P012]`, ist es eine Suche wie jede andere. Es funktioniert überall, wo die Suche funktioniert, in der globalen Suche, im Smart Picker und in der API, mit dem Datumsfilter und auf jeder Seite der Treffer, und lässt das Dokument selbst aus. Eine ID, die Paperless nicht kennt, oder die eines Dokuments, das sein Konto nicht ansehen darf, findet nichts. Vor Paperless-ngx 2.20.13 prüft Paperless nicht, ob sein Konto dieses Dokument ansehen darf, also findet eines, das es nicht ansehen darf, trotzdem ähnliche Dokumente, unter denen, die sein Konto ansehen darf. Paperless 3 schickt für ein ähnliches Dokument keinen Textauszug, also nennt sein Treffer stattdessen seine Datei.
+
+Paperless-ngx 2 kennt auch `owner:jamie`, das Konto, dem ein Dokument gehört; Paperless-ngx 3 hat dieses Feld nicht. [Die Vertragstests](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/tests/e2e/README.md#against-a-real-paperless-ngx) prüfen jede Zeile dieser Tabelle gegen beide.
 
 Ein Feld oder ein Zitat, das noch getippt wird, etwa `tag:` allein, findet womöglich nichts; die Treffer kommen, sobald die Suche vollständig ist. Paperless 3 lehnt eine Anfrage ab, die es noch nicht verarbeiten kann, etwa `created:[2026 to`, während der Bereich noch getippt wird; die Suche findet dann die Dokumente ihrer Wörter in der einfachen Suche von Paperless, bis die Anfrage vollständig ist. Weder das noch eine Seite nach dem letzten Treffer zählt als Problem der Suche. Jeder Treffer ist trotzdem ein Dokument, dessen Datei der suchende Benutzer öffnen kann.
 
