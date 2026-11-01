@@ -3,6 +3,9 @@ self-hosted-runner:
     # GitHub's runner with the egress firewall (technical preview), which this
     # version of actionlint does not know yet; see .github/egress-firewall.yaml.
     - ubuntu-24.04-firewall
+    # GitHub's runner of Ubuntu 26.04, which ubuntu-latest moves to from 2026-10-19 on and
+    # this version of actionlint does not know yet either.
+    - ubuntu-26.04
 paths:
   .github/workflows/issue-assistant.yml:
     ignore:

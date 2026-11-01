@@ -8,6 +8,7 @@
 - [ ] Tests cover the change, and `scripts/check.sh` passes.
 - [ ] The documentation is updated, and a new file in `changelog.d/` says what changes for users, or `CHANGELOG.md` under Unreleased.
 - [ ] Every commit is signed off (`git commit -s`).
+- [ ] Every commit is signed as well (`git commit -S`), with a key that GitHub verifies; the sign-off alone is no signature.
 - [ ] No tokens, keys or personal data are included.
 
 ## Test plan

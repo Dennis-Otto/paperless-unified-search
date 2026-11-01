@@ -28,7 +28,7 @@ from blueprint import (
 from blueprint.app import TIMEOUT, connect, register
 from blueprint.bootstrap import CreateError, create, doctor
 from blueprint.bot_health import renovate_report, sweep, watch_run
-from blueprint.branches import next_branch
+from blueprint.branches import job_from, next_branch
 from blueprint.changelog import (
     FRAGMENTS,
     FragmentError,
@@ -54,6 +54,7 @@ from blueprint.coach import (
     summary,
     undeclared,
     unknown,
+    unverified_commits,
 )
 from blueprint.coach import annotation as coach_annotation
 from blueprint.coach import report as coach_report
@@ -285,7 +286,8 @@ def explain(catalog: Catalog, name: str, step: bool, within: str = "") -> None:
         sys.stdout.write(text)
     else:
         repo = os.environ.get("GITHUB_REPOSITORY") or None
-        entry = entry.within(repo)
+        # The branch that a pull request goes into, which the runner names for it.
+        entry = entry.within(repo, os.environ.get("GITHUB_BASE_REF") or None)
         sys.stdout.write(plain(entry, step, within))
         if os.environ.get("GITHUB_ACTIONS") == "true":
             print(coach_annotation(entry, step, within))
@@ -295,10 +297,28 @@ def explain(catalog: Catalog, name: str, step: bool, within: str = "") -> None:
             os.environ.get("GITHUB_SERVER_URL") or "https://github.com",
         )
         text = summary(entry, step, url, within)
+    to_summary(text)
+
+
+def to_summary(text: str) -> None:
+    """Text at the end of the summary of the job, in the CI."""
     target = os.environ.get("GITHUB_STEP_SUMMARY")
     if target:
         with Path(target).open("a", encoding="utf-8") as file:
             file.write(text + "\n")
+
+
+def signatures_command(api: Api, repo: str, arguments: argparse.Namespace) -> int:
+    """The check signed commits: each commit of the pull request that blocks its merge,
+    as an annotation and in the summary. It fails as GitHub's rule blocks the merge."""
+    unverified = unverified_commits(api, repo, arguments.pull, arguments.base)
+    if not unverified:
+        print(f"No commit of #{arguments.pull} blocks its merge.")
+        return 0
+    for commit in unverified:
+        print(commit.annotation())
+    to_summary("\n".join(commit.finding().markdown() for commit in unverified))
+    return 1
 
 
 def bot_health_command(
@@ -1363,6 +1383,17 @@ def add_coach_parsers(
     coach_report_parser.add_argument(
         "--coverage-base", default="", help="the coverage report of main, if any"
     )
+    signatures_parser = coach_actions.add_parser(
+        "signatures",
+        help="whether a commit of a pull request lacks the verified signature that the "
+        "rules of the branch that it goes into require, which blocks its merge",
+    )
+    signatures_parser.add_argument(
+        "pull", type=int, help="the number of the pull request"
+    )
+    signatures_parser.add_argument(
+        "--base", required=True, help="the branch that it goes into"
+    )
     coach_actions.add_parser(
         "verify",
         help="whether every required check and every step of scripts/check.sh has "
@@ -1865,15 +1896,19 @@ def standalone_command(
         except CreateError as error:
             print(f"blueprint.py: {error}", file=sys.stderr)
             return 2
-    if arguments.command == "coach" and arguments.action != "report":
+    if arguments.command == "coach" and arguments.action in ("explain", "verify"):
         try:
             return explain_command(arguments, root)
         except (OSError, CatalogError) as error:
             print(f"blueprint.py: {error}", file=sys.stderr)
             return 2
-    if arguments.command == "coach" and not (
-        re.fullmatch(r"[0-9a-f]{40}", arguments.sha)
-        and re.fullmatch(r"[0-9]*", arguments.pull)
+    if (
+        arguments.command == "coach"
+        and arguments.action == "report"
+        and not (
+            re.fullmatch(r"[0-9a-f]{40}", arguments.sha)
+            and re.fullmatch(r"[0-9]*", arguments.pull)
+        )
     ):
         print(
             "blueprint.py: a commit is 40 hex digits, a pull request a number",
@@ -1992,6 +2027,8 @@ def main(
         if arguments.command == "settings" and arguments.action == "actions":
             return actions_command(api, root, arguments.config)
         repo = arguments.repo or current_repo(api)
+        if arguments.command == "coach" and arguments.action == "signatures":
+            return signatures_command(api, repo, arguments)
         if arguments.command == "coach":
             number = int(arguments.pull) if arguments.pull else None
             catalog = Catalog.load(root)
@@ -2026,8 +2063,8 @@ def main(
         if arguments.command == "bot-health":
             return bot_health_command(api, repo, arguments, root)
         if arguments.command == "next-branch":
-            outcome = next_branch(api, repo)
-            for warning in outcome.warnings:
+            outcome = next_branch(api, repo, job_from(os.environ))
+            for warning in (*outcome.warnings, *outcome.notices):
                 print(warning, file=sys.stderr)
             print(outcome.summary, end="")
             return 1 if outcome.warnings and not arguments.warnings_only else 0

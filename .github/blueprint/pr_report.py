@@ -335,7 +335,8 @@ def release_part(
     entry = entry_lines(lines, large)
     if entry:
         text += ["", *entry]
-    return Part("\n".join(text), news=bool(forced or level or lines or large))
+    news = bool(forced or level or lines or large)
+    return Part("\n".join(text), news=news, after_merge=True)
 
 
 # ---------------------------------------------------------------- coverage
@@ -446,7 +447,10 @@ def website_part(
             "",
         ]
     if pages:
-        lines += ["The pages that it changes, at their address after the merge:", ""]
+        lines += [
+            "The pages that it changes, at the address each has on the website:",
+            "",
+        ]
         for name in pages[:MOST_PAGES]:
             url = website.page(name) if website.url else ""
             lines.append(f"- [{code(name)}]({url})" if url else f"- {code(name)}")
