@@ -20,18 +20,19 @@ name: Docker E2E
 # documentation, of the CI or from the blueprint, passes the check in seconds without
 # running them. The schedule and a start by hand always run them, and test the newest
 # release behind each floating tag nextcloud:<version>-apache instead of the pins, which
-# gives notice of a break before the pull request of Renovate. When that run fails, it
-# opens the issue "A supported Nextcloud release breaks the app",
-# with the versions that broke and the releases behind their images, or adds the run to
-# it, and the next run that passes closes it. A pull request or a push never touches
-# the issue; a version that breaks there fails the required check instead.
+# gives notice of a break before the pull request of Renovate. When that run fails or
+# reaches the time limit of its job, it opens the issue "A supported Nextcloud release
+# breaks the app", with the versions that broke and the releases behind their images, or
+# adds the run to it, and the next run that passes closes it. A pull request or a push
+# never touches the issue; a version that breaks there fails the required check instead.
 #
 # Every Monday, and when started by hand, they also run against the coming Nextcloud
 # (tests/e2e/canary.sh): the beta or release candidate of the next major version, or
 # the daily build of master. That job is no required check and blocks nothing. When
-# it fails, it opens the issue "The coming Nextcloud breaks the app", or adds the run
-# to it, and closes the issue once the tests pass again. It leaves max-version as it
-# is; the upstream bot raises it when Nextcloud releases the version.
+# it fails or the weekly run reaches the time limit of its job, it opens the issue "The
+# coming Nextcloud breaks the app", or adds the run to it, and closes the issue once
+# the tests pass again. It leaves max-version as it is; the upstream bot raises it when
+# Nextcloud releases the version.
 #
 # The job "paperless" checks the contract with a real Paperless-ngx
 # (tests/e2e/paperless-contract.sh), for the last release of Paperless-ngx 2 and the
@@ -43,10 +44,11 @@ name: Docker E2E
 # (tests/e2e/scope.sh with SCOPE=paperless); otherwise it passes in seconds. Its two
 # jobs, "paperless (2)" and "paperless (3)", are required checks: they always run in a
 # pull request, so auto-merge waits for the contract, and with about two minutes they
-# end before the job "nextcloud" beside them, so they cost no time. A failure of the
-# weekly run opens the issue "Paperless-ngx breaks the app", or adds the run to it,
-# and the next run that passes closes it. Renovate brings every new release of
-# Paperless-ngx as a pull request, which runs the contract against it.
+# end before the job "nextcloud" beside them, so they cost no time. A weekly run that
+# fails or reaches the time limit of its job opens the issue "Paperless-ngx breaks the
+# app", or adds the run to it, and the next run that passes closes it. Renovate brings
+# every new release of Paperless-ngx as a pull request, which runs the contract against
+# it.
 
 on:
   push:
@@ -121,7 +123,7 @@ jobs:
   # start by hand always run the tests (tests/e2e/scope.sh), so a run that passes has
   # tested every version. When the flaky-test bot of after-checks.yml runs a failed
   # check once more, this job runs again with it, and closes the issue if the check
-  # passes then. tests/e2e/selftest.sh runs its script with a fake gh.
+  # passes then.
   nextcloud-issue:
     name: issue about the supported Nextcloud
     needs: nextcloud
@@ -235,8 +237,9 @@ jobs:
           CHECK: "paperless (${{ matrix.paperless }})"
         run: python3 .github/blueprint.py coach explain "$CHECK"
 
-  # Like the issue about the coming Nextcloud: it runs no code of the repository, and a
-  # run started by hand on another branch than main reports nothing.
+  # Like the issue about the coming Nextcloud: it runs no code of the repository, a run
+  # started by hand on another branch than main reports nothing, and a cancelled job
+  # reports in the weekly run alone.
   paperless-issue:
     name: issue about Paperless-ngx
     needs: paperless
@@ -244,7 +247,8 @@ jobs:
       always() &&
       (github.event_name == 'schedule' ||
         (github.event_name == 'workflow_dispatch' && github.ref_name == github.event.repository.default_branch)) &&
-      (needs.paperless.result == 'success' || needs.paperless.result == 'failure')
+      (needs.paperless.result == 'success' || needs.paperless.result == 'failure' ||
+        (github.event_name == 'schedule' && needs.paperless.result == 'cancelled'))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -272,14 +276,22 @@ jobs:
             fi
             exit 0
           fi
+          # GitHub cancels a job that reaches its time limit, such as at a download of
+          # an image that hangs; nothing else cancels the weekly run, whose group of
+          # concurrency is its own.
+          if [[ "$RESULT" == cancelled ]]; then
+            broken="run out of time against a real Paperless-ngx or are cancelled before they end"
+          else
+            broken="fail against a real Paperless-ngx"
+          fi
           if [[ -n "$number" ]]; then
-            gh issue comment "$number" --body "The contract tests still fail against Paperless-ngx: $RUN_URL"
+            gh issue comment "$number" --body "The contract tests still $broken: $RUN_URL"
             exit 0
           fi
           {
-            printf 'The weekly contract tests fail against a real Paperless-ngx: %s\n\n' "$RUN_URL"
+            printf 'The weekly contract tests %s: %s\n\n' "$broken" "$RUN_URL"
             cat <<'TEXT'
-          The job `paperless` of `.github/workflows/e2e.yml` runs `tests/e2e/paperless-contract.sh` against the last release of Paperless-ngx 2 and the newest release: it checks the fields, dates, excerpts, pages and errors of the API of Paperless that the app relies on, the newest documents of the dashboard and the names of correspondents, document types and tags, directly and through Nextcloud, and compares the mock with it. The summary of the run names the version of Paperless and the promise that it breaks, or each difference of the mock, such as a field of another type or another markup of the excerpt; users of that Paperless see the same in their search.
+          The job `paperless` of `.github/workflows/e2e.yml` runs `tests/e2e/paperless-contract.sh` against the last release of Paperless-ngx 2 and the newest release: it checks the fields, dates, excerpts, pages and errors of the API of Paperless that the app relies on, the newest documents of the dashboard and the names of correspondents, document types and tags, directly and through Nextcloud, and compares the mock with it. The summary of the run names the version of Paperless and the promise that it breaks, or each difference of the mock, such as a field of another type or another markup of the excerpt; users of that Paperless see the same in their search. A run that reaches the time limit of the job has no such summary, and its log ends at the step that hung.
 
           `PAPERLESS=2 bash tests/e2e/paperless-contract.sh` or `PAPERLESS=3 …` runs the same tests locally with Docker.
 
@@ -316,15 +328,20 @@ jobs:
           CHECK: coming Nextcloud
         run: python3 .github/blueprint.py coach explain "$CHECK"
 
-  # The only job that may write issues, and it runs no code of the repository. A run
-  # started by hand on another branch than main reports nothing.
+  # Like every job that may write issues, it runs no code of the repository. A run
+  # started by hand on another branch than main reports nothing. A cancelled job reports
+  # in the weekly run alone, where it reached its time limit; whoever starts a run by
+  # hand may cancel it. tests/e2e/selftest.sh runs the scripts of these jobs with a fake
+  # gh and evaluates their conditions.
   coming-issue:
     name: issue about the coming Nextcloud
     needs: coming
     if: >-
       always() &&
-      (github.event_name == 'schedule' || github.ref_name == github.event.repository.default_branch) &&
-      (needs.coming.result == 'success' || needs.coming.result == 'failure')
+      (github.event_name == 'schedule' ||
+        (github.event_name == 'workflow_dispatch' && github.ref_name == github.event.repository.default_branch)) &&
+      (needs.coming.result == 'success' || needs.coming.result == 'failure' ||
+        (github.event_name == 'schedule' && needs.coming.result == 'cancelled'))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -346,7 +363,7 @@ jobs:
           set -euo pipefail
           number="$(gh issue list --state open --search "in:title \"$TITLE\"" --json number,title \
             --jq '[.[] | select(.title == env.TITLE)][0].number // empty')"
-          coming="${VERSION:-the coming Nextcloud, which the job could not set up}"
+          coming="${VERSION:-the coming Nextcloud}"
           if [[ "$RESULT" == success ]]; then
             if [[ -n "$number" ]]; then
               gh issue close "$number" --reason completed \
@@ -354,16 +371,24 @@ jobs:
             fi
             exit 0
           fi
+          # GitHub cancels a job that reaches its time limit, such as at a download of
+          # an image that hangs; nothing else cancels the weekly run, whose group of
+          # concurrency is its own.
+          if [[ "$RESULT" == cancelled ]]; then
+            broken="run out of time against $coming or are cancelled before they end"
+          else
+            broken="fail against ${VERSION:-the coming Nextcloud, which the job could not set up}"
+          fi
           if [[ -n "$number" ]]; then
-            gh issue comment "$number" --body "The end-to-end tests still fail against $coming: $RUN_URL"
+            gh issue comment "$number" --body "The end-to-end tests still $broken: $RUN_URL"
             exit 0
           fi
           {
-            printf 'The weekly end-to-end tests fail against %s: %s\n\n' "$coming" "$RUN_URL"
+            printf 'The weekly end-to-end tests %s: %s\n\n' "$broken" "$RUN_URL"
             cat <<'TEXT'
           The canary of `.github/workflows/e2e.yml` runs `tests/e2e/canary.sh`: the end-to-end tests against the beta or release candidate of the next major version of Nextcloud, or against the daily build of its master branch while there is none. Nextcloud hasn't released that version yet, so the canary is no required check and blocks nothing; it gives notice before the release, while there is time to adapt the app. `max-version` of `appinfo/info.xml` stays as it is; the upstream bot raises it once Nextcloud releases the version.
 
-          The log of the run shows what failed; `bash tests/e2e/canary.sh` runs the same tests locally.
+          The log of the run shows what failed, or ends at the step that hung when the run reached the time limit of the job; `bash tests/e2e/canary.sh` runs the same tests locally.
 
           The canary adds every further failed run here and closes this issue once the tests pass again.
           TEXT
