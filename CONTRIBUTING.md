@@ -5,7 +5,7 @@ Participation follows [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), and project deci
 Use [SUPPORT.md](SUPPORT.md) to choose the correct public support channel and [SECURITY.md](SECURITY.md) for private vulnerability reports.
 
 All changes reach the protected `main` branch through pull requests that pass every required check.
-Coding agents find these rules in short in [AGENTS.md](AGENTS.md), with the files that belong to the blueprint and are changed there.
+Coding agents find these rules in short in [AGENTS.md](AGENTS.md), with the files that belong to the blueprint and are changed there. A pull request that changes one of those, as `.github/blueprint/owned.txt` lists them, gets a notice that says where the change belongs instead.
 
 ## Requirements for changes
 
@@ -157,5 +157,8 @@ The release bot keeps a pull request titled `chore: release x.y.z` with the next
 A line `Release-As: 2.0.0-beta.1` in the description of a pull request sets the version of the next release, for a prerelease for example. After the merge, the release bot writes the title and such a line, or one of `BREAKING CHANGE:`, into the end of the description as an override in an HTML comment, which release-please reads instead of the squash commit, whose parser could fail on another line of the description. A prerelease leaves the fragments and the text of Unreleased to the release that follows it.
 
 A file that the release ships beside its package, such as the zip of a browser extension, comes from `scripts/release-assets.sh` of this project, if it has one. The build of the release runs `bash scripts/release-assets.sh FOLDER VERSION` at the commit of the release, in a job of its own without a token that may write, a secret, `sudo` or Docker, with the Node.js of `.nvmrc` (or that of the runner without one) and `npm ci --ignore-scripts` first where a `package.json` is. The script writes each asset as a file at the top of `FOLDER`, by a name of letters, digits, `.`, `_`, `+` and `-` that starts and ends with a letter or a digit and that no asset of the release has. The release keeps `provenance.*`, `*.intoto.jsonl`, `*.spdx.json`, `*.cdx.json`, `*.openvex.json` and `THIRD_PARTY_NOTICES.md` for itself, and `*.tar.gz*` for what it publishes in the App Store. The script reaches only GitHub, Node.js and npm. The release attests every asset and attaches it to the draft before it is published; its SBOMs describe the zips and tarballs of the script where no registry delivers the project (`PUBLISH_TO` is `none` or unset), and the verification of the release fails for an asset without its signed provenance.
+
+<!-- The text of this project about its releases starts below this line, and every update of the blueprint keeps it. -->
+<!-- The text of this project about its releases ends above this line. -->
 
 By contributing, you agree that your contribution is licensed under the AGPL-3.0-or-later license of this project.

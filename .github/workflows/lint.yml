@@ -2,8 +2,8 @@ name: Lint
 
 # The checks every repository of the blueprint shares: the workflows, the license
 # of every file (REUSE), the Markdown of every document with hints at its spelling
-# and style, the pictures of its diagrams, the sign-off of every commit (DCO) and the
-# set-up of the issue assistant.
+# and style, the pictures of its diagrams, the sign-off of every commit (DCO), the
+# set-up of the issue assistant and a notice for each changed file of the blueprint.
 # In every pull request, not after a merge: main takes a pull request only when it is
 # up to date, so a merge gives main the files that the pull request passed with.
 # https://github.com/Dennis-Otto/repo-blueprint
@@ -26,7 +26,7 @@ env:
 jobs:
   # Every linter in one job, which takes one runner instead of one each: the workflows,
   # the license of every file, the Markdown, the set-up of the issue assistant, the
-  # sign-off of every commit and the hints at the prose. Each step runs also when one
+  # sign-off of every commit, the files of the blueprint and the hints at the prose. Each step runs also when one
   # before it failed, so that the check reports every linter at once, and the PR coach
   # explains each one that failed.
   lint:
@@ -142,6 +142,34 @@ jobs:
           # commits only bring main into the branch, such as those of the branch bot.
           done < <(git rev-list --reverse --no-merges "origin/$BASE_REF..$HEAD_SHA")
           echo "Checked the sign-off of $count commit(s)."
+      # A notice for each changed file that belongs to the blueprint, whose next update
+      # may conflict with the change; the report of the PR coach says where the change
+      # belongs instead. A failure only with the repository variable BLUEPRINT_OWNERSHIP
+      # set to fail. The old path of a rename counts too. The blueprint itself has no
+      # list of its files, and a bot that brings them gets no notice. A change between
+      # the two marked lines of CONTRIBUTING.md belongs to the project, and an update
+      # keeps it, so the diff of that file goes along.
+      - name: Find the changed files of the blueprint
+        id: ownership
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && github.event_name == 'pull_request' }}
+        env:
+          # The base branch as it is now, not the base that the event names: that one
+          # can be older than the commit of main that the branch was built on.
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BRANCH: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          BLUEPRINT_OWNERSHIP: ${{ vars.BLUEPRINT_OWNERSHIP }}
+        run: |
+          # The changes since the merge base: those of the pull request alone.
+          git diff -z --no-renames --name-only "origin/$BASE_REF...HEAD" > "$RUNNER_TEMP/changed"
+          git diff --no-renames "origin/$BASE_REF...HEAD" -- CONTRIBUTING.md > "$RUNNER_TEMP/contributing.diff"
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" --repo "$GITHUB_REPOSITORY" ownership "$RUNNER_TEMP/changed" \
+            --contributing-diff="$RUNNER_TEMP/contributing.diff" \
+            --branch="$BRANCH" --head-repo="$HEAD_REPO" --author-type="$AUTHOR_TYPE" \
+            --mode="$BLUEPRINT_OWNERSHIP"
       # Hints at the spelling (cspell, English and German) and the style of the English
       # (Vale) of the documents that a pull request changes. A hint, never a failure.
       # Not in the release pull request, the branch of the release bot in this
@@ -249,6 +277,7 @@ jobs:
             ${{ steps.markdown.outcome == 'failure' && 'markdown' || '' }}
             ${{ steps.issue-assistant.outcome == 'failure' && 'issue-assistant' || '' }}
             ${{ steps.dco.outcome == 'failure' && 'dco' || '' }}
+            ${{ steps.ownership.outcome == 'failure' && 'ownership' || '' }}
         run: |
           script=.github/blueprint.py
           [[ -f "$script" ]] || script=blueprint.py

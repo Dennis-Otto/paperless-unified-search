@@ -10,10 +10,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
 
-from blueprint.github import Api
+from blueprint.github import Api, GitHubError
 from blueprint.settings import (
+    BRANCH,
     Drift,
     Plan,
     Settings,
@@ -23,10 +23,9 @@ from blueprint.settings import (
     read_plan,
 )
 
-# The permissions of the release app, as its settings page names them and as the link
-# that registers it does, with the access that the bots need: the settings bot,
-# Renovate, the release bot, the blueprint bot and the others. GitHub's link has no
-# name for Variables, so the checklist names it.
+# The permissions of the release app, as its settings page names them and as its
+# manifest does, with the access that the bots need: the settings bot, Renovate, the
+# release bot, the blueprint bot and the others.
 RELEASE_APP_PERMISSIONS = (
     ("Actions", "actions", "write"),
     ("Administration", "administration", "write"),
@@ -38,10 +37,14 @@ RELEASE_APP_PERMISSIONS = (
     ("Issues", "issues", "write"),
     ("Pages", "pages", "write"),
     ("Pull requests", "pull_requests", "write"),
-    ("Variables", "", "write"),
+    ("Variables", "actions_variables", "write"),
     ("Workflows", "workflows", "write"),
     ("Environments", "environments", "read"),
     ("Secrets", "secrets", "read"),
+)
+RELEASE_APP_DESCRIPTION = (
+    "Opens the release and update pull requests of the repositories made from Repo"
+    " Blueprint, so that their checks run, and runs their bots."
 )
 REUSE_API = "https://api.reuse.software/status/github.com/"
 BEST_PRACTICES = "https://www.bestpractices.dev"
@@ -121,36 +124,30 @@ def release_app_name(owner: str) -> str:
     return owner.lower()[: APP_NAME_LIMIT - len(suffix)].rstrip("-") + suffix
 
 
-def release_app_registration(owner: str, organization: bool) -> str:
-    """The address that registers the release app of the owner: on the account itself,
-    with its name, its permissions and no webhook filled in."""
-    page = (
-        f"https://github.com/organizations/{owner}/settings/apps/new"
-        if organization
-        else "https://github.com/settings/apps/new"
-    )
-    query = {
-        "name": release_app_name(owner),
-        "description": "Opens the release and update pull requests of the repositories"
-        " made from Repo Blueprint, so that their checks run, and runs their bots.",
-        "url": f"https://github.com/{owner}",
-        "public": "false",
-        "webhook_active": "false",
-        **{key: access for _, key, access in RELEASE_APP_PERMISSIONS if key},
-    }
-    return f"{page}?{urlencode(query)}"
+def installed_on(api: Api, repo: str, app_id: str) -> bool | None:
+    """Whether the app shows as installed on the repository: GitHub opens a check suite
+    of every installed app with Checks for each push, so one on the head of main tells.
+    No API tells the opposite to the owner: an app may have come after that push, so
+    None and never False."""
+    if not app_id:
+        return None
+    try:
+        suites = api.get(f"repos/{repo}/commits/{BRANCH}/check-suites?app_id={app_id}")
+    except GitHubError:
+        return None
+    return True if isinstance(suites, dict) and suites.get("total_count") else None
 
 
 def release_app(api: Api, repo: str, settings: Settings) -> tuple[Step, Step]:
     """The release app: registered by the owner and named in the settings, then
     installed on the repository. Every owner registers their own, since only the
     owner of an app has its private key."""
-    owner = repo.split("/", 1)[0]
     name = str(settings.variables.get("RELEASE_APP", "")).strip()
     client = str(settings.variables.get("RELEASE_AUTOMATION_CLIENT_ID", "")).strip()
+    app_id = str(settings.variables.get("RELEASE_AUTOMATION_APP_ID", "")).strip()
     installed = Step(
         "Release app installed on the repository",
-        None,
+        installed_on(api, repo, app_id),
         f"https://github.com/apps/{name}/installations/new"
         if name
         else "Install App on the settings page of the app, for this repository",
@@ -158,18 +155,13 @@ def release_app(api: Api, repo: str, settings: Settings) -> tuple[Step, Step]:
     if client:
         named = f"Release app {name or client} named in .github/repository.toml"
         return Step(named, True), installed
-    account = api.get(f"users/{owner}")
-    organization = isinstance(account, dict) and account.get("type") == "Organization"
     how = [
-        "Register it, with its name and permissions filled in and without a webhook:",
-        release_app_registration(owner, organization),
-        f"It needs read and write access to {listed('write')}, and read access to"
-        f" {listed('read')}; set Variables by hand, which the link can't fill in.",
-        "Create the app and generate a private key on its settings page. Then name it"
-        " in the answers of the blueprint, with the name in its address and the Client"
-        " ID and App ID of that page, and commit the update:",
-        "copier update --defaults --vcs-ref=:current: --data release_app=NAME"
-        " --data release_app_client_id=CLIENT_ID --data release_app_id=APP_ID",
+        "Register it with one command: you confirm one page on GitHub, and it sets the"
+        " private key and opens the pull request that names the app:",
+        "python3 .github/blueprint.py app register",
+        f"The app gets read and write access to {listed('write')}, read access to"
+        f" {listed('read')}, and no webhook. For an app that exists, such as for a"
+        " further repository: python3 .github/blueprint.py app connect --key-file FILE",
     ]
     registered = Step(
         "Release app registered and named in .github/repository.toml",

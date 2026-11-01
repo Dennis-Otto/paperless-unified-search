@@ -3,7 +3,8 @@ name: Bot health
 # The bot-health bot. GitHub mails the failure of a scheduled run only to whoever
 # last changed its schedule, and that of another run to whoever started it, which
 # here is mostly the release app, so a failing bot went unnoticed for days. When a
-# run of a bot or a scheduled workflow ends on the default branch, this bot runs its
+# run of a bot or a scheduled workflow ends on the default branch, or the verification
+# of a release that someone published by hand or with a token, this bot runs its
 # failed jobs once more if a second try can pass, as it does with a job that GitHub
 # cancelled at its time limit; a failure that stays keeps one
 # issue per workflow open, with the label bot-failure, the failed jobs, their steps
@@ -36,7 +37,8 @@ jobs:
     if: >-
       github.event_name == 'workflow_run' &&
       !github.event.repository.fork &&
-      github.event.workflow_run.head_branch == github.event.repository.default_branch &&
+      (github.event.workflow_run.head_branch == github.event.repository.default_branch ||
+      (github.event.workflow_run.event == 'release' && github.event.workflow_run.name == 'Release verification')) &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
       !contains(fromJSON('["pull_request", "pull_request_target"]'), github.event.workflow_run.event) &&
       contains(fromJSON('["success", "failure", "timed_out", "cancelled", "startup_failure"]'), github.event.workflow_run.conclusion)

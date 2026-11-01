@@ -1,7 +1,8 @@
 """What a pull request makes, for the one report of the PR coach: the release that it
 brings and the entry that it adds to the changelog, the coverage of its tests against
-that of main, the website that it builds, and the parts that workflows add, such as the
-size of a module or the pictures of visual tests.
+that of main, the website that it builds, the files of the blueprint that it changes,
+and the parts that workflows add, such as the size of a module or the pictures of
+visual tests.
 
 The coach adds these parts after the sections of the checks that failed. A pull request
 controls its title, its description, its files, its coverage report and what its
@@ -36,6 +37,7 @@ from blueprint.coach import (
 )
 from blueprint.coverage_comment import COVERAGE_MARKER, Coverage, coverage_table
 from blueprint.github import Api, Json
+from blueprint.ownership import report_part as ownership_part
 
 MANIFEST = Path(".release-please-manifest.json")
 CONFIG = Path("release-please-config.json")
@@ -736,8 +738,8 @@ def about(
     reports: Iterable[ReportEntry] = (),
 ) -> list[Part]:
     """The parts of the report about the pull request: its release, its coverage when
-    the tests kept a report, its website, and the parts that its workflows added, as
-    reports of the catalog declares them."""
+    the tests kept a report, its website, the files of the blueprint that it changes,
+    and the parts that its workflows added, as reports of the catalog declares them."""
     number = int(pull["number"])
     sha = str(pull["head"]["sha"])
     files = list(islice(paged(api, f"repos/{repo}/pulls/{number}/files"), MOST_FILES))
@@ -749,6 +751,7 @@ def about(
         website_part(
             files, Website.load(root), lambda: website_artifact(api, repo, sha)
         ),
+        ownership_part(api, repo, pull, files, root),
         *workflow_parts(api, repo, sha, reports),
     ]
     return [part for part in parts if part is not None]
