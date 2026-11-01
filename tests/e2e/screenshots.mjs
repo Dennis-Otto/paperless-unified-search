@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Dennis Otto
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Takes the screenshots and the animation in screenshots/, which the README, the
-// website and the App Store show. scripts/screenshots.sh starts it in the image of
+// Takes the screenshots and the animations, which the README, the website and the App
+// Store show. scripts/screenshots.sh starts it in the image of
 // Playwright, inside the network of its Compose project, once Nextcloud and the mock
 // of Paperless run. It writes the synthetic documents of the demo as PDF files into
 // the folder Paperless of the archive account, shares the folder read-only with
@@ -11,8 +11,9 @@
 // a note of Text with the link that it inserts, the settings and the share of the
 // archive, light and dark, Try a search of the settings, the dashboard, the personal
 // settings with the choice to always search Paperless, the search and the settings on
-// a phone, and the search as an animation, light and dark, which starts on its
-// Paperless results. Last, in the real Paperless-ngx of compose.paperless.yaml, it sets
+// a phone, the search as an animation, light and dark, which starts on its Paperless
+// results, and the set-up as an animation, light and dark, from the empty settings to
+// the first search. Last, in the real Paperless-ngx of compose.paperless.yaml, it sets
 // up the account of the search as docs/configure.md does and takes its dialogs, light
 // and dark. The images go to the folder of SCREENSHOTS_OUT, where
 // scripts/screenshot-media.sh makes the videos of the animations. A step fails when the app doesn't show what its picture is meant to
@@ -29,6 +30,7 @@ import gifenc from 'gifenc'
 import pngjs from 'pngjs'
 import { chromium } from 'playwright-core'
 import { DEMO, OPENED, RESULTS, demoClock, lastChange, templateTimes, unexpectedResults } from './demo.mjs'
+import { changedRectangle, placeFrame } from './gif-frames.mjs'
 import {
 	BASE_URL,
 	PASSWORD,
@@ -60,6 +62,10 @@ const ADMIN = 'e2e-admin'
 const ARCHIVE = 'paperless'
 const READER = 'jamie'
 const TERM = 'invoice'
+// What the animation of the set-up enters: the mock under its name in the local network
+// of compose.yaml, and its token, of which the field shows only dots.
+const SETUP_URL = 'http://paperless.lan:8080'
+const TOKEN = 'e2e-only-token'
 // The moment of the pictures. The clock of every page starts there, in the time zone of
 // the pages, and the files of the archive were filed two days before, so that what
 // Nextcloud shows relative to now, such as "2 days ago" in Files or the greeting of the
@@ -799,22 +805,19 @@ async function framedResults(page) {
 	return png
 }
 
-// An animation of a film such as SEARCH_AND_OPEN, in the light theme, or in the dark
-// one with -dark after its name: where the film says so, the Paperless results in a
-// frame first, which is also the picture that the website shows until its video plays;
-// then the archive, the search for "invoice", the switch for connected services where it
-// needs it, and the insurance renewal, which only Paperless finds by its text.
-async function animation(browser, session, film = SEARCH_AND_OPEN, theme = 'light') {
+// What an animation does with its page, with the pointer at start: frames holds its
+// pictures, frame adds one that shows for the milliseconds that it names, glide moves the
+// pointer to a locator in a number of steps, a frame each, at most a number of pixels into
+// it from its left, and click presses it there.
+function camera(page, start) {
 	const frames = []
-	const name = theme === 'dark' ? film.name.replace(/\.gif$/, '-dark.gif') : film.name
-	const page = await newPage(browser, session, { viewport: { width: 1280, height: 800 }, colorScheme: theme }, { pointer: true, clock: film.clock })
 	const frame = async (delay) => {
 		frames.push({ png: await page.screenshot({ animations: 'disabled' }), delay })
 	}
-	let position = [640, 460]
-	const glide = async (locator, steps = 14) => {
+	let position = start
+	const glide = async (locator, steps = 14, reach = 40) => {
 		const box = await locator.boundingBox()
-		const target = [box.x + Math.min(box.width / 2, 40), box.y + box.height / 2]
+		const target = [box.x + Math.min(box.width / 2, reach), box.y + box.height / 2]
 		for (let step = 1; step <= steps; step++) {
 			const t = step / steps
 			const ease = t < 0.5 ? 2 * t * t : 1 - ((-2 * t + 2) ** 2) / 2
@@ -823,15 +826,28 @@ async function animation(browser, session, film = SEARCH_AND_OPEN, theme = 'ligh
 		}
 		position = target
 	}
-	const click = async (locator) => {
-		await glide(locator)
+	const click = async (locator, steps, reach) => {
+		await glide(locator, steps, reach)
 		await page.mouse.down()
 		await frame(120)
 		await page.mouse.up()
 	}
+	return { frames, frame, glide, click }
+}
+
+// An animation of a film such as SEARCH_AND_OPEN, in the light theme, or in the dark
+// one with -dark after its name: where the film says so, the Paperless results in a
+// frame first, which is also the picture that the website shows until its video plays;
+// then the archive, the search for "invoice", the switch for connected services where it
+// needs it, and the insurance renewal, which only Paperless finds by its text.
+async function animation(browser, session, film = SEARCH_AND_OPEN, theme = 'light') {
+	const name = theme === 'dark' ? film.name.replace(/\.gif$/, '-dark.gif') : film.name
+	const page = await newPage(browser, session, { viewport: { width: 1280, height: 800 }, colorScheme: theme }, { pointer: true, clock: film.clock })
+	const start = [640, 460]
+	const { frames, frame, click } = camera(page, start)
 
 	await film.start(page)
-	await page.mouse.move(...position)
+	await page.mouse.move(...start)
 	await settle(page)
 	await frame(1600)
 	await openSearch(page, click)
@@ -877,6 +893,90 @@ async function animation(browser, session, film = SEARCH_AND_OPEN, theme = 'ligh
 	await page.context().close()
 	writeGif(frames, join(OUT, name))
 	console.log(`Took ${name} with ${frames.length} frames.`)
+}
+
+// The animation of setting up the app, in the Quick start of the README and on the page
+// Configure, in the light theme, or in the dark one with -dark after its name. First, for
+// a moment, where it leads: the documents of the first search, which is also the picture
+// that the website shows until its video plays. Then an administrator takes the empty
+// form from the URL to that search, as jamie, with whom the archive is shared. It starts
+// from a Nextcloud without the settings and leaves them set up, with the mock under its
+// name in the local network in the URL, so it comes after every picture that shows the
+// settings. A session of its own: Nextcloud asks for the password again 30 minutes after
+// the sign-in, which the pictures before it may take. The page is too narrow for the
+// navigation of the settings, and its text stays legible when a phone shows the animation
+// in the width of its screen.
+async function setupAnimation(browser, theme) {
+	const name = theme === 'dark' ? 'setup-dark.gif' : 'setup.gif'
+	await request(ADMIN, 'DELETE', '/apps/paperless_unified_search/settings')
+	const session = await signIn(browser, ADMIN, { timezoneId: TIME_ZONE })
+	const page = await newPage(browser, session, { viewport: { width: 760, height: 900 }, colorScheme: theme }, { pointer: true })
+	const start = [560, 240]
+	const { frames, frame, click } = camera(page, start)
+	const clickAndRest = async (locator) => {
+		// To the middle, beside what the field then shows.
+		await click(locator, 8, Infinity)
+		// The ring around the pointer goes 350 ms after the click.
+		await page.waitForTimeout(400)
+	}
+	const type = async (locator, text) => {
+		for (const letter of text) {
+			await locator.press(letter)
+			await frame(40)
+		}
+	}
+	const field = (id) => page.locator(`#paperless-unified-search-${id}`)
+	// Scrolls until the locator shows at the start or the end of the page, with a margin
+	// in pixels, at once: every frame of a smooth scroll would hold a whole page of text.
+	const scroll = async (locator, block, margin) => {
+		await locator.evaluate((element, [where, pixels]) => {
+			element.style.scrollMarginBlock = `${pixels}px`
+			element.scrollIntoView({ block: where, behavior: 'instant' })
+		}, [block, margin])
+		await frame(200)
+	}
+
+	await page.goto(`${BASE_URL}${SETTINGS}`)
+	await page.locator(SETTINGS_SCOPE).waitFor()
+	await page.mouse.move(...start)
+	await settle(page)
+	await frame(500)
+	await clickAndRest(field('url'))
+	await type(field('url'), SETUP_URL)
+	await clickAndRest(field('allow-local'))
+	await frame(200)
+	await clickAndRest(field('token'))
+	await field('token').fill(TOKEN)
+	await frame(300)
+	await clickAndRest(field('archive-owner'))
+	await type(field('archive-owner'), ARCHIVE)
+	// Above the buttons shows what the form saves, below them the message.
+	await scroll(field('form').locator('.paperless-unified-search-actions'), 'end', 56)
+	await clickAndRest(field('save'))
+	await page.getByText('Connection successful. Settings saved.').waitFor()
+	await settle(page, 300)
+	await frame(1200)
+	await scroll(page.locator('.paperless-unified-search-try'), 'start', 16)
+	await clickAndRest(field('try-term'))
+	await type(field('try-term'), TERM)
+	await clickAndRest(field('try-user'))
+	await type(field('try-user'), READER)
+	await clickAndRest(field('try'))
+	await page.locator('.paperless-unified-search-documents').waitFor()
+	// The pages that show the animation say that all three documents show to jamie.
+	await page.getByText(`Shown to ${READER}: 3 of the first 3.`).waitFor()
+	await settle(page, 300)
+	await frame(1400)
+	// Without the pointer, which waits for the start, and away from the table, whose rows
+	// light up under it.
+	await page.mouse.move(0, 0)
+	await page.locator('#demo-pointer').evaluate((element) => {
+		element.style.visibility = 'hidden'
+	})
+	frames.unshift({ png: await page.screenshot({ animations: 'disabled' }), delay: 1200 })
+	await page.context().close()
+	writeGif(frames, join(OUT, name))
+	console.log(`Took ${name} with ${frames.length} frames of ${frames.reduce((sum, { delay }) => sum + delay, 0)} ms.`)
 }
 
 // The animation of the demo of the README, from the real Paperless-ngx and Nextcloud of
@@ -946,9 +1046,10 @@ async function demoAnimation(browser) {
 }
 
 // Encodes the frames as GIF, with one palette for all of them. Every frame after the
-// first holds only the pixels whose color in that palette changed; the rest stays
-// transparent, so that the previous frame shows through. A palette of each frame of
-// its own would let the colors of the unchanged pixels drift from their neighbors.
+// first holds only the rectangle around the pixels whose color in that palette changed
+// (gif-frames.mjs), and in it only those pixels; the rest stays transparent, so that the
+// previous frame shows through. A palette of each frame of its own would let the colors
+// of the unchanged pixels drift from their neighbors.
 function writeGif(frames, path) {
 	const decode = (png) => {
 		const { width, height, data } = PNG.sync.read(png)
@@ -1003,36 +1104,35 @@ function writeGif(frames, path) {
 	let previous = null
 	let pending = null
 	const write = () => {
-		gif.writeFrame(pending.index, pending.width, pending.height, {
-			palette: [...palette, [0, 0, 0]],
-			delay: pending.delay,
+		const { pixels, width, height, left, top, delay, transparent } = pending
+		const offset = gif.bytesView().length
+		gif.writeFrame(pixels, width, height, {
+			// Only the first frame names the palette, which all of them share.
+			palette: transparent ? null : [...palette, [0, 0, 0]],
+			delay,
 			dispose: 1,
-			transparent: pending.transparent,
+			transparent,
 			transparentIndex,
 		})
+		if (transparent) {
+			placeFrame(gif.bytesView(), offset, left, top)
+		}
 	}
 	for (const { png, delay } of frames) {
 		const { width, height, rgba } = decode(png)
 		const index = indexOf(rgba)
 		if (previous === null) {
-			pending = { index, width, height, delay, transparent: false }
+			pending = { pixels: index, width, height, left: 0, top: 0, delay, transparent: false }
 			previous = index
 			continue
 		}
-		const changes = new Uint8Array(index.length).fill(transparentIndex)
-		let changed = false
-		for (let i = 0; i < index.length; i++) {
-			if (index[i] !== previous[i]) {
-				changes[i] = index[i]
-				changed = true
-			}
-		}
-		if (!changed) {
+		const changed = changedRectangle(index, previous, width, transparentIndex)
+		if (changed === null) {
 			pending.delay += delay
 			continue
 		}
 		write()
-		pending = { index: changes, width, height, delay, transparent: true }
+		pending = { ...changed, delay, transparent: true }
 		previous = index
 	}
 	write()
@@ -1240,6 +1340,8 @@ async function everyPicture(browser) {
 	await phoneSettings(browser, admin)
 	await animation(browser, reader)
 	await animation(browser, reader, SEARCH_AND_OPEN, 'dark')
+	await setupAnimation(browser, 'light')
+	await setupAnimation(browser, 'dark')
 	await paperlessPictures(browser)
 }
 

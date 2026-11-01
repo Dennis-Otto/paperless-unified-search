@@ -11,6 +11,13 @@ Three things make Paperless documents show in Nextcloud's search: a Paperless ac
   <img src="images/diagrams/setting-up-the-search.svg" alt="Setting up the search: Install the app. In Paperless-ngx, create an account that may read the documents and an API token for it. In the administration settings of Nextcloud, enter the URL, the token and the archive account, select Paperless runs in my local network when Nextcloud reaches Paperless at such an address, and select Test connection and save. When Paperless answers, the settings are saved; otherwise nothing is saved and the message says what to correct. The archive account shares its archive read-only with the users who may find its documents, and they find them under Paperless documents in Nextcloud's search, with Search connected services switched on.">
 </picture>
 
+<div class="pus-animation" markdown>
+<div class="pus-animation__light" markdown="span">![Where the set-up leads, in the settings of the app: Try a search lists the three documents that Paperless finds for invoice, each shown to jamie. Then the set-up from the start, in the empty form: the URL http://paperless.lan:8080 is typed, Paperless runs in my local network is selected, the API token is pasted and shows as dots, and the archive account paperless is typed. Test connection and save answers Connection successful. Settings saved. Last, Try a search for invoice as the user jamie lists the electricity invoice, the home insurance renewal and the internet invoice.](images/setup.gif)</div>
+<div class="pus-animation__dark" markdown="span">![Where the set-up leads, in the settings of the app: Try a search lists the three documents that Paperless finds for invoice, each shown to jamie. Then the set-up from the start, in the empty form: the URL http://paperless.lan:8080 is typed, Paperless runs in my local network is selected, the API token is pasted and shows as dots, and the archive account paperless is typed. Test connection and save answers Connection successful. Settings saved. Last, Try a search for invoice as the user jamie lists the electricity invoice, the home insurance renewal and the internet invoice.](images/setup-dark.gif)</div>
+</div>
+
+<p class="pus-animation__caption">The settings of the app, from the empty form to the first search. The sections below explain each step.</p>
+
 --8<-- "README.md:how-it-works"
 
 ## A Paperless account for the search

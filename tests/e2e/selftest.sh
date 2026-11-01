@@ -846,7 +846,7 @@ cp "${SCRIPT_DIR}/../../scripts/screenshots.sh" "${shots}/scripts/screenshots.sh
 echo 'echo "social preview" >>"${FAKE_DOCKER_LOG}"' >"${shots}/scripts/social-preview.sh"
 # The script finds the image of the browser in run.sh.
 echo 'PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright:v1.0.0-noble' >"${shots}/tests/e2e/run.sh"
-for file in package.json package-lock.json ui.mjs demo.mjs screenshots.mjs; do
+for file in package.json package-lock.json ui.mjs demo.mjs gif-frames.mjs screenshots.mjs; do
 	echo "${file}" >"${shots}/tests/e2e/${file}"
 done
 echo "the committed picture" >"${shots}/screenshots/01-unified-search.png"
@@ -903,7 +903,7 @@ expect_in "the password of jamie, from demo/.env, in the environment of the brow
 	"browser environment: E2E_PASSWORD=fake-demo-password" "${WORK}/docker.log"
 expect "the password of jamie on a command line" 0 \
 	"$(grep --invert-match '^browser environment: ' "${WORK}/docker.log" | grep --count --fixed-strings fake-demo-password || true)"
-expect_in "the files of the browser" "browser files: demo.mjs package-lock.json package.json screenshots.mjs ui.mjs" "${WORK}/docker.log"
+expect_in "the files of the browser" "browser files: demo.mjs gif-frames.mjs package-lock.json package.json screenshots.mjs ui.mjs" "${WORK}/docker.log"
 expect "the demo after screenshots.sh --demo" 0 "$(grep --count --extended-regexp '^compose .*(down|stop|rm)( |$)' "${WORK}/docker.log" || true)"
 expect "the social preview after screenshots.sh --demo" 0 "$(grep --count --fixed-strings 'social preview' "${WORK}/docker.log" || true)"
 expect "the videos after screenshots.sh --demo" 0 "$(grep --count '^build ' "${WORK}/docker.log" || true)"
