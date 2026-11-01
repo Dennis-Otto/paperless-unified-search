@@ -97,7 +97,7 @@ jobs:
       - name: Lint the Markdown of every document
         id: markdown
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
-        uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
+        uses: DavidAnson/markdownlint-cli2-action@696eb3f2509270d7b882d2aa68347bc676e7af34 # v25.0.0
         with:
           globs: "**/*.md"
       # The labels, issue forms, workflows and notice of the issue assistant fit the
@@ -242,7 +242,7 @@ jobs:
         if: ${{ !cancelled() && steps.head.outcome == 'success' }}
         # Findings that no command fixes stay for a person; the check failed already.
         continue-on-error: true
-        uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
+        uses: DavidAnson/markdownlint-cli2-action@696eb3f2509270d7b882d2aa68347bc676e7af34 # v25.0.0
         with:
           globs: "**/*.md"
           fix: true
