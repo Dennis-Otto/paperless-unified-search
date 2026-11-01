@@ -956,7 +956,8 @@ async function setupAnimation(browser, theme) {
 	await page.getByText('Connection successful. Settings saved.').waitFor()
 	await settle(page, 300)
 	await frame(1200)
-	await scroll(page.locator('.paperless-unified-search-try'), 'start', 16)
+	// The heading above it clears Nextcloud's menu button, and the whole table still shows.
+	await scroll(page.locator('.paperless-unified-search-try'), 'start', 214)
 	await clickAndRest(field('try-term'))
 	await type(field('try-term'), TERM)
 	await clickAndRest(field('try-user'))
