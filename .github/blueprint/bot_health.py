@@ -20,7 +20,7 @@ import json
 import re
 import urllib.parse
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
@@ -37,6 +37,7 @@ LABEL_DESCRIPTION = (
 TYPE = "maintenance"
 PULL_REQUESTS = frozenset({"pull_request", "pull_request_target"})
 FAILED = frozenset({"failure", "timed_out", "startup_failure"})
+OUT_OF_TIME = "The job has exceeded the maximum execution time"
 PASSED = "success"
 # A second try only hides or repeats their failure: Findings fails while an alert is
 # open, Mutation takes hours to measure the same again, and the property tests and the
@@ -270,14 +271,17 @@ class Failure:
     error: str
 
 
-def first_error(api: Api, repo: str, job: int) -> str:
+def annotations_of(api: Api, repo: str, job: int) -> list[Json]:
     try:
-        annotations = api.get(f"repos/{repo}/check-runs/{job}/annotations?per_page=50")
+        return api.get(f"repos/{repo}/check-runs/{job}/annotations?per_page=50") or []
     except GitHubError:
-        return ""
+        return []
+
+
+def first_error(api: Api, repo: str, job: int) -> str:
     errors = [
         str(annotation.get("message") or "")
-        for annotation in annotations or []
+        for annotation in annotations_of(api, repo, job)
         if annotation.get("annotation_level") == "failure"
     ]
     telling = [error for error in errors if not GENERIC.fullmatch(error.strip())]
@@ -405,6 +409,20 @@ def report(api: Api, repo: str, branch: str, run: Run, issue: Issue | None) -> s
     return f"fails in another place: updated #{issue.number}"
 
 
+def ran_out_of_time(api: Api, repo: str, run: Run) -> bool:
+    """Whether GitHub cancelled a job of the run at its time limit, as it says on the
+    job, and not a person or a newer run."""
+    data = api.get(
+        f"repos/{repo}/actions/runs/{run.id}/attempts/{run.attempt}/jobs?per_page=100"
+    )
+    return any(
+        OUT_OF_TIME in str(annotation.get("message"))
+        for job in (data or {}).get("jobs", [])
+        if job.get("conclusion") == "cancelled"
+        for annotation in annotations_of(api, repo, int(job["id"]))
+    )
+
+
 def run_again(api: Api, repo: str, run: Run) -> str | None:
     """Runs the failed jobs once more; None when GitHub refuses and no one else did."""
     try:
@@ -448,6 +466,10 @@ def look_at(
             f"Passes again in {run.link()}, after {runs}.",
         )
         return f"passes again: closed #{issue.number}"
+    # A job that hangs until its time limit, as one behind Harden-Runner can, even after
+    # its last step, ends as cancelled; it failed like one that GitHub calls timed out.
+    if run.conclusion == "cancelled" and ran_out_of_time(api, repo, run):
+        run = replace(run, conclusion="timed_out")
     if run.conclusion not in FAILED:
         return f"ended as {run.conclusion or run.status}: no failure"
     note = ""

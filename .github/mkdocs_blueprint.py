@@ -7,6 +7,7 @@ https://github.com/Dennis-Otto/repo-blueprint
 
 from __future__ import annotations
 
+import faulthandler
 import gzip
 import html
 import importlib.util
@@ -38,8 +39,12 @@ DOWNLOADING = ("material/privacy", "material/social")
 ATTEMPTS = 3
 # The seconds that an attempt waits for the connection and then for each next part
 # of the file, when the plugin names no time limit itself: the social plugin names
-# none, so a server that stopped answering held the build until the CI ended it.
+# none, so a server that stops answering would hold the build until the CI ends it.
 TIMEOUT = (10, 30)
+# The seconds after which a build of the website prints the stack of every thread,
+# well before the end of the five minutes of its step, which leaves no trace of where
+# it stood. It goes on: a big website may just need that long.
+STACKS_AFTER = 4 * 60
 # The stylesheet and the script of every website: the path where the website serves
 # each, and the file beside this one that holds it.
 ASSETS = {
@@ -204,6 +209,60 @@ class Retrying:
         return self.requests.get(url, **kwargs)
 
 
+class Layers(dict[str, Any]):
+    """The jobs that draw the layers of the preview cards, in the social plugin of
+    Material, whose job also finishes the placeholder that it replaces.
+
+    To start each layer once, a thread of the plugin puts an empty Future under the
+    key of the layer with setdefault, and replaces it with the job when submit has
+    started it. A card with the same layer that asks in between gets the placeholder,
+    which nothing ever finishes: it waits without end, the build for that card, and
+    its step until the CI ends it, with no error and no line in the log. Starting a
+    job can start a thread, which lets the other threads run just then.
+
+    When a version of Material gives the jobs another name, on_config warns, which
+    fails a strict build: then look whether Material fixed this, and change or remove
+    this class. Decision 0089 of the blueprint tells how this was found.
+    """
+
+    def __setitem__(self, key: str, job: Any) -> None:
+        placeholder = self.get(key)
+        super().__setitem__(key, job)
+        if placeholder is not None:
+            job.add_done_callback(lambda done: self.finish(placeholder, done))
+
+    @staticmethod
+    def finish(placeholder: Any, job: Any) -> None:
+        """Give whoever waits for the placeholder the outcome of the job."""
+        if job.cancelled():
+            placeholder.cancel()
+        elif (error := job.exception()) is not None:
+            placeholder.set_exception(error)
+        else:
+            placeholder.set_result(job.result())
+
+
+def watch_the_layers(social: Any) -> None:
+    """Give the social plugin the jobs of Layers, or say what to do when it has none."""
+    jobs = getattr(social, "card_layer_pool_jobs", None)
+    if jobs is None:
+        log.warning(
+            "Material no longer keeps the jobs of the social plugin in "
+            "card_layer_pool_jobs: look whether it closed the gap of decision 0089 of "
+            "the blueprint, and change or remove Layers in .github/mkdocs_blueprint.py."
+        )
+    elif not isinstance(jobs, Layers):
+        social.card_layer_pool_jobs = Layers(jobs)
+
+
+def on_startup(command: str, dirty: bool) -> None:
+    """Print where every thread stands when a build takes nearly as long as its step
+    may, for the next hang: a log that ends with the last download says nothing about
+    what came after it. A preview runs for as long as its author writes."""
+    if command != "serve":
+        faulthandler.dump_traceback_later(STACKS_AFTER)
+
+
 def on_config(config: Any) -> None:
     """Let the plugins of Material try a download again before they give up, give
     every page the stylesheet and the script of the blueprint, the links to the
@@ -213,7 +272,8 @@ def on_config(config: Any) -> None:
     The plugins try every file once: the privacy plugin warns when a font of Google
     Fonts doesn't come within 5 seconds, which fails a strict build, and the social
     plugin fails on any error of the network and waits without end for a server that
-    stopped answering. The stylesheet and the script come
+    stopped answering, or for a layer of its card that another card just starts, as
+    Layers says. The stylesheet and the script come
     before those of the project, whose extra_css replaces the list of the blueprint
     and whose rules win over them. The menu of mkdocs.yml belongs to the project, so
     the page comes after the security design there, unless the menu names it.
@@ -225,6 +285,9 @@ def on_config(config: Any) -> None:
         module: Any = sys.modules[type(plugin).__module__]
         if not isinstance(module.requests, Retrying):
             module.requests = Retrying(module.requests)
+    social = config.plugins.get("material/social")
+    if social is not None:
+        watch_the_layers(social)
     for path, listed in (
         (STYLESHEET, config.extra_css),
         (SCRIPT, config.extra_javascript),

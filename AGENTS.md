@@ -72,6 +72,7 @@ The files of this project, as `_skip_if_exists` in the `copier.yml` of the bluep
 - **Issue and discussion forms:** `.github/ISSUE_TEMPLATE/bug_report.yml`, `.github/ISSUE_TEMPLATE/feature_request.yml`, `.github/ISSUE_TEMPLATE/config.yml`, `.github/DISCUSSION_TEMPLATE/q-a.yml`, `.github/DISCUSSION_TEMPLATE/ideas.yml`
 - **Settings, labels and bots:** `.github/repository.project.toml`, `.github/checks.project.toml`, `.github/labels.toml`, `.github/labeler.yml`, `.github/renovate.json5`, `.github/renovate-accepted.json5`, `/osv-scanner.toml`, `.github/findings.toml`, `.github/dependency-review.yml`, `.github/workflows/action-test.yml`, `.github/issue-assistant/project.md`, `.github/agents.project.md`
 - **Lint, links and the pictures:** `/.markdownlint.jsonc`, `.github/cspell-words.txt`, `/.lycheeignore`, `.github/social-preview.html`, `/scripts/screenshots.sh`, `.github/screenshots-paths.txt`
+- **The assets that the release builds of its own:** `/scripts/release-assets.sh`
 
 ## Project notes
 

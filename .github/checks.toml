@@ -416,7 +416,11 @@ it fails again. In a pull request that changes no workflow, no
 action and not `.github/zizmor.yml`, an alert comes from an advisory of an action
 published since the last analysis of `main`: a maintainer starts the workflow
 *Workflow security* on `main`, which gives `main` the alert, and runs the checks
-again. zizmor runs on your machine as well:"""
+again. The fix of such an alert, `known-vulnerable-actions`, is the pin: move the commit
+and the version in its comment to the release that the advisory names as fixed. Renovate
+moves it in its next weekly window once that release is a week old, and a workflow that
+belongs to the blueprint moves with the update of the blueprint. zizmor runs on your
+machine as well:"""
 commands = ["pipx run zizmor .github/workflows"]
 docs = "https://docs.zizmor.sh/audits/"
 autofix = """A weakness of a workflow needs a person, and the bot never writes a
@@ -631,6 +635,25 @@ fix = """Fix the configuration of mutmut, or set the repository variable
 docs = "CONTRIBUTING.md#tests"
 autofix = """A configuration of mutmut or a variable of the repository is the decision
 of a person."""
+
+[check."mutation stats"]
+title = "The stats of the mutation tests"
+problem = """mutmut ran the whole suite once in its copy of the repository, `mutants/`,
+to record which tests reach each function, and saved no stats: a test failed there
+without any mutant, which the summary of the check and its annotation name, or the
+stats ran out of their time. No part of the run started."""
+why = """Every part loads these stats and runs only its mutants; without them no mutant
+runs, and the weekly score, which shows the lines that the tests run but don't
+check, is missing."""
+fix = """A test that reads the code as text, asks Git, starts the tool or runs a copy of
+it in a folder of its own can't pass in mutmut's copy: mark it with
+`@pytest.mark.mutation_unsafe`. A test that runs under a cache of `functools` clears
+it with `cache_clear()`, since the stats run every test in one process. After
+`mutmut run` on your machine, `python -m pytest -m "not mutation_unsafe"` in
+`mutants/` lists every test that fails there."""
+docs = "CONTRIBUTING.md#tests"
+autofix = """Whether a test reads the code as text, and so belongs out of the mutation
+tests, is the decision of a person."""
 
 [check."mutation */*"]
 title = "A part of the mutation tests"
