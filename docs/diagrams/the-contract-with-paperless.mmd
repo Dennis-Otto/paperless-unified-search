@@ -5,7 +5,7 @@ config:
 ---
 flowchart TB
     accTitle: The contract with a real Paperless-ngx
-    accDescr: Every Monday, when started by hand, and in a pull request that changes the app or the mock, the job paperless runs paperless-contract.sh for Paperless-ngx 2 and 3. It starts that Paperless with Redis, Nextcloud with the app and the mock, and assert_contract.py gives Paperless three synthetic text files. Then it checks, with the version of the API and the fields that the app asks for, the fields, dates, excerpts, pages and errors, the newest documents, the names of correspondents, types and tags and what /api/ui_settings/ says an account may do directly, and the test of the connection, the warnings about the token and the results with their names through Nextcloud. The summary of the job shows the versions and every check. A broken contract fails the required check, so the pull request can't merge; a failed weekly run opens or updates the issue Paperless-ngx breaks the app, and a run that passes closes it.
+    accDescr: Every Monday, when started by hand, and in a pull request that changes the app or the mock, the job paperless runs paperless-contract.sh for Paperless-ngx 2 and 3. It starts that Paperless with Redis, Nextcloud with the app and the mock, and assert_contract.py gives Paperless three synthetic text files. Then it checks, with the version of the API and the fields that the app asks for, the fields, dates, excerpts, pages and errors, the newest documents, the names of correspondents, types and tags and what /api/ui_settings/ says an account may do directly, and the test of the connection, the warnings about the token and the results with their names through Nextcloud. Then it sends the requests of the app to this Paperless and to the mock, whose answers have to have the same form. The summary of the job shows the versions, every check and every difference of the mock. A broken contract fails the required check, so the pull request can't merge; a failed weekly run opens or updates the issue Paperless-ngx breaks the app, and a run that passes closes it.
 
     trigger["Weekly run, a start by hand,<br>or a pull request of the app<br>or the mock"]
     script["paperless-contract.sh<br>for Paperless-ngx 2 and 3"]
@@ -13,11 +13,12 @@ flowchart TB
     seed["assert_contract.py gives Paperless<br>three synthetic text files"]
     direct["`Directly: fields, dates, excerpts,<br>pages, errors, the newest documents,<br>the names and what an account<br>may do, with *version=9*`"]
     through["Through Nextcloud: the test<br>of the connection, the warnings<br>about the token and the results<br>with their names"]
+    mock["The same requests of the app<br>to Paperless and to the mock:<br>their answers have the same form"]
     holds{"The contract<br>holds?"}
-    passed["The summary shows<br>the versions and every check;<br>the issue closes"]
-    failed["The summary names the broken promise;<br>the pull request can't merge;<br>the weekly run opens or updates<br>Paperless-ngx breaks the app"]
+    passed["The summary shows the versions,<br>every check and the comparison;<br>the issue closes"]
+    failed["The summary names the broken promise<br>or each difference of the mock;<br>the pull request can't merge;<br>the weekly run opens or updates<br>Paperless-ngx breaks the app"]
 
-    trigger --> script --> start --> seed --> direct --> through --> holds
+    trigger --> script --> start --> seed --> direct --> through --> mock --> holds
     holds -- "yes" --> passed
     holds -- "no" --> failed
 
@@ -26,6 +27,6 @@ flowchart TB
     classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
     classDef fail fill:#dc26262e,stroke:#dc2626,stroke-width:2px
     class trigger person
-    class script,start,seed,direct,through bot
+    class script,start,seed,direct,through,mock bot
     class passed done
     class failed fail

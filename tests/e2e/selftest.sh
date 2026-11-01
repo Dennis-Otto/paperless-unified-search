@@ -34,6 +34,11 @@
 #   holds each request right after its answer, and run.sh reads that journal; and it
 #   answers /api/ui_settings/ for the token of a view-only account and of a superuser
 #   as Paperless does.
+# - parity.py, which compares the mock with a real Paperless in the contract tests, when
+#   Python is installed, with the mock on both sides, one of them changed: a field of
+#   another type, a renamed one, other links, markup, status, headers and words each fail,
+#   by the name of the point, and what a document merely lacks doesn't. The known
+#   differences of Paperless-ngx 2 pass, and one that no longer holds fails.
 # - assert_log.py, with records of the log of Nextcloud of its own, when Python is
 #   installed: it fails on an error of the app, also one that Nextcloud logs for core
 #   with a trace through lib/, on a deprecation, notice or warning of PHP in a file of
@@ -166,6 +171,7 @@ expect "a contract run for the commands of occ" true "$(pull_request 'mkdir -p l
 expect "a contract run for another file of the app" true "$(pull_request 'echo second >lib/Search.php')"
 expect "a contract run for the metadata of the app" true "$(pull_request 'mkdir -p appinfo && echo new >appinfo/info.xml')"
 expect "a contract run for the mock of Paperless" true "$(pull_request 'mkdir -p tests/e2e && echo new >tests/e2e/mock_server.py')"
+expect "a contract run for the comparison with the mock" true "$(pull_request 'mkdir -p tests/e2e && echo new >tests/e2e/parity.py')"
 expect "a contract run for a document of the contract" true "$(pull_request 'mkdir -p tests/e2e/contract && echo new >tests/e2e/contract/letter.txt')"
 expect "a contract run for the workflow of the tests" true "$(pull_request 'echo second >.github/workflows/e2e.yml')"
 expect "a contract run that moves a file out of the app" true "$(pull_request 'git mv lib/Search.php docs/Search.php')"
@@ -688,6 +694,222 @@ else
 	echo "Python 3.9 or newer is not installed here; the CI tests the journal of the mock."
 fi
 
+## The comparison of the mock with Paperless
+
+# The contract tests send the requests of the app to a real Paperless and to the mock, and
+# parity.py fails on each difference in the form of their answers. Here the mock plays both,
+# and one of them is changed in the way that Paperless or the mock could drift: each line
+# names the points that the comparison finds. Prints a line "name: points" per change.
+if [[ -n "${python}" ]]; then
+	"${python}" -B - "${SCRIPT_DIR}" "${WORK}/requests.log" 2>&1 <<'PYTHON' | tr -d '\r' >"${WORK}/parity" || true
+import dataclasses
+import json
+import sys
+import threading
+from http.server import ThreadingHTTPServer
+
+sys.path.insert(0, sys.argv[1])
+import mock_server  # noqa: E402
+import parity  # noqa: E402
+
+mock_server.REQUESTS = sys.argv[2]
+ACCEPT = "application/json; version=9"
+FIELDS = "id,title,created,correspondent,document_type,tags,__search_hit__"
+RECENT_FIELDS = "id,title,added,correspondent,document_type,tags"
+
+
+class Quiet(mock_server.Handler):
+    def log_message(self, message, *args):
+        pass
+
+
+class Changed(Quiet):
+    """The mock with the changes of the current line of this test."""
+
+    answer = staticmethod(lambda status, payload: (status, payload))
+    text = staticmethod(lambda body: body)
+    headers = {}
+
+    def _json(self, status, payload):
+        super()._json(*Changed.answer(status, payload))
+
+    def _send(self, status, content_type, body):
+        super()._send(status, content_type, Changed.text(body) if status == 403 else body)
+
+    def send_header(self, name, value):
+        value = Changed.headers.get(name, value)
+        if value is not None:
+            super().send_header(name, value)
+
+
+def serve(handler):
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return dataclasses.replace(parity.MOCK, origin=f"http://127.0.0.1:{server.server_port}")
+
+
+MOCK, CHANGED = serve(Quiet), serve(Changed)
+
+
+def compare(line="3"):
+    return parity.compare(line, CHANGED, MOCK, ACCEPT, FIELDS, RECENT_FIELDS)
+
+
+def results(change):
+    """An answer with this change of each result."""
+
+    def answer(status, payload):
+        for result in payload.get("results", []):
+            change(result)
+        return status, payload
+
+    return answer
+
+
+def excerpts(change):
+    """An answer with this change of the excerpt of each result."""
+
+    def on_result(result):
+        if "__search_hit__" in result:
+            result["__search_hit__"]["highlights"] = change(result["__search_hit__"]["highlights"])
+
+    return results(on_result)
+
+
+def renamed(result):
+    if "title" in result:
+        result["subject"] = result.pop("title")
+
+
+def moved(status, payload):
+    if payload.get("next"):
+        payload["next"] = "/api/documents/?page=2"
+    return status, payload
+
+
+def uncorrected(status, payload):
+    payload.pop("corrected_query", None)
+    return status, payload
+
+
+def emptied(status, payload):
+    if "results" in payload:
+        payload["results"] = []
+    return status, payload
+
+
+def refused(status, payload):
+    return (403 if status == 401 else status), payload
+
+
+def report(name, *, answer=None, text=None, headers=None):
+    Changed.answer = staticmethod(answer or (lambda status, payload: (status, payload)))
+    Changed.text = staticmethod(text or (lambda body: body))
+    Changed.headers = headers or {}
+    points = sorted({found.point for found in compare().differences})
+    print(f"{name}: {','.join(points) or 'none'}")
+
+
+report("same")
+report("type", answer=results(lambda result: result.update(id=str(result["id"]))))
+report("paged", answer=results(lambda result: result.get("title", "").startswith("Page test") and result.update(id=str(result["id"]))))
+report("date", answer=results(lambda result: "created" in result and result.update(created="2026-08-12T00:00:00+02:00")))
+report("rename", answer=results(renamed))
+report("removed", answer=uncorrected)
+report("link", answer=moved)
+report("markup", answer=excerpts(lambda text: text.replace("<b>", "<mark>").replace("</b>", "</mark>")))
+report("entity", answer=excerpts(lambda text: text.replace("&#x27;", "&apos;")))
+report("status", answer=refused)
+report("words", text=lambda body: b"Forbidden")
+report("media", headers={"Content-Type": "application/problem+json"})
+report("no version", headers={"X-Version": None})
+report("new line", headers={"X-Version": "4.0.0"})
+report("new release", headers={"X-Version": "3.4.2"})
+report("new api", headers={"X-Api-Version": "11"})
+# What a document lacks, in the one server or the other, is no difference.
+report("no tags", answer=results(lambda result: "tags" in result and result.update(tags=[])))
+report("no correspondent", answer=results(lambda result: "correspondent" in result and result.update(correspondent=None)))
+report("nothing found", answer=emptied)
+
+
+# Paperless-ngx 2, as it differs from the mock.
+def line_two(status, payload):
+    payload.pop("display_count", None)
+    return excerpts(lambda text: text.replace("<b>", '<span class="match term0">').replace("</b>", "</span>").replace("&quot;", '"').replace("&#x27;", "'"))(status, payload)
+
+
+Changed.answer = staticmethod(line_two)
+Changed.text = staticmethod(lambda body: body)
+Changed.headers = {"X-Version": "2.20.15", "X-Api-Version": "9"}
+comparison = compare("2")
+print(f"line 2 known: {len(comparison.known)} of {len(parity.KNOWN['2'])}")
+print(f"line 2 differences: {len(comparison.differences)}")
+print(f"line 2 requests: {comparison.asked}")
+
+# A list of known differences can't go stale: the same comparison with the mock on both sides.
+Changed.answer = staticmethod(lambda status, payload: (status, payload))
+Changed.headers = {}
+comparison = compare("2")
+print("stale: " + ",".join(sorted(found.point for found in comparison.differences)))
+
+# The table of the differences in the summary of the job.
+Changed.answer = staticmethod(refused)
+print("first row: " + compare().table().splitlines()[4])
+Changed.answer = staticmethod(lambda status, payload: (status, payload))
+print(f"no table: [{compare().table()}]")
+
+# null stands for a value that a document lacks, but only where it may lack one.
+print(f"null beside a value: {parity.agree({'a whole number'}, {parity.NULL}, True)}")
+print(f"null beside no field: {parity.agree({parity.ABSENT}, {parity.NULL}, True)}")
+print(f"another type beside null: {parity.agree({'a text', parity.NULL}, {'a whole number'}, True)}")
+print(f"null in a field that has to have a value: {parity.agree({'a whole number'}, {parity.NULL}, False)}")
+
+# What the mock answers now, as Paperless does: a version of the API that it doesn't know,
+# without naming its own, whatever the token, and an excerpt only in a search.
+status, headers, _ = parity.send(parity.Ask("", "/api/documents/", {"fields": "id"}, token="wrong"), MOCK, parity.NEWER_ACCEPT)
+print(f"unknown version: {status} {headers.get('X-Version')}")
+status, _, body = parity.send(parity.Ask("", "/api/documents/", {"fields": "id,__search_hit__", "page_size": 1}), MOCK, ACCEPT)
+print(f"excerpt of a list: {'__search_hit__' in json.loads(body)['results'][0]}")
+PYTHON
+	parity_says() {
+		sed -n "s/^$1: //p" "${WORK}/parity"
+	}
+	expect "the mock and itself" none "$(parity_says same)"
+	expect "a field of another type" "results[].id" "$(parity_says type)"
+	expect "a field of another type in the documents of the paging checks" "results[].id" "$(parity_says paged)"
+	expect "a date that became a moment" "results[].created" "$(parity_says date)"
+	expect "a renamed field" "results[].subject,results[].title" "$(parity_says rename)"
+	expect "a field that a search no longer sends" corrected_query "$(parity_says removed)"
+	expect "another form of the link to the next page" next "$(parity_says link)"
+	expect "other markup of an excerpt" "results[].__search_hit__.highlights, its markup" "$(parity_says markup)"
+	expect "another entity in an excerpt" "results[].__search_hit__.highlights, its entities" "$(parity_says entity)"
+	expect "another status for a wrong token" status "$(parity_says status)"
+	expect "other words for a refused document" body "$(parity_says words)"
+	expect "another media type" "media type" "$(parity_says media)"
+	expect "an answer that names no version" "header X-Version" "$(parity_says 'no version')"
+	expect "a new line of Paperless" "header X-Version" "$(parity_says 'new line')"
+	expect "a new release of the same line, which is no difference" none "$(parity_says 'new release')"
+	expect "a new version of the API" "header X-Api-Version" "$(parity_says 'new api')"
+	expect "documents without tags, which is no difference" none "$(parity_says 'no tags')"
+	expect "documents without a correspondent, which is no difference" none "$(parity_says 'no correspondent')"
+	expect "no results, which say nothing about their form" none "$(parity_says 'nothing found')"
+	expect "every known difference of Paperless-ngx 2 seen" "5 of 5" "$(parity_says 'line 2 known')"
+	expect "no other difference of Paperless-ngx 2" 0 "$(parity_says 'line 2 differences')"
+	expect "the requests that the app sends to Paperless-ngx 2" 23 "$(parity_says 'line 2 requests')"
+	expect "known differences that no longer hold" "display_count,header X-Api-Version,header X-Version,results[].__search_hit__.highlights, its entities,results[].__search_hit__.highlights, its markup" "$(parity_says stale)"
+	# shellcheck disable=SC2016 # The backticks are Markdown of the table, not a command.
+	expect "the row of a difference in the summary" '| `status` | `403` | `401` | A wrong token, No token |' "$(parity_says 'first row')"
+	expect "no table without a difference" "[]" "$(parity_says 'no table')"
+	expect "null beside a value" True "$(parity_says 'null beside a value')"
+	expect "null beside no field" False "$(parity_says 'null beside no field')"
+	expect "another type beside null" False "$(parity_says 'another type beside null')"
+	expect "null in a field that has to have a value" False "$(parity_says 'null in a field that has to have a value')"
+	expect "the mock on a version of the API that it doesn't know" "406 None" "$(parity_says 'unknown version')"
+	expect "the mock on the excerpt of a list without a search" False "$(parity_says 'excerpt of a list')"
+else
+	echo "Python 3.9 or newer is not installed here; the CI tests the comparison of the mock with Paperless."
+fi
+
 ## The check of the log of Nextcloud
 
 # run.sh sets log.condition of Nextcloud to {"apps":["PHP","paperless_unified_search"]},
@@ -1080,4 +1302,4 @@ if ((failures > 0)); then
 	echo "${failures} of ${checks} checks of the scripts of the end-to-end tests failed." >&2
 	exit 1
 fi
-echo "The ${checks} checks of scope.sh, run-all.sh, package.sh, upgrade.sh up to Docker, the issue of the weekly run, the journal of the mock, the check of the log of Nextcloud, what the upgrade compares, the pipes of the scripts, the animation of the demo, the videos of the animations and the steps of the demo pass."
+echo "The ${checks} checks of scope.sh, run-all.sh, package.sh, upgrade.sh up to Docker, the issue of the weekly run, the journal of the mock, the comparison of the mock with Paperless, the check of the log of Nextcloud, what the upgrade compares, the pipes of the scripts, the animation of the demo, the videos of the animations and the steps of the demo pass."

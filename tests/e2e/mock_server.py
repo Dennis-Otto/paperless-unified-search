@@ -3,6 +3,14 @@
 # SPDX-FileCopyrightText: 2026 Dennis Otto
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+"""The mock of Paperless-ngx for the end-to-end tests, which says what we think Paperless says.
+
+assert_contract.py sends the requests of the app to it and to a real Paperless-ngx, and
+fails when their answers differ in form (parity.py). So where a comment says "like
+Paperless", the contract tests vouch for it; where it says "unlike Paperless", the mock is
+stricter on purpose, and parity.py leaves that request out.
+"""
+
 import json
 import operator
 import re
@@ -53,7 +61,13 @@ DEFAULT_PAGE_SIZE = 25
 # Like Paperless, the mock names its version in the headers of every answer to a valid
 # token, as Paperless-ngx 3.3.0 does, so that the app may send a query that the advanced
 # syntax refuses to the simple mode of the search, the parameter text.
-VERSION_HEADERS = {"X-Version": "3.3.0", "X-Api-Version": "10"}
+OLDEST_API_VERSION = 9
+NEWEST_API_VERSION = 10
+VERSION_HEADERS = {"X-Version": "3.3.0", "X-Api-Version": str(NEWEST_API_VERSION)}
+
+# Like Paperless-ngx 3, the mock refuses another version of its API with HTTP 406, before it
+# looks at the token and therefore without naming its own.
+ACCEPTED_VERSION = re.compile(r"\bversion=([^;,\s]*)")
 
 # A range of dates whose end is still being typed, such as created:[2026 to, which
 # Paperless 3 refuses in its advanced syntax with HTTP 400 and the errors of the query.
@@ -79,11 +93,13 @@ NEW_DOCUMENT_PATH = "/e2e/documents"
 # by, the mock refuses one with HTTP 400, so that the end-to-end tests notice a wrong one.
 ORDERING_FIELDS = {"added", "created", "id", "title"}
 
-# Like Paperless, the mock sends only the fields of the documents that a request names,
-# and the excerpt of a search with them. Unlike Paperless, it refuses a request that names
-# none, for which Paperless sends every field, the whole OCR text of every document among
-# them, so that the end-to-end tests notice when the app stops naming them.
-ALWAYS_SENT = {"__search_hit__"}
+# Like Paperless, the mock sends only the fields of the documents that a request names, and
+# of a search the excerpt with them, named or not, but of a list without a search never. It
+# sends a field that a document has no value for, as null or an empty list. Unlike
+# Paperless, it refuses a request that names none, for which Paperless sends every field,
+# the whole OCR text of every document among them, so that the end-to-end tests notice when
+# the app stops naming them.
+NO_VALUE = {"correspondent": None, "document_type": None, "tags": []}
 
 # The documents of the demo that scripts/screenshots.sh searches for with the term
 # "invoice", for the screenshots and the animation of the README. The OCR text of the
@@ -158,6 +174,7 @@ PAGE_TEST_DOCUMENTS = [
         "id": document_id,
         "title": f"Page test {document_id}",
         "created": "2026-09-01",
+        "added": "2026-09-02T10:00:00.000000+02:00",
         "__search_hit__": {"highlights": f"Synthetic <b>pagetest</b> document {document_id}"},
     }
     for document_id in range(601, 641)
@@ -192,6 +209,7 @@ MOBILE_DOCUMENTS = [
         "correspondent": 9,
         "content": "Synthetic OCR text of a document no file stands for. " * 1000,
         "notes": [],
+        "__search_hit__": {"highlights": "Synthetic OCR <b>mobiletest</b> text of a document no file stands for"},
     },
 ]
 
@@ -284,12 +302,29 @@ def similar_to(identifier):
     doesn't have."""
     for family in SIMILAR_FAMILIES:
         if any(str(document["id"]) == identifier for document in family):
-            others = [document for document in family if str(document["id"]) != identifier]
             return [
-                {**document, "__search_hit__": {"score": 0.0, "highlights": "", "note_highlights": None, "rank": rank}}
-                for rank, document in enumerate(others, start=1)
+                {**document, "__search_hit__": {"score": 0.0, "highlights": ""}}
+                for document in family
+                if str(document["id"]) != identifier
             ]
     return None
+
+
+def unknown_version(accept):
+    """Whether the header Accept asks for a version of the API that the mock doesn't know."""
+    asked = ACCEPTED_VERSION.search(accept)
+    return asked is not None and not (asked[1].isdigit() and OLDEST_API_VERSION <= int(asked[1]) <= NEWEST_API_VERSION)
+
+
+def sent(document, fields, rank):
+    """A document as an answer sends it: the fields that the request names and, as the
+    place in the ranking of a search if it is one, the excerpt, with all that Paperless
+    sends beside it."""
+    answer = {name: document.get(name, NO_VALUE.get(name)) for name in fields if name in {*document, *NO_VALUE}}
+    answer.pop("__search_hit__", None)
+    if rank is not None:
+        answer["__search_hit__"] = {"score": 1.0, "note_highlights": None, **document.get("__search_hit__", {"highlights": ""}), "rank": rank}
+    return answer
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -321,6 +356,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path not in (API_PATH, UI_SETTINGS_PATH) and parsed.path not in LISTS:
             self._json(404, {"detail": "Not found"})
+            return
+
+        if unknown_version(self.headers.get("Accept", "")):
+            self._json(406, {"detail": 'Invalid version in "Accept" header.'})
             return
 
         authorization = self.headers.get("Authorization", "")
@@ -367,6 +406,7 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True
             return
 
+        searching = similar is not None or "query" in parameters or "text" in parameters
         results = documents_of(query)
         if "text" in parameters:
             # The simple mode takes any input and searches its words; the mock ranks the
@@ -424,16 +464,19 @@ class Handler(BaseHTTPRequestHandler):
                 # which occ paperless_unified_search:check compares with the files.
                 "all": [document["id"] for document in results],
                 "results": [
-                    {key: value for key, value in document.items() if key in fields | ALWAYS_SENT}
-                    for document in results[start:end]
+                    sent(document, fields, rank if searching else None)
+                    for rank, document in enumerate(results[start:end], start=start + 1)
                 ],
+                # Like Paperless-ngx, a word that a search corrected, which the app doesn't read.
+                **({"corrected_query": None} if searching else {}),
             },
         )
 
     def _list(self, names, parameters, *, tags=False):
         """A page of a list of Paperless, such as its correspondents, with every field of an
         object as Paperless sends them, filtered by the IDs of id__in; a tag also with its
-        colors, whether it is the tag of the inbox, and its place in the tree of tags."""
+        colors, whether it is the tag of the inbox, and its place in the tree of tags, and
+        the list of tags with how many it holds there."""
         wanted = {int(value) for value in parameters.get("id__in", [""])[0].split(",") if value.isdigit()}
         results = [
             {
@@ -453,7 +496,17 @@ class Handler(BaseHTTPRequestHandler):
             for object_id, name in sorted(names.items())
             if object_id in wanted
         ]
-        self._json(200, {"count": len(results), "next": None, "previous": None, "results": results})
+        self._json(
+            200,
+            {
+                "count": len(results),
+                "next": None,
+                "previous": None,
+                "all": [result["id"] for result in results],
+                "results": results,
+                **({"display_count": len(results)} if tags else {}),
+            },
+        )
 
     def _link(self, query, page):
         """The link of another page of this search, as Paperless writes it: the absolute URL

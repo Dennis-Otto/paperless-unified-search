@@ -1,6 +1,6 @@
 Contract invoice from Example Utilities
 
-Invoice CT-2026-0314 for the electricity of R&D <Lab> and "Sons" in March 2026.
+Invoice CT-2026-0314 for the electricity of O'Brien R&D <Lab> and "Sons" in March 2026.
 Total due: 84.30 EUR by 2026-04-01.
 
 A synthetic document of the contract tests of Paperless Unified Search.
