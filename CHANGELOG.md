@@ -4,6 +4,21 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [1.3.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.2.0...v1.3.0) (2026-11-01)
+
+
+### Features
+
+* notify users when Paperless adds a document that matches one of their saved searches ([#282](https://github.com/Dennis-Otto/paperless-unified-search/issues/282)) ([e0a347d](https://github.com/Dennis-Otto/paperless-unified-search/commit/e0a347dfb76df8ffae12ddc7fd324722c125f4cf))
+* results show the tags of a document ([#271](https://github.com/Dennis-Otto/paperless-unified-search/issues/271)) ([3dcf59c](https://github.com/Dennis-Otto/paperless-unified-search/commit/3dcf59ca62741946697cd47ebd48b4e52fb4537b))
+* **search:** find documents similar to one with like:[P412], and document more fields of Paperless's search ([#278](https://github.com/Dennis-Otto/paperless-unified-search/issues/278)) ([a90612e](https://github.com/Dennis-Otto/paperless-unified-search/commit/a90612e6913e9d9e445d2b6b10a76e4896b2eb24))
+
+
+### Bug fixes
+
+* make the demo work again ([#268](https://github.com/Dennis-Otto/paperless-unified-search/issues/268)) ([6596fa8](https://github.com/Dennis-Otto/paperless-unified-search/commit/6596fa87aff81afe5b6eceb094a829f3d0335c81))
+* **settings:** warn when the search account can't see correspondents or types of another owner ([#273](https://github.com/Dennis-Otto/paperless-unified-search/issues/273)) ([9325efa](https://github.com/Dennis-Otto/paperless-unified-search/commit/9325efa371b9ffd59f190e538894977b6c900237))
+
 ## [1.2.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.1.1...v1.2.0) (2026-10-25)
 
 ### Features
