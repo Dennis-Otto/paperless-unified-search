@@ -186,6 +186,18 @@ MOBILE_DOCUMENTS = [
     },
 ]
 
+# Like Paperless, the mock finds the documents similar to one for the parameter
+# more_like_id, instead of a term: here the others of its family, without the document
+# itself, and as Paperless-ngx 3 sends them without an excerpt. Like Paperless, it refuses
+# an ID with HTTP 403 and only these words, not in JSON: one that it doesn't have, and one
+# of a document that the account of the token may not view, here HIDDEN_DOCUMENT_ID. And
+# like Paperless-ngx 3, it refuses more_like_id beside a term.
+SIMILAR_FAMILIES = [MOBILE_DOCUMENTS, DEMO_DOCUMENTS + DEMO_ARCHIVE_ONLY, PAGE_TEST_DOCUMENTS]
+HIDDEN_DOCUMENT_ID = "777"
+UNKNOWN_DOCUMENT = b"Invalid more_like_id"
+HIDDEN_DOCUMENT = b"Insufficient permissions."
+ONE_SEARCH_ONLY = "Specify only one of text, title_search, query, or more_like_id."
+
 # Every document of the mock that a list without a search holds, as Paperless lists all
 # documents that the token may view: those of the term "mobiletest" and the archive of
 # the demo. The dashboard asks for the newest of them, and occ for the IDs of them all.
@@ -258,6 +270,19 @@ def documents_of(term):
     return []
 
 
+def similar_to(identifier):
+    """The documents similar to the one with this ID, or None for an ID that the mock
+    doesn't have."""
+    for family in SIMILAR_FAMILIES:
+        if any(str(document["id"]) == identifier for document in family):
+            others = [document for document in family if str(document["id"]) != identifier]
+            return [
+                {**document, "__search_hit__": {"score": 0.0, "highlights": "", "note_highlights": None, "rank": rank}}
+                for rank, document in enumerate(others, start=1)
+            ]
+    return None
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         # Only an answer to a valid token names the version, as with Paperless.
@@ -292,6 +317,14 @@ class Handler(BaseHTTPRequestHandler):
             self._json(400, {"detail": "Name the fields of the documents to send."})
             return
 
+        similar = parameters.get("more_like_id", [None])[0]
+        if similar is not None and ("query" in parameters or "text" in parameters):
+            self._json(400, {"detail": ONE_SEARCH_ONLY})
+            return
+        if similar == HIDDEN_DOCUMENT_ID:
+            self._send(403, "text/html; charset=utf-8", HIDDEN_DOCUMENT)
+            return
+
         query = parameters.get("query", [""])[0].strip().lower()
         unfinished = UNFINISHED_RANGE.search(query)
         if unfinished:
@@ -313,6 +346,11 @@ class Handler(BaseHTTPRequestHandler):
             # documents of the first word that names some.
             words = parameters["text"][0].lower().split()
             results = next((documents_of(word) for word in words if documents_of(word)), [])
+        if similar is not None:
+            results = similar_to(similar)
+            if results is None:
+                self._send(403, "text/html; charset=utf-8", UNKNOWN_DOCUMENT)
+                return
 
         for name, keeps in DATE_FILTERS.items():
             if name not in parameters:

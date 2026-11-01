@@ -48,6 +48,10 @@ Nextcloud turns it off at every reload of the page, so that a search term never 
 
 Yes: add **New in Paperless** to your dashboard. It lists the documents that Paperless added last and that you can open, newest first, each with the day that Paperless added it, its correspondent, its type and up to two of its tags, and opens a document's file in Files. [On the dashboard](usage.md#on-the-dashboard) has the details.
 
+## Can I find the documents similar to one?
+
+Yes, with the marker of its file, as Paperless does with **More like this**: search for `like:[P412]` in the global search, in the smart picker or through the API, and you see the documents most similar to that one whose files you can open, such as the other letters of a case. [Search like in Paperless](usage.md#search-like-in-paperless) has the details, and every field of Paperless's search that works in Nextcloud.
+
 ## How much load does it put on Paperless?
 
 The dashboard widget asks Paperless for its newest documents at most once a minute, for all users together, given a memory cache, as Nextcloud recommends. Beyond that, Paperless gets requests only from the searches that ask it: with **Search connected services** switched on, from the smart picker or the API, from every search of a user who chose **Always search my Paperless documents**, and from every search when **Always include Paperless in global search** is on. Nextcloud's search waits until the typing pauses before it asks. For each page of results, the app asks Paperless for 25 documents, and only for the fields that a result shows, not the OCR text of each document; to fill a page whose first documents the user can't open, it asks for up to 3 more pages, within 3 seconds. Paperless 3 gets a query in its syntax that it can't parse yet, as one still being typed, once more in its simple mode. A request that couldn't connect gets a second try; one that waited in vain for a Paperless that hangs isn't sent again.

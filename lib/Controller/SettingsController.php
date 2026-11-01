@@ -185,8 +185,10 @@ final class SettingsController extends Controller {
 		));
 		try {
 			$response = $this->paperlessApi->searchDocuments($term, 1, self::TRY_LIMIT);
-		} catch (PaperlessQueryRejected) {
-			return $this->refusal($this->l10n->t('Paperless can\'t read this term in its advanced syntax, such as a range of dates that isn\'t complete like created:[2026 to. Correct the term and try again.'), 'query_rejected');
+		} catch (PaperlessQueryRejected $rejection) {
+			return $rejection->refusesTheDocument()
+				? $this->refusal($this->l10n->t('Paperless has no document with this ID that its account may view, so it can\'t find similar ones. Correct the term and try again.'), 'unknown_document')
+				: $this->refusal($this->l10n->t('Paperless can\'t read this term in its advanced syntax, such as a range of dates that isn\'t complete like created:[2026 to. Correct the term and try again.'), 'query_rejected');
 		} catch (PaperlessRequestException $exception) {
 			return $this->refusal($this->messages->forFailure($exception), $exception->reason->value);
 		} catch (Throwable $error) {

@@ -44,15 +44,17 @@ export PAPERLESS_SECRET_KEY
 # Git Bash on Windows: keep the paths in the container of the mock as they are.
 export MSYS2_ARG_CONV_EXCL="/mock/${MSYS2_ARG_CONV_EXCL:+;${MSYS2_ARG_CONV_EXCL}}"
 
-# The version of the API, the fields of a result and those of the newest documents of
-# the dashboard that the app asks for, from its code, so that the contract checks what
-# the app sends.
+# The version of the API, the fields of a result, those of the newest documents of the
+# dashboard that the app asks for and the words that it takes for a refused document, from
+# its code, so that the contract checks what the app sends and reads.
 SERVICE="${REPOSITORY_ROOT}/lib/Service/PaperlessApiService.php"
 ACCEPT="$(sed -n "s/^[[:space:]]*private const ACCEPT = '\([^']*\)';.*/\1/p" "${SERVICE}")"
 FIELDS="$(sed -n "s/^[[:space:]]*private const SEARCH_FIELDS = '\([^']*\)';.*/\1/p" "${SERVICE}")"
 RECENT_FIELDS="$(sed -n "s/^[[:space:]]*private const RECENT_FIELDS = '\([^']*\)';.*/\1/p" "${SERVICE}")"
-if [[ -z "${ACCEPT}" || -z "${FIELDS}" || -z "${RECENT_FIELDS}" ]]; then
-	echo "${SERVICE} has no constant ACCEPT, SEARCH_FIELDS or RECENT_FIELDS, which the contract reads." >&2
+UNKNOWN_DOCUMENT="$(sed -n "s/^[[:space:]]*private const UNKNOWN_DOCUMENT = '\([^']*\)';.*/\1/p" "${SERVICE}")"
+HIDDEN_DOCUMENT="$(sed -n "s/^[[:space:]]*private const HIDDEN_DOCUMENT = '\([^']*\)';.*/\1/p" "${SERVICE}")"
+if [[ -z "${ACCEPT}" || -z "${FIELDS}" || -z "${RECENT_FIELDS}" || -z "${UNKNOWN_DOCUMENT}" || -z "${HIDDEN_DOCUMENT}" ]]; then
+	echo "${SERVICE} has no constant ACCEPT, SEARCH_FIELDS, RECENT_FIELDS, UNKNOWN_DOCUMENT or HIDDEN_DOCUMENT, which the contract reads." >&2
 	exit 1
 fi
 
@@ -100,6 +102,8 @@ phase "Check the contract with Paperless-ngx ${PAPERLESS}"
 	--env "ACCEPT=${ACCEPT}" \
 	--env "FIELDS=${FIELDS}" \
 	--env "RECENT_FIELDS=${RECENT_FIELDS}" \
+	--env "UNKNOWN_DOCUMENT=${UNKNOWN_DOCUMENT}" \
+	--env "HIDDEN_DOCUMENT=${HIDDEN_DOCUMENT}" \
 	--env "LINE=${PAPERLESS}" \
 	paperless-mock python /mock/assert_contract.py | tee -a "${SUMMARY}"
 phase "The contract holds"

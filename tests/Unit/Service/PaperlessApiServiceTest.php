@@ -870,6 +870,174 @@ final class PaperlessApiServiceTest extends TestCase {
 	}
 
 	/**
+	 * @return array<string, array{string, string}>
+	 */
+	public static function similarTerms(): array {
+		return [
+			'the ID' => ['like:412', '412'],
+			'the marker without its brackets' => ['like:P412', '412'],
+			'the marker of a file' => ['like:[P412]', '412'],
+			'capitals' => ['LIKE:[P412]', '412'],
+			'small letters' => ['like:[p412]', '412'],
+			'small letters without brackets' => ['Like:p412', '412'],
+			'spaces around it' => ["  like:[P412]\n", '412'],
+			'the smallest ID' => ['like:1', '1'],
+			'a zero inside the ID' => ['like:[P102]', '102'],
+			'an ID too large for an integer' => ['like:99999999999999999999', '99999999999999999999'],
+		];
+	}
+
+	/**
+	 * Paperless gets the ID in place of the term, which it would search for as words, with
+	 * the page, the size and the fields of any search, and with its filters.
+	 */
+	#[DataProvider('similarTerms')]
+	public function testALikeTermAsksPaperlessForSimilarDocuments(string $term, string $id): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with('https://paperless.example.com/api/documents/', self::callback(static fn (array $options): bool => $options['query'] === [
+				'more_like_id' => $id,
+				'page' => 3,
+				'page_size' => 25,
+				'fields' => self::FIELDS,
+				'created__date__gte' => '2026-08-01',
+			]))
+			->willReturn($this->response(200, '{"count":1,"next":null,"results":[{"id":7}]}', self::PAPERLESS_3));
+
+		self::assertSame(
+			['count' => 1, 'next' => null, 'results' => [['id' => 7]]],
+			$this->service($client)->searchDocuments($term, 3, 25, ['created__date__gte' => '2026-08-01']),
+		);
+		self::assertSame('3.3.0', $this->config->getValueString(AppConstants::APP_ID, 'paperless_version'));
+	}
+
+	/**
+	 * @return array<string, array{string}>
+	 */
+	public static function otherTermsWithLike(): array {
+		return [
+			'no ID' => ['like:'],
+			'a word' => ['like:abc'],
+			'a marker with a word' => ['like:[Pabc]'],
+			'a leading zero' => ['like:012'],
+			'a marker with a leading zero' => ['like:[P012]'],
+			'zero' => ['like:0'],
+			'a negative ID' => ['like:-412'],
+			'brackets without the P' => ['like:[412]'],
+			'a marker that is still being typed' => ['like:[P412'],
+			'a marker without its opening bracket' => ['like:P412]'],
+			'another letter' => ['like:Q412'],
+			'a further word' => ['like:412 invoice'],
+			'a word in front' => ['invoice like:412'],
+			'a space after the colon' => ['like: 412'],
+			'another line' => ["like:412\ninvoice"],
+			'a longer field' => ['unlike:412'],
+			'the word alone' => ['like'],
+			'digits of another script' => ['like:٤١٢'],
+		];
+	}
+
+	/**
+	 * Every other term with like: is a search as any other, whatever Paperless makes of it.
+	 */
+	#[DataProvider('otherTermsWithLike')]
+	public function testAnyOtherTermWithLikeIsAnOrdinarySearch(string $term): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with('https://paperless.example.com/api/documents/', self::callback(static fn (array $options): bool => $options['query'] === [
+				'query' => $term,
+				'page' => 1,
+				'page_size' => 25,
+				'fields' => self::FIELDS,
+			]))
+			->willReturn($this->response(200, self::NO_DOCUMENTS, self::PAPERLESS_3));
+
+		$this->service($client)->searchDocuments($term, 1, 25);
+	}
+
+	/**
+	 * @return array<string, array{string}>
+	 */
+	public static function refusalsOfADocument(): array {
+		return [
+			'a document that Paperless does not have' => ['Invalid more_like_id'],
+			'a document that the account may not view' => ['Insufficient permissions.'],
+		];
+	}
+
+	/**
+	 * Paperless refuses an ID as these words alone: that comes from what the user typed, so
+	 * it finds nothing, and the simple mode, which has no such question, isn't asked.
+	 */
+	#[DataProvider('refusalsOfADocument')]
+	public function testARefusedDocumentRejectsTheSearch(string $body): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->willReturn($this->response(403, $body, self::PAPERLESS_3));
+
+		$rejection = $this->rejectedSearch($client, 'like:[P412]');
+
+		self::assertSame(403, $rejection->status);
+		self::assertTrue($rejection->refusesTheDocument());
+		self::assertFalse($rejection->allowsSimpleSearch());
+	}
+
+	public function testAPagePastTheLastOfSimilarDocumentsIsRejected(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->willReturn($this->response(404, '{"detail":"Invalid page."}', self::PAPERLESS_3));
+
+		$rejection = $this->rejectedSearch($client, 'like:412', 3);
+
+		self::assertSame(404, $rejection->status);
+		self::assertFalse($rejection->refusesTheDocument());
+	}
+
+	public function testAQueryThatPaperlessCanNotReadIsNoRefusedDocument(): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response(400, self::INVALID_DATE, ['X-Version' => '2.20.13', 'X-Api-Version' => '9']));
+
+		self::assertFalse($this->rejectedSearch($client, 'created:[2026 to')->refusesTheDocument());
+	}
+
+	/**
+	 * @return array<string, array{string, int, ?string}>
+	 */
+	public static function failuresOfSimilarDocuments(): array {
+		return [
+			'an account that may view no documents' => ['like:412', 403, '{"detail":"You do not have permission to perform this action."}'],
+			'the page of a proxy' => ['like:412', 403, '<html><title>403 Forbidden</title></html>'],
+			'no body' => ['like:412', 403, null],
+			'the words with another status' => ['like:412', 500, 'Invalid more_like_id'],
+			'the words for a search of another term' => ['invoice', 403, 'Invalid more_like_id'],
+			'the first page not found, at a wrong URL' => ['like:412', 404, '{"detail":"Not found."}'],
+			'an index that Paperless can not read' => ['like:412', 400, 'Error listing search results, check logs for more detail.'],
+		];
+	}
+
+	/**
+	 * Whatever else Paperless or a proxy answers still fails the search, and the history
+	 * shows it, as an account that lost its permissions has to be noticed.
+	 */
+	#[DataProvider('failuresOfSimilarDocuments')]
+	public function testOtherAnswersStillFailASearchForSimilarDocuments(string $term, int $status, ?string $body): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response($status, $body, self::PAPERLESS_3));
+
+		try {
+			$this->service($client)->searchDocuments($term, 1, 25);
+			self::fail('The answer did not fail the search.');
+		} catch (PaperlessRequestException $exception) {
+			self::assertSame(PaperlessRequestException::class, $exception::class);
+			self::assertSame($status, $exception->status);
+		}
+	}
+
+	/**
 	 * @return array<string, array{int, int, ?string}>
 	 */
 	public static function failuresOfASearch(): array {

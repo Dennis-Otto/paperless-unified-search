@@ -906,6 +906,27 @@ assert_response browser "${TMP_DIR}/typing.json"
 search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/past-the-end.json" pagetest 100
 assert_response no-results "${TMP_DIR}/past-the-end.json"
 
+# A term like:[P620] asks Paperless for the documents similar to that one instead of
+# searching for words: they fill the pages of results across the pages of Paperless, with
+# the cursor and the date filter of any search, and without the document itself. A marker
+# that is wrong, or of a document that the account of the token may not view, finds
+# nothing, and the history below doesn't count it either.
+search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/similar-1.json" 'like:[P620]'
+cursor="$(assert_response page "${TMP_DIR}/similar-1.json" more 624 626 627 630 635)"
+search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/similar-2.json" 'like:[P620]' "${cursor}"
+assert_response page "${TMP_DIR}/similar-2.json" last 640 >/dev/null
+search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/similar-later.json" 'LIKE:p620' 0 'since=2026-10-01T00:00:00Z'
+assert_response no-results "${TMP_DIR}/similar-later.json"
+journal="$(mock_journal)"
+if ! grep --quiet --fixed-strings 'more_like_id=620&page=1&page_size=25&fields=' <<<"${journal}"; then
+	echo 'The search for like:[P620] reached Paperless without more_like_id=620.' >&2
+	exit 1
+fi
+for term in 'like:2147483647' 'like:[P777]' 'like:abc' 'like:[P012]'; do
+	search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/similar-none.json" "${term}"
+	assert_response no-results "${TMP_DIR}/similar-none.json"
+done
+
 # The date filter of Nextcloud's search narrows the documents by their date in Paperless,
 # which the mock filters as Paperless does (#153). The web search sends each bound of the
 # span as a moment in UTC, whose day in the timezone of the user is the day that the user
@@ -1012,4 +1033,4 @@ phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed in ${SECONDS} s: the set-up, the repair step that removes the last failure of version 0.3.0, the test, the explained search and the check of occ, the warnings of occ and of the overview about a token of a superuser, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, the dashboard widget with the newest documents that a user can open at one request to Paperless a minute, also in French, trusted mode, the choice of a user to include Paperless in every search of their own, which the administrators can disallow, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date and the name of its provider in English, German and French, its correspondent, its type and its tags, pages of results filled across pages of Paperless, the date filter in the timezone of the user, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, Try a search for administrators only with the IDs, titles, tags and verdicts alone, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."
+echo "Docker E2E passed in ${SECONDS} s: the set-up, the repair step that removes the last failure of version 0.3.0, the test, the explained search and the check of occ, the warnings of occ and of the overview about a token of a superuser, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, the dashboard widget with the newest documents that a user can open at one request to Paperless a minute, also in French, trusted mode, the choice of a user to include Paperless in every search of their own, which the administrators can disallow, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date and the name of its provider in English, German and French, its correspondent, its type and its tags, pages of results filled across pages of Paperless, documents similar to one with like:, the date filter in the timezone of the user, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, Try a search for administrators only with the IDs, titles, tags and verdicts alone, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."

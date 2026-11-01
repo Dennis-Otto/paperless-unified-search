@@ -119,7 +119,9 @@ final class Search extends Command {
 		try {
 			$response = $this->paperlessApi->searchDocuments($term, 1, (int)$limit);
 		} catch (PaperlessQueryRejected $rejection) {
-			self::error($output, sprintf('Paperless refused the query (HTTP %d): it can\'t read it in its advanced syntax, as a range of dates that isn\'t complete, such as created:[2026 to.', (int)$rejection->status));
+			self::error($output, $rejection->refusesTheDocument()
+				? 'Paperless has no document with this ID that its account may view, so it can\'t find similar ones.'
+				: sprintf('Paperless refused the query (HTTP %d): it can\'t read it in its advanced syntax, as a range of dates that isn\'t complete, such as created:[2026 to.', (int)$rejection->status));
 
 			return self::FAILURE;
 		} catch (Throwable $error) {

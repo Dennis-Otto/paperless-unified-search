@@ -107,6 +107,25 @@ final class PaperlessApiService {
 	 */
 	private const LONGEST_TERM = 4096;
 
+	/**
+	 * A term that asks for the documents similar to one, as More like this in the web
+	 * interface of Paperless does: like: with the ID of the document, alone or as the marker
+	 * of its file, such as like:412, like:P412 and like:[P412], in capitals or not. Nothing
+	 * else fits, no further word and no ID with a leading zero, which no document has: such a
+	 * term is a search like any other.
+	 */
+	private const SIMILAR_TERM = '/^like:(?|\[p([1-9]\d*)\]|p?([1-9]\d*))$/i';
+
+	/**
+	 * What Paperless answers with HTTP 403 to the question for documents similar to one that
+	 * it doesn't have, and to one that the account of the token may not view: only these
+	 * words, whereas it refuses an account that may view no documents at all with the field
+	 * detail in JSON. The app asks for no language, so they are always in English.
+	 * tests/e2e/paperless-contract.sh checks both against real Paperless servers.
+	 */
+	private const UNKNOWN_DOCUMENT = 'Invalid more_like_id';
+	private const HIDDEN_DOCUMENT = 'Insufficient permissions.';
+
 	private IClient $client;
 
 	private ?string $userAgent = null;
@@ -272,14 +291,16 @@ final class PaperlessApiService {
 	 * simple mode instead, which takes any input, with only its plain words: the simple
 	 * mode looks for every word it gets, and the field still being typed would match no
 	 * document. Paperless 2 never gets it: it ignores the parameter and would list all
-	 * documents. The filters narrow the documents in either mode; none of them replaces the
-	 * term, the page or the fields.
+	 * documents. A term such as like:[P412] asks for the documents similar to that one, as
+	 * SIMILAR_TERM says, without the document itself, which Paperless leaves out. The filters
+	 * narrow the documents in every case; none of them replaces the term, the page or the
+	 * fields.
 	 *
 	 * @param array<string, string> $filters filters of Paperless on the documents, such as
 	 *                                       CREATED_FROM => '2026-08-01'
 	 * @return array{count: int, next: ?string, results: list<array<array-key, mixed>>}
-	 * @throws PaperlessQueryRejected when Paperless refuses the term or the page, which is
-	 *                                no problem of the search
+	 * @throws PaperlessQueryRejected when Paperless refuses the term, the page or the document
+	 *                                to find similar ones of, which is no problem of the search
 	 * @throws PaperlessRequestException when Paperless answers, but not with documents
 	 * @throws Throwable the error of a request without answer, as the history shows it
 	 */
@@ -289,8 +310,9 @@ final class PaperlessApiService {
 			'page_size' => max(1, min(50, $pageSize)),
 			'fields' => self::SEARCH_FIELDS,
 		] + $filters;
+		$similarTo = self::similarTo($term);
 		try {
-			[$documents, $version] = $this->search(['query' => $term] + $parameters, $term);
+			[$documents, $version] = $this->search(($similarTo === null ? ['query' => $term] : ['more_like_id' => $similarTo]) + $parameters, $term);
 		} catch (PaperlessQueryRejected $rejection) {
 			$words = self::wordsOf($term);
 			if (!$rejection->allowsSimpleSearch() || $words === '' || mb_strlen($words) > self::LONGEST_TERM) {
@@ -332,6 +354,15 @@ final class PaperlessApiService {
 		$this->configService->rememberPaperlessVersion($version);
 
 		return self::documentsOf($data)['results'];
+	}
+
+	/**
+	 * The ID of the document that a term asks for similar ones of, as Paperless takes it:
+	 * as text, so that a number too large for an integer stays what it is, one that
+	 * Paperless doesn't know. Null for any other term.
+	 */
+	private static function similarTo(string $term): ?string {
+		return preg_match(self::SIMILAR_TERM, trim($term), $match) === 1 ? $match[1] : null;
 	}
 
 	/**
@@ -557,17 +588,25 @@ final class PaperlessApiService {
 	 * The failure of an answer whose status isn't 2xx. Of a search, Paperless refuses a
 	 * query that it can't parse with HTTP 400 and the errors of the field query, and a
 	 * page past the last one with HTTP 404, as when the hits of a search change between
-	 * two of its pages. Both come from what the user typed: the search finds nothing.
-	 * Any other answer is a failure, also HTTP 400 for another reason, such as the page of
-	 * a proxy, and HTTP 404 for the first page, which a wrong URL answers.
+	 * two of its pages, and HTTP 403 with its own words to the question for documents
+	 * similar to one that it doesn't have or that the account of the token may not view. All
+	 * of them come from what the user typed: the search finds nothing. Any other answer is a
+	 * failure, also HTTP 400 for another reason, such as the page of a proxy, HTTP 403 for an
+	 * account that may view no documents, and HTTP 404 for the first page, which a wrong URL
+	 * answers.
 	 *
 	 * @param array<string, int|string> $query
 	 */
 	private static function failureOf(IResponse $response, array $query): PaperlessRequestException {
 		$status = $response->getStatusCode();
-		$searches = isset($query['query']) || isset($query['text']);
+		$similar = isset($query['more_like_id']);
+		$searches = $similar || isset($query['query']) || isset($query['text']);
 		if ($searches && $status === 400 && self::refusesTheQuery($response)) {
 			return new PaperlessQueryRejected($status, PaperlessVersion::fromResponse($response));
+		}
+
+		if ($similar && $status === 403 && in_array($response->getBody(), [self::UNKNOWN_DOCUMENT, self::HIDDEN_DOCUMENT], true)) {
+			return new PaperlessQueryRejected($status);
 		}
 
 		$page = $query['page'] ?? 1;

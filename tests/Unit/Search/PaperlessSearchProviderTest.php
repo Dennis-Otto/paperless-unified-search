@@ -1097,6 +1097,100 @@ final class PaperlessSearchProviderTest extends TestCase {
 	}
 
 	/**
+	 * @return array<string, array{string}>
+	 */
+	public static function refusedDocuments(): array {
+		return [
+			'a document that Paperless does not have' => ['Invalid more_like_id'],
+			'a document that the account may not view' => ['Insufficient permissions.'],
+		];
+	}
+
+	/**
+	 * A marker that is wrong or of a document that the account of the token may not view
+	 * finds nothing: the history neither counts it nor takes it for a search that works again.
+	 */
+	#[DataProvider('refusedDocuments')]
+	public function testASearchForDocumentsLikeARefusedOneLeavesTheHistoryUntouched(string $body): void {
+		$this->awaitRecovery();
+		$before = $this->problems();
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->answer(403, $body));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::never())->method('warning');
+
+		$result = $this->provider($client, logger: $logger)
+			->search($this->user(), $this->query('like:[P412]'))
+			->jsonSerialize();
+
+		self::assertSame([], $result['entries']);
+		self::assertFalse($result['isPaginated']);
+		self::assertSame($before, $this->problems());
+	}
+
+	/**
+	 * A token that may view no documents at all still is a problem of the search, also for
+	 * this question, which Paperless refuses in other words then.
+	 */
+	public function testAnAccountWithoutDocumentsStillFailsASearchForSimilarOnes(): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->answer(403, '{"detail":"You do not have permission to perform this action."}'));
+
+		$result = $this->provider($client)->search($this->user(), $this->query('like:412'))->jsonSerialize();
+
+		self::assertSame([], $result['entries']);
+		self::assertCount(1, $this->problems());
+	}
+
+	/**
+	 * Documents similar to one fill a page as any search does: with hits of as many pages of
+	 * Paperless as it takes, the filter of the search on each of them, and a next page that
+	 * goes on from the cursor with the same question.
+	 */
+	public function testSimilarDocumentsFillAPageWithTheCursorAndTheDateFilter(): void {
+		$client = $this->ranking(self::documentsWithIds(range(1, 60)));
+		$provider = $this->provider($client, $this->files([3, 26, 27, 51, 52, 53]));
+		$filters = ['since' => new DateTimeImmutable('2026-08-01T04:00:00Z')];
+
+		$first = $provider->search($this->user(), $this->query('like:[P412]', null, 5, $filters))->jsonSerialize();
+
+		self::assertSame(self::titlesOf([3, 26, 27, 51, 52]), self::titles($first['entries']));
+		self::assertTrue($first['isPaginated']);
+		self::assertSame([1, 2, 3], array_column($this->requests, 'page'));
+		foreach ($this->requests as $request) {
+			self::assertSame('412', $request['more_like_id']);
+			self::assertArrayNotHasKey('query', $request);
+			self::assertSame('2026-08-01', $request['created__date__gte']);
+		}
+
+		$this->requests = [];
+		$second = $provider->search($this->user(), $this->query('like:[P412]', $first['cursor'], 5, $filters))->jsonSerialize();
+
+		self::assertSame(self::titlesOf([53]), self::titles($second['entries']));
+		self::assertFalse($second['isPaginated']);
+		self::assertSame([3], array_column($this->requests, 'page'));
+		self::assertSame('412', $this->requests[0]['more_like_id']);
+	}
+
+	/**
+	 * Paperless 3 sends documents similar to one without an excerpt, so the line of a result
+	 * ends with the name of its file.
+	 */
+	public function testASimilarDocumentWithoutAnExcerptShowsTheNameOfItsFile(): void {
+		$client = $this->paperless(['count' => 1, 'next' => null, 'results' => [[
+			'id' => 412,
+			'title' => 'Electricity invoice',
+			'__search_hit__' => ['score' => 0.0, 'highlights' => '', 'note_highlights' => null, 'rank' => 1],
+		]]]);
+
+		$result = $this->provider($client, [412 => $this->file(412, 'Electricity invoice [P412].pdf')])
+			->search($this->user(), $this->query('like:7'))
+			->jsonSerialize();
+
+		self::assertSame('Electricity invoice [P412].pdf', $result['entries'][0]->jsonSerialize()['subline']);
+	}
+
+	/**
 	 * A later page of Paperless past the last one, as when documents went away between two
 	 * pages, ends the results with those of the pages before (#128).
 	 */
