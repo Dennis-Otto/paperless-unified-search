@@ -6,7 +6,7 @@ config:
 ---
 flowchart TB
     accTitle: What a request to Paperless ends in
-    accDescr: The Paperless client asks Paperless for a page of documents. A request without an answer gets one second try only when it failed within 3.5 seconds, before it had a connection, and Nextcloud didn't refuse its address; a request that waited for a Paperless that hangs fails the search at once. An answer of 2xx brings the documents. HTTP 400 for the query, as for an advanced query that the user is still typing, or HTTP 404 for a page after the first, is no problem of the search, and the history stays untouched; on Paperless 3, the client asks once more with the same term in the simple mode of the search, which brings the documents of its words, finds nothing when refused again, and fails the search with any other answer. Every other answer fails the search, which the history notes.
+    accDescr: The Paperless client asks Paperless for a page of documents. A request without an answer gets one second try only when it failed within 3.5 seconds, before it had a connection, and Nextcloud didn't refuse its address; a request that waited for a Paperless that hangs fails the search at once. An answer of 2xx brings the documents. HTTP 400 for the query, as for an advanced query that the user is still typing, or HTTP 404 for a page after the first, is no problem of the search, and the history stays untouched; on Paperless 3, the client asks once more with the same term in the simple mode of the search, which brings the documents of its words, finds nothing when refused again, and fails the search with any other answer. For like:, an answer that refuses the document, HTTP 403 with the words of Paperless or, before Paperless-ngx 2.20.13, HTTP 400 with the words of its error, finds nothing as well, and the history stays untouched. Every other answer fails the search, which the history notes.
 
     request(["`**Ask Paperless**`"])
     answered{"Did Paperless<br>answer?"}
@@ -28,6 +28,7 @@ flowchart TB
     answered -- "yes" --> status
     status -- "2xx" --> documents
     status -- "400 for the query,<br>404 for a later page" --> paperless3
+    status -- "for like:, a refusal of<br>the document in the words<br>of Paperless" --> nothing
     status -- "any other" --> failed
     paperless3 -- "yes" --> simple
     paperless3 -- "no" --> nothing

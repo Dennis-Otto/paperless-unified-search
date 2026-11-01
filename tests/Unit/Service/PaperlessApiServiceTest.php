@@ -43,6 +43,7 @@ final class PaperlessApiServiceTest extends TestCase {
 	/** The headers of an answer of Paperless 3.3.0, as it names its version. */
 	private const PAPERLESS_3 = ['X-Version' => '3.3.0', 'X-Api-Version' => '10'];
 	private const PAPERLESS_2 = ['X-Version' => '2.20.13', 'X-Api-Version' => '9'];
+	private const SEARCH_ERROR = 'Error listing search results, check logs for more detail.';
 	/** The keys of the version of Paperless and of its API, as the app stores them. */
 	private const VERSION_KEYS = [AppConstants::APP_ID . '.paperless_version', AppConstants::APP_ID . '.paperless_api_version'];
 	/**
@@ -985,6 +986,64 @@ final class PaperlessApiServiceTest extends TestCase {
 		self::assertFalse($rejection->allowsSimpleSearch());
 	}
 
+	/**
+	 * @return array<string, array{string}>
+	 */
+	public static function versionsThatDoNotCheckTheDocument(): array {
+		return [
+			'the oldest supported' => ['2.16.0'],
+			'the last before the check' => ['2.20.12'],
+		];
+	}
+
+	/**
+	 * Before Paperless-ngx 2.20.13, Paperless answers an ID that it doesn't have with the
+	 * error of any search that failed, and only that error tells it: the search finds
+	 * nothing, and the simple mode isn't asked.
+	 */
+	#[DataProvider('versionsThatDoNotCheckTheDocument')]
+	public function testAnOlderPaperlessRefusesAnUnknownDocumentWithItsError(string $version): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->willReturn($this->response(400, self::SEARCH_ERROR, ['X-Version' => $version, 'X-Api-Version' => '9']));
+
+		$rejection = $this->rejectedSearch($client, 'like:999');
+
+		self::assertSame(400, $rejection->status);
+		self::assertTrue($rejection->refusesTheDocument());
+		self::assertFalse($rejection->allowsSimpleSearch());
+	}
+
+	/**
+	 * @return array<string, array{string, array<string, string>}>
+	 */
+	public static function errorsThatRefuseNoDocument(): array {
+		return [
+			'a Paperless that checks the document' => ['like:412', ['X-Version' => '2.20.13', 'X-Api-Version' => '9']],
+			'the last release of 2.20' => ['like:412', ['X-Version' => '2.20.15', 'X-Api-Version' => '9']],
+			'an answer without a version' => ['like:412', []],
+			'another term on an older Paperless' => ['invoice', ['X-Version' => '2.20.12', 'X-Api-Version' => '9']],
+		];
+	}
+
+	/**
+	 * @param array<string, string> $headers
+	 */
+	#[DataProvider('errorsThatRefuseNoDocument')]
+	public function testTheErrorOfAPaperlessStillFailsOtherwise(string $term, array $headers): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response(400, self::SEARCH_ERROR, $headers));
+
+		try {
+			$this->service($client)->searchDocuments($term, 1, 25);
+			self::fail('The answer did not fail the search.');
+		} catch (PaperlessRequestException $exception) {
+			self::assertSame(PaperlessRequestException::class, $exception::class);
+			self::assertSame(400, $exception->status);
+		}
+	}
+
 	public function testAPagePastTheLastOfSimilarDocumentsIsRejected(): void {
 		$client = $this->createMock(IClient::class);
 		$client->expects(self::once())
@@ -1015,7 +1074,7 @@ final class PaperlessApiServiceTest extends TestCase {
 			'the words with another status' => ['like:412', 500, 'Invalid more_like_id'],
 			'the words for a search of another term' => ['invoice', 403, 'Invalid more_like_id'],
 			'the first page not found, at a wrong URL' => ['like:412', 404, '{"detail":"Not found."}'],
-			'an index that Paperless can not read' => ['like:412', 400, 'Error listing search results, check logs for more detail.'],
+			'an index that Paperless can not read' => ['like:412', 400, self::SEARCH_ERROR],
 		];
 	}
 

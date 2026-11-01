@@ -50,7 +50,7 @@ Yes: add **New in Paperless** to your dashboard. It lists the documents that Pap
 
 ## Can I find the documents similar to one?
 
-Yes, with the marker of its file, as Paperless does with **More like this**: search for `like:[P412]` in the global search, in the smart picker or through the API, and you see the documents most similar to that one whose files you can open, such as the other letters of a case. [Search like in Paperless](usage.md#search-like-in-paperless) has the details, and every field of Paperless's search that works in Nextcloud.
+Yes, with the marker of its file, as Paperless does with **More like this**: search for `like:[P412]` in the global search, in the smart picker or through the API, and you see the documents most similar to that one whose files you can open, such as the other letters of a case. [Search like in Paperless](usage.md#search-like-in-paperless) has the details, and the fields of Paperless's search that users ask for most.
 
 ## How much load does it put on Paperless?
 

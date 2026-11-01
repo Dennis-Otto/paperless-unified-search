@@ -36,7 +36,7 @@ import secrets
 import sys
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import quote, urlencode
@@ -821,10 +821,19 @@ def check_syntax(paperless, ids, line, report):
         paperless.bulk_edit([invoice], "modify_tags", {"add_tags": [], "remove_tags": [tag]})
     report.passed("The rows of the table of the search syntax", ", ".join(code(query) for query, _ in rows))
 
-    # Near midnight in UTC, what the contract added today is from yesterday by now.
+    # Near midnight in UTC, what the contract added today is from yesterday by now, and a
+    # kept Paperless keeps the documents that it added days ago, which neither finds.
+    today = datetime.now(timezone.utc).date()
+    what = "The newest documents, with the moment that Paperless added them"
+    recent = {
+        result["title"]
+        for result in paperless.newest(what).json(what)["results"]
+        if today - datetime.fromisoformat(result["added"]).astimezone(timezone.utc).date() <= timedelta(days=1)
+    }
+    expected = {title for title, _ in SEED.values()} & recent
     added = set(titles("added:today")) | set(titles("added:yesterday"))
-    expect({title for title, _ in SEED.values()} <= added, f"added:today and added:yesterday find {sorted(added)}, not the documents of the contract.")
-    report.passed("The moment that Paperless added a document", f"{code('added:today')} and {code('added:yesterday')} find the documents that the contract added")
+    expect(expected <= added, f"added:today and added:yesterday find {sorted(added)}, not {sorted(expected)}, which the contract added then.")
+    report.passed("The moment that Paperless added a document", f"{code('added:today')} and {code('added:yesterday')} find the documents that the contract added then")
 
     # The field of the owner, which the table leaves out and its text names: only Paperless-ngx 2 has it.
     if line == "2":

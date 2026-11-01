@@ -29,6 +29,11 @@ final class PaperlessVersion {
 	 * takes any input. Paperless 2 ignores the parameter and lists all documents.
 	 */
 	private const SIMPLE_SEARCH_SINCE = 3;
+	/**
+	 * The first version that checks the document of more_like_id. Before it, Paperless
+	 * answers an unknown ID with the error of a search that failed.
+	 */
+	private const CHECKS_SIMILAR_DOCUMENT_SINCE = '2.20.13';
 
 	private function __construct(
 		public readonly string $version,
@@ -63,6 +68,14 @@ final class PaperlessVersion {
 	 */
 	public function hasSimpleSearch(): bool {
 		return (int)$this->version >= self::SIMPLE_SEARCH_SINCE;
+	}
+
+	/**
+	 * Whether this Paperless checks the document that a search for similar ones names, and
+	 * refuses it in its own words when it doesn't have it or the account may not view it.
+	 */
+	public function checksSimilarDocument(): bool {
+		return version_compare($this->version, self::CHECKS_SIMILAR_DOCUMENT_SINCE, '>=');
 	}
 
 	public function equals(?self $other): bool {

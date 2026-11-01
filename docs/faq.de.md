@@ -50,7 +50,7 @@ Nextcloud schaltet ihn bei jedem Neuladen der Seite aus, damit ein Suchbegriff n
 
 ## Kann ich die Dokumente finden, die einem ähneln?
 
-Ja, mit der Kennung seiner Datei, wie Paperless es mit **More like this** tut: Suche in der globalen Suche, im Smart Picker oder über die API nach `like:[P412]`, und du siehst die Dokumente, die diesem am ähnlichsten sind und deren Dateien du öffnen kannst, etwa die übrigen Briefe eines Vorgangs. [Suchen wie in Paperless](usage.de.md#suchen-wie-in-paperless) hat die Details und jedes Feld der Suche von Paperless, das in Nextcloud funktioniert.
+Ja, mit der Kennung seiner Datei, wie Paperless es mit **More like this** tut: Suche in der globalen Suche, im Smart Picker oder über die API nach `like:[P412]`, und du siehst die Dokumente, die diesem am ähnlichsten sind und deren Dateien du öffnen kannst, etwa die übrigen Briefe eines Vorgangs. [Suchen wie in Paperless](usage.de.md#suchen-wie-in-paperless) hat die Details und die Felder der Suche von Paperless, nach denen am häufigsten gefragt wird.
 
 ## Wie viel Last bringt es auf Paperless?
 

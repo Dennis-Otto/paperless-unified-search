@@ -125,6 +125,11 @@ final class PaperlessApiService {
 	 */
 	private const UNKNOWN_DOCUMENT = 'Invalid more_like_id';
 	private const HIDDEN_DOCUMENT = 'Insufficient permissions.';
+	/**
+	 * What Paperless-ngx before 2.20.13 answers with HTTP 400 when a search fails for any
+	 * reason, for documents similar to one that it doesn't have as well.
+	 */
+	private const SEARCH_ERROR = 'Error listing search results, check logs for more detail.';
 
 	private IClient $client;
 
@@ -588,12 +593,11 @@ final class PaperlessApiService {
 	 * The failure of an answer whose status isn't 2xx. Of a search, Paperless refuses a
 	 * query that it can't parse with HTTP 400 and the errors of the field query, and a
 	 * page past the last one with HTTP 404, as when the hits of a search change between
-	 * two of its pages, and HTTP 403 with its own words to the question for documents
-	 * similar to one that it doesn't have or that the account of the token may not view. All
-	 * of them come from what the user typed: the search finds nothing. Any other answer is a
-	 * failure, also HTTP 400 for another reason, such as the page of a proxy, HTTP 403 for an
-	 * account that may view no documents, and HTTP 404 for the first page, which a wrong URL
-	 * answers.
+	 * two of its pages, and with a refusal of the document to the question for documents
+	 * similar to one. All of them come from what the user typed: the search finds nothing.
+	 * Any other answer is a failure, also HTTP 400 for another reason, such as the page of a
+	 * proxy, HTTP 403 for an account that may view no documents, and HTTP 404 for the first
+	 * page, which a wrong URL answers.
 	 *
 	 * @param array<string, int|string> $query
 	 */
@@ -605,8 +609,8 @@ final class PaperlessApiService {
 			return new PaperlessQueryRejected($status, PaperlessVersion::fromResponse($response));
 		}
 
-		if ($similar && $status === 403 && in_array($response->getBody(), [self::UNKNOWN_DOCUMENT, self::HIDDEN_DOCUMENT], true)) {
-			return new PaperlessQueryRejected($status);
+		if ($similar && self::refusesTheDocument($response)) {
+			return new PaperlessQueryRejected($status, refusedDocument: true);
 		}
 
 		$page = $query['page'] ?? 1;
@@ -615,6 +619,25 @@ final class PaperlessApiService {
 		}
 
 		return PaperlessRequestException::forStatus($status);
+	}
+
+	/**
+	 * Whether an answer to the question for documents similar to one refuses that document:
+	 * HTTP 403 with the words of Paperless for one that it doesn't have or that the account
+	 * of the token may not view, or, from a Paperless that doesn't check the document yet,
+	 * HTTP 400 with the words of its error. That Paperless says the same when its index
+	 * fails, so such a failure counts as a refusal here; any other search still notices it.
+	 */
+	private static function refusesTheDocument(IResponse $response): bool {
+		$status = $response->getStatusCode();
+		$body = $response->getBody();
+		if ($status === 403) {
+			return in_array($body, [self::UNKNOWN_DOCUMENT, self::HIDDEN_DOCUMENT], true);
+		}
+
+		$version = PaperlessVersion::fromResponse($response);
+
+		return $status === 400 && $body === self::SEARCH_ERROR && $version !== null && !$version->checksSimilarDocument();
 	}
 
 	/**
