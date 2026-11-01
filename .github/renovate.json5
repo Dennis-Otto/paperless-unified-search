@@ -16,6 +16,18 @@
         "# renovate: datasource=(?<datasource>github-release-attachments) depName=(?<depName>\\S+)\\n[A-Z_]+_VERSION=\"(?<currentValue>[^\"]+)\"\\n[A-Z_]+_SHA256=\"(?<currentDigest>[a-f0-9]{64})\"",
       ],
     },
+    {
+      // The image of each major version of Nextcloud that a pull request and a push
+      // test, by its release and digest (tests/e2e/run-all.sh). Renovate takes a pattern
+      // with the flag g alone, so ^ holds only at the start of the file, and \n at the
+      // start of each other line; tests/e2e/selftest.sh checks that it finds each pin.
+      customType: "regex",
+      managerFilePatterns: ["/^tests/e2e/nextcloud-images\\.txt$/"],
+      matchStrings: [
+        "(?:^|\\n)(?<depName>nextcloud):(?<currentValue>\\d[^@\\s]*)@(?<currentDigest>sha256:[a-f0-9]{64})",
+      ],
+      datasourceTemplate: "docker",
+    },
   ],
   packageRules: [
     {
@@ -41,6 +53,21 @@
       matchPackageNames: ["ghcr.io/paperless-ngx/paperless-ngx"],
       matchCurrentVersion: "/^2\\./",
       allowedVersions: "/^2\\./",
+    },
+    {
+      // Every new release of a supported Nextcloud reaches one pull request of its own,
+      // apart from the other images, whose required check "nextcloud" tests it and which
+      // merges only when the tests pass. Until then, every other pull request stays
+      // with the images that pass.
+      matchFileNames: ["tests/e2e/nextcloud-images.txt"],
+      groupName: "the supported Nextcloud images",
+    },
+    {
+      // Each line stays within its major version: the upstream bot raises max-version
+      // of appinfo/info.xml, and tests/e2e/pin-images.sh adds the line of a new version.
+      matchFileNames: ["tests/e2e/nextcloud-images.txt"],
+      matchUpdateTypes: ["major"],
+      enabled: false,
     },
   ],
 }

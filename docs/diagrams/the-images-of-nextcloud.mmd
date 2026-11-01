@@ -1,0 +1,38 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+---
+flowchart TB
+    accTitle: The images of Nextcloud
+    accDescr: When Nextcloud publishes a release, the weekly run tests its floating tag, and opens the issue A supported Nextcloud release breaks the app when the tests fail, while every pull request goes on with the pins of nextcloud-images.txt. A week after the release, Renovate moves the pins in one pull request. When its required check nextcloud passes, it merges, and every pull request tests the new release; when it fails, it stays open and the pins stay. When Nextcloud publishes a new major version, the upstream bot raises max-version, the check of the pins fails, and the fix bot runs pin-images.sh on that pull request, which adds the pin of the new version.
+
+    release["Nextcloud publishes<br>a release"]
+    major["Nextcloud publishes<br>a new major version"]
+    weekly["The weekly run tests<br>the floating tags"]
+    issue["opens the issue<br>A supported Nextcloud<br>release breaks the app"]
+    renovate["A week later, Renovate moves<br>the pins in one pull request"]
+    tests{"Its required check<br>nextcloud passes?"}
+    merged["It merges, and every pull<br>request tests the new release"]
+    open["It stays open, and every<br>pull request keeps the pins"]
+    upstream["The upstream bot<br>raises max-version"]
+    check["scripts/check-project.sh<br>finds no pin for that version"]
+    fix["The fix bot runs<br>pin-images.sh on the pull request"]
+    pinned["The pull request tests<br>the pin of the new version"]
+
+    release --> weekly
+    release --> renovate
+    weekly -- "the tests fail" --> issue
+    renovate --> tests
+    tests -- "yes" --> merged
+    tests -- "no" --> open
+    major --> upstream --> check --> fix --> pinned
+
+    classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef bot fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef fail fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class release,major person
+    class weekly,renovate,upstream,fix bot
+    class merged,pinned done
+    class issue,open,check fail
