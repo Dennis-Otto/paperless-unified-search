@@ -867,6 +867,7 @@ def check_parity(paperless, ids, line, viewer, stranger, report):
         stranger=stranger,
         several=EVERY_TERM,
         marked=RARE_TERM,
+        paged=EVERY_TERM,
         document=invoice,
         hidden=invoice,
         correspondent=paperless.named("correspondents", CORRESPONDENT),

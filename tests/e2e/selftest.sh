@@ -812,6 +812,7 @@ def report(name, *, answer=None, text=None, headers=None):
 
 report("same")
 report("type", answer=results(lambda result: result.update(id=str(result["id"]))))
+report("paged", answer=results(lambda result: result.get("title", "").startswith("Page test") and result.update(id=str(result["id"]))))
 report("date", answer=results(lambda result: "created" in result and result.update(created="2026-08-12T00:00:00+02:00")))
 report("rename", answer=results(renamed))
 report("removed", answer=uncorrected)
@@ -875,6 +876,7 @@ PYTHON
 	}
 	expect "the mock and itself" none "$(parity_says same)"
 	expect "a field of another type" "results[].id" "$(parity_says type)"
+	expect "a field of another type in the documents of the paging checks" "results[].id" "$(parity_says paged)"
 	expect "a date that became a moment" "results[].created" "$(parity_says date)"
 	expect "a renamed field" "results[].subject,results[].title" "$(parity_says rename)"
 	expect "a field that a search no longer sends" corrected_query "$(parity_says removed)"
@@ -893,8 +895,9 @@ PYTHON
 	expect "no results, which say nothing about their form" none "$(parity_says 'nothing found')"
 	expect "every known difference of Paperless-ngx 2 seen" "5 of 5" "$(parity_says 'line 2 known')"
 	expect "no other difference of Paperless-ngx 2" 0 "$(parity_says 'line 2 differences')"
-	expect "the requests that the app sends to Paperless-ngx 2" 22 "$(parity_says 'line 2 requests')"
+	expect "the requests that the app sends to Paperless-ngx 2" 23 "$(parity_says 'line 2 requests')"
 	expect "known differences that no longer hold" "display_count,header X-Api-Version,header X-Version,results[].__search_hit__.highlights, its entities,results[].__search_hit__.highlights, its markup" "$(parity_says stale)"
+	# shellcheck disable=SC2016 # The backticks are Markdown of the table, not a command.
 	expect "the row of a difference in the summary" '| `status` | `403` | `401` | A wrong token, No token |' "$(parity_says 'first row')"
 	expect "no table without a difference" "[]" "$(parity_says 'no table')"
 	expect "null beside a value" True "$(parity_says 'null beside a value')"
@@ -1299,4 +1302,4 @@ if ((failures > 0)); then
 	echo "${failures} of ${checks} checks of the scripts of the end-to-end tests failed." >&2
 	exit 1
 fi
-echo "The ${checks} checks of scope.sh, run-all.sh, package.sh, upgrade.sh up to Docker, the issue of the weekly run, the journal of the mock, the check of the log of Nextcloud, what the upgrade compares, the pipes of the scripts, the animation of the demo, the videos of the animations and the steps of the demo pass."
+echo "The ${checks} checks of scope.sh, run-all.sh, package.sh, upgrade.sh up to Docker, the issue of the weekly run, the journal of the mock, the comparison of the mock with Paperless, the check of the log of Nextcloud, what the upgrade compares, the pipes of the scripts, the animation of the demo, the videos of the animations and the steps of the demo pass."

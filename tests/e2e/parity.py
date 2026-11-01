@@ -81,6 +81,9 @@ class Archive:
     # character that Paperless escapes.
     several: str
     marked: str
+    # A term that finds more than a page of one document: in the mock the documents that the
+    # paging checks of run.sh read, which no other term finds.
+    paged: str
     # A document with similar ones, and the one that stranger may not view.
     document: int
     hidden: int
@@ -98,6 +101,7 @@ MOCK = Archive(
     stranger=mock_server.TOKEN,
     several="invoice",
     marked="mobiletest",
+    paged="pagetest",
     document=412,
     hidden=int(mock_server.HIDDEN_DOCUMENT_ID),
     correspondent=3,
@@ -189,6 +193,7 @@ def requests_of_the_app(fields, recent_fields):
         Ask("A page in the middle", DOCUMENTS, {**pages, "page": 2}),
         Ask("The last page", DOCUMENTS, {**pages, "page": 3}),
         Ask("A page past the last", DOCUMENTS, {**pages, "page": 4}),
+        Ask("A search of many pages", DOCUMENTS, {"query": "{paged}", "page_size": 1, "page": 1, "fields": fields}),
         Ask("The test of the connection", DOCUMENTS, {"page": 1, "page_size": 1, "fields": "id"}),
         Ask("The newest documents", DOCUMENTS, {"ordering": "-added", "page": 1, "page_size": 25, "fields": recent_fields}),
         Ask("The names of correspondents", "/api/correspondents/", {"id__in": f"{{correspondent}},{UNKNOWN_ID}", "page_size": 2}),
@@ -273,10 +278,11 @@ def excerpts_in(value, key=""):
 
 def link(value, archive):
     """A link to another page, as it would read on either server: without the address of
-    the server, and without its term."""
+    the server, and without its terms."""
     if not isinstance(value, str) or not value.startswith(archive.origin):
         return json.dumps(value)
-    return re.sub(rf"(?<==){re.escape(quote_plus(archive.several))}(?=&|$)", "{several}", value.removeprefix(archive.origin))
+    terms = "|".join(re.escape(quote_plus(term)) for term in (archive.several, archive.paged))
+    return re.sub(rf"(?<==)({terms})(?=&|$)", "{term}", value.removeprefix(archive.origin))
 
 
 def normalise(ask, archive, status, headers, body):
