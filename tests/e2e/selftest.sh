@@ -896,7 +896,7 @@ expect "the comment with the versions that broke" \
 	"issue comment 12 --body The end-to-end tests still fail against ${broken}: ${run_url}" \
 	"$(tail -n 1 "${WORK}/gh.log")"
 expect "a failed run without versions that broke" 0 "$(report env RESULT=failure)"
-expect_in "the command without versions in the new issue" "\`bash tests/e2e/run-all.sh\` runs the same tests locally" "${issue_md}"
+expect_in "the command without versions in the new issue" "\`E2E_IMAGES=floating bash tests/e2e/run-all.sh\` runs the same tests locally" "${issue_md}"
 
 expect_issue_job e2e.yml paperless-issue "Paperless-ngx breaks the app" \
 	"The contract tests pass again against every line of Paperless-ngx" \
