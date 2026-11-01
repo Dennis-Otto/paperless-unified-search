@@ -19,8 +19,8 @@ name: Demo
 # release app, which merges itself once every check passes, and close it when main
 # looks as recorded without it.
 #
-# A failure of the weekly run opens the issue "The demo breaks", or adds the run to it,
-# and the next run that passes closes it.
+# A weekly run that fails or reaches the time limit of its job opens the issue "The demo
+# breaks", or adds the run to it, and the next run that passes closes it.
 
 on:
   pull_request:
@@ -253,7 +253,10 @@ jobs:
           echo "The pull request of the animation, #$open from $BRANCH, has the commit $head, and merges itself once every check passes." >>"$GITHUB_STEP_SUMMARY"
 
   # The only job that may write issues, and it runs no code of the repository. A run
-  # started by hand on another branch than main reports nothing.
+  # started by hand on another branch than main reports nothing. A cancelled job reports
+  # in the weekly run alone, where it reached its time limit; whoever starts a run by
+  # hand may cancel it. tests/e2e/selftest.sh runs its script with a fake gh and
+  # evaluates its condition.
   demo-issue:
     name: issue about the demo
     needs: demo
@@ -261,7 +264,8 @@ jobs:
       always() &&
       (github.event_name == 'schedule' ||
         (github.event_name == 'workflow_dispatch' && github.ref_name == github.event.repository.default_branch)) &&
-      (needs.demo.result == 'success' || needs.demo.result == 'failure')
+      (needs.demo.result == 'success' || needs.demo.result == 'failure' ||
+        (github.event_name == 'schedule' && needs.demo.result == 'cancelled'))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -289,14 +293,22 @@ jobs:
             fi
             exit 0
           fi
+          # GitHub cancels a job that reaches its time limit, such as at a download of
+          # an image that hangs; nothing else cancels the weekly run, whose group of
+          # concurrency is its own.
+          if [[ "$RESULT" == cancelled ]]; then
+            broken="runs out of time or is cancelled before it ends"
+          else
+            broken="fails"
+          fi
           if [[ -n "$number" ]]; then
-            gh issue comment "$number" --body "The demo still fails: $RUN_URL"
+            gh issue comment "$number" --body "The demo still $broken: $RUN_URL"
             exit 0
           fi
           {
-            printf 'The weekly run of the demo fails: %s\n\n' "$RUN_URL"
+            printf 'The weekly run of the demo %s: %s\n\n' "$broken" "$RUN_URL"
             cat <<'TEXT'
-          The job `demo` of `.github/workflows/demo.yml` runs `bash demo/seed.sh`, the demo that the README and the install guide offer as the first thing to try: a real Paperless-ngx and a real Nextcloud in Docker, Paperless Sync and this app, up to a search as jamie that must show three documents, and records the animation of the README from it with `bash scripts/screenshots.sh --demo`. The log of the job names the step that stopped, with the end of the logs of the containers; a new release of an image or of Nextcloud behind the same tag is the usual cause.
+          The job `demo` of `.github/workflows/demo.yml` runs `bash demo/seed.sh`, the demo that the README and the install guide offer as the first thing to try: a real Paperless-ngx and a real Nextcloud in Docker, Paperless Sync and this app, up to a search as jamie that must show three documents, and records the animation of the README from it with `bash scripts/screenshots.sh --demo`. The log of the job names the step that stopped, with the end of the logs of the containers, or ends at the step that hung when the run reached the time limit of the job; a new release of an image or of Nextcloud behind the same tag is the usual cause.
 
           `bash demo/seed.sh` runs the same demo locally with Docker, and `docker compose -f demo/compose.yaml down --volumes` removes it again.
 
