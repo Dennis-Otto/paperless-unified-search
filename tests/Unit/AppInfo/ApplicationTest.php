@@ -12,6 +12,7 @@ use OCA\PaperlessUnifiedSearch\Command\Search;
 use OCA\PaperlessUnifiedSearch\Command\Setup;
 use OCA\PaperlessUnifiedSearch\Command\Test;
 use OCA\PaperlessUnifiedSearch\Dashboard\RecentDocumentsWidget;
+use OCA\PaperlessUnifiedSearch\Notification\Notifier;
 use OCA\PaperlessUnifiedSearch\Reference\PaperlessReferenceProvider;
 use OCA\PaperlessUnifiedSearch\Search\PaperlessSearchProvider;
 use OCA\PaperlessUnifiedSearch\SetupCheck\PaperlessSetupCheck;
@@ -70,6 +71,15 @@ final class ApplicationTest extends TestCase {
 		$context->expects(self::once())
 			->method('registerReferenceProvider')
 			->with(PaperlessReferenceProvider::class);
+
+		$this->application()->register($context);
+	}
+
+	public function testRegistersTheWordsOfTheNotifications(): void {
+		$context = $this->createMock(IRegistrationContext::class);
+		$context->expects(self::once())
+			->method('registerNotifierService')
+			->with(Notifier::class);
 
 		$this->application()->register($context);
 	}

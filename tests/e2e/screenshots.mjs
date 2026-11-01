@@ -10,7 +10,8 @@
 // opened file, the search narrowed by the date filter of Nextcloud, the smart picker in
 // a note of Text with the link that it inserts, the settings and the share of the
 // archive, light and dark, Try a search of the settings, the dashboard, the personal
-// settings with the choice to always search Paperless, the search and the settings on
+// settings with the choice to always search Paperless, the notification about new
+// documents, the search and the settings on
 // a phone, the search as an animation, light and dark, which starts on its Paperless
 // results, and the set-up as an animation, light and dark, from the empty settings to
 // the first search. Last, in the real Paperless-ngx of compose.paperless.yaml, it sets
@@ -18,6 +19,9 @@
 // and dark. The images go to the folder of SCREENSHOTS_OUT, where
 // scripts/screenshot-media.sh makes the videos of the animations. A step fails when the app doesn't show what its picture is meant to
 // show, such as a Paperless result that the date filter should have left out.
+//
+// With SCREENSHOTS_NOTIFICATION=1, which scripts/screenshots.sh sets once the job of the
+// notifications has run on what the first pass left, it takes only the notification.
 //
 // With SCREENSHOTS_DEMO=1, which `bash scripts/screenshots.sh --demo` sets, it records
 // the animation of the demo of the README instead, demo-search-and-open.gif, from the
@@ -39,6 +43,7 @@ import {
 	SETTINGS,
 	SETTINGS_SCOPE,
 	chooseAlwaysSearch,
+	saveSearches,
 	connectedServices,
 	openSearch,
 	paperlessResult,
@@ -525,10 +530,43 @@ async function personalSettings(browser, session, theme) {
 	await page.goto(`${BASE_URL}${PERSONAL}`)
 	await page.locator(PERSONAL_SCOPE).waitFor()
 	await chooseAlwaysSearch(page, true)
+	await saveSearches(page, 'correspondent:"tax office"\ntag:unpaid')
 	// Away from the checkbox, which lights up under the pointer.
 	await page.mouse.move(0, 0)
 	await save(page, `13-personal-settings${suffix}.png`)
 	await chooseAlwaysSearch(page, false)
+	await saveSearches(page, '')
+	await page.context().close()
+}
+
+// The notification of jamie about the two new documents of scripts/screenshots.sh, in the
+// list of the bell. It says when it went out, in words that depend on the moment of the
+// picture, so the list says that it went out just now.
+async function notification(browser, session, theme) {
+	const suffix = theme === 'dark' ? '-dark' : ''
+	const page = await newPage(browser, session, { viewport: { width: 1280, height: 720 }, colorScheme: theme })
+	await page.route((url) => url.pathname.endsWith('/apps/notifications/api/v2/notifications'), async (route) => {
+		const response = await route.fetch()
+		const body = await response.text()
+		// An answer without a list, such as 304 for one that didn't change, goes through.
+		if (body === '') {
+			await route.fulfill({ response })
+			return
+		}
+		const answer = JSON.parse(body)
+		for (const each of answer.ocs.data) {
+			each.datetime = new Date(NOW).toISOString()
+		}
+		await route.fulfill({ response, json: answer })
+	})
+	// Over the personal settings where jamie asked for it: the dashboard would list the new
+	// documents with the day of this run, which would change the picture with every run.
+	await page.goto(`${BASE_URL}${PERSONAL}`)
+	await page.locator(PERSONAL_SCOPE).waitFor()
+	await page.getByRole('button', { name: 'Notifications' }).click()
+	await page.getByText('2 new documents in Paperless').waitFor()
+	await page.mouse.move(0, 0)
+	await save(page, `18-notification${suffix}.png`)
 	await page.context().close()
 }
 
@@ -1360,6 +1398,10 @@ const browser = await chromium.launch({
 try {
 	if (process.env.SCREENSHOTS_DEMO === '1') {
 		await demoAnimation(browser)
+	} else if (process.env.SCREENSHOTS_NOTIFICATION === '1') {
+		const reader = await signIn(browser, READER, { timezoneId: TIME_ZONE })
+		await notification(browser, reader, 'light')
+		await notification(browser, reader, 'dark')
 	} else {
 		await everyPicture(browser)
 	}

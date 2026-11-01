@@ -53,7 +53,7 @@ Paperless-ngx has already recognized the text of every document and keeps an ind
 - **No second index, no second OCR.** No Elasticsearch, no extra container and no copy of the text in Nextcloud. What Paperless finds, Nextcloud's search finds, as soon as the file of the document is in Nextcloud.
 - **Nextcloud decides who sees what.** A result appears only for someone who can open its file in Nextcloud, so the shares you already have are the permissions. Nobody needs an account in Paperless.
 - **Results open where people work.** In Nextcloud's viewer in the browser and in the Nextcloud apps for iOS and Android, ready to share, download or comment on.
-- **New documents come to you.** The dashboard lists the documents that Paperless added last, for everyone who can open them, without a search.
+- **New documents come to you.** The dashboard lists the documents that Paperless added last, for everyone who can open them, without a search, and a notification tells you about those that your saved searches find.
 - **The search of Paperless, not a copy of its words.** Its ranking, its highlights and its query syntax, such as `correspondent:acme` or `created:[2024 to 2025]`, which also look at the correspondent, the type and the tags of a document.
 
 <!-- --8<-- [start:comparison] -->
@@ -193,6 +193,15 @@ Type `/` in a note of Text and choose *Paperless documents*: the picker finds th
 
 *New in Paperless* on Nextcloud's dashboard lists the documents that Paperless added last and that you can open, without a search.
 
+### A notification about new documents
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/18-notification-dark.png">
+  <img alt="The notifications of Jamie, open below the bell: 2 new documents in Paperless, with the links Water bill - October 2026 and Tax assessment 2025" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/18-notification.png">
+</picture>
+
+Nextcloud tells you when Paperless adds a document that one of your saved searches finds, or any document, as soon as you can open its file.
+
 ### Paperless in every search of your own
 
 With **Always search my Paperless documents** in the personal settings, every search of yours includes Paperless without the switch *Search connected services*, which Nextcloud turns off on every page that loads.
@@ -327,7 +336,8 @@ The search needs one thing from a synchronization: each document of Paperless-ng
 6. Under **Archive account**, enter the Nextcloud account that owns the synchronized files, or leave it blank to use the account that Paperless Sync writes the archive with. The settings store the ID as Nextcloud spells it, whatever its case, and warn when the account doesn't exist.
 7. Optionally enable **Always include Paperless in global search** to treat the configured Paperless server as trusted.
 8. Leave **Let users include Paperless in all their searches** on to let each user include Paperless in every search of their own, in their personal settings, or turn it off.
-9. Select **Test connection and save**. Nextcloud asks for your password when you haven't confirmed it in the last 30 minutes, as for its own settings of this kind; so does **Disconnect**.
+9. Choose with **Let users ask for notifications about new documents** whether each user can save searches for notifications about new documents in their personal settings. Until you choose, it is on only where Nextcloud has a memory cache.
+10. Select **Test connection and save**. Nextcloud asks for your password when you haven't confirmed it in the last 30 minutes, as for its own settings of this kind; so does **Disconnect**.
 
 Leave the token blank to keep the stored one. The stored token goes only to the Paperless server it was saved for: when the URL names another server, with another scheme, host or port, the settings ask for the token again, so that the token never reaches a server it wasn't meant for. Another path on the same server keeps it. When Nextcloud can no longer decrypt the stored token, as after a move or a restore with another `secret` in `config.php`, the settings say so and ask for it again, and until then the search shows no Paperless documents.
 
@@ -473,6 +483,25 @@ Add **New in Paperless** to your dashboard with **Customize** at the end of the 
 - **Only where the search works.** The dashboard offers the widget once the settings name a Paperless and an archive account that exists.
 
 <!-- --8<-- [end:dashboard] -->
+<!-- --8<-- [start:notifications] -->
+
+### Notifications about new documents
+
+Under **Personal settings → Paperless**, **Notify me about new documents** asks Nextcloud to tell you when Paperless adds a document: **Every new document that I can open**, or only those that your saved searches find, up to 10, one per line, in the [syntax of Paperless](#search-like-in-paperless), such as `correspondent:"tax office"` or `tag:unpaid`. Paperless itself notifies only through workflows that its administrator sets up, which know nothing of the users and the permissions of Nextcloud, and the file notifications of Nextcloud don't fire for new files in a folder that is shared with you.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/notifications-about-new-documents.dark.svg">
+  <img src="docs/images/diagrams/notifications-about-new-documents.svg" alt="Notifications about new documents: Every five minutes, a background job asks Paperless-ngx once for the documents that it added since the last run, and they wait for their files. While no file has arrived, Paperless gets no further request. Once a file is in the archive account, the job asks Paperless once per distinct saved search which of those documents it finds. Each user who asked for a document and can open its file gets one notification, with a link to each file that it names.">
+</picture>
+
+- **Who hears what.** The same rule as in the search: you hear about a document only when you can open its file of the archive account. Someone who saved the same search and can't open the file hears nothing, and neither does the owner of a disabled account.
+- **One notification at a time.** A run of the job sends you one notification, whatever the number of its documents: with one document, its title; with more, how many they are and the titles of the newest three. Each title opens the file, on the web and in the apps for phones.
+- **When.** A background job runs every five minutes, as Nextcloud's cron starts it. A document counts once its file has reached the archive account, so the notification comes with your synchronization, which may take hours. A document whose file doesn't arrive within two days never counts, such as one that the rules of Paperless Sync leave out.
+- **What counts as new.** The documents that Paperless takes in from the moment that anybody first asks: a first run only learns how far the IDs go, so nobody hears about the archive of years. Each saved search looks at a document once, as its file arrives, so a tag that someone gives it later brings no notification. Of more than 100 documents between two runs, such as a large import, only the newest count.
+- **When Paperless doesn't answer,** the job waits ten minutes, then 20, 40 and at most an hour before it asks again, and nothing gets lost meanwhile. Such a failure goes into the log of Nextcloud, not into the history of the problems of the search. A saved search that Paperless refuses finds nothing, and the log counts it without naming it.
+- **Only where administrators allow it.** The personal settings offer it while **Let users ask for notifications about new documents** is on. Notifications need the app Notifications of Nextcloud, which comes with it.
+
+<!-- --8<-- [end:notifications] -->
 <!-- --8<-- [start:search-syntax] -->
 
 ## Search like in Paperless
@@ -571,6 +600,7 @@ The token never goes on the command line, where the history of the shell and the
 | `--allow-local`, `--no-allow-local` | **Paperless runs in my local network** |
 | `--always-search`, `--no-always-search` | **Always include Paperless in global search** |
 | `--personal-always-search`, `--no-personal-always-search` | **Let users include Paperless in all their searches** |
+| `--new-document-alerts`, `--no-new-document-alerts` | **Let users ask for notifications about new documents** |
 
 On a server, as the user of the web server:
 
@@ -670,6 +700,7 @@ Last, `check` lists with whom the archive account shares its files: the users, g
 - **Try a search** shows administrators which documents a user finds for a term, by their IDs, titles and tags alone, without their content, an excerpt or their files; the audit log of the app *Auditing / Logging* (`admin_audit`) records which administrator tried a search as which user, whatever the log level, and so does the log of Nextcloud at level info, without the term.
 - Search terms are sent server-to-server only when connected-services search or trusted-service mode is enabled, when the user chose **Always search my Paperless documents** in the personal settings, after the user chose **Paperless documents** in the smart picker, or when a client asks this search by its ID through the API.
 - A link that the smart picker inserts is the link of the file in Nextcloud, which shows its preview only to readers who can open the file.
+- The saved searches of the notifications about new documents stay with the account of the user who saved them, and a background job sends them to Paperless once documents with files are new, as the personal settings say above the field. A notification goes only to a user who can open the file, with its title.
 - The dashboard widget shows a user only the newest documents whose files they can open. Nextcloud's distributed cache keeps the IDs, titles, correspondents, types and tags of the 25 newest documents for a minute, which are the same for every user, and never their text.
 - Administrators can explicitly trust the configured Paperless server to include it automatically in every user's global searches.
 - No deployment credentials, private hostnames, internal addresses, or instance configuration belong in this repository.

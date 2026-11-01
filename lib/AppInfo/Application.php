@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\AppInfo;
 
 use OCA\PaperlessUnifiedSearch\Dashboard\RecentDocumentsWidget;
+use OCA\PaperlessUnifiedSearch\Notification\Notifier;
 use OCA\PaperlessUnifiedSearch\Reference\PaperlessReferenceProvider;
 use OCA\PaperlessUnifiedSearch\Search\PaperlessSearchProvider;
 use OCA\PaperlessUnifiedSearch\SetupCheck\PaperlessSetupCheck;
@@ -33,6 +34,9 @@ final class Application extends App implements IBootstrap {
 		// "New in Paperless" on the dashboard, which offers itself only once the
 		// app is set up: Nextcloud asks the widget, as it builds the dashboard.
 		$context->registerDashboardWidget(RecentDocumentsWidget::class);
+		// The words of the notifications about new documents, which Nextcloud asks for as a
+		// client fetches them, in the language of the user.
+		$context->registerNotifierService(Notifier::class);
 	}
 
 	public function boot(IBootContext $context): void {

@@ -54,6 +54,10 @@ final class SettingsTemplateTest extends TestCase {
 		$personal = $this->element($page, 'paperless-unified-search-users-always-search');
 		self::assertTrue($personal->hasAttribute('checked'));
 		self::assertSame('personalAlwaysSearch', $personal->getAttribute('name'));
+		// Users may ask for notifications only where the settings say so.
+		$alerts = $this->element($page, 'paperless-unified-search-new-document-alerts');
+		self::assertFalse($alerts->hasAttribute('checked'));
+		self::assertSame('newDocumentAlerts', $alerts->getAttribute('name'));
 		// Nothing stored, nothing to disconnect.
 		self::assertTrue($this->element($page, 'paperless-unified-search-reset')->hasAttribute('disabled'));
 		self::assertSame('', $this->text($this->element($page, 'paperless-unified-search-token-unreadable')));
@@ -79,7 +83,8 @@ final class SettingsTemplateTest extends TestCase {
 	}
 
 	public function testTheSettingsShowWhenUsersMayNotAlwaysSearchPaperless(): void {
-		[, $page] = $this->render(new PublicConfig(self::STORED, true, false, personalAlwaysSearch: false));
+		[, $page] = $this->render(new PublicConfig(self::STORED, true, false, personalAlwaysSearch: false, newDocumentAlerts: true));
+		self::assertTrue($this->element($page, 'paperless-unified-search-new-document-alerts')->hasAttribute('checked'));
 
 		self::assertFalse($this->element($page, 'paperless-unified-search-users-always-search')->hasAttribute('checked'));
 		$label = (new DOMXPath($page))->query('//label[@for="paperless-unified-search-users-always-search"]')?->item(0);
@@ -146,6 +151,7 @@ final class SettingsTemplateTest extends TestCase {
 			'paperless-unified-search-archive-owner' => ['paperless-unified-search-archive-owner-missing', 'paperless-unified-search-archive-owner-hint'],
 			'paperless-unified-search-always-search' => ['paperless-unified-search-always-search-hint'],
 			'paperless-unified-search-users-always-search' => ['paperless-unified-search-users-always-search-hint'],
+			'paperless-unified-search-new-document-alerts' => ['paperless-unified-search-new-document-alerts-hint'],
 			'paperless-unified-search-try-term' => ['paperless-unified-search-try-hint'],
 		], $described);
 		self::assertStringStartsWith(

@@ -13,11 +13,13 @@ use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Controller\PersonalSettingsController;
 use OCA\PaperlessUnifiedSearch\Service\AlwaysSearch;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
+use OCA\PaperlessUnifiedSearch\Service\SavedSearches;
 use OCA\PaperlessUnifiedSearch\Settings\PersonalSection;
 use OCA\PaperlessUnifiedSearch\Settings\PersonalSettings;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppSettings;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\UserPreferences;
+use OCP\ICacheFactory;
 use OCP\IL10N;
 use OCP\IURLGenerator;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -58,20 +60,29 @@ final class PersonalSettingsTest extends TestCase {
 	public function testTheFormShowsTheChoiceOfTheUserAndWhetherTheAdministratorsTrustPaperless(bool $chosen, bool $trusted): void {
 		$this->preferences['dennis.' . AppConstants::APP_ID . '.always_search'] = $chosen;
 		$this->settings[AppConstants::APP_ID . '.always_search'] = $trusted;
-		$urlGenerator = $this->createMock(IURLGenerator::class);
-		$urlGenerator->expects(self::once())
-			->method('linkToRoute')
-			->with(AppConstants::APP_ID . '.personalSettings.save')
-			->willReturn('/apps/paperless_unified_search/personal');
+		$this->settings[AppConstants::APP_ID . '.personal_always_search'] = !$trusted;
+		$this->settings[AppConstants::APP_ID . '.new_document_alerts'] = $trusted;
+		$this->preferences['dennis.' . AppConstants::APP_ID . '.new_document_alerts'] = ['everyDocument' => $chosen, 'terms' => ['tag:unpaid', 'tax']];
+		$urlGenerator = $this->createStub(IURLGenerator::class);
+		$urlGenerator->method('linkToRoute')->willReturnCallback(static fn (string $route): string => match ($route) {
+			AppConstants::APP_ID . '.personalSettings.save' => '/apps/paperless_unified_search/personal',
+			AppConstants::APP_ID . '.personalSettings.saveAlerts' => '/apps/paperless_unified_search/personal/alerts',
+		});
 
 		$form = $this->settings('dennis', $urlGenerator)->getForm();
 
 		self::assertSame(AppConstants::APP_ID, $form->getApp());
 		self::assertSame('personal', $form->getTemplateName());
 		self::assertSame([
+			'alwaysSearchAllowed' => !$trusted,
 			'alwaysSearch' => $chosen,
 			'trusted' => $trusted,
 			'saveUrl' => '/apps/paperless_unified_search/personal',
+			'alertsAllowed' => $trusted,
+			'everyDocument' => $chosen,
+			'terms' => "tag:unpaid\ntax",
+			'mostTerms' => 10,
+			'alertsUrl' => '/apps/paperless_unified_search/personal/alerts',
 		], $form->getParams());
 	}
 
@@ -81,10 +92,10 @@ final class PersonalSettingsTest extends TestCase {
 	 * the checkbox would then post to the page itself.
 	 */
 	public function testTheFormLinksTheRouteOfTheController(): void {
-		$linked = null;
+		$linked = [];
 		$urlGenerator = $this->createStub(IURLGenerator::class);
 		$urlGenerator->method('linkToRoute')->willReturnCallback(static function (string $name) use (&$linked): string {
-			$linked = $name;
+			$linked[] = $name;
 
 			return '/apps/paperless_unified_search/personal';
 		});
@@ -92,9 +103,10 @@ final class PersonalSettingsTest extends TestCase {
 		$this->settings('dennis', $urlGenerator)->getForm();
 
 		$controller = (new ReflectionClass(PersonalSettingsController::class))->getShortName();
+		$prefix = AppConstants::APP_ID . '.' . substr($controller, 0, -strlen('Controller')) . '.';
 		self::assertSame(
-			strtolower(AppConstants::APP_ID . '.' . substr($controller, 0, -strlen('Controller')) . '.save'),
-			strtolower((string)$linked),
+			[strtolower($prefix . 'save'), strtolower($prefix . 'saveAlerts')],
+			array_map('strtolower', $linked),
 		);
 	}
 
@@ -103,7 +115,11 @@ final class PersonalSettingsTest extends TestCase {
 	 * form shows nothing chosen.
 	 */
 	public function testWithoutAUserNothingIsChosen(): void {
-		self::assertFalse($this->settings(null)->getForm()->getParams()['alwaysSearch']);
+		$params = $this->settings(null)->getForm()->getParams();
+
+		self::assertFalse($params['alwaysSearch']);
+		self::assertFalse($params['everyDocument']);
+		self::assertSame('', $params['terms']);
 	}
 
 	/**
@@ -115,6 +131,10 @@ final class PersonalSettingsTest extends TestCase {
 			'connected, with an archive account' => [[], 'TEST_VALUE', true],
 			'users may choose' => [['personal_always_search' => true], 'TEST_VALUE', true],
 			'users may not choose' => [['personal_always_search' => false], 'TEST_VALUE', false],
+			'users may only ask for notifications' => [['personal_always_search' => false, 'new_document_alerts' => true], 'TEST_VALUE', true],
+			'users may only choose the search' => [['personal_always_search' => true, 'new_document_alerts' => false], 'TEST_VALUE', true],
+			'users may choose neither' => [['personal_always_search' => false, 'new_document_alerts' => false], 'TEST_VALUE', false],
+			'notifications without an archive account' => [['new_document_alerts' => true, 'archive_owner' => ''], 'TEST_VALUE', false],
 			'without a URL' => [['paperless_url' => ''], 'TEST_VALUE', false],
 			'without a token' => [[], null, false],
 			'without an archive account' => [['archive_owner' => ''], 'TEST_VALUE', false],
@@ -161,11 +181,12 @@ final class PersonalSettingsTest extends TestCase {
 	}
 
 	private function settings(?string $userId, ?IURLGenerator $urlGenerator = null): PersonalSettings {
-		$configService = new ConfigService($this->appConfig(), $this->credentialsManager(), $this->accounts('archive'), $this->createStub(LoggerInterface::class));
+		$configService = new ConfigService($this->appConfig(), $this->credentialsManager(), $this->accounts('archive'), $this->createStub(LoggerInterface::class), $this->createStub(ICacheFactory::class));
 
 		return new PersonalSettings(
 			$configService,
 			new AlwaysSearch($configService, $this->userConfig()),
+			new SavedSearches($this->userConfig()),
 			$this->session($userId),
 			$urlGenerator ?? $this->createStub(IURLGenerator::class),
 		);

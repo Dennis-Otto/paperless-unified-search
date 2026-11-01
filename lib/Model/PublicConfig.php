@@ -27,6 +27,8 @@ final class PublicConfig implements JsonSerializable {
 	 *                                          beyond what the search needs, or may not do
 	 *                                          of what the results show, as the last test of
 	 *                                          the connection found it
+	 * @param bool $newDocumentAlerts users may ask for a notification about new documents,
+	 *                                in their personal settings
 	 */
 	public function __construct(
 		public readonly string $url,
@@ -40,11 +42,12 @@ final class PublicConfig implements JsonSerializable {
 		public readonly ?PaperlessVersion $paperlessVersion = null,
 		public readonly bool $personalAlwaysSearch = true,
 		public readonly array $tokenWarnings = [],
+		public readonly bool $newDocumentAlerts = false,
 	) {
 	}
 
 	/**
-	 * @return array{url: string, tokenConfigured: bool, alwaysSearch: bool, archiveOwner: string, syncAccount: string, tokenUnreadable: bool, archiveOwnerMissing: bool, allowLocal: bool, paperlessVersion: string, paperlessApiVersion: string, personalAlwaysSearch: bool, tokenWarnings: list<string>}
+	 * @return array{url: string, tokenConfigured: bool, alwaysSearch: bool, archiveOwner: string, syncAccount: string, tokenUnreadable: bool, archiveOwnerMissing: bool, allowLocal: bool, paperlessVersion: string, paperlessApiVersion: string, personalAlwaysSearch: bool, tokenWarnings: list<string>, newDocumentAlerts: bool}
 	 */
 	public function jsonSerialize(): array {
 		return [
@@ -62,6 +65,7 @@ final class PublicConfig implements JsonSerializable {
 			'personalAlwaysSearch' => $this->personalAlwaysSearch,
 			// Their values, such as superuser, which the settings page names.
 			'tokenWarnings' => array_map(static fn (TokenWarning $warning): string => $warning->value, $this->tokenWarnings),
+			'newDocumentAlerts' => $this->newDocumentAlerts,
 		];
 	}
 }

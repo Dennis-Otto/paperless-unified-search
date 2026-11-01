@@ -27,6 +27,8 @@ require_once __DIR__ . '/../../stubs/template-functions.php';
  */
 final class PersonalTemplateTest extends TestCase {
 	private const CHECKBOX = 'paperless-unified-search-personal-always-search';
+	private const EVERY = 'paperless-unified-search-personal-every-document';
+	private const TERMS = 'paperless-unified-search-personal-terms';
 
 	protected function setUp(): void {
 		TemplateAssets::$loaded = [];
@@ -75,6 +77,62 @@ final class PersonalTemplateTest extends TestCase {
 		self::assertSame('Always search my Paperless documents', $this->text($this->query($page, '//label[@for="' . self::CHECKBOX . '"]')));
 	}
 
+	public function testWithoutAChoiceTheNotificationsOfferBothWays(): void {
+		$page = $this->render(false, false);
+
+		self::assertSame('/personal/alerts', $this->element($page, 'paperless-unified-search-personal')->getAttribute('data-alerts-url'));
+		self::assertSame('Notify me about new documents', $this->text($this->query($page, '//h3')));
+		$every = $this->element($page, self::EVERY);
+		self::assertSame('checkbox', $every->getAttribute('type'));
+		self::assertFalse($every->hasAttribute('checked'));
+		self::assertSame('Every new document that I can open', $this->text($this->query($page, '//label[@for="' . self::EVERY . '"]')));
+		$terms = $this->element($page, self::TERMS);
+		self::assertFalse($terms->hasAttribute('disabled'));
+		self::assertSame('', $terms->textContent);
+		self::assertSame(self::TERMS . '-hint', $terms->getAttribute('aria-describedby'));
+		self::assertSame("correspondent:\"tax office\"\ntag:unpaid", $terms->getAttribute('placeholder'));
+		self::assertSame('Or only those that these searches find, one per line', $this->text($this->query($page, '//label[@for="' . self::TERMS . '"]')));
+		// It says that the searches go to Paperless, which is what the user agrees to.
+		self::assertStringStartsWith('Up to 10 searches in the syntax of Paperless', $this->text($this->element($page, self::TERMS . '-hint')));
+		self::assertStringContainsString('sends them to the Paperless server', $this->text($this->element($page, self::TERMS . '-hint')));
+		$status = $this->element($page, 'paperless-unified-search-personal-alerts-status');
+		self::assertSame('status', $status->getAttribute('role'));
+		self::assertSame('polite', $status->getAttribute('aria-live'));
+		self::assertSame('Save', $this->text($this->element($page, 'paperless-unified-search-personal-alerts-save')));
+	}
+
+	public function testTheFieldShowsTheSavedSearchesAndKeepsThemAsText(): void {
+		$page = $this->render(false, false, alerts: ['terms' => "tag:unpaid\n<b>tax</b>"]);
+
+		self::assertSame("tag:unpaid\n<b>tax</b>", $this->element($page, self::TERMS)->textContent);
+		self::assertSame(0, $this->element($page, self::TERMS)->getElementsByTagName('b')->length);
+	}
+
+	public function testEveryDocumentIsTickedAndTheSearchesRestMeanwhile(): void {
+		$page = $this->render(false, false, alerts: ['everyDocument' => true, 'terms' => 'tag:unpaid']);
+
+		self::assertTrue($this->element($page, self::EVERY)->hasAttribute('checked'));
+		self::assertTrue($this->element($page, self::TERMS)->hasAttribute('disabled'));
+		self::assertSame('tag:unpaid', $this->element($page, self::TERMS)->textContent);
+	}
+
+	/**
+	 * Each part shows while the administrators let users choose it.
+	 */
+	public function testOnlyWhatTheAdministratorsAllowShows(): void {
+		$onlyAlerts = $this->render(false, false, alerts: ['alwaysSearchAllowed' => false]);
+		self::assertNull($onlyAlerts->getElementById(self::CHECKBOX));
+		self::assertNull($onlyAlerts->getElementById('paperless-unified-search-personal-status'));
+		self::assertNotNull($onlyAlerts->getElementById(self::EVERY));
+		self::assertStringNotContainsString('Nextcloud searches your Paperless documents', (string)$onlyAlerts->textContent);
+
+		$onlySearch = $this->render(false, false, alerts: ['alertsAllowed' => false]);
+		self::assertNotNull($onlySearch->getElementById(self::CHECKBOX));
+		self::assertNull($onlySearch->getElementById(self::EVERY));
+		self::assertNull($onlySearch->getElementById(self::TERMS));
+		self::assertSame(0, $onlySearch->getElementsByTagName('h3')->length);
+	}
+
 	public function testTheMessageAfterAChangeIsReadOut(): void {
 		$status = $this->element($this->render(false, false), 'paperless-unified-search-personal-status');
 
@@ -84,12 +142,25 @@ final class PersonalTemplateTest extends TestCase {
 		self::assertSame('', $this->text($status));
 	}
 
-	private function render(bool $alwaysSearch, bool $trusted, string $saveUrl = '/personal'): DOMDocument {
+	/**
+	 * @param array<string, mixed> $alerts what differs from a user without a choice
+	 */
+	private function render(bool $alwaysSearch, bool $trusted, string $saveUrl = '/personal', array $alerts = []): DOMDocument {
 		$l10n = $this->createStub(IL10N::class);
 		$l10n->method('t')->willReturnCallback(
 			static fn (string $text, array $parameters = []): string => vsprintf($text, $parameters),
 		);
-		$parameters = ['alwaysSearch' => $alwaysSearch, 'trusted' => $trusted, 'saveUrl' => $saveUrl];
+		$parameters = $alerts + [
+			'alwaysSearchAllowed' => true,
+			'alwaysSearch' => $alwaysSearch,
+			'trusted' => $trusted,
+			'saveUrl' => $saveUrl,
+			'alertsAllowed' => true,
+			'everyDocument' => false,
+			'terms' => '',
+			'mostTerms' => 10,
+			'alertsUrl' => '/personal/alerts',
+		];
 
 		ob_start();
 		try {

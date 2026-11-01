@@ -54,8 +54,19 @@ final class PersonalSettingsControllerRoutesTest extends TestCase {
 		self::assertCount(1, $method->getAttributes(NoAdminRequired::class));
 	}
 
+	public function testTheRouteOfTheNotificationsStoresTheChoiceOfTheSignedInUser(): void {
+		$method = new ReflectionMethod(PersonalSettingsController::class, 'saveAlerts');
+		$attributes = $method->getAttributes(FrontpageRoute::class);
+
+		self::assertCount(1, $attributes);
+		$route = $attributes[0]->newInstance();
+		self::assertSame('POST', $route->getVerb());
+		self::assertSame('/personal/alerts', $route->getUrl());
+		self::assertCount(1, $method->getAttributes(NoAdminRequired::class));
+	}
+
 	public function testTheControllerHasNoOtherAction(): void {
-		self::assertSame(['save'], array_map(
+		self::assertSame(['save', 'saveAlerts'], array_map(
 			static fn (ReflectionMethod $method): string => $method->getName(),
 			$this->actions(),
 		));

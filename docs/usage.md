@@ -44,6 +44,8 @@ Paperless documents show in the global search of Nextcloud for every user who ca
   <figcaption>New in Paperless on the dashboard of Nextcloud</figcaption>
 </figure>
 
+--8<-- "README.md:notifications"
+
 ## Why the switch is off after a reload
 
 **Search connected services** decides whether a search leaves Nextcloud. Nextcloud counts every search that sends the term to another server as one of a connected service, Paperless as well, and asks it only while the switch is on. It turns the switch off whenever the page loads anew, so that no term goes to another server without the choice of the user, again and again.

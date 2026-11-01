@@ -153,6 +153,23 @@ $archiveAccount = $config->archiveOwner !== '' ? $config->archiveOwner : $config
 			</p>
 		</div>
 
+		<div class="paperless-unified-search-option">
+			<input
+				id="paperless-unified-search-new-document-alerts"
+				name="newDocumentAlerts"
+				type="checkbox"
+				aria-describedby="paperless-unified-search-new-document-alerts-hint"
+				<?php if ($config->newDocumentAlerts) {
+					print_unescaped('checked');
+				} ?>>
+			<label for="paperless-unified-search-new-document-alerts">
+				<?php p($l->t('Let users ask for notifications about new documents')); ?>
+			</label>
+			<p id="paperless-unified-search-new-document-alerts-hint" class="settings-hint">
+				<?php p($l->t('Each user can then save searches in their personal settings, in the section Paperless, and be notified about the new documents that they find and that the user can open. A background job asks Paperless for new documents every five minutes, and looks through the files of those users while documents wait for their files. Until you choose, this is on only where Nextcloud has a memory cache.')); ?>
+			</p>
+		</div>
+
 		<div class="paperless-unified-search-actions">
 			<button id="paperless-unified-search-save" type="submit" class="primary">
 				<?php p($l->t('Test connection and save')); ?>

@@ -57,7 +57,7 @@ trait AppServices {
 	}
 
 	private function configService(IUserManager $accounts): ConfigService {
-		return new ConfigService($this->appConfig(), $this->credentialsManager(), $accounts, $this->createStub(LoggerInterface::class));
+		return new ConfigService($this->appConfig(), $this->credentialsManager(), $accounts, $this->createStub(LoggerInterface::class), $this->createStub(ICacheFactory::class));
 	}
 
 	private function diagnostics(): SearchDiagnostics {

@@ -16,6 +16,7 @@ use OCA\PaperlessUnifiedSearch\Model\PaperlessVersion;
 use OCA\PaperlessUnifiedSearch\Model\PublicConfig;
 use OCA\PaperlessUnifiedSearch\Model\TokenWarning;
 use OCP\IAppConfig;
+use OCP\ICacheFactory;
 use OCP\IUserManager;
 use OCP\Security\ICredentialsManager;
 use Psr\Log\LoggerInterface;
@@ -30,6 +31,11 @@ final class ConfigService {
 	 * settings: yes unless an administrator turned it off.
 	 */
 	private const PERSONAL_ALWAYS_SEARCH_KEY = 'personal_always_search';
+	/**
+	 * Whether a user may be notified about new documents, in their personal settings: yes
+	 * where Nextcloud has a memory cache, unless an administrator chose otherwise.
+	 */
+	private const NEW_DOCUMENT_ALERTS_KEY = 'new_document_alerts';
 	private const ARCHIVE_OWNER_KEY = 'archive_owner';
 	private const ALLOW_LOCAL_KEY = 'allow_local';
 	/**
@@ -77,6 +83,7 @@ final class ConfigService {
 		private ICredentialsManager $credentialsManager,
 		private IUserManager $userManager,
 		private LoggerInterface $logger,
+		private ICacheFactory $cacheFactory,
 	) {
 	}
 
@@ -96,6 +103,7 @@ final class ConfigService {
 			$this->getPaperlessVersion(),
 			$this->isPersonalAlwaysSearchAllowed(),
 			$this->getTokenWarnings(),
+			$this->isNewDocumentAlertsAllowed(),
 		);
 	}
 
@@ -191,6 +199,18 @@ final class ConfigService {
 	 */
 	public function isPersonalAlwaysSearchAllowed(): bool {
 		return $this->config->getValueBool(AppConstants::APP_ID, self::PERSONAL_ALWAYS_SEARCH_KEY, true);
+	}
+
+	/**
+	 * Whether a user may ask for a notification about new documents, in the personal
+	 * settings. As an administrator chose, and until one does, on only where Nextcloud has
+	 * a memory cache: the job looks through the files of each user who asks for it, every
+	 * five minutes while documents wait for their files, which a server without one, often
+	 * a small one, shouldn't do unasked. While it is off, the personal settings don't offer
+	 * it and the job asks Paperless nothing (NewDocumentAlerts).
+	 */
+	public function isNewDocumentAlertsAllowed(): bool {
+		return $this->config->getValueBool(AppConstants::APP_ID, self::NEW_DOCUMENT_ALERTS_KEY, $this->cacheFactory->isAvailable());
 	}
 
 	/**
@@ -306,9 +326,11 @@ final class ConfigService {
 	 * @param ?list<TokenWarning> $tokenWarnings the warnings about the account of the token
 	 *                                           that the test of the connection found, null
 	 *                                           when Paperless didn't say
+	 * @param ?bool $newDocumentAlerts whether users may ask for a notification about new
+	 *                                 documents, null to leave it as it is
 	 * @throws InvalidSettingException when the URL is invalid or the token blank
 	 */
-	public function save(string $url, #[SensitiveParameter] string $token, bool $alwaysSearch = false, string $archiveOwner = '', bool $allowLocal = false, ?PaperlessVersion $paperlessVersion = null, bool $personalAlwaysSearch = true, ?array $tokenWarnings = null): PublicConfig {
+	public function save(string $url, #[SensitiveParameter] string $token, bool $alwaysSearch = false, string $archiveOwner = '', bool $allowLocal = false, ?PaperlessVersion $paperlessVersion = null, bool $personalAlwaysSearch = true, ?array $tokenWarnings = null, ?bool $newDocumentAlerts = null): PublicConfig {
 		$normalizedUrl = $this->normalizeUrl($url);
 		$normalizedToken = trim($token);
 		if ($normalizedToken === '') {
@@ -320,6 +342,9 @@ final class ConfigService {
 		$this->config->setValueBool(AppConstants::APP_ID, self::ALWAYS_SEARCH_KEY, $alwaysSearch);
 		$this->config->setValueBool(AppConstants::APP_ID, self::ALLOW_LOCAL_KEY, $allowLocal);
 		$this->config->setValueBool(AppConstants::APP_ID, self::PERSONAL_ALWAYS_SEARCH_KEY, $personalAlwaysSearch);
+		if ($newDocumentAlerts !== null) {
+			$this->config->setValueBool(AppConstants::APP_ID, self::NEW_DOCUMENT_ALERTS_KEY, $newDocumentAlerts);
+		}
 		if ($normalizedOwner === '') {
 			$this->config->deleteKey(AppConstants::APP_ID, self::ARCHIVE_OWNER_KEY);
 		} else {
@@ -347,6 +372,7 @@ final class ConfigService {
 			$paperlessVersion,
 			$personalAlwaysSearch,
 			$tokenWarnings ?? [],
+			$this->isNewDocumentAlertsAllowed(),
 		);
 	}
 
@@ -356,6 +382,7 @@ final class ConfigService {
 		$this->config->deleteKey(AppConstants::APP_ID, self::ARCHIVE_OWNER_KEY);
 		$this->config->deleteKey(AppConstants::APP_ID, self::ALLOW_LOCAL_KEY);
 		$this->config->deleteKey(AppConstants::APP_ID, self::PERSONAL_ALWAYS_SEARCH_KEY);
+		$this->config->deleteKey(AppConstants::APP_ID, self::NEW_DOCUMENT_ALERTS_KEY);
 		$this->storePaperlessVersion(null);
 		$this->storeTokenWarnings([]);
 		$this->credentialsManager->delete('', self::TOKEN_IDENTIFIER);
@@ -364,7 +391,7 @@ final class ConfigService {
 
 		$syncAccount = $this->getSyncAccount();
 
-		return new PublicConfig('', false, false, '', $syncAccount, false, $this->isMissing($syncAccount));
+		return new PublicConfig('', false, false, '', $syncAccount, false, $this->isMissing($syncAccount), newDocumentAlerts: $this->isNewDocumentAlertsAllowed());
 	}
 
 	/**

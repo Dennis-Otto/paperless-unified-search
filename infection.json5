@@ -62,7 +62,9 @@
         // Every search sends its page, so the default for a missing one never counts.
         "\\$page = \\$query\\['page'\\] \\?\\? 1;",
         // The client asks Paperless for page max(1, page), so page 0 is page 1 as well.
-        "\\$response = \\$this->paperlessApi->searchDocuments\\(\\$term, 1, .*\\);"
+        "\\$response = \\$this->paperlessApi->searchDocuments\\(\\$term, 1, .*\\);",
+        // The client asks Paperless for at least one document, so 0 asks for one as well.
+        "\\$id = \\$this->paperlessApi->findNewestDocuments\\(1, null\\)\\[0\\]\\['id'\\] \\?\\? null;"
       ]
     },
     "FalseValue": {
@@ -133,6 +135,7 @@
         // The keys of a set are its members, whatever their value: array_keys(), count(),
         // array_intersect_key() and isset() don't read it.
         "\\$documentIds\\[\\$documentId\\] = true;",
+        "\\$terms\\[\\$line\\] = true;",
         "\\$granted\\[\\$permission\\] = true;",
         "\\$recipients\\[\\$share->kind\\]\\[\\$share->kind === ArchiveShare::KIND_LINK \\? \\$index : \\$share->recipient\\] = true;"
       ]
@@ -141,6 +144,8 @@
       "ignoreSourceCodeByRegex": [
         // The search for each marker goes through them in a loop, whatever their keys.
         ": \\$this->searchEach\\(\\$userFolder, array_values\\(\\$markers\\)\\);",
+        // The search for the files of a user goes through them in a loop, whatever their keys.
+        "return array_values\\(array_intersect\\(\\$documentIds, \\$wanted\\)\\);",
         // Spreading an array with keys of numbers numbers them anew.
         "\\$nodes = \\[\\.\\.\\.\\$nodes, \\.\\.\\.array_values\\(\\$userFolder->search\\(\\$marker\\)\\)\\];"
       ]

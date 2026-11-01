@@ -170,7 +170,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$query->method('getLimit')->willReturn(10);
 		$query->method('getCursor')->willReturn(null);
 
-		$configService = new ConfigService($config, $credentials, $this->accounts('archive'), $this->createStub(LoggerInterface::class));
+		$configService = new ConfigService($config, $credentials, $this->accounts('archive'), $this->createStub(LoggerInterface::class), $this->createStub(ICacheFactory::class));
 		$paperlessApi = new PaperlessApiService($configService, $clientService, $this->diagnostics($config), $this->clock(), $this->appManager());
 		$provider = new PaperlessSearchProvider(
 			$paperlessApi,
@@ -234,7 +234,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			->with(AppConstants::APP_ID, 'always_search', false)
 			->willReturn(true);
 
-		$configService = new ConfigService($config, $this->createStub(ICredentialsManager::class), $this->accounts(), $this->createStub(LoggerInterface::class));
+		$configService = new ConfigService($config, $this->createStub(ICredentialsManager::class), $this->accounts(), $this->createStub(LoggerInterface::class), $this->createStub(ICacheFactory::class));
 		$paperlessApi = new PaperlessApiService($configService, $this->createStub(IClientService::class), $this->diagnostics($config), $this->clock(), $this->appManager());
 		$provider = new PaperlessSearchProvider(
 			$paperlessApi,
@@ -1799,7 +1799,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$request = $this->createStub(IRequest::class);
 		$request->method('getHeader')->willReturn('Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0');
 
-		$configService = new ConfigService($config, $credentials, $this->accounts('archive', 'sync'), $this->createStub(LoggerInterface::class));
+		$configService = new ConfigService($config, $credentials, $this->accounts('archive', 'sync'), $this->createStub(LoggerInterface::class), $this->createStub(ICacheFactory::class));
 		$paperlessApi = new PaperlessApiService($configService, $clientService, $this->diagnostics($config), $this->clock(), $this->appManager());
 
 		return new PaperlessSearchProvider(

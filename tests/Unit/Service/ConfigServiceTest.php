@@ -17,6 +17,7 @@ use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryAppConfig;
 use OCP\IAppConfig;
+use OCP\ICacheFactory;
 use OCP\IUserManager;
 use OCP\Security\ICredentialsManager;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -69,6 +70,7 @@ final class ConfigServiceTest extends TestCase {
 			'paperlessApiVersion' => '10',
 			'personalAlwaysSearch' => true,
 			'tokenWarnings' => [],
+			'newDocumentAlerts' => false,
 		], $serialized);
 		self::assertStringNotContainsString('TEST_VALUE', json_encode($serialized, JSON_THROW_ON_ERROR));
 	}
@@ -307,7 +309,7 @@ final class ConfigServiceTest extends TestCase {
 	public function testWithoutAnArchiveAccountNoAccountIsLookedUp(): void {
 		$accounts = $this->createMock(IUserManager::class);
 		$accounts->expects(self::never())->method('get');
-		$service = new ConfigService($this->settings([]), $this->createStub(ICredentialsManager::class), $accounts, $this->createStub(LoggerInterface::class));
+		$service = new ConfigService($this->settings([]), $this->createStub(ICredentialsManager::class), $accounts, $this->createStub(LoggerInterface::class), $this->createStub(ICacheFactory::class));
 
 		self::assertSame('', $service->getArchiveOwner());
 		self::assertFalse($service->getPublicConfig()->archiveOwnerMissing);
@@ -562,6 +564,7 @@ final class ConfigServiceTest extends TestCase {
 			$credentials,
 			$this->accounts(),
 			$logger,
+			$this->createStub(ICacheFactory::class),
 		);
 
 		self::assertSame('', $service->getToken());
@@ -614,7 +617,7 @@ final class ConfigServiceTest extends TestCase {
 	public function testResetDeletesTheUrlTheSwitchesTheArchiveAccountAndTheToken(): void {
 		$deletedKeys = [];
 		$config = $this->createMock(IAppConfig::class);
-		$config->expects(self::exactly(8))
+		$config->expects(self::exactly(9))
 			->method('deleteKey')
 			->willReturnCallback(static function (string $app, string $key) use (&$deletedKeys): void {
 				$deletedKeys[] = $app . '.' . $key;
@@ -635,6 +638,7 @@ final class ConfigServiceTest extends TestCase {
 			AppConstants::APP_ID . '.archive_owner',
 			AppConstants::APP_ID . '.allow_local',
 			AppConstants::APP_ID . '.personal_always_search',
+			AppConstants::APP_ID . '.new_document_alerts',
 			AppConstants::APP_ID . '.paperless_version',
 			AppConstants::APP_ID . '.paperless_api_version',
 			AppConstants::APP_ID . '.token_warnings',
@@ -652,6 +656,7 @@ final class ConfigServiceTest extends TestCase {
 			'paperlessApiVersion' => '',
 			'personalAlwaysSearch' => true,
 			'tokenWarnings' => [],
+			'newDocumentAlerts' => false,
 		], $result->jsonSerialize());
 		self::assertSame('', $service->getToken());
 	}
@@ -867,6 +872,56 @@ final class ConfigServiceTest extends TestCase {
 	 *
 	 * @param callable(): mixed $refuse
 	 */
+
+	/**
+	 * @return array<string, array{?bool, bool, bool}>
+	 */
+	public static function newDocumentAlerts(): array {
+		return [
+			// stored, a memory cache, allowed
+			'nothing stored, with a memory cache' => [null, true, true],
+			'nothing stored, without a memory cache' => [null, false, false],
+			'turned on, without a memory cache' => [true, false, true],
+			'turned off, with a memory cache' => [false, true, false],
+		];
+	}
+
+	/**
+	 * Until an administrator chooses, users may ask for notifications only where Nextcloud
+	 * has a memory cache.
+	 */
+	#[DataProvider('newDocumentAlerts')]
+	public function testUsersMayAskForNotificationsAsChosenOrWithAMemoryCache(?bool $stored, bool $memoryCache, bool $allowed): void {
+		$cacheFactory = $this->createStub(ICacheFactory::class);
+		$cacheFactory->method('isAvailable')->willReturn($memoryCache);
+		$values = $stored === null ? [] : [AppConstants::APP_ID . '.new_document_alerts' => $stored];
+		$service = new ConfigService($this->settings($values), $this->createStub(ICredentialsManager::class), $this->accounts(), $this->createStub(LoggerInterface::class), $cacheFactory);
+
+		self::assertSame($allowed, $service->isNewDocumentAlertsAllowed());
+		self::assertSame($allowed, $service->getPublicConfig()->newDocumentAlerts);
+	}
+
+	public function testSavingStoresTheChoiceOfNotificationsOrLeavesItAlone(): void {
+		$config = $this->settings([]);
+		$cacheFactory = $this->createStub(ICacheFactory::class);
+		$cacheFactory->method('isAvailable')->willReturn(true);
+		$service = new ConfigService($config, $this->createStub(ICredentialsManager::class), $this->accounts(), $this->createStub(LoggerInterface::class), $cacheFactory);
+
+		// No choice leaves the default of the memory cache, and says what counts.
+		$result = $service->save('https://paperless.example.com', 'TEST_VALUE');
+		self::assertNull($config->stored(AppConstants::APP_ID, 'new_document_alerts'));
+		self::assertTrue($result->newDocumentAlerts);
+
+		$result = $service->save('https://paperless.example.com', 'TEST_VALUE', newDocumentAlerts: false);
+		self::assertFalse($config->stored(AppConstants::APP_ID, 'new_document_alerts'));
+		self::assertFalse($result->newDocumentAlerts);
+
+		// Disconnecting forgets the choice, and says what counts then.
+		$result = $service->reset();
+		self::assertNull($config->stored(AppConstants::APP_ID, 'new_document_alerts'));
+		self::assertTrue($result->newDocumentAlerts);
+	}
+
 	private function refusal(callable $refuse): InvalidSettingException {
 		try {
 			$refuse();
@@ -881,7 +936,7 @@ final class ConfigServiceTest extends TestCase {
 	 * The service, with the accounts archive and sync in Nextcloud.
 	 */
 	private function service(IAppConfig $config, ICredentialsManager $credentials): ConfigService {
-		return new ConfigService($config, $credentials, $this->accounts('archive', 'sync'), $this->createStub(LoggerInterface::class));
+		return new ConfigService($config, $credentials, $this->accounts('archive', 'sync'), $this->createStub(LoggerInterface::class), $this->createStub(ICacheFactory::class));
 	}
 
 	/**

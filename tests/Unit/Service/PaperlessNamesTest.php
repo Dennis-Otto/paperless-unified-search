@@ -522,7 +522,7 @@ final class PaperlessNamesTest extends TestCase {
 		$cacheFactory = $this->createMock(ICacheFactory::class);
 		$cacheFactory->expects(self::atMost(1))->method('createDistributed')->with(AppConstants::APP_ID)->willReturn($cache ?? $this->cache);
 
-		$configService = new ConfigService($config, $credentials, $this->createStub(IUserManager::class), $this->createStub(LoggerInterface::class));
+		$configService = new ConfigService($config, $credentials, $this->createStub(IUserManager::class), $this->createStub(LoggerInterface::class), $this->createStub(ICacheFactory::class));
 
 		return new PaperlessNames(
 			new PaperlessApiService($configService, $clientService, new SearchDiagnostics($config, $clock, $this->createStub(ICacheFactory::class)), $clock, $appManager),
