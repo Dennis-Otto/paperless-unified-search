@@ -14,15 +14,22 @@ name: Docs
 # current, and the files that Material downloads for the website stay in a cache for a
 # week. After the build, lychee checks every link and anchor of the pages that were
 # built, blueprint.py site-check what the hooks of the website promise, and axe-core
-# every page in the light and the dark scheme for what WCAG 2.2 A and AA ask, with
-# the locked tools of .github/a11y/. The job that publishes the website signs its
-# provenance and asks the published website for its pages.
+# the pages in the light and the dark scheme for what WCAG 2.2 A and AA ask, with the
+# locked tools of .github/a11y/: on a pull request those that differ from main, by the
+# digest that main keeps in the cache, and on main and every week every page. A serious
+# or critical violation fails the check, unless .github/a11y-accepted.toml accepts it
+# with its reason. The job that publishes the website signs its provenance and asks the
+# published website for its pages.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
   push:
     branches: [main]
   pull_request:
+  # Every page each week, in case something that no commit changes finds a violation; a
+  # run of the schedule publishes nothing.
+  schedule:
+    - cron: "55 6 * * 3"
   workflow_dispatch:
 
 permissions: {}
@@ -30,9 +37,11 @@ permissions: {}
 # One run for each commit of a pull request: a quick check, whose runs for different
 # commits never cancel each other, so that a late run for an older commit can't
 # cancel the check of the head. Runs on main wait for each other, so that the
-# website of the latest commit is published last.
+# website of the latest commit is published last. The run of each week has a group of
+# its own: it publishes nothing, and GitHub keeps one waiting run for each group, so
+# in that of main it could take the place of a push that waits.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event.pull_request.head.sha }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'schedule' && 'weekly-' || '' }}${{ github.event.pull_request.number || github.ref }}-${{ github.event.pull_request.head.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -46,7 +55,8 @@ jobs:
   docs:
     name: docs
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # The accessibility check, with its limit below, and five minutes for the rest.
+    timeout-minutes: 20
     permissions:
       contents: read
       pages: read # whether GitHub Pages publishes from this workflow
@@ -82,7 +92,7 @@ jobs:
             exit 0
           fi
           echo "build=true" >> "$GITHUB_OUTPUT"
-          if [[ "$EVENT" != pull_request && "$GITHUB_REF" == refs/heads/main ]]; then
+          if [[ "$EVENT" != pull_request && "$EVENT" != schedule && "$GITHUB_REF" == refs/heads/main ]]; then
             # GitHub Pages has one website, and the other workflow publishes it; not in
             # a fork, where the Dashboard of the blueprint doesn't run.
             for workflow in .github/workflows/*.y*ml; do
@@ -214,12 +224,11 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' && hashFiles('scripts/check-site.sh') != '' }}
         timeout-minutes: 5
         run: bash scripts/check-site.sh site
-      # The accessibility of the website: .github/a11y/check.mjs opens every page in
-      # the Google Chrome of the runner, in the light and the dark scheme, and names
-      # each serious or critical violation of WCAG 2.2 A or AA that axe-core finds,
-      # with its page and how to fix it, in the summary and as annotations. For one
-      # release it only reports, so that every repository can fix its pages before it
-      # fails the check.
+      # The accessibility of the website: .github/a11y/check.mjs opens the pages in the
+      # Google Chrome of the runner, in the light and the dark scheme, and names each
+      # serious or critical violation of WCAG 2.2 A or AA that axe-core finds and that
+      # .github/a11y-accepted.toml doesn't accept, with its page and how to fix it, in
+      # the summary and as annotations, and fails the check.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         timeout-minutes: 5
@@ -229,18 +238,65 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         timeout-minutes: 5
         run: npm ci --prefix .github/a11y --ignore-scripts --no-audit --no-fund
-      # The tests of the check itself, which the blueprint keeps.
-      - name: Test the accessibility check
-        if: ${{ !cancelled() && steps.build.outcome == 'success' && hashFiles('.github/a11y/check.test.mjs') != '' }}
+      # A pull request opens only the pages that differ from main, which takes a few
+      # seconds instead of minutes: it compares with the digest of the commit that it
+      # merges into, or else with the newest one, where what main changed since then
+      # only adds pages to open. Without a digest, or when a stylesheet, a script,
+      # mkdocs.yml, the accepted violations or the tools differ, it opens every page,
+      # and the summary says why.
+      - name: Restore the digest of the website of main
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && github.event_name == 'pull_request' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         timeout-minutes: 5
-        run: node --test .github/a11y/check.test.mjs
+        with:
+          path: site-digest.json
+          key: website-digest-${{ github.event.pull_request.base.sha }}-
+          restore-keys: website-digest-
       - name: Check the accessibility of the website
+        id: a11y
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        continue-on-error: true
-        timeout-minutes: 5
+        # Every page in two schemes, on a runner: 7 minutes 17 seconds on homedarts, the
+        # slowest website, with 243 pages (2026-11-01), and 5 minutes 32 seconds on the
+        # blueprint. The limit is about twice the slowest, for a slow runner and new pages.
+        timeout-minutes: 15
         env:
-          REPORT_ONLY: "true"
-        run: node .github/a11y/check.mjs site
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [[ "$EVENT" == pull_request ]]; then
+            node .github/a11y/check.mjs site --changed-since site-digest.json
+          else
+            node .github/a11y/check.mjs site --write-digest site-digest.json
+          fi
+      # Only main saves the digest, as every pull request reads a cache of main, and
+      # also after a violation: a pull request answers for what it changes.
+      - name: Keep the digest of the website for the pull requests
+        if: ${{ !cancelled() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && hashFiles('site-digest.json') != '' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        timeout-minutes: 5
+        with:
+          path: site-digest.json
+          key: website-digest-${{ github.sha }}-${{ github.run_id }}
+      # The first run of every page on main, with the line baseline = true that an update
+      # of the blueprint brings, wrote what it found into .github/a11y-accepted.toml and
+      # passes, so that no repository turns red. The fix bot brings that file in its
+      # pull request with the fixes of main, and from then on a new violation fails.
+      - name: Keep the violations that this run accepted
+        id: accepted
+        if: ${{ !cancelled() && steps.a11y.outputs.written == 'true' && github.event_name == 'push' }}
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" fix keep "$RUNNER_TEMP/fixes" >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the fixes for the fix bot
+        if: ${{ !cancelled() && steps.accepted.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        timeout-minutes: 5
+        with:
+          name: fixes-docs
+          path: ${{ runner.temp }}/fixes/
+          # Fixes of files in .github/ as well.
+          include-hidden-files: true
+          if-no-files-found: ignore
       # The website of a pull request, for a week: the report of the PR coach links
       # it, so that a reviewer sees the pages as they will look after the merge, also
       # when a check of its links or of its hooks failed. So is that of main in a

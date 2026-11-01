@@ -44,7 +44,10 @@ name: After the checks
 # .github/checks.project.toml. It works for a pull request from a fork as well, whose
 # own runs can't write to it. The comment follows every push and turns into a short
 # all-clear once every check passes. A check that was cancelled, as a job that ran out
-# of time is, hasn't passed either. It reads the check runs and their annotations from
+# of time is, hasn't passed either, and commits that block the merge, because the rules
+# of its base branch require a verified signature that they lack, allow no all-clear
+# and no word about the merge, also before their check signed commits has ended: the
+# coach asks GitHub for them itself. It reads the check runs and their annotations from
 # the API and shows their text only as code, and waits up to three minutes for the
 # checks of other apps, such as the alerts of code scanning, which end after the last
 # workflow. The scanners, which run in the pull requests that change what they read,
@@ -899,12 +902,14 @@ jobs:
     name: the fix bot
     # After a run of Lint or of the CI that failed for a pull request, also one from a
     # fork, and after every run of the CI on main, which also closes the pull request
-    # of the fixes of main once main needs none.
+    # of the fixes of main once main needs none; on main also after Docs, whose first
+    # run of the accessibility check keeps the violations that it accepted.
     if: >-
       !github.event.repository.fork &&
-      (github.event.workflow_run.name == 'Lint' || startsWith(github.event.workflow_run.name, 'CI (')) &&
-      ((github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'failure') ||
-      (github.event.workflow_run.event == 'push' &&
+      (((github.event.workflow_run.name == 'Lint' || startsWith(github.event.workflow_run.name, 'CI (')) &&
+      github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'failure') ||
+      ((github.event.workflow_run.name == 'Lint' || github.event.workflow_run.name == 'Docs' || startsWith(github.event.workflow_run.name, 'CI (')) &&
+      github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == github.event.repository.default_branch &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
       contains(fromJSON('["success", "failure"]'), github.event.workflow_run.conclusion)))
