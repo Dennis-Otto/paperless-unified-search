@@ -5,14 +5,23 @@
 
 # The end-to-end tests against every Nextcloud version that appinfo/info.xml supports,
 # from min-version to max-version, all at the same time: run.sh for each version, with
-# the current release of its image nextcloud:<version>-apache, in a Compose project and
-# on a port of its own. Together they take far less time than one after the other. The
-# required check "nextcloud" of .github/workflows/e2e.yml runs this script.
+# its image of Nextcloud, in a Compose project and on a port of its own. Together they
+# take far less time than one after the other. The required check "nextcloud" of
+# .github/workflows/e2e.yml runs this script.
 #
 #   bash tests/e2e/run-all.sh
 #   E2E_VERSIONS="33 35" bash tests/e2e/run-all.sh
+#   E2E_IMAGES=floating bash tests/e2e/run-all.sh
 #   E2E_PHONE=newest bash tests/e2e/run-all.sh
 #   E2E_UPGRADE=newest bash tests/e2e/run-all.sh
+#
+# E2E_IMAGES names the image of each version. pinned, the default, which e2e.yml sets for
+# a pull request and a push, is the line of nextcloud-images.txt, which names a release
+# and its digest: a new release of Nextcloud reaches a pull request only through the
+# pull request of Renovate that moves its line, and a run can be repeated later. floating,
+# which e2e.yml sets for the weekly run and a run started by hand, is the current release
+# behind nextcloud:<version>-apache. A version without a line, such as right after the
+# upstream bot raised max-version, tests its floating tag with a notice.
 #
 # flow.mjs goes through the search dialog on a laptop and on a phone, with every
 # version. E2E_PHONE=newest, which e2e.yml sets for a pull request, tests the phone only
@@ -35,7 +44,8 @@
 # 20 minutes. The same holds for each upgrade.
 #
 # In GitHub Actions, the script writes a table of the versions, with the release
-# behind each image and the result of each upgrade, into the summary of the run, and
+# behind each image, the result of each upgrade and each image with its digest, into
+# the summary of the run, and
 # the versions that broke into the output "failed" of its step, such as "Nextcloud 35
 # (35.0.1, failed)" or "Nextcloud 34 (34.0.1, upgrade failed)", and their major
 # versions into the output "versions", such as "35", from which the weekly run of
@@ -50,8 +60,14 @@ DOCKER_BIN="${DOCKER_BIN:-docker}"
 VERSION_TIMEOUT="${E2E_VERSION_TIMEOUT:-600}"
 PHONE="${E2E_PHONE:-all}"
 UPGRADE="${E2E_UPGRADE:-all}"
+IMAGES="${E2E_IMAGES:-pinned}"
 LOG_DIR="$(mktemp -d)"
 versions=()
+# The image of each version, as run.sh and upgrade.sh take it, how it was chosen, pinned
+# or floating, and for the summary its full name, with the digest of a floating tag.
+images=()
+image_kinds=()
+image_names=()
 downloads=()
 results=()
 durations=()
@@ -87,6 +103,15 @@ stop() {
 	exit 130
 }
 trap stop INT TERM
+
+# A notice of the run in GitHub Actions, and a plain line elsewhere: a title and a text.
+notice() {
+	if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+		echo "::notice title=$1::$2"
+	else
+		echo "$2"
+	fi
+}
 
 # Lines that group the log in GitHub Actions, and plain headings elsewhere.
 group() {
@@ -135,6 +160,10 @@ for version in "${versions[@]}"; do
 		exit 1
 	fi
 done
+if [[ "${IMAGES}" != pinned && "${IMAGES}" != floating ]]; then
+	echo "E2E_IMAGES is ${IMAGES}, but must be pinned, for the images of nextcloud-images.txt, or floating, for the current release behind nextcloud:<version>-apache." >&2
+	exit 1
+fi
 if [[ "${PHONE}" != all && "${PHONE}" != newest ]]; then
 	echo "E2E_PHONE is ${PHONE}, but must be all, for the phone with every version, or newest, for the phone with the newest version alone." >&2
 	exit 1
@@ -155,6 +184,26 @@ deadline=()
 if timeout --version >/dev/null 2>&1; then
 	deadline=(timeout --kill-after=30 "${VERSION_TIMEOUT}")
 fi
+
+# The line of a version in nextcloud-images.txt, and nothing when it has none.
+pinned_image() {
+	sed -nE "/^nextcloud:$1\.[0-9.]+-apache@sha256:[a-f0-9]{64}\$/{p;q;}" "${SCRIPT_DIR}/nextcloud-images.txt" 2>/dev/null || true
+}
+
+for index in "${!versions[@]}"; do
+	version="${versions[index]}"
+	images[index]="nextcloud:${version}-apache"
+	image_kinds[index]=floating
+	if [[ "${IMAGES}" == pinned ]]; then
+		pin="$(pinned_image "${version}")"
+		if [[ -n "${pin}" ]]; then
+			images[index]="${pin}"
+			image_kinds[index]=pinned
+		else
+			notice "Nextcloud ${version} has no pin" "tests/e2e/nextcloud-images.txt pins no image of Nextcloud ${version}, so its tests run against the floating tag ${images[index]}; bash tests/e2e/pin-images.sh adds the pin."
+		fi
+	fi
+done
 
 # The sizes of the search dialog in flow.mjs for each version (run.sh), and whether
 # upgrade.sh runs with it.
@@ -182,6 +231,9 @@ if ((${#versions[@]} == 1)); then
 else
 	echo "The end-to-end tests run against Nextcloud ${versions[*]} at the same time."
 fi
+for index in "${!versions[@]}"; do
+	echo "Nextcloud ${versions[index]} runs from the ${image_kinds[index]} image ${images[index]}."
+done
 if [[ "${PHONE}" == newest ]]; then
 	echo "The search dialog runs on a phone only against Nextcloud ${newest}, and on a laptop against every version (E2E_PHONE=newest)."
 fi
@@ -196,9 +248,9 @@ SECONDS=0
 # each run needs them at once, the browser only at its end. On a runner of GitHub,
 # this is about ten seconds faster than downloading the browser along with them. A
 # download that fails is left to the run of its version, whose log then says why.
-for version in "${versions[@]}"; do
-	NEXTCLOUD_IMAGE="nextcloud:${version}-apache" \
-		"${DOCKER_BIN}" compose --project-name "pus_e2e_${version}" --file "${SCRIPT_DIR}/compose.yaml" \
+for index in "${!versions[@]}"; do
+	NEXTCLOUD_IMAGE="${images[index]}" \
+		"${DOCKER_BIN}" compose --project-name "pus_e2e_${versions[index]}" --file "${SCRIPT_DIR}/compose.yaml" \
 		pull --quiet >/dev/null 2>&1 &
 	downloads+=("$!")
 done
@@ -217,7 +269,7 @@ for index in "${!versions[@]}"; do
 	version="${versions[index]}"
 	E2E_PORT="$((18000 + version))" \
 		E2E_PROJECT_NAME="pus_e2e_${version}" \
-		NEXTCLOUD_IMAGE="nextcloud:${version}-apache" \
+		NEXTCLOUD_IMAGE="${images[index]}" \
 		E2E_SKIP_PLAYWRIGHT_PULL=1 \
 		E2E_FLOW_SIZES="${sizes[index]}" \
 		"${deadline[@]}" bash "${SCRIPT_DIR}/run.sh" >"${LOG_DIR}/e2e-${version}.log" 2>&1 &
@@ -228,7 +280,7 @@ for index in "${!versions[@]}"; do
 	if ((upgrades[index] == 1)); then
 		E2E_PORT="$((19000 + version))" \
 			E2E_PROJECT_NAME="pus_upgrade_${version}" \
-			NEXTCLOUD_IMAGE="nextcloud:${version}-apache" \
+			NEXTCLOUD_IMAGE="${images[index]}" \
 			"${deadline[@]}" bash "${SCRIPT_DIR}/upgrade.sh" >"${LOG_DIR}/upgrade-${version}.log" 2>&1 &
 		pids+=("$!")
 		run_scripts+=(upgrade.sh)
@@ -324,31 +376,42 @@ for index in "${!versions[@]}"; do
 	esac
 done
 
-# The release that each floating image nextcloud:<version>-apache held, empty when
-# its download failed, for the summary of the run and the output of the step.
+# The release that each image held, empty when its download failed, for the summary of
+# the run and the output of the step; and the digest of a floating tag, which names the
+# same image later, when the tag has moved on.
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" || -n "${GITHUB_OUTPUT:-}" ]]; then
 	for index in "${!versions[@]}"; do
-		releases[index]="$("${DOCKER_BIN}" image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' \
-			"nextcloud:${versions[index]}-apache" 2>/dev/null | sed -n 's/^NEXTCLOUD_VERSION=//p' || true)"
+		inspected="$("${DOCKER_BIN}" image inspect \
+			--format '{{range .Config.Env}}{{println .}}{{end}}{{range .RepoDigests}}{{printf "REPO_DIGEST=%s\n" .}}{{end}}' \
+			"${images[index]}" 2>/dev/null || true)"
+		releases[index]="$(sed -n 's/^NEXTCLOUD_VERSION=//p' <<<"${inspected}")"
+		image_names[index]="${images[index]}"
+		digest="$(sed -nE '/^REPO_DIGEST=/{s/^REPO_DIGEST=[^@]*@//p;q;}' <<<"${inspected}")"
+		if [[ "${image_kinds[index]}" == floating && -n "${digest}" ]]; then
+			image_names[index]+="@${digest}"
+		fi
 	done
 fi
 
 # A table of the versions on the summary page of the run, with the result of each
-# upgrade, such as "passed, from v1.1.1, 95 s".
+# upgrade, such as "passed, from v1.1.1, 95 s", and the image, so that a run that failed
+# can be repeated, also once a new release has moved the tag.
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
 	{
 		echo "### End-to-end tests"
 		echo
-		echo "| Nextcloud | Release | Result | Time | Search dialog | Upgrade |"
-		echo "| --- | --- | --- | --- | --- | --- |"
+		echo "| Nextcloud | Release | Result | Time | Search dialog | Upgrade | Image |"
+		echo "| --- | --- | --- | --- | --- | --- | --- |"
 		for index in "${!versions[@]}"; do
 			if ((upgrades[index] == 0)); then
 				upgrade="not run"
 			else
 				upgrade="${upgrade_results[index]}${upgrade_from[index]:+, from ${upgrade_from[index]}}, ${upgrade_durations[index]} s"
 			fi
-			echo "| ${versions[index]} | ${releases[index]:-unknown} | ${results[index]} | ${durations[index]} s | ${sizes[index]// /, } | ${upgrade} |"
+			echo "| ${versions[index]} | ${releases[index]:-unknown} | ${results[index]} | ${durations[index]} s | ${sizes[index]// /, } | ${upgrade} | ${image_kinds[index]} \`${image_names[index]}\` |"
 		done
+		echo
+		echo "\`NEXTCLOUD_IMAGE=<image> bash tests/e2e/run.sh\` runs the tests against one of these images again."
 	} >>"${GITHUB_STEP_SUMMARY}"
 fi
 

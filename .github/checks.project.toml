@@ -65,11 +65,14 @@ go to another server, a repair step of the app runs twice or warns, or the log h
 finding. The annotation of each version that failed names it; the group of
 the log named after the version, such as *Nextcloud 35 (failed, 312 s)* or *Upgrade on
 Nextcloud 35 (failed, 95 s)*, shows the step that stopped and the logs of its
-containers, and the summary of the run the release of Nextcloud behind each image and
-the result of each upgrade. A failure of the weekly run, which tests the newest
-release behind each image also in a week without a change of the app, opens the issue
-*A supported Nextcloud release breaks the app* with the versions that broke, or adds
-the run to it, and the next run that passes closes it."""
+containers, and the summary of the run the release of Nextcloud behind each image, the
+result of each upgrade and the image with its digest. A pull request and a push test
+the images that `tests/e2e/nextcloud-images.txt` pins, so a failure there comes from
+the change itself, or, in the pull request of Renovate that moves those pins, from the
+new release of Nextcloud that it brings. A failure of the weekly run, which tests the
+newest release behind each floating tag also in a week without a change of the app,
+opens the issue *A supported Nextcloud release breaks the app* with the versions that
+broke, or adds the run to it, and the next run that passes closes it."""
 why = """Only these tests run the app in Nextcloud itself, as its users meet it: the
 search of Nextcloud with its files and shares, the settings, occ, the dashboard and the
 smart picker, in a browser on a laptop and on a phone. The check is required, so that
@@ -84,10 +87,16 @@ into `EXPECTED_WARNINGS` of `tests/e2e/assert_log.py`, with that step. For a fai
 upgrade, run `tests/e2e/upgrade.sh` against that version: a setting or a key that the
 upgrade lost needs a migration or a repair step that carries it over, and a key that
 the app retires on purpose a repair step that removes it and its place in
-`RETIRED_KEYS` of `tests/e2e/upgrade.sh`. A version that took too long on a busy runner
-usually passes when the job runs again, which the flaky-test bot does once by itself."""
+`RETIRED_KEYS` of `tests/e2e/upgrade.sh`. When a new release of Nextcloud breaks the
+app, in the weekly run or in the pull request of Renovate, adapt the app in a pull
+request of its own, and test it with `E2E_IMAGES=floating`, against that release; the
+pull request of Renovate passes once that is merged. To repeat a run, give
+`NEXTCLOUD_IMAGE` the image that the summary of the run names. A version that took too
+long on a busy runner usually passes when the job runs again, which the flaky-test bot
+does once by itself."""
 commands = [
   "bash tests/e2e/run-all.sh",
+  "E2E_IMAGES=floating E2E_VERSIONS=35 bash tests/e2e/run-all.sh",
   "NEXTCLOUD_IMAGE=nextcloud:35-apache KEEP_E2E=1 bash tests/e2e/run.sh",
   "NEXTCLOUD_IMAGE=nextcloud:35-apache KEEP_E2E=1 bash tests/e2e/upgrade.sh",
 ]
@@ -191,7 +200,9 @@ a person, who finds out whether the app or the step of the script is wrong."""
 [step."Checks of this project"]
 problem = """A check of this app alone, in `scripts/check-project.sh`, failed: the line
 `== …` above it names the check, and the last line of its output what is wrong. They
-check that the image of Playwright and `playwright-core` have the same version; the
+check that the image of Playwright and `playwright-core` have the same version;
+*Pinned images of Nextcloud*, that `tests/e2e/nextcloud-images.txt` has one pin for each
+version from `min-version` to `max-version` of `appinfo/info.xml` and no other; the
 scripts of the end-to-end tests, without Docker, among them that the mock of Paperless
 writes each request into its journal before it answers and that no script pipes a
 command into `grep --quiet`; *Pictures of the READMEs and the website*, that each
@@ -235,7 +246,9 @@ the output names, with a column for a new `max-version` in each table of compati
 whose cells are those of the newest column, and without the oldest column for a new
 `min-version`, and it names what only a person can fix: a place that is gone, a row of
 a table without a cell for each column, and a description of the App Store without its
-versions; for a link on main, correct the
+versions; for a pin of Nextcloud, the fourth command adds that of each version without
+one, from its floating tag, with Docker, and removes the lines that are wrong; for a link
+on main, correct the
 path of the link, or add the file that it links; for a section, mark it in both READMEs
 with the same name; for a picture from main that is missing, correct its path in the file that the
 output names, or add it to `scripts/screenshots.sh` and run that; for the social
@@ -253,7 +266,7 @@ pipe into `grep --quiet`, read the output into a variable first and search that,
 `grep --quiet … <<<"${output}"`, since the command before the pipe dies of SIGPIPE
 once grep stops reading at its first match. A
 JavaScript catalog that lags its JSON catalog is written anew by the third command.
-The fix bot runs the second and the third command on a pull request of this
+The fix bot runs the second, the third and the fourth command on a pull request of this
 repository, such as the one of the upstream bot for a new Nextcloud, which then fixes
 itself, and suggests their fixes on a pull request from a fork. Then run the checks
 again:"""
@@ -261,6 +274,7 @@ commands = [
   "bash scripts/check-project.sh",
   "bash scripts/versions.sh --write",
   "node scripts/check-l10n.mjs --write",
+  "bash tests/e2e/pin-images.sh",
 ]
 docs = "CONTRIBUTING.md#checks"
-autofix = ["bash scripts/versions.sh --write", "node scripts/check-l10n.mjs --write"]
+autofix = ["bash scripts/versions.sh --write", "node scripts/check-l10n.mjs --write", "bash tests/e2e/pin-images.sh"]

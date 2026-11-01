@@ -3,9 +3,12 @@
 
 name: Docker E2E
 
-# The end-to-end tests in Docker against the current release of every Nextcloud
-# version that appinfo/info.xml supports, from min-version to max-version, so that
-# raising max-version, as the upstream bot does, tests the new version at once. One
+# The end-to-end tests in Docker against every Nextcloud version that appinfo/info.xml
+# supports, from min-version to max-version, so that raising max-version, as the
+# upstream bot does, tests the new version at once. A pull request and a push test the
+# images that tests/e2e/nextcloud-images.txt pins by their digests, and Renovate brings
+# each new release as a pull request of its own: a new release of Nextcloud can't turn
+# every open pull request red at the same moment, and a run can be repeated later. One
 # job, the required check "nextcloud", runs all versions at the same time
 # (tests/e2e/run-all.sh): no queue between jobs, and one download of the browser. In
 # a pull request, the search dialog runs on a phone only against the newest version,
@@ -15,9 +18,10 @@ name: Docker E2E
 #
 # A pull request or push that changes no file the tests cover, such as one of the
 # documentation, of the CI or from the blueprint, passes the check in seconds without
-# running them. The schedule and a start by hand always run them, so that the weekly
-# run also tests the newest release behind each image nextcloud:<version>-apache. When
-# that run fails, it opens the issue "A supported Nextcloud release breaks the app",
+# running them. The schedule and a start by hand always run them, and test the newest
+# release behind each floating tag nextcloud:<version>-apache instead of the pins, which
+# gives notice of a break before the pull request of Renovate. When that run fails, it
+# opens the issue "A supported Nextcloud release breaks the app",
 # with the versions that broke and the releases behind their images, or adds the run to
 # it, and the next run that passes closes it. A pull request or a push never touches
 # the issue; a version that breaks there fails the required check instead.
@@ -92,6 +96,9 @@ jobs:
         id: tests
         if: steps.scope.outputs.run == 'true'
         env:
+          # A pull request and a push test the images of tests/e2e/nextcloud-images.txt;
+          # the weekly run and a start by hand the floating tags, as they are that day.
+          E2E_IMAGES: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && 'pinned' || 'floating' }}
           # A pull request tests the search dialog on a phone only with the newest
           # Nextcloud, and on a laptop with every version; a push to main, the weekly
           # run and a start by hand test every size with every version (#108).
@@ -173,7 +180,7 @@ jobs:
             cat <<'TEXT'
           The required check `nextcloud` of `.github/workflows/e2e.yml` runs `tests/e2e/run-all.sh` every Monday, also in a week without a change of the app: the end-to-end tests against the current release behind each image `nextcloud:<version>-apache`, for every version from `min-version` to `max-version` of `appinfo/info.xml`. Most often a new release of Nextcloud behind one of these images broke the app or its tests; its users meet the same break, and every pull request that changes the app fails the check until it is fixed.
 
-          The annotation of each version that broke names it; the group of the log named after the version, such as *Nextcloud 35 (failed, 312 s)*, shows the step that stopped and the logs of its containers, and the summary of the run the release of Nextcloud behind each image.
+          The annotation of each version that broke names it; the group of the log named after the version, such as *Nextcloud 35 (failed, 312 s)*, shows the step that stopped and the logs of its containers, and the summary of the run the release of Nextcloud behind each image and its digest.
 
           TEXT
             if [[ -n "${VERSIONS:-}" ]]; then

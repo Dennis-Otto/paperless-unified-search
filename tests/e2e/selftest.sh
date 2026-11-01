@@ -16,7 +16,13 @@
 #   the versions that broke as an output of the step, one download of the browser, the
 #   sizes of the search dialog of each version, and the exit status; and with a fake
 #   upgrade.sh, the upgrade from the last release beside the tests of the versions that
-#   E2E_UPGRADE names, one that passes, fails, hangs or is skipped.
+#   E2E_UPGRADE names, one that passes, fails, hangs or is skipped; and the image of each
+#   version that E2E_IMAGES names: the pin of nextcloud-images.txt, the floating tag, and
+#   the floating tag with a notice for a version without a pin.
+# - pin-images.sh, with a fake docker: the check names what is wrong with
+#   nextcloud-images.txt, without Docker, and the fix adds the pin of a new max-version,
+#   removes that of an old min-version and leaves every other pin alone; and, when Python
+#   is installed, that the manager of Renovate in .github/renovate.json5 reads each pin.
 # - package.sh, in a repository of its own: the files that Git tracks, without what a
 #   .nextcloudignore leaves out, in its folder and below it, with the content of the
 #   checkout and the version given.
@@ -208,10 +214,13 @@ XML
 # run-all.sh finds the image of the browser in run.sh.
 cat >"${fake}/tests/e2e/run.sh" <<'SCRIPT'
 # A fake of run.sh, with PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright:v1.0.0-noble
-case "${NEXTCLOUD_IMAGE}" in
-	nextcloud:33-apache) echo "Log of 33 on port ${E2E_PORT}, project ${E2E_PROJECT_NAME}, sizes ${E2E_FLOW_SIZES}" ;;
-	nextcloud:34-apache) echo "Log of 34, sizes ${E2E_FLOW_SIZES}" && exit 1 ;;
-	nextcloud:36-apache) echo "Log of 36, sizes ${E2E_FLOW_SIZES}" ;;
+version="${NEXTCLOUD_IMAGE#nextcloud:}"
+version="${version%%[.-]*}"
+echo "Image of ${version}: ${NEXTCLOUD_IMAGE}"
+case "${version}" in
+	33) echo "Log of 33 on port ${E2E_PORT}, project ${E2E_PROJECT_NAME}, sizes ${E2E_FLOW_SIZES}" ;;
+	34) echo "Log of 34, sizes ${E2E_FLOW_SIZES}" && exit 1 ;;
+	36) echo "Log of 36, sizes ${E2E_FLOW_SIZES}" ;;
 	*)
 		trap 'echo "Log of 35: stopped" && exit 143' TERM
 		echo "Log of 35: hangs"
@@ -224,7 +233,8 @@ SCRIPT
 # for the versions of FAKE_UPGRADE_FAIL, FAKE_UPGRADE_HANG and FAKE_UPGRADE_SKIP.
 cat >"${fake}/tests/e2e/upgrade.sh" <<'SCRIPT'
 version="${NEXTCLOUD_IMAGE#nextcloud:}"
-version="${version%-apache}"
+version="${version%%[.-]*}"
+echo "Upgrade image of ${version}: ${NEXTCLOUD_IMAGE}"
 echo "Upgrade log of ${version} on port ${E2E_PORT}, project ${E2E_PROJECT_NAME}"
 if [[ " ${FAKE_UPGRADE_SKIP:-} " == *" ${version} "* ]]; then
 	echo "The upgrade test is skipped: o/r has no release yet to upgrade from."
@@ -243,16 +253,25 @@ SCRIPT
 cat >"${fake}/bin/docker" <<'SCRIPT'
 #!/usr/bin/env bash
 echo "$*" >>"${FAKE_DOCKER_LOG}"
+if [[ "$1" == compose ]]; then
+	echo "The image of the download: ${NEXTCLOUD_IMAGE}" >>"${FAKE_DOCKER_LOG}"
+fi
 if [[ "$1 $2" == "image inspect" ]]; then
 	image="${*: -1}"
-	version="${image#nextcloud:}"
-	version="${version%-apache}"
+	tag="${image#nextcloud:}"
+	version="${tag%%[.-]*}"
 	# As when the download of the image of a version failed.
 	if [[ " ${FAKE_NO_IMAGE:-} " == *" ${version} "* ]]; then
 		echo "Error: No such image: ${image}" >&2
 		exit 1
 	fi
-	echo "NEXTCLOUD_VERSION=${version}.0.1"
+	# A pin names its release; behind a floating tag is the release <version>.0.1.
+	release="${tag%%-*}"
+	if [[ "${release}" == "${version}" ]]; then
+		release="${version}.0.1"
+	fi
+	echo "NEXTCLOUD_VERSION=${release}"
+	echo "REPO_DIGEST=nextcloud@sha256:digest-of-${release}"
 fi
 SCRIPT
 chmod +x "${fake}/bin/docker"
@@ -363,6 +382,180 @@ fi
 # The required check sets E2E_UPGRADE=newest for a pull request alone.
 expect "E2E_UPGRADE of the required check" 1 \
 	"$(grep --count --fixed-strings "E2E_UPGRADE: \${{ github.event_name == 'pull_request' && 'newest' || 'all' }}" "${SCRIPT_DIR}/../../.github/workflows/e2e.yml")"
+
+# The image of each version. Without a pin, as in every run above, the floating tag, with
+# a notice; the summary names the release behind it and its digest, which finds the same
+# image once the tag has moved on.
+expect "run-all.sh without a pin" 0 "$(run_all env E2E_VERSIONS=33)"
+expect_in "the notice about a version without a pin" "::notice title=Nextcloud 33 has no pin::tests/e2e/nextcloud-images.txt pins no image of Nextcloud 33, so its tests run against the floating tag nextcloud:33-apache; bash tests/e2e/pin-images.sh adds the pin." "${WORK}/log"
+expect_in "the floating tag without a pin" "Image of 33: nextcloud:33-apache" "${WORK}/log"
+expect_in "the kind of image in the log" "Nextcloud 33 runs from the floating image nextcloud:33-apache." "${WORK}/log"
+expect_in "the release of a floating tag in the summary" "| 33 | 33.0.1 | passed |" "${WORK}/summary"
+expect_in "the digest of a floating tag in the summary" "| floating \`nextcloud:33-apache@sha256:digest-of-33.0.1\` |" "${WORK}/summary"
+expect_in "how to run an image of the summary again" 'NEXTCLOUD_IMAGE=<image> bash tests/e2e/run.sh' "${WORK}/summary"
+expect "run-all.sh without a pin and outside of GitHub Actions" 0 "$(run_all env GITHUB_ACTIONS=false E2E_VERSIONS=33)"
+expect_in "the plain line about a version without a pin" "tests/e2e/nextcloud-images.txt pins no image of Nextcloud 33" "${WORK}/log"
+expect "the notice outside of GitHub Actions" 0 "$(grep --count --fixed-strings '::notice' "${WORK}/log" || true)"
+# With a pin, the default: the tests, the upgrade and the download take the image with
+# its digest, and the summary names it. A comment that names an image pins nothing.
+pin33="nextcloud:33.0.7-apache@sha256:$(printf '%064d' 33)"
+pin36="nextcloud:36.1.2-apache@sha256:$(printf '%064d' 36)"
+printf '# Not a pin:\n# nextcloud:34.0.1-apache@sha256:%064d\n%s\n%s\n' 34 "${pin33}" "${pin36}" >"${fake}/tests/e2e/nextcloud-images.txt"
+expect "run-all.sh with pins" 0 "$(run_all env E2E_VERSIONS="33 36")"
+expect_in "the pin in the tests of a version" "Image of 33: ${pin33}" "${WORK}/log"
+expect_in "the pin in the tests of the other version" "Image of 36: ${pin36}" "${WORK}/log"
+expect_in "the pin in the upgrade" "Upgrade image of 33: ${pin33}" "${WORK}/log"
+expect_in "the pin in the download" "The image of the download: ${pin33}" "${WORK}/docker.log"
+expect_in "the kind of a pin in the log" "Nextcloud 33 runs from the pinned image ${pin33}." "${WORK}/log"
+expect_in "the release of a pin in the summary" "| 33 | 33.0.7 | passed |" "${WORK}/summary"
+expect_in "the release of a pin of another minor version" "| 36 | 36.1.2 | passed |" "${WORK}/summary"
+expect_in "the digest of a pin in the summary" "| pinned \`${pin33}\` |" "${WORK}/summary"
+expect "the notice when every version has a pin" 0 "$(grep --count --fixed-strings '::notice' "${WORK}/log" || true)"
+expect "run-all.sh with E2E_IMAGES=pinned" 0 "$(run_all env E2E_VERSIONS=33 E2E_IMAGES=pinned)"
+expect_in "the pin with E2E_IMAGES=pinned" "Image of 33: ${pin33}" "${WORK}/log"
+# The weekly run: the floating tags, without a notice, whatever the file pins.
+expect "run-all.sh with E2E_IMAGES=floating" 0 "$(run_all env E2E_VERSIONS="33 36" E2E_IMAGES=floating)"
+expect_in "the floating tag in the tests" "Image of 33: nextcloud:33-apache" "${WORK}/log"
+expect_in "the floating tag in the upgrade" "Upgrade image of 36: nextcloud:36-apache" "${WORK}/log"
+expect_in "the floating tag in the download" "The image of the download: nextcloud:36-apache" "${WORK}/docker.log"
+expect_in "the floating release in the summary" "| 36 | 36.0.1 | passed |" "${WORK}/summary"
+expect_in "the floating tag in the summary" "| floating \`nextcloud:36-apache@sha256:digest-of-36.0.1\` |" "${WORK}/summary"
+expect "the pins with E2E_IMAGES=floating" 0 "$(grep --count --fixed-strings '@sha256:0000' "${WORK}/log" || true)"
+expect "the notice with E2E_IMAGES=floating" 0 "$(grep --count --fixed-strings '::notice' "${WORK}/log" || true)"
+# Right after the upstream bot raised max-version: the pins, and the floating tag of the
+# version without one, whose tests still decide the run.
+expect "run-all.sh with a pin and a version without one" 1 "$(run_all env E2E_VERSIONS="33 34")"
+expect_in "the pin beside a version without one" "Image of 33: ${pin33}" "${WORK}/log"
+expect_in "the floating tag beside a pin" "Image of 34: nextcloud:34-apache" "${WORK}/log"
+expect_in "the notice beside a pin" "::notice title=Nextcloud 34 has no pin::" "${WORK}/log"
+expect "the version that broke beside a pin" "failed=Nextcloud 34 (34.0.1, failed)|versions=34" "$(paste -s -d "|" "${WORK}/output")"
+# A line without a digest, or of a version that starts alike, is no pin of a version.
+printf 'nextcloud:36-apache\nnextcloud:36.1.2-apache\nnextcloud:360.0.1-apache@sha256:%064d\n' 36 >"${fake}/tests/e2e/nextcloud-images.txt"
+expect "run-all.sh with lines that are no pins" 0 "$(run_all env E2E_VERSIONS=36)"
+expect_in "the floating tag for lines that are no pins" "Image of 36: nextcloud:36-apache" "${WORK}/log"
+rm "${fake}/tests/e2e/nextcloud-images.txt"
+expect "run-all.sh with an E2E_IMAGES that isn't one" 1 "$(run_all env E2E_VERSIONS=33 E2E_IMAGES=newest)"
+expect_in "the message about an E2E_IMAGES that isn't one" "E2E_IMAGES is newest, but must be pinned" "${WORK}/log"
+# The required check tests the pins in a pull request and a push, and the floating tags
+# in the weekly run and a start by hand.
+expect "E2E_IMAGES of the required check" 1 \
+	"$(grep --count --fixed-strings "E2E_IMAGES: \${{ (github.event_name == 'pull_request' || github.event_name == 'push') && 'pinned' || 'floating' }}" "${SCRIPT_DIR}/../../.github/workflows/e2e.yml")"
+
+## pin-images.sh
+
+# In a copy of the script, with a fake of docker buildx imagetools inspect, which notes
+# each call: behind the floating tag of a version is its release <version>.0.4, or
+# FAKE_RELEASE, and the digest of a release is the number of its version, or FAKE_DIGEST;
+# Docker Hub has no versions of FAKE_NO_TAG.
+pinning="${WORK}/pinning"
+pins="${pinning}/tests/e2e/nextcloud-images.txt"
+mkdir -p "${pinning}/appinfo" "${pinning}/tests/e2e" "${pinning}/bin"
+cp "${SCRIPT_DIR}/pin-images.sh" "${pinning}/tests/e2e/pin-images.sh"
+cat >"${pinning}/bin/docker" <<'SCRIPT'
+#!/usr/bin/env bash
+echo "$*" >>"${FAKE_DOCKER_LOG}"
+tag="${4#nextcloud:}"
+version="${tag%%[.-]*}"
+if [[ " ${FAKE_NO_TAG:-} " == *" ${version} "* ]]; then
+	echo "ERROR: $4: not found" >&2
+	exit 1
+fi
+if [[ "${tag}" == "${version}-apache" ]]; then
+	printf 'PATH=/usr/bin\nNEXTCLOUD_VERSION=%s\nPHP_VERSION=8.4.1\n' "${FAKE_RELEASE-${version}.0.4}"
+else
+	printf '%s\n' "${FAKE_DIGEST-sha256:$(printf '%064d' "${version}")}"
+fi
+SCRIPT
+chmod +x "${pinning}/bin/docker"
+
+# Sets the versions that appinfo/info.xml supports.
+supports() {
+	printf '<info><dependencies><nextcloud min-version="%s" max-version="%s"/></dependencies></info>\n' "$1" "$2" >"${pinning}/appinfo/info.xml"
+}
+
+# The line of a pin: its release and the digest of the fake.
+pin_of() {
+	printf 'nextcloud:%s-apache@sha256:%064d\n' "$1" "${1%%.*}"
+}
+
+# Runs pin-images.sh with the arguments given and prints its exit status. env and
+# variables before it reach the script, as for run_all.
+pin_images() {
+	local status=0
+	: >"${WORK}/docker.log"
+	(cd "${pinning}" && DOCKER_BIN="${pinning}/bin/docker" FAKE_DOCKER_LOG="${WORK}/docker.log" \
+		"$@" >"${WORK}/log" 2>&1) || status=$?
+	echo "${status}"
+}
+pin_check=(bash tests/e2e/pin-images.sh --check)
+pin_fix=(bash tests/e2e/pin-images.sh)
+
+# A file in sync: the check and the fix pass, without Docker, and the file stays.
+supports 33 35
+in_sync="$(printf '# The comment of the file.\n'; pin_of 33.0.9; pin_of 34.0.5; pin_of 35.1.2)"
+printf '%s\n' "${in_sync}" >"${pins}"
+expect "the check of a file in sync" 0 "$(pin_images "${pin_check[@]}")"
+expect_in "the message of a file in sync" "tests/e2e/nextcloud-images.txt pins one image for each of Nextcloud 33 to 35" "${WORK}/log"
+expect "Docker in the check of a file in sync" "" "$(cat "${WORK}/docker.log")"
+expect "the fix of a file in sync" 0 "$(pin_images "${pin_fix[@]}")"
+expect "Docker in the fix of a file in sync" "" "$(cat "${WORK}/docker.log")"
+expect "the file in sync after the fix" "${in_sync}" "$(cat "${pins}")"
+# The upstream bot raised max-version. The check names the version, still without Docker.
+# The fix asks Docker for it and adds its line in the order of the versions, with the
+# comment and every other pin as they were, and then the check passes.
+supports 33 36
+expect "the check of a new max-version" 1 "$(pin_images "${pin_check[@]}")"
+expect_in "the version without a pin" "tests/e2e/nextcloud-images.txt: Nextcloud 36, which appinfo/info.xml supports, has no pin." "${WORK}/log"
+expect_in "the command that fixes the check" "Write them there with: bash tests/e2e/pin-images.sh" "${WORK}/log"
+expect "Docker in the check of a new max-version" "" "$(cat "${WORK}/docker.log")"
+expect "the fix of a new max-version" 0 "$(pin_images "${pin_fix[@]}")"
+expect_in "the floating tag in the fix" "buildx imagetools inspect nextcloud:36-apache --format" "${WORK}/docker.log"
+expect_in "the tag of the release in the fix" "buildx imagetools inspect nextcloud:36.0.4-apache --format {{.Manifest.Digest}}" "${WORK}/docker.log"
+expect_in "the pin that the fix names" "Pinned Nextcloud 36: $(pin_of 36.0.4)" "${WORK}/log"
+expect "the file after a new max-version" "$(printf '%s\n' "${in_sync}"; pin_of 36.0.4)" "$(cat "${pins}")"
+expect "the check after a new max-version" 0 "$(pin_images "${pin_check[@]}")"
+# A new min-version: the check names the old line, and the fix removes it without Docker.
+supports 34 36
+expect "the check of a new min-version" 1 "$(pin_images "${pin_check[@]}")"
+expect_in "the old line" "tests/e2e/nextcloud-images.txt: Line 2 pins Nextcloud 33, which appinfo/info.xml no longer supports; it names 34 to 36." "${WORK}/log"
+expect "the fix of a new min-version" 0 "$(pin_images "${pin_fix[@]}")"
+expect "Docker in the fix of a new min-version" "" "$(cat "${WORK}/docker.log")"
+expect "the old line after the fix" 0 "$(grep --count '^nextcloud:33' "${pins}" || true)"
+expect "the check after a new min-version" 0 "$(pin_images "${pin_check[@]}")"
+# A line without a digest, and a second pin of a version: the check names them, and the
+# fix resolves the version that then has no pin and keeps the first pin of the other.
+supports 34 35
+printf 'nextcloud:34-apache\n%s\n%s\n' "$(pin_of 35.0.1)" "$(pin_of 35.0.2)" >"${pins}"
+expect "the check of lines that are wrong" 1 "$(pin_images "${pin_check[@]}")"
+expect_in "the line that is no pin" "Line 1, \"nextcloud:34-apache\", is no pin, such as nextcloud:35.0.1-apache@sha256:" "${WORK}/log"
+expect_in "the second pin of a version" "Line 3 pins Nextcloud 35 a second time." "${WORK}/log"
+expect_in "the version that then has no pin" "Nextcloud 34, which appinfo/info.xml supports, has no pin." "${WORK}/log"
+expect "the fix of lines that are wrong" 0 "$(pin_images "${pin_fix[@]}")"
+expect "the file after the fix of lines that are wrong" "$(pin_of 34.0.4)|$(pin_of 35.0.1)" "$(paste -s -d "|" "${pins}")"
+# No file at all: the fix writes it.
+rm "${pins}"
+expect "the check without the file" 1 "$(pin_images "${pin_check[@]}")"
+expect "the fix without the file" 0 "$(pin_images "${pin_fix[@]}")"
+expect "the file that the fix wrote" "$(pin_of 34.0.4)|$(pin_of 35.0.4)" "$(paste -s -d "|" "${pins}")"
+# Docker Hub doesn't have a version yet, or answers with what is no pin: the fix fails for
+# that version, says so and writes the others, and the check stays red until a later run.
+rm "${pins}"
+expect "the fix of a version that Docker Hub doesn't have" 1 "$(pin_images env FAKE_NO_TAG=35 "${pin_fix[@]}")"
+expect_in "the message about a version that Docker Hub doesn't have" "Nextcloud 35 stays without a pin: Docker couldn't resolve its image nextcloud:35-apache." "${WORK}/log"
+expect "the file without that version" "$(pin_of 34.0.4)" "$(cat "${pins}")"
+expect "the check without that version" 1 "$(pin_images "${pin_check[@]}")"
+expect "the fix of a floating tag of another major version" 1 "$(pin_images env FAKE_RELEASE=34.0.9 "${pin_fix[@]}")"
+expect_in "the message about a floating tag of another major version" "The image nextcloud:35-apache names the release \"34.0.9\", which is no release of Nextcloud 35." "${WORK}/log"
+expect "the fix of a floating tag without a release" 1 "$(pin_images env FAKE_RELEASE= "${pin_fix[@]}")"
+expect "the fix of a tag without a digest" 1 "$(pin_images env FAKE_DIGEST= "${pin_fix[@]}")"
+expect_in "the message about a tag without a digest" "The tag nextcloud:35.0.4-apache has no digest to pin" "${WORK}/log"
+expect "the file after every fix that failed" "$(pin_of 34.0.4)" "$(cat "${pins}")"
+# The script says what it can't work with.
+expect "pin-images.sh with an argument that isn't one" 2 "$(pin_images bash tests/e2e/pin-images.sh --write)"
+expect_in "the usage of pin-images.sh" "Usage: bash tests/e2e/pin-images.sh [--check]" "${WORK}/log"
+printf '<info></info>\n' >"${pinning}/appinfo/info.xml"
+expect "pin-images.sh without a range of versions" 1 "$(pin_images "${pin_check[@]}")"
+expect_in "the message without a range of versions" "appinfo/info.xml names no range of Nextcloud versions" "${WORK}/log"
 
 ## package.sh and upgrade.sh up to Docker
 
@@ -686,6 +879,37 @@ PYTHON
 		"$(grep '^account ' "${WORK}/journal" | paste -s -d "|")"
 else
 	echo "Python 3.9 or newer is not installed here; the CI tests the journal of the mock."
+fi
+
+## The manager of Renovate for the pins
+
+# Renovate moves the lines of nextcloud-images.txt only while its manager finds them, and
+# no check fails when it stops: the pins would just stay old. So the pattern of the
+# manager must find each pin of the file, with its release and digest, and nothing else.
+if [[ -n "${python}" ]]; then
+	"${python}" -B - "${SCRIPT_DIR}/../../.github/renovate.json5" "${SCRIPT_DIR}/nextcloud-images.txt" >"${WORK}/renovate" 2>&1 <<'PYTHON' || true
+import json
+import re
+import sys
+
+config = open(sys.argv[1], encoding="utf-8").read()
+pattern = re.search(
+    r'managerFilePatterns: \["/\^tests/e2e/nextcloud-images\\\\\.txt\$/"\],\s+matchStrings: \[\s+("[^\n]+"),', config
+)
+# JavaScript names a group (?<name>...). Renovate takes the pattern with the flag g alone,
+# so ^ holds only at the start of the file, as here without re.MULTILINE.
+expression =json.loads(pattern.group(1)).replace("(?<", "(?P<")
+text = open(sys.argv[2], encoding="utf-8").read()
+pins = [line for line in text.splitlines() if line and not line.startswith("#")]
+found = [
+    f"{match['depName']}:{match['currentValue']}@{match['currentDigest']}"
+    for match in re.finditer(expression, text)
+]
+print("same" if found == pins and pins else f"the file pins {pins}, but Renovate finds {found}")
+PYTHON
+	expect "the pins that the manager of Renovate finds" same "$(tr -d '\r' <"${WORK}/renovate")"
+else
+	echo "Python 3.9 or newer is not installed here; the CI tests the manager of Renovate."
 fi
 
 ## The check of the log of Nextcloud
@@ -1080,4 +1304,4 @@ if ((failures > 0)); then
 	echo "${failures} of ${checks} checks of the scripts of the end-to-end tests failed." >&2
 	exit 1
 fi
-echo "The ${checks} checks of scope.sh, run-all.sh, package.sh, upgrade.sh up to Docker, the issue of the weekly run, the journal of the mock, the check of the log of Nextcloud, what the upgrade compares, the pipes of the scripts, the animation of the demo, the videos of the animations and the steps of the demo pass."
+echo "The ${checks} checks of scope.sh, run-all.sh, pin-images.sh, package.sh, upgrade.sh up to Docker, the issue of the weekly run, the journal of the mock, the check of the log of Nextcloud, what the upgrade compares, the pipes of the scripts, the animation of the demo, the videos of the animations and the steps of the demo pass."

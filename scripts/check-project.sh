@@ -2,8 +2,8 @@
 # SPDX-FileCopyrightText: 2026 Dennis Otto
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# The checks of this app alone, which scripts/check.sh runs last: the browser and the
-# scripts of the end-to-end tests, the pictures of the READMEs and of the website, the
+# The checks of this app alone, which scripts/check.sh runs last: the browser, the pinned
+# images of Nextcloud and the scripts of the end-to-end tests, the pictures of the READMEs and of the website, the
 # social preview and the files that tell the screenshot bot and the visual check when to
 # render, the pages of the website that the READMEs link, the German pages beside the
 # English ones, the screenshots of the website, the versions that the documentation names, the descriptions of the pages of
@@ -31,6 +31,14 @@ if [[ -z "$image" || "$image" != "$package" ]]; then
   exit 1
 fi
 echo "The image of Playwright and playwright-core are both at version $package."
+
+printf '\n== %s\n' "Pinned images of Nextcloud"
+# A pull request and a push test the images of tests/e2e/nextcloud-images.txt: one for each
+# version that appinfo/info.xml supports, so that a new max-version reaches the tests with
+# a pin as well. Renovate only moves the lines that are there, and tests/e2e/pin-images.sh
+# adds the others, as the fix bot does on the pull request of the upstream bot; its tests
+# are in tests/e2e/selftest.sh below.
+bash tests/e2e/pin-images.sh --check
 
 printf '\n== %s\n' "Scripts of the end-to-end tests"
 # The path filter that decides whether the required check nextcloud runs the tests, and
