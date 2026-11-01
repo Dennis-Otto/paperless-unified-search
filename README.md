@@ -742,7 +742,7 @@ bash tests/e2e/run-all.sh   # every supported version at the same time, as the C
 bash tests/e2e/upgrade.sh   # the upgrade from the last release to the checkout
 ```
 
-The [contract tests](tests/e2e/README.md#against-a-real-paperless-ngx) run the app against a real Paperless-ngx 2.20 and 3.x instead of the mock, and check that the fields, dates, excerpts, pages and errors of Paperless, the newest documents of the dashboard and the names of correspondents, document types and tags stay as the app reads them:
+The [contract tests](tests/e2e/README.md#against-a-real-paperless-ngx) run the app against a real Paperless-ngx 2.20 and 3.x instead of the mock, and check that the fields, dates, excerpts, pages and errors of Paperless, the newest documents of the dashboard and the names of correspondents, document types and tags stay as the app reads them. They also send the requests of the app to the mock and fail on every difference in the form of its answers, so that the Docker suite doesn't believe a mock that Paperless has left behind:
 
 ```bash
 PAPERLESS=3 bash tests/e2e/paperless-contract.sh   # or PAPERLESS=2
