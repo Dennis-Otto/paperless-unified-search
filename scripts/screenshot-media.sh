@@ -4,7 +4,7 @@
 #
 # Finishes the pictures that scripts/screenshots.sh took, in the folder that it names,
 # in place. Beside each animation NAME.gif it makes NAME.mp4, the video that the website
-# plays in its place at a quarter of its size, and NAME-poster.webp, its first frame,
+# plays in its place, and NAME-poster.webp, its first frame,
 # which the website shows until the video plays and, for a reader who asks for less
 # motion, in its place. Named NAME.webp, the hooks of the blueprint would make it the
 # poster of the video, which a browser loads also for the video of the other theme;

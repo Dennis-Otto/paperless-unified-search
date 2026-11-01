@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-// docs/javascripts/hero.js, which gives a video of the hero of the home page its poster
+// docs/javascripts/hero.js, which gives a video of an animation of the website its poster
 // once it comes near the screen, against a stand-in for the page and for the
 // IntersectionObserver of the browser.
 
@@ -15,7 +15,7 @@ import { Script, createContext } from 'node:vm'
 const url = new URL('../../docs/javascripts/hero.js', import.meta.url)
 const script = new Script(readFileSync(url, 'utf8'), { filename: url.href })
 
-// A video of the hero with the address of its video.
+// A video of an animation with the address of its video.
 function video(src) {
 	return { poster: '', getAttribute: (name) => (name === 'src' ? src : null) }
 }
@@ -41,7 +41,7 @@ function run(videos, { observer = true } = {}) {
 	const window = observer ? { IntersectionObserver } : {}
 	const document = {
 		querySelectorAll(selector) {
-			assert.equal(selector, '.pus-hero__media video')
+			assert.equal(selector, '.pus-hero__media video, .pus-animation video')
 			return videos
 		},
 	}
@@ -49,7 +49,7 @@ function run(videos, { observer = true } = {}) {
 	return observers
 }
 
-test('a page without the hero watches nothing', function() {
+test('a page without an animation watches nothing', function() {
 	assert.deepEqual(run([]), [])
 })
 
@@ -74,4 +74,13 @@ test('each video gets the first frame beside it once it comes near the screen', 
 	observer.callback([{ target: dark, isIntersecting: true }])
 	assert.equal(dark.poster, '../images/search-and-open-dark-poster.webp')
 	assert.deepEqual(observer.unobserved, [light, dark])
+})
+
+test('the animation of the set-up gets its first frame too, on the German page from its folder', function() {
+	const light = video('../images/setup.mp4')
+	const dark = video('../images/setup-dark.mp4')
+	const [observer] = run([light, dark])
+	observer.callback([{ target: light, isIntersecting: true }, { target: dark, isIntersecting: true }])
+	assert.equal(light.poster, '../images/setup-poster.webp')
+	assert.equal(dark.poster, '../images/setup-dark-poster.webp')
 })

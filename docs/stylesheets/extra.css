@@ -81,7 +81,17 @@
   margin-inline: auto;
 }
 
-.md-typeset .pus-hero__media video {
+/* The animation of the set-up on the page Configure, as the hero shows the one of the
+   search, but on every screen: it is as narrow as a page of settings, so that its
+   text stays legible on a phone, and low enough for half of it to be in view. */
+.md-typeset .pus-animation__light,
+.md-typeset .pus-animation__dark {
+  max-width: 38rem;
+  margin-inline: auto;
+}
+
+.md-typeset .pus-hero__media video,
+.md-typeset .pus-animation video {
   height: auto;
   border: 0.05rem solid var(--md-default-fg-color--lightest);
   border-radius: 0.4rem;
@@ -89,32 +99,38 @@
 }
 
 .md-typeset .pus-hero__dark,
-.md-typeset .pus-hero__phone {
+.md-typeset .pus-hero__phone,
+.md-typeset .pus-animation__dark {
   display: none;
 }
 
 /* The video of the scheme that the reader chose, or, until the script of Material has
    chosen one on a first visit, of the scheme of the system: before that, the page
    has the light scheme, and the light video would load in a dark system as well. */
-[data-md-color-media][data-md-color-scheme="slate"] .pus-hero__light {
+[data-md-color-media][data-md-color-scheme="slate"] .pus-hero__light,
+[data-md-color-media][data-md-color-scheme="slate"] .pus-animation__light {
   display: none;
 }
 
-[data-md-color-media][data-md-color-scheme="slate"] .pus-hero__dark {
+[data-md-color-media][data-md-color-scheme="slate"] .pus-hero__dark,
+[data-md-color-media][data-md-color-scheme="slate"] .pus-animation__dark {
   display: block;
 }
 
 @media (prefers-color-scheme: dark) {
-  body:not([data-md-color-media]) .pus-hero__light {
+  body:not([data-md-color-media]) .pus-hero__light,
+  body:not([data-md-color-media]) .pus-animation__light {
     display: none;
   }
 
-  body:not([data-md-color-media]) .pus-hero__dark {
+  body:not([data-md-color-media]) .pus-hero__dark,
+  body:not([data-md-color-media]) .pus-animation__dark {
     display: block;
   }
 }
 
-.md-typeset .pus-hero__caption {
+.md-typeset .pus-hero__caption,
+.md-typeset .pus-animation__caption {
   color: var(--md-default-fg-color--light);
   font-size: 0.9em;
   text-align: center;

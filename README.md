@@ -119,6 +119,15 @@ It needs Docker with Compose and Bash, Git Bash on Windows, and generates the pa
 
 <!-- --8<-- [end:quick-start] -->
 
+The third step takes seconds, and **Try a search** shows at once that it worked:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/setup-dark.gif">
+  <img src="docs/images/setup.gif" alt="Where the set-up leads, in the settings of the app: Try a search lists the three documents that Paperless finds for invoice, each shown to jamie. Then the set-up from the start, in the empty form: the URL http://paperless.lan:8080 is typed, Paperless runs in my local network is selected, the API token is pasted and shows as dots, and the archive account paperless is typed. Test connection and save answers Connection successful. Settings saved. Last, Try a search for invoice as the user jamie lists the electricity invoice, the home insurance renewal and the internet invoice.">
+</picture>
+
+<sub>Recorded by `bash scripts/screenshots.sh`, with the stand-in for Paperless of the end-to-end tests and its token.</sub>
+
 [Configuration](#configuration) and [Usage](#usage) have the details, and [occ](#set-up-and-check-it-with-occ) sets the app up without a browser.
 
 <!-- --8<-- [end:quick-start-section] -->
@@ -127,7 +136,7 @@ No Paperless documents in the search, or a test of the connection that fails? Th
 
 ## Screenshots
 
-Each screenshot below but those of the phone has a dark version, which a dark theme shows; the animation at the top is light only.
+Each screenshot below but those of the phone has a dark version, which a dark theme shows, and so do the animations of the search and of the set-up; the one of the demo is light only.
 
 ### Paperless results in Nextcloud's global search
 
@@ -743,13 +752,13 @@ In the CI, the required check `nextcloud` runs the tests against every supported
 
 ### Screenshots
 
-The screenshots in `screenshots/`, the animation of the search in `docs/images/`, light and dark, and the social preview `.github/social-preview.png`, which GitHub and chats show for a link to the repository, come from a script, so that they show what users see:
+The screenshots in `screenshots/`, the animations of the search and of the set-up in `docs/images/`, light and dark, and the social preview `.github/social-preview.png`, which GitHub and chats show for a link to the repository, come from a script, so that they show what users see:
 
 ```bash
 bash scripts/screenshots.sh
 ```
 
-It starts the Docker suite under a project of its own with a demo: the archive account `paperless`, whose synthetic documents are shared read-only with `jamie`, and a Paperless mock that finds three of them for "invoice". Chromium then searches, opens a result, narrows the search to July 2026 with the date filter, links a document from the smart picker in a note of Text, saves the settings and tries a search in them, light and dark, on a phone and as an animation, which starts on its Paperless results in a frame. `scripts/screenshot-media.sh` then makes, in the image of `.github/screenshots/Dockerfile`, the video beside each animation, which the website plays in its place at a quarter of its size, with its first frame, which shows until the video plays, and shrinks every PNG by about a quarter without changing a pixel. Each step checks what its picture shows: the search narrowed by date fails, for one, when a Paperless result outside July shows or the results land under *Partial matches*. The clock of the browser stands at the same morning in every run and the files of the demo were changed two days before it, so two runs render the same pixels. Set `KEEP_SCREENSHOTS=1` to look around in the demo afterwards.
+It starts the Docker suite under a project of its own with a demo: the archive account `paperless`, whose synthetic documents are shared read-only with `jamie`, and a Paperless mock that finds three of them for "invoice". Chromium then searches, opens a result, narrows the search to July 2026 with the date filter, links a document from the smart picker in a note of Text, saves the settings and tries a search in them, light and dark, on a phone and as an animation, which starts on its Paperless results in a frame. A second animation goes through the settings from the empty form to the first search, and starts on where that leads. `scripts/screenshot-media.sh` then makes, in the image of `.github/screenshots/Dockerfile`, the video beside each animation, which the website plays in its place, smaller and pausable, with its first frame, which shows until the video plays, and shrinks every PNG by about a quarter without changing a pixel. Each step checks what its picture shows: the search narrowed by date fails, for one, when a Paperless result outside July shows or the results land under *Partial matches*. The clock of the browser stands at the same morning in every run and the files of the demo were changed two days before it, so two runs render the same pixels. Set `KEEP_SCREENSHOTS=1` to look around in the demo afterwards.
 
 The animation of [Try it in three minutes](#try-it-in-three-minutes) comes from the real Paperless-ngx and Nextcloud of the demo instead. With the demo running, `bash scripts/screenshots.sh --demo` signs in as `jamie` with the password of `demo/.env`, searches for *invoice*, opens the home insurance renewal and writes `screenshots/demo-search-and-open.gif` alone; it leaves the demo and the other pictures as they are. Two fresh demos render the same pixels here too: the clock starts two days after the last change of the archive, the search starts once the whole term is typed, the notifications are read, and Paperless ranks the documents by their text alone. The weekly run of the demo records it as well, compares it by its pixels and, when they changed, keeps one pull request, *docs: update the animation of the demo*, that merges itself once every check passes.
 
