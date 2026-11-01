@@ -18,6 +18,7 @@ Find invoices, contracts, letters, statements, and any text recognized inside yo
 - Shows results directly in Nextcloud's global search, each with a preview of the document, its date in your language, its correspondent, its type and its tags
 - Finds documents from the smart picker in Talk, Text, Deck, and Mail, and inserts a link to their file
 - Lists the newest Paperless documents you can open on Nextcloud's dashboard, with the widget New in Paperless
+- Tells you with a notification when Paperless adds a document that one of your saved searches finds and that you can open
 - Opens the synchronized file in Nextcloud's built-in viewer on web, iOS, and Android
 - Matches documents through stable markers such as `[P123]`
 - Shows a document only to the users who may open its synchronized file
@@ -29,7 +30,7 @@ Find invoices, contracts, letters, statements, and any text recognized inside yo
 
 Paperless is queried server-to-server. The API token is stored in Nextcloud's encrypted credentials manager and is never exposed to the browser.
 
-By default, Nextcloud's search sends terms to Paperless only when users enable connected-services search, and the smart picker only when users pick Paperless documents in it; a client that asks the search API for this provider sends them as well. Administrators can optionally mark their Paperless server as trusted and include it automatically in every global search.
+By default, Nextcloud's search sends terms to Paperless only when users enable connected-services search, and the smart picker only when users pick Paperless documents in it; a client that asks the search API for this provider sends them as well. Administrators can optionally mark their Paperless server as trusted and include it automatically in every global search. The saved searches of the notifications stay with the account of each user, and a background job sends them to Paperless once documents are new.
 
 A dedicated, read-only Paperless account is recommended.
 
@@ -58,6 +59,7 @@ Rechnungen, Verträge, Briefe, Bescheide und beliebige Inhalte der Dokumente fin
 - Zeigt Treffer direkt in der globalen Nextcloud-Suche, jeden mit einer Vorschau des Dokuments, seinem Datum in der Sprache des Benutzers, seinem Korrespondenten, seinem Dokumenttyp und seinen Tags
 - Findet Dokumente auch über den Smart Picker in Talk, Text, Deck und Mail und fügt einen Link auf ihre Datei ein
 - Zeigt die neuesten Paperless-Dokumente, die der Benutzer öffnen darf, im Dashboard von Nextcloud, mit dem Widget „Neu in Paperless“
+- Benachrichtigt den Benutzer, wenn Paperless ein Dokument hinzufügt, das eine seiner gespeicherten Suchen findet und das er öffnen darf
 - Öffnet die synchronisierte Datei im integrierten Nextcloud-Viewer in Web, iOS und Android
 - Ordnet Dokumente über stabile Kennzeichnungen wie `[P123]` zu
 - Zeigt ein Dokument nur den Benutzern, die seine synchronisierte Datei öffnen dürfen
@@ -69,7 +71,7 @@ Rechnungen, Verträge, Briefe, Bescheide und beliebige Inhalte der Dokumente fin
 
 Die Kommunikation mit Paperless erfolgt ausschließlich zwischen den Servern. Das API-Token wird verschlüsselt im Zugangsdatenmanager von Nextcloud gespeichert und niemals an den Browser übertragen.
 
-Standardmäßig wird Paperless nur durchsucht, wenn der Benutzer die Suche in verbundenen Diensten aktiviert oder im Smart Picker Paperless-Dokumente auswählt. Administratoren können den eigenen Paperless-Server optional als vertrauenswürdig einstufen und automatisch in jede globale Suche einbeziehen.
+Standardmäßig wird Paperless nur durchsucht, wenn der Benutzer die Suche in verbundenen Diensten aktiviert oder im Smart Picker Paperless-Dokumente auswählt. Administratoren können den eigenen Paperless-Server optional als vertrauenswürdig einstufen und automatisch in jede globale Suche einbeziehen. Die gespeicherten Suchen der Benachrichtigungen bleiben beim Konto jedes Benutzers, und ein Hintergrundjob schickt sie an Paperless, sobald Dokumente neu sind.
 
 Empfohlen wird ein eigener Paperless-Dienstbenutzer mit ausschließlich lesendem Zugriff.
 
@@ -98,6 +100,7 @@ Encuentra facturas, contratos, cartas, extractos y cualquier texto reconocido de
 - Muestra los resultados directamente en la búsqueda global de Nextcloud, cada uno con una vista previa del documento, su fecha en tu idioma, su interlocutor, su tipo y sus etiquetas
 - Encuentra documentos desde el selector inteligente de Talk, Text, Deck y Mail, e inserta un enlace a su archivo
 - Muestra en el Dashboard de Nextcloud los documentos más recientes de Paperless que puedes abrir, con el widget Nuevo en Paperless
+- Te avisa con una notificación cuando Paperless añade un documento que encuentra una de tus búsquedas guardadas y que puedes abrir
 - Abre el archivo sincronizado en el visor integrado de Nextcloud en la web, iOS y Android
 - Asocia los documentos mediante marcadores estables como `[P123]`
 - Muestra un documento solo a los usuarios que pueden abrir su archivo sincronizado
@@ -109,7 +112,7 @@ Encuentra facturas, contratos, cartas, extractos y cualquier texto reconocido de
 
 Paperless se consulta de servidor a servidor. El token de API se guarda en el gestor de credenciales cifrado de Nextcloud y nunca se expone al navegador.
 
-De forma predeterminada, la búsqueda de Nextcloud solo envía términos a Paperless cuando los usuarios activan la búsqueda en servicios conectados, y el selector inteligente solo cuando los usuarios eligen en él los documentos de Paperless; un cliente que pide este proveedor a la API de búsqueda también los envía. Los administradores pueden marcar opcionalmente su servidor de Paperless como de confianza e incluirlo automáticamente en cada búsqueda global.
+De forma predeterminada, la búsqueda de Nextcloud solo envía términos a Paperless cuando los usuarios activan la búsqueda en servicios conectados, y el selector inteligente solo cuando los usuarios eligen en él los documentos de Paperless; un cliente que pide este proveedor a la API de búsqueda también los envía. Los administradores pueden marcar opcionalmente su servidor de Paperless como de confianza e incluirlo automáticamente en cada búsqueda global. Las búsquedas guardadas de las notificaciones se quedan en la cuenta de cada usuario, y una tarea en segundo plano las envía a Paperless cuando hay documentos nuevos.
 
 Se recomienda una cuenta de Paperless propia y de solo lectura.
 
@@ -138,6 +141,7 @@ Trouvez factures, contrats, lettres, relevés et tout texte reconnu dans vos doc
 - Affiche les résultats directement dans la recherche globale de Nextcloud, chacun avec un aperçu du document, sa date dans votre langue, son correspondant, son type et ses étiquettes
 - Trouve des documents depuis le sélecteur intelligent de Talk, Text, Deck et Mail, et insère un lien vers leur fichier
 - Liste sur le tableau de bord de Nextcloud les documents Paperless les plus récents que vous pouvez ouvrir, avec le widget Nouveau dans Paperless
+- Vous avertit par une notification lorsque Paperless ajoute un document qu’une de vos recherches enregistrées trouve et que vous pouvez ouvrir
 - Ouvre le fichier synchronisé dans la visionneuse intégrée de Nextcloud, sur le web, iOS et Android
 - Associe les documents grâce à des marqueurs stables comme `[P123]`
 - N’affiche un document qu’aux utilisateurs qui peuvent ouvrir son fichier synchronisé
@@ -149,7 +153,7 @@ Trouvez factures, contrats, lettres, relevés et tout texte reconnu dans vos doc
 
 Paperless est interrogé de serveur à serveur. Le jeton d’API est stocké dans le gestionnaire d’identifiants chiffré de Nextcloud et n’est jamais exposé au navigateur.
 
-Par défaut, la recherche de Nextcloud n’envoie des termes à Paperless que lorsque les utilisateurs activent la recherche dans les services connectés, et le sélecteur intelligent uniquement lorsque les utilisateurs y choisissent les documents Paperless ; un client qui demande ce fournisseur à l’API de recherche les envoie aussi. Les administrateurs peuvent, s’ils le souhaitent, marquer leur serveur Paperless comme fiable et l’inclure automatiquement dans chaque recherche globale.
+Par défaut, la recherche de Nextcloud n’envoie des termes à Paperless que lorsque les utilisateurs activent la recherche dans les services connectés, et le sélecteur intelligent uniquement lorsque les utilisateurs y choisissent les documents Paperless ; un client qui demande ce fournisseur à l’API de recherche les envoie aussi. Les administrateurs peuvent, s’ils le souhaitent, marquer leur serveur Paperless comme fiable et l’inclure automatiquement dans chaque recherche globale. Les recherches enregistrées des notifications restent dans le compte de chaque utilisateur, et une tâche de fond les envoie à Paperless lorsque des documents sont nouveaux.
 
 Un compte Paperless dédié, en lecture seule, est recommandé.
 
@@ -178,6 +182,7 @@ Vind facturen, contracten, brieven, afschriften en elke tekst die in je document
 - Toont resultaten direct in de globale zoekfunctie van Nextcloud, elk met een voorbeeld van het document, de datum in je taal, de correspondent, het type en de labels
 - Vindt documenten vanuit de slimme kiezer in Talk, Text, Deck en Mail, en voegt een link naar hun bestand in
 - Toont op het dashboard van Nextcloud de nieuwste Paperless-documenten die je kunt openen, met de widget Nieuw in Paperless
+- Stuurt je een melding wanneer Paperless een document toevoegt dat een van je bewaarde zoekopdrachten vindt en dat je kunt openen
 - Opent het gesynchroniseerde bestand in de ingebouwde viewer van Nextcloud op het web, iOS en Android
 - Koppelt documenten via stabiele markeringen zoals `[P123]`
 - Toont een document alleen aan de gebruikers die het gesynchroniseerde bestand ervan mogen openen
@@ -189,7 +194,7 @@ Vind facturen, contracten, brieven, afschriften en elke tekst die in je document
 
 Paperless wordt van server tot server bevraagd. Het API-token wordt opgeslagen in de versleutelde opslag voor inloggegevens van Nextcloud en komt nooit in de browser.
 
-Standaard stuurt de zoekfunctie van Nextcloud alleen termen naar Paperless wanneer gebruikers het zoeken in verbonden diensten inschakelen, en de slimme kiezer alleen wanneer gebruikers daarin Paperless-documenten kiezen; een client die de zoek-API om deze provider vraagt, stuurt ze ook. Beheerders kunnen hun Paperless-server optioneel als vertrouwd markeren en automatisch in elke globale zoekopdracht opnemen.
+Standaard stuurt de zoekfunctie van Nextcloud alleen termen naar Paperless wanneer gebruikers het zoeken in verbonden diensten inschakelen, en de slimme kiezer alleen wanneer gebruikers daarin Paperless-documenten kiezen; een client die de zoek-API om deze provider vraagt, stuurt ze ook. Beheerders kunnen hun Paperless-server optioneel als vertrouwd markeren en automatisch in elke globale zoekopdracht opnemen. De bewaarde zoekopdrachten van de meldingen blijven bij het account van elke gebruiker, en een achtergrondtaak stuurt ze naar Paperless zodra documenten nieuw zijn.
 
 Een eigen Paperless-account met alleen leesrechten wordt aanbevolen.
 
@@ -235,6 +240,9 @@ Documentatie (in het Engels): <https://dennis-otto.github.io/paperless-unified-s
 		<php min-version="8.2"/>
 		<nextcloud min-version="33" max-version="35"/>
 	</dependencies>
+	<background-jobs>
+		<job>OCA\PaperlessUnifiedSearch\BackgroundJob\NotifyNewDocuments</job>
+	</background-jobs>
 	<repair-steps>
 		<post-migration>
 			<step>OCA\PaperlessUnifiedSearch\Migration\RemoveLegacyDiagnostics</step>

@@ -1029,6 +1029,101 @@ done
 admin_settings "${TMP_DIR}/cleared.html"
 assert_history cleared "${TMP_DIR}/cleared.html"
 
+phase "Notify users about new documents"
+# Two users save the same search, and the archive account shares the folder of the new
+# document with one of them. The first run of the job learns how far the IDs go. A new
+# document without a file costs Paperless one request and waits, one with its file costs
+# one request more for the search, however many users saved it, and reaches only the user
+# who can open it. Nothing new costs one request and no search.
+ALERTS_URL="${BASE_URL}/apps/paperless_unified_search/personal/alerts"
+ALERTS_JOB="$(occ background-job:list --class='OCA\PaperlessUnifiedSearch\BackgroundJob\NotifyNewDocuments' --output=json |
+	"${COMPOSE[@]}" exec -T paperless-mock python -c 'import json, sys; print(json.load(sys.stdin)[0]["id"])')"
+let_users_ask_for_notifications() {
+	expect_status 200 "$1" \
+		--user "e2e-admin:${PASSWORD}" \
+		--request POST \
+		--data-urlencode 'url=http://paperless-mock:8080' \
+		--data-urlencode 'allowLocal=1' \
+		--data-urlencode 'token=' \
+		--data-urlencode 'alwaysSearch=0' \
+		--data-urlencode 'archiveOwner=e2e-user' \
+		--data-urlencode "newDocumentAlerts=$2" \
+		"${SETTINGS_URL}"
+}
+# Runs the job, and checks the requests that Paperless got from it: their number $1, and
+# in them the text $2.
+run_alerts_job() {
+	local before
+	before="$(mock_journal | wc -l)"
+	occ background-job:execute "${ALERTS_JOB}" --force-execute >/dev/null
+	mock_journal | tail -n "+$((before + 1))" | grep --fixed-strings "GET /api/documents/" >"${TMP_DIR}/job-requests.txt" || true
+	if [[ "$(wc -l <"${TMP_DIR}/job-requests.txt")" != "$1" ]]; then
+		printf 'The job sent %s requests to Paperless instead of %s:\n' "$(wc -l <"${TMP_DIR}/job-requests.txt")" "$1" >&2
+		cat "${TMP_DIR}/job-requests.txt" >&2
+		exit 1
+	fi
+	expect_text "$2" "${TMP_DIR}/job-requests.txt" "The requests of the job hold no $2: $(cat "${TMP_DIR}/job-requests.txt")"
+}
+# Checks the notifications of the app for the user $1, in the mode of assert_notifications.py.
+assert_notifications() {
+	local account="$1"
+	shift
+	expect_status 200 "The notifications of ${account}" \
+		--user "${account}:${PASSWORD}" \
+		"${BASE_URL}/ocs/v2.php/apps/notifications/api/v2/notifications"
+	"${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_notifications.py "$@" <"${TMP_DIR}/answer.json"
+}
+for user in e2e-jamie e2e-sam; do
+	expect_status 200 "Creating the user ${user}" \
+		--user "e2e-admin:${PASSWORD}" \
+		--data-urlencode "userid=${user}" \
+		--data-urlencode "password=${PASSWORD}" \
+		"${BASE_URL}/ocs/v2.php/cloud/users"
+done
+expect_status 401 'Saving a search without a login' --request POST --data-urlencode 'terms[]=e2e-alert' "${ALERTS_URL}"
+let_users_ask_for_notifications 'Not letting users ask for notifications' 0
+expect_status 403 'Saving a search while users may not ask for notifications' \
+	--user "e2e-jamie:${PASSWORD}" --request POST --data-urlencode 'terms[]=e2e-alert' "${ALERTS_URL}"
+let_users_ask_for_notifications 'Letting users ask for notifications' 1
+expect_text '"newDocumentAlerts":true' "${TMP_DIR}/answer.json" \
+	"The settings don't say that users may ask for notifications: $(cat "${TMP_DIR}/answer.json")"
+for user in e2e-jamie e2e-sam; do
+	expect_status 200 "Saving the search of ${user}" \
+		--user "${user}:${PASSWORD}" --request POST --data-urlencode 'terms[]=e2e-alert' --data-urlencode 'terms[]= e2e-alert ' "${ALERTS_URL}"
+	expect_text '{"everyDocument":false,"terms":["e2e-alert"]}' "${TMP_DIR}/answer.json" \
+		"The search of ${user} isn't stored as the server keeps it: $(cat "${TMP_DIR}/answer.json")"
+done
+run_alerts_job 1 'ordering=-id'
+assert_notifications e2e-jamie none
+"${COMPOSE[@]}" exec -T paperless-mock python -c 'import sys, urllib.request; urllib.request.urlopen(urllib.request.Request("http://localhost:8080/e2e/documents", data=sys.argv[1].encode(), method="POST"))' \
+	'{"id": 1001, "title": "Letter of the tax office", "finds": ["e2e-alert"]}'
+run_alerts_job 1 'added__date__gte='
+if grep --fixed-strings 'query=' "${TMP_DIR}/job-requests.txt" >/dev/null; then
+	echo "The job asked Paperless for a search for a document without a file: $(cat "${TMP_DIR}/job-requests.txt")" >&2
+	exit 1
+fi
+assert_notifications e2e-jamie none
+expect_status 201 'Creating the folder of the new document' \
+	--user "e2e-user:${PASSWORD}" --request MKCOL "${BASE_URL}/remote.php/dav/files/e2e-user/Documents/Letters"
+upload_pdf e2e-user 'Documents/Letters/Tax%20office%20%5BP1001%5D.pdf' 'Synthetic letter for the notifications of Paperless Unified Search'
+expect_status 200 'Sharing the folder of the new document with e2e-jamie read-only' \
+	--user "e2e-user:${PASSWORD}" \
+	--request POST \
+	--data-urlencode 'path=/Documents/Letters' \
+	--data-urlencode 'shareType=0' \
+	--data-urlencode 'shareWith=e2e-jamie' \
+	--data-urlencode 'permissions=1' \
+	"${BASE_URL}/ocs/v2.php/apps/files_sharing/api/v1/shares"
+run_alerts_job 2 'id__in=1001'
+assert_notifications e2e-jamie one 'Letter of the tax office'
+assert_notifications e2e-sam none
+run_alerts_job 1 'ordering=-id'
+if grep --fixed-strings 'query=' "${TMP_DIR}/job-requests.txt" >/dev/null; then
+	echo "The job asked Paperless for a search with no new document: $(cat "${TMP_DIR}/job-requests.txt")" >&2
+	exit 1
+fi
+assert_notifications e2e-jamie one 'Letter of the tax office'
+
 phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py

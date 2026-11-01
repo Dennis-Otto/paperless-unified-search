@@ -173,6 +173,24 @@ export const ALWAYS_SEARCH_SAVED = {
 	false: 'Saved. From the next page that you open, your searches include Paperless only with “Search connected services”.',
 }
 
+// The part of the section about the notifications: the searches of the user, the button
+// that saves them, and the message after it.
+export const SAVED_SEARCHES = '#paperless-unified-search-personal-terms'
+export const SAVE_SEARCHES = '#paperless-unified-search-personal-alerts-save'
+export const SAVED_SEARCHES_STATUS = '#paperless-unified-search-personal-alerts-status'
+
+// Saves the searches in the personal settings that the page shows, one per line, and
+// waits for the message that says what that means.
+export async function saveSearches(page, searches) {
+	await page.locator(SAVED_SEARCHES).fill(searches)
+	await page.locator(SAVE_SEARCHES).click()
+	await page.locator(SAVED_SEARCHES_STATUS).filter({
+		hasText: searches.trim() === ''
+			? 'Saved. You get no notifications about new documents.'
+			: 'Saved. You get a notification about the next new documents.',
+	}).waitFor()
+}
+
 // Ticks or unticks Always search my Paperless documents in the personal settings that
 // the page shows, and waits for the message that the choice is saved.
 export async function chooseAlwaysSearch(page, always) {

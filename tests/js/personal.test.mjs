@@ -19,6 +19,7 @@ const url = new URL('../../js/personal.js', import.meta.url)
 const script = new Script(readFileSync(url, 'utf8'), { filename: url.href })
 
 const SAVE_URL = '/apps/paperless_unified_search/personal'
+const ALERTS_URL = '/apps/paperless_unified_search/personal/alerts'
 const SUCCESS = 'paperless-unified-search-status--success'
 const ERROR = 'paperless-unified-search-status--error'
 const PENDING = 'paperless-unified-search-status--pending'
@@ -54,24 +55,57 @@ class Element {
 	}
 
 	addEventListener(type, listener) {
-		assert.equal(type, 'change')
+		assert.equal(type, this.event ?? 'change')
 		this.listeners.push(listener)
 	}
 
-	// The browser ticks the checkbox before it tells the page.
+	// The browser ticks a checkbox before it tells the page.
 	async click() {
 		this.checked = !this.checked
 		await Promise.all(this.listeners.map((listener) => listener()))
 	}
 }
 
-// The section as templates/personal.php renders it, with the choice as stored.
+// The section as templates/personal.php renders it, with the choice as stored, while the
+// administrators let users choose the search alone.
 function section({ checked = false } = {}) {
 	return new Map([
 		['paperless-unified-search-personal', new Element({ dataset: { saveUrl: SAVE_URL } })],
 		['paperless-unified-search-personal-always-search', new Element({ checked })],
 		['paperless-unified-search-personal-status', new Element()],
 	])
+}
+
+// The section while the administrators let users ask for notifications alone.
+function alertsSection({ every = false, terms = '' } = {}) {
+	return new Map([
+		['paperless-unified-search-personal', new Element({ dataset: { alertsUrl: ALERTS_URL } })],
+		['paperless-unified-search-personal-every-document', new Element({ checked: every })],
+		['paperless-unified-search-personal-terms', new Element({ value: terms, disabled: every })],
+		['paperless-unified-search-personal-alerts-save', new Element({ event: 'click' })],
+		['paperless-unified-search-personal-alerts-status', new Element()],
+	])
+}
+
+// The parts of the section about the notifications, and what they show.
+function alertsOf(elements) {
+	return {
+		every: elements.get('paperless-unified-search-personal-every-document'),
+		terms: elements.get('paperless-unified-search-personal-terms'),
+		button: elements.get('paperless-unified-search-personal-alerts-save'),
+		status: elements.get('paperless-unified-search-personal-alerts-status'),
+	}
+}
+
+function shownAlerts(elements) {
+	const { every, terms, button, status } = alertsOf(elements)
+	return { every: every.checked, terms: terms.value, termsDisabled: terms.disabled, button: button.disabled, text: status.textContent, kind: status.classList.toString() }
+}
+
+// A click on the button, which leaves the checkbox of the button alone.
+async function save(elements) {
+	const { button } = alertsOf(elements)
+	await Promise.all(button.listeners.map((listener) => listener()))
 }
 
 function json(body, status = 200, headers = {}) {
@@ -97,7 +131,7 @@ function load(elements, { answers = [], t = english } = {}) {
 	const pending = []
 	const listeners = []
 	const checkbox = elements.get('paperless-unified-search-personal-always-search')
-	const status = elements.get('paperless-unified-search-personal-status')
+	const status = elements.get('paperless-unified-search-personal-status') ?? elements.get('paperless-unified-search-personal-alerts-status')
 	const window = {
 		OC: { requestToken: 'request-token' },
 		t,
@@ -225,4 +259,130 @@ test('the messages go through the translation of Nextcloud, with their placehold
 	])
 	assert.ok(calls.every(({ app, options }) => app === 'paperless_unified_search' && options.escape === false))
 	assert.equal(page.status.textContent, '[The request failed (HTTP 500).]')
+})
+
+test('without the checkbox of the search, the notifications still work', async function() {
+	const elements = alertsSection({ terms: '' })
+	const { terms } = alertsOf(elements)
+	const page = load(elements, { answers: [json({ everyDocument: false, terms: ['tag:unpaid', 'tax'] })] })
+	terms.value = ' tag:unpaid \n\ntax\ntax'
+
+	await save(elements)
+
+	assert.deepEqual(page.requests, [{
+		url: ALERTS_URL,
+		method: 'POST',
+		credentials: 'same-origin',
+		headers: { Accept: 'application/json', 'Content-Type': 'application/json', requesttoken: 'request-token' },
+		body: { everyDocument: false, terms: [' tag:unpaid ', '', 'tax', 'tax'] },
+	}])
+	// What the page shows while it waits: the button rests, so no second save overtakes it.
+	assert.deepEqual(page.pending, [{ text: 'Saving…', kind: PENDING, disabled: undefined }])
+	assert.deepEqual(shownAlerts(elements), {
+		every: false,
+		terms: 'tag:unpaid\ntax',
+		termsDisabled: false,
+		button: false,
+		text: 'Saved. You get a notification about the next new documents.',
+		kind: SUCCESS,
+	})
+})
+
+test('the button rests while the server stores the searches', async function() {
+	const elements = alertsSection()
+	const { button } = alertsOf(elements)
+	let during
+	const answer = json({ everyDocument: false, terms: [] })
+	const page = load(elements, { answers: [answer] })
+	const clicked = save(elements)
+	during = button.disabled
+	await clicked
+
+	assert.equal(during, true)
+	assert.equal(button.disabled, false)
+	assert.equal(page.requests.length, 1)
+})
+
+test('every document rests the searches, and keeps them for the way back', async function() {
+	const elements = alertsSection({ terms: 'tag:unpaid' })
+	const { every, terms } = alertsOf(elements)
+	load(elements)
+
+	await every.click()
+	assert.equal(terms.disabled, true)
+	assert.equal(terms.value, 'tag:unpaid')
+
+	await every.click()
+	assert.equal(terms.disabled, false)
+})
+
+test('saving every document shows it as the server stored it', async function() {
+	const elements = alertsSection({ terms: 'tag:unpaid' })
+	const { every } = alertsOf(elements)
+	const page = load(elements, { answers: [json({ everyDocument: true, terms: ['tag:unpaid'] })] })
+	every.checked = true
+
+	await save(elements)
+
+	assert.deepEqual(page.requests.map(({ body }) => body), [{ everyDocument: true, terms: ['tag:unpaid'] }])
+	assert.deepEqual(shownAlerts(elements), {
+		every: true,
+		terms: 'tag:unpaid',
+		termsDisabled: true,
+		button: false,
+		text: 'Saved. You get a notification about the next new documents.',
+		kind: SUCCESS,
+	})
+})
+
+test('saving nothing says that no notifications come', async function() {
+	const elements = alertsSection({ terms: 'tag:unpaid' })
+	alertsOf(elements).terms.value = ''
+	load(elements, { answers: [json({ everyDocument: false, terms: [] })] })
+
+	await save(elements)
+
+	assert.equal(shownAlerts(elements).text, 'Saved. You get no notifications about new documents.')
+	assert.equal(shownAlerts(elements).kind, SUCCESS)
+})
+
+test('a refused save shows its reason and keeps what the user typed', async function() {
+	const elements = alertsSection()
+	alertsOf(elements).terms.value = 'one\ntwo'
+	load(elements, { answers: [json({ message: 'Save at most 10 searches.', code: 'too_many_searches' }, 400)] })
+
+	await save(elements)
+
+	assert.deepEqual(shownAlerts(elements), {
+		every: false,
+		terms: 'one\ntwo',
+		termsDisabled: false,
+		button: false,
+		text: 'Save at most 10 searches.',
+		kind: ERROR,
+	})
+})
+
+for (const [name, answer] of [
+	['without the terms', { everyDocument: true }],
+	['without the choice', { terms: [] }],
+	['with terms as text', { everyDocument: true, terms: 'tax' }],
+]) {
+	test(`an answer ${name} is no save`, async function() {
+		const elements = alertsSection()
+		load(elements, { answers: [json(answer)] })
+
+		await save(elements)
+
+		assert.equal(shownAlerts(elements).text, 'Nextcloud gave an unexpected answer. Reload the page and try again.')
+		assert.equal(shownAlerts(elements).kind, ERROR)
+	})
+}
+
+test('without a section of notifications, the checkbox of the search works alone', async function() {
+	const page = load(section(), { answers: [json({ alwaysSearch: true })] })
+
+	await page.checkbox.click()
+
+	assert.equal(shown(page).text, ON)
 })

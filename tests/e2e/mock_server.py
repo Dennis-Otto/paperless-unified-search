@@ -15,7 +15,7 @@ import json
 import operator
 import re
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -74,9 +74,18 @@ ACCEPTED_VERSION = re.compile(r"\bversion=([^;,\s]*)")
 UNFINISHED_RANGE = re.compile(r"(\w+):\[([^\]\s]*)[^\]]*$")
 
 # Like Paperless, the mock narrows the documents by their date with these filters, each a
-# day as YYYY-MM-DD, which the app sends for the date filter of Nextcloud's search, and
-# refuses another value with HTTP 400.
-DATE_FILTERS = {"created__date__gte": operator.ge, "created__date__lte": operator.le}
+# day as YYYY-MM-DD, which the app sends for the date filter of Nextcloud's search and for
+# the new documents of its notifications, and refuses another value with HTTP 400.
+DATE_FILTERS = {
+    "created__date__gte": ("created", operator.ge),
+    "created__date__lte": ("created", operator.le),
+    "added__date__gte": ("added", operator.ge),
+}
+
+# Unlike Paperless, the mock takes in a new document through a request of its own: run.sh
+# and scripts/screenshots.sh send it as JSON, with the field finds, the terms of the
+# searches that find it. So the end-to-end tests see the notifications about it.
+NEW_DOCUMENT_PATH = "/e2e/documents"
 
 # Like Paperless, the mock orders a list by the field that ordering names, the newest
 # first with a minus, as the dashboard of the app asks for the documents that Paperless
@@ -285,7 +294,7 @@ def documents_of(term):
         return DEMO_DOCUMENTS
     if term == "pagetest":
         return PAGE_TEST_DOCUMENTS
-    return []
+    return [document for document in ARCHIVE if term in document.get("finds", ())]
 
 
 def similar_to(identifier):
@@ -319,6 +328,24 @@ def sent(document, fields, rank):
 
 
 class Handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        self.versioned = False
+        if urlparse(self.path).path != NEW_DOCUMENT_PATH:
+            self._json(404, {"detail": "Not found"})
+            return
+
+        document = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+        now = datetime.now(timezone.utc)
+        ARCHIVE.insert(0, {
+            "created": now.date().isoformat(),
+            "added": now.isoformat(),
+            "correspondent": None,
+            "document_type": None,
+            "tags": [],
+            **document,
+        })
+        self._json(201, {"id": document["id"]})
+
     def do_GET(self):
         # Only an answer to a valid token names the version, as with Paperless.
         self.versioned = False
@@ -392,7 +419,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(403, "text/html; charset=utf-8", UNKNOWN_DOCUMENT)
                 return
 
-        for name, keeps in DATE_FILTERS.items():
+        for name, (field, keeps) in DATE_FILTERS.items():
             if name not in parameters:
                 continue
             try:
@@ -403,8 +430,13 @@ class Handler(BaseHTTPRequestHandler):
             results = [
                 document
                 for document in results
-                if keeps(datetime.strptime(document["created"], "%Y-%m-%d").date(), day)
+                if keeps(datetime.fromisoformat(document[field]).date(), day)
             ]
+
+        # Like Paperless, the mock narrows the documents to these IDs, in a search as well.
+        if "id__in" in parameters:
+            wanted = {int(value) for value in parameters["id__in"][0].split(",") if value.isdigit()}
+            results = [document for document in results if document["id"] in wanted]
 
         ordering = parameters.get("ordering", [""])[0]
         if ordering:

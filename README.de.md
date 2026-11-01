@@ -53,7 +53,7 @@ Paperless-ngx hat den Text jedes Dokuments bereits erkannt und führt einen Inde
 - **Kein zweiter Index, keine zweite OCR.** Kein Elasticsearch, kein zusätzlicher Container und keine Kopie des Textes in Nextcloud. Was Paperless findet, findet die Suche von Nextcloud, sobald die Datei des Dokuments in Nextcloud liegt.
 - **Nextcloud entscheidet, wer was sieht.** Ein Treffer erscheint nur für jemanden, der seine Datei in Nextcloud öffnen kann, also sind die Freigaben, die du schon hast, die Berechtigungen. Niemand braucht ein Konto in Paperless.
 - **Treffer öffnen sich dort, wo gearbeitet wird.** Im Viewer von Nextcloud im Browser und in den Nextcloud-Apps für iOS und Android, bereit zum Teilen, Herunterladen oder Kommentieren.
-- **Neue Dokumente kommen zu dir.** Das Dashboard listet die Dokumente, die Paperless zuletzt hinzugefügt hat, für alle, die sie öffnen können, ohne Suche.
+- **Neue Dokumente kommen zu dir.** Das Dashboard listet die Dokumente, die Paperless zuletzt hinzugefügt hat, für alle, die sie öffnen können, ohne Suche, und eine Benachrichtigung sagt dir, welche davon deine gespeicherten Suchen finden.
 - **Die Suche von Paperless, keine Kopie ihrer Wörter.** Ihre Rangfolge, ihre Hervorhebungen und ihre Suchsyntax, etwa `correspondent:acme` oder `created:[2024 to 2025]`, die auch den Korrespondenten, den Typ und die Tags eines Dokuments betrachten.
 
 <!-- --8<-- [start:comparison] -->
@@ -327,7 +327,8 @@ Die Suche braucht eines von einer Synchronisierung: jedes Dokument von Paperless
 6. Gib unter **Archiv-Konto** das Nextcloud-Konto ein, dem die synchronisierten Dateien gehören, oder lass das Feld leer, um das Konto zu verwenden, mit dem Paperless Sync das Archiv schreibt. Die Einstellungen speichern die ID so, wie Nextcloud sie schreibt, gleich in welcher Groß- und Kleinschreibung, und warnen, wenn das Konto nicht existiert.
 7. Schalte optional **Paperless immer in die globale Suche einbeziehen** ein, um den eingerichteten Paperless-Server als vertrauenswürdig zu behandeln.
 8. Lass **Benutzern erlauben, Paperless in alle ihre Suchen einzubeziehen** an, damit jeder Benutzer Paperless in seinen persönlichen Einstellungen in jede seiner Suchen einbeziehen kann, oder schalte es aus.
-9. Wähle **Verbindung testen und speichern**. Nextcloud fragt nach deinem Passwort, wenn du es in den letzten 30 Minuten nicht bestätigt hast, wie bei seinen eigenen Einstellungen dieser Art; ebenso **Verbindung trennen**.
+9. Wähle mit **Benutzern Benachrichtigungen über neue Dokumente erlauben**, ob jeder Benutzer in seinen persönlichen Einstellungen Suchen für Benachrichtigungen über neue Dokumente speichern kann. Bis du dich entscheidest, ist das nur an, wenn Nextcloud einen Memory-Cache hat.
+10. Wähle **Verbindung testen und speichern**. Nextcloud fragt nach deinem Passwort, wenn du es in den letzten 30 Minuten nicht bestätigt hast, wie bei seinen eigenen Einstellungen dieser Art; ebenso **Verbindung trennen**.
 
 Lass das Token leer, um das gespeicherte zu behalten. Das gespeicherte Token geht nur an den Paperless-Server, für den es gespeichert wurde: Nennt die URL einen anderen Server, mit anderem Schema, Host oder Port, fragen die Einstellungen erneut nach dem Token, damit das Token nie einen Server erreicht, für den es nicht gedacht war. Ein anderer Pfad auf demselben Server behält es. Kann Nextcloud das gespeicherte Token nicht mehr entschlüsseln, wie nach einem Umzug oder einer Wiederherstellung mit einem anderen `secret` in der `config.php`, sagen die Einstellungen das und fragen erneut danach, und bis dahin zeigt die Suche keine Paperless-Dokumente.
 
@@ -473,6 +474,25 @@ Füge **Neu in Paperless** mit **Anpassen** am Ende des Dashboards zu deinem Das
 - **Nur wo die Suche funktioniert.** Das Dashboard bietet das Widget an, sobald die Einstellungen ein Paperless und ein Archiv-Konto nennen, das existiert.
 
 <!-- --8<-- [end:dashboard] -->
+<!-- --8<-- [start:notifications] -->
+
+### Benachrichtigungen über neue Dokumente
+
+Unter **Persönliche Einstellungen → Paperless** bittet **Benachrichtige mich über neue Dokumente** Nextcloud, dir zu sagen, wenn Paperless ein Dokument hinzufügt: **Jedes neue Dokument, das ich öffnen kann**, oder nur die, die deine gespeicherten Suchen finden, bis zu 10, eine pro Zeile, in der [Syntax von Paperless](#suchen-wie-in-paperless), etwa `correspondent:"tax office"` oder `tag:unpaid`. Paperless selbst benachrichtigt nur über Workflows, die sein Administrator einrichtet und die nichts von den Benutzern und Berechtigungen von Nextcloud wissen, und die Dateibenachrichtigungen von Nextcloud lösen für neue Dateien in einem mit dir geteilten Ordner nicht aus.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/notifications-about-new-documents.de.dark.svg">
+  <img src="docs/images/diagrams/notifications-about-new-documents.de.svg" alt="Benachrichtigungen über neue Dokumente: Alle fünf Minuten fragt ein Hintergrundjob Paperless-ngx einmal nach den Dokumenten, die es seit dem letzten Lauf hinzugefügt hat, und sie warten auf ihre Dateien. Solange keine Datei angekommen ist, bekommt Paperless keine weitere Anfrage. Sobald eine Datei im Archiv-Konto liegt, fragt der Job Paperless einmal je unterschiedlicher gespeicherter Suche, welche dieser Dokumente sie findet. Jeder Benutzer, der ein Dokument gewählt hat und seine Datei öffnen kann, bekommt eine Benachrichtigung, mit einem Link zu jeder Datei, die sie nennt.">
+</picture>
+
+- **Wer was erfährt.** Dieselbe Regel wie in der Suche: Du erfährst von einem Dokument nur, wenn du seine Datei des Archiv-Kontos öffnen kannst. Wer dieselbe Suche gespeichert hat und die Datei nicht öffnen kann, erfährt nichts, ebenso wenig der Inhaber eines deaktivierten Kontos.
+- **Eine Benachrichtigung auf einmal.** Ein Lauf des Jobs schickt dir eine Benachrichtigung, egal wie viele Dokumente er hat: bei einem Dokument seinen Titel, bei mehreren ihre Anzahl und die Titel der neuesten drei. Jeder Titel öffnet die Datei, im Web und in den Apps für Telefone.
+- **Wann.** Ein Hintergrundjob läuft alle fünf Minuten, wie der Cron von Nextcloud ihn startet. Ein Dokument zählt, sobald seine Datei im Archiv-Konto angekommen ist, die Benachrichtigung kommt also mit deiner Synchronisierung, was Stunden dauern kann. Ein Dokument, dessen Datei nicht innerhalb von zwei Tagen ankommt, zählt nie, etwa eines, das die Regeln von Paperless Sync auslassen.
+- **Was als neu zählt.** Die Dokumente, die Paperless ab dem Moment aufnimmt, in dem zum ersten Mal jemand darum bittet: Ein erster Lauf lernt nur, wie weit die IDs reichen, also erfährt niemand vom Archiv vieler Jahre. Jede gespeicherte Suche sieht sich ein Dokument einmal an, wenn seine Datei ankommt, ein Tag, das es später bekommt, bringt also keine Benachrichtigung. Von mehr als 100 Dokumenten zwischen zwei Läufen, etwa bei einem großen Import, zählen nur die neuesten.
+- **Wenn Paperless nicht antwortet,** wartet der Job zehn Minuten, dann 20, 40 und höchstens eine Stunde, bevor er wieder fragt, und die Dokumente warten währenddessen weiter, innerhalb ihrer zwei Tage. Ein solcher Fehler landet im Protokoll von Nextcloud, nicht im Verlauf der Probleme der Suche. Eine gespeicherte Suche, die Paperless ablehnt oder nicht beantwortet, während es andere beantwortet, findet in diesem Lauf nichts, und das Protokoll zählt sie, ohne sie zu nennen.
+- **Nur wenn Administratoren es erlauben.** Die persönlichen Einstellungen bieten es an, solange **Benutzern Benachrichtigungen über neue Dokumente erlauben** an ist. Benachrichtigungen brauchen die App Notifications von Nextcloud, die dazugehört.
+
+<!-- --8<-- [end:notifications] -->
 <!-- --8<-- [start:search-syntax] -->
 
 ## Suchen wie in Paperless
@@ -571,6 +591,7 @@ Das Token kommt nie auf die Befehlszeile, wo der Verlauf der Shell und die Liste
 | `--allow-local`, `--no-allow-local` | **Paperless läuft in meinem lokalen Netzwerk** |
 | `--always-search`, `--no-always-search` | **Paperless immer in die globale Suche einbeziehen** |
 | `--personal-always-search`, `--no-personal-always-search` | **Benutzern erlauben, Paperless in alle ihre Suchen einzubeziehen** |
+| `--new-document-alerts`, `--no-new-document-alerts` | **Benutzern Benachrichtigungen über neue Dokumente erlauben** |
 
 Auf einem Server, als Benutzer des Webservers:
 
@@ -670,6 +691,7 @@ Zuletzt listet `check`, mit wem das Archiv-Konto seine Dateien teilt: die Benutz
 - **Suche ausprobieren** zeigt Administratoren, welche Dokumente ein Benutzer zu einem Begriff findet, nur mit ihren IDs, Titeln und Tags, ohne ihren Inhalt, einen Ausschnitt oder ihre Dateien; das Audit-Protokoll der App *Auditing / Logging* (`admin_audit`) hält fest, welcher Administrator als welcher Benutzer gesucht hat, gleich bei welcher Protokollstufe, ebenso das Protokoll von Nextcloud auf der Stufe info, ohne den Begriff.
 - Suchbegriffe werden nur von Server zu Server gesendet, wenn die Suche in verbundenen Diensten oder der Modus für den vertrauenswürdigen Dienst eingeschaltet ist, wenn der Benutzer in den persönlichen Einstellungen **Meine Paperless-Dokumente immer durchsuchen** gewählt hat, nachdem der Benutzer im Smart Picker **Paperless-Dokumente** gewählt hat, oder wenn ein Client diese Suche über ihre ID in der API anfragt.
 - Ein Link, den der Smart Picker einfügt, ist der Link der Datei in Nextcloud, der seine Vorschau nur Lesern zeigt, die die Datei öffnen können.
+- Die gespeicherten Suchen der Benachrichtigungen über neue Dokumente bleiben beim Konto des Benutzers, der sie gespeichert hat, und ein Hintergrundjob schickt sie an Paperless, sobald Dokumente mit Dateien neu sind, wie die persönlichen Einstellungen über dem Feld sagen. Eine Benachrichtigung geht nur an einen Benutzer, der die Datei öffnen kann, mit ihrem Titel.
 - Das Widget des Dashboards zeigt einem Benutzer nur die neuesten Dokumente, deren Dateien er öffnen kann. Der verteilte Cache von Nextcloud behält die IDs, Titel, Korrespondenten, Typen und Tags der 25 neuesten Dokumente eine Minute lang, die für jeden Benutzer dieselben sind, und nie ihren Text.
 - Administratoren können dem eingerichteten Paperless-Server ausdrücklich vertrauen, um ihn automatisch in die globalen Suchen jedes Benutzers einzubeziehen.
 - Keine Zugangsdaten für den Betrieb, privaten Hostnamen, internen Adressen oder Konfiguration einer Instanz gehören in dieses Repository.

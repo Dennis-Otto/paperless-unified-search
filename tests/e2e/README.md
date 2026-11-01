@@ -28,6 +28,8 @@ The suite makes the search fail, too, and checks the history of its problems tha
   <img src="../../docs/images/diagrams/the-problems-of-the-search-in-the-end-to-end-tests.svg" alt="The problems of the search in the end-to-end tests: run.sh searches as e2e-user for e2e-error, which the mock answers with HTTP 500, and the search shows no documents and records a failed search. Then it searches for e2e-drop; the mock breaks off the first request without an answer, the app sends it a second time and gets the document, and the history records the second try and that searches work again. assert_history.py checks the page of the administration settings, without the terms and the token. accessibility.mjs checks that page with axe-core, then clicks Clear history, and assert_history.py checks that the page says No problem recorded.">
 </picture>
 
+The notifications about new documents run in the last step, through the job as `occ background-job:execute` starts it: two users save the same search, the route refuses it while the settings don't let users ask for notifications, and the first run only learns how far the IDs go. The mock takes in a new document through `POST /e2e/documents`, a route that Paperless doesn't have. Without its file, the job costs the mock one request and no search. With the file in a folder that the archive account shares with one of the two, it costs one request more, with `id__in`, and `assert_notifications.py` finds one notification for that user in the notifications API of Nextcloud, with the title and the link of the file, and none for the other. With nothing new, it costs one request again.
+
 Run:
 
 ```bash

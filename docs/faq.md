@@ -46,7 +46,11 @@ Nextcloud turns it off at every reload of the page, so that a search term never 
 
 ## Can I see new documents without searching?
 
-Yes: add **New in Paperless** to your dashboard. It lists the documents that Paperless added last and that you can open, newest first, each with the day that Paperless added it, its correspondent, its type and up to two of its tags, and opens a document's file in Files. [On the dashboard](usage.md#on-the-dashboard) has the details.
+Yes: add **New in Paperless** to your dashboard. It lists the documents that Paperless added last and that you can open, newest first, each with the day that Paperless added it, its correspondent, its type and up to two of its tags, and opens a document's file in Files. [On the dashboard](usage.md#on-the-dashboard) has the details. Or let Nextcloud tell you: under **Personal settings → Paperless**, save searches such as `tag:unpaid` with [Notify me about new documents](usage.md#notifications-about-new-documents), or ask for every new document that you can open.
+
+## Why did I get no notification about a new document?
+
+A notification goes out only once the file of the document has reached the archive account and you can open it, so it comes with your synchronization. Each saved search looks at a document once, as its file arrives: a tag that it gets later brings none. Background jobs must run, as *Administration settings → Basic settings* shows, and the app Notifications of Nextcloud must be enabled. The first run after someone first asks only learns how far the IDs go, so a document of before then brings none either.
 
 ## Can I find the documents similar to one?
 
@@ -54,7 +58,7 @@ Yes, with the marker of its file, as Paperless does with **More like this**: sea
 
 ## How much load does it put on Paperless?
 
-The dashboard widget asks Paperless for its newest documents at most once a minute, for all users together, given a memory cache, as Nextcloud recommends. Beyond that, Paperless gets requests only from the searches that ask it: with **Search connected services** switched on, from the smart picker or the API, from every search of a user who chose **Always search my Paperless documents**, and from every search when **Always include Paperless in global search** is on. Nextcloud's search waits until the typing pauses before it asks. For each page of results, the app asks Paperless for 25 documents, and only for the fields that a result shows, not the OCR text of each document; to fill a page whose first documents the user can't open, it asks for up to 3 more pages, within 3 seconds. Paperless 3 gets a query in its syntax that it can't parse yet, as one still being typed, once more in its simple mode. A request that couldn't connect gets a second try; one that waited in vain for a Paperless that hangs isn't sent again.
+The dashboard widget asks Paperless for its newest documents at most once a minute, for all users together, given a memory cache, as Nextcloud recommends. Beyond that, Paperless gets requests only from the searches that ask it: with **Search connected services** switched on, from the smart picker or the API, from every search of a user who chose **Always search my Paperless documents**, and from every search when **Always include Paperless in global search** is on. Nextcloud's search waits until the typing pauses before it asks. For each page of results, the app asks Paperless for 25 documents, and only for the fields that a result shows, not the OCR text of each document; to fill a page whose first documents the user can't open, it asks for up to 3 more pages, within 3 seconds. Paperless 3 gets a query in its syntax that it can't parse yet, as one still being typed, once more in its simple mode. A request that couldn't connect gets a second try; one that waited in vain for a Paperless that hangs isn't sent again. While someone asks for notifications about new documents, a background job asks once every five minutes which documents are new, in a short request, and only for a document whose file has arrived once per distinct saved search.
 
 ## Does it search the documents in the inbox of Paperless?
 

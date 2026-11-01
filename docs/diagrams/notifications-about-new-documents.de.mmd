@@ -1,0 +1,33 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: Benachrichtigungen über neue Dokumente
+    accDescr: Alle fünf Minuten fragt ein Hintergrundjob Paperless-ngx einmal nach den Dokumenten, die es seit dem letzten Lauf hinzugefügt hat, und sie warten auf ihre Dateien. Solange keine Datei angekommen ist, bekommt Paperless keine weitere Anfrage. Sobald eine Datei im Archiv-Konto liegt, fragt der Job Paperless einmal je unterschiedlicher gespeicherter Suche, welche dieser Dokumente sie findet. Jeder Benutzer, der ein Dokument gewählt hat und seine Datei öffnen kann, bekommt eine Benachrichtigung, mit einem Link zu jeder Datei, die sie nennt.
+
+    job["Alle fünf Minuten<br>der Hintergrundjob"]
+    paperless[("Paperless-ngx: eine Anfrage<br>nach den seit dem letzten Lauf hinzugefügten Dokumenten")]
+    waiting{"Ist die Datei eines wartenden Dokuments<br>im Archiv-Konto angekommen?"}
+    rest["Keine weitere Anfrage:<br>Das Dokument wartet, bis zu zwei Tage"]
+    searches[("Paperless-ngx: eine Anfrage<br>je unterschiedlicher gespeicherter Suche,<br>nur unter diesen Dokumenten")]
+    files["Für jeden Benutzer, der sie gewählt hat:<br>die Dateien des Archiv-Kontos,<br>die er öffnen kann"]
+    notification(["`**Eine Benachrichtigung für Jamie**
+    2 neue Dokumente in Paperless
+    *jeder Titel öffnet seine Datei*`"])
+
+    job --> paperless
+    paperless --> waiting
+    waiting -- "nein" --> rest
+    waiting -- "ja" --> searches
+    searches --> files
+    files --> notification
+
+    classDef you fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    class job you
+    class waiting,rest,files app
+    class notification yes

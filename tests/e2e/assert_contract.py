@@ -406,6 +406,22 @@ def check_paperless(paperless, line, report):
     expect(moments == sorted(moments, reverse=True), f"ordering=-added doesn't list the newest first: {[result['added'] for result in newest]}")
     report.passed(f"The newest documents of the dashboard ({code('ordering=-added')}, {code(','.join(paperless.recent_fields))})", f"newest first, added as {code(newest[0]['added'])}")
 
+    # What the job of the notifications about new documents asks: the newest documents by
+    # their IDs, which a day narrows, and which of them a saved search finds.
+    by_id = paperless.documents("The documents by their IDs", ordering="-id", page=1, page_size=100, fields="id,title").json("The documents by their IDs").get("results")
+    ids = [result["id"] for result in by_id]
+    expect(len(ids) == len(SEED) and ids == sorted(ids, reverse=True), f"ordering=-id doesn't list the highest IDs first: {ids}")
+    expect(all(set(result) == {"id", "title"} for result in by_id), f"Paperless ignored the fields id,title: {by_id}")
+    recent = paperless.documents("The documents of a day and later", ordering="-id", page=1, page_size=100, fields="id,title", added__date__gte="2000-01-01").json("The documents of a day and later").get("results")
+    expect([result["id"] for result in recent] == ids, f"added__date__gte in the past leaves {recent} of {ids}.")
+    future = paperless.documents("The documents of a day to come", ordering="-id", page=1, page_size=100, fields="id,title", added__date__gte="2999-01-01").json("The documents of a day to come").get("results")
+    expect(future == [], f"added__date__gte in the future finds {future}.")
+    outside = paperless.documents("A search among no document of the term", query=TERM, id__in="2147483647", page=1, page_size=1, fields="id").json("A search among no document of the term").get("results")
+    expect(outside == [], f"The full-text search for {TERM!r} with id__in of another document finds {outside}.")
+    found = paperless.documents("A search among all documents", query=TERM, id__in=",".join(map(str, ids)), page=1, page_size=len(ids), fields="id").json("A search among all documents").get("results")
+    expect(found and all("id" in result and "title" not in result for result in found), f"The full-text search for {TERM!r} with id__in of all documents finds {found}.")
+    report.passed("The requests of the notifications about new documents", f"{code('ordering=-id')}, {code('added__date__gte')} and {code('query=')} with {code('id__in')}")
+
     answer = paperless.get("/api/documents/", page=1, page_size=25, fields=",".join(paperless.fields), query=UNFINISHED)
     if line == "2":
         # Paperless 2 parses what it can, and never gets the simple mode, which it ignores.

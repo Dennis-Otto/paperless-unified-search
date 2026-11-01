@@ -34,6 +34,7 @@ use OCP\Http\Client\IResponse;
 use OCP\Http\Client\LocalServerException;
 use OCP\IAppConfig;
 use OCP\ICacheFactory;
+use OCP\IConfig;
 use OCP\IL10N;
 use OCP\IRequest;
 use OCP\IUserSession;
@@ -95,6 +96,7 @@ final class SettingsControllerTest extends TestCase {
 			'paperlessApiVersion' => '',
 			'personalAlwaysSearch' => true,
 			'tokenWarnings' => [],
+			'newDocumentAlerts' => false,
 		], json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR));
 		self::assertStringNotContainsString('TEST_VALUE', $response->render());
 		self::assertNotContains(AppConstants::APP_ID . '.diagnostics', $deleted);
@@ -160,6 +162,31 @@ final class SettingsControllerTest extends TestCase {
 		self::assertSame(Http::STATUS_OK, $response->getStatus());
 		self::assertSame($allowed, $switches[AppConstants::APP_ID . '.personal_always_search'] ?? null);
 		self::assertSame($allowed, json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR)['personalAlwaysSearch']);
+	}
+
+	/**
+	 * A save hands over whether users may ask for notifications about new documents; one
+	 * without it leaves that as it is.
+	 */
+	public function testASaveStoresWhetherUsersMayAskForNotifications(): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response(200, self::NO_DOCUMENTS));
+
+		$switches = [];
+		$config = $this->createStub(IAppConfig::class);
+		$config->method('getValueBool')->willReturnCallback(static fn (string $app, string $key, bool $default = false): bool => $switches[$app . '.' . $key] ?? $default);
+		$config->method('setValueBool')->willReturnCallback(static function (string $app, string $key, bool $value) use (&$switches): bool {
+			$switches[$app . '.' . $key] = $value;
+
+			return true;
+		});
+		$controller = $this->controller($config, $this->createStub(ICredentialsManager::class), $client);
+
+		$controller->save('https://paperless.example.com', 'TEST_VALUE');
+		self::assertArrayNotHasKey(AppConstants::APP_ID . '.new_document_alerts', $switches);
+
+		$controller->save('https://paperless.example.com', 'TEST_VALUE', newDocumentAlerts: true);
+		self::assertTrue($switches[AppConstants::APP_ID . '.new_document_alerts'] ?? null);
 	}
 
 	/**
@@ -659,6 +686,7 @@ final class SettingsControllerTest extends TestCase {
 			'paperlessApiVersion' => '',
 			'personalAlwaysSearch' => true,
 			'tokenWarnings' => [],
+			'newDocumentAlerts' => false,
 		], json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR));
 		self::assertContains(AppConstants::APP_ID . '.diagnostics', $deleted);
 	}
@@ -693,7 +721,7 @@ final class SettingsControllerTest extends TestCase {
 		$clientService = $this->createStub(IClientService::class);
 		$clientService->method('newClient')->willReturn($client);
 		$accounts = $this->accounts('archive');
-		$configService = new ConfigService($config, $credentials, $accounts, $this->createStub(LoggerInterface::class));
+		$configService = new ConfigService($config, $credentials, $accounts, $this->createStub(LoggerInterface::class), $this->createStub(IConfig::class));
 		$clock = $this->createStub(ITimeFactory::class);
 		$clock->method('now')->willReturn(new DateTimeImmutable('@1791500000'));
 		$diagnostics = new SearchDiagnostics($config, $clock, $this->createStub(ICacheFactory::class));

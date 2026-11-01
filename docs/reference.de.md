@@ -18,6 +18,7 @@ Die Einstellungen liegen unter **Verwaltungseinstellungen → Paperless Unified 
 | **Archiv-Konto** | Das Nextcloud-Konto, dessen Dateien für die Dokumente stehen; leer nimmt das Konto von Paperless Sync | Das Konto von Paperless Sync | `archive_owner` |
 | **Paperless immer in die globale Suche einbeziehen** | Fragt Paperless bei jeder Suche jedes Benutzers, ohne **Verbundene Dienste durchsuchen**; lade Nextcloud nach einer Änderung neu | Aus | `always_search` |
 | **Benutzern erlauben, Paperless in alle ihre Suchen einzubeziehen** | Lässt jeden Benutzer in seinen persönlichen Einstellungen **Meine Paperless-Dokumente immer durchsuchen** wählen; aus blendet die Wahl aus, und die Suche übergeht, was Benutzer gewählt haben | An | `personal_always_search` |
+| **Benutzern Benachrichtigungen über neue Dokumente erlauben** | Lässt jeden Benutzer in seinen persönlichen Einstellungen Suchen für Benachrichtigungen speichern; aus blendet die Wahl aus, und der Job fragt Paperless nichts | An, wenn Nextcloud einen Memory-Cache hat, bis ein Administrator wählt | `new_document_alerts` |
 
 **Verbindung trennen** löscht die URL, das Token, die Schalter, das Archiv-Konto, die Version von Paperless und den Verlauf der Probleme. **Verlauf leeren** löscht nur den Verlauf.
 
@@ -28,6 +29,7 @@ Unter **Persönliche Einstellungen → Paperless** kann jeder Benutzer **Meine P
 | Einstellung | Standard | Benutzereinstellung |
 | --- | --- | --- |
 | **Meine Paperless-Dokumente immer durchsuchen** | Aus | `always_search` der App, nur gespeichert, solange sie gewählt ist |
+| **Benachrichtige mich über neue Dokumente** | Aus | `new_document_alerts` der App, ein Lazy-Wert, nur gespeichert, solange er etwas wählt, als JSON: `everyDocument` und die gespeicherten Suchen in `terms` |
 
 Ein Administrator liest die Wahl eines Benutzers mit `occ user:setting <user> paperless_unified_search always_search` und nimmt sie mit `occ user:setting <user> paperless_unified_search always_search --delete` zurück. Solange **Benutzern erlauben, Paperless in alle ihre Suchen einzubeziehen** aus ist, bleiben die gespeicherten Wahlen erhalten, zählen aber nicht; sie zählen wieder, sobald es an ist.
 
@@ -47,6 +49,8 @@ occ config:app:get paperless_unified_search paperless_url
 | `archive_owner` | Die ID des Archiv-Kontos, so geschrieben wie in Nextcloud; fehlt, wenn die Einstellungen das Konto von Paperless Sync nehmen |
 | `always_search` | Ob jede Suche Paperless fragt |
 | `personal_always_search` | Ob Benutzer wählen dürfen, Paperless in jede ihrer Suchen einzubeziehen; fehlt er, dürfen sie es |
+| `new_document_alerts` | Ob Benutzer Benachrichtigungen über neue Dokumente wählen dürfen; fehlt er, heißt das ja, wenn Nextcloud einen Memory-Cache hat |
+| `new_document_alerts_progress` | Wie weit der Job der Benachrichtigungen gekommen ist, als JSON: der Hash der URL des Servers, die höchste gesehene ID, der Moment der letzten Antwort, die Dokumente, die auf ihre Dateien warten, mit ihren Titeln, und die Fehler in Folge mit dem Ende der Pause; ein Lazy-Schlüssel. Der Job löscht ihn, solange niemand Benachrichtigungen wählt |
 | `paperless_version`, `paperless_api_version` | Die Versionen von Paperless und seiner API, etwa `3.3.0` und `10`, wie seine letzte Antwort sie genannt hat |
 | `token_warnings` | Die Warnungen zum Konto des API-Tokens, die der letzte Test der Verbindung gefunden hat, durch Kommas getrennt: `superuser`, `staff`, `changes_documents`, `hides_correspondents`, `hides_document_types`, `hides_tags` und `hides_names_of_others`; fehlt, wenn es keine gibt oder Paperless es nicht gesagt hat. Ein Lazy-Schlüssel |
 | `diagnostics` | Der Verlauf der Probleme der Suche, als JSON; ein Lazy-Schlüssel, den Nextcloud erst lädt, wenn er gelesen wird |
@@ -62,7 +66,7 @@ Schlüssel, die eine ältere Version hinterlassen hat und diese nicht mehr liest
 
 ## Die Routen der Einstellungen
 
-Die Seite der Einstellungen speichert über vier Routen der App, die nur Administratoren aufrufen dürfen, jede mit dem CSRF-Token von Nextcloud, und die persönlichen Einstellungen über eine fünfte, die jeder angemeldete Benutzer aufrufen darf. Ein Skript ruft die vier mit der Anmeldung eines Administrators auf und die fünfte mit der Anmeldung des Benutzers, dessen Wahl sie speichert, jede mit dem Header `OCS-APIRequest: true`, wie es die End-to-End-Tests tun; `/index.php` steht vor `/apps`, wo Nextcloud ohne Pretty URLs läuft.
+Die Seite der Einstellungen speichert über vier Routen der App, die nur Administratoren aufrufen dürfen, jede mit dem CSRF-Token von Nextcloud, und die persönlichen Einstellungen über zwei weitere, die jeder angemeldete Benutzer aufrufen darf. Ein Skript ruft die vier mit der Anmeldung eines Administrators auf und diese zwei mit der Anmeldung des Benutzers, dessen Wahl sie speichern, jede mit dem Header `OCS-APIRequest: true`, wie es die End-to-End-Tests tun; `/index.php` steht vor `/apps`, wo Nextcloud ohne Pretty URLs läuft.
 
 | Route | Tut |
 | --- | --- |
@@ -71,6 +75,7 @@ Die Seite der Einstellungen speichert über vier Routen der App, die nur Adminis
 | `DELETE /apps/paperless_unified_search/settings/diagnostics` | **Verlauf leeren** |
 | `POST /apps/paperless_unified_search/settings/try` | **Suche ausprobieren**: sucht mit dem Parameter `term` als das Konto `user` und sagt für jedes Dokument, ob es angezeigt wird und warum nicht, nur mit seiner ID, seinem Titel und seinen Tags; das Protokoll hält fest, welcher Administrator als wer gesucht hat, ohne den Begriff |
 | `POST /apps/paperless_unified_search/personal` | **Meine Paperless-Dokumente immer durchsuchen** des angemeldeten Benutzers, mit dem Parameter `alwaysSearch`; antwortet `{"alwaysSearch": true}` oder `false`, und HTTP 403 mit dem Code `not_allowed`, solange die Administratoren Benutzer nicht wählen lassen |
+| `POST /apps/paperless_unified_search/personal/alerts` | **Benachrichtige mich über neue Dokumente** des angemeldeten Benutzers, mit den Parametern `everyDocument` und `terms`, einer Liste; antwortet die Wahl, wie der Server sie behält, ohne leere Zeilen und Wiederholungen, oder eine `message` mit dem `code` `not_allowed`, `too_many_searches` für mehr als 10 oder `search_too_long` für mehr als 500 Zeichen |
 
 ```sh
 curl -u admin -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
@@ -118,6 +123,17 @@ Die [Fehlerbehebung](troubleshooting.de.md#wenn-der-test-der-verbindung-fehlschl
 | **Der Link unter der Liste** | *Mit dir geteilte Dateien*, die Ansicht von Dateien mit den Dateien, die andere mit dem Benutzer teilen; das Web-Dashboard von Nextcloud zeigt ihn, und sechs Dokumente, erst wenn die Liste voll ist; keiner für das Archiv-Konto |
 | **Paperless** | Eine Anfrage nach den 25 Dokumenten, die es zuletzt hinzugefügt hat, höchstens einmal in der Minute für alle Benutzer gemeinsam, die der verteilte Cache von Nextcloud solange behält (mit einem Memory-Cache, wie Nextcloud ihn empfiehlt; ohne einen fragt jedes Dashboard Paperless); ein Paperless, das nicht antwortet, ruht ebenfalls eine Minute, und das Widget sagt *Paperless ist gerade nicht erreichbar.* |
 
+## Die Benachrichtigungen über neue Dokumente
+
+| | |
+| --- | --- |
+| **Der Job** | `OCA\PaperlessUnifiedSearch\BackgroundJob\NotifyNewDocuments`, alle fünf Minuten, soweit der Cron von Nextcloud es zulässt, ein Lauf nach dem anderen; `occ background-job:list --class='OCA\PaperlessUnifiedSearch\BackgroundJob\NotifyNewDocuments'` zeigt ihn |
+| **Er läuft** | Solange **Benutzern Benachrichtigungen über neue Dokumente erlauben** an ist, Paperless verbunden ist, ein Archiv-Konto existiert und jemand Benachrichtigungen gewählt hat; sonst vergisst er seinen Fortschritt und fragt nichts |
+| **Paperless** | Eine Anfrage je Lauf nach den neuen Dokumenten, und nur für ein Dokument mit einer Datei im Archiv-Konto eine Anfrage je unterschiedlicher gespeicherter Suche, wie [unten](#anfragen-an-paperless) |
+| **Grenzen** | 10 gespeicherte Suchen je Benutzer, von bis zu 500 Zeichen; 100 neue Dokumente je Lauf; 200 Dokumente, die auf ihre Dateien warten, bis zu zwei Tage lang |
+| **Pause nach einem Fehler** | 10, 20 und 40 Minuten, dann eine Stunde, bis Paperless wieder antwortet |
+| **Die Benachrichtigung** | Eine je Benutzer und Lauf; das Subject `new_documents`, das Objekt `paperless_documents` mit der ID des neuesten Dokuments und die Parameter `count` und `documents` mit dem Titel, der ID und dem Pfad der Datei von bis zu drei |
+
 ## Anfragen an Paperless
 
 Jede Anfrage der App an Paperless ist ein `GET` von `<URL>/api/documents/`, von `/api/correspondents/`, `/api/document_types/` und `/api/tags/` für die Namen der Korrespondenten, Typen und Tags einer Seite und, beim Test der Verbindung, seiner neuesten Dokumente oder von `/api/ui_settings/` dafür, was das Konto des Tokens darf, vom Nextcloud-Server aus:
@@ -129,6 +145,8 @@ Jede Anfrage der App an Paperless ist ein `GET` von `<URL>/api/documents/`, von 
 | **Eine Suche** | `query` mit dem Begriff, `page`, `page_size=25` und `fields=id,title,created,correspondent,document_type,tags,__search_hit__`; bei Paperless 3 eine Anfrage, die es noch nicht verarbeiten kann, noch einmal mit `text` statt `query` |
 | **Der Test der Verbindung** | `page_size=1` und `fields=id`; sobald Paperless antwortet, `/api/ui_settings/` ohne Parameter, mit 3 Sekunden für die Antwort und ohne zweiten Versuch, für die Warnungen zum Konto des Tokens. Von der Antwort liest die App nur `user.is_superuser`, `user.is_staff` und `permissions`; einem Konto, das seine UI-Einstellungen nicht ansehen darf, antwortet Paperless mit HTTP 403, und die Warnungen bleiben unbekannt. Bei einem Konto, das kein Superuser ist und Dokumente ansehen darf, fragt sie dann nach den 25 neuesten mit `ordering=-added`, `page=1` und `fields=id,correspondent,document_type,tags` und nach den Namen ihrer Korrespondenten, Typen und Tags, wieder mit 3 Sekunden und ohne zweiten Versuch, für die Warnung zu denen, die einem anderen Benutzer gehören |
 | **Die neuesten Dokumente des Dashboards** | `ordering=-added`, `page=1`, `page_size=25` und `fields=id,title,added,correspondent,document_type,tags`, höchstens einmal in der Minute für alle Benutzer, mit 5 Sekunden für die Antwort und ohne zweiten Versuch |
+| **Die neuen Dokumente der Benachrichtigungen** | `ordering=-id`, `page=1`, `page_size=100`, `fields=id,title` und `added__date__gte` mit dem Tag vor der letzten Antwort, was die Antwort kurz hält, mit einem Versuch, alle fünf Minuten, solange jemand Benachrichtigungen gewählt hat und Paperless antwortet; der erste Lauf fragt `page_size=1` ohne den Tag |
+| **Eine gespeicherte Suche der Benachrichtigungen** | `query` mit dem Begriff, auf Paperless 3 bei einer Anfrage, die es nicht parsen kann, noch einmal `text` mit ihren Wörtern, `id__in` mit den neuen Dokumenten, die Dateien haben, `page=1`, `page_size` so viele wie diese und `fields=id`, mit einem Versuch, einmal je unterschiedlicher Suche und nur, wenn es solche Dokumente gibt |
 | **Zeit** | 3 Sekunden zum Verbinden, 10 Sekunden für die Antwort |
 | **Ein zweiter Versuch** | Nur für eine Anfrage, die innerhalb von 3,5 Sekunden fehlgeschlagen ist, bevor sie eine Verbindung hatte, und deren Adresse Nextcloud nicht verweigert hat |
 | **Weiterleitungen** | Ohne **Paperless läuft in meinem lokalen Netzwerk** bis zu 5, nie an eine Adresse des lokalen Netzwerks; Nextcloud lässt das Token bei einer Weiterleitung auf ein anderes Schema, einen anderen Host oder Port weg, was Paperless dann ablehnt, und behält es bei einer innerhalb desselben Servers. Mit dem Schalter keine |
@@ -157,6 +175,9 @@ Jede Anfrage der App an Paperless ist ein `GET` von `<URL>/api/documents/`, von 
 | Nextcloud | Paperless | Die Anfrage nach den 25 Dokumenten, die Paperless zuletzt hinzugefügt hat, mit den Feldern, die das Dashboard zeigt, und das API-Token | Höchstens einmal in der Minute, wenn das Dashboard eines Benutzers das Widget zeigt |
 | Paperless | Nextcloud | Von jedem dieser Dokumente, das das Konto des Tokens ansehen darf: seine ID, sein Titel, der Moment, an dem Paperless es hinzugefügt hat, und die IDs seines Korrespondenten, seines Typs und seiner Tags | In jeder Antwort |
 | Nextcloud | Der Browser oder eine App des Benutzers | Von jedem der neuesten Dokumente, dessen Datei der Benutzer öffnen kann: sein Titel, der Tag, an dem Paperless es hinzugefügt hat, sein Korrespondent, sein Typ und bis zu zwei seiner Tags und der Link und die Vorschau seiner Datei | Immer, wenn das Dashboard das Widget zeigt |
+| Nextcloud | Paperless | Die gespeicherten Suchen der Benutzer, die Benachrichtigungen gewählt haben, unter den IDs der neuen Dokumente mit Dateien, und das API-Token | Einmal je unterschiedlicher Suche, wenn ein neues Dokument seine Datei hat |
+| Paperless | Nextcloud | Die IDs und Titel der Dokumente, die es seit dem letzten Lauf hinzugefügt hat, und die IDs derer, die jede Suche findet | Alle fünf Minuten, solange jemand Benachrichtigungen gewählt hat |
+| Nextcloud | Der Browser oder eine App des Benutzers | Die Anzahl der neuen Dokumente, die der Benutzer gewählt hat und öffnen kann, und von den neuesten drei der Titel, die ID und der Pfad der Datei | Wenn der Client seine Benachrichtigungen abruft |
 
 <div class="diagram-wide" markdown tabindex="0" role="region" aria-label="Diagramm des Datenflusses einer Suche">
 
@@ -184,12 +205,17 @@ Die App schreibt in das Protokoll von Nextcloud mit `app` auf `paperless_unified
 | Warning | Paperless unified search skipped *n* file(s) it could not read (*error*) | Dateien des Archivs, die Nextcloud nicht lesen konnte |
 | Warning | Paperless unified search looks for the files of each document on its own … | Eine Version von Nextcloud, deren Abfrage des Datei-Caches die App noch nicht kennt: Die Suche funktioniert trotzdem, mit einer Abfrage je Dokument statt einer je Seite |
 | Warning | The stored Paperless API token can't be decrypted … | Das `secret` der `config.php` hat sich geändert: Gib das Token erneut ein |
+| Warning | The notifications about new Paperless documents try again in *n* seconds (*error*) | Der Job konnte Paperless nicht fragen oder die Dateien nicht suchen und pausiert |
+| Warning | *n* saved search(es) of the notifications about new Paperless documents failed (*error*) | Paperless hat die anderen beantwortet, aber diese nicht, etwa einen Platzhalter, der zu lange dauerte: Sie haben in diesem Lauf nichts gefunden, das Protokoll nennt sie nicht, und der Job macht weiter |
+| Warning | A user got no notification about new Paperless documents (*error*) | Die Dateien dieses Benutzers haben nicht geantwortet, oder Nextcloud hat die Benachrichtigung abgelehnt; die anderen haben ihre bekommen |
+| Info | Paperless refused *n* saved search(es) of the notifications about new documents | Diese Suchen haben in diesem Lauf nichts gefunden; das Protokoll nennt sie nicht |
+| Info | Paperless added *n* or more documents between two runs of the notifications about new documents: older ones get none | Ein großer Import |
 | Debug | Paperless rejected the query of a search with HTTP *status* | Eine Anfrage, die noch getippt wird, oder eine Seite nach der letzten: kein Problem |
 
 ## Deinstallieren
 
-1. **Verbindung trennen** in den Einstellungen. Das löscht die URL, das Token, die Schalter, das Archiv-Konto, die Version von Paperless und den Verlauf der Probleme; nur `diagnostics_pending` bleibt, mit den Schlüsseln, die Nextcloud von jeder App führt, etwa `enabled` und `installed_version`.
-2. **Die App entfernen:** `occ app:remove paperless_unified_search` deaktiviert sie und löscht ihren Code; oder *Apps → Deaktivieren* und *Entfernen* im Browser. Nextcloud behält die App-Konfiguration einer entfernten App: `occ config:list paperless_unified_search` listet, was übrig ist, und `occ config:app:delete paperless_unified_search <key>` löscht einen Schlüssel. Die Wahlen der Benutzer bleiben als ihre Benutzereinstellung `always_search`, die `occ user:setting <user> paperless_unified_search always_search --delete` löscht.
+1. **Verbindung trennen** in den Einstellungen. Das löscht die URL, das Token, die Schalter, das Archiv-Konto, die Version von Paperless, den Fortschritt der Benachrichtigungen über neue Dokumente und den Verlauf der Probleme; nur `diagnostics_pending` bleibt, mit den Schlüsseln, die Nextcloud von jeder App führt, etwa `enabled` und `installed_version`.
+2. **Die App entfernen:** `occ app:remove paperless_unified_search` deaktiviert sie und löscht ihren Code; oder *Apps → Deaktivieren* und *Entfernen* im Browser. Nextcloud behält die App-Konfiguration einer entfernten App: `occ config:list paperless_unified_search` listet, was übrig ist, und `occ config:app:delete paperless_unified_search <key>` löscht einen Schlüssel. Die Wahlen der Benutzer bleiben als ihre Benutzereinstellungen `always_search` und `new_document_alerts`, letztere mit ihren gespeicherten Suchen, die `occ user:setting <user> paperless_unified_search always_search --delete` und dasselbe mit `new_document_alerts` löschen.
 3. **In Paperless** löschst du das API-Token oder das Konto der Suche: Ein Token, das Nextcloud vergessen hat, funktioniert weiter, bis auch Paperless es vergisst.
 
 Die Dateien des Archivs und ihre Freigaben bleiben, wie sie sind: Sie gehören dem Archiv-Konto und der Synchronisierung, nicht dieser App. Ohne **Verbindung trennen** bleibt das verschlüsselte Token im Zugangsdatenmanager von Nextcloud, unter `paperless_unified_search.api-token`, bis die App wieder installiert und getrennt wird.

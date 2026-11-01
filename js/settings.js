@@ -153,6 +153,7 @@
 		const tokenWarnings = document.getElementById('paperless-unified-search-token-warnings')
 		const alwaysSearchInput = document.getElementById('paperless-unified-search-always-search')
 		const personalAlwaysSearchInput = document.getElementById('paperless-unified-search-users-always-search')
+		const newDocumentAlertsInput = document.getElementById('paperless-unified-search-new-document-alerts')
 		const archiveOwnerInput = document.getElementById('paperless-unified-search-archive-owner')
 		const archiveOwnerMissing = document.getElementById('paperless-unified-search-archive-owner-missing')
 		const saveButton = document.getElementById('paperless-unified-search-save')
@@ -208,6 +209,7 @@
 			tokenWarnings.textContent = tokenWarningsOf(config)
 			alwaysSearchInput.checked = Boolean(config.alwaysSearch)
 			personalAlwaysSearchInput.checked = Boolean(config.personalAlwaysSearch)
+			newDocumentAlertsInput.checked = Boolean(config.newDocumentAlerts)
 			archiveOwnerInput.value = config.archiveOwner || ''
 			archiveOwnerMissing.textContent = config.archiveOwnerMissing
 				? translate('The archive account {account} does not exist.', { account: config.archiveOwner || config.syncAccount })
@@ -252,6 +254,7 @@
 					token: tokenInput.value,
 					alwaysSearch: alwaysSearchInput.checked,
 					personalAlwaysSearch: personalAlwaysSearchInput.checked,
+					newDocumentAlerts: newDocumentAlertsInput.checked,
 					archiveOwner: archiveOwnerInput.value,
 				}))
 				showStatus(translate('Connection successful. Settings saved.'), 'success')

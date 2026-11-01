@@ -15,11 +15,13 @@ import { chromium } from 'playwright-core'
 import { SIZES, flowSizes } from './sizes.mjs'
 import {
 	ALWAYS_SEARCH,
+	SAVED_SEARCHES,
 	BASE_URL,
 	PERSONAL,
 	PERSONAL_SCOPE,
 	SEARCH_PROVIDERS,
 	chooseAlwaysSearch,
+	saveSearches,
 	connectedServices,
 	openSearch,
 	resultGroup,
@@ -148,6 +150,29 @@ async function searchAlways(browser, session, size) {
 	}
 }
 
+// The user saves two searches and a repeat in the personal settings, finds them as the
+// server keeps them after the page loads again, and takes them back, for the next runs.
+async function saveSearchesInSettings(browser, session, size) {
+	const context = await browser.newContext({ storageState: session, locale: 'en-US', ...size.options })
+	context.setDefaultTimeout(TIMEOUT)
+	const page = await context.newPage()
+	try {
+		await page.goto(`${BASE_URL}${PERSONAL}`, { waitUntil: 'domcontentloaded' })
+		await saveSearches(page, 'tag:unpaid\n\ncorrespondent:"tax office"\ntag:unpaid')
+		await page.goto(`${BASE_URL}${PERSONAL}`, { waitUntil: 'domcontentloaded' })
+		const saved = await page.locator(SAVED_SEARCHES).inputValue()
+		if (saved !== 'tag:unpaid\ncorrespondent:"tax office"') {
+			throw new Error(`The personal settings show the searches ${JSON.stringify(saved)}.`)
+		}
+		await saveSearches(page, '')
+		console.log(`Personal settings on a ${size.name}: the saved searches of the notifications stay as the server keeps them.`)
+	} catch (error) {
+		throw new Error(`On a ${size.name}, with saved searches, at ${page.url()}: ${error.message}`)
+	} finally {
+		await context.close()
+	}
+}
+
 const browser = await chromium.launch()
 try {
 	const session = await signIn(browser, USER)
@@ -164,6 +189,7 @@ try {
 	}
 	// Once, on the first size of the run: the choice takes no other path on a phone.
 	await searchAlways(browser, session, RUN[0])
+	await saveSearchesInSettings(browser, session, RUN[0])
 } finally {
 	await browser.close()
 }

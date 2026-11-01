@@ -44,6 +44,8 @@ Paperless-Dokumente erscheinen in der globalen Suche von Nextcloud für jeden Be
   <figcaption>Neu in Paperless auf dem Dashboard von Nextcloud</figcaption>
 </figure>
 
+--8<-- "README.de.md:notifications"
+
 ## Warum der Schalter nach dem Neuladen aus ist
 
 **Verbundene Dienste durchsuchen** entscheidet, ob eine Suche Nextcloud verlässt. Nextcloud zählt jede Suche, die den Begriff an einen anderen Server schickt, als eine eines verbundenen Dienstes, auch Paperless, und fragt sie nur, solange der Schalter an ist. Es schaltet den Schalter aus, sobald die Seite neu lädt, damit kein Begriff ohne die Wahl des Benutzers an einen anderen Server geht, immer wieder.

@@ -56,10 +56,18 @@
 .paperless-unified-search-settings input[type='url'],
 .paperless-unified-search-settings input[type='password'],
 .paperless-unified-search-settings input[type='search'],
-.paperless-unified-search-settings input[type='text'] {
+.paperless-unified-search-settings input[type='text'],
+.paperless-unified-search-settings textarea {
 	box-sizing: border-box;
 	max-width: 520px;
 	width: 100%;
+}
+
+/* The saved searches below their label, in the letters of code, one per line. */
+.paperless-unified-search-settings textarea {
+	display: block;
+	font-family: var(--font-face-monospace, monospace);
+	margin-top: 4px;
 }
 
 /*
