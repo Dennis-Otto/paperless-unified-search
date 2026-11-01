@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # Takes the screenshots in screenshots/, which the README, the website and the App
-# Store show, and the animation of the search in docs/images/, light and dark, with the
-# videos that the website plays in its place (scripts/screenshot-media.sh), and renders
+# Store show, and the animations of the search and of the set-up in docs/images/, light
+# and dark, with the videos that the website plays in their place
+# (scripts/screenshot-media.sh), and renders
 # the social preview from the first screenshot (scripts/social-preview.sh). Run it
 # after a change of what users see:
 #   bash scripts/screenshots.sh
@@ -62,7 +63,7 @@ TMP_DIR="$(mktemp -d)"
 browse() {
 	local network="$1"
 	shift
-	tar -C tests/e2e -cf - package.json package-lock.json ui.mjs demo.mjs screenshots.mjs \
+	tar -C tests/e2e -cf - package.json package-lock.json ui.mjs demo.mjs gif-frames.mjs screenshots.mjs \
 		| docker run --rm --interactive \
 			--network "${network}" \
 			--env NPM_CONFIG_UPDATE_NOTIFIER=false \
@@ -177,9 +178,9 @@ browse "${PROJECT_NAME}_default" --env "E2E_PASSWORD=${PASSWORD}"
 # The videos of the animations with their first frames, and every PNG at its smallest.
 bash scripts/screenshot-media.sh "${TMP_DIR}"
 
-# The animation of the README and of the home page of the website, light and dark, is a
-# file of the website, so that the website plays its video: the website loads the
-# screenshots from main, and no video of main.
+# The animations of the README and of the website, light and dark, are files of the
+# website, so that the website plays their videos: the website loads the screenshots
+# from main, and no video of main.
 cp "${TMP_DIR}"/*.png screenshots/
 cp "${TMP_DIR}"/*.gif "${TMP_DIR}"/*.mp4 "${TMP_DIR}"/*.webp docs/images/
 ls -l screenshots/ docs/images/

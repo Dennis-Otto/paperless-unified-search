@@ -30,6 +30,7 @@ on:
       - lib/**
       - scripts/screenshots.sh
       - tests/e2e/demo.mjs
+      - tests/e2e/gif-frames.mjs
       - tests/e2e/screenshots.mjs
       - tests/e2e/ui.mjs
       - tests/e2e/package.json

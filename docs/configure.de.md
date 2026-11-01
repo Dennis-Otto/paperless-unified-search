@@ -11,6 +11,13 @@ Drei Dinge lassen Paperless-Dokumente in der Suche von Nextcloud erscheinen: ein
   <img src="images/diagrams/setting-up-the-search.de.svg" alt="Die Suche einrichten: Installiere die App. Lege in Paperless-ngx ein Konto an, das die Dokumente lesen darf, und ein API-Token dafür. Gib in den Verwaltungseinstellungen von Nextcloud die URL, das Token und das Archiv-Konto ein, wähle Paperless läuft in meinem lokalen Netzwerk, wenn Nextcloud Paperless unter einer solchen Adresse erreicht, und wähle Verbindung testen und speichern. Antwortet Paperless, sind die Einstellungen gespeichert; sonst wird nichts gespeichert, und die Meldung sagt, was zu korrigieren ist. Das Archiv-Konto teilt sein Archiv nur lesend mit den Benutzern, die seine Dokumente finden dürfen, und sie finden sie unter Paperless-Dokumente in der Suche von Nextcloud, mit eingeschaltetem Verbundene Dienste durchsuchen.">
 </picture>
 
+<div class="pus-animation" markdown>
+<div class="pus-animation__light" markdown="span">![Wohin die Einrichtung führt, in den Einstellungen der App: Suche ausprobieren listet die drei Dokumente auf, die Paperless für invoice findet, jedes für jamie sichtbar. Dann die Einrichtung von Anfang an, im leeren Formular: Die URL http://paperless.lan:8080 wird getippt, Paperless läuft in meinem lokalen Netzwerk wird ausgewählt, das API-Token wird eingefügt und erscheint als Punkte, und das Archiv-Konto paperless wird getippt. Verbindung testen und speichern antwortet Connection successful. Settings saved. Zuletzt listet Suche ausprobieren für invoice als Benutzer jamie die Stromrechnung, die Verlängerung der Hausratversicherung und die Internetrechnung auf.](images/setup.gif)</div>
+<div class="pus-animation__dark" markdown="span">![Wohin die Einrichtung führt, in den Einstellungen der App: Suche ausprobieren listet die drei Dokumente auf, die Paperless für invoice findet, jedes für jamie sichtbar. Dann die Einrichtung von Anfang an, im leeren Formular: Die URL http://paperless.lan:8080 wird getippt, Paperless läuft in meinem lokalen Netzwerk wird ausgewählt, das API-Token wird eingefügt und erscheint als Punkte, und das Archiv-Konto paperless wird getippt. Verbindung testen und speichern antwortet Connection successful. Settings saved. Zuletzt listet Suche ausprobieren für invoice als Benutzer jamie die Stromrechnung, die Verlängerung der Hausratversicherung und die Internetrechnung auf.](images/setup-dark.gif)</div>
+</div>
+
+<p class="pus-animation__caption">Die Einstellungen der App, vom leeren Formular bis zur ersten Suche. Die Abschnitte unten erklären jeden Schritt.</p>
+
 --8<-- "README.de.md:how-it-works"
 
 ## Ein Paperless-Konto für die Suche
