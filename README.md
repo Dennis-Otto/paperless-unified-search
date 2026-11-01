@@ -193,15 +193,6 @@ Type `/` in a note of Text and choose *Paperless documents*: the picker finds th
 
 *New in Paperless* on Nextcloud's dashboard lists the documents that Paperless added last and that you can open, without a search.
 
-### A notification about new documents
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/18-notification-dark.png">
-  <img alt="The notifications of Jamie, open below the bell: 2 new documents in Paperless, with the links Water bill - October 2026 and Tax assessment 2025" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/18-notification.png">
-</picture>
-
-Nextcloud tells you when Paperless adds a document that one of your saved searches finds, or any document, as soon as you can open its file.
-
 ### Paperless in every search of your own
 
 With **Always search my Paperless documents** in the personal settings, every search of yours includes Paperless without the switch *Search connected services*, which Nextcloud turns off on every page that loads.
@@ -498,7 +489,7 @@ Under **Personal settings → Paperless**, **Notify me about new documents** ask
 - **One notification at a time.** A run of the job sends you one notification, whatever the number of its documents: with one document, its title; with more, how many they are and the titles of the newest three. Each title opens the file, on the web and in the apps for phones.
 - **When.** A background job runs every five minutes, as Nextcloud's cron starts it. A document counts once its file has reached the archive account, so the notification comes with your synchronization, which may take hours. A document whose file doesn't arrive within two days never counts, such as one that the rules of Paperless Sync leave out.
 - **What counts as new.** The documents that Paperless takes in from the moment that anybody first asks: a first run only learns how far the IDs go, so nobody hears about the archive of years. Each saved search looks at a document once, as its file arrives, so a tag that someone gives it later brings no notification. Of more than 100 documents between two runs, such as a large import, only the newest count.
-- **When Paperless doesn't answer,** the job waits ten minutes, then 20, 40 and at most an hour before it asks again, and nothing gets lost meanwhile. Such a failure goes into the log of Nextcloud, not into the history of the problems of the search. A saved search that Paperless refuses finds nothing, and the log counts it without naming it.
+- **When Paperless doesn't answer,** the job waits ten minutes, then 20, 40 and at most an hour before it asks again, and the documents keep waiting meanwhile, within their two days. Such a failure goes into the log of Nextcloud, not into the history of the problems of the search. A saved search that Paperless refuses or fails to answer while it answers others finds nothing in that run, and the log counts it without naming it.
 - **Only where administrators allow it.** The personal settings offer it while **Let users ask for notifications about new documents** is on. Notifications need the app Notifications of Nextcloud, which comes with it.
 
 <!-- --8<-- [end:notifications] -->

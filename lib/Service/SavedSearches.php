@@ -48,9 +48,10 @@ final class SavedSearches {
 	}
 
 	/**
-	 * The choice of each user who wants something, by the ID of the user.
+	 * The choice of each user who wants something, by the ID of the user, which PHP turns
+	 * into a number in a key when it looks like one, such as 12345.
 	 *
-	 * @return array<string, AlertChoice>
+	 * @return array<array-key, AlertChoice>
 	 */
 	public function ofEveryone(): array {
 		$choices = [];

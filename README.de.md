@@ -193,15 +193,6 @@ Tippe `/` in einer Notiz von Text und wähle *Paperless-Dokumente*: Der Picker f
 
 *Neu in Paperless* auf dem Dashboard von Nextcloud listet die Dokumente, die Paperless zuletzt hinzugefügt hat und die du öffnen kannst, ohne Suche.
 
-### Eine Benachrichtigung über neue Dokumente
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/18-notification-dark.png">
-  <img alt="Die Benachrichtigungen von Jamie, geöffnet unter der Glocke: 2 neue Dokumente in Paperless, mit den Links Water bill - October 2026 und Tax assessment 2025" src="https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/18-notification.png">
-</picture>
-
-Nextcloud sagt dir, wenn Paperless ein Dokument hinzufügt, das eine deiner gespeicherten Suchen findet, oder jedes Dokument, sobald du seine Datei öffnen kannst.
-
 ### Paperless in jeder deiner Suchen
 
 Mit **Meine Paperless-Dokumente immer durchsuchen** in den persönlichen Einstellungen bezieht jede deiner Suchen Paperless ohne den Schalter *Verbundene Dienste durchsuchen* ein, den Nextcloud auf jeder Seite, die lädt, ausschaltet.
@@ -498,7 +489,7 @@ Unter **Persönliche Einstellungen → Paperless** bittet **Benachrichtige mich 
 - **Eine Benachrichtigung auf einmal.** Ein Lauf des Jobs schickt dir eine Benachrichtigung, egal wie viele Dokumente er hat: bei einem Dokument seinen Titel, bei mehreren ihre Anzahl und die Titel der neuesten drei. Jeder Titel öffnet die Datei, im Web und in den Apps für Telefone.
 - **Wann.** Ein Hintergrundjob läuft alle fünf Minuten, wie der Cron von Nextcloud ihn startet. Ein Dokument zählt, sobald seine Datei im Archiv-Konto angekommen ist, die Benachrichtigung kommt also mit deiner Synchronisierung, was Stunden dauern kann. Ein Dokument, dessen Datei nicht innerhalb von zwei Tagen ankommt, zählt nie, etwa eines, das die Regeln von Paperless Sync auslassen.
 - **Was als neu zählt.** Die Dokumente, die Paperless ab dem Moment aufnimmt, in dem zum ersten Mal jemand darum bittet: Ein erster Lauf lernt nur, wie weit die IDs reichen, also erfährt niemand vom Archiv vieler Jahre. Jede gespeicherte Suche sieht sich ein Dokument einmal an, wenn seine Datei ankommt, ein Tag, das es später bekommt, bringt also keine Benachrichtigung. Von mehr als 100 Dokumenten zwischen zwei Läufen, etwa bei einem großen Import, zählen nur die neuesten.
-- **Wenn Paperless nicht antwortet,** wartet der Job zehn Minuten, dann 20, 40 und höchstens eine Stunde, bevor er wieder fragt, und währenddessen geht nichts verloren. Ein solcher Fehler landet im Protokoll von Nextcloud, nicht im Verlauf der Probleme der Suche. Eine gespeicherte Suche, die Paperless ablehnt, findet nichts, und das Protokoll zählt sie, ohne sie zu nennen.
+- **Wenn Paperless nicht antwortet,** wartet der Job zehn Minuten, dann 20, 40 und höchstens eine Stunde, bevor er wieder fragt, und die Dokumente warten währenddessen weiter, innerhalb ihrer zwei Tage. Ein solcher Fehler landet im Protokoll von Nextcloud, nicht im Verlauf der Probleme der Suche. Eine gespeicherte Suche, die Paperless ablehnt oder nicht beantwortet, während es andere beantwortet, findet in diesem Lauf nichts, und das Protokoll zählt sie, ohne sie zu nennen.
 - **Nur wenn Administratoren es erlauben.** Die persönlichen Einstellungen bieten es an, solange **Benutzern Benachrichtigungen über neue Dokumente erlauben** an ist. Benachrichtigungen brauchen die App Notifications von Nextcloud, die dazugehört.
 
 <!-- --8<-- [end:notifications] -->

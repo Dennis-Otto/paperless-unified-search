@@ -66,7 +66,7 @@ Schlüssel, die eine ältere Version hinterlassen hat und diese nicht mehr liest
 
 ## Die Routen der Einstellungen
 
-Die Seite der Einstellungen speichert über vier Routen der App, die nur Administratoren aufrufen dürfen, jede mit dem CSRF-Token von Nextcloud, und die persönlichen Einstellungen über zwei weitere, die jeder angemeldete Benutzer aufrufen darf. Ein Skript ruft die vier mit der Anmeldung eines Administrators auf und die fünfte mit der Anmeldung des Benutzers, dessen Wahl sie speichert, jede mit dem Header `OCS-APIRequest: true`, wie es die End-to-End-Tests tun; `/index.php` steht vor `/apps`, wo Nextcloud ohne Pretty URLs läuft.
+Die Seite der Einstellungen speichert über vier Routen der App, die nur Administratoren aufrufen dürfen, jede mit dem CSRF-Token von Nextcloud, und die persönlichen Einstellungen über zwei weitere, die jeder angemeldete Benutzer aufrufen darf. Ein Skript ruft die vier mit der Anmeldung eines Administrators auf und diese zwei mit der Anmeldung des Benutzers, dessen Wahl sie speichern, jede mit dem Header `OCS-APIRequest: true`, wie es die End-to-End-Tests tun; `/index.php` steht vor `/apps`, wo Nextcloud ohne Pretty URLs läuft.
 
 | Route | Tut |
 | --- | --- |
@@ -206,6 +206,7 @@ Die App schreibt in das Protokoll von Nextcloud mit `app` auf `paperless_unified
 | Warning | Paperless unified search looks for the files of each document on its own … | Eine Version von Nextcloud, deren Abfrage des Datei-Caches die App noch nicht kennt: Die Suche funktioniert trotzdem, mit einer Abfrage je Dokument statt einer je Seite |
 | Warning | The stored Paperless API token can't be decrypted … | Das `secret` der `config.php` hat sich geändert: Gib das Token erneut ein |
 | Warning | The notifications about new Paperless documents try again in *n* seconds (*error*) | Der Job konnte Paperless nicht fragen oder die Dateien nicht suchen und pausiert |
+| Warning | *n* saved search(es) of the notifications about new Paperless documents failed (*error*) | Paperless hat die anderen beantwortet, aber diese nicht, etwa einen Platzhalter, der zu lange dauerte: Sie haben in diesem Lauf nichts gefunden, das Protokoll nennt sie nicht, und der Job macht weiter |
 | Warning | A user got no notification about new Paperless documents (*error*) | Die Dateien dieses Benutzers haben nicht geantwortet, oder Nextcloud hat die Benachrichtigung abgelehnt; die anderen haben ihre bekommen |
 | Info | Paperless refused *n* saved search(es) of the notifications about new documents | Diese Suchen haben in diesem Lauf nichts gefunden; das Protokoll nennt sie nicht |
 | Info | Paperless added *n* or more documents between two runs of the notifications about new documents: older ones get none | Ein großer Import |
@@ -213,8 +214,8 @@ Die App schreibt in das Protokoll von Nextcloud mit `app` auf `paperless_unified
 
 ## Deinstallieren
 
-1. **Verbindung trennen** in den Einstellungen. Das löscht die URL, das Token, die Schalter, das Archiv-Konto, die Version von Paperless und den Verlauf der Probleme; nur `diagnostics_pending` bleibt, mit den Schlüsseln, die Nextcloud von jeder App führt, etwa `enabled` und `installed_version`.
-2. **Die App entfernen:** `occ app:remove paperless_unified_search` deaktiviert sie und löscht ihren Code; oder *Apps → Deaktivieren* und *Entfernen* im Browser. Nextcloud behält die App-Konfiguration einer entfernten App: `occ config:list paperless_unified_search` listet, was übrig ist, und `occ config:app:delete paperless_unified_search <key>` löscht einen Schlüssel. Die Wahlen der Benutzer bleiben als ihre Benutzereinstellung `always_search`, die `occ user:setting <user> paperless_unified_search always_search --delete` löscht.
+1. **Verbindung trennen** in den Einstellungen. Das löscht die URL, das Token, die Schalter, das Archiv-Konto, die Version von Paperless, den Fortschritt der Benachrichtigungen über neue Dokumente und den Verlauf der Probleme; nur `diagnostics_pending` bleibt, mit den Schlüsseln, die Nextcloud von jeder App führt, etwa `enabled` und `installed_version`.
+2. **Die App entfernen:** `occ app:remove paperless_unified_search` deaktiviert sie und löscht ihren Code; oder *Apps → Deaktivieren* und *Entfernen* im Browser. Nextcloud behält die App-Konfiguration einer entfernten App: `occ config:list paperless_unified_search` listet, was übrig ist, und `occ config:app:delete paperless_unified_search <key>` löscht einen Schlüssel. Die Wahlen der Benutzer bleiben als ihre Benutzereinstellungen `always_search` und `new_document_alerts`, letztere mit ihren gespeicherten Suchen, die `occ user:setting <user> paperless_unified_search always_search --delete` und dasselbe mit `new_document_alerts` löschen.
 3. **In Paperless** löschst du das API-Token oder das Konto der Suche: Ein Token, das Nextcloud vergessen hat, funktioniert weiter, bis auch Paperless es vergisst.
 
 Die Dateien des Archivs und ihre Freigaben bleiben, wie sie sind: Sie gehören dem Archiv-Konto und der Synchronisierung, nicht dieser App. Ohne **Verbindung trennen** bleibt das verschlüsselte Token im Zugangsdatenmanager von Nextcloud, unter `paperless_unified_search.api-token`, bis die App wieder installiert und getrennt wird.

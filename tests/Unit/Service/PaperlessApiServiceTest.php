@@ -27,6 +27,7 @@ use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
 use OCP\Http\Client\LocalServerException;
 use OCP\ICacheFactory;
+use OCP\IConfig;
 use OCP\IUserManager;
 use OCP\Security\ICredentialsManager;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -2043,7 +2044,7 @@ final class PaperlessApiServiceTest extends TestCase {
 		}
 
 		return new PaperlessApiService(
-			new ConfigService($config, $credentials, $this->createStub(IUserManager::class), $this->createStub(LoggerInterface::class), $this->createStub(ICacheFactory::class)),
+			new ConfigService($config, $credentials, $this->createStub(IUserManager::class), $this->createStub(LoggerInterface::class), $this->createStub(IConfig::class)),
 			$clientService,
 			new SearchDiagnostics($config, $clock, $this->createStub(ICacheFactory::class)),
 			$clock,

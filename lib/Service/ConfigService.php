@@ -16,7 +16,7 @@ use OCA\PaperlessUnifiedSearch\Model\PaperlessVersion;
 use OCA\PaperlessUnifiedSearch\Model\PublicConfig;
 use OCA\PaperlessUnifiedSearch\Model\TokenWarning;
 use OCP\IAppConfig;
-use OCP\ICacheFactory;
+use OCP\IConfig;
 use OCP\IUserManager;
 use OCP\Security\ICredentialsManager;
 use Psr\Log\LoggerInterface;
@@ -83,7 +83,7 @@ final class ConfigService {
 		private ICredentialsManager $credentialsManager,
 		private IUserManager $userManager,
 		private LoggerInterface $logger,
-		private ICacheFactory $cacheFactory,
+		private IConfig $systemConfig,
 	) {
 	}
 
@@ -207,10 +207,17 @@ final class ConfigService {
 	 * a memory cache: the job looks through the files of each user who asks for it, every
 	 * five minutes while documents wait for their files, which a server without one, often
 	 * a small one, shouldn't do unasked. While it is off, the personal settings don't offer
-	 * it and the job asks Paperless nothing (NewDocumentAlerts).
+	 * it and the job asks Paperless nothing (NewDocumentAlerts). The default looks at what
+	 * config.php names, not at the cache that this process has: without apc.enable_cli, the
+	 * web has APCu and cron has none, and the two have to give the same answer.
 	 */
 	public function isNewDocumentAlertsAllowed(): bool {
-		return $this->config->getValueBool(AppConstants::APP_ID, self::NEW_DOCUMENT_ALERTS_KEY, $this->cacheFactory->isAvailable());
+		return $this->config->getValueBool(AppConstants::APP_ID, self::NEW_DOCUMENT_ALERTS_KEY, $this->hasMemoryCache());
+	}
+
+	private function hasMemoryCache(): bool {
+		return $this->systemConfig->getSystemValueString('memcache.distributed') !== ''
+			|| $this->systemConfig->getSystemValueString('memcache.local') !== '';
 	}
 
 	/**
@@ -383,6 +390,8 @@ final class ConfigService {
 		$this->config->deleteKey(AppConstants::APP_ID, self::ALLOW_LOCAL_KEY);
 		$this->config->deleteKey(AppConstants::APP_ID, self::PERSONAL_ALWAYS_SEARCH_KEY);
 		$this->config->deleteKey(AppConstants::APP_ID, self::NEW_DOCUMENT_ALERTS_KEY);
+		// It holds the titles of the waiting documents, also of those that nobody may open.
+		$this->config->deleteKey(AppConstants::APP_ID, NewDocumentAlerts::PROGRESS);
 		$this->storePaperlessVersion(null);
 		$this->storeTokenWarnings([]);
 		$this->credentialsManager->delete('', self::TOKEN_IDENTIFIER);

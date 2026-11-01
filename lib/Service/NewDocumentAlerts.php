@@ -131,7 +131,8 @@ final class NewDocumentAlerts {
 		}
 
 		foreach ($choices as $userId => $choice) {
-			$this->notifyUser($userId, self::wantedOf($choice, array_keys($files), $found), $progress, $archiveOwner);
+			// PHP keeps the ID of a user like 12345 as a number in the keys of the array.
+			$this->notifyUser((string)$userId, self::wantedOf($choice, array_keys($files), $found), $progress, $archiveOwner);
 		}
 	}
 
@@ -205,15 +206,21 @@ final class NewDocumentAlerts {
 	/**
 	 * Which of the documents each distinct saved search finds, with one request per search.
 	 * A search that Paperless refuses, which the user can't see here, finds nothing, and
-	 * the log says so without naming it: the words of a user stay out of the log.
+	 * the log says so without naming it: the words of a user stay out of the log. So does
+	 * one that fails, such as a wildcard too expensive for Paperless to answer in time: one
+	 * user's search stops nobody's notifications. Only when every search of this run fails
+	 * and none answers is it Paperless that is down, and the run fails with it.
 	 *
-	 * @param array<string, AlertChoice> $choices
+	 * @param array<array-key, AlertChoice> $choices
 	 * @param non-empty-list<int> $documentIds
 	 * @return array<string, list<int>> the IDs of the documents that each term finds
+	 * @throws Throwable the last error, when every search failed
 	 */
 	private function findTerms(array $choices, array $documentIds): array {
 		$found = [];
 		$refused = 0;
+		$failed = 0;
+		$failure = null;
 		foreach ($choices as $choice) {
 			foreach ($choice->everyDocument ? [] : $choice->terms as $term) {
 				if (isset($found[$term])) {
@@ -225,8 +232,22 @@ final class NewDocumentAlerts {
 				} catch (PaperlessQueryRejected) {
 					$found[$term] = [];
 					$refused++;
+				} catch (Throwable $error) {
+					$found[$term] = [];
+					$failed++;
+					$failure = $error;
 				}
 			}
+		}
+		if ($failure !== null) {
+			if ($failed === count($found)) {
+				throw $failure;
+			}
+			$this->logger->warning('{count} saved search(es) of the notifications about new Paperless documents failed ({errorType})', [
+				'app' => AppConstants::APP_ID,
+				'count' => $failed,
+				'errorType' => $failure::class,
+			]);
 		}
 		if ($refused > 0) {
 			$this->logger->info('Paperless refused {count} saved search(es) of the notifications about new documents', [

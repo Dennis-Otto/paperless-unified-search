@@ -34,6 +34,7 @@ use OCP\Http\Client\IResponse;
 use OCP\Http\Client\LocalServerException;
 use OCP\IAppConfig;
 use OCP\ICacheFactory;
+use OCP\IConfig;
 use OCP\IL10N;
 use OCP\IRequest;
 use OCP\IUserSession;
@@ -720,7 +721,7 @@ final class SettingsControllerTest extends TestCase {
 		$clientService = $this->createStub(IClientService::class);
 		$clientService->method('newClient')->willReturn($client);
 		$accounts = $this->accounts('archive');
-		$configService = new ConfigService($config, $credentials, $accounts, $this->createStub(LoggerInterface::class), $this->createStub(ICacheFactory::class));
+		$configService = new ConfigService($config, $credentials, $accounts, $this->createStub(LoggerInterface::class), $this->createStub(IConfig::class));
 		$clock = $this->createStub(ITimeFactory::class);
 		$clock->method('now')->willReturn(new DateTimeImmutable('@1791500000'));
 		$diagnostics = new SearchDiagnostics($config, $clock, $this->createStub(ICacheFactory::class));

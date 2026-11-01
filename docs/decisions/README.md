@@ -20,3 +20,4 @@ Copy [the template](0000-template.md) to the next free number, replace the descr
 | [0008](0008-let-each-user-always-search-paperless.md) | Let each user include Paperless in every search of their own | accepted |
 | [0009](0009-count-only-files-that-the-user-may-only-read.md) | Count only the files that the user may only read, and show how the archive is shared | accepted |
 | [0010](0010-warn-about-what-the-token-may-do.md) | Warn about what the account of the API token may do, without refusing it | accepted |
+| [0011](0011-notify-about-new-documents-when-their-files-arrive.md) | Notify each user about new documents when their files arrive, from searches that the user saved | accepted |

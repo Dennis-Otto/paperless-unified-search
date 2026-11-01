@@ -19,7 +19,7 @@ use OCA\PaperlessUnifiedSearch\Settings\PersonalSettings;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppSettings;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\UserPreferences;
-use OCP\ICacheFactory;
+use OCP\IConfig;
 use OCP\IL10N;
 use OCP\IURLGenerator;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -181,7 +181,7 @@ final class PersonalSettingsTest extends TestCase {
 	}
 
 	private function settings(?string $userId, ?IURLGenerator $urlGenerator = null): PersonalSettings {
-		$configService = new ConfigService($this->appConfig(), $this->credentialsManager(), $this->accounts('archive'), $this->createStub(LoggerInterface::class), $this->createStub(ICacheFactory::class));
+		$configService = new ConfigService($this->appConfig(), $this->credentialsManager(), $this->accounts('archive'), $this->createStub(LoggerInterface::class), $this->createStub(IConfig::class));
 
 		return new PersonalSettings(
 			$configService,

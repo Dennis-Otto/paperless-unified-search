@@ -21,6 +21,7 @@ use OCP\Http\Client\IClient;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
 use OCP\ICacheFactory;
+use OCP\IConfig;
 use OCP\IL10N;
 use OCP\IUserManager;
 use Psr\Log\LoggerInterface;
@@ -57,7 +58,7 @@ trait AppServices {
 	}
 
 	private function configService(IUserManager $accounts): ConfigService {
-		return new ConfigService($this->appConfig(), $this->credentialsManager(), $accounts, $this->createStub(LoggerInterface::class), $this->createStub(ICacheFactory::class));
+		return new ConfigService($this->appConfig(), $this->credentialsManager(), $accounts, $this->createStub(LoggerInterface::class), $this->createStub(IConfig::class));
 	}
 
 	private function diagnostics(): SearchDiagnostics {

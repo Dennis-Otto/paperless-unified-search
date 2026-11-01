@@ -405,6 +405,95 @@ final class NewDocumentAlertsTest extends TestCase {
 	}
 
 	/**
+	 * One user's search that Paperless fails to answer, such as a wildcard that takes too
+	 * long, stops nobody else: it finds nothing, the log counts it without its words, and
+	 * the job doesn't rest, since the other search shows that Paperless answers.
+	 */
+	public function testAFailedSearchStopsNobodyElse(): void {
+		$this->wants('jamie', false, 'title:*secret*');
+		$this->wants('sam', false, 'tag:unpaid');
+		$this->seen(100, failures: 2);
+		$this->file('/archive/files/A [P101].pdf');
+		$this->file('/jamie/files/A [P101].pdf');
+		$this->file('/sam/files/A [P101].pdf');
+
+		$this->runJob($this->paperless(
+			$this->documents([['id' => 101, 'title' => 'A']]),
+			new RuntimeException('Timeout'),
+			$this->documents([['id' => 101]]),
+		));
+
+		self::assertCount(1, $this->sent);
+		self::assertSame('sam', $this->sent[0]['user']);
+		self::assertSame([], $this->stored()['waiting']);
+		self::assertSame(0, $this->stored()['failures']);
+		self::assertSame(0, $this->stored()['restingUntil']);
+		self::assertSame([['warning', '{count} saved search(es) of the notifications about new Paperless documents failed ({errorType})', ['app' => AppConstants::APP_ID, 'count' => 1, 'errorType' => RuntimeException::class]]], $this->logged);
+	}
+
+	/**
+	 * A search that Paperless refuses is an answer: with one that fails beside it, Paperless
+	 * still works, so the job goes on instead of resting.
+	 */
+	public function testARefusedSearchShowsThatPaperlessAnswersBesideAFailedOne(): void {
+		$this->wants('jamie', true);
+		$this->wants('sam', false, 'created:[2026 to', 'title:*secret*');
+		$this->seen(100);
+		$this->file('/archive/files/A [P101].pdf');
+		$this->file('/jamie/files/A [P101].pdf');
+
+		$this->runJob($this->paperless(
+			$this->documents([['id' => 101, 'title' => 'A']]),
+			$this->answer(400, '{"query": ["Invalid"]}', []),
+			new RuntimeException('Timeout'),
+		));
+
+		self::assertCount(1, $this->sent);
+		self::assertSame('jamie', $this->sent[0]['user']);
+		self::assertSame(0, $this->stored()['failures']);
+	}
+
+	/**
+	 * When every search fails, it is Paperless that is down: the documents keep waiting
+	 * and the job rests, also for whoever asked for every document.
+	 */
+	public function testEverySearchFailingRestsTheJob(): void {
+		$this->wants('jamie', true);
+		$this->wants('sam', false, 'tag:unpaid', 'tag:bills');
+		$this->seen(100);
+		$this->file('/archive/files/A [P101].pdf');
+		$this->file('/jamie/files/A [P101].pdf');
+
+		$this->runJob($this->paperless(
+			$this->documents([['id' => 101, 'title' => 'A']]),
+			new RuntimeException('Connection refused'),
+			new RuntimeException('Connection refused'),
+		));
+
+		self::assertSame([], $this->sent);
+		self::assertSame([['id' => 101, 'title' => 'A', 'since' => self::NOW]], $this->stored()['waiting']);
+		self::assertSame(1, $this->stored()['failures']);
+		self::assertSame(self::NOW + 600, $this->stored()['restingUntil']);
+	}
+
+	/**
+	 * PHP keeps a user ID like 12345, as from LDAP or a list of employees, as a number in the
+	 * keys of an array; that user gets their notification, and so does everyone after them.
+	 */
+	public function testAUserIdThatLooksLikeANumberStopsNobody(): void {
+		$this->wants('12345', true);
+		$this->wants('jamie', true);
+		$this->seen(100);
+		$this->file('/archive/files/A [P101].pdf');
+		$this->file('/12345/files/A [P101].pdf');
+		$this->file('/jamie/files/A [P101].pdf');
+
+		$this->runJob($this->paperless($this->documents([['id' => 101, 'title' => 'A']])), accounts: $this->enabledAccounts('archive', '12345', 'jamie'));
+
+		self::assertSame(['12345', 'jamie'], array_column($this->sent, 'user'));
+	}
+
+	/**
 	 * @return array<string, array{int, int}>
 	 */
 	public static function rests(): array {

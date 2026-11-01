@@ -19,7 +19,7 @@ use OCA\PaperlessUnifiedSearch\Tests\Unit\AppSettings;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\UserPreferences;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\JSONResponse;
-use OCP\ICacheFactory;
+use OCP\IConfig;
 use OCP\IL10N;
 use OCP\IRequest;
 use PHPUnit\Framework\TestCase;
@@ -186,7 +186,7 @@ final class PersonalSettingsControllerTest extends TestCase {
 	}
 
 	private function controller(?string $userId): PersonalSettingsController {
-		$configService = new ConfigService($this->appConfig(), $this->credentialsManager(), $this->accounts(), $this->createStub(LoggerInterface::class), $this->createStub(ICacheFactory::class));
+		$configService = new ConfigService($this->appConfig(), $this->credentialsManager(), $this->accounts(), $this->createStub(LoggerInterface::class), $this->createStub(IConfig::class));
 		$l10n = $this->createStub(IL10N::class);
 		$l10n->method('t')->willReturnCallback(static fn (string $text, array $parameters = []): string => '[' . vsprintf($text, $parameters) . ']');
 

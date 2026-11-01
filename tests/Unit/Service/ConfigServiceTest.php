@@ -17,7 +17,7 @@ use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryAppConfig;
 use OCP\IAppConfig;
-use OCP\ICacheFactory;
+use OCP\IConfig;
 use OCP\IUserManager;
 use OCP\Security\ICredentialsManager;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -309,7 +309,7 @@ final class ConfigServiceTest extends TestCase {
 	public function testWithoutAnArchiveAccountNoAccountIsLookedUp(): void {
 		$accounts = $this->createMock(IUserManager::class);
 		$accounts->expects(self::never())->method('get');
-		$service = new ConfigService($this->settings([]), $this->createStub(ICredentialsManager::class), $accounts, $this->createStub(LoggerInterface::class), $this->createStub(ICacheFactory::class));
+		$service = new ConfigService($this->settings([]), $this->createStub(ICredentialsManager::class), $accounts, $this->createStub(LoggerInterface::class), $this->createStub(IConfig::class));
 
 		self::assertSame('', $service->getArchiveOwner());
 		self::assertFalse($service->getPublicConfig()->archiveOwnerMissing);
@@ -564,7 +564,7 @@ final class ConfigServiceTest extends TestCase {
 			$credentials,
 			$this->accounts(),
 			$logger,
-			$this->createStub(ICacheFactory::class),
+			$this->createStub(IConfig::class),
 		);
 
 		self::assertSame('', $service->getToken());
@@ -617,7 +617,7 @@ final class ConfigServiceTest extends TestCase {
 	public function testResetDeletesTheUrlTheSwitchesTheArchiveAccountAndTheToken(): void {
 		$deletedKeys = [];
 		$config = $this->createMock(IAppConfig::class);
-		$config->expects(self::exactly(9))
+		$config->expects(self::exactly(10))
 			->method('deleteKey')
 			->willReturnCallback(static function (string $app, string $key) use (&$deletedKeys): void {
 				$deletedKeys[] = $app . '.' . $key;
@@ -639,6 +639,7 @@ final class ConfigServiceTest extends TestCase {
 			AppConstants::APP_ID . '.allow_local',
 			AppConstants::APP_ID . '.personal_always_search',
 			AppConstants::APP_ID . '.new_document_alerts',
+			AppConstants::APP_ID . '.new_document_alerts_progress',
 			AppConstants::APP_ID . '.paperless_version',
 			AppConstants::APP_ID . '.paperless_api_version',
 			AppConstants::APP_ID . '.token_warnings',
@@ -874,28 +875,29 @@ final class ConfigServiceTest extends TestCase {
 	 */
 
 	/**
-	 * @return array<string, array{?bool, bool, bool}>
+	 * @return array<string, array{?bool, array<string, string>, bool}>
 	 */
 	public static function newDocumentAlerts(): array {
 		return [
-			// stored, a memory cache, allowed
-			'nothing stored, with a memory cache' => [null, true, true],
-			'nothing stored, without a memory cache' => [null, false, false],
-			'turned on, without a memory cache' => [true, false, true],
-			'turned off, with a memory cache' => [false, true, false],
+			// stored, what config.php names, allowed
+			'nothing stored, with a local memory cache' => [null, ['memcache.local' => 'APCu'], true],
+			'nothing stored, with a distributed memory cache' => [null, ['memcache.distributed' => 'Redis'], true],
+			'nothing stored, without a memory cache' => [null, [], false],
+			'turned on, without a memory cache' => [true, [], true],
+			'turned off, with a memory cache' => [false, ['memcache.local' => 'APCu'], false],
 		];
 	}
 
 	/**
-	 * Until an administrator chooses, users may ask for notifications only where Nextcloud
-	 * has a memory cache.
+	 * Until an administrator chooses, users may ask for notifications only where config.php
+	 * names a memory cache, which is the same for the web and for cron.
+	 *
+	 * @param array<string, string> $system
 	 */
 	#[DataProvider('newDocumentAlerts')]
-	public function testUsersMayAskForNotificationsAsChosenOrWithAMemoryCache(?bool $stored, bool $memoryCache, bool $allowed): void {
-		$cacheFactory = $this->createStub(ICacheFactory::class);
-		$cacheFactory->method('isAvailable')->willReturn($memoryCache);
+	public function testUsersMayAskForNotificationsAsChosenOrWithAMemoryCache(?bool $stored, array $system, bool $allowed): void {
 		$values = $stored === null ? [] : [AppConstants::APP_ID . '.new_document_alerts' => $stored];
-		$service = new ConfigService($this->settings($values), $this->createStub(ICredentialsManager::class), $this->accounts(), $this->createStub(LoggerInterface::class), $cacheFactory);
+		$service = new ConfigService($this->settings($values), $this->createStub(ICredentialsManager::class), $this->accounts(), $this->createStub(LoggerInterface::class), $this->systemConfig($system));
 
 		self::assertSame($allowed, $service->isNewDocumentAlertsAllowed());
 		self::assertSame($allowed, $service->getPublicConfig()->newDocumentAlerts);
@@ -903,9 +905,7 @@ final class ConfigServiceTest extends TestCase {
 
 	public function testSavingStoresTheChoiceOfNotificationsOrLeavesItAlone(): void {
 		$config = $this->settings([]);
-		$cacheFactory = $this->createStub(ICacheFactory::class);
-		$cacheFactory->method('isAvailable')->willReturn(true);
-		$service = new ConfigService($config, $this->createStub(ICredentialsManager::class), $this->accounts(), $this->createStub(LoggerInterface::class), $cacheFactory);
+		$service = new ConfigService($config, $this->createStub(ICredentialsManager::class), $this->accounts(), $this->createStub(LoggerInterface::class), $this->systemConfig(['memcache.local' => 'APCu']));
 
 		// No choice leaves the default of the memory cache, and says what counts.
 		$result = $service->save('https://paperless.example.com', 'TEST_VALUE');
@@ -922,6 +922,18 @@ final class ConfigServiceTest extends TestCase {
 		self::assertTrue($result->newDocumentAlerts);
 	}
 
+	/**
+	 * The system configuration of a config.php that holds these strings.
+	 *
+	 * @param array<string, string> $values
+	 */
+	private function systemConfig(array $values): IConfig {
+		$config = $this->createStub(IConfig::class);
+		$config->method('getSystemValueString')->willReturnCallback(static fn (string $key, string $default = ''): string => $values[$key] ?? $default);
+
+		return $config;
+	}
+
 	private function refusal(callable $refuse): InvalidSettingException {
 		try {
 			$refuse();
@@ -936,7 +948,7 @@ final class ConfigServiceTest extends TestCase {
 	 * The service, with the accounts archive and sync in Nextcloud.
 	 */
 	private function service(IAppConfig $config, ICredentialsManager $credentials): ConfigService {
-		return new ConfigService($config, $credentials, $this->accounts('archive', 'sync'), $this->createStub(LoggerInterface::class), $this->createStub(ICacheFactory::class));
+		return new ConfigService($config, $credentials, $this->accounts('archive', 'sync'), $this->createStub(LoggerInterface::class), $this->createStub(IConfig::class));
 	}
 
 	/**
