@@ -42,6 +42,13 @@ final class PaperlessApiService {
 	private const RECENT_FIELDS = 'id,title,added,correspondent,document_type,tags';
 
 	/**
+	 * The fields of a document that the job of the notifications reads from the newest
+	 * documents, and the only one that it reads from the documents that a term finds.
+	 */
+	private const NEW_FIELDS = 'id,title';
+	private const MATCH_FIELDS = 'id';
+
+	/**
 	 * How many of the newest documents the test of the connection looks at for names that
 	 * the account of the token can't see, as many as a page of a search, and the only
 	 * fields of a document that it reads for them.
@@ -57,6 +64,12 @@ final class PaperlessApiService {
 
 	/** The filter of Paperless for the documents of a day and earlier, by their date. */
 	public const CREATED_UNTIL = 'created__date__lte';
+
+	/**
+	 * The filter of Paperless for the documents that it added on a day and later, by the
+	 * day that it added them, as Y-m-d.
+	 */
+	public const ADDED_FROM = 'added__date__gte';
 
 	/**
 	 * The version of the API of Paperless that every request asks for. Without one,
@@ -315,20 +328,32 @@ final class PaperlessApiService {
 			'page_size' => max(1, min(50, $pageSize)),
 			'fields' => self::SEARCH_FIELDS,
 		] + $filters;
+		[$documents, $version] = $this->searchOrSimply($term, $parameters, true);
+		$this->configService->rememberPaperlessVersion($version);
+
+		return $documents;
+	}
+
+	/**
+	 * The search for a term in the advanced syntax, or in the simple mode for a term that
+	 * Paperless refuses in it, where it has one.
+	 *
+	 * @param array<string, int|string> $parameters the page, its size, the fields and the filters
+	 * @param bool $retry whether a request without answer gets a second try, as send() decides
+	 * @return array{array{count: int, next: ?string, results: list<array<array-key, mixed>>}, ?PaperlessVersion}
+	 */
+	private function searchOrSimply(string $term, array $parameters, bool $retry): array {
 		$similarTo = self::similarTo($term);
 		try {
-			[$documents, $version] = $this->search(($similarTo === null ? ['query' => $term] : ['more_like_id' => $similarTo]) + $parameters, $term);
+			return $this->search(($similarTo === null ? ['query' => $term] : ['more_like_id' => $similarTo]) + $parameters, $term, $retry);
 		} catch (PaperlessQueryRejected $rejection) {
 			$words = self::wordsOf($term);
 			if (!$rejection->allowsSimpleSearch() || $words === '' || mb_strlen($words) > self::LONGEST_TERM) {
 				throw $rejection;
 			}
 
-			[$documents, $version] = $this->search(['text' => $words] + $parameters, $words);
+			return $this->search(['text' => $words] + $parameters, $words, $retry);
 		}
-		$this->configService->rememberPaperlessVersion($version);
-
-		return $documents;
 	}
 
 	/**
@@ -371,6 +396,70 @@ final class PaperlessApiService {
 	}
 
 	/**
+	 * The newest documents of Paperless, those with the highest IDs first, as many as asked
+	 * for, with their IDs and titles, for the job of the notifications: as far as the account
+	 * of the token may view them, also those that no user can open.
+	 *
+	 * With a day, only the documents that Paperless added on it or later: every answer of
+	 * Paperless to a list holds the IDs of all its documents, on every page, which for a
+	 * whole archive a job shouldn't ask for every five minutes. No user waits for the job,
+	 * so the request gets one try, and no place in the history of the problems of the search.
+	 *
+	 * @param ?string $from the day as Y-m-d, null for all documents
+	 * @return list<array<array-key, mixed>>
+	 * @throws PaperlessRequestException when Paperless answers, but not with documents
+	 * @throws Throwable the error of a request without answer, or without the settings
+	 */
+	public function findNewestDocuments(int $count, ?string $from): array {
+		[$data, $version] = $this->requestDocuments(
+			$this->configService->getUrl(),
+			$this->configService->getToken(),
+			$this->configService->isLocalNetworkAllowed(),
+			[
+				'ordering' => '-id',
+				'page' => 1,
+				'page_size' => max(1, min(100, $count)),
+				'fields' => self::NEW_FIELDS,
+			] + ($from === null ? [] : [self::ADDED_FROM => $from]),
+			retry: false,
+		);
+		$this->configService->rememberPaperlessVersion($version);
+
+		return self::documentsOf($data)['results'];
+	}
+
+	/**
+	 * Which of these documents a saved search finds, as a search for its term would: for the
+	 * job of the notifications, with one try and no place in the history of the problems of
+	 * the search, as findNewestDocuments().
+	 *
+	 * @param non-empty-list<int> $documentIds
+	 * @return list<int> the IDs of the documents that the term finds
+	 * @throws PaperlessQueryRejected when Paperless refuses the term
+	 * @throws PaperlessRequestException when Paperless answers, but not with documents
+	 * @throws Throwable the error of a request without answer, or without the settings
+	 */
+	public function findMatchingDocuments(string $term, array $documentIds): array {
+		[$documents] = $this->searchOrSimply($term, [
+			'id__in' => implode(',', $documentIds),
+			'page' => 1,
+			'page_size' => count($documentIds),
+			'fields' => self::MATCH_FIELDS,
+		], false);
+
+		$found = [];
+		foreach ($documents['results'] as $document) {
+			/** @psalm-suppress MixedAssignment The ID is checked before use. */
+			$id = $document['id'] ?? null;
+			if (is_int($id)) {
+				$found[] = $id;
+			}
+		}
+
+		return $found;
+	}
+
+	/**
 	 * The plain words of a query in the advanced syntax, for the simple mode: without its
 	 * fields, finished or not, such as created:[2026 to or tag:bills, without brackets and
 	 * quotes, and without the operators AND, OR and NOT.
@@ -388,15 +477,17 @@ final class PaperlessApiService {
 	/**
 	 * @param array<string, int|string> $query
 	 * @param string $term the term of the query, which the history must not show
+	 * @param bool $retry whether a request without answer gets a second try, as send() decides
 	 * @return array{array{count: int, next: ?string, results: list<array<array-key, mixed>>}, ?PaperlessVersion}
 	 */
-	private function search(array $query, string $term): array {
+	private function search(array $query, string $term, bool $retry): array {
 		[$data, $version] = $this->requestDocuments(
 			$this->configService->getUrl(),
 			$this->configService->getToken(),
 			$this->configService->isLocalNetworkAllowed(),
 			$query,
 			$term,
+			retry: $retry,
 		);
 
 		return [self::documentsOf($data), $version];

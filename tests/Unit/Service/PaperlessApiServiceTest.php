@@ -27,6 +27,7 @@ use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
 use OCP\Http\Client\LocalServerException;
 use OCP\ICacheFactory;
+use OCP\IConfig;
 use OCP\IUserManager;
 use OCP\Security\ICredentialsManager;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -1871,6 +1872,133 @@ final class PaperlessApiServiceTest extends TestCase {
 		self::fail('Paperless did not reject the search.');
 	}
 
+	public function testATestOfTheConnectionWithoutAnswerGetsASecondTry(): void {
+		$documents = 0;
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url) use (&$documents): IResponse {
+			if (str_ends_with($url, '/api/documents/') && ++$documents === 1) {
+				throw new RuntimeException('Connection refused');
+			}
+
+			return $this->response(200, '{"count": 0, "results": []}');
+		});
+
+		$this->service($client)->probe('https://paperless.example.com', 'TEST_VALUE', false);
+
+		self::assertSame(2, $documents);
+	}
+
+	/**
+	 * The job of the notifications asks for the newest documents by their IDs, with their
+	 * titles alone, in one try: nobody waits for it.
+	 */
+	public function testTheNewestDocumentsComeByTheirIdsWithTheirTitles(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with(
+				'https://paperless.example.com/api/documents/',
+				self::callback(static fn (array $options): bool => $options['query'] === ['ordering' => '-id', 'page' => 1, 'page_size' => 100, 'fields' => 'id,title', 'added__date__gte' => '2026-10-07']
+					&& $options['timeout'] === 10),
+			)
+			->willReturn($this->response(200, (string)json_encode(['count' => 1, 'next' => null, 'results' => [['id' => 412, 'title' => 'Electricity invoice'], 'no document']]), self::PAPERLESS_3));
+
+		self::assertSame([['id' => 412, 'title' => 'Electricity invoice']], $this->service($client)->findNewestDocuments(100, '2026-10-07'));
+		self::assertSame('3.3.0', $this->config->stored(AppConstants::APP_ID, 'paperless_version'));
+	}
+
+	/**
+	 * @return array<string, array{int, int}>
+	 */
+	public static function newestCounts(): array {
+		return [
+			'one' => [1, 1],
+			'none' => [0, 1],
+			'the most' => [100, 100],
+			'too many' => [101, 100],
+		];
+	}
+
+	#[DataProvider('newestCounts')]
+	public function testTheNewestDocumentsAreAsManyAsAskedForWithinAPage(int $count, int $pageSize): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with(self::anything(), self::callback(static fn (array $options): bool => $options['query'] === ['ordering' => '-id', 'page' => 1, 'page_size' => $pageSize, 'fields' => 'id,title']))
+			->willReturn($this->response(200, '{"results": []}'));
+
+		self::assertSame([], $this->service($client)->findNewestDocuments($count, null));
+	}
+
+	public function testTheNewestDocumentsGetOneTryAndNoPlaceInTheHistory(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())->method('get')->willThrowException(new RuntimeException('Connection refused'));
+
+		try {
+			$this->service($client)->findNewestDocuments(100, null);
+			self::fail('The request did not fail.');
+		} catch (RuntimeException $error) {
+			self::assertSame('Connection refused', $error->getMessage());
+		}
+		self::assertNull($this->history());
+	}
+
+	/**
+	 * A saved search asks only about the documents in question, in one try and with their
+	 * IDs alone, and what it finds is what counts.
+	 */
+	public function testASavedSearchSaysWhichOfTheDocumentsItFinds(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with(
+				'https://paperless.example.com/api/documents/',
+				self::callback(static fn (array $options): bool => $options['query'] === ['query' => 'tag:unpaid', 'id__in' => '413,412,389', 'page' => 1, 'page_size' => 3, 'fields' => 'id']),
+			)
+			->willReturn($this->response(200, (string)json_encode(['count' => 3, 'next' => null, 'results' => [['id' => 413], ['id' => '412'], ['title' => 'no ID'], ['id' => 389]]])));
+
+		self::assertSame([413, 389], $this->service($client)->findMatchingDocuments('tag:unpaid', [413, 412, 389]));
+	}
+
+	public function testASavedSearchGetsOneTryAndNoPlaceInTheHistory(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())->method('get')->willThrowException(new RuntimeException('Connection refused'));
+
+		$this->expectException(RuntimeException::class);
+		try {
+			$this->service($client)->findMatchingDocuments('tag:unpaid', [413]);
+		} finally {
+			self::assertNull($this->history());
+		}
+	}
+
+	/**
+	 * A saved search that Paperless 3 refuses in its advanced syntax goes to its simple mode,
+	 * as a search of the user does.
+	 */
+	public function testASavedSearchThatPaperlessRefusesGoesToItsSimpleMode(): void {
+		$queries = [];
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options) use (&$queries): IResponse {
+			$queries[] = $options['query'];
+
+			return count($queries) === 1
+				? $this->response(400, '{"query": ["Invalid"]}', self::PAPERLESS_3)
+				: $this->response(200, '{"results": [{"id": 413}]}', self::PAPERLESS_3);
+		});
+
+		self::assertSame([413], $this->service($client)->findMatchingDocuments('tax created:[2026 to', [413]));
+		self::assertSame(['text' => 'tax', 'id__in' => '413', 'page' => 1, 'page_size' => 1, 'fields' => 'id'], $queries[1]);
+	}
+
+	public function testASavedSearchThatAnOlderPaperlessRefusesFails(): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response(400, '{"query": ["Invalid"]}'));
+
+		$this->expectException(PaperlessQueryRejected::class);
+		$this->service($client)->findMatchingDocuments('created:[2026 to', [413]);
+	}
+
 	/**
 	 * The exception of a test of the connection that failed.
 	 */
@@ -1916,7 +2044,7 @@ final class PaperlessApiServiceTest extends TestCase {
 		}
 
 		return new PaperlessApiService(
-			new ConfigService($config, $credentials, $this->createStub(IUserManager::class), $this->createStub(LoggerInterface::class)),
+			new ConfigService($config, $credentials, $this->createStub(IUserManager::class), $this->createStub(LoggerInterface::class), $this->createStub(IConfig::class)),
 			$clientService,
 			new SearchDiagnostics($config, $clock, $this->createStub(ICacheFactory::class)),
 			$clock,

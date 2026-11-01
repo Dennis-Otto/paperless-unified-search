@@ -4,8 +4,10 @@
  */
 
 // The section Paperless of the personal settings: whether every search of the user
-// includes Paperless, without the switch Search connected services. The checkbox stores
-// the choice as soon as it changes, as the personal settings of Nextcloud do.
+// includes Paperless, without the switch Search connected services, and what the user wants
+// to be notified about. The checkbox of the search stores the choice as soon as it changes,
+// as the personal settings of Nextcloud do; the saved searches, which take some typing,
+// go with their button.
 (function() {
 	'use strict'
 
@@ -52,8 +54,9 @@
 		return translate('The request failed (HTTP {status}).', { status: response.status })
 	}
 
-	// Stores the choice and returns it as the server stored it.
-	async function save(url, alwaysSearch) {
+	// Sends the values to the route, and returns what the server answers to them, or throws
+	// the message to show when `isAnswer` doesn't take its answer for the one asked for.
+	async function post(url, values, isAnswer) {
 		let response
 		try {
 			response = await window.fetch(url, {
@@ -64,18 +67,92 @@
 					'Content-Type': 'application/json',
 					requesttoken: window.OC.requestToken,
 				},
-				body: JSON.stringify({ alwaysSearch }),
+				body: JSON.stringify(values),
 			})
 		} catch (error) {
 			throw new Error(translate('Nextcloud could not be reached. Check your connection and try again.'))
 		}
 
 		const payload = await readJson(response)
-		if (!response.ok || typeof payload?.alwaysSearch !== 'boolean') {
+		if (!response.ok || !isAnswer(payload)) {
 			throw new Error(failureMessage(response, payload))
 		}
 
-		return payload.alwaysSearch
+		return payload
+	}
+
+	// The message below a control, in the style of its kind, which adds an icon to each, so
+	// that the kind doesn't rest on the colour alone.
+	function showStatus(status, message, kind) {
+		status.textContent = message
+		for (const each of ['pending', 'success', 'error']) {
+			status.classList.toggle('paperless-unified-search-status--' + each, each === kind)
+		}
+	}
+
+	function setUpAlwaysSearch(root) {
+		const checkbox = document.getElementById('paperless-unified-search-personal-always-search')
+		if (!checkbox) {
+			return
+		}
+		const status = document.getElementById('paperless-unified-search-personal-status')
+
+		// Nextcloud lists the providers of its search as a page loads, so the choice
+		// applies to the pages that load after it.
+		checkbox.addEventListener('change', async function() {
+			const wanted = checkbox.checked
+			checkbox.disabled = true
+			showStatus(status, translate('Saving…'), 'pending')
+			try {
+				const payload = await post(root.dataset.saveUrl, { alwaysSearch: wanted }, (answer) => typeof answer?.alwaysSearch === 'boolean')
+				checkbox.checked = payload.alwaysSearch
+				showStatus(status, payload.alwaysSearch
+					? translate('Saved. Your searches include Paperless from the next page that you open.')
+					: translate('Saved. From the next page that you open, your searches include Paperless only with “Search connected services”.'), 'success')
+			} catch (error) {
+				checkbox.checked = !wanted
+				showStatus(status, error.message, 'error')
+			} finally {
+				checkbox.disabled = false
+			}
+		})
+	}
+
+	function setUpAlerts(root) {
+		const every = document.getElementById('paperless-unified-search-personal-every-document')
+		if (!every) {
+			return
+		}
+		const terms = document.getElementById('paperless-unified-search-personal-terms')
+		const button = document.getElementById('paperless-unified-search-personal-alerts-save')
+		const status = document.getElementById('paperless-unified-search-personal-alerts-status')
+
+		// Every document makes the searches pointless, but keeps them for the way back.
+		every.addEventListener('change', function() {
+			terms.disabled = every.checked
+		})
+
+		button.addEventListener('click', async function() {
+			button.disabled = true
+			showStatus(status, translate('Saving…'), 'pending')
+			try {
+				const payload = await post(root.dataset.alertsUrl, {
+					everyDocument: every.checked,
+					terms: terms.value.split('\n'),
+				}, (answer) => typeof answer?.everyDocument === 'boolean' && Array.isArray(answer?.terms))
+				every.checked = payload.everyDocument
+				terms.disabled = payload.everyDocument
+				// The searches as the server keeps them, without blank lines and repeats.
+				terms.value = payload.terms.join('\n')
+				showStatus(status, payload.everyDocument || payload.terms.length > 0
+					? translate('Saved. You get a notification about the next new documents.')
+					: translate('Saved. You get no notifications about new documents.'), 'success')
+			} catch (error) {
+				showStatus(status, error.message, 'error')
+			} finally {
+				button.disabled = false
+			}
+		})
 	}
 
 	document.addEventListener('DOMContentLoaded', function() {
@@ -84,36 +161,7 @@
 			return
 		}
 
-		const checkbox = document.getElementById('paperless-unified-search-personal-always-search')
-		const status = document.getElementById('paperless-unified-search-personal-status')
-
-		// The message below the checkbox, in the style of its kind, which adds an icon to
-		// each, so that the kind doesn't rest on the colour alone.
-		function showStatus(message, kind) {
-			status.textContent = message
-			for (const each of ['pending', 'success', 'error']) {
-				status.classList.toggle('paperless-unified-search-status--' + each, each === kind)
-			}
-		}
-
-		// Nextcloud lists the providers of its search as a page loads, so the choice
-		// applies to the pages that load after it.
-		checkbox.addEventListener('change', async function() {
-			const wanted = checkbox.checked
-			checkbox.disabled = true
-			showStatus(translate('Saving…'), 'pending')
-			try {
-				const saved = await save(root.dataset.saveUrl, wanted)
-				checkbox.checked = saved
-				showStatus(saved
-					? translate('Saved. Your searches include Paperless from the next page that you open.')
-					: translate('Saved. From the next page that you open, your searches include Paperless only with “Search connected services”.'), 'success')
-			} catch (error) {
-				checkbox.checked = !wanted
-				showStatus(error.message, 'error')
-			} finally {
-				checkbox.disabled = false
-			}
-		})
+		setUpAlwaysSearch(root)
+		setUpAlerts(root)
 	})
 })()

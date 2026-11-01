@@ -18,6 +18,7 @@ The settings are under **Administration settings → Paperless Unified Search**,
 | **Archive account** | The Nextcloud account whose files stand for the documents; blank takes the account of Paperless Sync | The account of Paperless Sync | `archive_owner` |
 | **Always include Paperless in global search** | Asks Paperless in every search of every user, without **Search connected services**; reload Nextcloud after a change | Off | `always_search` |
 | **Let users include Paperless in all their searches** | Lets each user choose **Always search my Paperless documents** in their personal settings; off hides the choice, and the search ignores what users chose | On | `personal_always_search` |
+| **Let users ask for notifications about new documents** | Lets each user save searches for notifications in their personal settings; off hides the choice, and the job asks Paperless nothing | On where Nextcloud has a memory cache, until an administrator chooses | `new_document_alerts` |
 
 **Disconnect** deletes the URL, the token, the switches, the archive account, the version of Paperless and the history of the problems. **Clear history** deletes only the history.
 
@@ -28,6 +29,7 @@ Under **Personal settings → Paperless**, each user can select **Always search 
 | Setting | Default | User preference |
 | --- | --- | --- |
 | **Always search my Paperless documents** | Off | `always_search` of the app, stored only while it is chosen |
+| **Notify me about new documents** | Off | `new_document_alerts` of the app, a lazy value, stored only while it asks for something, as JSON: `everyDocument`, and the saved searches in `terms` |
 
 An administrator reads the choice of a user with `occ user:setting <user> paperless_unified_search always_search` and takes it back with `occ user:setting <user> paperless_unified_search always_search --delete`. While **Let users include Paperless in all their searches** is off, the stored choices stay but count for nothing; they count again once it is on.
 
@@ -47,6 +49,8 @@ occ config:app:get paperless_unified_search paperless_url
 | `archive_owner` | The ID of the archive account, as Nextcloud spells it; missing when the settings take the account of Paperless Sync |
 | `always_search` | Whether every search asks Paperless |
 | `personal_always_search` | Whether users may choose to include Paperless in every search of their own; missing means yes |
+| `new_document_alerts` | Whether users may ask for notifications about new documents; missing means yes where Nextcloud has a memory cache |
+| `new_document_alerts_progress` | How far the job of the notifications has come, as JSON: the hash of the URL of the server, the highest ID seen, the moment of the last answer, the documents that wait for their files with their titles, and the failures in a row with the end of the rest; a lazy key. The job deletes it while nobody asks for notifications |
 | `paperless_version`, `paperless_api_version` | The versions of Paperless and of its API, such as `3.3.0` and `10`, as its last answer named them |
 | `token_warnings` | The warnings about the account of the API token that the last test of the connection found, separated by commas: `superuser`, `staff`, `changes_documents`, `hides_correspondents`, `hides_document_types`, `hides_tags` and `hides_names_of_others`; missing when there are none, or Paperless didn't say. A lazy key |
 | `diagnostics` | The history of the problems of the search, as JSON; a lazy key, which Nextcloud loads only when it is read |
@@ -62,7 +66,7 @@ Change the settings in the administration settings, which test the connection fi
 
 ## The routes of the settings
 
-The settings page saves through four routes of the app, which only administrators may call, each with Nextcloud's CSRF token, and the personal settings through a fifth that every user who signed in may call. A script calls the four with the login of an administrator, and the fifth with the login of the user whose choice it stores, each with the header `OCS-APIRequest: true`, as the end-to-end tests do; `/index.php` goes before `/apps` where Nextcloud runs without pretty URLs.
+The settings page saves through four routes of the app, which only administrators may call, each with Nextcloud's CSRF token, and the personal settings through two more that every user who signed in may call. A script calls the four with the login of an administrator, and these two with the login of the user whose choice they store, each with the header `OCS-APIRequest: true`, as the end-to-end tests do; `/index.php` goes before `/apps` where Nextcloud runs without pretty URLs.
 
 | Route | Does |
 | --- | --- |
@@ -71,6 +75,7 @@ The settings page saves through four routes of the app, which only administrator
 | `DELETE /apps/paperless_unified_search/settings/diagnostics` | **Clear history** |
 | `POST /apps/paperless_unified_search/settings/try` | **Try a search**: searches with the parameter `term` as the account `user` and says for each document whether it shows and why not, with its ID, title and tags alone; the log records which administrator tried a search as whom, without the term |
 | `POST /apps/paperless_unified_search/personal` | **Always search my Paperless documents** of the user who signed in, with the parameter `alwaysSearch`; answers `{"alwaysSearch": true}` or `false`, and HTTP 403 with the code `not_allowed` while the administrators don't let users choose |
+| `POST /apps/paperless_unified_search/personal/alerts` | **Notify me about new documents** of the user who signed in, with the parameters `everyDocument` and `terms`, a list; answers the choice as the server keeps it, without blank lines and repeats, or a `message` with the `code` `not_allowed`, `too_many_searches` for more than 10, or `search_too_long` for more than 500 characters |
 
 ```sh
 curl -u admin -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
@@ -118,6 +123,17 @@ curl -u admin -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
 | **The link below the list** | *Files shared with you*, the view of Files with the files that others share with the user; Nextcloud's web dashboard shows it, and six documents, only once the list is full; none for the archive account |
 | **Paperless** | One request for the 25 documents that it added last, at most once a minute for all users together, which Nextcloud's distributed cache keeps meanwhile (with a memory cache, as Nextcloud recommends; without one, every dashboard asks Paperless); a Paperless that doesn't answer rests for a minute as well, and the widget says *Paperless can't be reached right now.* |
 
+## The notifications about new documents
+
+| | |
+| --- | --- |
+| **The job** | `OCA\PaperlessUnifiedSearch\BackgroundJob\NotifyNewDocuments`, every five minutes as Nextcloud's cron allows, one run at a time; `occ background-job:list --class='OCA\PaperlessUnifiedSearch\BackgroundJob\NotifyNewDocuments'` shows it |
+| **It runs** | While **Let users ask for notifications about new documents** is on, Paperless is connected, an archive account exists and someone asks for notifications; otherwise it forgets its progress and asks nothing |
+| **Paperless** | One request per run for the new documents, and only for a document with a file in the archive account one request per distinct saved search, as [below](#requests-to-paperless) |
+| **Limits** | 10 saved searches per user, of up to 500 characters; 100 new documents per run; 200 documents waiting for their files, for up to two days |
+| **Rest after a failure** | 10, 20 and 40 minutes, then an hour until Paperless answers again |
+| **The notification** | One per user and run; the subject `new_documents`, the object `paperless_documents` with the ID of the newest document, and the parameters `count` and `documents` with the title, the ID and the path of the file of up to three |
+
 ## Requests to Paperless
 
 Every request of the app to Paperless is one `GET` of `<URL>/api/documents/`, of `/api/correspondents/`, `/api/document_types/` and `/api/tags/` for the names of the correspondents, types and tags of a page and, in a test of the connection, of its newest documents, or of `/api/ui_settings/` for what the account of the token may do, from the Nextcloud server:
@@ -129,6 +145,8 @@ Every request of the app to Paperless is one `GET` of `<URL>/api/documents/`, of
 | **A search** | `query` with the term, `page`, `page_size=25` and `fields=id,title,created,correspondent,document_type,tags,__search_hit__`; on Paperless 3, a query that it can't parse yet once more with `text` in place of `query` |
 | **The test of the connection** | `page_size=1` and `fields=id`; once Paperless answers, `/api/ui_settings/` without parameters, with 3 seconds for the answer and no second try, for the warnings about the account of the token. Of its answer, the app reads only `user.is_superuser`, `user.is_staff` and `permissions`; Paperless answers HTTP 403 to an account that may not view its UI settings, and the warnings stay unknown. Of an account that isn't a superuser and may view documents, it then asks for the 25 newest with `ordering=-added`, `page=1` and `fields=id,correspondent,document_type,tags`, and for the names of their correspondents, types and tags, again with 3 seconds and no second try, for the warning about those that another user owns |
 | **The newest documents of the dashboard** | `ordering=-added`, `page=1`, `page_size=25` and `fields=id,title,added,correspondent,document_type,tags`, at most once a minute for all users, with 5 seconds for the answer and no second try |
+| **The new documents of the notifications** | `ordering=-id`, `page=1`, `page_size=100`, `fields=id,title` and `added__date__gte` with the day before the last answer, which keeps the answer short, in one try, every five minutes while someone asks for notifications and Paperless answers; the first run asks for `page_size=1` without the day |
+| **A saved search of the notifications** | `query` with the term, on Paperless 3 for a query that it can't parse once more `text` with its words, `id__in` with the new documents that have files, `page=1`, `page_size` as many as those and `fields=id`, in one try, once per distinct search and only when such documents exist |
 | **Time** | 3 seconds to connect, 10 seconds for the answer |
 | **A second try** | Only for a request that failed within 3.5 seconds, before it had a connection, and whose address Nextcloud didn't refuse |
 | **Redirects** | Without **Paperless runs in my local network**, up to 5, never to an address of the local network; Nextcloud leaves the token out of a redirect to another scheme, host or port, which Paperless then refuses, and keeps it for one within the same server. With the switch, none |
@@ -157,6 +175,9 @@ Every request of the app to Paperless is one `GET` of `<URL>/api/documents/`, of
 | Nextcloud | Paperless | The request for the 25 documents that Paperless added last, with the fields that the dashboard shows, and the API token | At most once a minute, when the dashboard of a user shows the widget |
 | Paperless | Nextcloud | Of each of these documents that the account of the token may view: its ID, title, the moment that Paperless added it and the IDs of its correspondent, its type and its tags | In every answer |
 | Nextcloud | The browser or an app of the user | Of each of the newest documents whose file the user can open: its title, the day that Paperless added it, its correspondent, its type and up to two of its tags, and the link and the preview of its file | Whenever the dashboard shows the widget |
+| Nextcloud | Paperless | The saved searches of the users who asked for notifications, among the IDs of the new documents with files, and the API token | Once per distinct search, when a new document has its file |
+| Paperless | Nextcloud | The IDs and titles of the documents that it added since the last run, and the IDs of those that each search finds | Every five minutes while someone asks for notifications |
+| Nextcloud | The browser or an app of the user | The number of the new documents that the user asked for and can open, and of the newest three the title, the ID and the path of the file | As the client fetches its notifications |
 
 <div class="diagram-wide" markdown tabindex="0" role="region" aria-label="Diagram of the data flow of a search">
 
@@ -184,12 +205,17 @@ The app writes to the log of Nextcloud with `app` set to `paperless_unified_sear
 | Warning | Paperless unified search skipped *n* file(s) it could not read (*error*) | Files of the archive that Nextcloud couldn't read |
 | Warning | Paperless unified search looks for the files of each document on its own … | A version of Nextcloud whose query of the file cache the app doesn't know yet: the search still works, with one query for each document instead of one for each page |
 | Warning | The stored Paperless API token can't be decrypted … | The `secret` of `config.php` changed: enter the token again |
+| Warning | The notifications about new Paperless documents try again in *n* seconds (*error*) | The job couldn't ask Paperless or look for the files, and rests |
+| Warning | *n* saved search(es) of the notifications about new Paperless documents failed (*error*) | Paperless answered the others but not these, such as a wildcard that took too long: they found nothing in this run, the log doesn't name them, and the job goes on |
+| Warning | A user got no notification about new Paperless documents (*error*) | The files of that user failed to answer, or Nextcloud refused the notification; the others got theirs |
+| Info | Paperless refused *n* saved search(es) of the notifications about new documents | Those searches found nothing in this run; the log doesn't name them |
+| Info | Paperless added *n* or more documents between two runs of the notifications about new documents: older ones get none | A large import |
 | Debug | Paperless rejected the query of a search with HTTP *status* | A query still being typed, or a page past the last one: no problem |
 
 ## Uninstall
 
-1. **Disconnect** in the settings. It deletes the URL, the token, the switches, the archive account, the version of Paperless and the history of the problems; only `diagnostics_pending` stays, with the keys that Nextcloud keeps of every app, such as `enabled` and `installed_version`.
-2. **Remove the app:** `occ app:remove paperless_unified_search` disables it and deletes its code; or *Apps → Disable* and *Remove* in the browser. Nextcloud keeps the app configuration of a removed app: `occ config:list paperless_unified_search` lists what is left, and `occ config:app:delete paperless_unified_search <key>` deletes a key. The choices of the users stay as their preference `always_search`, which `occ user:setting <user> paperless_unified_search always_search --delete` deletes.
+1. **Disconnect** in the settings. It deletes the URL, the token, the switches, the archive account, the version of Paperless, the progress of the notifications about new documents and the history of the problems; only `diagnostics_pending` stays, with the keys that Nextcloud keeps of every app, such as `enabled` and `installed_version`.
+2. **Remove the app:** `occ app:remove paperless_unified_search` disables it and deletes its code; or *Apps → Disable* and *Remove* in the browser. Nextcloud keeps the app configuration of a removed app: `occ config:list paperless_unified_search` lists what is left, and `occ config:app:delete paperless_unified_search <key>` deletes a key. The choices of the users stay as their preferences `always_search` and `new_document_alerts`, the latter with their saved searches, which `occ user:setting <user> paperless_unified_search always_search --delete` and the same with `new_document_alerts` delete.
 3. **In Paperless**, delete the API token, or the account of the search: a token that Nextcloud forgot still works until Paperless forgets it too.
 
 The files of the archive and their shares stay as they are: they belong to the archive account and to the synchronization, not to this app. Without **Disconnect**, the encrypted token stays in the credentials manager of Nextcloud, under `paperless_unified_search.api-token`, until the app is installed again and disconnected.

@@ -16,6 +16,7 @@ use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppSettings;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\UserPreferences;
 use OCP\Config\IUserConfig;
+use OCP\IConfig;
 use OCP\IUser;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -123,7 +124,7 @@ final class AlwaysSearchTest extends TestCase {
 	}
 
 	private function configService(): ConfigService {
-		return new ConfigService($this->appConfig(), $this->credentialsManager(), $this->accounts(), $this->createStub(LoggerInterface::class));
+		return new ConfigService($this->appConfig(), $this->credentialsManager(), $this->accounts(), $this->createStub(LoggerInterface::class), $this->createStub(IConfig::class));
 	}
 
 	private function user(?string $userId): ?IUser {

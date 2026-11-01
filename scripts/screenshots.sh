@@ -175,6 +175,34 @@ occ config:app:set paperless_unified_search diagnostics --type=array --lazy \
 
 browse "${PROJECT_NAME}_default" --env "E2E_PASSWORD=${PASSWORD}"
 
+# The notification about new documents. Jamie asks for every new document, the first run
+# of the job learns how far the IDs go, then the mock takes in two documents, the archive
+# account writes their files into the folder that it shares with jamie, and the next run
+# notifies jamie. The job runs here, as occ, so a second pass of the browser takes the
+# picture.
+ALERTS_JOB="$(occ background-job:list --class='OCA\PaperlessUnifiedSearch\BackgroundJob\NotifyNewDocuments' --output=json |
+	"${COMPOSE[@]}" exec -T paperless-mock python -c 'import json, sys; print(json.load(sys.stdin)[0]["id"])')"
+curl --fail-with-body --silent --show-error \
+	--user "jamie:${PASSWORD}" \
+	--header 'Accept: application/json' \
+	--header 'OCS-APIRequest: true' \
+	--request POST \
+	--data-urlencode 'everyDocument=1' \
+	"${BASE_URL}/apps/paperless_unified_search/personal/alerts" >/dev/null
+occ background-job:execute "${ALERTS_JOB}" --force-execute >/dev/null
+for document in '1001:Tax assessment 2025' '1002:Water bill - October 2026'; do
+	id="${document%%:*}"
+	title="${document#*:}"
+	"${COMPOSE[@]}" exec -T paperless-mock python -c 'import json, sys, urllib.request; urllib.request.urlopen(urllib.request.Request("http://localhost:8080/e2e/documents", data=json.dumps({"id": int(sys.argv[1]), "title": sys.argv[2]}).encode(), method="POST"))' "${id}" "${title}"
+	"${COMPOSE[@]}" exec -T paperless-mock python /mock/pdf.py "${title}" |
+		curl --fail-with-body --silent --show-error \
+			--user "paperless:${PASSWORD}" \
+			--upload-file - \
+			"${BASE_URL}/remote.php/dav/files/paperless/Paperless/${title// /%20}%20%5BP${id}%5D.pdf" >/dev/null
+done
+occ background-job:execute "${ALERTS_JOB}" --force-execute >/dev/null
+browse "${PROJECT_NAME}_default" --env "E2E_PASSWORD=${PASSWORD}" --env SCREENSHOTS_NOTIFICATION=1
+
 # The videos of the animations with their first frames, and every PNG at its smallest.
 bash scripts/screenshot-media.sh "${TMP_DIR}"
 

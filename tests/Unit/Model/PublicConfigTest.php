@@ -33,6 +33,7 @@ final class PublicConfigTest extends TestCase {
 			// Users may choose to include Paperless in every search of their own.
 			'personalAlwaysSearch' => true,
 			'tokenWarnings' => [],
+			'newDocumentAlerts' => false,
 		], (new PublicConfig('https://paperless.example.com', true, false))->jsonSerialize());
 	}
 
@@ -40,6 +41,7 @@ final class PublicConfigTest extends TestCase {
 		$config = new PublicConfig('https://paperless.example.com', true, false, personalAlwaysSearch: false);
 
 		self::assertFalse($config->jsonSerialize()['personalAlwaysSearch']);
+		self::assertTrue((new PublicConfig('https://paperless.example.com', true, false, newDocumentAlerts: true))->jsonSerialize()['newDocumentAlerts']);
 	}
 
 	public function testTheConfigurationNamesTheVersionOfPaperless(): void {

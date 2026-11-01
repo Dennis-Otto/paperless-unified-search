@@ -69,6 +69,7 @@ final class Setup extends Command {
 			->addOption('archive-account', null, InputOption::VALUE_REQUIRED, 'The Nextcloud account that owns the synchronized files; empty for the account of Paperless Sync')
 			->addOption('always-search', null, InputOption::VALUE_NEGATABLE, 'Include Paperless in every global search as a trusted service, or not')
 			->addOption('personal-always-search', null, InputOption::VALUE_NEGATABLE, 'Let users include Paperless in all their searches in their personal settings, or not')
+			->addOption('new-document-alerts', null, InputOption::VALUE_NEGATABLE, 'Let users ask for a notification about new documents in their personal settings, or not')
 			->addOption('allow-local', null, InputOption::VALUE_NEGATABLE, 'Allow this Paperless, and only this one, at an address of the local network, or not');
 	}
 
@@ -90,6 +91,7 @@ final class Setup extends Command {
 
 		$alwaysSearch = self::switchOf($input, 'always-search', $this->configService->isAlwaysSearchEnabled());
 		$personalAlwaysSearch = self::switchOf($input, 'personal-always-search', $this->configService->isPersonalAlwaysSearchAllowed());
+		$newDocumentAlerts = self::switchOf($input, 'new-document-alerts', $this->configService->isNewDocumentAlertsAllowed());
 		$allowLocal = self::switchOf($input, 'allow-local', $this->configService->isLocalNetworkAllowed());
 		/** @psalm-suppress MixedAssignment An option of the console, checked before use. */
 		$archiveAccount = $input->getOption('archive-account');
@@ -101,7 +103,7 @@ final class Setup extends Command {
 			$effectiveToken = $this->configService->resolveToken($token, $normalizedUrl);
 			$owner = $this->configService->resolveArchiveOwner($archiveOwner);
 			$status = $this->paperlessApi->probe($normalizedUrl, $effectiveToken, $allowLocal);
-			$config = $this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner, $allowLocal, $status->version, $personalAlwaysSearch, $status->tokenWarnings);
+			$config = $this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner, $allowLocal, $status->version, $personalAlwaysSearch, $status->tokenWarnings, $newDocumentAlerts);
 		} catch (InvalidSettingException $exception) {
 			self::error($output, $this->messages->forSetting($exception->problem, trim($archiveOwner)));
 			if (in_array($exception->problem, [SettingProblem::TokenRequired, SettingProblem::TokenForOtherServer], true)) {
@@ -186,6 +188,7 @@ final class Setup extends Command {
 		$output->writeln('Archive account: ' . $archive);
 		$output->writeln('Always include Paperless in global search: ' . ($config->alwaysSearch ? 'yes' : 'no'));
 		$output->writeln('Users may include Paperless in all their searches: ' . ($config->personalAlwaysSearch ? 'yes' : 'no'));
+		$output->writeln('Users may ask for a notification about new documents: ' . ($config->newDocumentAlerts ? 'yes' : 'no'));
 		$output->writeln('Paperless runs in the local network: ' . ($config->allowLocal ? 'yes' : 'no'));
 	}
 }

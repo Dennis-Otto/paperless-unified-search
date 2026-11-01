@@ -24,6 +24,7 @@ use OCP\Http\Client\IResponse;
 use OCP\IAppConfig;
 use OCP\ICache;
 use OCP\ICacheFactory;
+use OCP\IConfig;
 use OCP\IUserManager;
 use OCP\Security\ICredentialsManager;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -522,7 +523,7 @@ final class PaperlessNamesTest extends TestCase {
 		$cacheFactory = $this->createMock(ICacheFactory::class);
 		$cacheFactory->expects(self::atMost(1))->method('createDistributed')->with(AppConstants::APP_ID)->willReturn($cache ?? $this->cache);
 
-		$configService = new ConfigService($config, $credentials, $this->createStub(IUserManager::class), $this->createStub(LoggerInterface::class));
+		$configService = new ConfigService($config, $credentials, $this->createStub(IUserManager::class), $this->createStub(LoggerInterface::class), $this->createStub(IConfig::class));
 
 		return new PaperlessNames(
 			new PaperlessApiService($configService, $clientService, new SearchDiagnostics($config, $clock, $this->createStub(ICacheFactory::class)), $clock, $appManager),
