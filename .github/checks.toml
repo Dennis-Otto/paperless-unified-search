@@ -47,7 +47,8 @@ autofix of its own."""
 title = "The linters"
 problem = """A step of the check failed before its linters ran, such as the checkout of
 the pull request. When a linter fails, the PR coach explains that linter instead:
-the workflows, the licenses, the Markdown, the issue assistant or the sign-off."""
+the workflows, the licenses, the Markdown, the issue assistant, the sign-off or the
+files of the blueprint."""
 why = """The linters run in one job, which takes one runner instead of one each; they
 report only once the job got that far."""
 fix = """Run the check again; if it fails at the same step, the log of the check says
@@ -203,6 +204,29 @@ commands = [
 docs = "CONTRIBUTING.md#requirements-for-changes"
 autofix = """Only the author of a commit can certify the Developer Certificate of
 Origin; no bot signs off for them."""
+
+[check.ownership]
+title = "The files of the blueprint"
+problem = """The pull request changes files that the blueprint keeps current, and the
+repository variable `BLUEPRINT_OWNERSHIP` is set to `fail`, so the check stops it. The
+annotations name each file, and `.github/blueprint/owned.txt` lists them all."""
+why = """The next update of the blueprint merges these files line by line and marks a
+conflict where both changed the same lines. An update with conflicts waits for a person,
+and so the updates of this repository stop until someone resolves them."""
+fix = """Make the change beside these files: settings in
+`.github/repository.project.toml`, a check in `scripts/check-project.sh` with its
+explanation in `.github/checks.project.toml`, notes for coding agents in
+`.github/agents.project.md`, text about the releases of this project between the two
+marked lines of `CONTRIBUTING.md`, and a workflow in a file of its own. What every
+repository needs belongs in the blueprint: the report of the PR coach links a new issue there,
+filled in with these files. Then undo the change of each file:"""
+commands = [
+  "git fetch https://github.com/{repo}.git main",
+  "git checkout FETCH_HEAD -- FILE",
+]
+docs = "https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/faq.md#which-files-may-a-project-change"
+autofix = """Only the author knows where the change belongs instead; undoing it by
+itself would lose what the pull request is for."""
 
 [check.issue-assistant]
 title = "The set-up of the issue assistant"

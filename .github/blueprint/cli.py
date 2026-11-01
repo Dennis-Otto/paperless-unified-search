@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import tomllib
+import webbrowser
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,6 +25,7 @@ from blueprint import (
     screenshots,
     versions,
 )
+from blueprint.app import TIMEOUT, connect, register
 from blueprint.bootstrap import CreateError, create, doctor
 from blueprint.bot_health import renovate_report, sweep, watch_run
 from blueprint.branches import next_branch
@@ -84,6 +86,7 @@ from blueprint.fixes import keep as keep_fixes
 from blueprint.github import Api, GitHubError, Json, current_repo
 from blueprint.notices import third_party_notices
 from blueprint.overrides import write_overrides
+from blueprint.ownership import check as ownership_check
 from blueprint.pages import (
     CELL_WORDS,
     Layout,
@@ -213,6 +216,30 @@ def read_coverage(head: str, base: str) -> tuple[Coverage, Coverage | None] | No
     return found, before
 
 
+def ownership_command(arguments: argparse.Namespace, root: Path) -> int:
+    """The step of the check lint, which needs neither the API nor the settings."""
+    try:
+        listing = arguments.changed.read_bytes()
+        part_diff = (
+            arguments.contributing_diff.read_text(encoding="utf-8", errors="replace")
+            if arguments.contributing_diff
+            else ""
+        )
+    except OSError as error:
+        print(f"blueprint.py: {error}", file=sys.stderr)
+        return 2
+    return ownership_check(
+        root,
+        listing,
+        part_diff=part_diff,
+        branch=arguments.branch,
+        head_repo=arguments.head_repo,
+        repo=arguments.repo or "",
+        author_type=arguments.author_type,
+        mode=arguments.mode,
+    )
+
+
 def explain_command(arguments: argparse.Namespace, root: Path) -> int:
     """What failed and how to fix it: in the log, and in the CI also in the summary
     of the job and as an annotation, from the variables that GitHub sets."""
@@ -285,7 +312,9 @@ def bot_health_command(
         summary, healthy = sweep(api, repo, root, now)
         print(summary, end="")
         return 0 if healthy else 1
-    print(renovate_report(api, repo, Path(arguments.log), arguments.run), end="")
+    complete = arguments.result == "success"
+    logs = map(Path, arguments.log)
+    print(renovate_report(api, repo, logs, arguments.run, complete=complete), end="")
     return 0
 
 
@@ -993,6 +1022,35 @@ def create_command(api: Api, arguments: argparse.Namespace, root: Path) -> int:
     return 2 if applied == 2 else 0
 
 
+def app_command(arguments: argparse.Namespace, root: Path) -> int:
+    """blueprint.py app: the release app of the owner, from its manifest or as one that
+    exists. Git and gh do the work, and the settings play no part in it."""
+    try:
+        if arguments.action == "register":
+            register(
+                root,
+                repo=arguments.repo,
+                org=arguments.org,
+                update=not arguments.no_update,
+                browser=None if arguments.no_browser else webbrowser.open,
+                timeout=arguments.timeout,
+            )
+        else:
+            connect(
+                root,
+                arguments.key_file,
+                repo=arguments.repo,
+                name=arguments.name,
+                client_id=arguments.client_id,
+                app_id=arguments.app_id,
+                update=not arguments.no_update,
+            )
+    except (CreateError, OSError) as error:
+        print(f"blueprint.py: {error}", file=sys.stderr)
+        return 2
+    return 0
+
+
 def utf8_output() -> None:
     """Windows consoles default to a code page without the marks of the checklist, and
     to CRLF, which a file of the repository written from the output must not get."""
@@ -1021,6 +1079,61 @@ def add_settings_parsers(
     commands.add_parser(
         "checklist", help="the steps outside the API, and which are done"
     )
+    app_parser = commands.add_parser(
+        "app",
+        help="the release app of the owner: register one from GitHub's manifest, or "
+        "connect one that exists",
+    )
+    app_actions = app_parser.add_subparsers(dest="action", required=True)
+    register_parser = app_actions.add_parser(
+        "register",
+        help="register the app on one page of GitHub, set its private key without "
+        "a file, and open the pull request that names it",
+    )
+    register_parser.add_argument(
+        "--org",
+        metavar="ORG",
+        help="the organization that owns the repository, which GitHub otherwise tells",
+    )
+    register_parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="only print the address of the page",
+    )
+    register_parser.add_argument(
+        "--timeout",
+        type=int,
+        default=TIMEOUT,
+        metavar="SECONDS",
+        help=f"how long to wait for the page of GitHub; {TIMEOUT} by default",
+    )
+    connect_parser = app_actions.add_parser(
+        "connect",
+        help="set the private key of an app that exists from a file, and name the app "
+        "unless the answers of the blueprint do",
+    )
+    connect_parser.add_argument(
+        "--key-file",
+        type=Path,
+        required=True,
+        metavar="PATH",
+        help="the private key that GitHub gave you",
+    )
+    connect_parser.add_argument(
+        "--name", default="", help="the name in the address of the app"
+    )
+    connect_parser.add_argument(
+        "--client-id", default="", help="the Client ID on the settings page of the app"
+    )
+    connect_parser.add_argument(
+        "--app-id", default="", help="the App ID on the settings page of the app"
+    )
+    for action_parser in (register_parser, connect_parser):
+        action_parser.add_argument(
+            "--no-update",
+            action="store_true",
+            help="print the commands that name the app, and run none of them",
+        )
     create_parser = commands.add_parser(
         "create",
         help="the repository on GitHub of a new copy: git init, the first commit, "
@@ -1178,6 +1291,34 @@ def add_update_parsers(
     )
 
 
+def add_ownership_parser(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """The notice for a pull request that changes a file of the blueprint."""
+    parser = commands.add_parser(
+        "ownership",
+        help="annotate each changed file of a pull request that belongs to the "
+        "blueprint, for the check lint",
+    )
+    parser.add_argument(
+        "changed", type=Path, help="the file with the output of git diff -z --name-only"
+    )
+    parser.add_argument(
+        "--contributing-diff",
+        type=Path,
+        help="the file with the git diff of CONTRIBUTING.md: a change that stays "
+        "between its two marked lines belongs to the project",
+    )
+    parser.add_argument("--branch", default="", help="the head branch")
+    parser.add_argument("--head-repo", default="", help="the repository of the branch")
+    parser.add_argument("--author-type", default="", help="the type of the author")
+    parser.add_argument(
+        "--mode",
+        default="",
+        help="fail makes each file a failure; anything else leaves a notice",
+    )
+
+
 def add_coach_parsers(
     commands: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
@@ -1267,9 +1408,17 @@ def add_bot_health_parsers(
     renovate_parser = health.add_parser(
         "renovate", help="the warnings and errors of a run of Renovate, in one issue"
     )
-    renovate_parser.add_argument("log", help="the log of Renovate in JSON")
+    renovate_parser.add_argument(
+        "log", nargs="+", help="the logs of Renovate in JSON, of one run"
+    )
     renovate_parser.add_argument(
         "--run", required=True, help="the link of the run of Renovate"
+    )
+    renovate_parser.add_argument(
+        "--result",
+        default="success",
+        help="how the runs ended, as GitHub says it; without success, the run doesn't "
+        "count as one without problems",
     )
 
 
@@ -1677,6 +1826,7 @@ def parser() -> argparse.ArgumentParser:
         add_changelog_parsers,
         add_update_parsers,
         add_coach_parsers,
+        add_ownership_parser,
         add_bot_health_parsers,
         add_diagrams_parsers,
         add_screenshots_parsers,
@@ -1704,6 +1854,10 @@ def standalone_command(
             return 2
     if arguments.command == "annotate":
         return annotate_command(arguments, root)
+    if arguments.command == "ownership":
+        return ownership_command(arguments, root)
+    if arguments.command == "app":
+        return app_command(arguments, root)
     if arguments.command == "doctor":
         # Git and gh only answer, and the settings play no part in it.
         try:

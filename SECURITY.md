@@ -35,7 +35,7 @@ The application stores the Paperless API token through Nextcloud's server-side c
 - Actions are pinned to commit hashes, only those of GitHub and of a list in the settings as code may run, tokens get the least permissions they need, and Renovate keeps actions, dependencies and images current, with the updates that fix a vulnerability at once.
 - OSV-Scanner checks every lock file against the OSV database of known vulnerabilities: in every pull request that changes a lock file, after every change of `main` and every week.
 - Harden-Runner records the network traffic of every job of the workflows, so that a connection that doesn't belong there shows, and blocks it in every job that holds a secret, an OIDC token or a token that may write, such as those with the private key of the release app or the signing key of a Nextcloud app: such a job reaches only the hosts that it needs, each named in the job, and runs without `sudo` and Docker where it needs neither. Such a job first waits until Harden-Runner lets its hosts through, because of [a bug on some of GitHub's runners](https://github.com/step-security/harden-runner/issues/708), and one that hangs until its time limit runs once more; the block stays on. The GitHub CLI of the workflows sends no telemetry.
-- Releases carry SBOMs of what they ship, under their name and version, as SPDX and as CycloneDX, the licenses of their third-party components (`THIRD_PARTY_NOTICES.md`), an OpenVEX document of the advisories that the project accepts with their reasons, and the signed provenance of an isolated build (SLSA Build Level 3); their tags are signed without a key by the release workflow (gitsign), which builds no release on a tag that it didn't sign; they are immutable once published and are verified as their users can after every release and every week.
+- Releases carry SBOMs of what they ship, under their name and version, as SPDX and as CycloneDX, the licenses of their third-party components (`THIRD_PARTY_NOTICES.md`), an OpenVEX document of the advisories that the project accepts with their reasons, and the signed provenance of an isolated build (SLSA Build Level 3); their tags are signed without a key by the release workflow (gitsign), which builds no release on a tag that it didn't sign; they are immutable once published and are verified as their users can after every release, every week and at once when anybody but the release workflow publishes one.
 
 ## Findings of code scanning
 
@@ -48,8 +48,10 @@ A release is immutable once it is published, and GitHub signs an attestation of 
 ```sh
 gh release verify vX.Y.Z --repo Dennis-Otto/paperless-unified-search
 gh release download vX.Y.Z --repo Dennis-Otto/paperless-unified-search --pattern 'paperless_unified_search.tar.gz*'
-gh attestation verify paperless_unified_search.tar.gz --repo Dennis-Otto/paperless-unified-search --signer-workflow Dennis-Otto/paperless-unified-search/.github/workflows/build-release.yml
+gh attestation verify paperless_unified_search.tar.gz --repo Dennis-Otto/paperless-unified-search --signer-workflow Dennis-Otto/paperless-unified-search/.github/workflows/build-release.yml --source-ref refs/heads/main --deny-self-hosted-runners
 ```
+
+`--signer-workflow` accepts only the provenance of the workflow that builds the release, `--source-ref` only that of a run for `main`, the only branch whose runs make releases, and `--deny-self-hosted-runners` only that of a runner of GitHub: an attestation that another workflow, another branch or a machine of someone else made for this repository fails.
 
 Every asset of a release carries this provenance, those that the project builds itself with `scripts/release-assets.sh`, such as the zip of a browser extension, too.
 
