@@ -110,7 +110,9 @@ Two fresh demos record the same pixels, so the animation in the repository chang
 - **The order of the Paperless results** comes from the text of the documents alone: the electricity invoice says *invoice* twice, the internet invoice once, so Paperless ranks the electricity invoice first in every demo. With the same score, the order of two documents would follow the order in which Paperless happened to read them.
 - **What a person does at their first sign-in** happens first: the welcome wizard of Nextcloud is closed, the notifications are read, so the bell has no red dot however long the demo has run, and `jamie` is online, so the dot on the avatar is there from the first frame. The two templates that the search finds, `Invoice.ods` and `Invoice.odt`, which Nextcloud copies in the same second, get times an hour apart, so the search lists them in the same order.
 
-The weekly run of the demo (`.github/workflows/demo.yml`) records the animation as well and compares it with the one in the repository by its pixels, as the screenshot bot compares its pictures. When they changed, it keeps one pull request, *docs: update the animation of the demo*, from the branch `bot/demo-animation`, which merges itself once every check passes; a pull request that changes the demo or its recording shows the difference in its summary and in the artifact `demo-animation`.
+A weekly run of the demo (`.github/workflows/demo.yml`) that fails or reaches the time limit of its job opens the issue *The demo breaks*, or adds the run to it, and the next run that passes closes it.
+
+The weekly run also records the animation and compares it with the one in the repository by its pixels, as the screenshot bot compares its pictures. When they changed, it keeps one pull request, *docs: update the animation of the demo*, from the branch `bot/demo-animation`, which merges itself once every check passes; a pull request that changes the demo or its recording shows the difference in its summary and in the artifact `demo-animation`.
 
 ## A demo, not a production set-up
 

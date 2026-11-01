@@ -27,9 +27,12 @@
 # - assert_upgrade.py, with answers of its own, when Python is installed: the results
 #   of a search, the settings of the page of the administration settings and the keys
 #   of the configuration of the app, which upgrade.sh compares before and after.
-# - the job of .github/workflows/e2e.yml that writes the issue about the supported
-#   Nextcloud versions, with a fake gh: it opens the issue with the versions that
-#   broke, adds a further failed run to it and closes it once the tests pass again.
+# - the four jobs that write the issues of the weekly runs, three of
+#   .github/workflows/e2e.yml and the one of .github/workflows/demo.yml, with a fake gh:
+#   each opens its issue for a run that fails or runs out of time, adds a further such
+#   run to it and closes it once a run passes, and leaves it alone in a pull request,
+#   by the if: of the job as GitHub evaluates it. The one about the supported Nextcloud
+#   versions names the versions that broke.
 # - mock_server.py, with requests of its own, when Python is installed: its journal
 #   holds each request right after its answer, and run.sh reads that journal; and it
 #   answers /api/ui_settings/ for the token of a view-only account and of a superuser
@@ -541,16 +544,23 @@ else
 	echo "openssl is not installed here; the CI tests upgrade.sh up to Docker."
 fi
 
-## The issue about the supported Nextcloud versions
+## The issues of the weekly runs
 
-# The script of the step "Open, update or close the issue" of the job of e2e.yml that
-# the argument names, as GitHub runs it: the lines of the block of its run:, without
-# the indentation of the block.
-workflow_script() {
-	awk -v job="  $1:" '
+# The lines of a job of a workflow, into job.yml.
+workflow_job() {
+	awk -v job="  $2:" '
 		$0 == job { inside = 1; next }
 		inside && /^  [^ #]/ { exit }
-		inside && !block && /^ +run: \|$/ { block = 1; next }
+		inside
+	' "${SCRIPT_DIR}/../../.github/workflows/$1" >"${WORK}/job.yml"
+}
+
+# The script of the step "Open, update or close the issue" of the job in job.yml, as
+# GitHub runs it: the lines of the block of its run:, without the indentation of the
+# block.
+job_script() {
+	awk '
+		!block && /^ +run: \|$/ { block = 1; next }
 		block {
 			if ($0 ~ /^ *$/) { print ""; next }
 			match($0, /^ */)
@@ -558,12 +568,31 @@ workflow_script() {
 			if (RLENGTH < indent) { exit }
 			print substr($0, indent + 1)
 		}
-	' "${SCRIPT_DIR}/../../.github/workflows/e2e.yml"
+	' "${WORK}/job.yml"
 }
 
-workflow_script nextcloud-issue >"${WORK}/issue.sh"
-expect "the script of the job nextcloud-issue of e2e.yml" true \
-	"$(grep --quiet --fixed-strings 'gh issue create' "${WORK}/issue.sh" && echo true || echo false)"
+# Whether GitHub runs the job in job.yml, by the if: of the job, for an event, the
+# result of the job that it needs and a branch: true or false. GitHub reports a job
+# that reaches its time limit as cancelled.
+job_runs() {
+	local event="$1" result="$2" branch="$3" condition
+	condition="$(sed -n -E "/^    if: >-\$/,/^    [^ ]/ {
+		/^      / {
+			s|always\(\)|'always' == 'always'|
+			s|github\.event_name|'${event}'|g
+			s|github\.ref_name|'${branch}'|g
+			s|github\.event\.repository\.default_branch|'main'|g
+			s|needs\.[a-z]+\.result|'${result}'|g
+			p
+		}
+	}" "${WORK}/job.yml")"
+	if eval "[[ ${condition//$'\n'/ } ]]"; then
+		echo true
+	else
+		echo false
+	fi
+}
+
 mkdir -p "${WORK}/runner"
 cat >"${fake}/bin/gh" <<'SCRIPT'
 #!/usr/bin/env bash
@@ -575,48 +604,137 @@ fi
 SCRIPT
 chmod +x "${fake}/bin/gh"
 
+run_url=https://github.com/run/7
+issue_md="${WORK}/runner/issue.md"
+
 # Runs the script of the job with a fake gh, with the environment that the job gives
-# it and the result of the check nextcloud as the arguments, and prints its exit status.
+# it and the result of the job that it needs as the arguments, and prints its exit
+# status.
 report() {
 	local status=0
 	: >"${WORK}/gh.log"
-	rm -f "${WORK}/runner/issue.md"
+	rm -f "${issue_md}"
 	(PATH="${fake}/bin:${PATH}" FAKE_GH_LOG="${WORK}/gh.log" RUNNER_TEMP="${WORK}/runner" \
 		GH_TOKEN=fake GH_REPO=Dennis-Otto/paperless-unified-search \
-		TITLE="A supported Nextcloud release breaks the app" RUN_URL=https://github.com/run/7 FAILED="" VERSIONS="" \
+		TITLE="${title}" RUN_URL="${run_url}" FAILED="" VERSIONS="" VERSION="" \
 		"$@" bash "${WORK}/issue.sh" >"${WORK}/log" 2>&1) || status=$?
 	echo "${status}"
 }
 
+# What each of the four jobs does, in its own words: the workflow and the job; the title
+# of its issue; the comment that closes it; how a comment on it and a new issue start;
+# and what they then say about a run that fails and one that runs out of time.
+expect_issue_job() {
+	local workflow="$1" job="$2" closed="$4" still="$5" weekly="$6" failed="$7" out_of_time="$8"
+	local event result branch runs
+	title="$3"
+	workflow_job "${workflow}" "${job}"
+	job_script >"${WORK}/issue.sh"
+	expect "the script of the job ${job} of ${workflow}" true \
+		"$(grep --quiet --fixed-strings 'gh issue create' "${WORK}/issue.sh" && echo true || echo false)"
+	expect "the title of the issue of ${job}" "${title}" "$(sed -n 's/^ *TITLE: //p' "${WORK}/job.yml")"
+
+	expect "${job}: a failed run without an open issue" 0 "$(report env RESULT=failure)"
+	expect_in "${job}: the search for the open issue" \
+		"issue list --state open --search in:title \"${title}\"" "${WORK}/gh.log"
+	expect "${job}: the new issue" "issue create --title ${title} --body-file ${issue_md}" "$(tail -n 1 "${WORK}/gh.log")"
+	expect "${job}: the first line of the new issue" "${weekly} ${failed}: ${run_url}" "$(head -n 1 "${issue_md}")"
+	expect_in "${job}: the last paragraph of the new issue" "closes this issue once" "${issue_md}"
+	expect "${job}: a failed run with an open issue" 0 "$(report env RESULT=failure FAKE_ISSUE=12)"
+	expect "${job}: the comment about a failed run" "issue comment 12 --body ${still} ${failed}: ${run_url}" \
+		"$(tail -n 1 "${WORK}/gh.log")"
+
+	expect "${job}: a run out of time without an open issue" 0 "$(report env RESULT=cancelled)"
+	expect "${job}: the new issue about a run out of time" "issue create --title ${title} --body-file ${issue_md}" \
+		"$(tail -n 1 "${WORK}/gh.log")"
+	expect "${job}: the first line of the new issue about a run out of time" "${weekly} ${out_of_time}: ${run_url}" \
+		"$(head -n 1 "${issue_md}")"
+	expect "${job}: a run out of time with an open issue" 0 "$(report env RESULT=cancelled FAKE_ISSUE=12)"
+	expect "${job}: the comment about a run out of time" "issue comment 12 --body ${still} ${out_of_time}: ${run_url}" \
+		"$(tail -n 1 "${WORK}/gh.log")"
+
+	expect "${job}: a run that passes with an open issue" 0 "$(report env RESULT=success FAKE_ISSUE=12)"
+	expect "${job}: the issue closed by a run that passes" \
+		"issue close 12 --reason completed --comment ${closed}: ${run_url}" "$(tail -n 1 "${WORK}/gh.log")"
+	expect "${job}: a run that passes without an open issue" 0 "$(report env RESULT=success)"
+	expect "${job}: the calls of gh of a run that passes without an open issue" 1 "$(wc -l <"${WORK}/gh.log" | tr -d ' ')"
+
+	# Only the weekly run takes a cancelled job for its time limit: whoever starts a run
+	# by hand may cancel it. A pull request and a push never report.
+	while read -r event result branch runs; do
+		expect "${job}: whether it runs after ${result} in a ${event} on ${branch}" "${runs}" \
+			"$(job_runs "${event}" "${result}" "${branch}")"
+	done <<'CASES'
+schedule success main true
+schedule failure main true
+schedule cancelled main true
+schedule skipped main false
+workflow_dispatch success main true
+workflow_dispatch failure main true
+workflow_dispatch cancelled main false
+workflow_dispatch skipped main false
+workflow_dispatch success other false
+workflow_dispatch failure other false
+pull_request success 12/merge false
+pull_request failure 12/merge false
+pull_request cancelled 12/merge false
+pull_request skipped 12/merge false
+push success main false
+push failure main false
+push cancelled main false
+CASES
+}
+
+expect_issue_job e2e.yml nextcloud-issue "A supported Nextcloud release breaks the app" \
+	"The end-to-end tests pass again against every supported Nextcloud version" \
+	"The end-to-end tests still" "The weekly end-to-end tests" \
+	"stop before they test a version of Nextcloud" \
+	"run out of time or are cancelled before they end"
+# The versions that broke, from the outputs of run-all.sh.
 broken="Nextcloud 34 (34.0.1, failed), Nextcloud 35 (35.0.1, timed out)"
-expect "a failed run without an open issue" 0 "$(report env RESULT=failure FAILED="${broken}" VERSIONS="34 35")"
-expect_in "the search for the open issue" \
-	"issue list --state open --search in:title \"A supported Nextcloud release breaks the app\"" "${WORK}/gh.log"
-expect_in "the new issue" "issue create --title A supported Nextcloud release breaks the app --body-file ${WORK}/runner/issue.md" \
-	"${WORK}/gh.log"
+expect "a failed run with versions that broke" 0 "$(report env RESULT=failure FAILED="${broken}" VERSIONS="34 35")"
 expect_in "the run and the versions that broke in the new issue" \
-	"The weekly end-to-end tests fail against ${broken}: https://github.com/run/7" "${WORK}/runner/issue.md"
-expect_in "the command for the versions in the new issue" 'E2E_VERSIONS="34 35" bash tests/e2e/run-all.sh' "${WORK}/runner/issue.md"
-expect_in "the paragraph after the command in the new issue" "The job adds every further failed run here" "${WORK}/runner/issue.md"
-expect "a failed run with an open issue" 0 "$(report env RESULT=failure FAILED="${broken}" FAKE_ISSUE=12)"
-expect "the comment on the open issue" \
-	"issue comment 12 --body The end-to-end tests still fail against ${broken}: https://github.com/run/7" \
+	"The weekly end-to-end tests fail against ${broken}: ${run_url}" "${issue_md}"
+expect_in "the command for the versions in the new issue" 'E2E_VERSIONS="34 35" bash tests/e2e/run-all.sh' "${issue_md}"
+expect_in "the paragraph after the command in the new issue" "The job adds every further failed run here" "${issue_md}"
+expect "a failed run with versions that broke and an open issue" 0 \
+	"$(report env RESULT=failure FAILED="${broken}" FAKE_ISSUE=12)"
+expect "the comment with the versions that broke" \
+	"issue comment 12 --body The end-to-end tests still fail against ${broken}: ${run_url}" \
 	"$(tail -n 1 "${WORK}/gh.log")"
-expect "a run that ran out of time" 0 "$(report env RESULT=cancelled)"
-expect_in "the new issue about a run that ran out of time" \
-	"The weekly end-to-end tests run out of time or are cancelled before they end: https://github.com/run/7" \
-	"${WORK}/runner/issue.md"
-expect "a run that stopped before the tests" 0 "$(report env RESULT=failure)"
-expect_in "the new issue about a run that stopped before the tests" \
-	"The weekly end-to-end tests stop before they test a version of Nextcloud: https://github.com/run/7" \
-	"${WORK}/runner/issue.md"
-expect_in "the command without versions in the new issue" "\`bash tests/e2e/run-all.sh\` runs the same tests locally" "${WORK}/runner/issue.md"
-expect "a run that passes with an open issue" 0 "$(report env RESULT=success FAKE_ISSUE=12)"
-expect "the issue closed by a run that passes" \
-	"issue close 12 --reason completed --comment The end-to-end tests pass again against every supported Nextcloud version: https://github.com/run/7" \
+expect "a failed run without versions that broke" 0 "$(report env RESULT=failure)"
+expect_in "the command without versions in the new issue" "\`bash tests/e2e/run-all.sh\` runs the same tests locally" "${issue_md}"
+
+expect_issue_job e2e.yml paperless-issue "Paperless-ngx breaks the app" \
+	"The contract tests pass again against every line of Paperless-ngx" \
+	"The contract tests still" "The weekly contract tests" \
+	"fail against a real Paperless-ngx" \
+	"run out of time against a real Paperless-ngx or are cancelled before they end"
+
+expect_issue_job e2e.yml coming-issue "The coming Nextcloud breaks the app" \
+	"The end-to-end tests pass again against the coming Nextcloud" \
+	"The end-to-end tests still" "The weekly end-to-end tests" \
+	"fail against the coming Nextcloud, which the job could not set up" \
+	"run out of time against the coming Nextcloud or are cancelled before they end"
+# The version that the canary found, an output of canary.sh, once it got that far.
+coming="Nextcloud 35.0.0 RC1"
+expect "a failed run with the coming version" 0 "$(report env RESULT=failure VERSION="${coming}")"
+expect "the first line of the new issue with the coming version" \
+	"The weekly end-to-end tests fail against ${coming}: ${run_url}" "$(head -n 1 "${issue_md}")"
+expect "a run out of time with the coming version" 0 "$(report env RESULT=cancelled VERSION="${coming}" FAKE_ISSUE=12)"
+expect "the comment about a run out of time with the coming version" \
+	"issue comment 12 --body The end-to-end tests still run out of time against ${coming} or are cancelled before they end: ${run_url}" \
 	"$(tail -n 1 "${WORK}/gh.log")"
-expect "a run that passes without an open issue" 0 "$(report env RESULT=success)"
-expect "the calls of gh of a run that passes without an open issue" 1 "$(wc -l <"${WORK}/gh.log" | tr -d ' ')"
+expect "a run that passes with the coming version" 0 "$(report env RESULT=success VERSION="${coming}" FAKE_ISSUE=12)"
+expect "the issue closed with the coming version" \
+	"issue close 12 --reason completed --comment The end-to-end tests pass again against ${coming}: ${run_url}" \
+	"$(tail -n 1 "${WORK}/gh.log")"
+
+expect_issue_job demo.yml demo-issue "The demo breaks" \
+	"The demo runs again" \
+	"The demo still" "The weekly run of the demo" \
+	"fails" \
+	"runs out of time or is cancelled before it ends"
 
 ## The journal of the mock
 
@@ -1302,4 +1420,4 @@ if ((failures > 0)); then
 	echo "${failures} of ${checks} checks of the scripts of the end-to-end tests failed." >&2
 	exit 1
 fi
-echo "The ${checks} checks of scope.sh, run-all.sh, package.sh, upgrade.sh up to Docker, the issue of the weekly run, the journal of the mock, the comparison of the mock with Paperless, the check of the log of Nextcloud, what the upgrade compares, the pipes of the scripts, the animation of the demo, the videos of the animations and the steps of the demo pass."
+echo "The ${checks} checks of scope.sh, run-all.sh, package.sh, upgrade.sh up to Docker, the issues of the weekly runs, the journal of the mock, the comparison of the mock with Paperless, the check of the log of Nextcloud, what the upgrade compares, the pipes of the scripts, the animation of the demo, the videos of the animations and the steps of the demo pass."
