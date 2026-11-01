@@ -4,7 +4,8 @@ name: Bot health
 # last changed its schedule, and that of another run to whoever started it, which
 # here is mostly the release app, so a failing bot went unnoticed for days. When a
 # run of a bot or a scheduled workflow ends on the default branch, this bot runs its
-# failed jobs once more if a second try can pass; a failure that stays keeps one
+# failed jobs once more if a second try can pass, as it does with a job that GitHub
+# cancelled at its time limit; a failure that stays keeps one
 # issue per workflow open, with the label bot-failure, the failed jobs, their steps
 # and their first errors, and the next run that passes closes it. Every night it
 # also looks at the latest run of every workflow, those of the project and the
@@ -38,7 +39,7 @@ jobs:
       github.event.workflow_run.head_branch == github.event.repository.default_branch &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
       !contains(fromJSON('["pull_request", "pull_request_target"]'), github.event.workflow_run.event) &&
-      contains(fromJSON('["success", "failure", "timed_out", "startup_failure"]'), github.event.workflow_run.conclusion)
+      contains(fromJSON('["success", "failure", "timed_out", "cancelled", "startup_failure"]'), github.event.workflow_run.conclusion)
     # One run at a time for each workflow, so that two ends never open two issues.
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.workflow_run.workflow_id }}
@@ -54,13 +55,36 @@ jobs:
       issues: write
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           disable-sudo-and-containers: true
           allowed-endpoints: >-
             api.github.com:443
             github.com:443
+      - name: Wait until Harden-Runner lets the hosts through
+        # The runner may have asked for an address past Harden-Runner, which then blocks
+        # that address for as long as systemd-resolved keeps it, up to a minute.
+        timeout-minutes: 4
+        env:
+          HOSTS: >-
+            api.github.com:443
+            github.com:443
+        run: |
+          deadline=$(($(date +%s) + 120))
+          for endpoint in $HOSTS; do
+            host="${endpoint%:*}"
+            # A wildcard names no host to ask.
+            [[ "$host" == '*.'* ]] && continue
+            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+              if (($(date +%s) >= deadline)); then
+                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                break
+              fi
+              echo "Harden-Runner still blocks $host, waiting 3 s."
+              sleep 3
+            done
+          done
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -108,13 +132,36 @@ jobs:
       issues: write
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           disable-sudo-and-containers: true
           allowed-endpoints: >-
             api.github.com:443
             github.com:443
+      - name: Wait until Harden-Runner lets the hosts through
+        # The runner may have asked for an address past Harden-Runner, which then blocks
+        # that address for as long as systemd-resolved keeps it, up to a minute.
+        timeout-minutes: 4
+        env:
+          HOSTS: >-
+            api.github.com:443
+            github.com:443
+        run: |
+          deadline=$(($(date +%s) + 120))
+          for endpoint in $HOSTS; do
+            host="${endpoint%:*}"
+            # A wildcard names no host to ask.
+            [[ "$host" == '*.'* ]] && continue
+            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+              if (($(date +%s) >= deadline)); then
+                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                break
+              fi
+              echo "Harden-Runner still blocks $host, waiting 3 s."
+              sleep 3
+            done
+          done
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

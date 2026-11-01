@@ -41,7 +41,7 @@ jobs:
       contents: read
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           disable-sudo-and-containers: true
@@ -57,6 +57,38 @@ jobs:
             ${{ vars.PUBLISH_TO == 'npm' && 'registry.npmjs.org:443' || '' }}
             ${{ vars.PUBLISH_TO == 'ghcr' && 'ghcr.io:443 pkg-containers.githubusercontent.com:443' || '' }}
             ${{ vars.PUBLISH_TO == 'nextcloud-appstore' && 'apps.nextcloud.com:443' || '' }}
+      - name: Wait until Harden-Runner lets the hosts through
+        # The runner may have asked for an address past Harden-Runner, which then blocks
+        # that address for as long as systemd-resolved keeps it, up to a minute.
+        timeout-minutes: 4
+        env:
+          HOSTS: >-
+            api.github.com:443
+            github.com:443
+            release-assets.githubusercontent.com:443
+            rekor.sigstore.dev:443
+            tuf-repo-cdn.sigstore.dev:443
+            tuf-repo.github.com:443
+            tmaproduction.blob.core.windows.net:443
+            ${{ vars.PUBLISH_TO == 'pypi' && 'pypi.org:443' || '' }}
+            ${{ vars.PUBLISH_TO == 'npm' && 'registry.npmjs.org:443' || '' }}
+            ${{ vars.PUBLISH_TO == 'ghcr' && 'ghcr.io:443 pkg-containers.githubusercontent.com:443' || '' }}
+            ${{ vars.PUBLISH_TO == 'nextcloud-appstore' && 'apps.nextcloud.com:443' || '' }}
+        run: |
+          deadline=$(($(date +%s) + 120))
+          for endpoint in $HOSTS; do
+            host="${endpoint%:*}"
+            # A wildcard names no host to ask.
+            [[ "$host" == '*.'* ]] && continue
+            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+              if (($(date +%s) >= deadline)); then
+                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                break
+              fi
+              echo "Harden-Runner still blocks $host, waiting 3 s."
+              sleep 3
+            done
+          done
       - name: Verify the release as its users can
         env:
           GH_TOKEN: ${{ github.token }}

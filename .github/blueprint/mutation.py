@@ -9,6 +9,11 @@ shows only where its copy of the repository, mutants/, is. The report of the run
 the parts together into one score, lists first the survivors that change what the
 code does, which a test should notice, and opens one issue when the score of main
 drops below that of the run before; the issue closes once a run is back at that score.
+
+Before any part, one job runs the stats of mutmut: the whole suite once, with the
+trampolines that record which tests reach each function. It takes ten times as long
+as the tests, so the job hands its stats to every part, which loads them and runs
+only its mutants, and a test that fails without any mutant stops the run there.
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ import ast
 import configparser
 import difflib
 import fnmatch
+import hashlib
 import json
 import math
 import re
@@ -38,6 +44,10 @@ from blueprint.github import Api
 # part.
 PART_MUTANTS = 3000
 MOST_PARTS = 8
+# A pull request that changes how the mutants run tries a sample of about so many, in
+# one part: enough to show a defect of the run within minutes, while the schedule runs
+# every part.
+SAMPLE_MUTANTS = 200
 # The score and the score of the logic count as dropped when they fall by more than
 # so many points: a run measures the same code a little differently at times, as when
 # a mutant hits its time limit.
@@ -366,25 +376,88 @@ def split(found: Sequence[Module], parts: int | None) -> list[list[Unit]]:
     return buckets
 
 
-def plan(root: Path, parts: int | None) -> tuple[str, list[dict[str, Any]]]:
+def sampled(found: Sequence[Module], mutants: int) -> list[Unit]:
+    """The functions of a sample of about so many mutants, for one part, or none when
+    the code has no more, which the part then runs whole. The order of a hash of their
+    names picks them: a pull request tries the same ones each time, and a new function
+    changes the sample by itself only. A function larger than the sample stays out,
+    unless every one is."""
+    if sum(module.mutants for module in found) <= mutants:
+        return []
+    units = sorted(
+        (unit for module in found for unit in module.split() if unit.mutants),
+        key=lambda unit: hashlib.sha256(unit.name.encode()).hexdigest(),
+    )
+    chosen: list[Unit] = []
+    count = 0
+    for unit in units:
+        if count + unit.mutants <= mutants:
+            chosen.append(unit)
+            count += unit.mutants
+    return chosen or [min(units, key=lambda unit: (unit.mutants, unit.name))]
+
+
+def plan(
+    root: Path, parts: int | None, sample: bool = False
+) -> tuple[str, list[dict[str, Any]]]:
     """The tool and the parts of the run, as the matrix of the workflow takes them.
-    One part runs every mutant; several each run those of their code."""
+    One part runs every mutant; several each run those of their code, and the sample
+    of a pull request those of its functions."""
     kind = kind_of(root)
     if not kind:
         return "", []
-    buckets = split(modules(root), parts) if kind == "python" else [[]]
+    every = True
+    if kind != "python":
+        buckets: list[list[Unit]] = [[]]
+    elif sample:
+        found = modules(root)
+        chosen = sampled(found, SAMPLE_MUTANTS)
+        buckets = [chosen or [module.whole() for module in found]]
+        every = not chosen
+    else:
+        buckets = split(modules(root), parts)
+        every = len(buckets) == 1
     return kind, [
         {
             "part": number,
             "parts": len(buckets),
             # One on each line, for the shell of the step.
             "patterns": ""
-            if len(buckets) == 1
+            if every
             else "\n".join(pattern for unit in bucket for pattern in unit.patterns),
             "mutants": sum(unit.mutants for unit in bucket),
         }
         for number, bucket in enumerate(buckets, 1)
     ]
+
+
+def configure(root: Path) -> str | None:
+    """The section [mutmut] of setup.cfg for a project without a configuration of
+    mutmut of its own, or None: the code that the plan splits, every file of the
+    repository, which the tests may read, and no test marked mutation_unsafe, which
+    needs the repository itself rather than mutmut's copy. The stats and every part
+    write the same one, or mutmut would collect the stats again in each part.
+    mutmut reads a list of setup.cfg as one item on each line."""
+    if configuration(root) is not None:
+        return None
+    copied = sorted(
+        path.name
+        for path in root.iterdir()
+        if path.name not in (".git", "mutants", "setup.cfg")
+    )
+
+    def listed(key: str, items: Iterable[str]) -> list[str]:
+        return [f"{key}=", *(f"    {item}" for item in items)]
+
+    return "\n".join(
+        [
+            "[mutmut]",
+            *listed("source_paths", default_paths(root)),
+            *listed("also_copy", copied),
+            *listed("pytest_add_cli_args", ["-m", "not mutation_unsafe"]),
+            "",
+        ]
+    )
 
 
 # ---------------------------------------------------------------- the kinds of survivors
@@ -616,13 +689,35 @@ def id_of_test(text: str) -> str:
 
 
 def failing_tests(output: str) -> list[str]:
-    """The tests that pytest reports as failed or in error, once each."""
+    """The tests that pytest reports as failed or in error, once each, or else those
+    of the tracebacks: pytest may print no short summary, as with -q twice, of the
+    project's addopts and of mutmut."""
     found: list[str] = []
     for line in last_words(output):
         line = line.strip()
         prefix = next((start for start in FAILING if line.startswith(start)), "")
         test = id_of_test(line.removeprefix(prefix)) if prefix else ""
         if ("::" in test or test.endswith(".py")) and test not in found:
+            found.append(test)
+    return found or traceback_tests(output)
+
+
+# A frame of a traceback of --tb=native, which mutmut asks pytest for, in a test:
+# '  File "/home/runner/work/a/a/mutants/tests/test_a.py", line 7, in test_one'.
+FRAME = re.compile(r'^\s*File "(?P<path>[^"]+)", line \d+, in (?P<test>test\w*)\s*$')
+
+
+def traceback_tests(output: str) -> list[str]:
+    """The tests of the frames of the tracebacks of pytest, once each, by their path
+    in the repository: mutmut runs them in its copy, mutants/."""
+    found: list[str] = []
+    for line in last_words(output):
+        match = FRAME.match(line)
+        if not match:
+            continue
+        path = match["path"].replace("\\", "/").rpartition("/mutants/")[2]
+        test = f"{path}::{match['test']}"
+        if test not in found:
             found.append(test)
     return found
 
@@ -727,6 +822,52 @@ def no_mutant_ran_error(part: Mapping[str, Any]) -> str:
             "No mutant ran; the summary of the job has the end of the output of mutmut."
         )
     return f"::error title=No mutant ran::{escape_data(message)}"
+
+
+# ---------------------------------------------------------------- the stats
+
+
+def read_stats(path: Path) -> dict[str, Any] | None:
+    """The stats that mutmut saved in mutants/mutmut-stats.json, which it does only
+    once every test passed, or None."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) and "duration_by_test" in data else None
+
+
+def stopped(output: str) -> dict[str, Any]:
+    """The stats that mutmut didn't save, as a part that measured nothing has them:
+    the tests that failed without any mutant and the end of its output."""
+    return {
+        "failing": failing_tests(output),
+        "last_words": last_words(output)[-LAST_WORDS:],
+    }
+
+
+def stats_summary(stats: Mapping[str, Any] | None, output: str) -> str:
+    """The summary of the job of the stats: what they found, or why mutmut saved
+    none, in which case no part starts."""
+    lines = ["### The stats of mutmut", ""]
+    if stats is not None:
+        tests = len(stats.get("duration_by_test") or {})
+        functions = len(stats.get("tests_by_mangled_function_name") or {})
+        lines.append(
+            "The tests ran once in mutmut's copy of the repository, which records the "
+            f"tests that reach each function: {tests} tests reach {functions} "
+            "functions. Every part loads these stats and runs only its mutants."
+        )
+    else:
+        if NOTHING_MATCHES in output:
+            lines += [
+                "**mutmut looked for its mutants before it saved its stats.** This "
+                "version of mutmut no longer collects them first, so the job of the "
+                "stats needs a change before the parts can load them.",
+                "",
+            ]
+        lines += ["No part runs.", "", no_mutant_ran(stopped(output))]
+    return "\n".join(lines) + "\n"
 
 
 # ---------------------------------------------------------------- the whole run

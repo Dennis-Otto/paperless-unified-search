@@ -324,7 +324,9 @@ def mutation_command(
     api: Api | None,
 ) -> int:
     if arguments.action == "plan":
-        kind, parts = mutation.plan(root, parts_count(arguments.parts))
+        kind, parts = mutation.plan(
+            root, parts_count(arguments.parts), arguments.sample
+        )
         print(f"kind={kind}")
         print(f"parts={json.dumps(parts, ensure_ascii=False)}")
         for part in parts:
@@ -333,6 +335,28 @@ def mutation_command(
                 "mutants",
                 file=sys.stderr,
             )
+        return 0
+    if arguments.action == "configure":
+        section = mutation.configure(root)
+        if section is None:
+            print("The project configures mutmut itself; setup.cfg stays as it is.")
+            return 0
+        setup = root / "setup.cfg"
+        before = setup.read_text(encoding="utf-8") if setup.is_file() else ""
+        if before and not before.endswith("\n"):
+            before += "\n"
+        setup.write_text(before + section, encoding="utf-8", newline="\n")
+        print(section, end="")
+        return 0
+    if arguments.action == "stats":
+        printed = read_output(Path(arguments.output))
+        stats = mutation.read_stats(root / arguments.stats)
+        print(mutation.stats_summary(stats, printed), end="")
+        if stats is None:
+            print(
+                mutation.no_mutant_ran_error(mutation.stopped(printed)), file=sys.stderr
+            )
+            return 1
         return 0
     if arguments.action == "collect":
         number, _, total = arguments.part.partition("/")
@@ -1485,6 +1509,26 @@ def add_mutation_parsers(
         "--parts",
         default="auto",
         help="the number of parts, or auto for the estimate of the mutants",
+    )
+    plan_parser.add_argument(
+        "--sample",
+        action="store_true",
+        help="one part with a sample of the functions, as a pull request tries them",
+    )
+    mutation_actions.add_parser(
+        "configure",
+        help="the configuration of mutmut in setup.cfg, unless the project has one",
+    )
+    stats_parser = mutation_actions.add_parser(
+        "stats",
+        help="the summary of the stats of mutmut, or the tests that fail without any "
+        "mutant",
+    )
+    stats_parser.add_argument("output", help="what mutmut run printed")
+    stats_parser.add_argument(
+        "--stats",
+        default="mutants/mutmut-stats.json",
+        help="the stats that mutmut saved",
     )
     collect_mutants_parser = mutation_actions.add_parser(
         "collect",

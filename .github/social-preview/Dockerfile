@@ -1,3 +1,3 @@
 # The browser that renders the social preview of the repository: scripts/social-preview.sh
 # runs the headless Chromium of this image. Renovate keeps it current.
-FROM mcr.microsoft.com/playwright/python:v1.63.0-noble@sha256:72bd171a9ffc2b4b59532aaa6210e21014d07093120dc25528870c0b840da1f0
+FROM mcr.microsoft.com/playwright/python:v1.64.1-noble@sha256:330d401ae23c905896a0c26c66c36fc971b621519e7b11b435a8328d7bf6e031
