@@ -111,8 +111,10 @@ problem = """`tests/e2e/paperless-contract.sh` found that a real Paperless-ngx, 
 line that the name of the check names, no longer answers as the app reads it: a field
 of another type, a date, the markup of an excerpt, a page, an error, the newest
 documents of the dashboard or the names of correspondents, document types and tags, directly
-or through Nextcloud. The summary of the check names the version of Paperless and the
-promise that it broke."""
+or through Nextcloud. Or the mock, `tests/e2e/mock_server.py`, answers the requests of the
+app in another form than that Paperless. The summary of the check names the version of
+Paperless and the promise that it broke, or each point where the mock differs, what each
+says and the requests that show it."""
 why = """The end-to-end tests run against a mock of Paperless-ngx, and this check
 makes sure that the app and the mock still read and answer as Paperless does, so that
 neither a change of the app nor a new release of Paperless can break the search of
@@ -123,8 +125,9 @@ pull request that changes no file that it covers passes it in seconds."""
 fix = """Run the contract with Docker against the same line of Paperless-ngx. When
 Paperless changed, let the app read the answers of both lines, and let the mock,
 `tests/e2e/mock_server.py`, answer as Paperless does now; when the app changed, keep it
-to the contract. `KEEP_E2E=1` leaves the containers running, so that you can look
-inside them:"""
+to the contract. When only the mock differs, let it answer as the table in the summary says,
+which `parity.py` compares; a point that only Paperless-ngx 2 says goes into `KNOWN` there,
+with its reason. `KEEP_E2E=1` leaves the containers running, so that you can look inside them:"""
 commands = [
   "PAPERLESS=3 bash tests/e2e/paperless-contract.sh",
   "PAPERLESS=2 bash tests/e2e/paperless-contract.sh",

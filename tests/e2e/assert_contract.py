@@ -16,9 +16,11 @@ the token of the account that may only view and then with that of the superuser.
 gives the invoice a correspondent, a type and two tags, one of them the tag of the inbox,
 checks their names as the app asks for them with id__in, and what each permission of the account of the token gives the search, as the
 table of docs/configure.md says, directly and in the results of Nextcloud, where the names
-show, and every row of the table of the search syntax of README.md. It prints a report in
-Markdown, which paperless-contract.sh adds to the summary of the job, and fails with the
-first broken promise.
+show, and every row of the table of the search syntax of README.md. Last, it sends the
+requests of the app to this Paperless and to the mock, which runs beside it, and compares
+the form of their answers (parity.py), since the required check "nextcloud" believes the
+mock. It prints a report in Markdown, which paperless-contract.sh adds to the summary of the
+job, and fails with the first broken promise or with every difference of the mock.
 
     ACCEPT='application/json; version=9' FIELDS=id,title,… RECENT_FIELDS=id,title,added,… UNKNOWN_DOCUMENT=… HIDDEN_DOCUMENT=… LINE=3 python assert_contract.py
 
@@ -42,6 +44,8 @@ from urllib.error import HTTPError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
+import parity
+
 PAPERLESS = "http://paperless:8000"
 NEXTCLOUD = "http://nextcloud"
 # The accounts of the tests alone, from compose.paperless.yaml and compose.yaml.
@@ -61,6 +65,8 @@ SEED = {
 # characters that Paperless escapes in its excerpt.
 TERM = "invoice"
 RARE_TERM = "electricity"
+# The term that finds all documents of SEED, as many as the mock finds for its own term.
+EVERY_TERM = "contract"
 # A range of dates that is still being typed, which Paperless 3 can't parse yet.
 UNFINISHED = "invoice created:[2026 to"
 # The longest that Paperless may take to read the documents and to index them.
@@ -155,6 +161,8 @@ class Report:
 
     def __init__(self):
         self.rows = []
+        # What the table doesn't hold, in Markdown: the differences of the mock.
+        self.details = ""
 
     def passed(self, check, detail):
         self.rows.append((check, f"passed: {detail}"))
@@ -453,10 +461,11 @@ def check_privileges(paperless, report):
 
     # Without the permission to view its UI settings, Paperless doesn't say: the app then
     # warns about nothing, and occ says that it can't tell.
-    refused = paperless.ui_settings(paperless.account(["view_document"])[1])
+    stranger = paperless.account(["view_document"])[1]
+    refused = paperless.ui_settings(stranger)
     expect(refused.status == 403, f"/api/ui_settings/ answered an account without view_uisettings with HTTP {refused.status}, not 403: {refused.body[:300]!r}")
     report.passed("An account that may not view its UI settings", f"HTTP {refused.status}")
-    return viewer_id, viewer
+    return viewer_id, viewer, stranger
 
 
 def check_similar(paperless, ids, viewer, unknown, hidden, report):
@@ -860,6 +869,34 @@ def check_syntax(paperless, ids, line, report):
     report.passed("The owner of a document", f"{code('owner:')} finds the documents of an account in Paperless-ngx 2 alone" if line == "2" else f"{code('owner:')} is no field of Paperless-ngx 3")
 
 
+def check_parity(paperless, ids, line, viewer, stranger, report):
+    """The mock against this Paperless: the requests of the app to both, whose answers have
+    to have the same form (parity.py). The required check "nextcloud" believes the mock, so
+    every difference is one that it can't see. By now the account may view the documents of
+    the contract, and their names; stranger may view none of them."""
+    until(f"The account didn't find all documents for {EVERY_TERM!r}", lambda: len(hits(paperless, viewer, EVERY_TERM)) == len(SEED))
+    invoice = ids["Contract invoice"]
+    archive = parity.Archive(
+        origin=PAPERLESS,
+        token=viewer,
+        superuser=paperless.token,
+        stranger=stranger,
+        several=EVERY_TERM,
+        marked=RARE_TERM,
+        paged=EVERY_TERM,
+        document=invoice,
+        hidden=invoice,
+        correspondent=paperless.named("correspondents", CORRESPONDENT),
+        document_type=paperless.named("document_types", DOCUMENT_TYPE),
+        tag=paperless.named("tags", TAG_NAME),
+    )
+    comparison = parity.compare(line, archive, parity.MOCK, paperless.accept, ",".join(paperless.fields), ",".join(paperless.recent_fields))
+    report.details = comparison.table()
+    expect(not comparison.differences, f"{len(comparison.points())} point(s) of {comparison.asked} requests of the app differ between this Paperless and the mock, which the required check nextcloud believes. The table below names them.")
+    known = "; ".join(comparison.known.values())
+    report.passed("The mock answers as this Paperless does", f"{comparison.asked} requests of the app: the same status, media type, versions, keys and types, links and markup" + (f", but where {known}" if known else ""))
+
+
 def main():
     accept = os.environ.get("ACCEPT", "")
     fields = [field for field in os.environ.get("FIELDS", "").split(",") if field]
@@ -881,16 +918,19 @@ def main():
         report.passed("Documents", f"{len(ids)} synthetic text files, read and indexed")
         version, api_version, shown = check_paperless(paperless, line, report)
         heading = f"### The contract with Paperless-ngx {version} (newest API version {api_version})"
-        viewer_id, viewer = check_privileges(paperless, report)
+        viewer_id, viewer, stranger = check_privileges(paperless, report)
         check_similar(paperless, ids, viewer, unknown, hidden, report)
         check_nextcloud(paperless, line, ids, version, api_version, shown, viewer, report)
         check_permissions(paperless, ids, viewer_id, viewer, report)
         check_syntax(paperless, ids, line, report)
+        check_parity(paperless, ids, line, viewer, stranger, report)
     except Broken as broken:
         status = 1
         report.failed(broken)
         print(f"The contract is broken: {broken}", file=sys.stderr)
     print(f"{heading}\n\nThe app asks for {code(accept)}.\n\n{report.table()}\n")
+    if report.details:
+        print(f"{report.details}\n")
     return status
 
 
