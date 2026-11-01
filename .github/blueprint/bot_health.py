@@ -36,6 +36,9 @@ LABEL_DESCRIPTION = (
 # The type of these issues, which every repository has among its labels.
 TYPE = "maintenance"
 PULL_REQUESTS = frozenset({"pull_request", "pull_request_target"})
+# The verification that a published release starts: its run is one of the tag of the
+# release, not of the default branch, and it is the only such run that counts.
+VERIFICATION = "Release verification"
 FAILED = frozenset({"failure", "timed_out", "startup_failure"})
 OUT_OF_TIME = "The job has exceeded the maximum execution time"
 PASSED = "success"
@@ -99,6 +102,7 @@ EVENTS = {
     "push": "a push",
     "workflow_dispatch": "hand",
     "workflow_run": "the end of another workflow",
+    "release": "a published release",
 }
 
 
@@ -174,6 +178,21 @@ class Run:
             and self.head == repo
         )
 
+    @property
+    def key(self) -> str:
+        """What its issue is about: the workflow, or for the verification of a published
+        release that release. The weekly run checks the latest release only, so its pass
+        says nothing about a prerelease that fails, and an issue of its own notifies
+        where an update of the issue of the workflow would not."""
+        return f"{self.path}@{self.branch}" if self.event == "release" else self.path
+
+    def verifies_a_published_release(self, repo: str) -> bool:
+        """Whether the run is the verification that a release starts when someone
+        publishes it outside the release workflow."""
+        return (
+            self.event == "release" and self.name == VERIFICATION and self.head == repo
+        )
+
     def deserves_second_try(self) -> bool:
         return (
             self.attempt == 1
@@ -196,7 +215,7 @@ class Issue:
 
 def open_issues(api: Api, repo: str) -> dict[str, Issue]:
     """The open issues of the bot by the key in their state: the path of a workflow,
-    or renovate. Where a key has several, because two runs of the bot opened one each
+    with the tag of a published release for its verification, or renovate. Where a key has several, because two runs of the bot opened one each
     at the same moment, the newest one stays and the older ones close."""
     found: dict[str, Issue] = {}
     listed = api.get(f"repos/{repo}/issues?labels={LABEL}&state=open&per_page=100")
@@ -340,6 +359,16 @@ def failure_table(run: Run, found: list[Failure]) -> str:
     return "\n".join(lines)
 
 
+def published_note(run: Run, tag: str) -> str:
+    """What the issue about a published release adds: no other run closes it."""
+    if run.event != "release":
+        return ""
+    return (
+        f" Only a run for `{tag}` closes this issue: if the release shouldn't stand, "
+        "take it down and close the issue by hand."
+    )
+
+
 def failure_body(run: Run, branch: str, found: list[Failure], state: Json) -> str:
     started = EVENTS.get(run.event, f"the event {run.event}")
     failed = state["failed"]
@@ -355,7 +384,7 @@ def failure_body(run: Run, branch: str, found: list[Failure], state: Json) -> st
         f"{failure_table(run, found)}\n\n"
         "Fix what the error names, or run the workflow again under "
         f"*Actions → {run.name}* when GitHub was at fault. A failure in another job "
-        "or step adds a comment here.\n"
+        f"or step adds a comment here.{published_note(run, branch)}\n"
     )
 
 
@@ -370,7 +399,7 @@ def report(api: Api, repo: str, branch: str, run: Run, issue: Issue | None) -> s
     place = where(run, found)
     if issue is None:
         state = {
-            "key": run.path,
+            "key": run.key,
             "run": run.id,
             "attempt": run.attempt,
             "failed": 1,
@@ -450,7 +479,7 @@ def look_at(
     """What a finished run of the default branch means for its issue. With second_try,
     a first failure that a second try can fix runs again instead; without it, as in
     the daily look, such a failure is reported once it is too old for its second try."""
-    issue = issues.get(run.path)
+    issue = issues.get(run.key)
     if run.conclusion == PASSED:
         if issue is None:
             return "passes"
@@ -491,14 +520,14 @@ def watch_run(api: Api, repo: str, run_id: int, now: datetime) -> str:
         return f"GitHub doesn't know the run {run_id}."
     run = Run.of(data)
     branch = default_branch(api, repo)
-    if not run.of_branch(repo, branch):
+    published = run.verifies_a_published_release(repo)
+    if not (run.of_branch(repo, branch) or published):
         return f"{run.name}: not a run of `{branch}`, nothing to do."
     if run.status != "completed":
         return f"{run.name}: runs again, its next end counts."
     issues = open_issues(api, repo)
-    return (
-        f"{run.name}: {look_at(api, repo, branch, run, issues, now, second_try=True)}."
-    )
+    ref = run.branch if published else branch
+    return f"{run.name}: {look_at(api, repo, ref, run, issues, now, second_try=True)}."
 
 
 # ---------------------------------------------------------------- the daily look
@@ -990,11 +1019,19 @@ def problems_text(problems: Mapping[Problem, int], hidden: int, run: str) -> str
     return "\n".join(lines) + "\n"
 
 
-def renovate_report(api: Api, repo: str, log: Path, run: str) -> str:
-    """Keeps the one issue with Renovate's problems current from the log of a run."""
-    if not log.is_file():
+def renovate_report(
+    api: Api, repo: str, logs: Iterable[Path], run: str, *, complete: bool = True
+) -> str:
+    """Keeps the one issue with Renovate's problems current from the logs of a run, one
+    for each repository where the blueprint runs Renovate for several. A run that isn't
+    complete missed a repository, which may be the one with the problems, so it doesn't
+    count towards closing the issue."""
+    written = [log for log in logs if log.is_file()]
+    if not written:
         return "Renovate wrote no log of problems; the issue stays as it is.\n"
-    problems = renovate_problems(log.read_text(encoding="utf-8").splitlines())
+    problems = renovate_problems(
+        line for log in written for line in log.read_text("utf-8").splitlines()
+    )
     known: dict[str, bool] = {}
     shown = {
         problem: count
@@ -1006,6 +1043,11 @@ def renovate_report(api: Api, repo: str, log: Path, run: str) -> str:
     if not problems:
         if issue is None:
             return "Renovate logged no warning and no error.\n"
+        if not complete:
+            return (
+                "Renovate logged no problem, but not every repository finished; "
+                f"#{issue.number} stays as it is.\n"
+            )
         quiet = int(issue.state.get("quiet") or 0) + 1
         if quiet >= QUIET_RUNS:
             close_issue(

@@ -1035,7 +1035,11 @@ def check_environments(
         }
         for secret in config.get("secrets", []):
             if secret not in present:
-                command = f"gh secret set {secret} --env {name} --repo {repo}"
+                command = (
+                    "python3 .github/blueprint.py app connect --key-file FILE"
+                    if secret == "RELEASE_AUTOMATION_PRIVATE_KEY"
+                    else f"gh secret set {secret} --env {name} --repo {repo}"
+                )
                 drift.append(
                     Drift(
                         f"secret {secret} of {name}", "set", "missing", manual=command

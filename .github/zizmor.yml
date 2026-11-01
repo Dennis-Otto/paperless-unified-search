@@ -3,12 +3,6 @@
 # the Findings workflow keeps it fixed or accepted.
 # https://github.com/Dennis-Otto/repo-blueprint
 rules:
-  secrets-inherit:
-    ignore:
-      # The isolated build of a release signs a Nextcloud app with the key of the
-      # environment release, which a called workflow sees only with the secrets of
-      # its caller; the build is a workflow of this repository.
-      - release.yml
   dangerous-triggers:
     ignore:
       # These workflows start on pull_request_target or workflow_run so that they
@@ -51,7 +45,8 @@ rules:
       # build attached to the release, after it checked its provenance.
       - publish-store.yml
       # The bot-health bot starts after the runs of the bots and acts only on those of
-      # the default branch: it runs their failed jobs again, reads their jobs and
+      # the default branch and on the verification of a published release: it runs their
+      # failed jobs again, reads their jobs and
       # annotations and writes issues, and checks out only the default branch.
       - bot-health.yml
       # The branch bot starts when auto-merge of a pull request is turned on or off and
