@@ -888,7 +888,7 @@ broken="Nextcloud 34 (34.0.1, failed), Nextcloud 35 (35.0.1, timed out)"
 expect "a failed run with versions that broke" 0 "$(report env RESULT=failure FAILED="${broken}" VERSIONS="34 35")"
 expect_in "the run and the versions that broke in the new issue" \
 	"The weekly end-to-end tests fail against ${broken}: ${run_url}" "${issue_md}"
-expect_in "the command for the versions in the new issue" 'E2E_VERSIONS="34 35" bash tests/e2e/run-all.sh' "${issue_md}"
+expect_in "the command for the versions in the new issue" 'E2E_IMAGES=floating E2E_VERSIONS="34 35" bash tests/e2e/run-all.sh' "${issue_md}"
 expect_in "the paragraph after the command in the new issue" "The job adds every further failed run here" "${issue_md}"
 expect "a failed run with versions that broke and an open issue" 0 \
 	"$(report env RESULT=failure FAILED="${broken}" FAKE_ISSUE=12)"

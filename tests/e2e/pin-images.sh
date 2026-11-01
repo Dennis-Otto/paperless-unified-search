@@ -88,7 +88,6 @@ if ((${#findings[@]} == 0)); then
 	exit 0
 fi
 if [[ "${mode}" == check ]]; then
-	printf '%s: %s\n' "${findings[@]/#/${SHOWN}}" >/dev/null
 	for finding in "${findings[@]}"; do
 		echo "${SHOWN}: ${finding}"
 	done

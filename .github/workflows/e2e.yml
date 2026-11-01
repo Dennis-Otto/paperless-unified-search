@@ -180,15 +180,15 @@ jobs:
           {
             printf 'The weekly end-to-end tests %s: %s\n\n' "$broken" "$RUN_URL"
             cat <<'TEXT'
-          The required check `nextcloud` of `.github/workflows/e2e.yml` runs `tests/e2e/run-all.sh` every Monday, also in a week without a change of the app: the end-to-end tests against the current release behind each image `nextcloud:<version>-apache`, for every version from `min-version` to `max-version` of `appinfo/info.xml`. Most often a new release of Nextcloud behind one of these images broke the app or its tests; its users meet the same break, and every pull request that changes the app fails the check until it is fixed.
+          The required check `nextcloud` of `.github/workflows/e2e.yml` runs `tests/e2e/run-all.sh` every Monday, also in a week without a change of the app: the end-to-end tests against the current release behind each image `nextcloud:<version>-apache`, for every version from `min-version` to `max-version` of `appinfo/info.xml`. Most often a new release of Nextcloud behind one of these images broke the app or its tests; its users meet the same break. Pull requests keep testing the pins of `tests/e2e/nextcloud-images.txt`, and the pull request of Renovate that moves them to this release can't merge until the app is fixed. Test the fix with `E2E_IMAGES=floating`, against this release.
 
           The annotation of each version that broke names it; the group of the log named after the version, such as *Nextcloud 35 (failed, 312 s)*, shows the step that stopped and the logs of its containers, and the summary of the run the release of Nextcloud behind each image and its digest.
 
           TEXT
             if [[ -n "${VERSIONS:-}" ]]; then
-              printf "\`E2E_VERSIONS=\"%s\" bash tests/e2e/run-all.sh\` runs the same tests locally with Docker, against the versions that broke.\n\n" "$VERSIONS"
+              printf "\`E2E_IMAGES=floating E2E_VERSIONS=\"%s\" bash tests/e2e/run-all.sh\` runs the same tests locally with Docker, against the versions that broke.\n\n" "$VERSIONS"
             else
-              printf "\`bash tests/e2e/run-all.sh\` runs the same tests locally with Docker; \`E2E_VERSIONS\` picks the versions, such as \`E2E_VERSIONS=35\`.\n\n"
+              printf "\`E2E_IMAGES=floating bash tests/e2e/run-all.sh\` runs the same tests locally with Docker; \`E2E_VERSIONS\` picks the versions, such as \`E2E_VERSIONS=35\`.\n\n"
             fi
             cat <<'TEXT'
           The job adds every further failed run here and closes this issue once the tests pass again against every supported version.
