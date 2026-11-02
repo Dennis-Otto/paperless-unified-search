@@ -38,10 +38,12 @@ import urllib.parse
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 
 from blueprint.bot_health import code, default_branch
 from blueprint.coach import escape_data
 from blueprint.github import PAGE, Api, GitHubError, Json, run_gh_as
+from blueprint.stale_runs import cancel_stale_runs
 from blueprint.update import LABEL, pages
 
 # The first line of the one comment of the bot on a pull request that conflicts.
@@ -865,13 +867,23 @@ class Outcome:
     notices: list[str]
 
 
-def next_branch(api: Api, repo: str, job: Job | None = None) -> Outcome:
-    """One run of the branch bot: the labels of the conflicts, and the next pull
-    request of the line brought up to date, unless one is in flight."""
+def next_branch(
+    api: Api, repo: str, job: Job | None = None, root: Path | None = None
+) -> Outcome:
+    """One run of the branch bot: the labels of the conflicts, the next pull request of
+    the line brought up to date, unless one is in flight, and in a job with the checkout
+    in root, the runs of the commits that a merge or an update replaced cancelled, with
+    no runner of its own: every merge starts this job anyway."""
     base = default_branch(api, repo)
     rules = rules_of(api, repo, base)
     line = Line(api, repo, base, rules.checks, rules.threads, rules.signatures, job)
     pulls = waiting(api, repo, base)
     line.move_on(line.sort_out(pulls))
     line.look_again()
-    return Outcome(line.summary(pulls), line.warnings, line.notices)
+    summary = line.summary(pulls)
+    if job is None or root is None:
+        return Outcome(summary, line.warnings, line.notices)
+    stale = cancel_stale_runs(job.api, repo, root)
+    return Outcome(
+        f"{summary}\n{stale.summary}", line.warnings, [*line.notices, *stale.warnings]
+    )

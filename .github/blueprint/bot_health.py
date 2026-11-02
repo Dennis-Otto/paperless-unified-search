@@ -9,8 +9,9 @@ if a second try can pass, and otherwise keeps one issue per workflow current, wi
 the failed jobs, their steps and their first errors; a run that passes closes it.
 Once a day it looks at the latest run of every workflow, those of the project too,
 in case GitHub lost an event, and starts a workflow whose schedule GitHub missed or
-switched off. In the blueprint, it also keeps one issue with the warnings and errors
-in the log of Renovate.
+switched off. A failure of Lint, which main runs only each week, counts only at the
+head of main: a pull request reaches main only when it passes Lint. In the blueprint,
+it also keeps one issue with the warnings and errors in the log of Renovate.
 """
 
 from __future__ import annotations
@@ -55,6 +56,10 @@ OWN_ISSUE_LINE = re.compile(r"^[ \t]*#[ \t]*bot-health:[ \t]*own-issue\b", re.MU
 # run may leave out what only the schedule does, such as the tests of the coming
 # release, so it doesn't count as the run of a schedule.
 SCHEDULED = frozenset({"schedule", "workflow_dispatch"})
+# A check that main runs only each week, not after a push, because a pull request
+# reaches main only when it passes the check. Its failure at a commit that main has left
+# says nothing about main any more: mostly the pull request of the fix bot left it.
+CHECKED_BEFORE_THE_MERGE = frozenset({"Lint"})
 # The runs of a workflow that one request lists, the newest first.
 PAGE = 50
 # A failure that ended this recently may still get its second try from the run that
@@ -145,6 +150,7 @@ class Run:
     event: str
     branch: str
     head: str
+    sha: str
     status: str
     conclusion: str
     attempt: int
@@ -162,6 +168,7 @@ class Run:
             event=str(data["event"]),
             branch=str(data.get("head_branch") or ""),
             head=str((data.get("head_repository") or {}).get("full_name") or ""),
+            sha=str(data.get("head_sha") or ""),
             status=str(data["status"]),
             conclusion=str(data.get("conclusion") or ""),
             attempt=int(data.get("run_attempt") or 1),
@@ -763,6 +770,15 @@ def runs_of(
     return [Run.of(item) for item in (listed or {}).get("workflow_runs", [])]
 
 
+def left_behind(api: Api, repo: str, branch: str, run: Run) -> bool:
+    """Whether the run is a failure of a check of CHECKED_BEFORE_THE_MERGE at a commit
+    that the branch has left."""
+    if run.name not in CHECKED_BEFORE_THE_MERGE or run.conclusion == PASSED:
+        return False
+    ref = api.get(f"repos/{repo}/git/ref/heads/{branch}") or {}
+    return str((ref.get("object") or {}).get("sha") or run.sha) != run.sha
+
+
 def scheduled_since(runs: Iterable[Run], repo: str, branch: str, due: datetime) -> bool:
     """Whether one of the runs is one of the branch that its schedule or a hand
     started, as the daily look starts one, at the time due or after it."""
@@ -824,13 +840,22 @@ def look_after(
         None,
     )
     notes = []
+    waits = False
     if own:
         notes.append(leave_to_its_own(api, repo, workflow, issues))
     elif finished is None:
         notes.append(f"no finished run on `{branch}`")
+    elif left_behind(api, repo, branch, finished):
+        notes.append(f"failed at {finished.sha[:7]}, which `{branch}` has left")
+        # Only a run of the branch closes its issue, and without an issue the next
+        # weekly run is soon enough.
+        waits = finished.key in issues
     else:
+        # Nothing else starts the second try of Lint: after the checks leaves it out,
+        # and bot health doesn't watch its end.
+        second_try = finished.name in CHECKED_BEFORE_THE_MERGE
         notes.append(
-            look_at(api, repo, branch, finished, issues, now, second_try=False)
+            look_at(api, repo, branch, finished, issues, now, second_try=second_try)
         )
     if workflow["state"] == "disabled_inactivity":
         api.put(f"repos/{repo}/actions/workflows/{workflow['id']}/enable")
@@ -839,21 +864,23 @@ def look_after(
     if not readable:
         notes.append("a schedule that can't be read")
     started = False
+    reason = f"its issue waits for a run of the head of `{branch}`" if waits else ""
     if due is not None and not ran_as_scheduled(
         api, repo, branch, workflow, listed, due
     ):
+        reason = f"missed its run of {moment(due)}"
+    if reason:
         inputs = dispatch_inputs(text)
-        missed = f"missed its run of {moment(due)}"
         if inputs is None:
-            notes.append(f"{missed}, and can't be started by hand")
+            notes.append(f"{reason}, and can't be started by hand")
         elif not start:
-            notes.append(f"{missed}: starts in a later look, {MOST_STARTS} a day")
+            notes.append(f"{reason}: starts in a later look, {MOST_STARTS} a day")
         else:
             api.post(
                 f"repos/{repo}/actions/workflows/{workflow['id']}/dispatches",
                 {"ref": branch, "inputs": inputs},
             )
-            notes.append(f"{missed}: started")
+            notes.append(f"{reason}: started")
             started = True
     return "; ".join(notes), started
 

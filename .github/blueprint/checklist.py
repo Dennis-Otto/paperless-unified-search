@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import urllib.error
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from blueprint.bootstrap import PUSH_AS_GH
 from blueprint.github import Api, GitHubError
 from blueprint.settings import (
     BRANCH,
@@ -157,7 +159,8 @@ def release_app(api: Api, repo: str, settings: Settings) -> tuple[Step, Step]:
         return Step(named, True), installed
     how = [
         "Register it with one command: you confirm one page on GitHub, and it sets the"
-        " private key and opens the pull request that names the app:",
+        " private key and opens the pull request that names the app. Turn"
+        " commit.gpgsign on first: main takes signed commits only, also this one:",
         "python3 .github/blueprint.py app register",
         f"The app gets read and write access to {listed('write')}, read access to"
         f" {listed('read')}, and no webhook. For an app that exists, such as for a"
@@ -185,17 +188,85 @@ BRANCHES = "renovate/"
 LATEST = 100
 
 
-def renovate_runner(root: Path) -> str:
-    """Who runs Renovate for the repository in root."""
+def answer(root: Path, name: str) -> str:
+    """An answer of Copier for the repository in root, empty without one."""
     answers = root / ".copier-answers.yml"
     text = answers.read_text(encoding="utf-8") if answers.exists() else ""
-    match = re.search(r"^renovate_runner: *['\"]?(\w+)", text, re.MULTILINE)
-    return match.group(1) if match and match.group(1) in RENOVATE_RUNNERS else "hub"
+    match = re.search(rf"^{name}: *['\"]?([\w-]+)", text, re.MULTILINE)
+    return match.group(1) if match else ""
 
 
-def renovate(api: Api, repo: str, settings: Settings, root: Path) -> Step:
+def renovate_runner(root: Path) -> str:
+    """Who runs Renovate for the repository in root."""
+    runner = answer(root, "renovate_runner")
+    return runner if runner in RENOVATE_RUNNERS else "hub"
+
+
+# Copier of the quick start, which puts no copier on the PATH. A manager in
+# .github/renovate.json5 moves the version with the pages.
+PINNED = "copier==9.19.1 copier update"
+ANSWER_BRANCH = "change-the-answers"
+ANSWER_MESSAGE = "chore: change the answers of the blueprint"
+SETTINGS_APPLY = "python3 .github/blueprint.py settings apply"
+
+
+def answer_steps(
+    copier: Sequence[str],
+    data: Sequence[str],
+    branch: str = ANSWER_BRANCH,
+    message: str = ANSWER_MESSAGE,
+) -> list[list[str]]:
+    """The steps that change answers of Copier, on a branch of their own: Copier writes
+    .github/repository.toml from them, and main takes pull requests only. The branch
+    starts at the main of GitHub, so that the pull request holds this one commit, also
+    when a merged branch of the same name is left, or another branch is checked out."""
+    return [
+        ["git", "fetch", "origin", "main"],
+        ["git", "switch", "--force-create", branch, "FETCH_HEAD"],
+        [*copier, "--defaults", "--vcs-ref=:current:", *data],
+        ["git", "add", "--all"],
+        ["git", "commit", "--signoff", "--message", message],
+        [*PUSH_AS_GH, "push", "--set-upstream", "origin", "HEAD"],
+        ["gh", "pr", "create", "--fill"],
+    ]
+
+
+def answer_commands(data: str) -> list[str]:
+    """The steps as a person runs them, who has the copier of the quick start."""
+    copier = shlex.split(f"uvx --from {PINNED}")
+    return [shlex.join(step) for step in answer_steps(copier, ["--data", data])]
+
+
+def change_answer(data: str) -> list[str]:
+    """What to run for another answer, and why it takes these steps: a commit that lacks
+    a signature fails nothing until the merge, which the rules of main then block."""
+    return [
+        "main takes only pull requests of signed commits, so run this on a branch, with"
+        " commit.gpgsign on or --gpg-sign added to the commit:",
+        *answer_commands(data),
+        f"With pipx in place of uv, the Copier line starts pipx run --spec {PINNED};"
+        " a Copier of your own, copier update.",
+    ]
+
+
+def unanswered_app(app: str, root: Path) -> list[str]:
+    """What to do when the settings as code name a release app that the answers of
+    Copier don't: the rule that lets the Mend Renovate app take its commits for its own
+    follows the answer alone."""
+    if not app or app == answer(root, "release_app"):
+        return []
+    return [
+        f"The settings as code name the release app {app} and the answers of Copier"
+        " don't, whose name the rule gitIgnoredAuthors comes from; so that Renovate"
+        " goes on rebasing the branches that its bots commit to, change the answer."
+        " Then merge the pull request.",
+        *change_answer(f"release_app={app}"),
+    ]
+
+
+def renovate(api: Api, repo: str, root: Path, app: str = "") -> Step:
     """Renovate, which runs once it has opened a pull request, and how it comes to
-    run."""
+    run; app is the release app by the settings as code."""
     pulls = api.get(f"repos/{repo}/pulls?state=all&per_page={LATEST}")
     running = isinstance(pulls, list) and any(
         isinstance(pull, dict)
@@ -215,7 +286,7 @@ def renovate(api: Api, repo: str, settings: Settings, root: Path) -> Step:
             "Install the Mend Renovate app on this repository; it reads"
             " .github/renovate.json5 and opens its pull requests from its first run:",
             f"{MEND_APP}/installations/new",
-            *ignored_author(api, settings),
+            *unanswered_app(app, root),
         ]
     else:
         how = [
@@ -224,32 +295,6 @@ def renovate(api: Api, repo: str, settings: Settings, root: Path) -> Step:
             " run after the installation opens its pull requests."
         ]
     return Step("Renovate runs: it has opened a pull request", running, "\n".join(how))
-
-
-def ignored_author(api: Api, settings: Settings) -> list[str]:
-    """The rule that lets the Mend Renovate app take the commits of the release app,
-    with which the branch bot and the fix bot update its branches, for none of
-    someone else, which would stop it from rebasing them."""
-    name = str(settings.variables.get("RELEASE_APP", "")).strip()
-    user = api.get(f"users/{name}%5Bbot%5D") if name else None
-    number = user.get("id") if isinstance(user, dict) else None
-    known = number is not None
-    address = (
-        f"{number}+{name}[bot]" if known else "ID+NAME[bot]"
-    ) + "@users.noreply.github.com"
-    return [
-        "The branch bot and the fix bot commit to its branches as the release app;"
-        " so that Renovate goes on rebasing them, add to .github/renovate.json5:",
-        f'gitIgnoredAuthors: ["{address}"]',
-        *(
-            []
-            if known
-            else [
-                "with the name of the release app for NAME, and for ID the number of"
-                " its bot user: gh api users/NAME%5Bbot%5D --jq .id"
-            ]
-        ),
-    ]
 
 
 def listed(access: str) -> str:
@@ -281,14 +326,14 @@ def applied_step(drift: list[Drift], private: bool = False) -> Step:
         return Step(
             "Settings as code applied",
             None,
-            "python3 blueprint.py settings apply; it tells whether GitHub keeps "
+            f"{SETTINGS_APPLY}; it tells whether GitHub keeps "
             + ", ".join(item.setting for item in open_items)
             + " off for the plan of the repository",
         )
     return Step(
         "Settings as code applied",
         not open_items,
-        "python3 blueprint.py settings apply",
+        SETTINGS_APPLY,
     )
 
 
@@ -366,7 +411,9 @@ def checklist(
         ),
         installed,
         DEPENDABOT_ALERTS,
-        renovate(api, repo, settings, root),
+        renovate(
+            api, repo, root, str(settings.variables.get("RELEASE_APP", "")).strip()
+        ),
         Step(
             "Settings → General → Issues: 'Auto-close issues with merged linked pull requests' off "
             "(the issue assistant closes them with the release)",
@@ -474,11 +521,14 @@ def listing(settings: Settings, drift: list[Drift]) -> Step:
         item.setting in ("repository.description", "repository.topics")
         for item in drift
     )
-    how = "python3 blueprint.py settings apply"
+    how = SETTINGS_APPLY
     if not named:
-        how = (
-            'copier update --defaults --vcs-ref=:current: --data "topics=home-assistant,'
-            ' hacs", which names them in .github/repository.toml, then: ' + how
+        how = "\n".join(
+            [
+                "The answer topics names them in .github/repository.toml. Merge the"
+                f" pull request, then run {how}.",
+                *change_answer("topics=home-assistant, hacs"),
+            ]
         )
     return Step("Description and topics set (HACS lists them)", named and applied, how)
 

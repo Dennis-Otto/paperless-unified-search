@@ -94,6 +94,9 @@ SVG_LENGTHS = tuple(
 )
 # The pictures beside a video, NAME.webp or NAME.png, that show until it plays.
 POSTERS = (".webp", ".png")
+# The width that an <img> names, as a browser reads it: a number, which with a % is a
+# part of the column, and nothing of what follows, such as the px of 396px.
+NAMED_WIDTH = re.compile(r"\s*(?P<number>\d+(?:\.\d+)?)(?P<percent>%?)")
 # A picture of the repository that a page shows from main, as a README names it so
 # that it shows wherever the README does, such as on PyPI or in the store of an app:
 # github.com/OWNER/NAME/raw/main/PATH, its blob/main/PATH?raw=true, and
@@ -1261,17 +1264,23 @@ def video(tag: str, where: Where) -> str:
     while it is in view, muted and in a loop as the GIF, and the reader can pause it.
     NAME.webp or NAME.png beside it shows until it plays, and the text of the GIF
     names it.
+
+    The video stands where the GIF stood: in the scheme alone that its address names,
+    which the stylesheet of the blueprint hides in the other one, and as wide as the
+    width that its <img> names; the size of the file gives its shape until it loads.
     """
     attrs = attributes(tag)
-    target = where.find(attrs.get("src") or "")
+    src = attrs.get("src") or ""
+    target = where.find(src)
     folder, found = where.folder, where.found
     if target is None or not target.lower().endswith(".gif"):
         return tag
     stem = target[: -len(".gif")]
     if f"{stem}.mp4" not in found:
         return tag
+    only = next((ending[1:] for ending in SCHEMES if src.endswith(ending)), None)
     shown: dict[str, str | None] = {
-        "class": "blueprint-video",
+        "class": f"blueprint-video blueprint-{only}" if only else "blueprint-video",
         "src": relative(f"{stem}.mp4", folder),
     }
     poster = next((f"{stem}{end}" for end in POSTERS if f"{stem}{end}" in found), None)
@@ -1280,6 +1289,9 @@ def video(tag: str, where: Where) -> str:
     dimensions = size(found[target].abs_src_path)
     if dimensions is not None:
         shown["width"], shown["height"] = map(str, dimensions)
+    named = NAMED_WIDTH.match(attrs.get("width") or "")
+    if named is not None:
+        shown["style"] = f"width:{named['number']}{named['percent'] or 'px'}"
     for flag in ("controls", "muted", "loop", "playsinline"):
         shown[flag] = None
     shown["preload"] = "none"
@@ -1448,10 +1460,12 @@ def versions(output: str, page: Any, config: Any, found: Languages) -> str:
     Search engines take only a full address, and x-default for the readers of a
     language that the website lacks. A version that only shows the page of the
     default language, untranslated, is no version of its own: a page with no other
-    version names none, and an untranslated page names the page of the default
-    language as its canonical address.
+    version names none, and an untranslated page names none either, even when
+    another further language has translated the page, and names the page of the
+    default language as its canonical address.
     """
     here = urljoin(config.site_url or "", page.url)
+    copy = untranslated(page, config)
     alternates = getattr(page.file, "alternates", None) or {}
     translated = {
         language for language, file in alternates.items() if file.locale == language
@@ -1462,7 +1476,7 @@ def versions(output: str, page: Any, config: Any, found: Languages) -> str:
         language = attrs.get("hreflang")
         if attrs.get("rel") == "alternate" and language in translated:
             named[str(language)] = urljoin(here, attrs.get("href") or "")
-    if found.default in named and len(named) > 1:
+    if found.default in named and len(named) > 1 and not copy:
         named["x-default"] = named[found.default]
     else:
         named = {}
@@ -1472,7 +1486,7 @@ def versions(output: str, page: Any, config: Any, found: Languages) -> str:
     )
     default = alternates.get(found.default)
     canonical = None
-    if default is not None and untranslated(page, config):
+    if default is not None and copy:
         canonical = urljoin(config.site_url or "", default.url)
 
     def replace(match: re.Match[str]) -> str:
@@ -1806,6 +1820,20 @@ CHANGES = frozenset({"push", "pull_request", "pull_request_target", "merge_group
 # The headings of the page that are not those of a workflow, by their anchors, the
 # same in every language.
 SECTIONS = ("required-checks", "at-a-glance", *GROUPS)
+# The attribute of the heading of the table of the workflows by which blueprint.py
+# site-check knows the page of the hooks from a page of the project with such a heading.
+AUTOMATION_MARK = 'data-blueprint-automation="true"'
+# The section of a workflow in the HTML of the page: its heading, the only kind that
+# the page has at this level, without the link to it that the extension toc puts in
+# it, and what follows it, up to the next heading of a workflow or a group, or the end
+# of the text, which on a page that a further language shows untranslated is the end
+# of the element around it. The section itself holds only paragraphs and a list, and
+# what a workflow says in them is escaped.
+WORKFLOW_SECTION = re.compile(
+    r'(?P<heading><h3\b[^>]*>.*?)(?:<a class="headerlink"[^>]*>.*?</a>)?</h3>'
+    r"(?P<body>.*?)(?=<h[23]\b|</div>|\Z)",
+    re.S,
+)
 # The words of the page in each language that it has. The comments of the
 # workflows are English on every page.
 WORDS: dict[str, dict[str, str]] = {
@@ -2469,7 +2497,7 @@ def automation_page(
     groups = {
         group: [flow for flow in flows if flow.group == group] for group in GROUPS
     }
-    lines += [f"## {words['at-a-glance']} {{#at-a-glance}}", ""]
+    lines += [f"## {words['at-a-glance']} {{#at-a-glance {AUTOMATION_MARK}}}", ""]
     lines += [words["glance intro"], ""]
     lines += [f"| {words['workflow']} | {words['when']} |", "| --- | --- |"]
     for flow in (flow for group in GROUPS for flow in groups[group]):
@@ -2508,6 +2536,43 @@ def automation_page(
             lines += [f"- **{words[key]}:** {value}" for key, value in facts if value]
             lines.append("")
     return "\n".join(lines)
+
+
+def folded_workflows(html_text: str) -> str:
+    """The HTML of the page of the automation with the section of each workflow in a
+    fold, whose title is its heading: a reader sees the list of the workflows and opens
+    the one they want, and an anchor still leads to each, since the title of a fold
+    always shows and the Material theme opens the fold around the element that a link
+    leads to.
+
+    The heading loses the link to it, which the reader finds in the menu of the page
+    and in the table at a glance: a control in the title of a fold, itself a control,
+    is a violation of WCAG 4.1.2 that the check of the accessibility fails on.
+    """
+    return WORKFLOW_SECTION.sub(
+        r'<details class="blueprint-fold">'
+        r"<summary>\g<heading></h3></summary>\g<body></details>",
+        html_text,
+    )
+
+
+def on_page_context(context: Any, page: Any, config: Any, nav: Any) -> Any:
+    """Fold the section of each workflow on a page of the automation that the hooks
+    wrote, which on a phone was three times as tall as any other page of a website;
+    a page of the project in its place stays as it is.
+
+    It comes after the search of Material has read the page in this same event: the
+    search ends a section at the end of the element around its heading, so that in the
+    HTML of a fold it would file the text of each workflow under the heading of its
+    group, whose anchor doesn't lead to it.
+    """
+    if page.file.src_uri in BUILT.pages:
+        page.content = folded_workflows(page.content)
+    return context
+
+
+# After the plugin material/search, which has the default priority.
+on_page_context.mkdocs_priority = -100  # type: ignore[attr-defined]
 
 
 def on_nav(nav: Any, config: Any, files: Any) -> Any:

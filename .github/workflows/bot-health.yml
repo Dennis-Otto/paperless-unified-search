@@ -11,7 +11,10 @@ name: Bot health
 # and their first errors, and the next run that passes closes it. Every night it
 # also looks at the latest run of every workflow, those of the project and the
 # checks of main too, in case GitHub lost an event, and starts a workflow whose
-# schedule GitHub missed or switched off. Runs of pull requests start nothing here.
+# schedule GitHub missed or switched off. A failure of Lint at a commit that the
+# branch has left says nothing any more, because a pull request reaches the branch
+# only when it passes Lint: it gets no issue, and an open one starts Lint by hand, so
+# that a run that passes closes it. Runs of pull requests start nothing here.
 # It checks out the default branch only, for blueprint.py, never the code of a pull
 # request; blueprint.py bot-health holds the logic.
 # https://github.com/Dennis-Otto/repo-blueprint

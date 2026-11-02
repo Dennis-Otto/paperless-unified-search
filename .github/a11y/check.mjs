@@ -190,7 +190,9 @@ export function parseAccepted(text) {
   try {
     data = parseToml(text);
   } catch (error) {
-    throw new Error(`${ACCEPTED} isn't valid TOML: ${error.message.split("\n")[0]}`);
+    throw new Error(`${ACCEPTED} isn't valid TOML: ${error.message.split("\n")[0]}`, {
+      cause: error,
+    });
   }
   const { baseline = false, accepted = [], ...others } = data;
   const problems = Object.keys(others).map((key) => `the key ${key} means nothing here`);
@@ -379,12 +381,16 @@ async function showing(tab, scheme, timeout) {
   }
 }
 
-/** The violations of a page in one scheme, as it shows now. */
+/** The violations of a page in one scheme, as it shows now, with the folds of the page
+ * of the automation open, because axe doesn't read the contents of a closed one. */
 async function violations(tab, page, scheme) {
   // The fonts, and the frames after which the script of Material has measured the
   // page, such as a block of code that scrolls and takes the focus.
   /* node:coverage disable */
   await tab.evaluate(async () => {
+    for (const fold of document.querySelectorAll("details.blueprint-fold")) {
+      fold.open = true;
+    }
     await document.fonts.ready;
     for (let frame = 0; frame < 3; frame++) {
       await new Promise((resolve) => requestAnimationFrame(resolve));

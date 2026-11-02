@@ -14,6 +14,12 @@ name: Pull request title
 # as GitHub then blocks the merge. It stays out of the required checks: GitHub's own
 # rule already blocks that merge, and a required check would change the settings of
 # every repository for nothing (decision 0098).
+#
+# The bot for replaced commits is a step of that job for the same reason: the run of a
+# commit that a newer push replaced tells nobody anything, yet it holds a runner of the
+# account, and this job runs on every push anyway, so the bot needs no runner of its own
+# (decision 0108). It cancels only runs of the checks whose commit no open pull request
+# has as its head; the branch bot does the same for the pull requests that merge.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -313,8 +319,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
+      # The runs of the commits that this push replaced, which the bot cancels.
+      actions: write
       # blueprint.py and the explanations of the PR coach of the default branch, and the
-      # commits of the pull request and the rules of its base branch; it writes nothing.
+      # commits of the pull request and the rules of its base branch.
       contents: read
       pull-requests: read
     steps:
@@ -367,6 +375,18 @@ jobs:
           script=.github/blueprint.py
           [[ -f "$script" ]] || script=blueprint.py
           python3 "$script" --repo "$GH_REPO" coach signatures "$NUMBER" --base "$BASE"
+      - name: Cancel the runs of the commits that a newer push replaced
+        # Only a new commit replaces one. It fails nothing, whatever GitHub answers: a run
+        # that stays costs a runner, a warning says so, and the next push looks again.
+        if: ${{ !cancelled() && github.event.action == 'synchronize' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -o pipefail
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" --repo "$GH_REPO" stale-runs | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Wait until Harden-Runner has removed Docker
         # Harden-Runner removes Docker with apt-get in the background; a job that ends
         # before it finishes hangs in "Cleaning up orphan processes" until its timeout.

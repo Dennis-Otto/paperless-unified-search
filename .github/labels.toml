@@ -12,6 +12,7 @@
 #   topic      cross-cutting topics the assistant may add
 #   lifecycle  set and removed by the issue assistant's rules
 #   decision   set by the maintainer only
+#   contribution set by the maintainer; the assistant's digest names candidates
 #   release    sorts pull requests into the release notes (.github/release.yml)
 #
 # ask = false keeps the assistant from asking reporters of that kind for information.
@@ -160,17 +161,19 @@ color = "ffffff"
 description = "This will not be worked on"
 group = "decision"
 
-[[label]]
-name = "help wanted"
-color = "008672"
-description = "Extra attention is needed"
-group = "decision"
+# Contribution: the assistant's digest suggests the first of these labels
 
 [[label]]
 name = "good first issue"
 color = "7057ff"
 description = "Good for newcomers"
-group = "decision"
+group = "contribution"
+
+[[label]]
+name = "help wanted"
+color = "008672"
+description = "Extra attention is needed"
+group = "contribution"
 
 # Release notes
 

@@ -5,11 +5,16 @@ name: Lint
 # and style, the pictures of its diagrams, the sign-off of every commit (DCO), the
 # set-up of the issue assistant and a notice for each changed file of the blueprint.
 # In every pull request, not after a merge: main takes a pull request only when it is
-# up to date, so a merge gives main the files that the pull request passed with.
+# up to date, so a merge gives main the files that the pull request passed with. And
+# each week on main, for what no commit changes, such as a new rule of a tool: it fails
+# here and repairs itself through the fix bot, not in the next pull request.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
   pull_request:
+  # At the time of the CI, so that one commit of the fix bot holds what both fix.
+  schedule:
+    - cron: "3 4 * * 0"
   workflow_dispatch:
 
 permissions:
@@ -105,7 +110,7 @@ jobs:
       - name: Check the issue assistant's set-up
         id: issue-assistant
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
-        uses: Dennis-Otto/issue-assistant@eec0af47d18a67f27e83af79a2f41d8f3df7c9de # v1.8.0
+        uses: Dennis-Otto/issue-assistant@e2e41b838235117ebd4c6583ce12b8cdecb4264d # v1.9.0
         with:
           command: check
       - name: Check the sign-off of every commit
@@ -229,15 +234,26 @@ jobs:
             echo "A word of the project goes into \`.github/cspell-words.txt\`."
           } >> "$GITHUB_STEP_SUMMARY"
       # The fix bot: markdownlint fixes what it can of what it found, on the head of
-      # the pull request, after every other linter, and after the checks the bot
-      # commits the files that it changed onto a branch of this repository, or
-      # suggests them on a pull request from a fork; the command of autofix in
-      # .github/checks.toml does the same.
-      - name: Check out the head of the pull request for the fixes
+      # the pull request or on main, after every other linter, and after the checks the
+      # bot commits the files that it changed onto a branch of this repository, suggests
+      # them on a pull request from a fork, or keeps one pull request with the fixes of
+      # main; the command of autofix in .github/checks.toml does the same. Main runs it
+      # in the weekly run, by its schedule or by hand, as bot health starts a schedule
+      # that GitHub missed.
+      - name: Take the commit that the fixes start from
         id: head
-        if: ${{ !cancelled() && steps.markdown.outcome == 'failure' && github.event_name == 'pull_request' }}
-        # Onto which the bot commits, not its merge into main.
-        run: git checkout --quiet --force --detach HEAD^2
+        if: >-
+          ${{ !cancelled() && steps.markdown.outcome == 'failure' &&
+          (contains(fromJSON('["pull_request", "schedule"]'), github.event_name) ||
+          (github.event_name == 'workflow_dispatch' && github.ref_name == github.event.repository.default_branch)) }}
+        env:
+          EVENT: ${{ github.event_name }}
+        # The head of a pull request, onto which the bot commits, not its merge into
+        # main; a run of main stands on its commit already.
+        run: |
+          if [[ "$EVENT" == pull_request ]]; then
+            git checkout --quiet --force --detach HEAD^2
+          fi
       - name: Fix what markdownlint can fix
         if: ${{ !cancelled() && steps.head.outcome == 'success' }}
         # Findings that no command fixes stay for a person; the check failed already.
@@ -290,9 +306,12 @@ jobs:
   # any other pull request passes at once. Once a page shows a picture of a diagram,
   # scripts/diagrams.sh --extract turns a new block into a source and its picture as
   # well. For a branch of this repository, the diagram bot (After the checks) commits
-  # what changed; for a fork, the artifact diagrams of the run holds it.
+  # what changed; for a fork, the artifact diagrams of the run holds it. The Diagrams
+  # workflow looks after the pictures of main, so the weekly run, by its schedule or by
+  # hand on main, leaves out this job and its large image.
   diagrams:
     name: diagrams
+    if: github.event_name != 'schedule' && github.ref_name != github.event.repository.default_branch
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:

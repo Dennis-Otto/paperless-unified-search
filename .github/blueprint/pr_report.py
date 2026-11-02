@@ -355,13 +355,27 @@ def coverage_part(head: Coverage, base: Coverage | None) -> Part:
 # ---------------------------------------------------------------- the website
 
 
+# A language of the i18n plugin in mkdocs.yml: the indent of its line, its locale, and
+# its settings, the lines that go deeper. A comment is none, and neither is the locale
+# of another plugin, with which no item of a list begins.
+LANGUAGE = re.compile(
+    r"""^( +)- locale: *['"]?([\w-]+)['"]?.*((?:\n\1 .*)*)""", re.MULTILINE
+)
+DEFAULT_LANGUAGE = re.compile(r"^ *default: *true\b", re.MULTILINE)
+# .github/mkdocs-blueprint.yml turns them off, and a project can turn them on again.
+DIRECTORY_URLS = re.compile(r"^use_directory_urls: *true\b", re.MULTILINE)
+
+
 @dataclass(frozen=True)
 class Website:
     """The website of the repository, from mkdocs.yml of the default branch: its
-    address, and whether it has German pages under de/."""
+    address, the languages of the i18n plugin: first the default one, whose pages are
+    at the root, then each further one, with its pages in a folder such as nl/; and
+    whether a page has a folder of its own, guide/ in place of guide.html."""
 
     url: str
-    german: bool
+    languages: tuple[str, ...] = ()
+    directory_urls: bool = False
 
     @classmethod
     def load(cls, root: Path) -> Website | None:
@@ -371,20 +385,32 @@ class Website:
             return None
         found = re.search(r"^site_url: *(https://[^\s#'\"]+)", text, re.MULTILINE)
         url = found[1].rstrip("/") + "/" if found else ""
-        german = re.search(r"^ +- locale: de\b", text, re.MULTILINE) is not None
-        return cls(url, german)
+        languages = sorted(
+            LANGUAGE.finditer(text),
+            key=lambda language: DEFAULT_LANGUAGE.search(language[3]) is None,
+        )
+        return cls(
+            url,
+            tuple(language[2] for language in languages),
+            DIRECTORY_URLS.search(text) is not None,
+        )
 
     def page(self, name: str) -> str:
-        """The address of a page of docs/ after the merge: guide.md at guide/, a
-        README.md or index.md at its folder, guide.de.md at de/guide/."""
+        """The address of a page of docs/ after the merge: guide.md at guide.html, or
+        at guide/ with directory addresses, a README.md or index.md at its folder,
+        guide.nl.md of a further language at nl/guide.html, and guide.en.md of the
+        default language at guide.html."""
         path = name.removeprefix("docs/").removesuffix(".md")
+        stem, _, language = path.rpartition(".")
         prefix = ""
-        if self.german and path.endswith(".de"):
-            path, prefix = path.removesuffix(".de"), "de/"
-        folders = path.split("/")
-        if folders[-1] in ("index", "README"):
-            folders.pop()
-        return self.url + prefix + "".join(f"{folder}/" for folder in folders)
+        if stem and language in self.languages:
+            path = stem
+            prefix = "" if language == self.languages[0] else f"{language}/"
+        *folders, file = path.split("/")
+        base = self.url + prefix + "".join(f"{folder}/" for folder in folders)
+        if file in ("index", "README"):
+            return base
+        return f"{base}{file}/" if self.directory_urls else f"{base}{file}.html"
 
 
 @dataclass(frozen=True)

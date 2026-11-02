@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/streetsidesoftware/cspell/main/cspell.schema.json",
   "version": "0.2",
-  "description": "The spelling check of the Lint workflow, a hint in pull requests: English and German, and the words of the project in .github/cspell-words.txt.",
+  "description": "The spelling check of the Lint workflow, a hint in pull requests: English and German, and the words of the project in .github/cspell-words.txt. A page in another language, such as docs/faq.nl.md, has no dictionary here and stays out.",
   "language": "en,de",
   "import": [
     "@cspell/dict-de-de/cspell-ext.json"
@@ -25,6 +25,24 @@
     "vendor/**",
     "LICENSES/**",
     ".github/prose/**"
+  ],
+  "overrides": [
+    {
+      "filename": [
+        "**/*.[a-z][a-z].md",
+        "**/*.[a-z][a-z][-_][A-Z][A-Z].md",
+        "**/*.[a-z][a-z]-[A-Z][a-z][a-z][a-z].md",
+        "**/*.[a-z][a-z]-[A-Z][a-z][a-z][a-z]-[A-Z][A-Z].md"
+      ],
+      "enabled": false
+    },
+    {
+      "filename": [
+        "**/*.de.md",
+        "**/*.en.md"
+      ],
+      "enabled": true
+    }
   ],
   "ignoreRegExpList": [
     "Urls",

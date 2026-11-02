@@ -15,7 +15,9 @@ name: Screenshots
 # pixels changed, it keeps one pull request from the branch bot/screenshots, as the
 # release app, which merges
 # itself once every check passes, and closes it when main looks as rendered without
-# it. The bot commits only pictures, by plain paths, outside .git and the workflows;
+# it. The bot commits only pictures, by plain paths, outside .git and the workflows,
+# and for a picture that came out at another size the width and the height that the
+# pages of main name for it, so that the pull request passes a check of those sizes;
 # without the release app, the run warns and keeps the pictures as an artifact. A
 # failed run keeps an issue of the bot-health bot open until a run passes again.
 # https://github.com/Dennis-Otto/repo-blueprint
@@ -240,13 +242,19 @@ jobs:
               sleep 3
             done
           done
-      # blueprint.py, which checks what the job render kept.
+      # blueprint.py, which checks what the job render kept, and the Markdown of the
+      # pages, whose named sizes it corrects; none of the pictures of main.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          sparse-checkout-cone-mode: false
           sparse-checkout: |
-            .github/blueprint
-            blueprint
+            /.github/blueprint.py
+            /.github/blueprint/
+            /blueprint.py
+            /blueprint/
+            /*.md
+            /docs/**/*.md
       - name: Fetch the pictures that the job render kept
         if: needs.render.outputs.stale == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -301,7 +309,7 @@ jobs:
           # branch of an open pull request moves from a commit on an older main to one
           # on the newest, and GitHub refuses that move without workflows when main
           # changed a workflow in between. The commits themselves hold only what
-          # blueprint.py lets through: pictures.
+          # blueprint.py lets through: pictures, and new sizes on the pages of main.
           permission-contents: write
           permission-pull-requests: write
           permission-workflows: write
@@ -360,7 +368,7 @@ jobs:
 
           Signed-off-by: ${APP_SLUG}[bot] <${user_id}+${APP_SLUG}[bot]@users.noreply.github.com>"
           head="$SHA"
-          parts="$(python3 "$tool" screenshots parts "$kept")"
+          parts="$(python3 "$tool" --repo "$GH_REPO" screenshots parts "$kept")"
           for ((part = 1; part <= parts; part++)); do
             python3 "$tool" --repo "$GH_REPO" screenshots commit "$kept" --branch "$scratch" \
               --head "$head" --headline "$HEADLINE" --body "$body" --part "$part" > "$RUNNER_TEMP/commit.json"
@@ -368,7 +376,7 @@ jobs:
           done
           point "$BRANCH" "$head"
           gh api --method DELETE "repos/$GH_REPO/git/refs/heads/$scratch" > /dev/null
-          python3 "$tool" screenshots report "$kept" --sha "$SHA" --run "$URL" > "$RUNNER_TEMP/body.md"
+          python3 "$tool" --repo "$GH_REPO" screenshots report "$kept" --sha "$SHA" --run "$URL" > "$RUNNER_TEMP/body.md"
           if [[ -n "$open" ]]; then
             gh pr edit "$open" --title "$HEADLINE" --body-file "$RUNNER_TEMP/body.md"
           else

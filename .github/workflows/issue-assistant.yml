@@ -51,7 +51,7 @@ jobs:
       contents: read
       issues: write
       discussions: read
-    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-assistant.yml@eec0af47d18a67f27e83af79a2f41d8f3df7c9de # v1.8.0
+    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-assistant.yml@e2e41b838235117ebd4c6583ce12b8cdecb4264d # v1.9.0
     with:
       dry_run: ${{ inputs.dry_run || false }}
     # Passed by name: only the job analyze sees their values, those of the

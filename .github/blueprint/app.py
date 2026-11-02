@@ -43,7 +43,6 @@ from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 from blueprint.bootstrap import (
     ANSWERS,
-    PUSH_AS_GH,
     Answer,
     CreateError,
     Finding,
@@ -56,8 +55,10 @@ from blueprint.bootstrap import (
     stops,
 )
 from blueprint.checklist import (
+    PINNED,
     RELEASE_APP_DESCRIPTION,
     RELEASE_APP_PERMISSIONS,
+    answer_steps,
     release_app_name,
 )
 
@@ -77,8 +78,7 @@ POLL = 0.05
 # Python only between two waits, so one long wait would ignore it.
 SLICE = 0.2
 # Copier of the quick start, by the first program of the owner that runs it, or one
-# of their own. A manager in .github/renovate.json5 moves the version with the pages.
-PINNED = "copier==9.19.1 copier update"
+# of their own.
 COPIERS = (f"uvx --from {PINNED}", f"pipx run --spec {PINNED}", "copier update")
 # The answers that name the app, as Copier writes them, and as its questions take them.
 ANSWER = re.compile(
@@ -396,14 +396,7 @@ def set_key(run: Runner, root: Path, repo: str, key: str) -> str:
 def naming_steps(copier: Sequence[str], app: App) -> list[list[str]]:
     """The steps that name the app in the answers, on a branch of their own: Copier
     writes .github/repository.toml from them, and main takes pull requests only."""
-    return [
-        ["git", "switch", "--create", BRANCH],
-        [*copier, "--defaults", "--vcs-ref=:current:", *app.data()],
-        ["git", "add", "--all"],
-        ["git", "commit", "--signoff", "--message", MESSAGE],
-        [*PUSH_AS_GH, "push", "--set-upstream", "origin", "HEAD"],
-        ["gh", "pr", "create", "--fill"],
-    ]
+    return answer_steps(copier, app.data(), BRANCH, MESSAGE)
 
 
 def name_app(run: Runner, root: Path, steps: list[list[str]]) -> str:

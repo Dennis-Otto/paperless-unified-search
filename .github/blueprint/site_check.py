@@ -16,7 +16,9 @@ which the 404 page links the files of the website. With the sources of the pages
 also finds a picture that a page lost on its way from the Markdown, the README
 included, to the built file, and the empty paragraph that such a loss leaves. It reads
 llms.txt, the map of the website for AI assistants, as https://llmstxt.org/ asks for
-it, and whether each of its links to the website leads to a page there.
+it, and whether each of its links to the website leads to a page there. On the page of
+the automation, it finds a workflow outside its fold, and one whose text the search
+doesn't lead to.
 """
 
 from __future__ import annotations
@@ -66,6 +68,10 @@ OWN_INDEX = re.compile(r'new URL\("(?P<index>[^"]*search_index\.[\w-]+\.json)"')
 # The class of the article of Material, which holds the content of a page, without the
 # pictures of the theme around it, such as the logo in the header.
 ARTICLE = "md-content__inner"
+# The attribute by which the hooks mark the page of the automation that they write,
+# and the class of the fold of each workflow in it.
+MARK = "data-blueprint-automation"
+FOLD = "blueprint-fold"
 # How many characters of the text of the block before an empty paragraph a finding
 # quotes, such as a paragraph or an item of a list, which a block of HTML starts.
 CONTEXT = 60
@@ -121,10 +127,17 @@ class Page(HTMLParser):
         self.paragraph = False
         self.block = ""
         self.before = ""
+        # Whether the article is the page of the automation of the hooks, whether the
+        # parser is in a fold of a workflow, and the heading of the third level of the
+        # article with an anchor, each by that anchor and whether it is in such a fold.
+        self.automation = False
+        self.fold = False
+        self.workflows: list[tuple[str, bool]] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         found = {name: value or "" for name, value in attrs}
         self.showing(tag, found)
+        self.folding(tag, found)
         name = found.get("name", "").lower()
         if tag == "html":
             self.lang = found.get("lang", "") if self.lang is None else self.lang
@@ -181,6 +194,16 @@ class Page(HTMLParser):
             if text.strip():
                 part.texts.add(" ".join(text.split()))
 
+    def folding(self, tag: str, found: dict[str, str]) -> None:
+        """Note the mark of the page of the automation, the fold of a workflow that the
+        tag opens, and the heading of one in the article."""
+        self.automation = self.automation or MARK in found
+        anchor = found.get("id")
+        if tag == "details" and FOLD in found.get("class", "").split():
+            self.fold = True
+        elif self.depth and anchor and tag == "h3":
+            self.workflows.append((anchor, self.fold))
+
     def places(self) -> list[Shown]:
         """What the parser is in: the whole page, and the article while it is in
         it."""
@@ -191,6 +214,8 @@ class Page(HTMLParser):
     def handle_endtag(self, tag: str) -> None:
         if tag == "script":
             self.script = None
+        if tag == "details":
+            self.fold = False
         if tag == "p" and self.paragraph:
             before = self.before or "the start of the page"
             for part in self.places():
@@ -296,6 +321,7 @@ def check(site: Path, repository: Path | None = None, docs: str | None = None) -
         *private(pages),
         *heavy(site, pages),
         *emptied(pages),
+        *folded(site, pages),
     ]
     if repository is not None:
         folder, bases = layout(repository)
@@ -584,6 +610,46 @@ def emptied(pages: dict[str, Page]) -> list[Finding]:
         if page.built
         for before in page.content.empty
     ]
+
+
+def folded(site: Path, pages: dict[str, Page]) -> list[Finding]:
+    """The page of the automation that the hooks write shows each workflow in a fold,
+    which keeps it short on a phone, and its search leads to the text of each by the
+    anchor in that fold: a search that read the page with its folds would file that
+    text under the heading of the group."""
+    root = site.resolve()
+    findings = []
+    for name, page in pages.items():
+        if not page.built or not page.automation:
+            continue
+        anchors = [anchor for anchor, _ in page.workflows]
+        bare = [anchor for anchor, fold in page.workflows if not fold]
+        if bare:
+            findings.append(
+                Finding(
+                    name,
+                    f"shows the workflow(s) {', '.join(bare)} outside a fold of the "
+                    f"class {FOLD}, which makes the page far too tall on a phone",
+                )
+            )
+        index = local_file(root, root / name, page.search[-1]) if page.search else None
+        if index is None:
+            continue
+        data = json.loads(index.read_text(encoding="utf-8"))
+        texts = {entry["location"]: entry["text"] for entry in data["docs"]}
+        address = name.removesuffix("index.html")
+        lacking = [a for a in anchors if not texts.get(f"{address}#{a}", "").strip()]
+        if lacking:
+            findings.append(
+                Finding(
+                    name,
+                    f"has no text of the workflow(s) {', '.join(lacking)} in the search"
+                    f", {index.relative_to(root).as_posix()}: the hook on_page_context "
+                    "that folds them has to run after the plugin material/search reads "
+                    "the page",
+                )
+            )
+    return findings
 
 
 def lost(

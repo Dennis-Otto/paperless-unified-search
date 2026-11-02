@@ -255,13 +255,13 @@ class Api:
         response = self.request("GET", path, missing_ok=True)
         return None if response.status == 404 else response.data
 
-    def get_all(self, path: str) -> list[Json]:
+    def get_all(self, path: str, *, missing_ok: bool = True) -> list[Json]:
         """Every item of the list at path, from all its pages, or [] when GitHub
-        doesn't know it."""
+        doesn't know it; without missing_ok, that is an error like any other."""
         if "per_page=" not in path:
             path += f"{'&' if '?' in path else '?'}per_page={PAGE}"
         arguments = ["api", "--method", "GET", "--paginate", "--slurp", path]
-        answer = self.answer(arguments, None, Answer.of_pages, missing_ok=True)
+        answer = self.answer(arguments, None, Answer.of_pages, missing_ok=missing_ok)
         return [] if answer.status == 404 else list(answer.data)
 
     def exists(self, path: str) -> bool:
