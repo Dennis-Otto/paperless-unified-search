@@ -6,11 +6,13 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tomllib
 import webbrowser
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from xml.etree import ElementTree
@@ -40,7 +42,7 @@ from blueprint.changelog import (
     release_notes,
     released_fragments,
 )
-from blueprint.checklist import checklist, describe_steps
+from blueprint.checklist import SETTINGS_APPLY, checklist, describe_steps
 from blueprint.coach import (
     PROJECT_CATALOG,
     Catalog,
@@ -69,22 +71,28 @@ from blueprint.diagrams import (
     report,
 )
 from blueprint.fixes import (
+    MAIN_EVENTS,
     Fixes,
     FixLoop,
+    NoList,
     collect,
     commit_onto_branch,
     downloader,
+    fix_own,
     fix_text,
     fixers,
     heal_main,
     load,
+    own_fix,
     plan,
     report_kept,
     run_until_done,
     suggest,
+    watched,
 )
 from blueprint.fixes import keep as keep_fixes
 from blueprint.github import Api, GitHubError, Json, current_repo
+from blueprint.migrate import migrate
 from blueprint.notices import third_party_notices
 from blueprint.overrides import write_overrides
 from blueprint.ownership import check as ownership_check
@@ -117,6 +125,7 @@ from blueprint.settings import (
 from blueprint.site_check import annotation as site_annotation
 from blueprint.site_check import check as check_site
 from blueprint.site_check import map_rule
+from blueprint.stale_runs import cancel_stale_runs
 from blueprint.update import SOURCE, Outdated, update_pull_request
 from blueprint.vex import openvex
 
@@ -542,14 +551,22 @@ def screenshots_command(arguments: argparse.Namespace, root: Path) -> int:
             )
             return 2
         print(screenshots.summary(found), end="")
+        if arguments.action == "restore":
+            repository = arguments.repo or screenshots.repository_of(root)
+            pages = screenshots.correct_work_tree(root, found, repository)
+            corrected = screenshots.corrections(pages)
+            if corrected:
+                print(f"\n{corrected}", end="")
         return 0
+    if arguments.action == "commit" and not arguments.repo:
+        print("blueprint.py: screenshots commit needs --repo", file=sys.stderr)
+        return 2
+    repository = arguments.repo or screenshots.repository_of(root)
+    pages = screenshots.pages_of_folder(root, arguments.folder, repository)
     if arguments.action == "parts":
-        print(len(screenshots.parts(arguments.folder)))
+        print(len(screenshots.parts(arguments.folder, pages=pages)))
         return 0
     if arguments.action == "commit":
-        if not arguments.repo:
-            print("blueprint.py: screenshots commit needs --repo", file=sys.stderr)
-            return 2
         request = screenshots.commit_request(
             arguments.folder,
             arguments.repo,
@@ -558,11 +575,12 @@ def screenshots_command(arguments: argparse.Namespace, root: Path) -> int:
             arguments.headline,
             arguments.body,
             arguments.part,
+            pages,
         )
         print(json.dumps(request))
         return 0
     text = screenshots.report(
-        arguments.folder, arguments.sha, arguments.run, arguments.script
+        arguments.folder, arguments.sha, arguments.run, arguments.script, pages
     )
     print(text, end="")
     return 0
@@ -596,7 +614,7 @@ def fix_command(arguments: argparse.Namespace, root: Path) -> int:
     lines = [
         "### Fixed by a command",
         "",
-        f"The commands that fix what {what} found, from `.github/checks.toml`:",
+        f"The commands that fix what {what} found, from `autofix` of the explanations:",
         "",
         *run_until_done(commands, root),
         "",
@@ -641,22 +659,54 @@ def kept_fixes(folder: Path) -> Fixes:
     return load(sorted(path for path in folder.iterdir() if path.is_dir()))
 
 
-def fix_bot_command(api: Api, repo: str, arguments: argparse.Namespace) -> int:
+def fix_own_command(api: Api, repo: str, arguments: argparse.Namespace) -> int:
+    """The title and the entry of a pull request from a branch of this repository: what
+    the bot fixes of them, and with --app also the fixes, as that app."""
+    number = int(arguments.pull) if arguments.pull else None
+    if arguments.app:
+        sys.stdout.write(
+            fix_own(api, repo, arguments.sha, number, arguments.app, arguments.url)
+        )
+        return 0
+    found = own_fix(api, repo, arguments.sha, number)
+    if arguments.output:
+        to_fix = found.title or found.path
+        with Path(arguments.output).open("a", encoding="utf-8") as file:
+            file.write(f"action={'fix' if to_fix else ''}\n")
+            file.write(f"pull={found.number or ''}\n")
+    sys.stdout.write(found.text)
+    return 0
+
+
+def job_output(output: str | Path | None, lines: str) -> None:
+    """Adds lines to the outputs of the step, when the job asks for them."""
+    if output:
+        with Path(output).open("a", encoding="utf-8") as file:
+            file.write(lines)
+
+
+def fix_bot_command(
+    api: Api, repo: str, arguments: argparse.Namespace, root: Path
+) -> int:
     """The fix bot after the checks: collect the fixes of a commit and decide, then
     commit them, suggest them or keep the pull request of main."""
+    if arguments.action == "own":
+        return fix_own_command(api, repo, arguments)
     if arguments.action == "collect":
-        folders = collect(
-            api,
-            repo,
-            arguments.run,
-            arguments.sha,
-            arguments.event,
-            arguments.folder,
-            downloader(api, repo),
-        )
-        fixes = load(folders)
         number = int(arguments.pull) if arguments.pull else None
         try:
+            workflows = watched(root)
+            found = collect(
+                api,
+                repo,
+                arguments.run,
+                arguments.sha,
+                arguments.event,
+                arguments.branch,
+                arguments.folder,
+                downloader(api, repo),
+                workflows,
+            )
             decided = plan(
                 api,
                 repo,
@@ -664,17 +714,20 @@ def fix_bot_command(api: Api, repo: str, arguments: argparse.Namespace) -> int:
                 arguments.event,
                 arguments.branch,
                 number,
-                fixes,
+                load(found.folders),
+                workflows.listed,
+                found.late,
             )
-        except FixLoop as error:
+        except (FixLoop, NoList) as error:
             # The annotation in the log, the reason in the summary as well.
             print(f"::error::{error}", file=sys.stderr)
             print(error)
+            job_output(arguments.output, "stopped=true\n")
             return 1
-        if arguments.output:
-            with Path(arguments.output).open("a", encoding="utf-8") as file:
-                file.write(f"action={decided.action}\n")
-                file.write(f"pull={decided.number or ''}\n")
+        job_output(
+            arguments.output,
+            f"action={decided.action}\npull={decided.number or ''}\n",
+        )
         sys.stdout.write(decided.text)
         return 0
     fixes = kept_fixes(arguments.folder)
@@ -702,6 +755,35 @@ def fix_bot_command(api: Api, repo: str, arguments: argparse.Namespace) -> int:
         )
     sys.stdout.write(said)
     return 0
+
+
+def migrate_command(arguments: argparse.Namespace, root: Path) -> int:
+    """What the releases of the blueprint move in the files of the project, one on each
+    line, and in the CI also as annotations of those files; with --fix, it moves them."""
+    found = migrate(root, arguments.fix)
+    for migration in found:
+        print(f"{migration.path}: {migration.summary}")
+    if arguments.fix or not found:
+        print(
+            f"{len(found)} move(s) of a release done in the files of the project."
+            if found
+            else "The files of the project have what the releases of the blueprint moved."
+        )
+        return 0
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        for migration in found:
+            print(
+                f"::error file={migration.path},title=Files of the project::"
+                f"{migration.summary}"
+            )
+    print(
+        f"{command(root)} migrate --fix moves what these lines name: an update of the "
+        "blueprint leaves the files of the project alone, so a release moves them "
+        "through this check. How a project declines: "
+        "https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/"
+        "troubleshooting.md#a-release-moves-a-file-of-the-project"
+    )
+    return 1
 
 
 def pages_command(arguments: argparse.Namespace, root: Path) -> int:
@@ -836,7 +918,9 @@ def dependabot_command(
 def locks_command(arguments: argparse.Namespace, root: Path) -> int:
     """Whether Renovate can compile each lock file of pip-compile again with the
     command in its header; with --fix, it puts the = between each option and its
-    value first."""
+    value first. With --compile, whether each one still pins what its sources ask for."""
+    if arguments.compile:
+        return locks_compile_command(arguments, root)
     names, skipped = locks.check(root)
     if arguments.fix and skipped:
         for name in locks.fix(root, skipped):
@@ -862,6 +946,64 @@ def locks_command(arguments: argparse.Namespace, root: Path) -> int:
         )
     else:
         print("No file here is a lock file of pip-compile, which Renovate compiles.")
+    return 0
+
+
+def locks_compile_command(arguments: argparse.Namespace, root: Path) -> int:
+    """Whether each lock file of pip-compile, compiled again with the command in its
+    header, keeps its pins; with --fix, it keeps the result of those that don't."""
+    names = locks.lock_files(root)
+    if not names:
+        print("No file here is a lock file of pip-compile.")
+        return 0
+    uv = shutil.which("uv")
+    if uv is None:
+        print(
+            "uv is not installed here, so nothing compiled the lock files of "
+            "pip-compile again; the CI does."
+        )
+        return 0
+    failed = False
+    compared = 0
+    written = 0
+    with ThreadPoolExecutor() as pool:
+        results = list(pool.map(lambda name: locks.compare(root, name, uv), names))
+    for found in results:
+        if found.note:
+            print(f"{found.name}: not compared, for {found.note}.")
+            continue
+        compared += 1
+        if found.failure:
+            failed = True
+            print(f"{found.name}: uv can't compile its sources:\n{found.failure}")
+        elif found.differences and arguments.fix:
+            (root / found.name).write_bytes(found.content)
+            written += 1
+            print(f"{found.name}: compiled again with the command in its header.")
+        elif found.differences:
+            failed = True
+            print(
+                f"{found.name}: no longer matches its sources: "
+                f"{'; '.join(found.differences)}."
+            )
+    if failed:
+        print(
+            "pip installs a lock file as it is: what its sources ask for reaches no "
+            f"install until the file is compiled again. {command(root)} locks --compile "
+            "--fix compiles each one with the command in its header, on the versions "
+            "that it pins; sources that uv can't compile need a fix of their own."
+        )
+        return 1
+    if written:
+        print(
+            f"Compiled {written} of the {compared} compared lock file(s) of pip-compile "
+            "again; the others keep their pins."
+        )
+        return 0
+    print(
+        "Compiled again with the command in its header, each of the "
+        f"{compared} compared lock file(s) of pip-compile keeps its pins."
+    )
     return 0
 
 
@@ -936,7 +1078,7 @@ def settings_command(
         print(f"The settings of {repo} differ from {config}:")
         print(describe(drift))
         if action == "check":
-            print("python3 blueprint.py settings apply sets what the API can set.")
+            print(f"{SETTINGS_APPLY} sets what the API can set.")
     else:
         print(f"The settings of {repo} match {config}.")
     if notices:
@@ -1315,6 +1457,16 @@ def add_update_parsers(
         help="pass even when GitHub refused a request, with the warnings alone, as "
         "in a run that shows as a check of a pull request",
     )
+    stale_runs_parser = commands.add_parser(
+        "stale-runs",
+        help="cancel the runs of the checks of commits that no open pull request has "
+        "as its head any more",
+    )
+    stale_runs_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="only say which runs the bot would cancel",
+    )
 
 
 def add_ownership_parser(
@@ -1547,7 +1699,8 @@ def add_screenshots_parsers(
     screenshots_actions.add_parser(
         "restore",
         help="give each picture whose pixels the script didn't change its committed "
-        "file back, and list the others",
+        "file back, list the others, and correct the width and height that the pages "
+        "name for one of another size",
     )
     shots_keep_parser = screenshots_actions.add_parser(
         "keep",
@@ -1556,13 +1709,16 @@ def add_screenshots_parsers(
     )
     shots_keep_parser.add_argument("folder", type=Path)
     parts_parser = screenshots_actions.add_parser(
-        "parts", help="how many commits carry the pictures of a folder of keep"
+        "parts",
+        help="how many commits carry the pictures of a folder of keep and the pages "
+        "that they correct",
     )
     parts_parser.add_argument("folder", type=Path)
     shots_commit_parser = screenshots_actions.add_parser(
         "commit",
         help="the request to GitHub's GraphQL API that commits a part of what a "
-        "folder of keep holds onto a branch of --repo, once it is checked",
+        "folder of keep holds, once it is checked, and of the pages that it corrects "
+        "onto a branch of --repo",
     )
     shots_commit_parser.add_argument("folder", type=Path)
     shots_commit_parser.add_argument("--branch", required=True)
@@ -1637,6 +1793,18 @@ def add_fix_parsers(
         "decide what the fix bot does with them",
     )
     collect_parser.add_argument("run", type=int, help="the run that ended")
+    own_parser = fix_actions.add_parser(
+        "own",
+        help="say what the bot fixes of the title and the entry of the changelog of a "
+        "pull request from a branch of this repository, and with --app fix them",
+    )
+    own_parser.add_argument("--sha", required=True, help="the commit of the checks")
+    own_parser.add_argument("--pull", default="", help="the pull request, if named")
+    own_parser.add_argument(
+        "--output", help="the file of the outputs of the step, $GITHUB_OUTPUT"
+    )
+    own_parser.add_argument("--app", help="the slug of the release app, which fixes")
+    own_parser.add_argument("--url", default="", help="the run of the checks")
     commit_fixes_parser = fix_actions.add_parser(
         "commit",
         help="commit the fixes onto the branch of a pull request, as the release app",
@@ -1660,7 +1828,7 @@ def add_fix_parsers(
             "--folder", type=Path, required=True, help="the fixes, one folder per check"
         )
     collect_parser.add_argument(
-        "--event", required=True, choices=["pull_request", "push"]
+        "--event", required=True, choices=["pull_request", *MAIN_EVENTS]
     )
     collect_parser.add_argument("--branch", required=True, help="the branch of the run")
     collect_parser.add_argument("--pull", default="", help="the pull request, if named")
@@ -1798,7 +1966,15 @@ def add_locks_parsers(
     locks_parser.add_argument(
         "--fix",
         action="store_true",
-        help="put the = between each option of the command and its value first",
+        help="put the = between each option of the command and its value first; "
+        "with --compile, keep the result of the compile",
+    )
+    locks_parser.add_argument(
+        "--compile",
+        action="store_true",
+        help="compile each lock file again with the command in its header, for its "
+        "Python and on the versions that it pins, and say which no longer matches "
+        "its sources",
     )
 
 
@@ -1817,6 +1993,16 @@ def add_pages_parsers(
         action="store_true",
         help="put the cells of a layout table one below the other, the text before "
         "its picture, and leave out the widths of cells, first",
+    )
+    migrate_parser = commands.add_parser(
+        "migrate",
+        help="what the releases of the blueprint move in the files of the project, "
+        "which an update leaves alone",
+    )
+    migrate_parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="move it in those files",
     )
     site_check_parser = commands.add_parser(
         "site-check",
@@ -1994,6 +2180,12 @@ def standalone_command(
         except (OSError, UnicodeDecodeError, subprocess.CalledProcessError) as error:
             print(f"blueprint.py: {error}", file=sys.stderr)
             return 2
+    if arguments.command == "migrate":
+        try:
+            return migrate_command(arguments, root)
+        except (OSError, UnicodeDecodeError) as error:
+            print(f"blueprint.py: {error}", file=sys.stderr)
+            return 2
     if arguments.command == "pages":
         try:
             return pages_command(arguments, root)
@@ -2070,13 +2262,25 @@ def main(
         if arguments.command == "bot-health":
             return bot_health_command(api, repo, arguments, root)
         if arguments.command == "next-branch":
-            outcome = next_branch(api, repo, job_from(os.environ))
+            outcome = next_branch(api, repo, job_from(os.environ), root)
             for warning in (*outcome.warnings, *outcome.notices):
                 print(warning, file=sys.stderr)
             print(outcome.summary, end="")
             return 1 if outcome.warnings and not arguments.warnings_only else 0
+        if arguments.command == "stale-runs":
+            stale = cancel_stale_runs(
+                api,
+                repo,
+                root,
+                own_run=os.environ.get("GITHUB_RUN_ID", ""),
+                dry_run=arguments.dry_run,
+            )
+            for warning in stale.warnings:
+                print(warning, file=sys.stderr)
+            print(stale.summary, end="")
+            return 0
         if arguments.command == "fix":
-            return fix_bot_command(api, repo, arguments)
+            return fix_bot_command(api, repo, arguments, root)
         if arguments.command == "advisories":
             return dependabot_command(api, repo, arguments, root)
         if arguments.command == "commit-overrides":

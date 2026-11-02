@@ -47,6 +47,10 @@ RETIRED = ("<!-- coverage-bot -->",)
 TITLE_CHECK = "conventional title"
 # The first line of each commit of the fix bot, by which the report names its fixes.
 FIX_HEADLINE = "style: apply the automatic fixes"
+# The first line of the commit of the fix bot with a draft of the entry of the changelog.
+# It is no fix of a check: it comes once for each pull request, and the bot counts it
+# as neither a round of its fixes nor by the name of a fix in the report.
+DRAFT_HEADLINE = "docs: draft the entry of the changelog from the title"
 TYPES = (
     "feat",
     "fix",
@@ -60,6 +64,19 @@ TYPES = (
     "style",
     "revert",
 )
+# A title that passes the check of the title, whose pattern this is.
+PASSING_TITLE = re.compile(rf"^({'|'.join(TYPES)})(\([a-z0-9._/-]+\))?(!)?: .+")
+# The parts of a title that is no Conventional Commit yet: its first word, a scope, a
+# breaking mark, what follows them, and the words. A dash marks a type only with a space
+# before it: "test-driven development" is a sentence.
+TITLE_PARTS = re.compile(
+    r"^\[?([A-Za-z]+)(?:\(([^)]*)\))?\]?(!)?(\s*[:\]]\s*|\s+-\s*|\s+)(.*)$"
+)
+# A bracket at the start of a title that closes right after its first word, a scope and
+# a breaking mark. Any other holds a tag of its own, such as "[Test PR] feat: x".
+BRACKETED = re.compile(r"\[[A-Za-z]+(?:\([^)]*\))?!?\]")
+# How much of a title the coach shows; the bot never sets one that this cuts.
+TITLE_LENGTH = 200
 # The words that people use for a type instead of its name.
 ALIASES = {
     "feature": "feat",
@@ -477,17 +494,50 @@ def html_code(text: str) -> str:
     return f"<code>{html.escape(clean(text, NAME_LENGTH))}</code>"
 
 
+def title_parts(text: str) -> re.Match[str] | None:
+    """The parts of a title, or nothing for one whose bracket is more than its type."""
+    if text[:1] == "[" and not BRACKETED.match(text):
+        return None
+    return TITLE_PARTS.match(text)
+
+
+def names_its_type(text: str, match: re.Match[str]) -> bool:
+    """Whether the first word of a title is marked as its type, by a colon or a dash
+    after it, brackets around it, a scope or a breaking mark: a sentence has none."""
+    return bool(match[4].strip() or text[:1] == "[" or match[2] is not None or match[3])
+
+
+def marks_a_type(text: str) -> bool:
+    """Whether a text starts with the name of a type that it marks as its type."""
+    match = title_parts(text)
+    return bool(match and match[1].lower() in TYPES and names_its_type(text, match))
+
+
+def lowered(text: str) -> str:
+    """Words with a lower first letter, but not those of a name: a first word with other
+    capitals, as README or GitHub, or a next word with a capital, as Home Assistant."""
+    words = text.split()
+    first = words[0] if words else ""
+    if not first[:1].isupper() or not (len(first) == 1 or first[1:].islower()):
+        return text
+    if len(words) > 1 and words[1].istitle():
+        return text
+    return text[0].lower() + text[1:]
+
+
 def suggest_title(title: str, branch: str) -> str:
     """A Conventional Commit title from a title that isn't one: the type from the title
     or the name of the branch, as feat/dark-mode, or from its words."""
-    text = clean(title, 200)
+    text = clean(title, TITLE_LENGTH)
     kind = scope = bang = ""
-    match = re.match(
-        r"^\[?([A-Za-z]+)(?:\(([^)]*)\))?\]?(!)?(\s*(?::|\]|-)\s*|\s+)(.*)$", text
-    )
+    match = title_parts(text)
     word = match[1].lower() if match else ""
-    # A type with a colon, or one that is no word of a sentence without it.
-    typed = bool(match and match[4].strip()) and word in (*TYPES, *ALIASES)
+    # A type that the title marks as one, a word for a type with a colon, or one that is
+    # no word of a sentence without it.
+    typed = match is not None and (
+        (word in TYPES and names_its_type(text, match))
+        or (word in ALIASES and bool(match[4].strip()))
+    )
     if match and (typed or word in BARE):
         kind = ALIASES.get(word, word)
         scope = re.sub(r"[^a-z0-9._/-]+", "-", (match[2] or "").lower()).strip("-")
@@ -501,13 +551,32 @@ def suggest_title(title: str, branch: str) -> str:
     if not kind:
         repair = re.search(r"\b(fix|fixes|fixed|bug|repair|crash|error)\b", text, re.I)
         kind = "fix" if repair else "feat"
-    text = text.rstrip(". ")
-    # A lower first letter, but not of a name in capitals, such as README or CI.
-    if text[:1].isupper() and not text[1:2].isupper():
-        text = text[0].lower() + text[1:]
+    text = lowered(text.rstrip(". "))
     return (
         f"{kind}{f'({scope})' if scope else ''}{bang}: {text or 'describe the change'}"
     )
+
+
+def corrected_title(title: str, branch: str) -> str:
+    """The title that the fix bot may set by itself, or nothing: the one that the coach
+    suggests, for a title that names its type itself and differs only in its form. The
+    type and the breaking mark decide the version, so the bot takes them from the title
+    as they stand. A word for a type, a type that the branch or the words would choose,
+    a title that names a second type and a title without words stay suggestions for a
+    person."""
+    # Its full length: clean with a limit may cut it to just that limit.
+    text = clean(title, len(title))
+    match = title_parts(text)
+    if (
+        match is None
+        or PASSING_TITLE.match(title)
+        or len(text) > TITLE_LENGTH
+        or not marks_a_type(text)
+        or marks_a_type(match[5])
+        or not match[5].rstrip(". ")
+    ):
+        return ""
+    return suggest_title(title, branch)
 
 
 # ---------------------------------------------------------------- the report
@@ -854,6 +923,16 @@ def fix_note(sha: str, fixed: Sequence[str]) -> str:
     )
 
 
+def draft_note(sha: str, drafted: Sequence[str]) -> str:
+    """What the report says of a head that is the draft of the fix bot."""
+    shown = ", ".join(code(path, NAME_LENGTH) for path in drafted)
+    return (
+        f"📝 **The fix bot drafted the entry of the changelog** in {sha[:7]}: {shown}, "
+        "from the title. Read it, and say in the words of a user what changes for them; "
+        "pull the branch before you push again."
+    )
+
+
 def footer(repo: str, sha: str) -> str:
     guide = link("CONTRIBUTING.md#when-a-check-fails", repo)
     return (
@@ -885,10 +964,12 @@ def render(
     fixed: Sequence[str] | None = None,
     parts: Sequence[Part] = (),
     unverified: int = 0,
+    drafted: Sequence[str] = (),
 ) -> str:
     """The comment of the PR coach on a pull request; fixed holds the files of the
-    head when the fix bot made it, parts what the report says of the pull request
-    itself, after the checks, and unverified how many of its commits block its merge."""
+    head when the fix bot made it, drafted those when the head is its draft of the
+    changelog, parts what the report says of the pull request itself, after the checks,
+    and unverified how many of its commits block its merge."""
     failed = [run for run in runs if run.failed]
     stopped = [run for run in runs if run.stopped]
     pending = sum(1 for run in runs if run.pending)
@@ -916,6 +997,8 @@ def render(
         lines += [*halted(stopped), ""]
     if fixed is not None:
         lines += [fix_note(sha, fixed), ""]
+    if drafted:
+        lines += [draft_note(sha, drafted), ""]
     body = "\n".join([*lines, ""])
     about = parts_text(parts, BODY_LENGTH - len(body))
     shown = 0
@@ -932,14 +1015,20 @@ def render(
     return body + about + footer(repo, sha)
 
 
+def commit_of_bot(api: Api, repo: str, sha: str) -> tuple[str, list[str]]:
+    """The headline and the files of sha when an app made it; nothing for a person."""
+    commit = api.get(f"repos/{repo}/commits/{sha}") or {}
+    if (commit.get("author") or {}).get("type") != "Bot":
+        return "", []
+    message = str((commit.get("commit") or {}).get("message") or "")
+    files = [str(item.get("filename") or "") for item in commit.get("files") or []]
+    return message.partition("\n")[0], files
+
+
 def fixed_by_bot(api: Api, repo: str, sha: str) -> list[str] | None:
     """The files of sha when it is a commit of the fix bot, an app with its headline."""
-    commit = api.get(f"repos/{repo}/commits/{sha}") or {}
-    message = str((commit.get("commit") or {}).get("message") or "")
-    headline = message.partition("\n")[0]
-    if (commit.get("author") or {}).get("type") != "Bot" or headline != FIX_HEADLINE:
-        return None
-    return [str(item.get("filename") or "") for item in commit.get("files") or []]
+    headline, files = commit_of_bot(api, repo, sha)
+    return files if headline == FIX_HEADLINE else None
 
 
 def bot_comments(api: Api, repo: str, number: int) -> list[Json]:
@@ -1012,8 +1101,19 @@ def report(
     found = {run.id: findings(api, repo, run) for run in failed[:SECTIONS]}
     if unverified:
         found[SIGNATURE_RUN] = [commit.finding() for commit in unverified]
-    fixed = fixed_by_bot(api, repo, sha)
-    body = render(repo, sha, pull, runs, found, catalog, fixed, parts, len(unverified))
+    headline, files = commit_of_bot(api, repo, sha)
+    body = render(
+        repo,
+        sha,
+        pull,
+        runs,
+        found,
+        catalog,
+        files if headline == FIX_HEADLINE else None,
+        parts,
+        len(unverified),
+        files if headline == DRAFT_HEADLINE else (),
+    )
     if comment is not None and comment.get("body") == body:
         said = f"The report of #{number} is up to date:\n\n{body}"
     # A push while the coach read the checks: the report of the new head follows, and

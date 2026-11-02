@@ -26,6 +26,9 @@ name: Update branches
 # until someone approved. Only a head that the bot made itself, on top of commits that a
 # person approved, gets its runs approved by the bot, in the summary of the run, since
 # nothing new from the fork runs then (decision 0099).
+# Every merge leaves the runs of its pull request behind, and every update the runs of
+# the commit that it replaced: after the line, the bot cancels those that no open pull
+# request has as its head any more, as this job runs anyway (decision 0108).
 # The bot checks out main alone, for blueprint.py, which holds the logic, and runs
 # nothing of a pull request. https://github.com/Dennis-Otto/repo-blueprint
 
@@ -92,12 +95,14 @@ jobs:
     environment:
       name: release
       deployment: false
-    # Actions for the runs of the pull requests from forks: the token of the job reads
-    # them, approves those that the bot may approve and starts the next run of the bot,
-    # so that the release app needs no right for it.
+    # Actions for the runs of the pull requests: the token of the job reads them, approves
+    # those of a fork that the bot may approve, cancels those of a replaced commit and
+    # starts the next run of the bot, so that the release app needs no right for it. The
+    # pull requests for their heads, which those runs of a replaced commit don't have.
     permissions:
       actions: write
       contents: read
+      pull-requests: read
     steps:
       - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3

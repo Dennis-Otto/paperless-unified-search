@@ -118,6 +118,9 @@ jobs:
           problems=0
           pass() { echo "$1"; echo "- ✔ $1" >> "$GITHUB_STEP_SUMMARY"; }
           fail() { echo "::error::$1"; echo "- ✘ $1" >> "$GITHUB_STEP_SUMMARY"; problems=$((problems + 1)); }
+          # What the checks after it can't go without ends the run, and says why: the
+          # shell would end it at the failed command without a word in the summary.
+          stop() { fail "$1"; echo "The release $TAG has $problems problem(s)." >> "$GITHUB_STEP_SUMMARY"; exit 1; }
 
           if [[ -z "$TAG" ]]; then
             TAG="$(gh release view --json tagName --jq .tagName 2>/dev/null || true)"
@@ -127,7 +130,9 @@ jobs:
             fi
           fi
           echo "### The release $TAG" >> "$GITHUB_STEP_SUMMARY"
-          release="$(gh api "repos/$GH_REPO/releases/tags/$TAG")"
+          # GitHub answers for a tag only with a published release, never with a draft.
+          release="$(gh api "repos/$GH_REPO/releases/tags/$TAG")" ||
+            stop "GitHub shows no published release with the tag $TAG: it is still a draft, there is none, or GitHub didn't answer."
           # A release from before the release workflow of the blueprint has none of
           # what it attaches; the weekly run waits for the next release instead.
           if [[ "$WEEKLY" == true ]] &&
@@ -140,7 +145,8 @@ jobs:
           else
             fail "The release is not immutable."
           fi
-          sha="$(gh api "repos/$GH_REPO/commits/$TAG" --jq .sha)"
+          sha="$(gh api "repos/$GH_REPO/commits/$TAG" --jq .sha)" ||
+            stop "GitHub doesn't show the commit of the tag $TAG."
           if [[ "$(gh api "repos/$GH_REPO/commits/$sha" --jq .commit.verification.verified)" == true ]]; then
             pass "Its commit $sha is signed."
           else
@@ -153,11 +159,14 @@ jobs:
           gitsign="$RUNNER_TEMP/gitsign"
           curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
             --connect-timeout 15 --max-time 300 --output "$gitsign" \
-            "https://github.com/sigstore/gitsign/releases/download/v$GITSIGN_VERSION/gitsign_${GITSIGN_VERSION}_linux_amd64"
-          echo "$GITSIGN_SHA256  $gitsign" | sha256sum --check --strict >/dev/null
+            "https://github.com/sigstore/gitsign/releases/download/v$GITSIGN_VERSION/gitsign_${GITSIGN_VERSION}_linux_amd64" ||
+            stop "gitsign $GITSIGN_VERSION can't be downloaded, so the tag $TAG can't be checked."
+          echo "$GITSIGN_SHA256  $gitsign" | sha256sum --check --strict >/dev/null ||
+            stop "The download of gitsign $GITSIGN_VERSION doesn't have its sha256, so the tag $TAG can't be checked."
           chmod +x "$gitsign"
           git init --quiet "$RUNNER_TEMP/tag"
-          git -C "$RUNNER_TEMP/tag" fetch --quiet --depth=1 "https://github.com/$GH_REPO.git" "refs/tags/$TAG:refs/tags/$TAG"
+          git -C "$RUNNER_TEMP/tag" fetch --quiet --depth=1 "https://github.com/$GH_REPO.git" "refs/tags/$TAG:refs/tags/$TAG" ||
+            stop "The tag $TAG can't be fetched from the repository."
           if [[ "$(git -C "$RUNNER_TEMP/tag" cat-file -t "$TAG")" != tag ]]; then
             if [[ "$WEEKLY" == true ]]; then
               echo "::notice::The tag $TAG is older than the signed tags."
@@ -174,7 +183,7 @@ jobs:
 
           mkdir -p "$RUNNER_TEMP/assets"
           cd "$RUNNER_TEMP/assets" || exit 1
-          gh release download "$TAG"
+          gh release download "$TAG" || stop "The assets of the release $TAG can't be downloaded."
           if [[ -f provenance.sigstore.json ]]; then
             pass "The bundle of the provenance is attached."
           else
@@ -267,23 +276,34 @@ jobs:
               if curl --fail --silent --show-error --retry 5 --retry-all-errors \
                 --connect-timeout 15 --max-time 300 --output "$RUNNER_TEMP/pypi.json" \
                 "https://pypi.org/pypi/$name/$version/json"; then
-                published="$(jq -r '.urls[].digests.sha256' "$RUNNER_TEMP/pypi.json" | sort)"
+                # An answer that isn't JSON, such as the page of a gateway, has no files.
+                published="$(jq -r '.urls[].digests.sha256' "$RUNNER_TEMP/pypi.json" | tr -d '\r' | sort || true)"
               fi
-              attached="$(sha256sum ./*.whl ./*.tar.gz 2>/dev/null | cut -d' ' -f1 | sort)"
-              if [[ -n "$published" && "$published" == "$attached" ]]; then
+              # sha256sum fails for a kind of file that the release doesn't have.
+              attached="$(sha256sum ./*.whl ./*.tar.gz 2>/dev/null | cut -d' ' -f1 | sort || true)"
+              if [[ -z "$attached" ]]; then
+                fail "The release has no wheel and no source archive to compare with PyPI."
+              elif [[ -n "$published" && "$published" == "$attached" ]]; then
                 pass "PyPI has the same files of $version."
               else
                 fail "PyPI doesn't have the files of the release $version."
               fi
               ;;
             npm)
-              package="$(tar -xOzf ./*.tgz package/package.json | jq -r .name)"
-              published="$(npm view "$package@$version" dist.integrity 2>/dev/null || true)"
-              attached="sha512-$(openssl dgst -sha512 -binary ./*.tgz | openssl base64 -A)"
-              if [[ "$published" == "$attached" ]]; then
-                pass "npm has the same package $package@$version."
+              tarballs=(./*.tgz)
+              if [[ ${#tarballs[@]} -ne 1 || ! -f "${tarballs[0]}" ]]; then
+                fail "The release has no single npm package, a .tgz."
               else
-                fail "npm doesn't have the package of the release $version."
+                package="$(tar -xOzf "${tarballs[0]}" package/package.json | jq -r '.name // ""' || true)"
+                published="$(npm view "$package@$version" dist.integrity 2>/dev/null || true)"
+                attached="sha512-$(openssl dgst -sha512 -binary "${tarballs[0]}" | openssl base64 -A)"
+                if [[ -z "$package" ]]; then
+                  fail "${tarballs[0]#./} has no package.json with a name, so npm can't be asked for it."
+                elif [[ "$published" == "$attached" ]]; then
+                  pass "npm has the same package $package@$version."
+                else
+                  fail "npm doesn't have the package of the release $version."
+                fi
               fi
               ;;
             ghcr)
@@ -350,7 +370,7 @@ jobs:
               # publish-store.yml uploads this zip to the Chrome Web Store, which reads
               # the manifest.json at its root; a manifest takes only the numbers of a
               # version, so a beta, such as 1.3.0-beta.2, has 1.3.0.
-              numbers="$(grep -oE '^[0-9]+([.][0-9]+)*' <<<"$version")"
+              numbers="$(grep -oE '^[0-9]+([.][0-9]+)*' <<<"$version" || true)"
               zips=(./*.zip)
               if [[ ${#zips[@]} -ne 1 || ! -f "${zips[0]}" ]]; then
                 if [[ "$WEEKLY" == true ]]; then
@@ -365,33 +385,37 @@ jobs:
                 if [[ "$zipped" == "3 $numbers" ]]; then
                   pass "${zips[0]} holds the manifest.json of Manifest V3 and the version $numbers at its root, as the Chrome Web Store takes it."
                 else
-                  fail "${zips[0]} has no manifest.json of Manifest V3 and the version $numbers at its root."
+                  fail "${zips[0]} has no manifest.json of Manifest V3 and the version ${numbers:-$version} at its root."
                 fi
               fi
               ;;
             nextcloud-appstore)
               app_id="$(gh api -H "Accept: application/vnd.github.raw+json" \
                 "repos/$GH_REPO/contents/appinfo/info.xml?ref=$TAG" |
-                python3 -c 'import sys, xml.etree.ElementTree as t; print(t.parse(sys.stdin).getroot().findtext("id"))')"
-              # The page of the app shows a new release at once and links its signed
-              # package; the list of all apps follows up to hours later. The loop waits
-              # for the package, curl itself tries again after a passing error.
-              package="https://github.com/$GH_REPO/releases/download/$TAG/$app_id.tar.gz"
-              offered=false
-              for attempt in 1 2 3 4 5 6; do
-                if curl --fail --silent --show-error --retry 2 --retry-all-errors \
-                  --connect-timeout 15 --max-time 30 --output "$RUNNER_TEMP/app.html" \
-                  "https://apps.nextcloud.com/apps/$app_id" &&
-                  grep -qF "href=\"$package\"" "$RUNNER_TEMP/app.html"; then
-                  offered=true
-                  break
-                fi
-                [[ "$attempt" == 6 ]] || sleep 30
-              done
-              if [[ "$offered" == true ]]; then
-                pass "The Nextcloud App Store offers the package of $app_id $version."
+                python3 -c 'import sys, xml.etree.ElementTree as t; print(t.parse(sys.stdin).getroot().findtext("id") or "")' 2>/dev/null || true)"
+              if [[ -z "$app_id" ]]; then
+                fail "appinfo/info.xml at $TAG names no app, so the Nextcloud App Store can't be checked."
               else
-                fail "The Nextcloud App Store doesn't offer the package of $app_id $version."
+                # The page of the app shows a new release at once and links its signed
+                # package; the list of all apps follows up to hours later. The loop waits
+                # for the package, curl itself tries again after a passing error.
+                package="https://github.com/$GH_REPO/releases/download/$TAG/$app_id.tar.gz"
+                offered=false
+                for attempt in 1 2 3 4 5 6; do
+                  if curl --fail --silent --show-error --retry 2 --retry-all-errors \
+                    --connect-timeout 15 --max-time 30 --output "$RUNNER_TEMP/app.html" \
+                    "https://apps.nextcloud.com/apps/$app_id" &&
+                    grep -qF "href=\"$package\"" "$RUNNER_TEMP/app.html"; then
+                    offered=true
+                    break
+                  fi
+                  [[ "$attempt" == 6 ]] || sleep 30
+                done
+                if [[ "$offered" == true ]]; then
+                  pass "The Nextcloud App Store offers the package of $app_id $version."
+                else
+                  fail "The Nextcloud App Store doesn't offer the package of $app_id $version."
+                fi
               fi
               ;;
             github-action)

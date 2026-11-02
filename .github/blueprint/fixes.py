@@ -6,14 +6,30 @@ fails runs these commands on the head of its pull request, or on main, with `fix
 and keeps each file that they changed as an artifact fixes-<job>. After the checks,
 the fix bot of after-checks.yml takes these artifacts as data that the pull request
 made: it runs nothing of them and lets through only text files that the commit has
-already, by paths of plain names, outside .git and .github/workflows. `fix collect`
-waits for the other checks of the commit that keep fixes, so that one commit holds
-them all. Then `fix commit` commits them onto the branch of a pull request of this
-repository as the release app, `fix suggest` suggests them at their lines of a pull
-request from a fork, which no bot may push to, and `fix main` keeps one pull request
-from bot/self-heal with the fixes of main, which merges itself. Docs keeps a fix of
-main alone, and while it passes: the first run of the accessibility check with the line
-baseline = true of .github/a11y-accepted.toml, which accepts what the website has.
+already, by paths of plain names, outside .git and .github/workflows. It reads the
+fixes of every workflow in the list of after-checks.yml of main, also one of the
+project's own, and of no other. `fix collect` waits for those whose files keep fixes,
+so that one commit holds them all. Then `fix commit` commits them onto the branch of a
+pull request of this repository as the release app, `fix suggest` suggests them at
+their lines of a pull request from a fork, which no bot may push to, and `fix main`
+keeps one pull request from bot/self-heal with the fixes of main, which merges itself.
+A run that still runs after the wait leaves the commit to the job after its own end: a
+commit now would cancel it, and use up a commit of the bot for a part of the fixes.
+Docs keeps a fix of main alone, and while it passes: the first run of the accessibility
+check with the line baseline = true of .github/a11y-accepted.toml, which accepts what
+the website has.
+
+Lint and the CI also run on main each week, by their schedule or by hand, as bot health
+starts a schedule that GitHub missed, so that what no commit changes, such as a new rule
+of a tool, repairs itself before it fails the next pull request. Only such a run that
+failed starts the bot, so a quiet week takes no runner of it.
+
+The check of the title runs no fixer, as it runs nothing of a pull request, so `fix own`
+works from what the API says of a pull request from a branch of this repository, and
+only there. It sets the title that the PR coach suggests when only its form differs,
+because the type and the breaking mark decide the version. And it commits one draft of
+the entry of the changelog from that title where the check asks for an entry: the one
+new file that the bot ever adds, which it names and writes itself, in changelog.d/.
 """
 
 from __future__ import annotations
@@ -32,15 +48,23 @@ import time
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import quote
 
+from blueprint.bot_health import started_after
+from blueprint.changelog import FRAGMENT_NAME, FRAGMENTS
 from blueprint.coach import (
+    ALIASES,
     BOT,
+    DRAFT_HEADLINE,
     FIX_HEADLINE,
     NAME_LENGTH,
     OWN_CHECKS,
+    TYPES,
     Catalog,
     check_steps,
+    clean,
     code,
+    corrected_title,
     find_pull,
     fixed_by_bot,
     paged,
@@ -57,8 +81,14 @@ OPT_OUT = "no-bot-fixes"
 BRANCH = "bot/self-heal"
 # The artifacts of the checks with what their commands fixed, one for each job.
 ARTIFACT = "fixes-"
-# The workflows whose checks keep fixes: Lint and the CI of each kind of project.
-WORKFLOWS = ("Lint", "CI (*)")
+# The events of the runs of main that keep fixes: a push, and the weekly run by its
+# schedule or by hand, as bot health starts a schedule that GitHub missed.
+MAIN_EVENTS = ("push", "schedule", "workflow_dispatch")
+# The file whose list names the workflows that the bot reads, as main has it.
+AFTER_CHECKS = ".github/workflows/after-checks.yml"
+# The name of a workflow, and a line of a workflow that names an artifact of fixes.
+WORKFLOW_NAME = re.compile(r"""^name:[ \t]*["']?(.+?)["']?[ \t\r]*$""", re.M)
+KEEPS_FIXES = re.compile(rf"""^[ \t]+name:[ \t]*["']?{ARTIFACT}""", re.M)
 # The workflow that keeps a fix only on main, and also when it passes: Docs, whose first
 # run of every page accepts the violations that the website has, and turns no check red.
 MAIN_WORKFLOW = "Docs"
@@ -67,7 +97,7 @@ TOOL = "{blueprint}"
 # In a command of autofix, the Python that runs the bot, for a script of the repository.
 PYTHON = "{python}"
 # The first line of the body of each commit of the bot, before the run of the checks.
-MADE_BY = "Made by the commands of .github/checks.toml in the checks of"
+MADE_BY = "Made by the commands of autofix in the checks of"
 # How often the commands run at most, until they change nothing more.
 ROUNDS = 3
 # What one commit of the bot holds at most.
@@ -84,6 +114,25 @@ WAITS = 28
 # commit through the API keeps the mode of a file that it changes.
 FILE_MODES = frozenset({"100644", "100755"})
 HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", re.M)
+# A title of a change for users, for which the check of the title asks an entry: its
+# type, its scope, its breaking mark and its words.
+FOR_USERS = re.compile(r"^(feat|fix|perf)(?:\(([a-z0-9._/-]+)\))?(!)?: (.*)$")
+# The scopes of updates of dependencies, which write no entry.
+UPDATES = frozenset({"deps", "deps-dev"})
+# The kind of change of a draft, by the type of its title or by its breaking mark.
+DRAFT_KINDS = {"feat": "Features", "fix": "Bug fixes", "perf": "Performance"}
+DRAFT_BREAKING = "Breaking changes"
+# What a draft never holds, because it becomes a page and the notes of a release: HTML,
+# a mention and a link, also a bare address, which GitHub links by itself. Such a title
+# stays for a person.
+NOT_WORDS = re.compile(r"[<@]|\]\(|://|\bwww\.", re.I)
+# The longest name of a draft, without its end, and what GitHub takes for a title.
+DRAFT_NAME_LENGTH = 80
+LONGEST_TITLE = 256
+# The endings of the name of a draft, where the commit has the one before already.
+DRAFT_ENDINGS = ("", *(f"-{number}" for number in range(2, 10)))
+# The first line of the body of the draft, before the run of the checks.
+DRAFTED_AFTER = "Made from the title of the pull request after"
 
 
 # ---------------------------------------------------------------- in the check
@@ -353,39 +402,119 @@ class WorkflowRun:
     conclusion: str
 
 
-def runs_of(api: Api, repo: str, sha: str, event: str) -> list[WorkflowRun]:
-    """The newest run of each workflow of a commit that keeps fixes."""
-    data = api.get(
-        f"repos/{repo}/actions/runs?head_sha={sha}&event={event}&per_page=100"
-    ) or {"workflow_runs": []}
-    latest: dict[str, WorkflowRun] = {}
-    for item in data["workflow_runs"]:
-        name = str(item.get("name") or "")
-        if not (event == "push" and name == MAIN_WORKFLOW) and not any(
-            fnmatch.fnmatchcase(name, pattern) for pattern in WORKFLOWS
-        ):
-            continue
-        found = WorkflowRun(
-            int(item["id"]),
-            name,
-            str(item.get("status") or ""),
-            str(item.get("conclusion") or ""),
+class NoList(Exception):
+    """after-checks.yml of main names no workflow that the fix bot could go by."""
+
+
+@dataclass(frozen=True)
+class Watched:
+    """The workflows of the fix bot, as the files of main name them: every one of the
+    list of after-checks.yml, whose fixes it reads, and among them those whose files
+    keep fixes, which it waits for. A long run that keeps none, such as the tests in a
+    browser, holds up no commit, and one whose fixes come late starts the bot itself."""
+
+    listed: frozenset[str]
+    keeping: frozenset[str]
+
+    def awaited(self, event: str) -> frozenset[str]:
+        """Those that the bot waits for: Docs keeps nothing on a pull request."""
+        if event in MAIN_EVENTS:
+            return self.keeping
+        return self.keeping - {MAIN_WORKFLOW}
+
+
+def watched(root: Path) -> Watched:
+    """The workflows of the fix bot from the files of the default branch, never those
+    of a pull request, which names its runs as it likes. Without a list to go by, the
+    bot stops and says so rather than take the fixes of any run."""
+    listed = started_after((root / AFTER_CHECKS).read_text(encoding="utf-8"))
+    if not listed:
+        raise NoList(
+            f"{AFTER_CHECKS} lists no workflow whose fixes the fix bot may read; "
+            "the bot stops and commits nothing."
         )
-        if name not in latest or found.id > latest[name].id:
-            latest[name] = found
+    keeping = set()
+    for path in (root / AFTER_CHECKS).parent.glob("*.y*ml"):
+        text = path.read_text(encoding="utf-8")
+        name = WORKFLOW_NAME.search(text)
+        if name and name[1] in listed and KEEPS_FIXES.search(text):
+            keeping.add(name[1])
+    return Watched(listed, frozenset(keeping))
+
+
+def runs_of(
+    api: Api, repo: str, sha: str, event: str, branch: str, listed: frozenset[str]
+) -> list[WorkflowRun]:
+    """The newest run of each workflow of the list for a commit: of the event of a pull
+    request, and of every event of main, so that a check that bot health started by
+    hand and one that its schedule started end in one pull request. One event at a
+    time: a commit of main is also that of the many runs after other workflows. Of main
+    only its own runs: one by hand on a branch at the same commit keeps no fix, and
+    would hide the failed run of main. Docs keeps a fix of main only in the run of a push."""
+    latest: dict[str, WorkflowRun] = {}
+    for each in MAIN_EVENTS if event in MAIN_EVENTS else (event,):
+        data = api.get(
+            f"repos/{repo}/actions/runs?head_sha={sha}&event={each}&per_page=100"
+        ) or {"workflow_runs": []}
+        for item in data["workflow_runs"]:
+            if each in MAIN_EVENTS and item.get("head_branch") != branch:
+                continue
+            name = str(item.get("name") or "")
+            if name not in listed or (
+                name == MAIN_WORKFLOW and each in MAIN_EVENTS and each != "push"
+            ):
+                continue
+            found = WorkflowRun(
+                int(item["id"]),
+                name,
+                str(item.get("status") or ""),
+                str(item.get("conclusion") or ""),
+            )
+            if name not in latest or found.id > latest[name].id:
+                latest[name] = found
     return sorted(latest.values(), key=lambda found: found.id)
+
+
+def fixes_of(api: Api, repo: str, run_id: int) -> list[Json]:
+    """The artifacts of the fixes of a run, also those that have expired."""
+    data = api.get(f"repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100") or {}
+    return [
+        item
+        for item in data.get("artifacts", [])
+        if str(item.get("name") or "").startswith(ARTIFACT)
+    ]
 
 
 def artifacts_of(api: Api, repo: str, run_id: int) -> list[str]:
     """The names of the fixes that a run kept."""
-    data = api.get(f"repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100") or {}
     return sorted(
         {
             str(item.get("name"))
-            for item in data.get("artifacts", [])
-            if str(item.get("name") or "").startswith(ARTIFACT)
-            and not item.get("expired")
+            for item in fixes_of(api, repo, run_id)
+            if not item.get("expired")
         }
+    )
+
+
+def failed(runs: Iterable[WorkflowRun]) -> list[int]:
+    """The ids of the runs that ended by failing."""
+    return [
+        found.id
+        for found in runs
+        if found.status == "completed" and found.conclusion == "failure"
+    ]
+
+
+def fixes_expired(
+    api: Api, repo: str, sha: str, event: str, branch: str, listed: frozenset[str]
+) -> bool:
+    """Whether a failed run of a commit of main kept fixes that have expired since. The
+    commit may still need them, so only the next run of that check, by the week at the
+    latest, can say that it doesn't."""
+    return any(
+        item.get("expired")
+        for run_id in failed(runs_of(api, repo, sha, event, branch, listed))
+        for item in fixes_of(api, repo, run_id)
     )
 
 
@@ -413,6 +542,16 @@ def downloader(api: Api, repo: str) -> Download:
 
 
 @dataclass(frozen=True)
+class Collected:
+    """The folders of the fixes of a commit, and the workflows that the bot waited for
+    in vain, as one look at the runs found both: a fix that is here comes from a run that
+    had ended then, and a run that ended later has its own job."""
+
+    folders: list[Path]
+    late: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class Plan:
     """What the fix bot does with the fixes of a commit: commit them onto the branch
     of a pull request, suggest them on one from a fork, keep the pull request of main
@@ -429,25 +568,44 @@ def collect(
     run_id: int,
     sha: str,
     event: str,
+    branch: str,
     folder: Path,
     download: Download,
+    workflows: Watched,
     wait: Callable[[float], None] = time.sleep,
-) -> list[Path]:
-    """Downloads the fixes of every check of a commit into folder, one folder for
-    each, once the checks that keep fixes have ended, so that one commit holds them
-    all. A pull request whose run kept no fix has nothing for the bot."""
-    if event != "push" and not artifacts_of(api, repo, run_id):
-        return []
-    runs = runs_of(api, repo, sha, event)
+) -> Collected:
+    """Downloads the fixes of every workflow of the list for a commit into folder, one
+    folder for each, once those that keep fixes have ended, so that one commit holds
+    them all, and says which of them still ran after the wait. A pull request whose
+    commit has no failed run with a fix has nothing for the bot. The commit decides that,
+    not the run that started this job: GitHub keeps one pending job of a branch, so a run
+    with no fix can replace the job of one with. A run that started this job and ended
+    without failing counts for nothing, whatever it kept, as the bot takes no fix of it;
+    one that runs again still counts."""
+    awaited = workflows.awaited(event)
+    runs = runs_of(api, repo, sha, event, branch, workflows.listed)
+    ended = {
+        found.id
+        for found in runs
+        if found.status == "completed" and found.conclusion != "failure"
+    }
+    if event not in MAIN_EVENTS and not any(
+        artifacts_of(api, repo, each)
+        for each in dict.fromkeys((run_id, *failed(runs)))
+        if each not in ended
+    ):
+        return Collected([])
     for _ in range(WAITS):
-        if all(found.status == "completed" for found in runs):
+        if all(found.status == "completed" for found in runs if found.name in awaited):
             break
         wait(WAIT)
-        runs = runs_of(api, repo, sha, event)
+        runs = runs_of(api, repo, sha, event, branch, workflows.listed)
     folders = []
     for found in runs:
         passed_with_fixes = (
-            found.name == MAIN_WORKFLOW and found.conclusion == "success"
+            event in MAIN_EVENTS
+            and found.name == MAIN_WORKFLOW
+            and found.conclusion == "success"
         )
         if found.status != "completed" or (
             found.conclusion != "failure" and not passed_with_fixes
@@ -457,7 +615,14 @@ def collect(
             target = folder / f"{found.id}-{name}"
             download(found.id, name, target)
             folders.append(target)
-    return folders
+    return Collected(
+        folders,
+        tuple(
+            found.name
+            for found in runs
+            if found.name in awaited and found.status != "completed"
+        ),
+    )
 
 
 class FixLoop(Exception):
@@ -477,6 +642,23 @@ def parent_of(api: Api, repo: str, sha: str) -> str:
     return str(parents[0].get("sha") or "")
 
 
+def opted_out(pull: Json) -> bool:
+    """Whether the author of a pull request wants no commit of the bot."""
+    return OPT_OUT in {str(label.get("name")) for label in pull.get("labels") or []}
+
+
+def from_fork(pull: Json, repo: str) -> bool:
+    """Whether a pull request comes from another repository, which no bot may push to."""
+    head = pull.get("head") or {}
+    return str((head.get("repo") or {}).get("full_name") or "") != repo
+
+
+def still_running(late: Iterable[str], sha: str) -> str:
+    """The first words of the bot when it leaves its work to the job after these runs."""
+    names = ", ".join(code(name, NAME_LENGTH) for name in late)
+    return f"Still running after the wait for {sha[:7]}: {names}."
+
+
 def plan(
     api: Api,
     repo: str,
@@ -485,9 +667,19 @@ def plan(
     branch: str,
     number: int | None,
     fixes: Fixes,
+    listed: frozenset[str] = frozenset(),
+    late: Sequence[str] = (),
 ) -> Plan:
-    """Decides what the bot does with the fixes of a commit."""
-    if event == "push":
+    """Decides what the bot does with the fixes of a commit; listed names the workflows
+    that it reads, and late those that it waited for in vain.
+
+    Only a commit onto a branch waits for them. It would cancel these runs, whose fixes
+    the next commit then has to find again, and the bot commits only twice in a row, so
+    a part of the fixes could leave a later one without a commit. The job after the run
+    that ends last takes them all, however that run ends. The pull request of main costs
+    no run and takes the next fixes as well, and a suggestion comes once: both act on what
+    has ended, as a weekly run of main or a run of a fork starts no job when it passes."""
+    if event in MAIN_EVENTS:
         ref = api.get(f"repos/{repo}/git/ref/heads/{branch}") or {}
         if (ref.get("object") or {}).get("sha") != sha:
             return Plan(
@@ -498,6 +690,18 @@ def plan(
         pull = open_pull_of_main(api, repo)
         if pull is None:
             return Plan("", f"{branch} needs no fix that a command makes.\n")
+        if fixes_expired(api, repo, sha, event, branch, listed):
+            return Plan(
+                "",
+                f"A failed check of {sha[:7]} kept fixes that have expired, so "
+                f"#{pull['number']} stays open until that check runs again.\n",
+            )
+        if late:
+            return Plan(
+                "",
+                f"{still_running(late, sha)} #{pull['number']} stays open until a later "
+                "job of the bot finds them ended, as they may need its fixes.\n",
+            )
         return Plan(
             "close", f"{branch} needs the fixes of #{pull['number']} no more.\n"
         )
@@ -505,16 +709,20 @@ def plan(
     if pull is None:
         return Plan("", f"{sha[:7]} is no longer the head of an open pull request.\n")
     number = int(pull["number"])
-    labels = {str(label.get("name")) for label in pull.get("labels") or []}
-    if OPT_OUT in labels:
+    if opted_out(pull):
         return Plan(
             "", f"#{number} has the label {OPT_OUT}: the bot leaves it alone.\n"
         )
     if not fixes.files:
         return Plan("", f"No command fixed what the checks of #{number} found.\n")
-    head = pull.get("head") or {}
-    if str((head.get("repo") or {}).get("full_name") or "") != repo:
+    if from_fork(pull, repo):
         return Plan("suggest", f"#{number} comes from a fork.\n", number)
+    if late:
+        return Plan(
+            "",
+            f"{still_running(late, sha)} The bot commits nothing yet, so that one commit "
+            "holds every fix: the job after the last of them makes it.\n",
+        )
     # One more commit onto its own is fine: the checks of a commit end at different
     # times, and a check may fix a file after another one did. Two in a row are not.
     if fixed_by_bot(api, repo, sha) is not None and (
@@ -536,7 +744,15 @@ def signed_off(api: Api, app: str, text: str) -> str:
     return f"{text}\n\nSigned-off-by: {app}[bot] <{email}>"
 
 
-def commit(api: Api, repo: str, branch: str, sha: str, fixes: Fixes, body: str) -> str:
+def commit(
+    api: Api,
+    repo: str,
+    branch: str,
+    sha: str,
+    fixes: Fixes,
+    body: str,
+    headline: str = HEADLINE,
+) -> str:
     """Commits the fixes onto branch while it is still at sha, as whoever sends the
     request; GitHub signs the commit, and the push starts the checks."""
     data = graphql(
@@ -546,7 +762,7 @@ def commit(api: Api, repo: str, branch: str, sha: str, fixes: Fixes, body: str) 
             "input": {
                 "branch": {"repositoryNameWithOwner": repo, "branchName": branch},
                 "expectedHeadOid": sha,
-                "message": {"headline": HEADLINE, "body": body},
+                "message": {"headline": headline, "body": body},
                 "fileChanges": {
                     "additions": [
                         {"path": path, "contents": base64.b64encode(data).decode()}
@@ -564,6 +780,31 @@ def head_of(api: Api, repo: str, branch: str) -> str:
     return str((ref.get("object") or {}).get("sha") or "")
 
 
+def onto_branch(
+    api: Api,
+    repo: str,
+    branch: str,
+    sha: str,
+    fixes: Fixes,
+    body: str,
+    headline: str = HEADLINE,
+) -> str:
+    """The commit that the bot made of the fixes on branch, or nothing when the branch
+    moved on from sha, whose new head its checks look at again."""
+    if head_of(api, repo, branch) != sha:
+        return ""
+    try:
+        return commit(api, repo, branch, sha, fixes, body, headline)
+    except GitHubError:
+        if head_of(api, repo, branch) != sha:
+            return ""
+        raise
+
+
+def moved_on(branch: str, sha: str) -> str:
+    return f"{branch} moved on from {sha[:7]}; its checks fix it again.\n"
+
+
 def commit_onto_branch(
     api: Api, repo: str, branch: str, sha: str, fixes: Fixes, app: str, url: str
 ) -> str:
@@ -574,17 +815,166 @@ def commit_onto_branch(
         return "\n".join(
             ["Every fix is in the branch already.", "", *listing(fixes), ""]
         )
-    if head_of(api, repo, branch) != sha:
-        return f"{branch} moved on from {sha[:7]}; its checks fix it again.\n"
     body = signed_off(api, app, f"{MADE_BY} {url}")
-    try:
-        made = commit(api, repo, branch, sha, fixes, body)
-    except GitHubError:
-        if head_of(api, repo, branch) != sha:
-            return f"{branch} moved on from {sha[:7]}; its checks fix it again.\n"
-        raise
+    made = onto_branch(api, repo, branch, sha, fixes, body)
+    if not made:
+        return moved_on(branch, sha)
     lines = [f"The fix bot committed {made[:7]} onto {code(branch, NAME_LENGTH)}:", ""]
     return "\n".join([*lines, *listing(fixes), ""])
+
+
+# ---------------------------------------------------------------- the title and the entry
+
+
+def needs_entry(title: str, pull: Json, files: Iterable[Json]) -> bool:
+    """Whether a pull request with this title has only its entry of the changelog
+    missing: a change for users of a person, with no entry of its own. The step of the
+    check of the title decides alike, and a test runs both on the same pull requests. A
+    file of changelog.d/ that is no fragment fails the check by itself, and its author
+    meant an entry, so the bot adds none next to it."""
+    match = FOR_USERS.match(title)
+    if (
+        match is None
+        or match[2] in UPDATES
+        or (pull.get("user") or {}).get("type") == "Bot"
+    ):
+        return False
+    folder = f"{FRAGMENTS}/"
+    for item in files:
+        name, status = str(item.get("filename")), str(item.get("status"))
+        if status == "removed":
+            continue
+        if name == "CHANGELOG.md":
+            return False
+        if name.startswith(folder) and not name.startswith(f"{folder}."):
+            own = status in ("added", "copied")
+            if own or not FRAGMENT_NAME.match(name.removeprefix(folder)):
+                return False
+    return True
+
+
+def draft_of(title: str) -> str:
+    """The text of a fragment from a title of a change for users: its words below the
+    heading of its kind, or nothing when they say nothing, or could be more than words.
+    A test proves that the release takes in each such text."""
+    match = FOR_USERS.match(title)
+    if match is None:
+        return ""
+    words = clean(match[4], LONGEST_TITLE).rstrip(". ")
+    if not words or NOT_WORDS.search(words):
+        return ""
+    kind = DRAFT_BREAKING if match[3] else DRAFT_KINDS[match[1]]
+    entry = f"**{match[2]}:** {words}" if match[2] else words[0].upper() + words[1:]
+    return f"### {kind}\n\n- {entry}.\n"
+
+
+def fragment_path(branch: str, taken: Iterable[str], number: int) -> str:
+    """The path of a new fragment, which the bot builds itself: the name of the branch
+    without its type, as the guide for the changelog asks, in the plain letters of a
+    fragment; the number of the pull request for a branch that leaves none. A fragment
+    that the commit or its base branch has already is the entry of another pull request,
+    so the name then takes an ending, and when it runs out of them, the bot adds nothing."""
+    kind, _, rest = branch.partition("/")
+    name = rest if rest and kind.lower() in (*TYPES, *ALIASES) else branch
+    plain = re.sub(r"[^A-Za-z0-9._-]+", "-", name)[:DRAFT_NAME_LENGTH]
+    stem = plain.strip("-._") or f"pull-{number}"
+    names = {path.lower() for path in taken}
+    for ending in DRAFT_ENDINGS:
+        path = f"{FRAGMENTS}/{stem}{ending}.md"
+        if path.lower() not in names:
+            return path
+    return ""
+
+
+def drafted_before(api: Api, repo: str, number: int) -> bool:
+    """Whether a commit of a pull request is a draft of the bot. One who deleted it
+    wants none, and so the bot drafts once for each pull request and never again."""
+    return any(
+        str((item.get("commit") or {}).get("message") or "").partition("\n")[0]
+        == DRAFT_HEADLINE
+        for item in paged(api, f"repos/{repo}/pulls/{number}/commits")
+    )
+
+
+@dataclass(frozen=True)
+class OwnFix:
+    """What the bot fixes of the title and the entry of a pull request from a branch of
+    this repository: nothing when title and path are empty, and text says why."""
+
+    text: str
+    number: int | None = None
+    branch: str = ""
+    title: str = ""
+    path: str = ""
+    draft: str = ""
+
+
+def own_fix(api: Api, repo: str, sha: str, number: int | None) -> OwnFix:
+    """Decides what the bot fixes of the title and the entry of a pull request, from
+    what the API says of it now. When in doubt, it fixes nothing and the check explains."""
+    pull = find_pull(api, repo, sha, number)
+    if pull is None:
+        return OwnFix(f"{sha[:7]} is no longer the head of an open pull request.\n")
+    number = int(pull["number"])
+    if opted_out(pull):
+        return OwnFix(f"#{number} has the label {OPT_OUT}: the bot leaves it alone.\n")
+    if from_fork(pull, repo):
+        return OwnFix(
+            f"#{number} comes from a fork, which the bot leaves to the PR coach.\n"
+        )
+    branch = str(pull["head"].get("ref") or "")
+    title = str(pull.get("title") or "")
+    corrected = corrected_title(title, branch)
+    path = draft = ""
+    # The check asks for no entry while the title is no Conventional Commit: the bot
+    # looks at the title that it sets, so that one run brings both.
+    if needs_entry(
+        corrected or title, pull, paged(api, f"repos/{repo}/pulls/{number}/files")
+    ) and not drafted_before(api, repo, number):
+        draft = draft_of(corrected or title)
+        if draft:
+            # The base branch too: a name that only it has would be a conflict.
+            base = quote(str(pull["base"]["ref"]), safe="")
+            taken = {*files_of(api, repo, sha), *files_of(api, repo, base)}
+            path = fragment_path(branch, taken, number)
+    if not corrected and not path:
+        return OwnFix(
+            f"#{number} has nothing that the bot corrects or drafts by itself; the "
+            "check says what it needs.\n"
+        )
+    lines = [f"- the title: {code(corrected)}"] if corrected else []
+    if path:
+        lines += [f"- a draft of the entry of the changelog: {code(path, NAME_LENGTH)}"]
+    text = "\n".join([f"#{number} has what the bot fixes by itself:", "", *lines, ""])
+    return OwnFix(text, number, branch, corrected, path, draft)
+
+
+def fix_own(
+    api: Api, repo: str, sha: str, number: int | None, app: str, url: str
+) -> str:
+    """Sets the corrected title of a pull request from a branch of this repository, as
+    the release app, so that the check of the title runs again, and commits the draft of
+    its entry as one new file. The title first: the commit starts that check anew."""
+    found = own_fix(api, repo, sha, number)
+    said = found.text if not found.title and not found.path else ""
+    if found.title:
+        api.patch(f"repos/{repo}/pulls/{found.number}", {"title": found.title})
+        said += (
+            f"The fix bot set the title of #{found.number} to {code(found.title)}: only "
+            "its form differed, and its type and breaking mark decide the version.\n"
+        )
+    if found.path:
+        body = signed_off(api, app, f"{DRAFTED_AFTER} {url}")
+        fixes = Fixes({found.path: found.draft.encode()})
+        made = onto_branch(api, repo, found.branch, sha, fixes, body, DRAFT_HEADLINE)
+        if not made:
+            return said + moved_on(found.branch, sha)
+        said += (
+            f"The fix bot committed {made[:7]}, a draft of the entry of the changelog "
+            f"from the title: {code(found.path, NAME_LENGTH)}. Read it, and say in the "
+            "words of a user what changes for them.\n"
+        )
+    return said
 
 
 # ---------------------------------------------------------------- a pull request from a fork
@@ -772,8 +1162,9 @@ def pull_request_body(fixes: Fixes, base: str, url: str) -> str:
     return "\n".join(
         [
             f"`{base}` has findings of its checks that a command fixes. This pull "
-            "request holds what the commands of `.github/checks.toml` made of these "
-            "files, and merges itself once every check passes:",
+            "request holds what the commands of `autofix` in `.github/checks.toml` "
+            "and `.github/checks.project.toml` made of these files, and merges itself "
+            "once every check passes:",
             "",
             *listing(fixes),
             "",
@@ -781,6 +1172,22 @@ def pull_request_body(fixes: Fixes, base: str, url: str) -> str:
             "",
         ]
     )
+
+
+def holds(api: Api, repo: str, pull: Json, sha: str, fixes: Fixes) -> bool:
+    """Whether the pull request of main is the one commit that these fixes make of sha."""
+    head = str((pull.get("head") or {}).get("sha") or "")
+    if not head or parent_of(api, repo, head) != sha:
+        return False
+    files = files_of(api, repo, sha)
+    fixed = {
+        path: (files[path][0], blob_sha(data)) for path, data in fixes.files.items()
+    }
+    return files_of(api, repo, head) == files | fixed
+
+
+def merge_itself(api: Api, repo: str, number: int) -> None:
+    gh(api, "pr", "merge", str(number), "--repo", repo, "--auto", "--squash")
 
 
 def heal_main(
@@ -803,6 +1210,15 @@ def heal_main(
         api.patch(f"repos/{repo}/pulls/{number}", {"state": "closed"})
         api.delete(f"repos/{repo}/git/refs/heads/{BRANCH}")
         return f"{base} needs the fixes no more; closed #{number}.\n"
+    # Each check of a weekly run that fails starts the bot, and the later run finds what
+    # the first one made: a new commit would only start the checks of the pull request
+    # again, and those of one that is stuck anew every week. It only asks for the merge
+    # again when the run that made the commit failed to, or the pull request would wait
+    # for a person.
+    if pull is not None and holds(api, repo, pull, sha, fixes):
+        if pull.get("auto_merge") is None:
+            merge_itself(api, repo, int(pull["number"]))
+        return f"#{pull['number']} from {BRANCH} holds these fixes of {base} already.\n"
     # The commit starts from the commit of main that the checks fixed, on a branch of
     # its own, and the branch of the pull request moves to it in one step: a pull
     # request whose head is a commit of main would be closed by GitHub.
@@ -825,7 +1241,7 @@ def heal_main(
     else:
         number = int(pull["number"])
         api.patch(f"repos/{repo}/pulls/{number}", {"body": text})
-    gh(api, "pr", "merge", str(number), "--repo", repo, "--auto", "--squash")
+    merge_itself(api, repo, number)
     return (
         f"#{number} from {BRANCH} has the fixes of {base} in {made[:7]}, and merges "
         "itself once every check passes.\n"

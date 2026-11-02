@@ -1039,6 +1039,9 @@ def check_environments(
                     "python3 .github/blueprint.py app connect --key-file FILE"
                     if secret == "RELEASE_AUTOMATION_PRIVATE_KEY"
                     else f"gh secret set {secret} --env {name} --repo {repo}"
+                    # The prompt of gh reads one line, which of a private key is
+                    # stored as if it were all of it.
+                    + (" < KEY_FILE" if secret.endswith("_PRIVATE_KEY") else "")
                 )
                 drift.append(
                     Drift(

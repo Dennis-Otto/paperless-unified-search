@@ -34,6 +34,7 @@
 .github/blueprint/fixes.py
 .github/blueprint/github.py
 .github/blueprint/locks.py
+.github/blueprint/migrate.py
 .github/blueprint/mutation.py
 .github/blueprint/notices.py
 .github/blueprint/overrides.py
@@ -45,6 +46,7 @@
 .github/blueprint/screenshots.py
 .github/blueprint/settings.py
 .github/blueprint/site_check.py
+.github/blueprint/stale_runs.py
 .github/blueprint/update.py
 .github/blueprint/versions.py
 .github/blueprint/vex.py

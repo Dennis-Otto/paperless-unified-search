@@ -79,8 +79,51 @@
   display: none;
 }
 
-/* A video in place of a GIF keeps the width of the column, as the GIF did. */
+/* A video in place of a GIF is as wide as the GIF was: the width that its file or its
+   <img> names, and no wider than the column. */
 .md-typeset video.blueprint-video {
   display: block;
+  height: auto;
+  max-width: 100%;
+}
+
+/* The whole column for a GIF whose size the website can't read. */
+.md-typeset video.blueprint-video:not([width]) {
   width: 100%;
+}
+
+/* A video for one scheme alone hides in the other, as Material hides a picture with
+   #only-light or #only-dark, and doesn't play or load there; a browser does load its
+   poster, which is small and which blueprint.py site-check counts. */
+[data-md-color-scheme="default"] .md-typeset video.blueprint-only-dark,
+[data-md-color-scheme="slate"] .md-typeset video.blueprint-only-light {
+  display: none;
+}
+
+/* The section of a workflow on the page of the automation is a fold, whose heading is
+   its title and looks like one, in the size of the text of the page; the folds lie
+   close together as the list of the workflows, without the pencil of a note in each.
+   A link on the same page scrolls to the fold it opens, not to the heading, so the fold
+   keeps its title below the sticky header, and short of the margin at which
+   navigation.tracking would name the section before it in the address. */
+.md-typeset details.blueprint-fold {
+  font-size: inherit;
+  margin: 0.4em 0;
+  scroll-margin-top: 3rem;
+}
+
+.md-typeset details.blueprint-fold > summary {
+  padding-inline-start: 0.6rem;
+}
+
+.md-typeset details.blueprint-fold > summary::before {
+  content: none;
+}
+
+.md-typeset details.blueprint-fold > summary > h3 {
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
+  margin: 0;
 }

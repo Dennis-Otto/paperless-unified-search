@@ -111,7 +111,7 @@ docs = "https://reuse.software/tutorial/"
 autofix = """No command can: `REUSE.toml` gives every file the license and the copyright
 of the project, so what the check finds is a header of a file's own, and under which
 license a file stands is the decision of a person. Its fix is a text added to
-`LICENSES/` or deleted from it, and the bot never adds or deletes a file."""
+`LICENSES/` or deleted from it, and the bot adds or deletes no file of `LICENSES/`."""
 
 [check.markdown]
 title = "The Markdown of the documents"
@@ -153,9 +153,10 @@ checks every link and anchor of the built pages, also those written in HTML, suc
 assistants, and `blueprint.py site-check` what the hooks of the website promise, such
 as a sitemap in every folder of pages, the 404 page in the default language and that
 map, that no page loads more than 1,200 KB at once, as it names a page that
-does with what it loads the most, and that every page shows each picture of its
+does with what it loads the most, that every page shows each picture of its
 Markdown, the parts of the README included, with no empty paragraph where a plugin
-took one out; `scripts/check-site.sh` adds the checks of the project. axe-core opens
+took one out, and that the page of the automation shows each workflow in a fold and
+the search finds its text; `scripts/check-site.sh` adds the checks of the project. axe-core opens
 the pages that differ from `main` in Chrome, and every page when a stylesheet, a script
 or `mkdocs.yml` differs, and names each serious or critical violation of WCAG 2.2 A or
 AA that `.github/a11y-accepted.toml` doesn't accept, at the Markdown of its page, or at
@@ -303,10 +304,14 @@ a major one, and to write the changelog."""
 fix = """Edit the title of the pull request: a type, which is feat, fix, docs, perf,
 refactor, test, ci, build, chore, style or revert, a scope in parentheses if you like,
 `!` for a breaking change, a colon and what the change does. The check runs again by
-itself."""
+itself. On a branch of this repository, the fix bot corrects a title that names its type
+and differs only in its form, such as `Feat: add a dark mode`."""
 docs = "CONTRIBUTING.md#workflow"
-autofix = """Not yet: on a branch of this repository, the bot setting the title that
-the PR coach suggests follows in Dennis-Otto/repo-blueprint#429; until then, the PR coach suggests it."""
+autofix = """No command changes a title. After the check, `fix own` of the fix bot sets
+the title that the PR coach suggests, on a branch of this repository, when the title
+names its own type and only its form differs. The type and the breaking mark decide the
+version, so a title that names no type, or a word for one, stays a suggestion, as every
+title does on a pull request from a fork."""
 
 [check.changelog]
 title = "The entry in the changelog"
@@ -322,13 +327,18 @@ fragment that fails says what to change. A fragment that `main` has already is t
 entry of another pull request and doesn't count; give yours a name of its own. An
 entry under `## Unreleased` in `CHANGELOG.md` counts as well, but conflicts with every
 pull request that adds one at the same place. A change that users don't notice takes
-another type in the title, such as `refactor:`, `docs:` or `test:`."""
+another type in the title, such as `refactor:`, `docs:` or `test:`. On a branch of this
+repository, the fix bot commits a draft from the title; say in its place what changes for
+users."""
 docs = "CONTRIBUTING.md#the-changelog"
 autofix = """A heading of a fragment that surely means a kind of change, such as `### Fixes`
 for `### Fixed`, the fix bot renames, since the step *Changelog fragments* of
-`scripts/check.sh` checks every fragment as well. Not yet: a draft fragment from the
-title, a new file of `changelog.d/` and never an entry under `## Unreleased`, follows in
-Dennis-Otto/repo-blueprint#429; the words for users stay the author's."""
+`scripts/check.sh` checks every fragment as well. No command writes an entry: after the
+check, `fix own` of the fix bot commits a draft from the title onto a branch of this
+repository, once for each pull request, as one new file of `changelog.d/` that it names
+and writes itself; the words for users stay the author's, and the PR coach asks to read
+them. A title with HTML, a mention or a link gets no draft, and a pull request from a fork
+none, since no bot may push to it."""
 
 [check.codeql]
 title = "The CodeQL analysis"
@@ -637,7 +647,8 @@ itself."""
 why = """The blueprint bot brings every release to every repository; an update that
 fails there holds up all of them."""
 fix = """Read the log of the check: it shows the conflict or the step that failed. Fix
-the template, or describe in the changelog what an existing project changes by hand.
+the template; for a file of the project, which an update keeps, add a migration to
+`blueprint/migrate.py`.
 The tests of the template update a project of every kind as well:"""
 commands = ["python -m pytest tests/test_template.py"]
 docs = "CONTRIBUTING.md#tests"
@@ -880,6 +891,21 @@ commands = ["python3 .github/blueprint.py pages --fix"]
 docs = "CONTRIBUTING.md#pages-in-one-column"
 autofix = ["{blueprint} pages --fix"]
 
+[step."Files of the project"]
+problem = """A file that belongs to this project, which an update of the blueprint leaves
+as it is, lacks what a release of the blueprint moved, such as the labels `good first
+issue` and `help wanted` in the group `contribution` of `.github/labels.toml`; the log
+names each file and what moves."""
+why = """The files of the blueprint in the update count on that move, and an update never
+overwrites a file of the project. Without it the repository stays behind every new one,
+and a feature of the release stays off without a word."""
+fix = """Move it with the command, then commit what changed (in the blueprint itself, the
+tool is `blueprint.py` without `.github/`). A project that declines the move of a label
+writes a comment behind its line `group = "decision"`:"""
+commands = ["python3 .github/blueprint.py migrate --fix"]
+docs = "https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/troubleshooting.md#a-release-moves-a-file-of-the-project"
+autofix = ["{blueprint} migrate --fix"]
+
 [step."Changelog fragments"]
 problem = """A fragment in `changelog.d/` is one that the release can't take in: a name
 that it reads differently, no entry, text outside a heading, a `## ` heading, or a
@@ -930,6 +956,24 @@ requirements.in`:"""
 commands = ["python3 .github/blueprint.py locks --fix"]
 docs = "https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/troubleshooting.md#renovate-skips-a-lock-file"
 autofix = ["{blueprint} locks --fix"]
+
+[step."Lock files match their sources"]
+problem = """A lock file of pip-compile, such as `requirements-dev.txt`, no longer pins
+what its source, such as `requirements-dev.in`, asks for: compiled again with the
+command in its header, for its Python and on the versions that it pins, it comes out with
+other pins or with a hash missing, or the sources have no solution; the log names each
+file and each pin."""
+why = """pip installs a lock file as it is: a package that a source adds, or a bound that
+it moves, reaches no install until someone compiles the file again, and a package that a
+source drops stays installed. Nothing else fails. A new release upstream doesn't trigger
+this check: only a change of the sources moves a pin."""
+fix = """Where uv finds no solution, the sources contradict themselves or a pin that they
+name: correct them first. Then compile the file again and commit it; its header stays,
+with its Python and its tool (in the blueprint itself, the tool is `blueprint.py` without
+`.github/`):"""
+commands = ["python3 .github/blueprint.py locks --compile --fix"]
+docs = "https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/troubleshooting.md#a-lock-file-no-longer-matches-its-source"
+autofix = ["{blueprint} locks --compile --fix"]
 
 [step."Explanations of the checks"]
 problem = """A required check of `.github/repository.toml` or

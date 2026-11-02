@@ -10,20 +10,27 @@ with the one that main has, by its pixels: one whose pixels stayed the same gets
 committed file back, so that a new encoder, a new browser or another runner changes
 no file, and what is left goes into a folder for the bot's pull request.
 commit_request turns that folder into commits of the release app, which take nothing
-but pictures, by paths of plain names.
+but pictures, by paths of plain names, from that folder. A picture that came out at
+another size would leave a page that names its width and height with the wrong shape:
+corrected_pages rewrites those numbers on the pages of the checkout, and nothing else.
 """
 
 from __future__ import annotations
 
 import base64
+import html
 import io
 import json
 import os
+import posixpath
 import re
+import struct
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import SplitResult, unquote, urlsplit
 
 SCRIPT = Path("scripts/screenshots.sh")
 PATHS = Path(".github/screenshots-paths.txt")
@@ -50,17 +57,42 @@ COMMIT = (
 )
 REPORT = "report.json"
 SOCIAL_PREVIEW = ".github/social-preview.png"
+# The width and the height of a picture, in pixels.
+Size = tuple[int, int]
+# The pages whose sizes the bot corrects: the Markdown at the top of the repository
+# and in docs/, as pathspecs of git.
+PAGES = (":(glob)*.md", ":(glob)docs/**/*.md")
+# A picture of Markdown that has attributes, with a text that may hold brackets one
+# deep and an optional title, such as ![A](a.png "B"){ width="1600" height="900" }.
+MARKDOWN_PICTURE = re.compile(
+    r"(?P<shown>!\[(?:[^\[\]]|\[[^\]]*\])*\]"
+    r"\(\s*<?(?P<address>[^\s<>)]+)>?(?:\s+(?:\"[^\"]*\"|'[^']*'))?\s*\))"
+    r"(?P<attributes>\{[^{}\n]*\})"
+)
+# A picture of HTML, on one line or several, whose attributes may hold a >.
+HTML_PICTURE = re.compile(r"""<img\b(?:[^<>"']|"[^"]*"|'[^']*')*>""", re.IGNORECASE)
+# An attribute of either: a quoted value counts as a whole, so that a width in the text
+# of a picture stays text.
+ATTRIBUTE = re.compile(
+    r"""(?P<lead>(?P<name>[\w:.-]+)\s*=\s*)(?P<value>"[^"]*"|'[^']*'|[^\s"'<>{}]+)"""
+)
+# The branch of a picture that a page shows from main of its own repository, as
+# .github/mkdocs_blueprint.py reads such an address for the website.
+BRANCHES = ("main", "HEAD")
+ORIGIN = re.compile(r"github\.com[:/](?P<repository>[^/\s]+/[^/\s]+?)(?:\.git)?/?$")
 
 
 @dataclass(frozen=True)
 class Picture:
     """A picture that the script changed: its path, whether it is new, changed or
-    deleted, and the share of its pixels that changed, when the two have the same
-    size and number of frames."""
+    deleted, the share of its pixels that changed, when the two have the same size
+    and number of frames, and the size of the committed file when the new one has
+    another."""
 
     path: str
     status: str
     share: float | None = None
+    before: Size | None = None
 
 
 @dataclass(frozen=True)
@@ -70,6 +102,25 @@ class Kept:
 
     pictures: tuple[Picture, ...]
     ignored: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class Correction:
+    """A size that a page named for a picture, and the size that it names now."""
+
+    picture: str
+    named: Size
+    fitted: Size
+
+
+@dataclass(frozen=True)
+class Page:
+    """A page whose named sizes the bot corrected: its path, its content with the new
+    numbers, and each correction."""
+
+    path: str
+    data: bytes
+    corrections: tuple[Correction, ...]
 
 
 def git(root: Path, *arguments: str) -> str:
@@ -90,13 +141,17 @@ def committed(root: Path, path: str) -> bytes:
     ).stdout
 
 
+def is_plain(path: str) -> bool:
+    """Whether a path has only plain names, so that it stays in the repository."""
+    return all(PART.fullmatch(part.removeprefix(".")) for part in path.split("/"))
+
+
 def is_picture(path: str) -> bool:
     """Whether the bot may write a file: a picture by its ending, by a path of plain
     names that stays in the repository, out of .git and of the workflows."""
-    parts = path.split("/")
-    if not all(PART.fullmatch(part.removeprefix(".")) for part in parts):
+    if not is_plain(path):
         return False
-    if parts[0] == ".git" or path.startswith(".github/workflows/"):
+    if path.split("/")[0] == ".git" or path.startswith(".github/workflows/"):
         return False
     return Path(path).suffix.lower() in SIGNATURES
 
@@ -109,6 +164,73 @@ def looks_like_its_kind(path: str, data: bytes) -> bool:
     if suffix == ".mp4":
         data = data[4:]
     return data.startswith(SIGNATURES[suffix])
+
+
+def png_size(data: bytes) -> tuple[int, ...]:
+    return struct.unpack(">II", data[16:24]) if data[12:16] == b"IHDR" else ()
+
+
+def gif_size(data: bytes) -> tuple[int, ...]:
+    return struct.unpack("<HH", data[6:10])
+
+
+def jpeg_size(data: bytes) -> tuple[int, ...]:
+    """The size in the first frame header of a JPEG, past the segments before it. A
+    file that ends first, or holds no marker where one belongs, has none."""
+    at = 2
+    while data[at] == 0xFF:
+        marker = data[at + 1]
+        # The frame headers of every kind of JPEG; C4, C8 and CC only look like them.
+        if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+            height, width = struct.unpack(">HH", data[at + 5 : at + 9])
+            return width, height
+        at += 2 + struct.unpack(">H", data[at + 2 : at + 4])[0]
+    return ()
+
+
+def webp_size(data: bytes) -> tuple[int, ...]:
+    """The size in the first chunk of the three kinds of WebP: lossy, lossless, and
+    extended, such as an animation."""
+    chunk = data[12:16]
+    if chunk == b"VP8 ":
+        width, height = struct.unpack("<HH", data[26:30])
+        return width & 0x3FFF, height & 0x3FFF
+    # The two others read fewer bytes as a smaller number without complaint.
+    if len(data) < 30:
+        return ()
+    if chunk == b"VP8L":
+        bits = int.from_bytes(data[21:25], "little")
+        return (bits & 0x3FFF) + 1, (bits >> 14 & 0x3FFF) + 1
+    if chunk == b"VP8X":
+        width = int.from_bytes(data[24:27], "little") + 1
+        return width, int.from_bytes(data[27:30], "little") + 1
+    return ()
+
+
+SIZE_READERS = {
+    ".png": png_size,
+    ".jpg": jpeg_size,
+    ".jpeg": jpeg_size,
+    ".gif": gif_size,
+    ".webp": webp_size,
+}
+
+
+def picture_size(path: str, data: bytes) -> Size | None:
+    """The width and the height that a picture names in its header, read without
+    Pillow, which the job with the release app doesn't have: its file comes from a job
+    that ran the script of the project, so a file that names none, or none that makes
+    sense, simply has no size. A video has none here either."""
+    reader = SIZE_READERS.get(Path(path).suffix.lower())
+    if reader is None or not looks_like_its_kind(path, data):
+        return None
+    try:
+        found = reader(data)
+    except (IndexError, struct.error):
+        return None
+    if len(found) != 2 or not all(found):
+        return None
+    return found[0], found[1]
 
 
 def patterns(root: Path, paths: Path = PATHS, script: Path = SCRIPT) -> list[str]:
@@ -241,6 +363,12 @@ def still_videos(root: Path, pictures: list[Picture]) -> list[Picture]:
     return left
 
 
+def size_before(path: str, before: bytes, after: bytes) -> Size | None:
+    """The size of a picture before the script changed it, when it has another now."""
+    old = picture_size(path, before)
+    return old if old != picture_size(path, after) else None
+
+
 def keep(root: Path, folder: Path | None = None) -> Kept:
     """Compares each picture that the script changed in the work tree with the one
     that the commit has, by its pixels: one that looks the same gets the committed
@@ -283,7 +411,9 @@ def keep(root: Path, folder: Path | None = None) -> Kept:
             share = changed_share(before, data)
         except (OSError, ValueError):
             share = None
-        pictures.append(Picture(path, "changed", share))
+        pictures.append(
+            Picture(path, "changed", share, size_before(path, before, data))
+        )
     pictures = still_videos(root, pictures)
     pictures.sort(key=lambda picture: picture.path)
     found = Kept(tuple(pictures), tuple(sorted(ignored)))
@@ -305,7 +435,12 @@ def keep(root: Path, folder: Path | None = None) -> Kept:
         json.dumps(
             {
                 "pictures": [
-                    {"path": p.path, "status": p.status, "share": p.share}
+                    {
+                        "path": p.path,
+                        "status": p.status,
+                        "share": p.share,
+                        "before": p.before,
+                    }
                     for p in pictures
                 ],
                 "ignored": list(found.ignored),
@@ -317,6 +452,14 @@ def keep(root: Path, folder: Path | None = None) -> Kept:
         newline="\n",
     )
     return found
+
+
+def reported_size(value: Any) -> Size | None:
+    """A size as the report of a run names it."""
+    if value is None:
+        return None
+    width, height = value
+    return int(width), int(height)
 
 
 def kept(folder: Path) -> Kept:
@@ -357,6 +500,7 @@ def kept(folder: Path) -> Kept:
                 str(entry["path"]),
                 str(entry["status"]),
                 None if entry["share"] is None else float(entry["share"]),
+                reported_size(entry["before"]),
             )
             for entry in report["pictures"]
         )
@@ -376,19 +520,204 @@ def kept(folder: Path) -> Kept:
     return Kept(pictures, ignored)
 
 
-def parts(folder: Path, largest: int = LARGEST) -> list[list[Picture]]:
-    """The pictures of folder in the commits that carry them, each request below
-    largest once its pictures are in base64."""
-    found: list[list[Picture]] = [[]]
+def repository_of(root: Path) -> str:
+    """OWNER/NAME of the remote origin on GitHub, or nothing without one: then only an
+    address relative to its page shows a picture of this repository."""
+    remote = subprocess.run(
+        ["git", "remote", "get-url", "origin"],
+        cwd=root,
+        capture_output=True,
+        check=False,
+        text=True,
+        encoding="utf-8",
+    )
+    found = ORIGIN.search(remote.stdout.strip())
+    return found["repository"] if found else ""
+
+
+def from_main(address: SplitResult, repository: str) -> str:
+    """The path in the repository of what an address shows from main of repository
+    on GitHub, as .github/mkdocs_blueprint.py reads it; nothing for any other."""
+    segments = address.path.split("/")[1:]
+    if address.scheme != "https":
+        return ""
+    if address.hostname == "github.com" and segments[2:3] == ["raw"]:
+        rest = segments[3:]
+    elif address.hostname == "github.com" and segments[2:3] == ["blob"]:
+        rest = segments[3:] if "raw=true" in address.query.split("&") else []
+    elif address.hostname == "raw.githubusercontent.com":
+        rest = segments[2:]
+    else:
+        return ""
+    if "/".join(segments[:2]).lower() != repository.lower():
+        return ""
+    if rest[:2] == ["refs", "heads"]:
+        rest = rest[2:]
+    if len(rest) < 2 or rest[0] not in BRANCHES:
+        return ""
+    return posixpath.normpath(unquote("/".join(rest[1:])))
+
+
+def shown_picture(address: str, page: str, repository: str) -> str:
+    """The path in the repository of the file that a page shows at address: relative
+    to the page, or from main of repository; nothing for what is neither."""
+    try:
+        parsed = urlsplit(html.unescape(address))
+    except ValueError:
+        return ""
+    if parsed.scheme or parsed.netloc:
+        return from_main(parsed, repository)
+    return posixpath.normpath(posixpath.join(posixpath.dirname(page), parsed.path))
+
+
+def fitted_size(named: Size, before: Size, after: Size) -> Size | None:
+    """The size that a page should name for a picture that went from before to after,
+    or None when what it names still fits. A page that named the whole picture of
+    another shape names the whole new one. Any other keeps its width, as a smaller
+    picture in a gallery does, with the height of the new shape; a height may be one
+    pixel off, as rounding at a smaller size makes it, and a sharper picture of the
+    same shape changes nothing on the page."""
+    width, height = named
+    across, down = after
+    if named == before and width * down != height * across:
+        return after
+    if abs(height - width * down / across) <= 1:
+        return None
+    return width, max(1, round(width * down / across))
+
+
+def attributes_of(text: str) -> dict[str, re.Match[str]]:
+    return {match["name"].lower(): match for match in ATTRIBUTE.finditer(text)}
+
+
+def named_number(attribute: re.Match[str] | None) -> int:
+    """The whole number that an attribute names, 0 for anything else, such as 50%."""
+    value = attribute["value"].strip("\"'") if attribute else ""
+    return int(value) if value.isdecimal() else 0
+
+
+def fit_page(
+    text: str, page: str, sizes: dict[str, tuple[Size, Size]], repository: str
+) -> tuple[str, list[Correction]]:
+    """The text of a page with the width and the height corrected of each picture of
+    sizes that it names both of, in Markdown and in HTML, and what it corrected. The
+    numbers are all that changes: their quotes, every other attribute and the rest of
+    the page stay as they are."""
+    corrections: list[Correction] = []
+
+    def fit(attributes: str, address: str) -> str:
+        picture = shown_picture(address, page, repository)
+        found = attributes_of(attributes)
+        named = named_number(found.get("width")), named_number(found.get("height"))
+        if picture not in sizes or not all(named):
+            return attributes
+        fitted = fitted_size(named, *sizes[picture])
+        if fitted is None:
+            return attributes
+        corrections.append(Correction(picture, named, fitted))
+        new = dict(zip(("width", "height"), fitted, strict=True))
+
+        def number(match: re.Match[str]) -> str:
+            value = new.get(match["name"].lower())
+            if value is None:
+                return match[0]
+            digits = match["value"].strip("\"'")
+            return match["lead"] + match["value"].replace(digits, str(value))
+
+        return ATTRIBUTE.sub(number, attributes)
+
+    def in_markdown(match: re.Match[str]) -> str:
+        return match["shown"] + fit(match["attributes"], match["address"])
+
+    def in_html(match: re.Match[str]) -> str:
+        source = attributes_of(match[0]).get("src")
+        return fit(match[0], source["value"].strip("\"'")) if source else match[0]
+
+    return (
+        HTML_PICTURE.sub(in_html, MARKDOWN_PICTURE.sub(in_markdown, text)),
+        corrections,
+    )
+
+
+def resized(found: Kept, files: Path) -> dict[str, tuple[Size, Size]]:
+    """Each picture that came out at another size, with that of the committed file
+    and that of its file in the folder files; one whose file names none stays away,
+    so that its pages stay as they are."""
+    sizes = {}
+    for picture in found.pictures:
+        if picture.before is None:
+            continue
+        after = picture_size(picture.path, (files / picture.path).read_bytes())
+        if after is not None:
+            sizes[picture.path] = (picture.before, after)
+    return sizes
+
+
+def corrected_pages(
+    root: Path, sizes: dict[str, tuple[Size, Size]], repository: str
+) -> list[Page]:
+    """Each page that git tracks in the work tree at root whose named sizes no longer
+    fit a picture of sizes, corrected. Its text comes from the checkout and only the
+    numbers from the pictures, so that nothing of a script reaches a page. A page by
+    a path that isn't plain, a link and one that isn't UTF-8 stay as they are, and the
+    check that names the size explains them."""
+    pages: list[Page] = []
+    if not sizes:
+        return pages
+    for path in filter(None, git(root, "ls-files", "-z", "--", *PAGES).split("\0")):
+        file = root / path
+        if not is_plain(path) or file.is_symlink() or not file.is_file():
+            continue
+        try:
+            text = file.read_bytes().decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        corrected, corrections = fit_page(text, path, sizes, repository)
+        if corrections:
+            pages.append(Page(path, corrected.encode("utf-8"), tuple(corrections)))
+    return pages
+
+
+def pages_of_folder(root: Path, folder: Path, repository: str) -> list[Page]:
+    """The pages that the pictures of a folder of keep correct, for the job with the
+    release app, which reads these numbers from the files once kept checked them."""
+    return corrected_pages(root, resized(kept(folder), folder / "files"), repository)
+
+
+def correct_work_tree(root: Path, found: Kept, repository: str) -> list[Page]:
+    """Writes the corrections of what keep found into the pages at root, for a person
+    who renders on their machine."""
+    pages = corrected_pages(root, resized(found, root), repository)
+    for page in pages:
+        (root / page.path).write_bytes(page.data)
+    return pages
+
+
+def contents(folder: Path, change: Picture | Page) -> bytes | None:
+    """What a commit writes for a picture of folder or for a corrected page, and None
+    for a picture that it deletes."""
+    if isinstance(change, Page):
+        return change.data
+    if change.status == "deleted":
+        return None
+    return (folder / "files" / change.path).read_bytes()
+
+
+def parts(
+    folder: Path, largest: int = LARGEST, pages: Sequence[Page] = ()
+) -> list[list[Picture | Page]]:
+    """The pictures of folder, then the corrected pages, in the commits that carry
+    them, each request below largest once its files are in base64."""
+    found: list[list[Picture | Page]] = [[]]
     size = 0
-    for picture in kept(folder).pictures:
-        length = 0
-        if picture.status != "deleted":
-            length = (folder / "files" / picture.path).stat().st_size * 4 // 3
+    changes: list[Picture | Page] = [*kept(folder).pictures, *pages]
+    for change in changes:
+        data = contents(folder, change)
+        length = 0 if data is None else len(data) * 4 // 3
         if found[-1] and length and size + length > largest:
             found.append([])
             size = 0
-        found[-1].append(picture)
+        found[-1].append(change)
         size += length
     return found
 
@@ -401,29 +730,28 @@ def commit_request(
     headline: str,
     body: str,
     part: int = 1,
+    pages: Sequence[Page] = (),
 ) -> dict[str, Any]:
     """The request to GitHub's GraphQL API that commits the part of what keep left in
-    folder onto a branch, as whoever sends it, and only while the branch is still at
-    head. The headline of one of several parts names it."""
-    every = parts(folder, LARGEST)
+    folder, and of the corrected pages, onto a branch, as whoever sends it, and only
+    while the branch is still at head. The headline of one of several parts names it."""
+    every = parts(folder, LARGEST, pages)
     if not 1 <= part <= len(every):
         raise ValueError(
             f"The screenshots of the run have no part {part}, of {len(every)}."
         )
-    pictures = every[part - 1]
     if len(every) > 1:
         headline = f"{headline} ({part} of {len(every)})"
-    additions = [
-        {
-            "path": picture.path,
-            "contents": base64.b64encode(
-                (folder / "files" / picture.path).read_bytes()
-            ).decode(),
-        }
-        for picture in pictures
-        if picture.status != "deleted"
-    ]
-    deletions = [{"path": p.path} for p in pictures if p.status == "deleted"]
+    additions = []
+    deletions = []
+    for change in every[part - 1]:
+        data = contents(folder, change)
+        if data is None:
+            deletions.append({"path": change.path})
+        else:
+            additions.append(
+                {"path": change.path, "contents": base64.b64encode(data).decode()}
+            )
     return {
         "query": COMMIT,
         "variables": {
@@ -468,7 +796,25 @@ def others(found: Kept) -> str:
         named += f" and {len(found.ignored) - 10} more"
     return (
         "The script changed other files too, which the bot leaves out, because it "
-        f"commits pictures only: {named}.\n"
+        f"takes only pictures from the script: {named}.\n"
+    )
+
+
+def corrections(pages: Sequence[Page]) -> str:
+    """The sizes that the bot corrected on the pages, as a table with a sentence;
+    nothing when it corrected none."""
+    if not pages:
+        return ""
+    rows = ["| Page | Picture | Named | Now |", "| --- | --- | ---: | ---: |"]
+    for page in pages:
+        for change in page.corrections:
+            named = " x ".join(map(str, change.named))
+            fitted = " x ".join(map(str, change.fitted))
+            rows.append(f"| `{page.path}` | `{change.picture}` | {named} | {fitted} |")
+    return (
+        "These pictures came out at another size, so the width and the height that "
+        "these pages name for them changed, and nothing else on those pages:\n\n"
+        + "".join(f"{row}\n" for row in rows)
     )
 
 
@@ -482,13 +828,23 @@ def summary(found: Kept) -> str:
     return f"{text}\n{extra}" if extra else text
 
 
-def report(folder: Path, sha: str, run: str, script: Path = SCRIPT) -> str:
-    """The description of the bot's pull request, for the pictures of script."""
+def report(
+    folder: Path,
+    sha: str,
+    run: str,
+    script: Path = SCRIPT,
+    pages: Sequence[Page] = (),
+) -> str:
+    """The description of the bot's pull request, for the pictures of script and the
+    pages that they correct."""
     found = kept(folder)
     text = (
         f"`bash {script.as_posix()}` rendered the pictures of `main` anew, on {sha}, "
         "and these look different:\n\n" + listing(found)
     )
+    corrected = corrections(pages)
+    if corrected:
+        text += f"\n{corrected}"
     if any(picture.path == SOCIAL_PREVIEW for picture in found.pictures):
         text += (
             f"\n`{SOCIAL_PREVIEW}` changed: once this pull request is merged, upload "

@@ -192,6 +192,20 @@ else
   echo "Python 3.12 or newer is not installed here; the CI checks the pages."
 fi
 
+step "Files of the project"
+# What a release of the blueprint moves in a file that an update leaves as it is, such
+# as the group of a label in .github/labels.toml. migrate --fix moves it, and the fix bot
+# commits that onto the pull request of the update. The Python and blueprint.py of the
+# step Pages in one column.
+if [[ -n "$python" ]]; then
+  "$python" "$tool" migrate
+elif [[ -n "${CI:-}" ]]; then
+  echo "Checking the files of the project needs Python 3.12 or newer, which this runner lacks."
+  exit 1
+else
+  echo "Python 3.12 or newer is not installed here; the CI checks the files of the project."
+fi
+
 step "Changelog fragments"
 # Every fragment of changelog.d/ as the release takes it in, those that wait on main
 # for the next release too: rules that get stricter, in blueprint.py or in an update
@@ -237,6 +251,22 @@ elif [[ -n "${CI:-}" ]]; then
   exit 1
 else
   echo "Python 3.12 or newer is not installed here; the CI checks the lock files."
+fi
+
+step "Lock files match their sources"
+# pip installs a lock file as it is, so a change of its source, such as
+# requirements-dev.in, reaches no install until the file is compiled again. The step
+# compiles each lock file again with the command in its header, for its Python and on
+# the versions that it pins, so that a new release upstream changes nothing, and
+# compares the pins; locks --compile --fix keeps the result. It needs uv, without which
+# it says so and passes: the CI has it. The Python and blueprint.py of the step before.
+if [[ -n "$python" ]]; then
+  "$python" "$tool" locks --compile
+elif [[ -n "${CI:-}" ]]; then
+  echo "Comparing the lock files needs Python 3.12 or newer, which this runner lacks."
+  exit 1
+else
+  echo "Python 3.12 or newer is not installed here; the CI compares the lock files."
 fi
 
 step "Explanations of the checks"
