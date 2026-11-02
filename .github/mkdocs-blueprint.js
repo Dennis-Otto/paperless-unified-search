@@ -2,14 +2,22 @@
 // .github/mkdocs_blueprint.py serves it as assets/javascripts/blueprint.js.
 // https://github.com/Dennis-Otto/repo-blueprint
 
-// A block of code that scrolls sideways takes the focus, so that a reader scrolls it
-// with the keyboard (WCAG 2.1.1). Material does that only once the block comes into
-// view, so the keyboard would skip the blocks further down.
+// What scrolls sideways takes the focus, so that a reader scrolls it with the keyboard
+// (WCAG 2.1.1): a block of code, and the frame that Material puts around a table, which
+// scrolls on a phone. Material does that for a block only once it comes into view, so
+// the keyboard would skip those further down, and never for a table. Whether it scrolls
+// can change after the load, as a phone turns or a fold opens, and each of them calls
+// the observer then; a frame that fits again keeps the focus, which does no harm.
 window.addEventListener("load", () => {
-  for (const code of document.querySelectorAll(".md-typeset pre > code")) {
-    if (code.scrollWidth > code.clientWidth && !code.hasAttribute("tabindex")) {
-      code.setAttribute("tabindex", "0");
+  const observer = new ResizeObserver((entries) => {
+    for (const { target } of entries) {
+      if (target.scrollWidth > target.clientWidth && !target.hasAttribute("tabindex")) {
+        target.setAttribute("tabindex", "0");
+      }
     }
+  });
+  for (const each of document.querySelectorAll(".md-typeset pre > code, .md-typeset__scrollwrap")) {
+    observer.observe(each);
   }
 });
 

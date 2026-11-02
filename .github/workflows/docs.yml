@@ -15,7 +15,8 @@ name: Docs
 # week. After the build, lychee checks every link and anchor of the pages that were
 # built and the links of llms.txt, the map of the website for AI assistants,
 # blueprint.py site-check what the hooks of the website promise, and axe-core
-# the pages in the light and the dark scheme for what WCAG 2.2 A and AA ask, with the
+# the pages in the light and the dark scheme, at the width of a desktop and of a phone,
+# for what WCAG 2.2 A and AA ask, also that no page scrolls sideways on a phone, with the
 # locked tools of .github/a11y/: on a pull request those that differ from main, by the
 # digest that main keeps in the cache, and on main and every week every page. A serious
 # or critical violation fails the check, unless .github/a11y-accepted.toml accepts it
@@ -57,7 +58,7 @@ jobs:
     name: docs
     runs-on: ubuntu-24.04
     # The accessibility check, with its limit below, and five minutes for the rest.
-    timeout-minutes: 20
+    timeout-minutes: 35
     permissions:
       contents: read
       pages: read # whether GitHub Pages publishes from this workflow
@@ -239,8 +240,9 @@ jobs:
         timeout-minutes: 5
         run: bash scripts/check-site.sh site
       # The accessibility of the website: .github/a11y/check.mjs opens the pages in the
-      # Google Chrome of the runner, in the light and the dark scheme, and names each
-      # serious or critical violation of WCAG 2.2 A or AA that axe-core finds and that
+      # Google Chrome of the runner, in the light and the dark scheme, at 1280 and at
+      # 375 px wide, and names each serious or critical violation of WCAG 2.2 A or AA that
+      # axe-core finds, and each page that scrolls sideways at 375 px, that
       # .github/a11y-accepted.toml doesn't accept, with its page and how to fix it, in
       # the summary and as annotations, and fails the check.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -269,10 +271,11 @@ jobs:
       - name: Check the accessibility of the website
         id: a11y
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        # Every page in two schemes, on a runner: 7 minutes 17 seconds on homedarts, the
-        # slowest website, with 243 pages (2026-11-01), and 5 minutes 32 seconds on the
-        # blueprint. The limit is about twice the slowest, for a slow runner and new pages.
-        timeout-minutes: 15
+        # Every page in two schemes and at two widths, on a runner: 12 minutes 15 seconds
+        # on the blueprint (2026-11-02). At one width, homedarts, the slowest website with
+        # 243 pages, took 7 minutes 17 seconds (2026-11-01), so about twice that now. The
+        # limit is about twice the slowest, for a slow runner and new pages.
+        timeout-minutes: 30
         env:
           EVENT: ${{ github.event_name }}
         run: |
