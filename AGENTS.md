@@ -38,6 +38,7 @@ Turn on the hook of the repository once with `git config core.hooksPath .githook
 ## Commits and pull requests
 
 - Sign off every commit with `git commit -s`, for the [Developer Certificate of Origin](https://developercertificate.org/); the check *lint* fails without it.
+- Sign every commit as well, with `git commit -S` or `commit.gpgsign` set: `-S` signs, `-s` only adds the sign-off. Where the rules of `main` require a verified signature, GitHub blocks the merge of a pull request with an unsigned commit; the check *signed commits* and the PR coach name the commit and how to sign it again.
 - The title of a pull request is a [Conventional Commit](https://www.conventionalcommits.org/), such as `feat(settings): add a dark mode`. Pull requests are squashed into one commit named after the title, and the title decides the next version: `fix` and `perf` a patch, `feat` a minor, `!` after the type, such as `feat!:`, a major version (a minor one before 1.0.0). `docs`, `test`, `refactor`, `ci`, `build` and `chore` make no release by themselves.
 - The description follows the pull request template and names the issue that it fixes with `Fixes #123`. The issue stays open until a release ships the fix, and a bot closes it then.
 - Every change reaches `main` through a pull request that passes every required check.
@@ -72,7 +73,7 @@ The files of this project, as `_skip_if_exists` in the `copier.yml` of the bluep
 - **Code and tests:** `/src`, `/lib`, `/app`, `/appinfo`, `/img`, `/custom_components`, `/extension`, `/store`, `/tests`, `/test`, `/fuzz`, `/*.py`, `/action.yml`, `/hacs.json`, `/Dockerfile`
 - **Dependency manifests and lock files, which Renovate keeps current:** `/pyproject.toml`, `/requirements-dev.in`, `/requirements-dev.txt`, `/requirements-test.in`, `/requirements-test.txt`, `/requirements-fuzz.in`, `/requirements-fuzz.txt`, `/composer.json`, `/composer.lock`, `/package.json`, `/package-lock.json`
 - **Issue and discussion forms:** `.github/ISSUE_TEMPLATE/bug_report.yml`, `.github/ISSUE_TEMPLATE/feature_request.yml`, `.github/ISSUE_TEMPLATE/config.yml`, `.github/DISCUSSION_TEMPLATE/q-a.yml`, `.github/DISCUSSION_TEMPLATE/ideas.yml`
-- **Settings, labels and bots:** `.github/repository.project.toml`, `.github/checks.project.toml`, `.github/labels.toml`, `.github/labeler.yml`, `.github/renovate.json5`, `.github/renovate-accepted.json5`, `/osv-scanner.toml`, `.github/findings.toml`, `.github/dependency-review.yml`, `.github/workflows/action-test.yml`, `.github/issue-assistant/project.md`, `.github/agents.project.md`
+- **Settings, labels and bots:** `.github/repository.project.toml`, `.github/checks.project.toml`, `.github/labels.toml`, `.github/labeler.yml`, `.github/renovate.json5`, `.github/renovate-accepted.json5`, `.github/a11y-accepted.toml`, `/osv-scanner.toml`, `.github/findings.toml`, `.github/dependency-review.yml`, `.github/workflows/action-test.yml`, `.github/issue-assistant/project.md`, `.github/agents.project.md`
 - **Lint, links and the pictures:** `/.markdownlint.jsonc`, `.github/cspell-words.txt`, `/.lycheeignore`, `.github/social-preview.html`, `/scripts/screenshots.sh`, `.github/screenshots-paths.txt`
 - **The assets that the release builds of its own:** `/scripts/release-assets.sh`
 

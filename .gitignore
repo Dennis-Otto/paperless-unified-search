@@ -12,8 +12,10 @@ Thumbs.db
 /.github/prose/node_modules/
 /.github/vale/
 
-# The tools of the accessibility check of the website, fetched when it runs
+# The tools of the accessibility check of the website, fetched when it runs, and
+# the digest of the website that it compares with
 /.github/a11y/node_modules/
+/site-digest.json
 
 # Secrets, which never belong in the repository; the secret scan checks every push too.
 .env

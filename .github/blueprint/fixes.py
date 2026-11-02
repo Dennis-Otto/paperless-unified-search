@@ -11,7 +11,9 @@ waits for the other checks of the commit that keep fixes, so that one commit hol
 them all. Then `fix commit` commits them onto the branch of a pull request of this
 repository as the release app, `fix suggest` suggests them at their lines of a pull
 request from a fork, which no bot may push to, and `fix main` keeps one pull request
-from bot/self-heal with the fixes of main, which merges itself.
+from bot/self-heal with the fixes of main, which merges itself. Docs keeps a fix of
+main alone, and while it passes: the first run of the accessibility check with the line
+baseline = true of .github/a11y-accepted.toml, which accepts what the website has.
 """
 
 from __future__ import annotations
@@ -57,6 +59,9 @@ BRANCH = "bot/self-heal"
 ARTIFACT = "fixes-"
 # The workflows whose checks keep fixes: Lint and the CI of each kind of project.
 WORKFLOWS = ("Lint", "CI (*)")
+# The workflow that keeps a fix only on main, and also when it passes: Docs, whose first
+# run of every page accepts the violations that the website has, and turns no check red.
+MAIN_WORKFLOW = "Docs"
 # In a command of autofix, blueprint.py of this repository, with the Python that runs.
 TOOL = "{blueprint}"
 # In a command of autofix, the Python that runs the bot, for a script of the repository.
@@ -356,7 +361,9 @@ def runs_of(api: Api, repo: str, sha: str, event: str) -> list[WorkflowRun]:
     latest: dict[str, WorkflowRun] = {}
     for item in data["workflow_runs"]:
         name = str(item.get("name") or "")
-        if not any(fnmatch.fnmatchcase(name, pattern) for pattern in WORKFLOWS):
+        if not (event == "push" and name == MAIN_WORKFLOW) and not any(
+            fnmatch.fnmatchcase(name, pattern) for pattern in WORKFLOWS
+        ):
             continue
         found = WorkflowRun(
             int(item["id"]),
@@ -439,7 +446,12 @@ def collect(
         runs = runs_of(api, repo, sha, event)
     folders = []
     for found in runs:
-        if found.status != "completed" or found.conclusion != "failure":
+        passed_with_fixes = (
+            found.name == MAIN_WORKFLOW and found.conclusion == "success"
+        )
+        if found.status != "completed" or (
+            found.conclusion != "failure" and not passed_with_fixes
+        ):
             continue
         for name in artifacts_of(api, repo, found.id):
             target = folder / f"{found.id}-{name}"

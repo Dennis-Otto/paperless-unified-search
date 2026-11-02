@@ -14,7 +14,9 @@ slow phone stays within BUDGET, and reads what the deploy job needs to know: the
 further languages, whose home pages it asks for, and the path of the address, from
 which the 404 page links the files of the website. With the sources of the pages, it
 also finds a picture that a page lost on its way from the Markdown, the README
-included, to the built file, and the empty paragraph that such a loss leaves.
+included, to the built file, and the empty paragraph that such a loss leaves. It reads
+llms.txt, the map of the website for AI assistants, as https://llmstxt.org/ asks for
+it, and whether each of its links to the website leads to a page there.
 """
 
 from __future__ import annotations
@@ -26,7 +28,7 @@ import re
 from bisect import bisect_right
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
-from itertools import accumulate
+from itertools import accumulate, dropwhile
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -38,6 +40,15 @@ SITEMAP = "sitemap.xml"
 # The page that GitHub Pages shows for every address that leads nowhere.
 NOT_FOUND = "404.html"
 LOCATION = re.compile(r"<loc>\s*([^<]*?)\s*</loc>")
+# The map of the website for AI assistants, at its root; a link of it, by its address;
+# an item of a list of links, which is every line of its sections, as
+# https://llmstxt.org/ asks: a name and an address, and after them with a colon what
+# the page is about; and the folder of the decision records, at any depth, which are
+# for maintainers and stay out of it.
+LLMS_TXT = "llms.txt"
+LLMS_LINK = re.compile(r"\[[^\[\]\n]+\]\(([^()\s]+)\)")
+LLMS_ITEM = re.compile(r"(?:  )*- \[[^\[\]\n]+\]\([^()\s]+\)(?:: .+)?")
+DECISIONS = "decisions"
 # What a page may load at once, in bytes as GitHub Pages sends them, compressed:
 # the budget of a page on a phone with 1.6 Mbit/s (decision 0058). It counts the
 # page, its stylesheets and scripts, the pictures that load before the reader
@@ -245,13 +256,14 @@ class Finding:
 @dataclass(frozen=True)
 class Site:
     """What check() found: the default language, the further ones that the website
-    has, the path of its address, such as /repo/ for a project website, and every
-    broken promise."""
+    has, the path of its address, such as /repo/ for a project website, every broken
+    promise, and its full address, if it has one."""
 
     default: str
     further: tuple[str, ...]
     root: str
     findings: tuple[Finding, ...]
+    base: str = ""
 
 
 def check(site: Path, repository: Path | None = None, docs: str | None = None) -> Site:
@@ -292,7 +304,9 @@ def check(site: Path, repository: Path | None = None, docs: str | None = None) -
     if further:
         findings += sitemaps(site, pages, base)
         findings += not_found(pages, default)
-    return Site(default, further, root, tuple(findings))
+    if base:
+        findings += website_map(site, pages, base, further)
+    return Site(default, further, root, tuple(findings), base)
 
 
 def canonicals(pages: dict[str, Page], *, required: bool) -> list[Finding]:
@@ -959,6 +973,95 @@ def not_found(pages: dict[str, Page], default: str) -> list[Finding]:
             )
         ]
     return []
+
+
+def website_map(
+    site: Path, pages: dict[str, Page], base: str, further: tuple[str, ...]
+) -> list[Finding]:
+    """llms.txt, the map of a website with an address, is as https://llmstxt.org/ asks:
+    it starts with a title, and its sections hold lists of links alone. It links
+    pages, and each link to the website leads to one that the website has and search
+    engines may list, and that is no decision record; a further language with a home
+    page of its own has its pages linked as well.
+
+    At the root of an address, a folder that the website lacks belongs to another
+    website there, which this check can't see."""
+    path = site / LLMS_TXT
+    if not path.is_file():
+        return [
+            Finding(
+                LLMS_TXT,
+                "is missing: on_post_build of .github/mkdocs_blueprint.py writes it "
+                "after the build, so check that hooks of the configuration of MkDocs "
+                "names that file",
+            )
+        ]
+    text = path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines()
+    findings = []
+    if not lines or not lines[0].startswith("# "):
+        findings.append(
+            Finding(LLMS_TXT, "doesn't start with a title, which llmstxt.org asks for")
+        )
+    sections = dropwhile(lambda line: not line.startswith("## "), lines)
+    findings += [
+        Finding(
+            LLMS_TXT,
+            f"has a line in its sections that is no item with a link: {line!r}",
+        )
+        for line in sections
+        if line and not line.startswith("## ") and not LLMS_ITEM.fullmatch(line)
+    ]
+    links = list(dict.fromkeys(LLMS_LINK.findall(text)))
+    if not links:
+        findings.append(Finding(LLMS_TXT, "links no page"))
+    at_root = urlsplit(base).path == "/"
+    for address in links:
+        if not address.startswith(base):
+            continue
+        name = unquote(urlsplit(address.removeprefix(base)).path)
+        if not name or name.endswith("/"):
+            name += "index.html"
+        folder, slash, _ = name.partition("/")
+        if at_root and slash and not (site / folder).is_dir():
+            continue
+        problem = map_link_problem(site, pages, name)
+        if problem:
+            findings.append(Finding(LLMS_TXT, f"{problem}: {address}"))
+    for language in further:
+        if not pages[f"{language}/index.html"].unlisted and not any(
+            f"/{language}/" in address for address in links
+        ):
+            findings.append(
+                Finding(
+                    LLMS_TXT,
+                    f'links no page in "{language}", which has a home page of its own',
+                )
+            )
+    return findings
+
+
+def map_link_problem(site: Path, pages: dict[str, Page], name: str) -> str:
+    """What is wrong with a link of llms.txt to name, a path on the website, if
+    anything."""
+    if DECISIONS in name.split("/"):
+        return "links a decision record, which is for maintainers"
+    if not (site / name).is_file():
+        return "links a page that the website lacks"
+    page = pages.get(name)
+    if page is not None and page.unlisted:
+        return "links a page that no search engine may list"
+    return ""
+
+
+def map_rule(site: Site, folder: Path) -> str:
+    """What --remap of lychee needs to check the links of llms.txt of site, which
+    MkDocs built into folder: lychee --offline leaves out every full address, so the
+    rule leads those of the website to its files. Empty for a website without the
+    map or at the root of an address, where other websites have addresses as well."""
+    if site.root == "/" or not (folder / LLMS_TXT).is_file():
+        return ""
+    return f"^{re.escape(site.base)}(.*)$ {folder.resolve().as_uri()}/$1"
 
 
 def annotation(finding: Finding, folder: str) -> str:

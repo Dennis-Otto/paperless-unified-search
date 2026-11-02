@@ -115,6 +115,7 @@ jobs:
           # change them.
           package-manager-cache: false
       - name: Build the assets of the project
+        id: build-project-assets
         if: hashFiles('scripts/release-assets.sh') != ''
         timeout-minutes: 15
         env:
@@ -159,6 +160,18 @@ jobs:
           if-no-files-found: error
           # Long enough to re-run only the failed job assets after a weekend.
           retention-days: 7
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.toml. Only for the step
+      # of the script: a tag that moved, say, is no fault of the script, and its own
+      # annotation names it.
+      - name: Explain a failure of the script
+        if: failure() && steps.build-project-assets.outcome == 'failure'
+        env:
+          CHECK: assets of the project
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" coach explain "$CHECK"
       - name: Wait until Harden-Runner has removed Docker
         # Harden-Runner removes Docker with apt-get in the background; a job that ends
         # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
@@ -572,6 +585,7 @@ jobs:
       # The assets that scripts/release-assets.sh built, beside those of the release,
       # none of which they replace.
       - name: Add the assets of the project
+        id: add-project-assets
         if: hashFiles('scripts/release-assets.sh') != ''
         run: |
           set -euo pipefail
@@ -621,6 +635,16 @@ jobs:
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$RUNNER_TEMP/pull-requests.md"
           python3 "$script" changelog notes "$VERSION" CHANGELOG.md "$RUNNER_TEMP/pull-requests.md" > "$RUNNER_TEMP/notes.md"
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/notes.md"
+      # The PR coach for a name that the release refuses for itself; the other
+      # failures of this job are no fault of the project's script.
+      - name: Explain a refused asset of the project
+        if: failure() && steps.add-project-assets.outcome == 'failure'
+        env:
+          CHECK: assets of the project
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" coach explain "$CHECK"
       - name: Wait until Harden-Runner has removed Docker
         # Harden-Runner removes Docker with apt-get in the background; a job that ends
         # before it finishes hangs in "Cleaning up orphan processes" until its timeout.

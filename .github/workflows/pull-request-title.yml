@@ -6,6 +6,14 @@ name: Pull request title
 # that changes something for users, a feat, fix or perf, also says so in a fragment of
 # the changelog, a new file in changelog.d/, or under Unreleased in CHANGELOG.md, which
 # becomes the notes of the release.
+#
+# The check signed commits is here because this event starts on every push, also from a
+# fork whose other workflows wait for the approval of a maintainer, and costs only a
+# question to the API: where the rules of the base branch require signed commits, it
+# fails for each commit of the pull request without a signature that GitHub verified,
+# as GitHub then blocks the merge. It stays out of the required checks: GitHub's own
+# rule already blocks that merge, and a required check would change the settings of
+# every repository for nothing (decision 0098).
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -298,3 +306,84 @@ jobs:
           [[ -f "$script" ]] || script=blueprint.py
           mapfile -t parts < <(grep . <<<"$FAILED" || true)
           python3 "$script" coach explain "$CHECK" --parts "${parts[@]}"
+
+  signatures:
+    name: signed commits
+    if: ${{ !github.event.repository.fork }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      # blueprint.py and the explanations of the PR coach of the default branch, and the
+      # commits of the pull request and the rules of its base branch; it writes nothing.
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Block every host that the job doesn't need
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
+      - name: Wait until Harden-Runner lets the hosts through
+        # The runner may have asked for an address past Harden-Runner, which then blocks
+        # that address for as long as systemd-resolved keeps it, up to a minute.
+        timeout-minutes: 4
+        env:
+          HOSTS: >-
+            api.github.com:443
+            github.com:443
+        run: |
+          deadline=$(($(date +%s) + 120))
+          for endpoint in $HOSTS; do
+            host="${endpoint%:*}"
+            # A wildcard names no host to ask.
+            [[ "$host" == '*.'* ]] && continue
+            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+              if (($(date +%s) >= deadline)); then
+                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                break
+              fi
+              echo "Harden-Runner still blocks $host, waiting 3 s."
+              sleep 3
+            done
+          done
+      # The default branch alone; nothing of the pull request is checked out or run, and
+      # what it says of its commits only comes from the API.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github
+            blueprint
+      - name: Check the signature of every commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" --repo "$GH_REPO" coach signatures "$NUMBER" --base "$BASE"
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.toml.
+      - name: Explain the failure
+        if: failure()
+        env:
+          CHECK: "signed commits"
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" coach explain "$CHECK"

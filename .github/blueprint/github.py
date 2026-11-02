@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import time
@@ -67,6 +68,25 @@ def run_gh(
     return subprocess.run(  # pragma: no cover - the tests simulate gh
         ["gh", *arguments], input=body, capture_output=True, text=True, check=False
     )
+
+
+def run_gh_as(token: str) -> Runner:
+    """The GitHub CLI with a token other than that of the environment, for a request
+    that takes another right, such as those of the token of a job."""
+
+    def run(
+        arguments: Sequence[str], body: str | None
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["gh", *arguments],
+            input=body,
+            capture_output=True,
+            text=True,
+            check=False,
+            env={**os.environ, "GH_TOKEN": token},
+        )
+
+    return run
 
 
 def sleep(seconds: float) -> None:

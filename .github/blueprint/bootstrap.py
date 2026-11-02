@@ -38,6 +38,10 @@ from blueprint.github import MINIMUM_GH
 from blueprint.settings import BRANCH
 
 ANSWERS = ".copier-answers.yml"
+# The violations that the accessibility check of the website accepts, and the line of
+# that file, with the two lines of comment above it, that makes a run write them.
+ACCEPTED = ".github/a11y-accepted.toml"
+BASELINE = re.compile(r"^(?:#.*\n){0,2}baseline\s*=\s*true[^\n]*\n", re.MULTILINE)
 MESSAGE = "chore: start from the blueprint"
 # What the command line runs after the commands of create, as the user would type it.
 AFTER = (
@@ -240,6 +244,21 @@ def local_plan(root: Path, repo: str, run: Runner) -> Plan:
             ["git", "commit", "--signoff", "--message", MESSAGE],
         ]
     return plan
+
+
+def no_baseline(root: Path) -> None:
+    """Takes the line baseline = true out of the accepted violations of a new
+    repository, with the comment above it: the line is for a repository that an update
+    brings the check to, and whose website may have violations already. The accessibility
+    check of a new one fails on every violation from its first run."""
+    path = root / ACCEPTED
+    if path.is_file():
+        text = path.read_text(encoding="utf-8")
+        path.write_text(
+            BASELINE.sub("", text).rstrip("\n") + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
 
 
 def python_finding(python: tuple[int, ...]) -> Finding:
@@ -599,6 +618,8 @@ def create(
             print(f"  {shlex.join(step)}")
         print("Run it without --dry-run to do it.")
         return None
+    if plan.commits:
+        no_baseline(root)
     if plan.resume:
         print(f"Going on with {repo} on GitHub, from the first step that is left:")
     else:

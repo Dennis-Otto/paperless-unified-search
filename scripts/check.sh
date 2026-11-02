@@ -443,6 +443,31 @@ else
   echo "krankerl is not installed here; the CI builds the package."
 fi
 
+# The tests of the accessibility check of the website, which the blueprint alone keeps:
+# .github/a11y/check.mjs in a real Chrome, with every line and branch of it covered. They
+# need Node 24, as the check docs has it, for the limits of the coverage; check (python)
+# sets it up.
+if [[ -f .github/a11y/check.test.mjs ]]; then
+  step "Accessibility check"
+  node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)"
+  if ((${node_major:-0} < 24)); then
+    echo "Node 24 or newer is not installed here; the CI tests the accessibility check."
+  else
+    npm ci --prefix .github/a11y --ignore-scripts --no-audit --no-fund --silent
+    if node --input-type=module -e 'const { launch } = await import("./.github/a11y/check.mjs"); await (await launch()).close();' 2>/dev/null; then
+      node --test --experimental-test-coverage \
+        --test-coverage-include=.github/a11y/check.mjs \
+        --test-coverage-lines=100 --test-coverage-branches=100 \
+        .github/a11y/check.test.mjs
+    elif [[ -n "${CI:-}" ]]; then
+      echo "The tests of the accessibility check need a Chrome, which doesn't start on this runner."
+      exit 1
+    else
+      echo "Chrome doesn't start here; the CI tests the accessibility check."
+    fi
+  fi
+fi
+
 step "Website"
 # The website of the Docs workflow, built strictly as the check docs builds it, so
 # that a link or an anchor that leads nowhere fails here already. Its tools are those

@@ -1,6 +1,7 @@
 """The PR coach: a check that fails says what it found, why that matters and how to fix
 it, in the summary of the check and in one comment on the pull request, also on a pull
-request from a fork.
+request from a fork. It also asks GitHub itself whether the commits of the pull request
+block its merge, so that it never gives the all-clear to one that can't merge.
 
 The explanations are tables of .github/checks.toml, which the blueprint keeps, and of
 .github/checks.project.toml, which belongs to the project: one for each check, by the
@@ -16,15 +17,17 @@ from __future__ import annotations
 import fnmatch
 import html
 import re
+import shlex
 import textwrap
 import time
 import tomllib
+import urllib.parse
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from blueprint.github import Api, Json
+from blueprint.github import Api, GitHubError, Json
 
 CATALOG = Path(".github/checks.toml")
 PROJECT_CATALOG = Path(".github/checks.project.toml")
@@ -93,8 +96,19 @@ OWN_CHECKS = "check (*)"
 ACTIONS = "github-actions"
 WAIT = 20
 WAITS = 9
-# What a command of an explanation writes for the repository, as OWNER/NAME.
+# What a command of an explanation writes for the repository, as OWNER/NAME, and for
+# the branch that the pull request goes into.
 REPO = "{repo}"
+BASE = "{base}"
+# The check of the signatures of the commits of a pull request, the rule of the base
+# branch that makes GitHub block the merge without them, and what stands for the run of
+# the check in the report while the check hasn't ended: the ids of real runs are larger.
+SIGNATURE_CHECK = "signed commits"
+SIGNATURE_RULE = "required_signatures"
+SIGNATURE_RUN = 0
+# What GitHub answers for the rules of a private repository on a plan without rulesets,
+# which so has none: it names the plan to upgrade to, Pro or Team, by the owner's kind.
+NO_RULESETS = "upgrade to github"
 # The annotation that GitHub adds to every job that fails, which says nothing more.
 GENERIC = re.compile(r"Process completed with exit code \d+\.")
 # What the report shows of a pull request at most: GitHub takes 65536 characters.
@@ -186,11 +200,16 @@ class Entry:
             key, title, problem, why, fix, tuple(commands), docs, autofix, manual
         )
 
-    def within(self, repo: str | None) -> Entry:
+    def within(self, repo: str | None, base: str | None = None) -> Entry:
         """The explanation for a repository: {repo} in a command becomes its name, so
-        that a fork rebases onto the main of this repository, not onto its own."""
+        that a fork rebases onto the main of this repository, not onto its own, and
+        {base} the branch that the pull request goes into, as one word of the shell."""
         name = repo or "OWNER/NAME"
-        commands = tuple(command.replace(REPO, name) for command in self.commands)
+        branch = shlex.quote(base or "main")
+        commands = tuple(
+            command.replace(REPO, name).replace(BASE, branch)
+            for command in self.commands
+        )
         return replace(self, commands=commands)
 
 
@@ -573,15 +592,36 @@ class Finding:
 
 
 @dataclass(frozen=True)
+class Unverified:
+    """A commit of a pull request without a signature that GitHub verified, and the
+    reason that GitHub gives, such as unsigned or unknown_key. A pull request from a
+    fork writes its commits, so the report shows both only as code."""
+
+    sha: str
+    reason: str
+
+    def finding(self) -> Finding:
+        """The commit as what the check found, by its short name."""
+        return Finding("", 0, self.sha[:7], self.reason)
+
+    def annotation(self) -> str:
+        """The commit as an annotation of the check."""
+        message = escape_data(f"{self.sha[:7]}: {self.reason}")
+        return f"::error title=No verified signature::{message}"
+
+
+@dataclass(frozen=True)
 class Part:
     """A part of the report about the pull request itself, after the checks, such as
     the release that it makes: its Markdown, whether it is worth a comment on a pull
-    request whose checks pass, and the marker of an older comment of a bot that it
-    takes the place of."""
+    request whose checks pass, the marker of an older comment of a bot that it takes
+    the place of, and whether it says what the merge does, which it doesn't say of a
+    pull request that GitHub won't merge."""
 
     text: str
     news: bool = False
     replaces: str = ""
+    after_merge: bool = False
 
 
 def paged(api: Api, path: str) -> Iterator[Json]:
@@ -632,6 +672,46 @@ def check_runs(api: Api, repo: str, sha: str) -> list[Run]:
         page += 1
 
 
+def signatures_required(api: Api, repo: str, base: str) -> bool:
+    """Whether a rule of a branch requires signed commits. Any other refusal than that
+    of a plan without rulesets is an error: the coach then gives no all-clear."""
+    branch = urllib.parse.quote(base, safe="/")
+    try:
+        rules = list(paged(api, f"repos/{repo}/rules/branches/{branch}"))
+    except GitHubError as error:
+        if error.status == 403 and NO_RULESETS in error.message.lower():
+            return False
+        raise
+    return any(rule.get("type") == SIGNATURE_RULE for rule in rules)
+
+
+def unverified_commits(api: Api, repo: str, number: int, base: str) -> list[Unverified]:
+    """The commits of a pull request that block its merge: those without a signature
+    that GitHub verified, when a rule of the branch that it goes into requires one. A
+    merge of "Update branch" and a commit of a bot through the API are verified, and a
+    repository without the rule has none, whatever its commits are."""
+    if not signatures_required(api, repo, base):
+        return []
+    unverified = []
+    for item in paged(api, f"repos/{repo}/pulls/{number}/commits"):
+        verification = (item.get("commit") or {}).get("verification") or {}
+        if not verification.get("verified"):
+            reason = str(verification.get("reason") or "unknown")
+            unverified.append(Unverified(str(item.get("sha") or ""), reason))
+    return unverified
+
+
+def blocked_by_commits(runs: list[Run]) -> list[Run]:
+    """The check runs of a head whose commits block its merge: the check of the
+    signatures comes first and has failed, whatever GitHub shows of it. It may not have
+    ended or even started when the coach runs, and a run that passed, which GitHub
+    started late, doesn't turn it back. Its section links to its log, if it has run."""
+    own = [run for run in runs if run.app == ACTIONS and run.name == SIGNATURE_CHECK]
+    url = own[0].url if own else ""
+    failed = Run(SIGNATURE_RUN, SIGNATURE_CHECK, "completed", "failure", url, 0)
+    return [failed, *(run for run in runs if run not in own)]
+
+
 def findings(api: Api, repo: str, run: Run) -> list[Finding]:
     """The errors that a check run reports as annotations, without GitHub's own, and
     the explanations of the coach."""
@@ -667,9 +747,10 @@ def section(
     expanded: bool,
 ) -> str:
     """The part of the report about one check that failed."""
+    base = str(pull["base"]["ref"])
     entry = catalog.check(run.name)
     if entry:
-        entry = entry.within(repo)
+        entry = entry.within(repo, base)
     name = html_code(run.name)
     title = f"<b>{html.escape(entry.title)}</b> · {name}" if entry else name
     lines = [
@@ -695,7 +776,7 @@ def section(
         lines += [f"It stopped at the step **{step.key}** of `scripts/check.sh`.", ""]
         if not own:
             continue
-        lines += details(step.within(repo), link(step.docs, repo))
+        lines += details(step.within(repo, base), link(step.docs, repo))
         lines += [
             "Then run every check on your machine with `bash scripts/check.sh`, which "
             "explains each step that fails as well.",
@@ -716,7 +797,7 @@ def section(
         lines += ["**A title that passes:**", "", fence("text", [suggestion]), ""]
     for part in parts:
         lines += [f"**{html.escape(part.title)}** · {html_code(part.key)}", ""]
-        lines += details(part.within(repo), link(part.docs, repo))
+        lines += details(part.within(repo, base), link(part.docs, repo))
     others = [finding for finding in found if not finding.coach]
     if others:
         lines += ["**What the check found:**", ""]
@@ -748,6 +829,17 @@ def halted(stopped: list[Run]) -> list[str]:
     if len(stopped) > FINDINGS:
         lines.append(f"- … and {len(stopped) - FINDINGS} more")
     return lines
+
+
+def merge_blocked(unverified: int) -> str:
+    """What the report says first of commits that block the merge."""
+    commits = "1 commit of this pull request has"
+    if unverified > 1:
+        commits = f"{unverified} commits of this pull request have"
+    return (
+        "\u26d4 **GitHub blocks the merge until every commit is signed:** "
+        f"{commits} no verified signature."
+    )
 
 
 def fix_note(sha: str, fixed: Sequence[str]) -> str:
@@ -792,14 +884,17 @@ def render(
     catalog: Catalog,
     fixed: Sequence[str] | None = None,
     parts: Sequence[Part] = (),
+    unverified: int = 0,
 ) -> str:
     """The comment of the PR coach on a pull request; fixed holds the files of the
-    head when the fix bot made it, and parts what the report says of the pull request
-    itself, after the checks."""
+    head when the fix bot made it, parts what the report says of the pull request
+    itself, after the checks, and unverified how many of its commits block its merge."""
     failed = [run for run in runs if run.failed]
     stopped = [run for run in runs if run.stopped]
     pending = sum(1 for run in runs if run.pending)
     lines = [MARKER, "### PR coach", ""]
+    if unverified:
+        lines += [merge_blocked(unverified), ""]
     if failed:
         count = f"{len(failed)} check{'s' if len(failed) > 1 else ''}"
         lines += [
@@ -886,7 +981,8 @@ def report(
     and says what it did, for the summary of the job. about gives the parts of the
     report about the pull request of a person, such as the release that it makes; a
     pull request of a bot gets none. A pull request whose checks never failed gets no
-    comment, unless one of its parts is news."""
+    comment, unless one of its parts is news or its commits block its merge, which the
+    coach asks GitHub itself each time: the report may come before their check ended."""
     pull = find_pull(api, repo, sha, number)
     if pull is None:
         return f"{sha[:7]} is no longer the head of an open pull request; no report.\n"
@@ -898,19 +994,26 @@ def report(
             break
         wait(WAIT)
         runs = check_runs(api, repo, sha)
+    unverified = unverified_commits(api, repo, number, str(pull["base"]["ref"]))
+    if unverified:
+        runs = blocked_by_commits(runs)
     comments = bot_comments(api, repo, number)
     comment = next(iter(marked(comments, MARKER)), None)
     failed = [run for run in runs if run.failed]
     person = (pull.get("user") or {}).get("type") != "Bot"
     parts = list(about(pull)) if about is not None and person else []
+    if unverified:
+        parts = [part for part in parts if not part.after_merge]
     if comment is None and not failed and not any(part.news for part in parts):
         retire(api, repo, comments, parts)
         return f"No check of #{number} failed; it needs no report.\n"
     # What the checks found, only of those that the report can show: each check that
     # failed has one annotation at least, and the API takes only so many requests.
     found = {run.id: findings(api, repo, run) for run in failed[:SECTIONS]}
+    if unverified:
+        found[SIGNATURE_RUN] = [commit.finding() for commit in unverified]
     fixed = fixed_by_bot(api, repo, sha)
-    body = render(repo, sha, pull, runs, found, catalog, fixed, parts)
+    body = render(repo, sha, pull, runs, found, catalog, fixed, parts, len(unverified))
     if comment is not None and comment.get("body") == body:
         said = f"The report of #{number} is up to date:\n\n{body}"
     # A push while the coach read the checks: the report of the new head follows, and
