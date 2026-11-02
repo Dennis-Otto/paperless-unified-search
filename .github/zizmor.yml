@@ -52,8 +52,9 @@ rules:
       # The branch bot starts when auto-merge of a pull request is turned on or off and
       # when a check of a pull request fails, also one that runs on pull_request_target
       # such as the title's, which may be a fork's; it checks out only the default branch,
-      # whose blueprint.py reads the pull requests and their checks from the API and
-      # merges the default branch into one of them through the API.
+      # whose blueprint.py reads the pull requests and their checks from the API, merges
+      # the default branch into one of them through the API, and approves the runs of a
+      # head of a fork that it made itself on top of commits that a person approved.
       - update-branches.yml
       # The issue assistant's templates, which its check keeps equal to the action's.
       # The issue assistant starts on issue_comment so that it may answer a new

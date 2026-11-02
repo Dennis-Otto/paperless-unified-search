@@ -175,6 +175,17 @@ SEARCH_REQUEST = ("XMLHttpRequest", "search_index.json")
 # The sitemap that the website hands to search engines, with an entry for each page.
 SITEMAP_ENTRY = re.compile(r"\s*<url>\s*<loc>(?P<loc>[^<]*)</loc>.*?</url>", re.S)
 SITEMAP_LINK = re.compile(r'\s*<xhtml:link\b[^>]*?\bhref="(?P<href>[^"]*)"[^>]*/>')
+# The map of the website for AI assistants (https://llmstxt.org/), at its root; the
+# section of the pages at the top of the menu; the folder of the decision records, at
+# any depth, which are for maintainers and stay out of it; and what a link of the map
+# can't hold, as its parsers take the first ] for the end of the name and the first )
+# for the end of the address.
+LLMS_TXT = "llms.txt"
+LLMS_PAGES = "Pages"
+DECISIONS = "decisions"
+LINK_NAME = str.maketrans("[]", "()")
+LINK_ADDRESS = str.maketrans({"(": "%28", ")": "%29"})
+SENTENCE_ENDS = ".…!?"
 # A line of a page that includes a file of the repository, --8<-- "README.md", or a
 # part of one, "README.md:loop"; a line --8<-- alone starts and ends a block with
 # one file on each line.
@@ -656,6 +667,16 @@ FRAGMENTS = "changelog.d"
 CHANGELOG_CODE = ("blueprint/changelog.py", "../blueprint/changelog.py")
 
 
+class Menu(NamedTuple):
+    """What the build of a language gives the map of the website: the name and the
+    description of the website in that language, and its menu, whose pages have
+    their titles and descriptions once MkDocs has read them."""
+
+    name: str
+    summary: str | None
+    nav: Any
+
+
 class Built:
     """What the builds of every language found, for the steps after the last one:
     the paths of the pages that a further language shows untranslated, such as
@@ -665,7 +686,8 @@ class Built:
     pictures beside this file that they show; the pictures of each page that
     on_page_content left, by its path on the website, each by the name of its file;
     the links in the footer that the hooks gave the build before, None until they
-    did; and the version of the latest release, which the header shows.
+    did; the version of the latest release, which the header shows; and the menu of
+    each language, for the map of the website.
 
     The i18n plugin builds every further language within the build of the default
     one, and MkDocs loads the hooks anew for each build of mkdocs serve.
@@ -680,6 +702,7 @@ class Built:
         self.images: dict[str, list[str]] = {}
         self.social: list[dict[str, str]] | None = None
         self.version = ""
+        self.menus: dict[str, Menu] = {}
 
 
 BUILT = Built()
@@ -1487,9 +1510,9 @@ def search_in_language(output: str, page: Any, found: Languages) -> str:
 
 
 def on_post_build(config: Any) -> None:
-    """Write the search index of each language, keep the pages that no search engine
-    lists out of the sitemap, and copy the sitemap of a website in several
-    languages into every folder of pages.
+    """Write the map of the website and the search index of each language, keep the
+    pages that no search engine lists out of the sitemap, and copy the sitemap of a
+    website in several languages into every folder of pages.
 
     The language switch of Material asks for sitemap.xml in the folder of the page in
     each language: decisions/ and de/decisions/ on decisions/0006-beta-channel.html.
@@ -1500,6 +1523,7 @@ def on_post_build(config: Any) -> None:
     sitemap = site / "sitemap.xml"
     for path in (sitemap, site / "sitemap.xml.gz"):
         unlist(path, BUILT.unlisted)
+    write_map(site / LLMS_TXT, config)
     found = languages(config)
     if found is None:
         return
@@ -1516,6 +1540,119 @@ def on_post_build(config: Any) -> None:
 # After the i18n plugin, which writes the search index of every language with -100,
 # and after the hooks of a project that add to it, such as -110.
 on_post_build.mkdocs_priority = -120  # type: ignore[attr-defined]
+
+
+def write_map(path: Path, config: Any) -> None:
+    """Write llms.txt, the map of the website for AI assistants, once every language
+    has given its menu: the build of the last further language, within that of the
+    default one, has all that the map needs.
+
+    A website without an address has no full address for a link. A file that is there
+    already stays: the project's own, from docs/llms.txt or from a hook of its own
+    that runs before this one, such as the website at the root of an address, whose
+    map lists every website there.
+    """
+    found = languages(config)
+    spoken = (found.default, *found.further) if found else ("",)
+    if (
+        not config.site_url
+        or path.exists()
+        or any(language not in BUILT.menus for language in spoken)
+    ):
+        return
+    names = {
+        language.locale: language.name
+        for language in (config.plugins["i18n"].config.languages if found else ())
+    }
+    further = {language: names[language] for language in spoken[1:]}
+    path.write_text(map_of_website(spoken[0], further), encoding="utf-8", newline="\n")
+
+
+def map_of_website(default: str, further: dict[str, str]) -> str:
+    """llms.txt (https://llmstxt.org/) of the website, in default, its language: its
+    name, its description and a section for each part of its menu, with the pages of
+    that part. A link names the page of each language of further, by its name, that
+    has a version of its own."""
+    menu = BUILT.menus[default]
+    lines = [f"# {one_line(menu.name)}", ""]
+    if menu.summary:
+        lines += [f"> {one_line(menu.summary)}", ""]
+    translated = (
+        f", each with its page in {' and '.join(further.values())} where there is one"
+        if further
+        else ""
+    )
+    lines += [f"The pages of this website, in the order of its menu{translated}.", ""]
+    versions = {
+        language: {page.url: page for page in pages_in(BUILT.menus[language].nav.items)}
+        for language in further
+    }
+    for heading, pages in parts_of(menu.nav):
+        items = [
+            map_item(page, further, versions)
+            for page in pages
+            if page.canonical_url not in BUILT.unlisted
+            and DECISIONS not in page.url.split("/")
+        ]
+        if items:
+            lines += [f"## {one_line(heading)}", "", *items, ""]
+    return "\n".join(lines)
+
+
+def parts_of(nav: Any) -> list[tuple[str, list[Any]]]:
+    """The parts of a menu, each with its pages in the order of the menu: the pages at
+    its top under LLMS_PAGES, and then each of its sections, with the pages of the
+    sections inside it. A link to another site is no page of the website."""
+    top = [item for item in nav.items if item.is_page]
+    sections = [item for item in nav.items if item.is_section]
+    return [
+        (LLMS_PAGES, top),
+        *((section.title, pages_in(section.children)) for section in sections),
+    ]
+
+
+def pages_in(items: list[Any]) -> list[Any]:
+    """The pages among items of a menu, and inside its sections, in the order of the
+    menu."""
+    pages: list[Any] = []
+    for item in items:
+        if item.is_section:
+            pages += pages_in(item.children)
+        elif item.is_page:
+            pages.append(item)
+    return pages
+
+
+def map_item(
+    page: Any, further: dict[str, str], versions: dict[str, dict[str, Any]]
+) -> str:
+    """The item of the map for page: its title, which links it, and after it its
+    description and its version in each language of further, in versions by its path
+    on the website, unless no search engine may list that version: it shows the page
+    untranslated, or its own front matter says noindex."""
+    description = one_line(page.meta.get("description") or "")
+    if description and description[-1] not in SENTENCE_ENDS:
+        description += "."
+    links = []
+    for language, name in further.items():
+        there = f"{language}/{page.url}"
+        version = versions[language].get(there)
+        if version is not None and version.canonical_url not in BUILT.unlisted:
+            links.append(f"{name}: {map_link(version)}")
+    notes = " ".join(filter(None, (description, ". ".join(links))))
+    return f"- {map_link(page)}: {notes}" if notes else f"- {map_link(page)}"
+
+
+def map_link(page: Any) -> str:
+    """A link of the map to page, by its title and its full address."""
+    address = page.canonical_url.translate(LINK_ADDRESS)
+    return f"[{one_line(page.title)}]({address})"
+
+
+def one_line(text: str) -> str:
+    """text for the map: on one line, with a space between two words, and with
+    parentheses for its brackets."""
+    return " ".join(text.split()).translate(LINK_NAME)
 
 
 def unlist(path: Path, addresses: set[str]) -> None:
@@ -2375,12 +2512,17 @@ def automation_page(
 
 def on_nav(nav: Any, config: Any, files: Any) -> Any:
     """Give the pages that the hooks write their text, once the i18n plugin has made
-    a file of each language of them in on_files, and before MkDocs reads them.
+    a file of each language of them in on_files, and before MkDocs reads them, and
+    keep the menu of this language for the map of the website.
 
     They have no file of their own: MkDocs shows no pencil to edit them, and the
     plugin git-revision-date-localized dates them by the build, which redate
     corrects.
     """
+    found = languages(config)
+    BUILT.menus[found.current if found else ""] = Menu(
+        config.site_name, config.site_description, nav
+    )
     for file in files:
         text = BUILT.pages.get(file.src_uri)
         if text is not None:
@@ -2389,3 +2531,7 @@ def on_nav(nav: Any, config: Any, files: Any) -> Any:
             if file.page is not None:
                 file.page.edit_url = None
     return nav
+
+
+# After the i18n plugin, which translates the menu with -100, and can make a new one.
+on_nav.mkdocs_priority = -110  # type: ignore[attr-defined]

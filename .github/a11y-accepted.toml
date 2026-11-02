@@ -1,0 +1,16 @@
+# The violations of WCAG 2.2 A and AA that the website of this repository accepts, each
+# with its reason. The check docs fails on every other serious or critical violation
+# that .github/a11y/check.mjs finds. An entry names the page, as the check names it, and
+# the rule of axe-core; it accepts that rule on that page in both schemes:
+#
+# [[accepted]]
+# page = "demo.html"
+# rule = "color-contrast"
+# reason = "The demo shows the colors of the project's cards, which it can't change."
+#
+# The check says when an entry finds nothing any more. The blueprint brings this file
+# once and never changes it again: https://github.com/Dennis-Otto/repo-blueprint
+
+# Until the first run of every page on main, which writes what it finds below, as what
+# this repository accepted so far, and takes this line away; the fix bot brings that.
+baseline = true
