@@ -21,8 +21,8 @@ set -euo pipefail
 
 # Renovate moves the version, and pins.py of the blueprint writes its sha256.
 # renovate: datasource=github-releases depName=sigstore/gitsign extractVersion=^v(?<version>.+)$
-version=0.17.1
-sha256=69213a8a0813a151e5a47d0060862952ff833a845d57309dff76f7ba6600abae
+version=0.18.0
+sha256=2bc625472a08fea3bb6a57982c7d8b4978d1032251d305ceef3bf2ded0ca4483
 repo="$GITHUB_REPOSITORY"
 if [[ "$1" == verify && -n "${4:-}" ]]; then
   repo="$4"

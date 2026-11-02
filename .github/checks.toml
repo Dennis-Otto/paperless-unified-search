@@ -1304,11 +1304,15 @@ should do."""
 [step.Website]
 problem = """The website doesn't build strictly: a link or an anchor leads nowhere, a
 page is missing from the navigation of `mkdocs.yml`, or MkDocs warns about a page; the
-log names each one."""
+log names each one. Or the built website breaks what its hooks promise, or fails the
+checks of this project in `scripts/check-site.sh`; the lines above say which."""
 why = """A strict build keeps every link of the documentation working, and the check
-docs builds the website the same way."""
-fix = """Fix what the log names, and build the website again with the tools of its
-preview, which the section Website of CONTRIBUTING.md sets up:"""
+docs builds and checks the website the same way."""
+fix = """Fix what the log names. `bash scripts/check-site.sh site`, where the project
+has that script, checks a build in the folder `site` again and keeps what the script
+leaves there, such as a screenshot of a failure; the temporary folder of the step
+doesn't keep it. Build the website again with the tools of its preview, which the
+section Website of CONTRIBUTING.md sets up:"""
 commands = [".venv-docs/bin/mkdocs build --strict"]
 docs = "CONTRIBUTING.md#website"
 autofix = """A link or a page that leads nowhere needs a person, who knows where it

@@ -509,6 +509,12 @@ else
         echo "The website breaks what its hooks promise; the lines above name each file."
         exit 1
       fi
+      # The checks of this project alone on its website, as the check docs runs them
+      # after the build, here with the folder of this build.
+      if [[ -f scripts/check-site.sh ]] && ! bash scripts/check-site.sh "$site"; then
+        echo "The website fails the checks of this project in scripts/check-site.sh; the lines above say which."
+        exit 1
+      fi
     )
   fi
 fi
