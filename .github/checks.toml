@@ -158,8 +158,10 @@ Markdown, the parts of the README included, with no empty paragraph where a plug
 took one out, and that the page of the automation shows each workflow in a fold and
 the search finds its text; `scripts/check-site.sh` adds the checks of the project. axe-core opens
 the pages that differ from `main` in Chrome, and every page when a stylesheet, a script
-or `mkdocs.yml` differs, and names each serious or critical violation of WCAG 2.2 A or
-AA that `.github/a11y-accepted.toml` doesn't accept, at the Markdown of its page, or at
+or `mkdocs.yml` differs, in both schemes, at the width of a desktop and of a phone, and
+names each serious or critical violation of WCAG 2.2 A or AA, also a page that scrolls
+sideways on a phone with the widest element that overflows, that
+`.github/a11y-accepted.toml` doesn't accept, at the Markdown of its page, or at
 `mkdocs.yml` for a page without one. When the log names a font or a script that Material
 couldn't download, its server had a hiccup: that usually passes when the job runs again,
 and a build that finds them in the cache of the week, which a push to `main` saves,
@@ -170,7 +172,9 @@ the build doesn't: the links that a page writes in HTML, what a new version of
 Material or of its plugins changes in the pages, and a page that takes a phone on a
 slow network more than a few seconds to load. A reader with a screen reader, the
 keyboard alone or a larger contrast can't use what axe-core finds: text too faint to
-read, a link told apart by its color alone, a control without a name."""
+read, a link told apart by its color alone, a control without a name. A reader on a
+phone, or with a page enlarged to 400 %, loses the end of each line of a page that
+scrolls sideways."""
 fix = """Fix what the log of the check names: the page and the link that leads nowhere,
 or the file of the website that breaks a promise of its hooks. The hooks write
 `llms.txt` from the menu of `mkdocs.yml`, with the pages that it lists; a file of your
@@ -184,7 +188,8 @@ them. A page that lacks a picture of its Markdown, or has an empty paragraph,
 lost it in the build: build the website with the lock of its tools and look for the
 plugin or the hook that takes it out, as mkdocs-glightbox did with selectolax 1.0.0
 and 1.0.1. A violation of accessibility has a link in the summary that explains its
-fix; one that has to stay goes into `.github/a11y-accepted.toml`, with its page, its
+fix. A page that scrolls sideways lets what is wide wrap, or puts it in a frame that
+scrolls on its own, with `overflow-x: auto` and `tabindex="0"`. A violation that has to stay goes into `.github/a11y-accepted.toml`, with its page, its
 rule and the reason, and an entry without a reason stops the check. Install the tools of
 the website as the section Website of CONTRIBUTING.md shows, and build and check it as
 the check does (in the blueprint itself, the tool is `blueprint.py` without `.github/`);

@@ -1,9 +1,13 @@
 // The accessibility check of the website, a step of the check docs: it opens every
 // page that MkDocs built into a folder, such as site/, in Chrome, in the light and in
-// the dark scheme, and runs axe-core on each with the rules of WCAG 2.2 at the levels
-// A and AA. A violation whose impact is serious or critical fails it, with the page,
+// the dark scheme, at the width of a desktop and of a phone, and runs axe-core on each
+// with the rules of WCAG 2.2 at the levels A and AA. At the width of a phone it also
+// measures whether the page reflows, the criterion of WCAG 1.4.10, which itself measures
+// at 320 px: a page that scrolls sideways at this width is a violation of the rule
+// reflow, which names the widest element that overflows.
+// A violation whose impact is serious or critical fails it, with the page,
 // the rule, the elements and a link that explains the fix; the lesser ones it counts.
-// Each scheme has a browser of its own, whose system shows that scheme, and each page
+// Each scheme and width has a browser of its own, whose system shows that scheme, and each page
 // loads in it as a new reader's would, without a scheme that an earlier page saved;
 // a website whose palette doesn't follow the system switches with its toggle, and a
 // page that shows neither way the scheme of its toggle is a violation as well. A page
@@ -66,6 +70,19 @@ const UNSHOWN = {
 };
 // The schemes of the reader's system, and the one of Material that each should show.
 const SCHEMES = { light: "default", dark: "slate" };
+// The screens of the readers: a desktop, and a phone, whose layout CSS switches to on
+// a narrow screen. A plain window of that width, without the emulation of a phone,
+// which would zoom out of a page that is too wide instead of showing it.
+const DESKTOP = { width: 1280, height: 900 };
+const PHONE = { width: 375, height: 812 };
+// How the check shows each page.
+const SHOWN = `in the light and the dark scheme, at ${DESKTOP.width} and ${PHONE.width} px wide`;
+// The finding of a page that scrolls sideways on a phone; axe-core has no such rule.
+const SIDEWAYS = {
+  rule: "reflow",
+  impact: "serious",
+  link: "https://www.w3.org/WAI/WCAG22/Understanding/reflow.html",
+};
 // Pages that are checked at the same time: one for each core, from two to eight.
 const PARALLEL = Math.min(8, Math.max(2, availableParallelism()));
 // The address of a website without one in its pages.
@@ -381,11 +398,11 @@ async function showing(tab, scheme, timeout) {
   }
 }
 
-/** The violations of a page in one scheme, as it shows now, with the folds of the page
- * of the automation open, because axe doesn't read the contents of a closed one. */
-async function violations(tab, page, scheme) {
-  // The fonts, and the frames after which the script of Material has measured the
-  // page, such as a block of code that scrolls and takes the focus.
+/** Waits for the fonts, and the frames after which the script of Material has measured
+ * the page, such as a block of code that scrolls and takes the focus, with the folds of
+ * the page of the automation open, because axe doesn't read the contents of a closed
+ * one and a fold can hold what is too wide. */
+async function settled(tab) {
   /* node:coverage disable */
   await tab.evaluate(async () => {
     for (const fold of document.querySelectorAll("details.blueprint-fold")) {
@@ -397,10 +414,69 @@ async function violations(tab, page, scheme) {
     }
   });
   /* node:coverage enable */
+}
+
+/** The finding of a page that scrolls sideways, as it shows now, with the widest element
+ * that overflows: on a tie, the inner one, which an outer one grew around. What stays in
+ * a frame of its own or on the screen makes the page no wider. A word that doesn't wrap
+ * leaves its box behind, so the boxes of the text count as well; what overflows without
+ * a box, such as a pseudo-element, leaves the page as a whole to name. */
+async function reflow(tab, page, scheme) {
+  /* node:coverage disable */
+  const wide = await tab.evaluate(() => {
+    const root = document.documentElement;
+    if (root.scrollWidth <= root.clientWidth) {
+      return null;
+    }
+    const contained = (start, own) => {
+      for (let each = start; each && each !== document.body && each !== root; each = each.parentElement) {
+        const style = getComputedStyle(each);
+        if (style.position === "fixed" || (each !== own && style.overflowX !== "visible")) {
+          return true;
+        }
+      }
+      return false;
+    };
+    let widest = root;
+    let width = 0;
+    const weigh = (element, box, own) => {
+      if (box.right > root.clientWidth && box.width >= width && !contained(element, own)) {
+        widest = element;
+        width = box.width;
+      }
+    };
+    for (const element of document.querySelectorAll("body, body *")) {
+      weigh(element, element.getBoundingClientRect(), element);
+    }
+    const texts = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    const range = document.createRange();
+    while (texts.nextNode()) {
+      range.selectNodeContents(texts.currentNode);
+      weigh(texts.currentNode.parentElement, range.getBoundingClientRect(), null);
+    }
+    const name = widest.id ? `#${widest.id}` : [widest.localName, ...widest.classList].join(".");
+    const words = widest === root ? "" : (widest.innerText ?? widest.textContent).replace(/\s+/g, " ").trim().slice(0, 40);
+    return {
+      page: root.scrollWidth,
+      screen: root.clientWidth,
+      element: words ? `${name} "${words}"` : name,
+    };
+  });
+  /* node:coverage enable */
+  if (!wide) {
+    return [];
+  }
+  const help = `The page is ${wide.page} px wide on a screen of ${wide.screen} px, so its reader scrolls sideways, which WCAG 1.4.10 rules out; the widest element that overflows`;
+  return [{ ...SIDEWAYS, page, scheme, width: PHONE.width, help, elements: [wide.element] }];
+}
+
+/** The violations of a page in one scheme and at one width, as it shows now. */
+async function violations(tab, page, scheme, width) {
   const results = await new AxeBuilder({ page: tab }).withTags(TAGS).analyze();
   return results.violations.map((violation) => ({
     page,
     scheme,
+    width,
     rule: violation.id,
     impact: violation.impact,
     help: violation.help,
@@ -427,20 +503,24 @@ async function shows(tab, scheme) {
   return offered ? showing(tab, scheme, 3_000) : null;
 }
 
-/** The violations of one page in each scheme that the website offers, each in the
- * browser of that scheme. */
+/** The violations of one page in each scheme that the website offers and at each
+ * width, each in the browser of that scheme and width. */
 async function check(contexts, address, page) {
   const found = [];
-  for (const [scheme, context] of Object.entries(contexts)) {
+  for (const { context, scheme, screen } of contexts) {
     const tab = await context.newPage();
     try {
       await tab.goto(new URL(page, address).href, { waitUntil: "load", timeout: 60_000 });
       const shown = await shows(tab, scheme);
       if (shown) {
-        found.push(...(await violations(tab, page, scheme)));
+        await settled(tab);
+        if (screen === PHONE) {
+          found.push(...(await reflow(tab, page, scheme)));
+        }
+        found.push(...(await violations(tab, page, scheme, screen.width)));
       } else if (shown === false) {
         const help = `The page doesn't show the ${scheme} scheme that its toggle offers, neither as the system shows it nor after the toggle, so it can't be checked in it`;
-        found.push({ ...UNSHOWN, page, scheme, help });
+        found.push({ ...UNSHOWN, page, scheme, width: screen.width, help });
       }
     } finally {
       await tab.close();
@@ -449,24 +529,26 @@ async function check(contexts, address, page) {
   return found;
 }
 
-/** A browser for each scheme, whose system shows that scheme and whose pages read
- * the website from the folder; each page loads without what an earlier one saved,
- * such as the scheme that Material keeps. */
+/** A browser for each scheme at each width, whose system shows that scheme and whose
+ * pages read the website from the folder; each page loads without what an earlier one
+ * saved, such as the scheme that Material keeps. */
 async function contextsOf(browser, site, address, foreign) {
-  const contexts = {};
-  for (const scheme of Object.keys(SCHEMES)) {
-    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, colorScheme: scheme });
-    /* node:coverage disable */
-    await context.addInitScript(() => {
-      try {
-        localStorage.clear();
-      } catch {
-        // A frame without storage keeps nothing.
-      }
-    });
-    /* node:coverage enable */
-    await serve(context, site, address, foreign);
-    contexts[scheme] = context;
+  const contexts = [];
+  for (const screen of [DESKTOP, PHONE]) {
+    for (const scheme of Object.keys(SCHEMES)) {
+      const context = await browser.newContext({ viewport: screen, colorScheme: scheme });
+      /* node:coverage disable */
+      await context.addInitScript(() => {
+        try {
+          localStorage.clear();
+        } catch {
+          // A frame without storage keeps nothing.
+        }
+      });
+      /* node:coverage enable */
+      await serve(context, site, address, foreign);
+      contexts.push({ context, scheme, screen });
+    }
   }
   return contexts;
 }
@@ -485,13 +567,14 @@ async function pool(tasks) {
   return results;
 }
 
-/** The findings of the same rule on the same page, with the schemes where it fails. */
+/** The findings of the same rule on the same page, with the schemes and the widths
+ * where it fails. */
 function grouped(findings) {
   const groups = new Map();
   for (const finding of findings) {
     const key = `${finding.page}\0${finding.rule}`;
-    const group = groups.get(key) ?? { ...finding, schemes: [], elements: [] };
-    group.schemes.push(finding.scheme);
+    const group = groups.get(key) ?? { ...finding, places: [], elements: [] };
+    group.places.push({ scheme: finding.scheme, width: finding.width });
     for (const element of finding.elements) {
       if (!group.elements.includes(element)) {
         group.elements.push(element);
@@ -504,10 +587,19 @@ function grouped(findings) {
   );
 }
 
+/** Where a rule fails, such as light and dark at 1280 px, dark at 375 px. */
+function placesOf(group) {
+  const widths = [...new Set(group.places.map((place) => place.width))];
+  return widths.map((width) => {
+    const schemes = group.places.filter((place) => place.width === width).map((place) => place.scheme);
+    return `${schemes.join(" and ")} at ${width} px`;
+  }).join(", ");
+}
+
 function described(group) {
   const shown = group.elements.slice(0, 3).map((element) => `\`${element}\``).join(", ");
   const more = group.elements.length > 3 ? ` and ${group.elements.length - 3} more` : "";
-  return `${group.help}: ${group.elements.length} element(s) in ${group.schemes.join(" and ")}, ${shown}${more}.`;
+  return `${group.help}: ${group.elements.length} element(s) in ${placesOf(group)}, ${shown}${more}.`;
 }
 
 /** What failed, why it matters and how to fix it, for the summary of the job. */
@@ -524,16 +616,24 @@ function summary({ fresh, known, gone, lesser, scope, why, foreign, baseline }) 
   }
   if (fresh.length === 0) {
     lines.push(
-      `axe-core found no new serious or critical violation of WCAG 2.2 A or AA on ${scope}.`,
+      `The check found no new serious or critical violation of WCAG 2.2 A or AA on ${scope}.`,
     );
   } else {
     lines.push(
-      `axe-core found ${fresh.length} serious or critical violation(s) of WCAG 2.2 A or AA on ${scope}; the table below names each one.`,
+      `The check found ${fresh.length} serious or critical violation(s) of WCAG 2.2 A or AA on ${scope}; the table below names each one.`,
       "",
       "**Why it matters:** a reader who uses a screen reader, the keyboard alone or a larger contrast can't use what these rules find: text too faint to read, a link told apart by its color alone, a control without a name.",
       "",
       `**How to fix it:** the link of each rule explains the fix. A page of \`docs/\` is yours to fix; what every page shows, such as the header, comes from the blueprint, whose issue tracker takes it. Build the website and run the check again: \`npm ci --prefix .github/a11y --ignore-scripts && node .github/a11y/check.mjs site\`. A violation that has to stay goes into \`${ACCEPTED}\`, with its page, its rule and the reason.`,
       "",
+    );
+    if (fresh.some((group) => group.rule === SIDEWAYS.rule)) {
+      lines.push(
+        "**A page that scrolls sideways:** let what is wide wrap, or put it in a frame that scrolls on its own, with `overflow-x: auto` and, for the keyboard, `tabindex=\"0\"`. A reader on a phone, or with a page enlarged to 400 %, otherwise loses the end of each line.",
+        "",
+      );
+    }
+    lines.push(
       "| Page | Rule | Impact | What it found |",
       "| --- | --- | --- | --- |",
     );
@@ -588,7 +688,7 @@ export async function checkSite(browser, site, named = [], changed = null) {
     const findings = await pool(pages.map((page) => () => check(contexts, address, page)));
     return { pages, same: changed ? [] : same, findings, foreign };
   } finally {
-    await Promise.all(Object.values(contexts).map((context) => context.close()));
+    await Promise.all(contexts.map(({ context }) => context.close()));
   }
 }
 
@@ -668,8 +768,8 @@ export async function main(argv, root = ".") {
   const { pages, same, findings, foreign } = result;
   const groups = grouped(findings);
   const scope = changed
-    ? `the ${pages.length} changed page(s) of ${Object.keys(digest.pages).length} in the light and the dark scheme`
-    : `${pages.length} page(s) in the light and the dark scheme` + (same.length > 0
+    ? `the ${pages.length} changed page(s) of ${Object.keys(digest.pages).length} ${SHOWN}`
+    : `${pages.length} page(s) ${SHOWN}` + (same.length > 0
       ? `, which stand in for ${same.length} more of another language without a translation`
       : "");
   const failing = groups.filter((group) => FAILING.has(group.impact));
