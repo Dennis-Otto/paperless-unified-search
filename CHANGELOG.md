@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [1.4.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.3.0...v1.4.0) (2026-11-03)
+
+### Features
+
+- **Simplified Chinese:** the search, its results, the widget *New in Paperless* on the dashboard, the personal and the administration settings and the warnings of the overview now speak Simplified Chinese to accounts set to *简体中文*, with the words that Nextcloud itself uses there, such as *搜索已连接的服务* for **Search connected services**, and the same words as Paperless Sync, its companion, for the archive, the marker, the API token, correspondents, document types and tags. The listing in the App Store has a summary and a description in Simplified Chinese too. The texts were drafted with the help of an AI and reviewed against their English source: native speakers are welcome to correct them, as [Translate](https://dennis-otto.github.io/paperless-unified-search/translate.html) shows.
+
 ## [1.3.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.2.0...v1.3.0) (2026-11-01)
 
 ### Features
