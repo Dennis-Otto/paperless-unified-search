@@ -26,6 +26,14 @@ on:
         description: Its version
         required: true
         type: string
+    secrets:
+      # Only the release of a Nextcloud app passes it. A called workflow sees no secret
+      # that its caller doesn't pass, and the secret of the environment that a called
+      # job enters takes the place of the value passed, which is empty as the caller
+      # enters no environment: the build signs with the key of its environment signing.
+      APP_PRIVATE_KEY:
+        description: The key that signs a Nextcloud app
+        required: false
 
 permissions: {}
 
@@ -188,10 +196,11 @@ jobs:
     needs: project-assets
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    # The key that signs a Nextcloud app is a secret of this environment, which the
-    # build of no other kind of project enters.
+    # The key that signs a Nextcloud app is the one secret of this environment, which
+    # the build of no other kind of project enters: no action of the build can reach
+    # the private key of the release app or the token of the App Store.
     environment:
-      name: release
+      name: signing
       deployment: false
     permissions:
       attestations: write
@@ -431,8 +440,9 @@ jobs:
           APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
         run: |
           set -euo pipefail
+          # Without the key, no release: an app signed by nothing never reaches the draft.
           if [[ -z "$APP_PRIVATE_KEY" ]]; then
-            echo "::error::The secret APP_PRIVATE_KEY of the environment release is missing."
+            echo "::error::The build got no APP_PRIVATE_KEY: set it as a secret of the environment signing, and let the job assets of release.yml pass it under secrets:, as a called workflow sees no secret that its caller doesn't pass. If both are in place, GitHub didn't take the key of signing in place of the empty value passed (decision 0114, #530): revert the blueprint update, as the environment release still holds a copy of the key."
             exit 1
           fi
           trap 'rm -f "$RUNNER_TEMP/app.key"' EXIT
@@ -446,6 +456,7 @@ jobs:
           openssl dgst -sha512 -sign "$RUNNER_TEMP/app.key" -out "$ASSETS/$APP_ID.tar.gz.sig" "$ASSETS/$APP_ID.tar.gz"
           openssl x509 -in "$RUNNER_TEMP/app.crt" -pubkey -noout > "$RUNNER_TEMP/app.pub"
           openssl dgst -sha512 -verify "$RUNNER_TEMP/app.pub" -signature "$ASSETS/$APP_ID.tar.gz.sig" "$ASSETS/$APP_ID.tar.gz"
+          echo "Signed $APP_ID with the key of the environment signing, which its certificate verifies." >> "$GITHUB_STEP_SUMMARY"
       - name: Check the signed Nextcloud app
         if: env.PUBLISH_TO == 'nextcloud-appstore' && hashFiles('scripts/check-package.sh') != ''
         env:

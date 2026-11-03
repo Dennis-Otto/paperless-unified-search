@@ -1,10 +1,12 @@
 name: Register the app
 
 # Registers a Nextcloud app in the App Store, once, and again only for a new
-# certificate: it checks the private key of the environment release against the
-# certificate that Nextcloud issued for the app id, and then sends the certificate
-# with the app id signed by that key. Run it by hand under Actions with the app id
-# of appinfo/info.xml as confirmation. https://github.com/Dennis-Otto/repo-blueprint
+# certificate: the first job checks the private key of the environment signing
+# against the certificate that Nextcloud issued for the app id and signs the app id,
+# and the second sends the certificate with that signature, with the token of the
+# environment appstore. A job enters one environment, and neither holds both secrets.
+# Run it by hand under Actions with the app id of appinfo/info.xml as confirmation.
+# https://github.com/Dennis-Otto/repo-blueprint
 
 on:
   workflow_dispatch:
@@ -21,16 +23,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  register:
-    name: register the app
+  sign:
+    name: sign the app id
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    # The environment holds the key of the app's certificate; only main may use it.
+    # The key of the app's certificate is the one secret of this environment, which
+    # only main may use.
     environment:
-      name: release
+      name: signing
       deployment: false
     permissions:
       contents: read
+    # Neither is a secret: the certificate is public, and the signature proves the key
+    # for this app id alone.
+    outputs:
+      app-id: ${{ steps.sign.outputs.app-id }}
+      certificate: ${{ steps.sign.outputs.certificate }}
+      signature: ${{ steps.sign.outputs.signature }}
     steps:
       - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
@@ -40,7 +49,6 @@ jobs:
           allowed-endpoints: >-
             github.com:443
             raw.githubusercontent.com:443
-            apps.nextcloud.com:443
       - name: Wait until Harden-Runner lets the hosts through
         # The runner may have asked for an address past Harden-Runner, which then blocks
         # that address for as long as systemd-resolved keeps it, up to a minute.
@@ -49,7 +57,6 @@ jobs:
           HOSTS: >-
             github.com:443
             raw.githubusercontent.com:443
-            apps.nextcloud.com:443
         run: |
           deadline=$(($(date +%s) + 120))
           for endpoint in $HOSTS; do
@@ -68,10 +75,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Check the certificate and register the app id
+      - name: Check the certificate and sign the app id
+        id: sign
         env:
           APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
-          APPSTORE_TOKEN: ${{ secrets.APPSTORE_TOKEN }}
           CONFIRMATION: ${{ inputs.confirmation }}
         run: |
           set -euo pipefail
@@ -80,14 +87,14 @@ jobs:
             echo "::error::Confirm with the id of the app, $app_id."
             exit 1
           fi
-          if [[ -z "$APP_PRIVATE_KEY" || -z "$APPSTORE_TOKEN" ]]; then
-            echo "::error::The environment release needs the secrets APP_PRIVATE_KEY and APPSTORE_TOKEN."
+          if [[ -z "$APP_PRIVATE_KEY" ]]; then
+            echo "::error::The environment signing needs the secret APP_PRIVATE_KEY."
             exit 1
           fi
           umask 077
           key="$RUNNER_TEMP/app.key"
           certificate="$RUNNER_TEMP/app.crt"
-          trap 'rm -f "$key" "$certificate" "$RUNNER_TEMP/request.json"' EXIT
+          trap 'rm -f "$key" "$certificate"' EXIT
           printf '%s' "$APP_PRIVATE_KEY" > "$key"
           openssl pkey -in "$key" -check -noout
 
@@ -95,7 +102,8 @@ jobs:
             --connect-timeout 15 --max-time 300 --output "$certificate" \
             "https://raw.githubusercontent.com/nextcloud/app-certificate-requests/master/$app_id/$app_id.crt"
           openssl x509 -in "$certificate" -noout -checkend 0
-          openssl x509 -in "$certificate" -noout -subject | grep --fixed-strings "CN = $app_id"
+          # The form of oneline, which OpenSSL 3.0 prints by default and 3.5 no longer does.
+          openssl x509 -in "$certificate" -noout -subject -nameopt oneline | grep --fixed-strings "CN = $app_id"
           key_fingerprint="$(openssl pkey -in "$key" -pubout -outform DER | sha256sum | cut -d' ' -f1)"
           certificate_fingerprint="$(openssl x509 -in "$certificate" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum | cut -d' ' -f1)"
           if [[ "$key_fingerprint" != "$certificate_fingerprint" ]]; then
@@ -104,12 +112,91 @@ jobs:
           fi
 
           signature="$(printf '%s' "$app_id" | openssl dgst -sha512 -sign "$key" | openssl base64 -A)"
-          jq --null-input --rawfile certificate "$certificate" --arg signature "$signature" \
+          # The certificate goes as it came, in one line of Base64.
+          encoded="$(openssl base64 -A -in "$certificate")"
+          {
+            echo "app-id=$app_id"
+            echo "certificate=$encoded"
+            echo "signature=$signature"
+          } >> "$GITHUB_OUTPUT"
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
+
+  register:
+    name: register the app
+    needs: sign
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # The token of the App Store is the one secret of this environment, which only main
+    # may use. The job checks nothing out and reaches nothing but the App Store.
+    environment:
+      name: appstore
+      deployment: false
+    permissions: {}
+    steps:
+      - name: Block every host that the job doesn't need
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            apps.nextcloud.com:443
+      - name: Wait until Harden-Runner lets the hosts through
+        # The runner may have asked for an address past Harden-Runner, which then blocks
+        # that address for as long as systemd-resolved keeps it, up to a minute.
+        timeout-minutes: 4
+        env:
+          HOSTS: >-
+            apps.nextcloud.com:443
+        run: |
+          deadline=$(($(date +%s) + 120))
+          for endpoint in $HOSTS; do
+            host="${endpoint%:*}"
+            # A wildcard names no host to ask.
+            [[ "$host" == '*.'* ]] && continue
+            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+              if (($(date +%s) >= deadline)); then
+                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                break
+              fi
+              echo "Harden-Runner still blocks $host, waiting 3 s."
+              sleep 3
+            done
+          done
+      - name: Register the app id with its certificate
+        env:
+          APPSTORE_TOKEN: ${{ secrets.APPSTORE_TOKEN }}
+          APP_ID: ${{ needs.sign.outputs.app-id }}
+          CERTIFICATE: ${{ needs.sign.outputs.certificate }}
+          SIGNATURE: ${{ needs.sign.outputs.signature }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$APPSTORE_TOKEN" ]]; then
+            echo "::error::The environment appstore needs the secret APPSTORE_TOKEN."
+            exit 1
+          fi
+          # GitHub hands on no output that it takes for a secret, so check each one.
+          if [[ -z "$APP_ID" || -z "$CERTIFICATE" || -z "$SIGNATURE" ]]; then
+            echo "::error::The job sign the app id handed over no app id, certificate or signature."
+            exit 1
+          fi
+          umask 077
+          trap 'rm -f "$RUNNER_TEMP/app.crt" "$RUNNER_TEMP/request.json"' EXIT
+          printf '%s' "$CERTIFICATE" | openssl base64 -d -A > "$RUNNER_TEMP/app.crt"
+          jq --null-input --rawfile certificate "$RUNNER_TEMP/app.crt" --arg signature "$SIGNATURE" \
             '{certificate: $certificate, signature: $signature}' > "$RUNNER_TEMP/request.json"
           curl --fail-with-body --silent --show-error --request POST \
             --header "Authorization: Token $APPSTORE_TOKEN" --header 'Content-Type: application/json' \
             --data-binary "@$RUNNER_TEMP/request.json" https://apps.nextcloud.com/api/v1/apps
-          echo "Registered $app_id in the Nextcloud App Store." >> "$GITHUB_STEP_SUMMARY"
+          echo "Registered $APP_ID in the Nextcloud App Store." >> "$GITHUB_STEP_SUMMARY"
       - name: Wait until Harden-Runner has removed Docker
         # Harden-Runner removes Docker with apt-get in the background; a job that ends
         # before it finishes hangs in "Cleaning up orphan processes" until its timeout.

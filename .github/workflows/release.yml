@@ -455,10 +455,12 @@ jobs:
       contents: write
       id-token: write
     uses: ./.github/workflows/build-release.yml
-    # A called workflow sees the secrets of its environment only when the caller
-    # passes its secrets on: the build signs the Nextcloud app with the key of the
-    # environment release. The build is a workflow of this repository.
-    secrets: inherit # zizmor: ignore[secrets-inherit]
+    # The build signs the Nextcloud app with the key of its environment signing. A
+    # called workflow sees no secret that its caller doesn't pass, and the secret of
+    # the environment of the called job takes the place of the value passed, which is
+    # empty as this job enters no environment. No other secret reaches the build.
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
     with:
       tag: ${{ needs.release-please.outputs.tag }}
       sha: ${{ needs.release-please.outputs.sha }}
@@ -655,8 +657,11 @@ jobs:
     if: vars.PUBLISH_TO == 'nextcloud-appstore'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # The token of the App Store is the one secret of this environment, which only main
+    # may use: the job reaches neither the key that signs the app nor that of the
+    # release app.
     environment:
-      name: release
+      name: appstore
       deployment: false
     permissions:
       contents: read
@@ -708,7 +713,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "$APPSTORE_TOKEN" ]]; then
-            echo "::error::The secret APPSTORE_TOKEN of the environment release is missing."
+            echo "::error::The secret APPSTORE_TOKEN of the environment appstore is missing."
             exit 1
           fi
           app_id="$(python3 -c 'import xml.etree.ElementTree as t; print(t.parse("appinfo/info.xml").getroot().findtext("id"))')"
