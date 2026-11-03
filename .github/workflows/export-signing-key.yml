@@ -88,15 +88,16 @@ jobs:
           umask 077
           out="$RUNNER_TEMP/export"
           mkdir -p "$out"
-          printf '%s
-' "$APP_PRIVATE_KEY" > "$RUNNER_TEMP/app.key"
-          printf '%s
-' "$OWNER_KEY" > "$RUNNER_TEMP/owner.pub.pem"
+          printf '%s\n' "$APP_PRIVATE_KEY" > "$RUNNER_TEMP/app.key"
+          printf '%s\n' "$OWNER_KEY" > "$RUNNER_TEMP/owner.pub.pem"
           # The key is longer than one RSA block: a random AES key encrypts it, and the
           # owner's public key encrypts that.
           openssl rand -hex 32 > "$RUNNER_TEMP/aes.txt"
-          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in "$RUNNER_TEMP/app.key"             -out "$out/app.key.enc" -pass "file:$RUNNER_TEMP/aes.txt"
-          openssl pkeyutl -encrypt -pubin -inkey "$RUNNER_TEMP/owner.pub.pem"             -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256             -in "$RUNNER_TEMP/aes.txt" -out "$out/aes.txt.enc"
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in "$RUNNER_TEMP/app.key" \
+            -out "$out/app.key.enc" -pass "file:$RUNNER_TEMP/aes.txt"
+          openssl pkeyutl -encrypt -pubin -inkey "$RUNNER_TEMP/owner.pub.pem" \
+            -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 \
+            -in "$RUNNER_TEMP/aes.txt" -out "$out/aes.txt.enc"
           shred -u "$RUNNER_TEMP/app.key" "$RUNNER_TEMP/aes.txt"
       - name: Keep the encrypted key for a day
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
