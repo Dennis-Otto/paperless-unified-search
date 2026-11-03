@@ -6,7 +6,7 @@ description: "Correct a translation of Paperless Unified Search or add a languag
 
 [Languages](configure.md#languages) · [FAQ](faq.md) · [Contributing](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CONTRIBUTING.md)
 
-The app speaks English, German, French, Spanish and Dutch. The French, Spanish and Dutch texts were drafted with the help of an AI, with the words that Nextcloud itself uses in these languages, and wait for native speakers to read them: a word that sounds wrong to you in Nextcloud is worth a pull request, and so is a language that the app doesn't speak yet. You need a text editor or the editor of GitHub, no PHP and no build.
+The app speaks English, German, French, Spanish, Dutch and Simplified Chinese. The French, Spanish, Dutch and Chinese texts were drafted with the help of an AI, with the words that Nextcloud itself uses in these languages, and wait for native speakers to read them: a word that sounds wrong to you in Nextcloud is worth a pull request, and so is a language that the app doesn't speak yet. You need a text editor or the editor of GitHub, no PHP and no build.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/diagrams/how-a-translation-reaches-its-readers.dark.svg">
@@ -22,6 +22,7 @@ The app speaks English, German, French, Spanish and Dutch. The French, Spanish a
 | French | `l10n/fr.json` | *vous* | an AI, waiting for review |
 | Spanish | `l10n/es.json` | *tú* | an AI, waiting for review |
 | Dutch | `l10n/nl.json` | *je* | an AI, waiting for review |
+| Simplified Chinese | `l10n/zh_CN.json` | *您* | an AI, waiting for review |
 
 Nextcloud takes the catalog of the language of an account, and the English texts of the code where the app has no catalog in that language. It takes a catalog for the exact language alone: an account set to a regional variant, such as *Español (México)*, `es_MX`, needs a catalog of its own, even one that copies `l10n/es.json`.
 
@@ -49,8 +50,9 @@ Each line pairs a text of the code, in English, with its translation:
 
 - **The English text on the left stays as it is,** character for character: the code looks the translation up by it. Change only the text on the right.
 - **Placeholders stay,** such as `%s`, `%1$s`, `%n`, `{status}` and `{account}`: the app puts a name, a number or a link there. The words around them may move, and `%1$s` and `%2$s` may swap places.
-- **A plural,** whose text reads `_singular_::_plural_`, has as many forms as `pluralForm` names with `nplurals`: German and Dutch one and other, French and Spanish three. Nextcloud, however, picks only *one* or *other* for French and Spanish (form 0 or 1), never the third form for millions, so the middle form repeats the *other* form, as in Nextcloud's own catalogs; `scripts/check-l10n.mjs` fails otherwise. `pluralForm` is the one of Nextcloud's own catalog of the language.
-- **Nextcloud's words:** a word that Nextcloud shows as well takes Nextcloud's translation, such as *Search connected services*, which is *Rechercher dans les services connectés*, *Buscar servicios conectados* and *Verbonden diensten zoeken*; the [catalogs of Nextcloud's server](https://github.com/nextcloud/server/tree/master/core/l10n) have them. The words of Paperless, such as the permission *View* of *Correspondents*, take those of Paperless-ngx in the language.
+- **A plural,** whose text reads `_singular_::_plural_`, has as many forms as `pluralForm` names with `nplurals`: German and Dutch one and other, French and Spanish three, Chinese one for every count. Nextcloud, however, picks only *one* or *other* for French and Spanish (form 0 or 1), never the third form for millions, so the middle form repeats the *other* form, as in Nextcloud's own catalogs; `scripts/check-l10n.mjs` fails otherwise. `pluralForm` is the one of Nextcloud's own catalog of the language.
+- **Nextcloud's words:** a word that Nextcloud shows as well takes Nextcloud's translation, such as *Search connected services*, which is *Rechercher dans les services connectés*, *Buscar servicios conectados*, *Verbonden diensten zoeken* and *搜索已连接的服务*; the [catalogs of Nextcloud's server](https://github.com/nextcloud/server/tree/master/core/l10n) have them. The words of Paperless, such as the permission *View* of *Correspondents*, take those of Paperless-ngx in the language.
+- **The words of Paperless Sync:** where [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync), the companion of this app, names the same thing, such as the archive, the marker, the API token or the correspondents, a translation takes its word in the language, so that the two apps read as one.
 - **French typography:** a no-break space before `:`, `;`, `?` and `!` and inside `«` and `»`, as Nextcloud writes French.
 
 ## Correct a translation
@@ -72,7 +74,7 @@ Each line pairs a text of the code, in English, with its translation:
 
 1. Copy `l10n/de.json` to `l10n/<language>.json`, named with the code of the language in Nextcloud, such as `it` for Italian or `pt_BR` for Brazilian Portuguese, the names of the files in the [catalogs of Nextcloud's server](https://github.com/nextcloud/server/tree/master/core/l10n).
 2. Translate every text on the right, and set `pluralForm` to the one of Nextcloud's `core/l10n/<language>.json`, with as many forms for each plural as it names.
-3. Add `<summary lang="it">` and `<description lang="it">` to `appinfo/info.xml`, after those of the other languages, translated from the English ones; the description ends with the link to the English documentation.
+3. Add `<summary lang="it">` and `<description lang="it">` to `appinfo/info.xml`, after those of the other languages, translated from the English ones; the description ends with the link to the English documentation. The `lang` is the code of the language in the App Store: the language alone, such as `it`, and `de` for `de_DE`, but a code of its own for the few variants that the [schema of the App Store](https://apps.nextcloud.com/schema/apps/info.xsd) lists, such as `pt-br` for `pt_BR` and `zh-hans` for `zh_CN`. The check below names it.
 4. Run the two commands above, which write `l10n/<language>.js` and check every catalog.
 5. Name the language where the others are named: [Languages](configure.md#languages) in `README.md` and `README.de.md`, the FAQ in `docs/faq.md` and `docs/faq.de.md`, the table above in this page and its German twin, the languages of the App Store in `tests/Unit/AppInfo/AppStoreListingTest.php`, and the versions of Nextcloud in the new description for `scripts/check-project.sh`, such as `- Nextcloud 33 a 35`.
 6. Open a pull request with a title such as `feat(l10n): speak Italian`, which ships the language in the next release.
@@ -85,6 +87,6 @@ Each line pairs a text of the code, in English, with its translation:
 - a translation is empty, or has other placeholders than its text;
 - a plural has another number of forms than the `pluralForm` of its catalog names;
 - a catalog for the browser, `l10n/<language>.js`, holds anything other than its `l10n/<language>.json`;
-- `appinfo/info.xml` has no summary or no description for the App Store in the language of a catalog, where a regional variant, such as `de_DE`, takes those of its language, `de`.
+- `appinfo/info.xml` has no summary or no description for the App Store in the language of a catalog, where a regional variant, such as `de_DE`, takes those of its language, `de`, and a variant that the App Store knows those of its code, such as `zh-hans` for `zh_CN`.
 
 Each problem names the file, the text and the fix. The check can't tell a good translation from a bad one: that takes a native speaker.
