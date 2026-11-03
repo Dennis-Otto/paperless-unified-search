@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [1.4.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.3.0...v1.4.0) (2026-11-03)
+
+
+### Features
+
+* **l10n:** speak Simplified Chinese ([#312](https://github.com/Dennis-Otto/paperless-unified-search/issues/312)) ([778020d](https://github.com/Dennis-Otto/paperless-unified-search/commit/778020d389a733d4ac383dcdab6160caa59246b4))
+
 ## [1.3.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.2.0...v1.3.0) (2026-11-01)
 
 ### Features
