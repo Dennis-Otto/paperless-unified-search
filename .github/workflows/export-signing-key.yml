@@ -1,0 +1,108 @@
+name: Export the signing key
+
+# One-off (Dennis-Otto/repo-blueprint#530): the private key of the app's certificate
+# exists only in the environment release, and its owner has no copy of it. This job
+# copies it out once, encrypted to a public key whose private half only the owner's
+# computer holds, so that it can be kept there and set in the environment signing.
+# The artifact holds nothing readable and expires after a day. A pull request removes
+# this workflow again right after its run.
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: export-signing-key
+  cancel-in-progress: false
+
+jobs:
+  export:
+    name: export the signing key
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # The environment holds the key of the app's certificate; only main may use it.
+    environment:
+      name: release
+      deployment: false
+    permissions:
+      contents: read
+    steps:
+      - name: Block every host that the job doesn't need
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: block
+          disable-sudo-and-containers: true
+          # The hosts of the Actions service keep the artifact.
+          allowed-endpoints: >-
+            github.com:443
+            *.actions.githubusercontent.com:443
+      - name: Wait until Harden-Runner lets the hosts through
+        # The runner may have asked for an address past Harden-Runner, which then blocks
+        # that address for as long as systemd-resolved keeps it, up to a minute.
+        timeout-minutes: 4
+        env:
+          HOSTS: >-
+            github.com:443
+            *.actions.githubusercontent.com:443
+        run: |
+          deadline=$(($(date +%s) + 120))
+          for endpoint in $HOSTS; do
+            host="${endpoint%:*}"
+            # A wildcard names no host to ask.
+            [[ "$host" == '*.'* ]] && continue
+            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+              if (($(date +%s) >= deadline)); then
+                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                break
+              fi
+              echo "Harden-Runner still blocks $host, waiting 3 s."
+              sleep 3
+            done
+          done
+      - name: Encrypt the key for its owner
+        env:
+          APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+          # Public: only the owner's computer can decrypt what it encrypts.
+          OWNER_KEY: |
+            -----BEGIN PUBLIC KEY-----
+            MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAyUdrM7nQ/d+zYPdjqSaJ
+            Z4MqAgOk9oXwvSpHiixCjUU5qZqLJtxh9drGXhs0baVRaE7D4NPBvI42V8neczDA
+            HyFbIIUIzQl1nOQdt3lItP05igRmZafPbG+iR63KBI56K0uAnQXaHAds+KmQFxMY
+            eRW1m4nIbTVm1+ln2JVI+pbgSTOviN1nHYe0LwWBSrLQ0v40DMqmidYtt1uVqNnJ
+            QYaXsOpZTTh5c5xWlysZeB3XLnFUzxWwGFpMIZv7HYiDJdn10nqpI6fkyfVMNakT
+            1pfn5OgxhKszss1Nw8rL9XzkBOkUEmUB3xWOPKyVq02kN8g8ruefi9fdoxqAjVju
+            hHA16dVV8T/sCGpy4LO7WtSUuT+A2fNxIXi21JwiqnvY4QAwEB3rTAgi/XD/ZWFh
+            1TxCnTNECZJt2T5F6qWUQC7PbM/WYzIUl/94fa11h2XZVWZO3wRkH86KBbHBNWfH
+            Sx9W8ueZgkOkH1TxZTSK8ksiXGx+WSMZtZmA8Wri5HJNRM0iN3YhYHn6YwL82nCS
+            UwOLZCy5LUKiG2bdkaohfKF6bcjDDRPlep8f9j+zlvWiRB64CRWYQY7ytrJzakZ2
+            EvW6tnicuNfE9C18GJB0M+v4HGHCFQCoumMPDJTb/1BGfejrYI9ZSzN2Om1rxytq
+            CO2ZBVQ9MdAHgwJn+YhCQnUCAwEAAQ==
+            -----END PUBLIC KEY-----
+        run: |
+          set -euo pipefail
+          if [[ -z "$APP_PRIVATE_KEY" ]]; then
+            echo "::error::The environment release has no secret APP_PRIVATE_KEY."
+            exit 1
+          fi
+          umask 077
+          out="$RUNNER_TEMP/export"
+          mkdir -p "$out"
+          printf '%s
+' "$APP_PRIVATE_KEY" > "$RUNNER_TEMP/app.key"
+          printf '%s
+' "$OWNER_KEY" > "$RUNNER_TEMP/owner.pub.pem"
+          # The key is longer than one RSA block: a random AES key encrypts it, and the
+          # owner's public key encrypts that.
+          openssl rand -hex 32 > "$RUNNER_TEMP/aes.txt"
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in "$RUNNER_TEMP/app.key"             -out "$out/app.key.enc" -pass "file:$RUNNER_TEMP/aes.txt"
+          openssl pkeyutl -encrypt -pubin -inkey "$RUNNER_TEMP/owner.pub.pem"             -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256             -in "$RUNNER_TEMP/aes.txt" -out "$out/aes.txt.enc"
+          shred -u "$RUNNER_TEMP/app.key" "$RUNNER_TEMP/aes.txt"
+      - name: Keep the encrypted key for a day
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        timeout-minutes: 5
+        with:
+          name: signing-key-encrypted
+          path: ${{ runner.temp }}/export
+          if-no-files-found: error
+          retention-days: 1
