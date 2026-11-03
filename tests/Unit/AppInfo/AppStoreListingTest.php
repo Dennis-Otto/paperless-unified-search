@@ -95,13 +95,14 @@ final class AppStoreListingTest extends TestCase {
 		$info = self::appInfo();
 		$website = (string)$info->website;
 		// The website in English, and its German pages in de/. The website has no pages in
-		// Spanish, French or Dutch, so their descriptions link the English ones.
+		// Spanish, French, Dutch or Chinese, so their descriptions link the English ones.
 		$documentation = [
 			'en' => $website,
 			'de' => $website . 'de/index.html',
 			'es' => $website,
 			'fr' => $website,
 			'nl' => $website,
+			'zh-hans' => $website,
 		];
 
 		self::assertCount(count($documentation), $info->description);
@@ -130,7 +131,8 @@ final class AppStoreListingTest extends TestCase {
 			return $found;
 		};
 
-		self::assertSame(['de', 'en', 'es', 'fr', 'nl'], $languages($info->summary));
-		self::assertSame(['de', 'en', 'es', 'fr', 'nl'], $languages($info->description));
+		// zh-hans is the code of the App Store for Simplified Chinese, zh_CN in Nextcloud.
+		self::assertSame(['de', 'en', 'es', 'fr', 'nl', 'zh-hans'], $languages($info->summary));
+		self::assertSame(['de', 'en', 'es', 'fr', 'nl', 'zh-hans'], $languages($info->description));
 	}
 }

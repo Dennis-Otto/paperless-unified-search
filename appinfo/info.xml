@@ -7,6 +7,7 @@
 	<summary lang="es">Busca en el contenido OCR de Paperless-ngx desde Nextcloud y abre los archivos encontrados directamente en su visor</summary>
 	<summary lang="fr">Recherchez dans le contenu OCR de Paperless-ngx depuis Nextcloud et ouvrez les fichiers trouvés directement dans sa visionneuse</summary>
 	<summary lang="nl">Doorzoek de OCR-inhoud van Paperless-ngx vanuit Nextcloud en open gevonden bestanden direct in de viewer</summary>
+	<summary lang="zh-hans">在 Nextcloud 中搜索 Paperless-ngx 的 OCR 内容，并直接在其查看器中打开匹配的文件</summary>
 	<description><![CDATA[
 Full-text search of your Paperless-ngx archive in Nextcloud's search bar, without Elasticsearch, a second index or another container: Paperless answers, Nextcloud decides who sees the file.
 
@@ -211,6 +212,47 @@ Deze app biedt alleen de integratie met de zoekfunctie. Hij synchroniseert geen 
 De onafhankelijke Nextcloud-app [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) schrijft deze bestanden in het archiefaccount. Beide apps gebruiken dezelfde stabiele documentmarkering `[P123]` en kunnen los van elkaar worden onderhouden en bijgewerkt.
 
 Documentatie (in het Engels): <https://dennis-otto.github.io/paperless-unified-search/>
+]]></description>
+	<description lang="zh-hans"><![CDATA[
+在 Nextcloud 的搜索栏中对您的 Paperless-ngx 归档进行全文搜索，无需 Elasticsearch、第二个索引或额外的容器：由 Paperless 给出搜索结果，由 Nextcloud 决定谁能看到文件。
+
+查找发票、合同、信件、对账单，以及文档中识别出的任何文字，并在 Nextcloud 的查看器中打开已同步的文件——无需离开 Nextcloud。
+
+### 在 Paperless 中搜索，在 Nextcloud 中工作。
+
+- 使用 Paperless-ngx 原生的 OCR 和全文搜索，无需构建或维护自己的索引
+- 直接在 Nextcloud 的全局搜索中显示结果，每条结果都带有文档预览、以您的语言显示的日期、往来方、文档类型和标签
+- 在 Talk、Text、Deck 和 Mail 的智能选择器中查找文档，并插入指向其文件的链接
+- 通过“Paperless 新文档”小组件，在 Nextcloud 仪表板上列出您可以打开的最新 Paperless 文档
+- 当 Paperless 添加了您某个已保存搜索能找到、且您可以打开的文档时，通过通知告诉您
+- 在网页、iOS 和 Android 上使用 Nextcloud 内置查看器打开已同步的文件
+- 通过 `[P123]` 这类稳定的标记匹配文档
+- 只向有权打开其已同步文件的用户显示文档
+- 自动排除尚未同步的文档
+- 诊断：设置会测试连接，并保留失败搜索及其错误的历史记录，即使托管商不向管理员开放 Nextcloud 的日志也可查看
+- 面向管理员：无需浏览器，用 occ 设置并测试本应用，用 occ 查询某个用户为什么看不到某个文档，并在管理设置的概览中查看搜索的状态
+
+### 隐私与访问控制
+
+Paperless 通过服务器之间的通信进行查询。API 令牌存储在 Nextcloud 加密的凭据管理器中，绝不会暴露给浏览器。
+
+默认情况下，只有当用户开启“搜索已连接的服务”时，Nextcloud 的搜索才会将搜索词发送到 Paperless；智能选择器也只有在用户从中选择 Paperless 文档时才会发送；向搜索 API 请求此提供程序的客户端同样会发送。管理员可以选择将其 Paperless 服务器标记为受信任，并自动将其包含在每次全局搜索中。用于通知的已保存搜索保存在每个用户自己的账号中，有新文档时由后台任务将其发送到 Paperless。
+
+建议使用专用的只读 Paperless 账号。
+
+### 要求
+
+- Nextcloud 33 至 35
+- 可访问且可使用其 API 的 Paperless-ngx 实例
+- 已同步的文件：其名称包含 Paperless 文档标记（例如 `[P123]`），归一个 Nextcloud 账号（即归档账号）所有，并以只读方式共享给有权查看它们的用户
+
+本应用只提供搜索集成。它不会在 Paperless 和 Nextcloud 之间同步文档，没有这样的文件，搜索就不会显示任何 Paperless 文档。
+
+### 原生同步搭档
+
+独立的 Nextcloud 应用 [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) 会将这些文件写入归档账号。两个应用使用相同的稳定文档标记 `[P123]`，可以分别维护和更新。
+
+文档（英文）：<https://dennis-otto.github.io/paperless-unified-search/>
 ]]></description>
 	<version>1.3.0</version>
 	<licence>AGPL-3.0-or-later</licence>

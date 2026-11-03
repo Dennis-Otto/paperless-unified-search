@@ -182,6 +182,24 @@ function storeLanguages() {
 	return languages
 }
 
+// The code of the App Store for a language of Nextcloud, in the lang of <summary> and
+// <description> of appinfo/info.xml: its own for the variants that the schema of the App
+// Store, apps.nextcloud.com/schema/apps/info.xsd, lists, such as zh-hans for Simplified
+// Chinese, and the language alone for every other one, such as de for de_DE, since the
+// schema knows no other variant.
+const storeVariants = {
+	es_AR: 'es-ar',
+	es_CO: 'es-co',
+	es_MX: 'es-mx',
+	es_NI: 'es-ni',
+	es_VE: 'es-ve',
+	pt_BR: 'pt-br',
+	'sr@latin': 'sr-latn',
+	zh_CN: 'zh-hans',
+	zh_HK: 'zh-hant',
+	zh_TW: 'zh-hant',
+}
+
 const files = existsSync(catalogFolder) ? readdirSync(catalogFolder) : []
 const catalogs = files.filter((file) => file.endsWith('.json')).sort()
 for (const file of files.filter((name) => name.endsWith('.js'))) {
@@ -210,11 +228,12 @@ for (const file of catalogs) {
 	}
 
 	// A variant of a language, such as de_DE, shares the texts of the App Store of its
-	// language, such as de, which the App Store knows alone.
+	// language, such as de, which the App Store knows alone; a variant that the App Store
+	// knows, such as zh_CN, has them under the code of the App Store, zh-hans.
 	const language = file.replace(/\.json$/, '')
-	const storeLanguage = language.split('_')[0]
+	const storeLanguage = storeVariants[language] ?? language.split(/[_@]/)[0]
 	for (const element of ['summary', 'description']) {
-		if (store !== null && !store[element].has(language) && !store[element].has(storeLanguage)) {
+		if (store !== null && !store[element].has(storeLanguage)) {
 			problems.push(`appinfo/info.xml has no <${element} lang="${storeLanguage}">, so the App Store shows its English ${element} to whoever reads the app in ${name}; add one.`)
 		}
 	}

@@ -268,6 +268,20 @@ test('takes the texts of the App Store of a language for its variants, but not a
 	assert.doesNotMatch(result.output, /<summary/)
 })
 
+test('takes the code of the App Store for a variant that its schema lists, such as zh-hans for zh_CN', function() {
+	const catalogs = { zh_CN: { 'Paperless URL': 'Paperless URL' } }
+
+	assert.equal(check(written(app({ 'appinfo/info.xml': info('zh-hans') }, catalogs))).status, 0)
+	// The schema of the App Store knows neither the code of Nextcloud nor the language alone.
+	for (const language of ['zh_CN', 'zh']) {
+		const result = check(written(app({ 'appinfo/info.xml': info(language) }, catalogs)))
+
+		assert.equal(result.status, 1)
+		assert.match(result.output, /appinfo\/info\.xml has no <summary lang="zh-hans">, so the App Store shows its English summary to whoever reads the app in l10n\/zh_CN\.json/)
+		assert.match(result.output, /appinfo\/info\.xml has no <description lang="zh-hans">/)
+	}
+})
+
 test('fails without appinfo/info.xml', function() {
 	const root = written(app({ 'appinfo/info.xml': null }))
 
