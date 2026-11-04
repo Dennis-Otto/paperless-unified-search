@@ -570,6 +570,15 @@ def screenshots_command(arguments: argparse.Namespace, root: Path) -> int:
     if arguments.action == "parts":
         print(len(screenshots.parts(arguments.folder, pages=pages)))
         return 0
+    if arguments.action == "overtaken":
+        moved, reason = screenshots.overtaken(
+            screenshots.written(arguments.folder, pages),
+            json.loads(arguments.compared.read_text(encoding="utf-8")),
+            arguments.base,
+        )
+        print(reason)
+        # Not 1, which an error that the command does not catch returns as well.
+        return 0 if moved else 3
     if arguments.action == "commit":
         request = screenshots.commit_request(
             arguments.folder,
@@ -1790,6 +1799,23 @@ def add_screenshots_parsers(
         "that they correct",
     )
     parts_parser.add_argument("folder", type=Path)
+    overtaken_parser = screenshots_actions.add_parser(
+        "overtaken",
+        help="whether the default branch changed a picture or a page of the commits of "
+        "a folder of keep since the commit that was rendered, so that their pull "
+        "request would conflict; exits 3 when not, and says why",
+    )
+    overtaken_parser.add_argument("folder", type=Path)
+    overtaken_parser.add_argument(
+        "--compared",
+        type=Path,
+        required=True,
+        help="GitHub's comparison of the commit that was rendered with the default "
+        "branch, as JSON with behind_by and files",
+    )
+    overtaken_parser.add_argument(
+        "--base", default="main", help="the default branch, for what the bot says"
+    )
     shots_commit_parser = screenshots_actions.add_parser(
         "commit",
         help="the request to GitHub's GraphQL API that commits a part of what a "

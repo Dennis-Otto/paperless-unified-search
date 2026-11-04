@@ -12,7 +12,10 @@ name: Update branches
 # starts one at once. A pull request whose required check failed waits for a fix and
 # leaves its place to the next one. One that conflicts with main gets the label
 # merge-conflict and one comment. The label goes once it no longer conflicts; the
-# comment stays for the history, so a later conflict brings back only the label. A
+# comment stays for the history, so a later conflict brings back only the label. One
+# of a bot that builds its branch anew from main, the screenshot bot, the picture bot
+# or the issue assistant sync, gets the label and no comment, and the bot starts the
+# workflow of that bot once for each conflict (decision 0118). A
 # request that GitHub refuses is a warning about that pull request, and the bot goes
 # on with the next one. The release bot keeps its own pull request current.
 # Renovate's pull requests take their place in the line as well, which spares them
@@ -96,8 +99,9 @@ jobs:
       name: release
       deployment: false
     # Actions for the runs of the pull requests: the token of the job reads them, approves
-    # those of a fork that the bot may approve, cancels those of a replaced commit and
-    # starts the next run of the bot, so that the release app needs no right for it. The
+    # those of a fork that the bot may approve, cancels those of a replaced commit,
+    # starts the next run of the bot and the workflow of a bot whose pull request
+    # conflicts, so that the release app needs no right for it. The
     # pull requests for their heads, which those runs of a replaced commit don't have.
     permissions:
       actions: write

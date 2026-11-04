@@ -26,7 +26,7 @@ import posixpath
 import re
 import struct
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -56,6 +56,8 @@ COMMIT = (
     "{ createCommitOnBranch(input: $input) { commit { oid } } }"
 )
 REPORT = "report.json"
+# The most files that GitHub's comparison of two commits lists.
+COMPARED_FILES = 300
 SOCIAL_PREVIEW = ".github/social-preview.png"
 # The width and the height of a picture, in pixels.
 Size = tuple[int, int]
@@ -701,6 +703,54 @@ def contents(folder: Path, change: Picture | Page) -> bytes | None:
     if change.status == "deleted":
         return None
     return (folder / "files" / change.path).read_bytes()
+
+
+def written(folder: Path, pages: Sequence[Page] = ()) -> list[str]:
+    """The paths that the commits of the bot write: each picture of folder, a deleted
+    one too, and each corrected page."""
+    return [picture.path for picture in kept(folder).pictures] + [
+        page.path for page in pages
+    ]
+
+
+def overtaken(
+    paths: Sequence[str], compared: Mapping[str, Any], base: str = "main"
+) -> tuple[bool, str]:
+    """Whether base changed one of paths since the commit that was rendered, as
+    GitHub's comparison of the two lists the files, and why: a pull request from that
+    commit would conflict with base over each, so the bot renders base anew instead.
+    That happens when the pull request before merges while the next one renders. A
+    comparison in which base lacks the commit, as after a forced push, or that lists
+    as many files as GitHub lists at most, counts as such a change."""
+    files = compared.get("files") or []
+    if int(compared.get("behind_by") or 0):
+        return True, (
+            f"`{base}` no longer has the commit that was rendered, so the bot renders "
+            f"`{base}` anew."
+        )
+    if len(files) >= COMPARED_FILES:
+        return True, (
+            f"`{base}` changed {COMPARED_FILES} files or more since the commit that "
+            "was rendered, more than GitHub lists, so the bot renders it anew."
+        )
+    changed = {
+        str(name)
+        for file in files
+        for name in (file.get("filename"), file.get("previous_filename"))
+        if name
+    }
+    found = [path for path in paths if path in changed]
+    if not found:
+        return False, (
+            f"`{base}` changed none of the files of the pull request since the commit "
+            "that was rendered."
+        )
+    named = ", ".join(f"`{path}`" for path in found[:5])
+    more = f" and {len(found) - 5} more" if len(found) > 5 else ""
+    return True, (
+        f"`{base}` changed {named}{more} since the commit that was rendered, so a "
+        f"pull request from that commit would conflict: the bot renders `{base}` anew."
+    )
 
 
 def parts(

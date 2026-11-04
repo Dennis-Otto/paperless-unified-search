@@ -15,8 +15,11 @@ name: Screenshots
 # pixels changed, it keeps one pull request from the branch bot/screenshots, as the
 # release app, which merges
 # itself once every check passes, and closes it when main looks as rendered without
-# it. The bot commits only pictures, by plain paths, outside .git and the workflows,
-# and for a picture that came out at another size the width and the height that the
+# it. It renders the newest main, and when main changed a picture or a page of the
+# pull request while it rendered, as when the pull request before merged, it starts
+# itself anew rather than open one that conflicts; the branch bot starts it for one
+# that conflicts later (decision 0118). The bot commits only pictures, by plain
+# paths, outside .git and the workflows, and for a picture that came out at another size the width and the height that the
 # pages of main name for it, so that the pull request passes a check of those sizes;
 # without the release app, the run warns and keeps the pictures as an artifact. A
 # failed run keeps an issue of the bot-health bot open until a run passes again.
@@ -114,6 +117,7 @@ jobs:
     permissions:
       contents: read
     outputs:
+      sha: ${{ steps.rendered.outputs.sha }}
       stale: ${{ steps.keep.outputs.stale }}
     steps:
       # The script reaches whatever the project needs, its images and packages.
@@ -122,11 +126,18 @@ jobs:
         with:
           egress-policy: audit
       # With the whole history, as the Docs workflow checks it out: a picture of the
-      # website shows the date of each page's last change, which git keeps.
+      # website shows the date of each page's last change, which git keeps. The newest
+      # commit of the branch, not that of the event: a render that waited for the one
+      # before renders main as it is now, with the pictures that its pull request
+      # merged meanwhile, so that the pull request of this one doesn't conflict there.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
+          ref: ${{ github.ref }}
+      - name: Name the commit that the job renders
+        id: rendered
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         timeout-minutes: 5
         with:
@@ -206,7 +217,10 @@ jobs:
     environment:
       name: release
       deployment: false
+    # Actions for the token of the job, which starts the workflow anew when main changed
+    # a file of the pull request while the job render ran.
     permissions:
+      actions: write
       contents: read
     steps:
       - name: Block every host that the job doesn't need
@@ -242,11 +256,25 @@ jobs:
               sleep 3
             done
           done
+      # The job render runs the script of the project and its tools; the code that runs
+      # below with the token of the release app comes only from a commit of main, never
+      # from one that a render job that went wrong names, such as that of a fork.
+      - name: Check that main has the commit that the job render names
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ needs.render.outputs.sha }}
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(gh api "repos/$GH_REPO/compare/$SHA...main" --jq .behind_by)" == 0 ]]
       # blueprint.py, which checks what the job render kept, and the Markdown of the
-      # pages, whose named sizes it corrects; none of the pictures of main.
+      # pages, whose named sizes it corrects; none of the pictures of main. Of the
+      # commit that the job render rendered, which the commits start from.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ needs.render.outputs.sha }}
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /.github/blueprint.py
@@ -321,8 +349,10 @@ jobs:
           GH_REPO: ${{ github.repository }}
           APP_SLUG: ${{ steps.app.outputs.app-slug }}
           STALE: ${{ needs.render.outputs.stale }}
-          SHA: ${{ github.sha }}
+          SHA: ${{ needs.render.outputs.sha }}
           URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          # The token of the job, which may start a run of this workflow.
+          ACTIONS_TOKEN: ${{ github.token }}
         run: |
           # Only the app's own pull request from the branch of this repository: a fork
           # may open one from a branch of the same name.
@@ -335,6 +365,27 @@ jobs:
               echo "main looks as rendered; closed #$open." >> "$GITHUB_STEP_SUMMARY"
             fi
             exit 0
+          fi
+
+          tool=.github/blueprint.py
+          [[ -f "$tool" ]] || tool=blueprint.py
+          kept="$RUNNER_TEMP/screenshots"
+          # main may have moved on while the job render ran, such as by the merge of the
+          # pull request before this one: a pull request from the commit that was
+          # rendered would conflict over each picture or page that main changed since.
+          # Then the bot leaves the branch and the pull request as they are, and renders
+          # main anew, as the commit that it renders is the newest one.
+          gh api "repos/$GH_REPO/compare/$SHA...main" \
+            --jq '{behind_by, files: [.files[]? | {filename, previous_filename}]}' > "$RUNNER_TEMP/compared.json"
+          if python3 "$tool" --repo "$GH_REPO" screenshots overtaken "$kept" \
+            --compared "$RUNNER_TEMP/compared.json" >> "$GITHUB_STEP_SUMMARY"; then
+            GH_TOKEN="$ACTIONS_TOKEN" gh api --method POST \
+              "repos/$GH_REPO/actions/workflows/screenshot-bot.yml/dispatches" -f ref=main
+            echo "The bot started a new run of this workflow, which renders main anew." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          # 3 means not; an error that the tool does not catch exits 1.
+          elif (($? != 3)); then
+            exit 1
           fi
 
           # Points the branch of the pull request at a commit, new or moved.
@@ -356,9 +407,6 @@ jobs:
             gh api --method DELETE "repos/$GH_REPO/git/refs/heads/$scratch" > /dev/null
           fi
           gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/heads/$scratch" -f sha="$SHA" > /dev/null
-          tool=.github/blueprint.py
-          [[ -f "$tool" ]] || tool=blueprint.py
-          kept="$RUNNER_TEMP/screenshots"
           # The commits go through GitHub's API as the release app: GitHub signs them,
           # as main requires, and they start the checks. The sign-off names the app's
           # account, which is the author of the commits. A large set of pictures goes

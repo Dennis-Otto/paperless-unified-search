@@ -27,7 +27,8 @@ BRANCH = "blueprint/update"
 # The blueprint on GitHub, unless the answers name a fork of it.
 SOURCE = "Dennis-Otto/repo-blueprint"
 ANSWERS = ".copier-answers.yml"
-# The label of the branch bot for a pull request that needs a person to merge it.
+# The label of the branch bot for a pull request that conflicts with main, which a
+# person merges unless the bot that made it builds it anew.
 LABEL = "merge-conflict"
 # The first line of the one comment on a pull request that the bot leaves alone.
 NOTICE = "<!-- blueprint-bot: newer release -->"
