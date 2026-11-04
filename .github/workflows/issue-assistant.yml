@@ -13,6 +13,12 @@ name: Issue assistant
 # Without the engine's secret in the environment issue-assistant, or with the
 # repository variable ISSUE_ASSISTANT_AI set to "off", only labels and the lifecycle
 # work. The issue assistant's check command keeps this file equal to its template.
+#
+# A run by hand, also through the REST API, answers an issue that has no comment of
+# its task yet. Someone with write access starts it, and may add an instruction; a
+# maintainer, with the role admin or maintain, may tick override to have the
+# assistant answer again past its one comment. The job event checks the role of
+# the person who started the run, and its summary records every override.
 
 on:
   issues:
@@ -30,6 +36,14 @@ on:
         type: choice
         options: [triage, follow-up, maintainer-reply, release-reply, maintainer-question]
         default: triage
+      instruction:
+        description: What the assistant should do, such as "ask for the logs" (triage and follow-up)
+        type: string
+        default: ""
+      override:
+        description: Answer again past the one comment of the task (maintainers only)
+        type: boolean
+        default: false
       dry_run:
         description: Only show what the assistant would do
         type: boolean
@@ -51,7 +65,7 @@ jobs:
       contents: read
       issues: write
       discussions: read
-    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-assistant.yml@e2e41b838235117ebd4c6583ce12b8cdecb4264d # v1.9.0
+    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-assistant.yml@8af682441bf4881f42b626caaa3061953a677481 # v1.10.0
     with:
       dry_run: ${{ inputs.dry_run || false }}
     # Passed by name: only the job analyze sees their values, those of the
