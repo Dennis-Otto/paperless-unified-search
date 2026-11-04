@@ -1,0 +1,243 @@
+name: Commands
+
+# The commands that a person gives a pull request in a comment, as its first line.
+#
+# /fix: the fix bot commits the fixes of the checks of the head of the pull request
+# onto its branch, as the release app, also onto the branch of a fork whose author
+# allows edits by maintainers, which the fix bot after the checks only suggests at
+# their lines. Only a person with write access to the repository starts it, as GitHub
+# answers when the command comes; anybody else gets that answer. The bot takes the
+# fixes that the checks of the head kept, the artifacts fixes-* of the workflows of the
+# list of after-checks.yml of main, as data, once those that keep fixes have ended,
+# and blueprint.py of main lets through only text files that the commit has already,
+# outside .git and the workflows. On a fork, it commits only the files that the pull
+# request changes and none that decides what a workflow runs, such as a file of
+# .github/ or scripts/ or pyproject.toml, whose fix stays with a person. Whether GitHub
+# lets the app push onto the branch of a fork isn't settled, so a refusal is no failure:
+# the bot suggests the fixes at their lines, as a fork gets them without the command,
+# and so it does on a fork that allows no edits. One comment answers each command, with
+# what the bot did and why; the label no-bot-fixes stops the bot's own commits, not
+# those that a person asks for. Nothing of the pull request runs here: the job checks
+# out main alone.
+# https://github.com/Dennis-Otto/repo-blueprint
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+# The GitHub CLI of the jobs sends no telemetry to GitHub.
+env:
+  GH_TELEMETRY: "false"
+
+jobs:
+  fix:
+    name: the fix bot at /fix
+    # A comment that starts with /fix on an open pull request, by a person whom GitHub
+    # names as the owner, a member or a collaborator, so that no other comment takes a
+    # runner; the bot asks GitHub for the permission of that person itself.
+    if: >-
+      !github.event.repository.fork && github.event.issue.pull_request &&
+      github.event.issue.state == 'open' &&
+      startsWith(github.event.comment.body, '/fix') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+    # One command at a time for each pull request, so that two never commit at once;
+    # a command given while another one waits replaces the waiting one.
+    concurrency:
+      group: ${{ github.workflow }}-fix-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    # It waits up to a quarter of an hour for the checks of the head that fix.
+    timeout-minutes: 20
+    # The environment holds the private key of the release app; only main may use it.
+    environment:
+      name: release
+      deployment: false
+    permissions:
+      actions: read # the runs of the head and the fixes that their checks kept
+      contents: read # blueprint.py of main, and the files of the head
+      pull-requests: write # the pull request, the suggestions on a fork, and the answer to the command
+    steps:
+      - name: Block every host that the job doesn't need
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
+      - name: Wait until Harden-Runner lets the hosts through
+        # The runner may have asked for an address past Harden-Runner, which then blocks
+        # that address for as long as systemd-resolved keeps it, up to a minute.
+        timeout-minutes: 4
+        env:
+          HOSTS: >-
+            api.github.com:443
+            github.com:443
+        run: |
+          deadline=$(($(date +%s) + 120))
+          for endpoint in $HOSTS; do
+            host="${endpoint%:*}"
+            # A wildcard names no host to ask.
+            [[ "$host" == '*.'* ]] && continue
+            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+              if (($(date +%s) >= deadline)); then
+                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                break
+              fi
+              echo "Harden-Runner still blocks $host, waiting 3 s."
+              sleep 3
+            done
+          done
+      # The tool of main, never the code of the pull request; the fixes are data.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github
+            blueprint
+      - name: Decide what the fix bot does at the command
+        id: decide
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PULL: ${{ github.event.issue.number }}
+          COMMENT: ${{ github.event.comment.id }}
+        run: |
+          # What the bot says goes into the summary and into the answer to the command,
+          # and its failure fails the step.
+          set -o pipefail
+          tool=.github/blueprint.py
+          [[ -f "$tool" ]] || tool=blueprint.py
+          python3 "$tool" --repo "$GH_REPO" fix command --pull "$PULL" --comment "$COMMENT" \
+            --folder "$RUNNER_TEMP/fixes" --output "$GITHUB_OUTPUT" \
+            | tee -a "$RUNNER_TEMP/answer.md" >> "$GITHUB_STEP_SUMMARY"
+      # Without the release app of the owner, the run names what is missing rather than
+      # fail at the token; every workflow has this step, the same but for its variables.
+      - name: Check that the release app is set up
+        id: release-app
+        if: steps.decide.outputs.action == 'commit'
+        env:
+          CLIENT_ID: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          KEY_SET: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY != '' }}
+          # Who needs the app and for what, what happens without it, and whether the
+          # run fails then.
+          BOT: the fix bot
+          TASK: commit the fixes at the command /fix
+          WITHOUT: a fork gets the fixes as suggestions at their lines, the PR coach names the command of each check that failed, and the artifacts fixes-* of the checks hold the files
+          REQUIRED: "false"
+        run: |
+          if [[ -z "$CLIENT_ID" ]]; then
+            missing="names no release app in the variable RELEASE_AUTOMATION_CLIENT_ID"
+          elif [[ "$KEY_SET" != true ]]; then
+            missing="has no private key of its release app in the secret RELEASE_AUTOMATION_PRIVATE_KEY of the environment release"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          level=warning
+          if [[ "$REQUIRED" == true ]]; then
+            level=error
+          fi
+          echo "::$level::This repository $missing, which $BOT needs to $TASK; $WITHOUT."
+          {
+            echo "### ${BOT^} needs the release app of the owner"
+            echo
+            echo "This repository $missing, which $BOT needs to $TASK; $WITHOUT. The release app is a GitHub App of the owner, whose token may do what the token of a job can't: start the checks of a pull request, change a workflow and apply the settings."
+            echo
+            echo "\`python3 .github/blueprint.py app register\` registers the app, sets its private key and opens the pull request that names it in \`.github/repository.toml\`; \`python3 .github/blueprint.py checklist\` shows what is left, such as its installation and the settings. Once they are done, $BOT can $TASK in its next run."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$REQUIRED" == true ]]; then
+            exit 1
+          fi
+      - name: Create a token of the release app for the branch
+        id: app
+        if: steps.decide.outputs.action == 'commit' && steps.release-app.outputs.ready == 'true'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY }}
+          # Only what one commit on the branch needs, and the files of the pull request,
+          # which say which fixes go onto the branch of a fork.
+          permission-contents: write
+          permission-pull-requests: read
+      - name: Commit the fixes onto the branch of the pull request
+        id: commit
+        if: steps.app.outputs.token != ''
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          PULL: ${{ github.event.issue.number }}
+          HEAD_REPO: ${{ steps.decide.outputs.repository }}
+          BRANCH: ${{ steps.decide.outputs.branch }}
+          SHA: ${{ steps.decide.outputs.sha }}
+          URL: ${{ github.event.comment.html_url }}
+        run: |
+          set -o pipefail
+          tool=.github/blueprint.py
+          [[ -f "$tool" ]] || tool=blueprint.py
+          # The commit goes through GitHub's API as the release app: GitHub signs it,
+          # and the push starts the checks again. A fork's branch may refuse it.
+          python3 "$tool" --repo "$GH_REPO" fix commit --sha "$SHA" --branch "$BRANCH" \
+            --repository "$HEAD_REPO" --pull "$PULL" --app "$APP_SLUG" --url "$URL" \
+            --folder "$RUNNER_TEMP/fixes" --output "$GITHUB_OUTPUT" \
+            | tee -a "$RUNNER_TEMP/answer.md" >> "$GITHUB_STEP_SUMMARY"
+      # What a fork gets without the command: when it allows no edits, when its branch
+      # refused the commit, and without the release app.
+      - name: Suggest the fixes on the pull request from a fork
+        if: >-
+          steps.decide.outputs.action == 'suggest' ||
+          (steps.decide.outputs.action == 'commit' && steps.decide.outputs.fork == 'true' &&
+          (steps.release-app.outputs.ready != 'true' || steps.commit.outputs.suggest == 'true'))
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PULL: ${{ github.event.issue.number }}
+          SHA: ${{ steps.decide.outputs.sha }}
+        run: |
+          set -o pipefail
+          tool=.github/blueprint.py
+          [[ -f "$tool" ]] || tool=blueprint.py
+          python3 "$tool" --repo "$GH_REPO" fix suggest --sha "$SHA" --pull "$PULL" \
+            --folder "$RUNNER_TEMP/fixes" | tee -a "$RUNNER_TEMP/answer.md" >> "$GITHUB_STEP_SUMMARY"
+      # One comment for each command, also when the bot failed: the person waits for it.
+      - name: Answer the command on the pull request
+        if: always() && steps.decide.outputs.command == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PULL: ${{ github.event.issue.number }}
+          ACTION: ${{ steps.decide.outputs.action }}
+          READY: ${{ steps.release-app.outputs.ready }}
+          FAILED: ${{ job.status == 'failure' }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          answer="$RUNNER_TEMP/answer.md"
+          {
+            echo "### The fix bot at \`/fix\`"
+            echo
+            if [[ -f "$answer" ]]; then
+              cat "$answer"
+            fi
+            if [[ "$ACTION" == commit && "$READY" != true ]]; then
+              echo
+              echo "This repository has no release app set up, which the fix bot needs to commit; the summary of the run ($URL) says how to set it up."
+            fi
+            if [[ "$FAILED" == true ]]; then
+              echo
+              echo "The fix bot failed ($URL); its summary says why. The PR coach names the command of each check that failed, which makes the fixes on your machine."
+            fi
+          } > "$RUNNER_TEMP/comment.md"
+          gh pr comment "$PULL" --body-file "$RUNNER_TEMP/comment.md"
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."

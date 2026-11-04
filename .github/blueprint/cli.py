@@ -75,8 +75,12 @@ from blueprint.fixes import (
     Fixes,
     FixLoop,
     NoList,
+    acknowledge,
     collect,
+    commander,
+    commit_on_command,
     commit_onto_branch,
+    decide_command,
     downloader,
     fix_own,
     fix_text,
@@ -601,7 +605,7 @@ def fix_command(arguments: argparse.Namespace, root: Path) -> int:
         )
         return 0
     if arguments.action == "version":
-        return fix_version(root)
+        return fix_version(root, arguments.base or os.environ.get(versions.BASE))
     if arguments.action == "keep":
         print("\n".join(report_kept(keep_fixes(root, arguments.folder), kept=True)))
         return 0
@@ -627,14 +631,34 @@ def fix_command(arguments: argparse.Namespace, root: Path) -> int:
     return 0
 
 
-def fix_version(root: Path) -> int:
+def fix_version(root: Path, base: str | None = None) -> int:
     """Writes the version of the manifest of the release bot back into each file that
     has another one; a file without a version at the place of the step Version stays
-    for a person."""
-    done = versions.fix(root)
+    for a person, and so does every file where the manifest names another version than
+    on the base of the pull request."""
+    done = versions.fix(root, base or None)
     if done.version is None:
         print(f"{versions.MANIFEST} names no version, so there is none to write.")
         return 0
+    if done.changed:
+        for file in done.left:
+            print(
+                f"{file.path}: has version {file.found}, and the manifest {done.version}"
+                if file.found is not None
+                else f"{file.path}: has no version where the step Version reads it"
+            )
+        print(
+            f"{versions.MANIFEST} names version {done.version}, but "
+            f"{done.released or 'no version'} on the base of the pull request. Only "
+            "the release bot changes it, so the fix writes no version: "
+            + (
+                f"set it back to {done.released}, or bring the branch up to date with "
+                "the base if a release came since."
+                if done.released is not None
+                else "give each file its version by hand."
+            )
+        )
+        return 1
     for file in done.fixed:
         print(
             f"{file.path}: version {done.version} of the release bot, "
@@ -685,6 +709,42 @@ def job_output(output: str | Path | None, lines: str) -> None:
             file.write(lines)
 
 
+def fix_command_command(
+    api: Api, repo: str, arguments: argparse.Namespace, root: Path
+) -> int:
+    """The command /fix in a comment on a pull request: who gave it, what the bot does,
+    and the fixes of its head downloaded into the folder."""
+    user = commander(api, repo, arguments.comment)
+    if not user:
+        print(f"Comment {arguments.comment} is no command of the fix bot.")
+        return 0
+    job_output(arguments.output, "command=true\n")
+    acknowledge(api, repo, arguments.comment)
+    try:
+        decided = decide_command(
+            api,
+            repo,
+            arguments.pull,
+            user,
+            arguments.folder,
+            downloader(api, repo),
+            watched(root),
+        )
+    except NoList as error:
+        print(f"::error::{error}", file=sys.stderr)
+        print(error)
+        return 1
+    fork = bool(decided.repository) and decided.repository != repo
+    job_output(
+        arguments.output,
+        f"action={decided.action}\nsha={decided.sha}\n"
+        f"repository={decided.repository}\nbranch={decided.branch}\n"
+        f"fork={str(fork).lower()}\n",
+    )
+    sys.stdout.write(decided.text)
+    return 0
+
+
 def fix_bot_command(
     api: Api, repo: str, arguments: argparse.Namespace, root: Path
 ) -> int:
@@ -692,6 +752,8 @@ def fix_bot_command(
     commit them, suggest them or keep the pull request of main."""
     if arguments.action == "own":
         return fix_own_command(api, repo, arguments)
+    if arguments.action == "command":
+        return fix_command_command(api, repo, arguments, root)
     if arguments.action == "collect":
         number = int(arguments.pull) if arguments.pull else None
         try:
@@ -731,7 +793,21 @@ def fix_bot_command(
         sys.stdout.write(decided.text)
         return 0
     fixes = kept_fixes(arguments.folder)
-    if arguments.action == "commit":
+    if arguments.action == "commit" and arguments.pull:
+        pushed = commit_on_command(
+            api,
+            repo,
+            int(arguments.pull),
+            arguments.repository or repo,
+            arguments.branch,
+            arguments.sha,
+            fixes,
+            arguments.app,
+            arguments.url,
+        )
+        job_output(arguments.output, f"suggest={str(pushed.to_suggest).lower()}\n")
+        said = pushed.text
+    elif arguments.action == "commit":
         said = commit_onto_branch(
             api,
             repo,
@@ -1782,10 +1858,16 @@ def add_fix_parsers(
         help="give every text file LF line endings, no trailing whitespace and a line "
         "break at its end",
     )
-    fix_actions.add_parser(
+    fix_version_parser = fix_actions.add_parser(
         "version",
         help="write the version of .release-please-manifest.json back into each file "
         "that the release bot writes it into, where a hand changed it",
+    )
+    fix_version_parser.add_argument(
+        "--base",
+        help="the commit that the pull request goes into, such as origin/main: where "
+        "the manifest names another version than there, write nothing (default: "
+        f"${versions.BASE}, which the fix step of the CI sets)",
     )
     collect_parser = fix_actions.add_parser(
         "collect",
@@ -1843,6 +1925,43 @@ def add_fix_parsers(
             "--app", required=True, help="the slug of the release app, which commits"
         )
         bot_parser.add_argument("--url", required=True, help="the run of the checks")
+    add_fix_command_parsers(fix_actions, commit_fixes_parser)
+
+
+def add_fix_command_parsers(
+    fix_actions: argparse._SubParsersAction[argparse.ArgumentParser],
+    commit_fixes_parser: argparse.ArgumentParser,
+) -> None:
+    """The command /fix: what the bot does at it, and its commit, which may go onto the
+    branch of a fork. A function of its own, as each copy of mutmut repeats the whole."""
+    command_parser = fix_actions.add_parser(
+        "command",
+        help="take the command /fix of a person with write access in a comment on a "
+        "pull request: download the fixes of its head and decide what the bot does",
+    )
+    command_parser.add_argument(
+        "--pull", type=int, required=True, help="the pull request of the comment"
+    )
+    command_parser.add_argument(
+        "--comment", type=int, required=True, help="the id of the comment"
+    )
+    command_parser.add_argument(
+        "--folder", type=Path, required=True, help="the fixes, one folder per check"
+    )
+    commit_fixes_parser.add_argument(
+        "--pull",
+        default="",
+        help="the pull request whose command /fix asked for the commit",
+    )
+    commit_fixes_parser.add_argument(
+        "--repository",
+        default="",
+        help="at a command, the repository of the branch, a fork's or this one",
+    )
+    for parser in (command_parser, commit_fixes_parser):
+        parser.add_argument(
+            "--output", help="the file of the outputs of the step, $GITHUB_OUTPUT"
+        )
 
 
 def add_mutation_parsers(
@@ -2137,9 +2256,14 @@ def standalone_command(
         ) as error:
             print(f"blueprint.py: {error}", file=sys.stderr)
             return 2
-    if arguments.command == "fix" and not (
-        re.fullmatch(r"[0-9a-f]{40}", arguments.sha)
-        and re.fullmatch(r"[0-9]*", getattr(arguments, "pull", ""))
+    # The command names its pull request and comment as numbers, which argparse checks.
+    if (
+        arguments.command == "fix"
+        and arguments.action != "command"
+        and not (
+            re.fullmatch(r"[0-9a-f]{40}", arguments.sha)
+            and re.fullmatch(r"[0-9]*", getattr(arguments, "pull", ""))
+        )
     ):
         print(
             "blueprint.py: a commit is 40 hex digits, a pull request a number",

@@ -396,22 +396,39 @@ jobs:
               if [[ -z "$app_id" ]]; then
                 fail "appinfo/info.xml at $TAG names no app, so the Nextcloud App Store can't be checked."
               else
+                # The App Store takes the version of a release from the appinfo/info.xml
+                # in its package and updates its release of that version: a package of
+                # another version, such as a beta that still says the last release, has
+                # replaced the package of that release for every user (#635).
+                packaged="$(python3 -c 'import sys, tarfile, xml.etree.ElementTree as t; info = tarfile.open(sys.argv[1]).extractfile(sys.argv[2] + "/appinfo/info.xml"); print((t.parse(info).getroot().findtext("version") or "").strip())' \
+                  "$app_id.tar.gz" "$app_id" 2>/dev/null || true)"
+                if [[ "$packaged" == "$version" ]]; then
+                  pass "The appinfo/info.xml in $app_id.tar.gz has the version $version, which the App Store takes for its release."
+                else
+                  fail "The appinfo/info.xml in $app_id.tar.gz has the version ${packaged:-none}, not $version, so the App Store takes the package for another release."
+                fi
                 # The page of the app shows a new release at once and links its signed
-                # package; the list of all apps follows up to hours later. The loop waits
-                # for the package, curl itself tries again after a passing error.
+                # package; the list of all apps follows up to hours later. A beta, whose
+                # version has a pre-release identifier such as -beta.2, shows among the
+                # unstable releases on the page of all its releases: Nextcloud offers it
+                # only to servers on the beta channel. The loop waits for the package,
+                # curl itself tries again after a passing error.
                 package="https://github.com/$GH_REPO/releases/download/$TAG/$app_id.tar.gz"
+                page="https://apps.nextcloud.com/apps/$app_id"
+                [[ "$version" != *-* ]] || page="$page/releases"
                 offered=false
                 for attempt in 1 2 3 4 5 6; do
                   if curl --fail --silent --show-error --retry 2 --retry-all-errors \
-                    --connect-timeout 15 --max-time 30 --output "$RUNNER_TEMP/app.html" \
-                    "https://apps.nextcloud.com/apps/$app_id" &&
+                    --connect-timeout 15 --max-time 30 --output "$RUNNER_TEMP/app.html" "$page" &&
                     grep -qF "href=\"$package\"" "$RUNNER_TEMP/app.html"; then
                     offered=true
                     break
                   fi
                   [[ "$attempt" == 6 ]] || sleep 30
                 done
-                if [[ "$offered" == true ]]; then
+                if [[ "$offered" == true && "$version" == *-* ]]; then
+                  pass "The Nextcloud App Store offers the package of $app_id $version only to servers on the beta channel of Nextcloud."
+                elif [[ "$offered" == true ]]; then
                   pass "The Nextcloud App Store offers the package of $app_id $version."
                 else
                   fail "The Nextcloud App Store doesn't offer the package of $app_id $version."

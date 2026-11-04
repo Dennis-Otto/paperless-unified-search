@@ -91,6 +91,7 @@
 .github/workflows/ci.yml
 .github/workflows/cleanup.yml
 .github/workflows/codeql.yml
+.github/workflows/commands.yml
 .github/workflows/dependabot-automerge.yml
 .github/workflows/dependency-review.yml
 .github/workflows/diagrams.yml
