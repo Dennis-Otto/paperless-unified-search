@@ -16,10 +16,12 @@ each pull request has to run its checks again after the merge before it anyway.
 A pull request whose required check failed waits for a fix and leaves its place to the
 next one. One that conflicts with the default branch gets the label merge-conflict and
 one comment, which stays for the history; the label goes once it no longer conflicts.
-Renovate builds a branch of its own that conflicts anew. One that waits for a review,
-or for its conversations to be resolved, can't merge whatever its checks say, so the
-bot doesn't bring it up to date either. A request that GitHub refuses is a warning
-about that pull request, and the bot goes on with the next one.
+Renovate builds a branch of its own that conflicts anew, and so does a bot of the
+blueprint that builds its branch from the default branch, such as the screenshot bot,
+whose workflow the branch bot starts once for each conflict (decision 0118). One that
+waits for a review, or for its conversations to be resolved, can't merge whatever its
+checks say, so the bot doesn't bring it up to date either. A request that GitHub
+refuses is a warning about that pull request, and the bot goes on with the next one.
 
 A pull request from a fork takes its place as well, once its author allows edits by
 maintainers. GitHub holds the runs of each new head of a fork until they are approved,
@@ -57,6 +59,17 @@ CONFLICT_COMMENT = (
 RELEASE_BRANCH = "release-please--"
 # Renovate builds a branch of its own that conflicts with the default branch anew.
 RENOVATE_BRANCH = "renovate/"
+# The bots that build the branch of their pull request anew from the default branch
+# whenever their workflow runs, by that workflow, but run only now and then: after a
+# release, every week or every day. A conflict starts the workflow at once, rather than
+# leave the pull request to a person or to the next run (decision 0118). The diagram
+# bot and the fix bot need no start: every change of the default branch that can
+# conflict with their pull request starts them anyway.
+REBUILT_BY = {
+    "bot/screenshots": "screenshot-bot.yml",
+    "bot/pictures": "docs-pictures.yml",
+    "bot/issue-assistant": "sync-issue-assistant.yml",
+}
 # What the bot needs of each open pull request, in one request.
 FIELDS = (
     "number,headRefName,headRefOid,autoMergeRequest,isCrossRepository,"
@@ -447,10 +460,15 @@ class Line:
 
     def conflict(self, pull: Pull) -> None:
         """A pull request that conflicts with base: the label and one comment, which a
-        person resolves; Renovate builds a branch of its own anew."""
+        person resolves; Renovate and the bots of REBUILT_BY build a branch of their own
+        anew."""
         base = code(self.base)
         if pull.branch.startswith(RENOVATE_BRANCH) and not pull.fork:
             self.note(pull, f"conflicts with {base}; Renovate builds its branch anew.")
+            return
+        workflow = REBUILT_BY.get(pull.branch)
+        if workflow and not pull.fork:
+            self.rebuild(pull, workflow)
             return
         issue = f"repos/{self.repo}/issues/{pull.number}"
         if not pull.labelled:
@@ -465,6 +483,37 @@ class Line:
             pull,
             f"conflicts with {base}: it has the label {LABEL} and waits for a person "
             f"to merge {base} into it.",
+        )
+
+    def rebuild(self, pull: Pull, workflow: str) -> None:
+        """A pull request of a bot that builds its branch anew from base, by workflow:
+        the token of the job starts the workflow once for each conflict, and the label
+        says that it did, with no comment, as nobody has to act. The new branch doesn't
+        conflict, and the label goes once GitHub finds that; a new conflict starts the
+        workflow again. Outside of a job, a person starts it."""
+        base = code(self.base)
+        started = f"{code(workflow)} builds its branch anew from {base}"
+        if pull.labelled:
+            self.note(pull, f"conflicts with {base}: {started}.")
+            return
+        if self.job is None:
+            self.note(
+                pull,
+                f"conflicts with {base}: start {code(workflow)} on {base}, which "
+                "builds its branch anew.",
+            )
+            return
+        self.job.api.post(
+            f"repos/{self.repo}/actions/workflows/{workflow}/dispatches",
+            {"ref": self.base},
+        )
+        self.api.post(
+            f"repos/{self.repo}/issues/{pull.number}/labels", {"labels": [LABEL]}
+        )
+        self.note(
+            pull,
+            f"conflicts with {base}: the bot started {code(workflow)}, which builds "
+            f"its branch anew from {base}; it has the label {LABEL} until then.",
         )
 
     def sort_out(self, pulls: list[Pull]) -> list[Pull]:
