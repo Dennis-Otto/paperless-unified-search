@@ -70,7 +70,7 @@ The files of this project, as `_skip_if_exists` in the `copier.yml` of the bluep
 
 - **Documentation and website:** `/README.md`, `/CHANGELOG.md`, `/mkdocs.yml`, `/docs/index.md`, `/docs/security.md`, `/docs/releases.md`, `/docs/decisions`
 - **Version, which the release bot writes:** `/version.txt`, `/.release-please-manifest.json`
-- **Code and tests:** `/src`, `/lib`, `/app`, `/appinfo`, `/img`, `/custom_components`, `/extension`, `/store`, `/tests`, `/test`, `/fuzz`, `/*.py`, `/action.yml`, `/hacs.json`, `/Dockerfile`
+- **Code and tests:** `/src`, `/lib`, `/app`, `/appinfo`, `/img`, `/custom_components`, `/extension`, `/store`, `/wrangler.jsonc`, `/tests`, `/test`, `/fuzz`, `/*.py`, `/action.yml`, `/hacs.json`, `/Dockerfile`
 - **Dependency manifests and lock files, which Renovate keeps current:** `/pyproject.toml`, `/requirements-dev.in`, `/requirements-dev.txt`, `/requirements-test.in`, `/requirements-test.txt`, `/requirements-fuzz.in`, `/requirements-fuzz.txt`, `/composer.json`, `/composer.lock`, `/package.json`, `/package-lock.json`
 - **Issue and discussion forms:** `.github/ISSUE_TEMPLATE/bug_report.yml`, `.github/ISSUE_TEMPLATE/feature_request.yml`, `.github/ISSUE_TEMPLATE/config.yml`, `.github/DISCUSSION_TEMPLATE/q-a.yml`, `.github/DISCUSSION_TEMPLATE/ideas.yml`
 - **Settings, labels and bots:** `.github/repository.project.toml`, `.github/checks.project.toml`, `.github/labels.toml`, `.github/labeler.yml`, `.github/renovate.json5`, `.github/renovate-accepted.json5`, `.github/a11y-accepted.toml`, `/osv-scanner.toml`, `.github/findings.toml`, `.github/dependency-review.yml`, `.github/workflows/action-test.yml`, `.github/issue-assistant/project.md`, `.github/agents.project.md`

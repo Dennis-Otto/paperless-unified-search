@@ -465,6 +465,14 @@ def checklist(
             "https://nextcloudappstore.readthedocs.io/en/latest/developer.html\n"
             "then run Actions -> Register the app with the id of the app.",
         ),
+        "cloudflare-workers": (
+            "Cloudflare: the Worker created with a first npx wrangler deploy, and the"
+            " repository connected with Workers Builds (build command"
+            " `npm ci --ignore-scripts`, SKIP_DEPENDENCY_INSTALL=1, deploy"
+            " command npm run deploy)",
+            f"https://github.com/{repo}/blob/main/docs/releases.md"
+            "#set-up-cloudflare-once",
+        ),
     }
     if target == "hacs":
         steps.append(listing(settings, drift))
