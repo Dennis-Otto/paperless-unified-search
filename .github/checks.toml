@@ -17,7 +17,8 @@
 # alone, or a sentence with the reason why no command can. The job of a check that
 # fails runs its commands, those of a check of scripts/check.sh the commands of each
 # step, and the fix bot commits their fixes after the checks, or suggests them on a
-# pull request from a fork. See "Pull requests fix themselves" in CONTRIBUTING.md.
+# pull request from a fork, where /fix of a maintainer commits them. See "Pull
+# requests fix themselves" in CONTRIBUTING.md.
 #
 # The blueprint keeps this file current: https://github.com/Dennis-Otto/repo-blueprint
 # Explain the checks and steps of this project alone in .github/checks.project.toml,
@@ -343,7 +344,8 @@ check, `fix own` of the fix bot commits a draft from the title onto a branch of 
 repository, once for each pull request, as one new file of `changelog.d/` that it names
 and writes itself; the words for users stay the author's, and the PR coach asks to read
 them. A title with HTML, a mention or a link gets no draft, and a pull request from a fork
-none, since no bot may push to it."""
+none, since the bot after the checks never pushes to it and `/fix` commits only
+the fixes of the checks."""
 
 [check.codeql]
 title = "The CodeQL analysis"
@@ -1002,10 +1004,17 @@ problem = """A file has another version than `.release-please-manifest.json`, wh
 version the release bot writes into every file that has one."""
 why = """A version changed by hand would ship a package with the wrong number; the
 release bot decides the version from the titles of the pull requests."""
-fix = """Set the version that the log names back to that of the manifest. The release bot
-changes the version, a pull request doesn't; the command writes the version of the
-manifest into each file:"""
-commands = ["python3 .github/blueprint.py fix version"]
+fix = """Set the version that the log names back to that of the manifest. Where the pull
+request changed `.release-please-manifest.json` itself, set the manifest back to the
+version of `main` instead, or bring the branch up to date if a release came since: the
+release bot changes the version, a pull request doesn't. The command writes the version
+of the manifest into each file, and with `--base` none where the manifest differs from
+that of the base, as the fix bot runs it. On a fork, fetch and name the remote of
+the upstream repository, such as `upstream/main`, instead of `origin/main`:"""
+commands = [
+  "git fetch origin main",
+  "python3 .github/blueprint.py fix version --base origin/main",
+]
 docs = "CONTRIBUTING.md#workflow"
 autofix = ["{blueprint} fix version"]
 

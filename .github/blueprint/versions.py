@@ -6,18 +6,28 @@ release-please-config.json, and the step Version of scripts/check.sh fails while
 of them has another version. The version decides nothing in a pull request: the
 release bot takes the next one from the titles. So `fix version`, the autofix of the
 step, writes the version of the manifest back into each file, at the place where the
-step reads it, and leaves every other byte of the file as it is."""
+step reads it, and leaves every other byte of the file as it is.
+
+Only the release bot changes the manifest, in its own pull request, which writes every
+file at once. So in any other pull request, the fix compares the manifest with that of
+its base, main as the pull request found it, and where it names another version, the
+fix writes nothing: a hand changed it, or main had a release since, and either is for
+a person, not for a fix that would make it pass."""
 
 from __future__ import annotations
 
 import json
 import re
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 MANIFEST = ".release-please-manifest.json"
 CONFIG = "release-please-config.json"
+# The variable in which the fix step of the CI names the base of a pull request, a
+# commit, for `fix version` among the commands of autofix.
+BASE = "FIX_BASE"
 # The files that release-please writes the version into for each release type of the
 # template, besides its extra-files.
 OF_THE_TYPE = {
@@ -58,10 +68,41 @@ def loaded(path: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def version_of(manifest: object) -> str | None:
+    """The version of the last release in a manifest of the release bot, in JSON."""
+    version = manifest.get(".") if isinstance(manifest, dict) else None
+    return version if isinstance(version, str) else None
+
+
 def release(root: Path) -> str | None:
     """The version of the last release, from the manifest of the release bot."""
-    version = loaded(root / MANIFEST).get(".")
-    return version if isinstance(version, str) else None
+    return version_of(loaded(root / MANIFEST))
+
+
+def released_on(root: Path, base: str) -> str | None:
+    """The version of the last release on the base of a pull request, a commit of the
+    repository: from the manifest there, None where it has none or names none."""
+
+    def git(*arguments: str, check: bool = True) -> bytes:
+        return subprocess.run(
+            ["git", *arguments], cwd=root, capture_output=True, check=check
+        ).stdout
+
+    # The base is a revision, never an option of git, and only a commit.
+    commit = git(
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "--end-of-options",
+        f"{base}^{{commit}}",
+        check=False,
+    ).strip()
+    if not commit:
+        raise ValueError(f"{base} is no commit of this repository")
+    sha = commit.decode()
+    if not git("ls-tree", "--name-only", sha, "--", MANIFEST).strip():
+        return None
+    return version_of(json.loads(git("cat-file", "blob", f"{sha}:{MANIFEST}")))
 
 
 def files(root: Path) -> list[str]:
@@ -108,19 +149,29 @@ def differing(root: Path, version: str) -> list[Versioned]:
 class Fixed:
     """What `fix version` did: the version of the manifest, None without one, the
     files that it wrote it into, each with the version that it had, and those without
-    a version at the place of the step, which a person gives one."""
+    a version at the place of the step, which a person gives one. Where the manifest
+    names another version than on the base of the pull request, it changed, and the
+    fix wrote nothing: every file with another version is left, and released is the
+    version of the base, None for none."""
 
     version: str | None
     fixed: list[Versioned]
     left: list[Versioned]
+    changed: bool = False
+    released: str | None = None
 
 
-def fix(root: Path) -> Fixed:
-    """Writes the version of the manifest into each file that has another one."""
+def fix(root: Path, base: str | None = None) -> Fixed:
+    """Writes the version of the manifest into each file that has another one. With
+    the base of a pull request, a commit, it writes nothing where the manifest names
+    another version than the manifest of the base."""
     version = release(root)
     if version is None:
         return Fixed(None, [], [])
+    released = version if base is None else released_on(root, base)
     wrong = differing(root, version)
+    if wrong and released != version:
+        return Fixed(version, [], wrong, changed=True, released=released)
     fixed = [file for file in wrong if file.found is not None]
     for file in fixed:
         path = root / file.path

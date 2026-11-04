@@ -67,6 +67,14 @@ rules:
       # that only reads and read-only tools on the egress-firewall runner, and apply
       # checks the engine's answer before it writes labels or one comment.
       - issue-assistant.yml
+      # The fix bot of the command /fix starts on issue_comment so that a person with
+      # write access may ask for the fixes of a pull request, also of a fork; it starts
+      # only for a comment of an owner, a member or a collaborator, blueprint.py asks
+      # GitHub for that person's permission and reads the comment only as text. It
+      # checks out only .github and blueprint of the default branch, never the code of
+      # the pull request, and takes the fixes-* artifacts of the checks of the head
+      # only as data.
+      - commands.yml
       - findings.yml
       - issue-lifecycle.yml
   self-repository:

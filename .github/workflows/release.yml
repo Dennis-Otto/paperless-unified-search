@@ -718,8 +718,22 @@ jobs:
             exit 1
           fi
           app_id="$(python3 -c 'import xml.etree.ElementTree as t; print(t.parse("appinfo/info.xml").getroot().findtext("id"))')"
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$app_id.tar.gz.sig"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$app_id.tar.gz" --pattern "$app_id.tar.gz.sig"
+          # The App Store takes the version of the release from the appinfo/info.xml in
+          # the package and updates its release of that version: a package of another
+          # version, such as a beta that still says the last release, would replace the
+          # package of that release for every user (#635). The build checked it too.
+          version="${TAG#v}"
+          packaged="$(python3 -c 'import sys, tarfile, xml.etree.ElementTree as t; info = tarfile.open(sys.argv[1]).extractfile(sys.argv[2] + "/appinfo/info.xml"); print((t.parse(info).getroot().findtext("version") or "").strip())' \
+            "$app_id.tar.gz" "$app_id" 2>/dev/null || true)"
+          if [[ "$packaged" != "$version" ]]; then
+            echo "::error::The appinfo/info.xml in $app_id.tar.gz has the version ${packaged:-none}, not $version, so the App Store would take the package for another release (#635)."
+            exit 1
+          fi
           umask 077
+          # A beta is no nightly, which would reach only servers on the daily channel and
+          # delete the nightly before it: the pre-release identifier of its version, such
+          # as -beta.2, makes it a beta of the App Store.
           jq --null-input \
             --arg download "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$app_id.tar.gz" \
             --arg signature "$(openssl base64 -A -in "$app_id.tar.gz.sig")" \
@@ -729,6 +743,13 @@ jobs:
             --connect-timeout 15 --max-time 180 --request POST \
             --header "Authorization: Token $APPSTORE_TOKEN" --header 'Content-Type: application/json' \
             --data-binary "@$RUNNER_TEMP/request.json" https://apps.nextcloud.com/api/v1/apps/releases
+          # Nextcloud offers a version with a pre-release identifier only to a server on
+          # the channel beta, daily or git, or one that takes experimental apps.
+          if [[ "$version" == *-* ]]; then
+            echo "The App Store offers $app_id $version only to servers on the beta channel of Nextcloud." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "The App Store offers $app_id $version to every server it fits." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Wait until Harden-Runner has removed Docker
         # Harden-Runner removes Docker with apt-get in the background; a job that ends
         # before it finishes hangs in "Cleaning up orphan processes" until its timeout.

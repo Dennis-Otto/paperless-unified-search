@@ -11,8 +11,9 @@ fixes of every workflow in the list of after-checks.yml of main, also one of the
 project's own, and of no other. `fix collect` waits for those whose files keep fixes,
 so that one commit holds them all. Then `fix commit` commits them onto the branch of a
 pull request of this repository as the release app, `fix suggest` suggests them at
-their lines of a pull request from a fork, which no bot may push to, and `fix main`
-keeps one pull request from bot/self-heal with the fixes of main, which merges itself.
+their lines of a pull request from a fork, which the bot after the checks never pushes
+to, and `fix main` keeps one pull request from bot/self-heal with the fixes of main,
+which merges itself.
 A run that still runs after the wait leaves the commit to the job after its own end: a
 commit now would cancel it, and use up a commit of the bot for a part of the fixes.
 Docs keeps a fix of main alone, and while it passes: the first run of the accessibility
@@ -30,6 +31,16 @@ only there. It sets the title that the PR coach suggests when only its form diff
 because the type and the breaking mark decide the version. And it commits one draft of
 the entry of the changelog from that title where the check asks for an entry: the one
 new file that the bot ever adds, which it names and writes itself, in changelog.d/.
+
+A person with write access to the repository starts the bot by the command /fix, the
+first line of a comment on a pull request, with commands.yml. `fix command` takes the
+fixes that the ended checks of its head kept, as data, as `fix collect` does, and `fix
+commit` commits them onto its branch as the release app: also onto the branch of a fork
+whose author allows edits by maintainers, then only for the files that the pull request
+changes and none that decides what a workflow runs. Whether GitHub lets the app push
+there isn't settled, so a refusal, and a fork that allows no edits, gets the suggestions
+at their lines that a fork gets without the command, and the answer to the command says
+so. Nothing of the fork runs with the token: the job checks out main alone.
 """
 
 from __future__ import annotations
@@ -51,11 +62,13 @@ from pathlib import Path
 from urllib.parse import quote
 
 from blueprint.bot_health import started_after
+from blueprint.branches import decides_what_runs
 from blueprint.changelog import FRAGMENT_NAME, FRAGMENTS
 from blueprint.coach import (
     ALIASES,
     BOT,
     DRAFT_HEADLINE,
+    FINDING_LENGTH,
     FIX_HEADLINE,
     NAME_LENGTH,
     OWN_CHECKS,
@@ -133,6 +146,12 @@ LONGEST_TITLE = 256
 DRAFT_ENDINGS = ("", *(f"-{number}" for number in range(2, 10)))
 # The first line of the body of the draft, before the run of the checks.
 DRAFTED_AFTER = "Made from the title of the pull request after"
+# The command of a person on a pull request that starts the fix bot: the first line of
+# a comment, alone.
+COMMAND = "/fix"
+# The permissions on the repository of a person whose command the bot follows; GitHub
+# names maintain as write and triage as read in this field.
+WRITE_ACCESS = frozenset({"admin", "write"})
 
 
 # ---------------------------------------------------------------- in the check
@@ -565,7 +584,7 @@ class Plan:
 def collect(
     api: Api,
     repo: str,
-    run_id: int,
+    run_id: int | None,
     sha: str,
     event: str,
     branch: str,
@@ -581,7 +600,8 @@ def collect(
     not the run that started this job: GitHub keeps one pending job of a branch, so a run
     with no fix can replace the job of one with. A run that started this job and ended
     without failing counts for nothing, whatever it kept, as the bot takes no fix of it;
-    one that runs again still counts."""
+    one that runs again still counts. Without run_id, at the command of a person, the bot
+    waits in any case: a check that still runs may keep a fix."""
     awaited = workflows.awaited(event)
     runs = runs_of(api, repo, sha, event, branch, workflows.listed)
     ended = {
@@ -589,10 +609,14 @@ def collect(
         for found in runs
         if found.status == "completed" and found.conclusion != "failure"
     }
-    if event not in MAIN_EVENTS and not any(
-        artifacts_of(api, repo, each)
-        for each in dict.fromkeys((run_id, *failed(runs)))
-        if each not in ended
+    if (
+        run_id is not None
+        and event not in MAIN_EVENTS
+        and not any(
+            artifacts_of(api, repo, each)
+            for each in dict.fromkeys((run_id, *failed(runs)))
+            if each not in ended
+        )
     ):
         return Collected([])
     for _ in range(WAITS):
@@ -648,7 +672,8 @@ def opted_out(pull: Json) -> bool:
 
 
 def from_fork(pull: Json, repo: str) -> bool:
-    """Whether a pull request comes from another repository, which no bot may push to."""
+    """Whether a pull request comes from another repository, which the bot after the checks never
+    pushes to."""
     head = pull.get("head") or {}
     return str((head.get("repo") or {}).get("full_name") or "") != repo
 
@@ -776,7 +801,8 @@ def commit(
 
 
 def head_of(api: Api, repo: str, branch: str) -> str:
-    ref = api.get(f"repos/{repo}/git/ref/heads/{branch}") or {}
+    # A fork names its branch as it likes, such as with a # that would end the path.
+    ref = api.get(f"repos/{repo}/git/ref/heads/{quote(branch, safe='/')}") or {}
     return str((ref.get("object") or {}).get("sha") or "")
 
 
@@ -1144,6 +1170,225 @@ def suggest(api: Api, repo: str, number: int, sha: str, fixes: Fixes) -> str:
         },
     )
     return f"Suggested {len(posted)} fix(es) on #{number}.\n"
+
+
+# ---------------------------------------------------------------- the command /fix
+
+
+def is_command(body: str) -> bool:
+    """Whether a comment is the command /fix: its first line, alone, so that a comment
+    that only talks about it, such as "/fixed it" or a quote, starts nothing."""
+    lines = body.strip().splitlines()
+    return bool(lines) and lines[0].strip() == COMMAND
+
+
+def permission_of(api: Api, repo: str, user: str) -> str:
+    """The permission of a person on the repository, as GitHub answers now; none
+    where GitHub knows no such person."""
+    data = api.get(f"repos/{repo}/collaborators/{quote(user, safe='')}/permission")
+    return str((data or {}).get("permission") or "none")
+
+
+def commander(api: Api, repo: str, comment: int) -> str:
+    """The person who gave the command in a comment, from the API, which says what the
+    comment says now: nobody, when it is no command."""
+    data = api.get(f"repos/{repo}/issues/comments/{comment}") or {}
+    if not is_command(str(data.get("body") or "")):
+        return ""
+    return str((data.get("user") or {}).get("login") or "")
+
+
+def acknowledge(api: Api, repo: str, comment: int) -> None:
+    """Shows the person at once that the bot took the command, as GitHub shows a pair
+    of eyes; a refusal changes nothing of the work."""
+    try:
+        post(
+            api,
+            f"repos/{repo}/issues/comments/{comment}/reactions",
+            {"content": "eyes"},
+        )
+    except GitHubError as error:
+        print(
+            f"::warning::The fix bot couldn't react to the command: {error}",
+            file=sys.stderr,
+        )
+
+
+@dataclass(frozen=True)
+class Command:
+    """What the fix bot does at the command of a person: commit the fixes onto the
+    branch of the head in repository, suggest them, or nothing."""
+
+    action: str
+    text: str
+    sha: str = ""
+    repository: str = ""
+    branch: str = ""
+
+
+def decide_command(
+    api: Api,
+    repo: str,
+    number: int,
+    user: str,
+    folder: Path,
+    download: Download,
+    workflows: Watched,
+    wait: Callable[[float], None] = time.sleep,
+) -> Command:
+    """Decides what the bot does at the command /fix of user on a pull request: only a
+    person with write access starts it, as GitHub answers now, and the bot takes the
+    fixes that the checks of the head kept once they have ended, as the bot after the
+    checks does. The label no-bot-fixes turns off the bot's own commits, not those that
+    a person asks for. A fork that allows no edits by maintainers takes no commit of
+    anybody but its author, so it gets the suggestions."""
+    permission = permission_of(api, repo, user)
+    if permission not in WRITE_ACCESS:
+        return Command(
+            "",
+            f"Only a person with write access to this repository starts the fix bot "
+            f"with `{COMMAND}`; {code(user, NAME_LENGTH)} has the permission "
+            f"{code(permission, NAME_LENGTH)}.\n",
+        )
+    pull = api.get(f"repos/{repo}/pulls/{number}") or {}
+    if pull.get("state") != "open":
+        return Command("", f"#{number} is no open pull request.\n")
+    head = pull.get("head") or {}
+    sha = str(head.get("sha") or "")
+    branch = str(head.get("ref") or "")
+    repository = str((head.get("repo") or {}).get("full_name") or "")
+    if not repository:
+        return Command(
+            "", f"The fork of #{number} is gone, so no commit can reach its branch.\n"
+        )
+    found = collect(
+        api, repo, None, sha, "pull_request", branch, folder, download, workflows, wait
+    )
+    if found.late:
+        return Command(
+            "",
+            f"{still_running(found.late, sha)} The bot commits nothing yet, so that one "
+            f"commit holds every fix: say `{COMMAND}` again once they have ended.\n",
+        )
+    if not load(found.folders).files:
+        return Command(
+            "",
+            f"No command fixed what the checks of {sha[:7]} found; the PR coach names "
+            "what is left and how to fix it.\n",
+        )
+    if repository == repo:
+        return Command(
+            "commit",
+            f"#{number} comes from a branch of this repository.\n",
+            sha,
+            repository,
+            branch,
+        )
+    if not pull.get("maintainer_can_modify"):
+        return Command(
+            "suggest",
+            f"#{number} comes from a fork whose author allows no edits by maintainers, "
+            "so no bot may commit onto its branch: the bot suggests the fixes at their "
+            "lines, and **Commit suggestion** takes each. With **Allow edits by "
+            f"maintainers** turned on, `{COMMAND}` commits them.\n",
+            sha,
+            repository,
+            branch,
+        )
+    return Command(
+        "commit",
+        f"#{number} comes from a fork whose author allows edits by maintainers.\n",
+        sha,
+        repository,
+        branch,
+    )
+
+
+def for_fork(api: Api, repo: str, number: int, fixes: Fixes) -> Fixes:
+    """The fixes that the bot commits onto the branch of a fork: those of files that the
+    pull request changes, and of none that decides what a workflow runs. Whether GitHub
+    holds the runs of a commit of the app on a fork for a person isn't documented, so
+    such a file stays with a person, as with the approvals of the branch bot; the others
+    are files that a person reviews in the pull request anyway."""
+    changed = {
+        str(item.get("filename"))
+        for item in paged(api, f"repos/{repo}/pulls/{number}/files")
+        if item.get("status") != "removed"
+    }
+    kept: dict[str, bytes] = {}
+    left = dict(fixes.left)
+    for path, data in fixes.files.items():
+        if decides_what_runs(path):
+            left[path] = "decides what a workflow runs, so a person commits its fix"
+        elif path not in changed:
+            left[path] = "no file that the pull request changes"
+        else:
+            kept[path] = data
+    return Fixes(kept, dict(sorted(left.items())))
+
+
+@dataclass(frozen=True)
+class Pushed:
+    """What the bot said of its commit at a command, and whether it leaves the fixes to
+    the suggestions: on a fork whose branch refused the commit or takes none of them."""
+
+    text: str
+    to_suggest: bool = False
+
+
+def commit_on_command(
+    api: Api,
+    repo: str,
+    number: int,
+    repository: str,
+    branch: str,
+    sha: str,
+    fixes: Fixes,
+    app: str,
+    url: str,
+) -> Pushed:
+    """Commits the fixes onto the branch of a pull request at the command of a person,
+    in repository, a fork's when it isn't repo, while the branch is still at sha. A
+    refusal of the branch of a fork is no failure: GitHub may not let the app push
+    there, and the suggestions follow."""
+    fixes = changeable(files_of(api, repo, sha), sha, fixes)
+    fork = repository != repo
+    if fork:
+        fixes = for_fork(api, repo, number, fixes)
+    if not fixes.files:
+        return Pushed(
+            "\n".join(["No fix is left to commit.", *listing(fixes), ""]), fork
+        )
+    where = code(f"{repository}:{branch}" if fork else branch, NAME_LENGTH)
+    again = Pushed(
+        f"{where} moved on from {sha[:7]}, so the bot commits nothing: say "
+        f"`{COMMAND}` again once the checks of its new head have ended.\n"
+    )
+    if head_of(api, repository, branch) != sha:
+        return again
+    body = signed_off(api, app, f"{MADE_BY} {sha[:7]}, at the command {url}")
+    try:
+        made = commit(api, repository, branch, sha, fixes, body)
+    except GitHubError as error:
+        if head_of(api, repository, branch) != sha:
+            return again
+        if not fork:
+            raise
+        return Pushed(
+            f"GitHub refused the commit of the fix bot onto {where}: "
+            f"{code(error.message, FINDING_LENGTH)}. So the fixes stay what a fork gets "
+            "without the command: the bot suggests them at their lines, and **Commit "
+            "suggestion** takes each.\n",
+            True,
+        )
+    lines = [f"The fix bot committed {made[:7]} onto {where}:", "", *listing(fixes), ""]
+    if fork:
+        lines += [
+            "The checks of the new head run once GitHub lets them, which on a fork "
+            "may wait for a person to approve them.",
+            "",
+        ]
+    return Pushed("\n".join(lines))
 
 
 # ---------------------------------------------------------------- main

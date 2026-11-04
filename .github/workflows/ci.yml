@@ -181,10 +181,22 @@ jobs:
         env:
           CHECK: "check (php)"
           EVENT: ${{ github.event_name }}
+          # The pull request of the release bot, from its branch of this repository,
+          # changes the manifest of the release bot itself.
+          RELEASE: >-
+            ${{ startsWith(github.head_ref, 'release-please--') &&
+            github.event.pull_request.head.repo.full_name == github.repository }}
         run: |
           # The head of the pull request, onto which the bot commits, not its merge
           # into main.
           if [[ "$EVENT" == pull_request ]]; then
+            # main as the pull request found it, the first parent of the merge:
+            # where the manifest of the release bot names another version than
+            # there, fix version writes none, other than for the release bot.
+            if [[ "$RELEASE" != true ]]; then
+              FIX_BASE="$(git rev-parse HEAD^1)"
+              export FIX_BASE
+            fi
             git checkout --quiet --force --detach HEAD^2
           else
             # Only what the commands change is a fix, not what the check left behind.

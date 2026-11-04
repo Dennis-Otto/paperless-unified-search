@@ -433,6 +433,44 @@ jobs:
           unzip -q "$RUNNER_TEMP/nextcloud.zip" -d "$RUNNER_TEMP/server"
           mkdir -p "$RUNNER_TEMP/signing"
           tar --extract --gzip --file "build/artifacts/$app_id.tar.gz" --directory "$RUNNER_TEMP/signing"
+      # A beta, such as 1.3.0-beta.2, comes from main, whose appinfo/info.xml still has
+      # the version of the last release, as release-please writes it. The App Store
+      # takes the version of a release from the info.xml in its package and updates
+      # its release of that version: the package of the beta would replace that of
+      # the last release for every user (#635). So the unpacked package gets the
+      # version of the beta, which the App Store offers only to servers on the beta
+      # channel of Nextcloud, before the signature covers it, and so does the checkout,
+      # with which the project's own check of the signed package may compare it. That
+      # check must compare appinfo/info.xml with the checkout, not with git archive
+      # HEAD, whose info.xml still says the last release. A release, whose version
+      # release-please wrote, keeps its info.xml as it is.
+      - name: Write the version of the release into the Nextcloud app
+        if: env.PUBLISH_TO == 'nextcloud-appstore'
+        env:
+          APP_ID: ${{ steps.nextcloud.outputs.app-id }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          for info in "$RUNNER_TEMP/signing/$APP_ID/appinfo/info.xml" appinfo/info.xml; do
+            # Only the text of the one element version changes, so that the comments,
+            # the order and the indentation stay as the project wrote them.
+            if ! python3 -c '
+          import re, sys, xml.etree.ElementTree as t
+          path, version = sys.argv[1:]
+          with open(path, encoding="utf-8", newline="") as file:
+              text = file.read()
+          written = (t.fromstring(text).findtext("version") or "").strip()
+          pattern = r"<version>\s*" + re.escape(written) + r"\s*</version>"
+          if written and written != version and len(re.findall(pattern, text)) == 1:
+              text = re.sub(pattern, "<version>" + version + "</version>", text)
+              with open(path, "w", encoding="utf-8", newline="") as file:
+                  file.write(text)
+          sys.exit((t.fromstring(text).findtext("version") or "").strip() != version)
+          ' "$info" "$VERSION" 2>/dev/null; then
+              echo "::error::The appinfo/info.xml of $APP_ID has no single version that the build can set to $VERSION, so the App Store would take its package for another release (#635)."
+              exit 1
+            fi
+          done
       - name: Sign the Nextcloud app
         if: env.PUBLISH_TO == 'nextcloud-appstore'
         env:
@@ -457,6 +495,21 @@ jobs:
           openssl x509 -in "$RUNNER_TEMP/app.crt" -pubkey -noout > "$RUNNER_TEMP/app.pub"
           openssl dgst -sha512 -verify "$RUNNER_TEMP/app.pub" -signature "$ASSETS/$APP_ID.tar.gz.sig" "$ASSETS/$APP_ID.tar.gz"
           echo "Signed $APP_ID with the key of the environment signing, which its certificate verifies." >> "$GITHUB_STEP_SUMMARY"
+      # The check of release.yml before it posts the package, and of verify-release.yml,
+      # before the release is immutable: the App Store takes the package for the
+      # release of the version in its appinfo/info.xml.
+      - name: Check the version of the signed Nextcloud app
+        if: env.PUBLISH_TO == 'nextcloud-appstore'
+        env:
+          APP_ID: ${{ steps.nextcloud.outputs.app-id }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          packaged="$(python3 -c 'import sys, tarfile, xml.etree.ElementTree as t; info = tarfile.open(sys.argv[1]).extractfile(sys.argv[2] + "/appinfo/info.xml"); print((t.parse(info).getroot().findtext("version") or "").strip())' \
+            "$ASSETS/$APP_ID.tar.gz" "$APP_ID" 2>/dev/null || true)"
+          if [[ "$packaged" != "$VERSION" ]]; then
+            echo "::error::The appinfo/info.xml in $APP_ID.tar.gz has the version ${packaged:-none}, not $VERSION, so the App Store would take the package for another release (#635)."
+            exit 1
+          fi
       - name: Check the signed Nextcloud app
         if: env.PUBLISH_TO == 'nextcloud-appstore' && hashFiles('scripts/check-package.sh') != ''
         env:

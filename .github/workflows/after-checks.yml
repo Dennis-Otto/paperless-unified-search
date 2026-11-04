@@ -80,10 +80,11 @@ name: After the checks
 # workflows on main keep fixes have ended, the bot takes these files as data: on a pull
 # request from a branch of this repository, also one of Renovate or another bot, it
 # commits them as one commit onto the branch, as the release app, so that the checks
-# run again; on one from a fork, which no bot may push to, it suggests them at their
-# lines, at most ten in one review, never one twice; on main, it keeps one pull
-# request from bot/self-heal with them, which merges itself, and closes it once main
-# needs no fix. Lint and the CI also run on main each week, by their schedule or by hand,
+# run again; on one from a fork, which this bot never pushes to, it suggests them at
+# their lines, at most ten in one review, never one twice, and a person with write
+# access asks for the commit there with /fix, in commands.yml; on main, it keeps one
+# pull request from bot/self-heal with them, which merges itself, and closes it once
+# main needs no fix. Lint and the CI also run on main each week, by their schedule or by hand,
 # as bot health starts a schedule that GitHub missed, so that what no commit changes, such
 # as a new rule of a tool, repairs itself the same way before it fails the next pull
 # request; a weekly run that passes starts no job here, so a quiet week takes no runner
