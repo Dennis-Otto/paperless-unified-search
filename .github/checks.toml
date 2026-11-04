@@ -1303,6 +1303,20 @@ commands = ["node scripts/check-manifest.mjs", "bash scripts/package-extension.s
 docs = "CONTRIBUTING.md#checks"
 autofix = """A permission and its reason need a person, who knows why the extension asks for it."""
 
+[step.Worker]
+problem = """Wrangler can't bundle the Worker as Workers Builds bundles it for Cloudflare:
+`wrangler.jsonc` breaks a rule of its schema, names a main module that doesn't exist or
+a compatibility date that is newer than the runtime of the installed Wrangler, or the
+code imports what the bundle can't resolve; the log of `npm run build` names each
+problem."""
+why = """Cloudflare builds the Worker with the same Wrangler after every merge: what
+fails here would fail there, and the release after it would not go live."""
+fix = """Fix what Wrangler names in `wrangler.jsonc` or in the code, then bundle again,
+which uploads nothing and needs no sign-in:"""
+commands = ["npm run build"]
+docs = "https://developers.cloudflare.com/workers/wrangler/configuration/"
+autofix = """A configuration of the Worker or an import that doesn't resolve needs a person, who knows what the Worker should use."""
+
 [step.Dockerfile]
 problem = """hadolint flags a line of the Dockerfile, such as a package without a pinned
 version or a shell construct that breaks; the log names each line with its rule."""
