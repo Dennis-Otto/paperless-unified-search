@@ -442,7 +442,7 @@ jobs:
           set -euo pipefail
           # Without the key, no release: an app signed by nothing never reaches the draft.
           if [[ -z "$APP_PRIVATE_KEY" ]]; then
-            echo "::error::The build got no APP_PRIVATE_KEY: set it as a secret of the environment signing, and let the job assets of release.yml pass it under secrets:, as a called workflow sees no secret that its caller doesn't pass. If both are in place, GitHub didn't take the key of signing in place of the empty value passed (decision 0114, #530): revert the blueprint update, as the environment release still holds a copy of the key."
+            echo "::error::The build got no APP_PRIVATE_KEY: set it as a secret of the environment signing, and let the job assets of release.yml pass it under secrets:, as a called workflow sees no secret that its caller doesn't pass. The secret of the environment takes the place of the empty value passed (decision 0114, #530)."
             exit 1
           fi
           trap 'rm -f "$RUNNER_TEMP/app.key"' EXIT

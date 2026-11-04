@@ -137,14 +137,14 @@ build_type = "workflow"
 
 # Environments and the secrets they need; only main may use them.
 [environments.release]
-secrets = ["RELEASE_AUTOMATION_PRIVATE_KEY", "APP_PRIVATE_KEY", "APPSTORE_TOKEN"]
+secrets = ["RELEASE_AUTOMATION_PRIVATE_KEY"]
 
 [environments.issue-assistant]
 secrets = ["CLAUDE_CODE_OAUTH_TOKEN"]
 
 # The key that signs the app and the token of the App Store, each in an environment of
-# its own, so that the build of a release can reach only the key. The workflows still
-# take both from the environment release, until they move here in a later version:
+# its own and in no other, so that the build of a release can reach only the key and no
+# job of release, such as release-please, either of them:
 # https://github.com/Dennis-Otto/repo-blueprint/issues/530
 [environments.signing]
 secrets = ["APP_PRIVATE_KEY"]
