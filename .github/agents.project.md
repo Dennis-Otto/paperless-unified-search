@@ -1,6 +1,6 @@
 # Notes of this project for coding agents
 
-Paperless Unified Search: OCR-powered Paperless-ngx search, seamlessly integrated into Nextcloud
+Paperless Unified Search: OCR-powered Paperless-ngx search, seamlessly integrated into Nextcloud 
 
 This file belongs to the project: the blueprint wrote it once, and its updates leave it alone. It adds to `AGENTS.md` what a coding agent needs to know about this project alone, such as its architecture, the commands of its own checks and what to watch for in its tests.
 
