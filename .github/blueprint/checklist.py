@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import shlex
@@ -12,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from blueprint import workflows
 from blueprint.bootstrap import PUSH_AS_GH
 from blueprint.github import Api, GitHubError
 from blueprint.settings import (
@@ -369,6 +371,43 @@ DEPENDABOT_ALERTS = Step(
 )
 
 
+def workflows_step(api: Api, repo: str, root: Path) -> list[Step]:
+    """Whether GitHub knows each workflow, which it starts only then, and whether the
+    comments that registered some are out again (#652). Both are of main as GitHub
+    has it, so that a pull request merged on GitHub counts before a pull; the
+    checkout stands in only when GitHub can't answer for main."""
+    texts = workflows.local_workflows(root)
+    if not texts:
+        return []
+    with contextlib.suppress(GitHubError):
+        texts = workflows.read_main(api, repo).texts
+    missing = workflows.unknown(texts, workflows.registered(api, repo))
+    marked = workflows.marked(texts)
+    how: list[str] = []
+    if missing:
+        how.append(
+            f"GitHub hasn't registered {workflows.names(missing)}: it starts none of"
+            " them, not even on a schedule, and gh workflow run answers 404"
+            f" ({workflows.ISSUE}). {workflows.COMMAND} opens the pull request that"
+            " registers them, or names the one that is open; once it has merged, run"
+            " it again, and it opens the one that takes its comments out."
+        )
+    if marked:
+        how.append(
+            f"The comments that registered {workflows.names(marked)} are still in"
+            f" them: {workflows.COMMAND} opens the pull request that takes them out,"
+            " or names the one that is open."
+        )
+    return [
+        Step(
+            f"GitHub knows every workflow of {workflows.FOLDER}/, so that it starts"
+            " each",
+            not how,
+            "\n".join(how),
+        )
+    ]
+
+
 def checklist(
     api: Api,
     repo: str,
@@ -399,6 +438,7 @@ def checklist(
         registered,
         applied_step(drift, plan.private),
         *([code_security_step(repo, plan)] if plan.private else []),
+        *workflows_step(api, repo, root),
         Step(
             "Secrets of the environments set",
             not secrets_missing,

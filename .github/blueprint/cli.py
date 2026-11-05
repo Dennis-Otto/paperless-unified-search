@@ -132,6 +132,13 @@ from blueprint.site_check import map_rule
 from blueprint.stale_runs import cancel_stale_runs
 from blueprint.update import SOURCE, Outdated, update_pull_request
 from blueprint.vex import openvex
+from blueprint.workflows import COMMAND as REGISTER_COMMAND
+from blueprint.workflows import (
+    known_text,
+    local_workflows,
+    register_workflows,
+    wait_until_known,
+)
 
 
 def changelog_command(arguments: argparse.Namespace) -> int:
@@ -1259,7 +1266,12 @@ def create_command(api: Api, arguments: argparse.Namespace, root: Path) -> int:
     rest; a run that goes on where an earlier one stopped applies the settings again,
     which changes only what differs. What only a person can do, such as the
     secrets, the checklist names, so only a part of the settings that GitHub refused
-    fails it."""
+    fails it, or the pull request that registers the workflows.
+
+    GitHub may leave the workflows that the first push brought unregistered (#652),
+    and then starts none that only a schedule, a release or a person starts: create
+    waits a moment for GitHub to know each, and opens the pull request of workflows
+    register for those that it still doesn't."""
     settings = Settings.load(root / arguments.config, root)
     repo = create(
         root,
@@ -1270,9 +1282,35 @@ def create_command(api: Api, arguments: argparse.Namespace, root: Path) -> int:
     )
     if repo is None:
         return 0
+    workflows = local_workflows(root)
+    registering = 0
+    try:
+        missing = wait_until_known(api, repo, workflows)
+    except GitHubError as error:
+        # The settings still follow the push, so that main isn't left unprotected.
+        print(
+            "blueprint.py: GitHub couldn't be asked which workflows it knows:"
+            f" {error}. Run {REGISTER_COMMAND} once that is fixed.",
+            file=sys.stderr,
+        )
+        missing = []
+        registering = 2
+    else:
+        if workflows:
+            print(known_text(workflows, missing))
+    if missing:
+        try:
+            print(register_workflows(api, repo))
+        except GitHubError as error:
+            print(
+                "blueprint.py: the pull request that registers the workflows could"
+                f" not be opened: {error}. Run {REGISTER_COMMAND} once that is fixed.",
+                file=sys.stderr,
+            )
+            registering = 2
     applied = settings_command(api, repo, settings, "apply", arguments.config)
     checklist_command(api, repo, settings, root)
-    return 2 if applied == 2 else 0
+    return 2 if 2 in (applied, registering) else 0
 
 
 def app_command(arguments: argparse.Namespace, root: Path) -> int:
@@ -1404,6 +1442,18 @@ def add_settings_parsers(
         "doctor",
         help="the preflight of create alone: whether Python, Git, the GitHub CLI, "
         "its sign-in, the owner and the name let create run, with what fixes each",
+    )
+    workflows_parser = commands.add_parser(
+        "workflows",
+        help="the workflows of .github/workflows/ that GitHub hasn't registered, "
+        "which it starts not even on a schedule",
+    )
+    workflows_parser.add_argument(
+        "action",
+        choices=["register"],
+        help="register: open the pull request that changes each of them by a "
+        "comment, which registers it; after its merge, the one that takes the "
+        "comments out again",
     )
 
 
@@ -2435,6 +2485,9 @@ def main(
             return dependabot_command(api, repo, arguments, root)
         if arguments.command == "commit-overrides":
             print(write_overrides(api, repo), end="")
+            return 0
+        if arguments.command == "workflows":
+            print(register_workflows(api, repo))
             return 0
         settings = Settings.load(root / arguments.config, root)
         if arguments.command == "checklist":
