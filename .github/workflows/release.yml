@@ -510,23 +510,78 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.release-please.outputs.tag }}
         run: |
+          # GitHub fails for a moment now and then, so each call is made up to three
+          # times, 15 seconds apart.
+          three_times() {
+            for attempt in 1 2 3; do
+              if "$@"; then
+                return 0
+              fi
+              if ((attempt < 3)); then
+                sleep 15
+              fi
+            done
+            return 1
+          }
+          # At times GitHub fails a call after it has done what was asked: it answered
+          # the call that made v1.11.1 public with an HTTP 502, and the job failed. So a
+          # call that fails counts once the release reads as public as asked: no draft,
+          # a prerelease as its tag says, a release for everybody the latest one, and
+          # announced when the call asked for a discussion.
+          # Made again, the call changes nothing that is done already, and GitHub links
+          # no second discussion to a release that has one.
+          publish() {
+            if gh release edit "$TAG" "$@" --repo "$GITHUB_REPOSITORY"; then
+              return 0
+            fi
+            local prerelease=false
+            if [[ "$TAG" == *-* ]]; then
+              prerelease=true
+            fi
+            [[ "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease \
+              --jq '"\(.isDraft) \(.isPrerelease)"')" == "false $prerelease" ]] || return 1
+            if [[ "$prerelease" == false ]] &&
+              [[ "$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)" != "$TAG" ]]; then
+              return 1
+            fi
+            # The discussion may be missing although the release is public: GitHub
+            # created the one of v1.11.1 only when the job made the call again. The
+            # look goes through the REST API, as gh release view names no discussion.
+            if [[ " $* " == *" --discussion-category "* ]] &&
+              [[ -z "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.discussion_url // empty')" ]]; then
+              return 1
+            fi
+            echo "GitHub answered the call that makes $TAG public with an error, and made it public all the same." >> "$GITHUB_STEP_SUMMARY"
+          }
+          unpublished() {
+            echo "::error::GitHub failed three times to make $TAG public, which stays a draft until the job runs again."
+            exit 1
+          }
           # A version such as 2.0.0-beta.1 is a prerelease, which HACS, npm and the
           # like only offer to those who ask for one.
           if [[ "$TAG" == *-* ]]; then
-            gh release edit "$TAG" --draft=false --prerelease --latest=false --repo "$GITHUB_REPOSITORY"
+            three_times publish --draft=false --prerelease --latest=false || unpublished
             exit 0
           fi
           # A release for everybody is announced in the category Announcements of the
           # discussions, when the repository has them, with its notes and a link.
           announce=()
-          # The variables of the query are GraphQL's, not the shell's.
-          # shellcheck disable=SC2016
-          categories="$(gh api graphql -F owner="${GITHUB_REPOSITORY%/*}" -F name="${GITHUB_REPOSITORY#*/}"             -f query='query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { discussionCategories(first: 50) { nodes { name } } } }'             --jq '.data.repository.discussionCategories.nodes[].name')"
-          if grep -qx Announcements <<<"$categories"; then
+          categories() {
+            # The variables of the query are GraphQL's, not the shell's.
+            # shellcheck disable=SC2016
+            names="$(gh api graphql -F owner="${GITHUB_REPOSITORY%/*}" -F name="${GITHUB_REPOSITORY#*/}" \
+              -f query='query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { discussionCategories(first: 50) { nodes { name } } } }' \
+              --jq '.data.repository.discussionCategories.nodes[].name')"
+          }
+          if ! three_times categories; then
+            echo "::error::GitHub failed three times to name the categories of the discussions; $TAG stays a draft until the job runs again."
+            exit 1
+          fi
+          if grep -qx Announcements <<<"$names"; then
             announce=(--discussion-category Announcements)
             echo "The release is announced in the discussions." >> "$GITHUB_STEP_SUMMARY"
           fi
-          gh release edit "$TAG" --draft=false --latest "${announce[@]}" --repo "$GITHUB_REPOSITORY"
+          three_times publish --draft=false --latest "${announce[@]}" || unpublished
       - name: Wait until Harden-Runner has removed Docker
         # Harden-Runner removes Docker with apt-get in the background; a job that ends
         # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
