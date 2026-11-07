@@ -70,7 +70,7 @@ No. The settings hold one Paperless, for all users of the Nextcloud. Its account
 
 ## Which languages does it speak?
 
-English, German, French, Spanish, Dutch and Simplified Chinese, as the language of the account says: German with *du* or with *Sie*, French with *vous*, Spanish with *tú*, Dutch with *je* and Simplified Chinese with *您*, and English in every other language. The search finds documents in every language that Paperless recognizes, since Paperless searches their text. [Languages](configure.md#languages) has the details, and [Translate](translate.md) shows how to correct a translation or add a language.
+English, German, French, Spanish, Dutch, Simplified Chinese and Traditional Chinese as written in Taiwan, as the language of the account says: German with *du* or with *Sie*, French with *vous*, Spanish with *tú*, Dutch with *je* and Chinese with *您*, and English in every other language. The search finds documents in every language that Paperless recognizes, since Paperless searches their text. [Languages](configure.md#languages) has the details, and [Translate](translate.md) shows how to correct a translation or add a language.
 
 ## Which versions of Nextcloud and Paperless does it support?
 
