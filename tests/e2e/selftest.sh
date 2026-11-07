@@ -411,10 +411,12 @@ expect "the warning about the disk with enough space" 0 "$(grep --count --fixed-
 expect "run-all.sh with a disk that ran low" 0 "$(run_all env E2E_VERSIONS=33 FAKE_DOCKER_ROOT="${WORK}" E2E_LOW_SPACE_MB=999999999)"
 expect_in "the warning about the disk that ran low" "::warning title=Disk space::The disk of Docker had only " "${WORK}/log"
 expect_in "the threshold in the warning" "below E2E_LOW_SPACE_MB, 999999999 MB" "${WORK}/log"
-expect "run-all.sh with a disk that ran low and a version that failed" 1 	"$(run_all env E2E_VERSIONS="33 34" FAKE_DOCKER_ROOT="${WORK}" E2E_LOW_SPACE_MB=999999999)"
+expect "run-all.sh with a disk that ran low and a version that failed" 1 \
+	"$(run_all env E2E_VERSIONS="33 34" FAKE_DOCKER_ROOT="${WORK}" E2E_LOW_SPACE_MB=999999999)"
 expect_in "the error about the disk that ran low" "::error title=Disk space::The disk of Docker had only " "${WORK}/log"
 expect_in "the cause in the error about the disk" "such as HTTP 507 of Nextcloud" "${WORK}/log"
-expect "run-all.sh with a disk that ran low, outside of GitHub Actions" 0 	"$(run_all env GITHUB_ACTIONS=false E2E_VERSIONS=33 FAKE_DOCKER_ROOT="${WORK}" E2E_LOW_SPACE_MB=999999999)"
+expect "run-all.sh with a disk that ran low, outside of GitHub Actions" 0 \
+	"$(run_all env GITHUB_ACTIONS=false E2E_VERSIONS=33 FAKE_DOCKER_ROOT="${WORK}" E2E_LOW_SPACE_MB=999999999)"
 expect_in "the plain line about the disk that ran low" "The disk of Docker had only " "${WORK}/log"
 expect "the warning outside of GitHub Actions" 0 "$(grep --count --fixed-strings '::warning' "${WORK}/log" || true)"
 expect "run-all.sh with an E2E_LOW_SPACE_MB that isn't one" 1 "$(run_all env E2E_VERSIONS=33 E2E_LOW_SPACE_MB=lots)"
@@ -724,7 +726,9 @@ SCRIPT
 	# Beside the upgrade, the tests of the versions run on for minutes and need the disk
 	# that the files of its Nextcloud take, also on a runner of GitHub (#290).
 	expect "upgrade.sh on a runner of GitHub" 1 "$(upgrade env RUNNER_ENVIRONMENT=github-hosted)"
-	expect "the containers of the upgrade removed on a runner of GitHub" 		"docker compose --project-name paperless_unified_search_upgrade --file ${app}/tests/e2e/compose.yaml down --volumes --remove-orphans --timeout 0" 		"$(tail -n 1 "${WORK}/docker.log")"
+	expect "the containers of the upgrade removed on a runner of GitHub" \
+		"docker compose --project-name paperless_unified_search_upgrade --file ${app}/tests/e2e/compose.yaml down --volumes --remove-orphans --timeout 0" \
+		"$(tail -n 1 "${WORK}/docker.log")"
 	expect "upgrade.sh with KEEP_E2E=1" 1 "$(upgrade env KEEP_E2E=1)"
 	expect_in "the containers of the upgrade kept with KEEP_E2E=1" "Upgrade environment kept at http://127.0.0.1:18182" "${WORK}/log"
 	expect "the removal of the containers with KEEP_E2E=1" 1 "$(grep --count --fixed-strings ' down --volumes ' "${WORK}/docker.log" || true)"
@@ -971,6 +975,57 @@ expect_issue_job demo.yml demo-issue "The demo breaks" \
 	"The demo still" "The weekly run of the demo" \
 	"fails" \
 	"runs out of time or is cancelled before it ends"
+
+## The room on the disk of a runner
+
+# The step of the job nextcloud that makes room before the tests, as GitHub runs it, with
+# fakes of df and sudo: it deletes the toolchains that the job doesn't use only on a disk
+# with less than 20 GB free, where the tests ran out of space (#290).
+workflow_job e2e.yml nextcloud
+awk '
+	/^      - name: Make room on a runner with a small disk$/ { step = 1; next }
+	step && !block && /^ +run: \|$/ { block = 1; next }
+	block {
+		if ($0 ~ /^ *$/) { print ""; next }
+		match($0, /^ */)
+		if (!indent) { indent = RLENGTH }
+		if (RLENGTH < indent) { exit }
+		print substr($0, indent + 1)
+	}
+' "${WORK}/job.yml" >"${WORK}/room.sh"
+room="${WORK}/room-bin"
+mkdir -p "${room}"
+cat >"${room}/df" <<'SCRIPT'
+#!/usr/bin/env bash
+echo "Filesystem 1048576-blocks Used Available Capacity Mounted on"
+echo "/dev/root 74000 0 ${FAKE_FREE} 50% /"
+SCRIPT
+cat >"${room}/sudo" <<'SCRIPT'
+#!/usr/bin/env bash
+echo "sudo $*" >>"${FAKE_SUDO_LOG}"
+SCRIPT
+chmod +x "${room}/df" "${room}/sudo"
+# Runs the step with FAKE_FREE MB free on the disk and prints its exit status.
+make_room() {
+	local status=0
+	: >"${WORK}/sudo.log"
+	(PATH="${room}:${PATH}" FAKE_SUDO_LOG="${WORK}/sudo.log" FAKE_FREE="$1" \
+		bash -e "${WORK}/room.sh" >"${WORK}/log" 2>&1) || status=$?
+	echo "${status}"
+}
+expect "the step that makes room on a small disk" 0 "$(make_room 15000)"
+expect "the toolchains removed on a small disk" \
+	"sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL" \
+	"$(cat "${WORK}/sudo.log")"
+expect_in "the free space before and after on a small disk" "The disk had 14 GB free, and has 14 GB without the toolchains that the job doesn't use." "${WORK}/log"
+expect "the step on a large disk" 0 "$(make_room 80000)"
+expect "the toolchains on a large disk" "" "$(cat "${WORK}/sudo.log")"
+expect_in "the free space on a large disk" "The disk has 78 GB free, enough for the tests." "${WORK}/log"
+expect "the step on a disk of exactly 20 GB" 0 "$(make_room 20480)"
+expect "the toolchains on a disk of exactly 20 GB" "" "$(cat "${WORK}/sudo.log")"
+expect "the step when df names no free space" 0 "$(make_room "")"
+expect "the toolchains when df names no free space" "" "$(cat "${WORK}/sudo.log")"
+expect_in "the message when df names no free space" "df names no free space of the disk, so the step leaves it as it is." "${WORK}/log"
 
 ## The journal of the mock
 
@@ -1687,4 +1742,4 @@ if ((failures > 0)); then
 	echo "${failures} of ${checks} checks of the scripts of the end-to-end tests failed." >&2
 	exit 1
 fi
-echo "The ${checks} checks of scope.sh, run-all.sh, pin-images.sh, package.sh, upgrade.sh up to Docker, the issues of the weekly runs, the journal of the mock, the comparison of the mock with Paperless, the check of the log of Nextcloud, what the upgrade compares, the pipes of the scripts, the animation of the demo, the videos of the animations and the steps of the demo pass."
+echo "The ${checks} checks of scope.sh, run-all.sh, pin-images.sh, package.sh, upgrade.sh up to Docker, the issues of the weekly runs, the room on the disk of a runner, the journal of the mock, the comparison of the mock with Paperless, the check of the log of Nextcloud, what the upgrade compares, the pipes of the scripts, the animation of the demo, the videos of the animations and the steps of the demo pass."
