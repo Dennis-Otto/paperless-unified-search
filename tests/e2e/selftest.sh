@@ -421,6 +421,8 @@ expect_in "the plain line about the disk that ran low" "The disk of Docker had o
 expect "the warning outside of GitHub Actions" 0 "$(grep --count --fixed-strings '::warning' "${WORK}/log" || true)"
 expect "run-all.sh with an E2E_LOW_SPACE_MB that isn't one" 1 "$(run_all env E2E_VERSIONS=33 E2E_LOW_SPACE_MB=lots)"
 expect_in "the message about an E2E_LOW_SPACE_MB that isn't one" "E2E_LOW_SPACE_MB is lots, but must be a number of MB" "${WORK}/log"
+expect "run-all.sh with an E2E_LOW_SPACE_MB with a leading zero" 1 "$(run_all env E2E_VERSIONS=33 E2E_LOW_SPACE_MB=08)"
+expect_in "the message about an E2E_LOW_SPACE_MB with a leading zero" "E2E_LOW_SPACE_MB is 08, but must be a number of MB" "${WORK}/log"
 
 # The image of each version. Without a pin, as in every run above, the floating tag, with
 # a notice; the summary names the release behind it and its digest, which finds the same

@@ -186,7 +186,7 @@ if [[ ! "${VERSION_TIMEOUT}" =~ ^[1-9][0-9]*$ ]]; then
 	echo "E2E_VERSION_TIMEOUT is ${VERSION_TIMEOUT}, but must be a number of seconds, such as 600." >&2
 	exit 1
 fi
-if [[ ! "${LOW_SPACE_MB}" =~ ^[0-9]+$ ]]; then
+if [[ ! "${LOW_SPACE_MB}" =~ ^(0|[1-9][0-9]*)$ ]]; then
 	echo "E2E_LOW_SPACE_MB is ${LOW_SPACE_MB}, but must be a number of MB, such as 1024." >&2
 	exit 1
 fi
