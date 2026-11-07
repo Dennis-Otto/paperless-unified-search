@@ -81,9 +81,12 @@ cleanup() {
 			"${COMPOSE[@]}" ps || true
 			"${COMPOSE[@]}" logs --no-color --tail 100 || true
 		fi
+		# Also on a runner of GitHub, which run.sh leaves to be thrown away: beside the
+		# upgrade, run-all.sh runs the tests of the versions for minutes more, and they
+		# need the disk that the files of this Nextcloud take, about 0.9 GB (#290).
 		if [[ "${KEEP_E2E:-0}" == "1" ]]; then
 			echo "Upgrade environment kept at ${BASE_URL} (project ${PROJECT_NAME})."
-		elif [[ "${RUNNER_ENVIRONMENT:-}" != "github-hosted" ]]; then
+		else
 			"${COMPOSE[@]}" down --volumes --remove-orphans --timeout 0 >/dev/null 2>&1 || true
 		fi
 	fi
@@ -264,12 +267,17 @@ fi
 echo "The signature of ${APP_ID}.tar.gz matches the certificate of the app at the App Store."
 # The signed provenance of the isolated build, from the bundle of the release, which
 # gh verifies without a login; verify-release.yml checks it for each release as well.
+# gh keeps the trusted root of Sigstore, which it fetches with TUF, in a cache below
+# XDG_CACHE_HOME. run-all.sh starts the upgrades of every version at the same time, and
+# where they share that cache, one may read what another is writing: gh then fails with
+# "public good verifier is not available" or "no valid Sigstore verifiers could be
+# initialized" (#290). Each upgrade takes a cache of its own, which it removes at the end.
 if ! command -v gh >/dev/null 2>&1; then
 	notice "gh is not installed, so the provenance of ${from} is not verified here; verify-release.yml checks it for each release."
 elif ! download "${release}/provenance.sigstore.json" \
 	"https://github.com/${repository}/releases/download/${from}/provenance.sigstore.json"; then
 	notice "The release ${from} has no provenance.sigstore.json, as releases before the isolated build; only its signature is verified."
-elif gh attestation verify "${release}/${APP_ID}.tar.gz" --repo "${repository}" \
+elif XDG_CACHE_HOME="${TMP_DIR}/gh-cache" gh attestation verify "${release}/${APP_ID}.tar.gz" --repo "${repository}" \
 	--signer-workflow "${repository}/.github/workflows/build-release.yml" \
 	--bundle "${release}/provenance.sigstore.json" >/dev/null; then
 	echo "${APP_ID}.tar.gz carries the signed provenance of build-release.yml of ${repository}."
