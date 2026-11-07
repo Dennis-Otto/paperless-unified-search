@@ -103,6 +103,7 @@ final class AppStoreListingTest extends TestCase {
 			'fr' => $website,
 			'nl' => $website,
 			'zh-hans' => $website,
+			'zh-hant' => $website,
 		];
 
 		self::assertCount(count($documentation), $info->description);
@@ -131,8 +132,9 @@ final class AppStoreListingTest extends TestCase {
 			return $found;
 		};
 
-		// zh-hans is the code of the App Store for Simplified Chinese, zh_CN in Nextcloud.
-		self::assertSame(['de', 'en', 'es', 'fr', 'nl', 'zh-hans'], $languages($info->summary));
-		self::assertSame(['de', 'en', 'es', 'fr', 'nl', 'zh-hans'], $languages($info->description));
+		// zh-hans and zh-hant are the codes of the App Store for Simplified Chinese, zh_CN in
+		// Nextcloud, and for Traditional Chinese, zh_TW.
+		self::assertSame(['de', 'en', 'es', 'fr', 'nl', 'zh-hans', 'zh-hant'], $languages($info->summary));
+		self::assertSame(['de', 'en', 'es', 'fr', 'nl', 'zh-hans', 'zh-hant'], $languages($info->description));
 	}
 }
