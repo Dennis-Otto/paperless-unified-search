@@ -6,10 +6,9 @@ All notable changes to this project are documented in this file.
 
 ## [1.5.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.4.0...v1.5.0) (2026-11-07)
 
-
 ### Features
 
-* **i18n:** speak Traditional Chinese ([#329](https://github.com/Dennis-Otto/paperless-unified-search/issues/329)) ([2e96a73](https://github.com/Dennis-Otto/paperless-unified-search/commit/2e96a73f79c3a47a7bbf95f8d70be256d63d104d))
+- **Traditional Chinese:** the search, its results, the widget *New in Paperless* on the dashboard, the personal and the administration settings and the warnings of the overview now speak Traditional Chinese to accounts set to *正體中文（臺灣）*, in the words that Nextcloud and Paperless-ngx use in Taiwan, such as *搜尋已連結的服務* for **Search connected services**, *檔案* and *關聯方*, and the same words as Paperless Sync, its companion, for the archive, the marker and the API token. The listing in the App Store has a summary and a description in Traditional Chinese too. The texts were drafted with the help of an AI and reviewed against their English source: native speakers are welcome to correct them, as [Translate](https://dennis-otto.github.io/paperless-unified-search/translate.html) shows. Accounts set to *正體中文（香港）* still read the app in English.
 
 ## [1.4.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.3.0...v1.4.0) (2026-11-03)
 
