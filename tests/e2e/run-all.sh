@@ -43,6 +43,15 @@
 # that its log still shows where it hung, long before the job of the CI times out after
 # 20 minutes. The same holds for each upgrade.
 #
+# The images, containers and volumes of Docker share one disk: each version and each
+# upgrade needs about 0.9 GB there for the files of its Nextcloud, beside some 6 GB of
+# images, and a runner of GitHub has not much more to spare. A disk that runs full fails
+# a version at random, with errors of its own, such as HTTP 507 of Nextcloud for an
+# upload (#290). Where that disk is on this machine, the script notes its free space at
+# the start and the least of it while the tests ran, and warns when it fell below
+# E2E_LOW_SPACE_MB (default 1024), with an error when a version failed. Docker Desktop
+# keeps it in its virtual machine, out of reach of df, so there it says nothing.
+#
 # In GitHub Actions, the script writes a table of the versions, with the release
 # behind each image, the result of each upgrade and each image with its digest, into
 # the summary of the run, and
@@ -61,6 +70,7 @@ VERSION_TIMEOUT="${E2E_VERSION_TIMEOUT:-600}"
 PHONE="${E2E_PHONE:-all}"
 UPGRADE="${E2E_UPGRADE:-all}"
 IMAGES="${E2E_IMAGES:-pinned}"
+LOW_SPACE_MB="${E2E_LOW_SPACE_MB:-1024}"
 LOG_DIR="$(mktemp -d)"
 versions=()
 # The image of each version, as run.sh and upgrade.sh take it, how it was chosen, pinned
@@ -176,6 +186,10 @@ if [[ ! "${VERSION_TIMEOUT}" =~ ^[1-9][0-9]*$ ]]; then
 	echo "E2E_VERSION_TIMEOUT is ${VERSION_TIMEOUT}, but must be a number of seconds, such as 600." >&2
 	exit 1
 fi
+if [[ ! "${LOW_SPACE_MB}" =~ ^[0-9]+$ ]]; then
+	echo "E2E_LOW_SPACE_MB is ${LOW_SPACE_MB}, but must be a number of MB, such as 1024." >&2
+	exit 1
+fi
 # timeout of GNU coreutils, on Linux and in Git Bash, stops a version that hangs with
 # every process it started: first with TERM, after which run.sh writes the state of its
 # containers into its log, and 30 seconds later with KILL. Without it, as on macOS, a
@@ -242,6 +256,36 @@ case "${UPGRADE}" in
 	newest) echo "The upgrade from the last release runs only against Nextcloud ${newest} (E2E_UPGRADE=newest)." ;;
 	*) echo "The upgrade from the last release doesn't run (E2E_UPGRADE=none)." ;;
 esac
+
+# The free space in MB of the disk of the images, containers and volumes of Docker, and
+# nothing where that disk isn't on this machine, as with Docker Desktop.
+docker_root="$("${DOCKER_BIN}" info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+free_space() {
+	local free=""
+	if [[ -n "${docker_root}" && -d "${docker_root}" ]]; then
+		free="$(df -Pm "${docker_root}" 2>/dev/null | awk 'NR == 2 { print $4 }' || true)"
+	fi
+	if [[ "${free}" =~ ^[0-9]+$ ]]; then
+		echo "${free}"
+	fi
+}
+# A number of MB in GB, such as 13.5.
+gigabytes() {
+	awk -v megabytes="$1" 'BEGIN { printf "%.1f", megabytes / 1024 }'
+}
+start_free="$(free_space)"
+least_free="${start_free}"
+# Notes the free space now, when it is the least so far.
+note_free_space() {
+	local free
+	free="$(free_space)"
+	if [[ -n "${free}" && -n "${least_free}" ]] && ((free < least_free)); then
+		least_free="${free}"
+	fi
+}
+if [[ -n "${start_free}" ]]; then
+	echo "The disk of Docker has $(gigabytes "${start_free}") GB free."
+fi
 SECONDS=0
 
 # First the images of Nextcloud and of the mock, for every version at the same time:
@@ -257,6 +301,7 @@ done
 wait "${downloads[@]}" || true
 downloads=()
 echo "The images of Nextcloud are there after ${SECONDS} s."
+note_free_space
 
 # The browser of the accessibility check, which every version needs at its end: one
 # download for all of them, while Nextcloud sets itself up. A run that gets there
@@ -325,6 +370,7 @@ while ((${#pending[@]} > 0)); do
 		echo "The upgrade on Nextcloud ${versions[index]} ${result} after ${SECONDS} s."
 	done
 	pending=("${running[@]}")
+	note_free_space
 	if ((${#pending[@]} > 0)); then
 		sleep 1
 	fi
@@ -376,6 +422,29 @@ for index in "${!versions[@]}"; do
 	esac
 done
 
+# How low the disk of Docker ran: below E2E_LOW_SPACE_MB a warning, and an error when a
+# version failed, which the lack of space may have failed.
+disk_note=""
+if [[ -n "${start_free}" ]]; then
+	disk_note="The disk of Docker had $(gigabytes "${least_free}") GB free at the least while the tests ran, of $(gigabytes "${start_free}") GB at the start."
+	echo "${disk_note}"
+	if ((least_free < LOW_SPACE_MB)); then
+		low_space="The disk of Docker had only ${least_free} MB free at the least while the tests ran, below E2E_LOW_SPACE_MB, ${LOW_SPACE_MB} MB"
+		if ((${#failed[@]} > 0)); then
+			level=error
+			low_space+=": a version may have failed for the lack of space, with errors such as HTTP 507 of Nextcloud, rather than for a change of the app. Free space on the disk, or test fewer versions at the same time with E2E_VERSIONS and E2E_UPGRADE."
+		else
+			level=warning
+			low_space+=": the tests passed, but a little more on the disk fails them, with errors such as HTTP 507 of Nextcloud."
+		fi
+		if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+			echo "::${level} title=Disk space::${low_space}"
+		else
+			echo "${low_space}" >&2
+		fi
+	fi
+fi
+
 # The release that each image held, empty when its download failed, for the summary of
 # the run and the output of the step; and the digest of a floating tag, which names the
 # same image later, when the tag has moved on.
@@ -412,6 +481,10 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
 		done
 		echo
 		echo "\`NEXTCLOUD_IMAGE=<image> bash tests/e2e/run.sh\` runs the tests against one of these images again."
+		if [[ -n "${disk_note}" ]]; then
+			echo
+			echo "${disk_note}"
+		fi
 	} >>"${GITHUB_STEP_SUMMARY}"
 fi
 

@@ -18,7 +18,8 @@
 #   upgrade.sh, the upgrade from the last release beside the tests of the versions that
 #   E2E_UPGRADE names, one that passes, fails, hangs or is skipped; and the image of each
 #   version that E2E_IMAGES names: the pin of nextcloud-images.txt, the floating tag, and
-#   the floating tag with a notice for a version without a pin.
+#   the floating tag with a notice for a version without a pin; and the free space of
+#   the disk of Docker, with a warning or an error below E2E_LOW_SPACE_MB.
 # - pin-images.sh, with a fake docker: the check names what is wrong with
 #   nextcloud-images.txt, without Docker, and the fix adds the pin of a new max-version,
 #   removes that of an old min-version and leaves every other pin alone; and, when Python
@@ -29,7 +30,8 @@
 # - upgrade.sh up to the start of Nextcloud, with fakes of curl, gh and Docker and a
 #   release that openssl signs: the last release, its signature and provenance, a
 #   certificate of another app, a release that its signature doesn't match, one without
-#   its signature or provenance, and the notice without any release, before Docker.
+#   its signature or provenance, and the notice without any release, before Docker; the
+#   cache of gh of its own, and its containers removed also on a runner of GitHub.
 # - assert_upgrade.py, with answers of its own, when Python is installed: the results
 #   of a search, the settings of the page of the administration settings and the keys
 #   of the configuration of the app, which upgrade.sh compares before and after.
@@ -265,6 +267,11 @@ echo "$*" >>"${FAKE_DOCKER_LOG}"
 if [[ "$1" == compose ]]; then
 	echo "The image of the download: ${NEXTCLOUD_IMAGE}" >>"${FAKE_DOCKER_LOG}"
 fi
+# The place of the images and volumes of Docker, FAKE_DOCKER_ROOT; without it, one that
+# isn't on this machine, as with Docker Desktop, whose disk is in its virtual machine.
+if [[ "$1" == info ]]; then
+	echo "${FAKE_DOCKER_ROOT:-/the/disk/of/a/virtual/machine}"
+fi
 if [[ "$1 $2" == "image inspect" ]]; then
 	image="${*: -1}"
 	tag="${image#nextcloud:}"
@@ -391,6 +398,27 @@ fi
 # The required check sets E2E_UPGRADE=newest for a pull request alone.
 expect "E2E_UPGRADE of the required check" 1 \
 	"$(grep --count --fixed-strings "E2E_UPGRADE: \${{ github.event_name == 'pull_request' && 'newest' || 'all' }}" "${SCRIPT_DIR}/../../.github/workflows/e2e.yml")"
+
+# The free space of the disk of Docker, at the start and the least while the tests run,
+# which a full disk would fail with errors of its own, such as HTTP 507 of Nextcloud
+# (#290). In the runs above the disk of Docker isn't on this machine, so they leave it out.
+expect "the disk of Docker on another machine" 0 "$(grep --count --fixed-strings 'The disk of Docker' "${WORK}/log" || true)"
+expect "run-all.sh with the disk of Docker" 0 "$(run_all env E2E_VERSIONS=33 FAKE_DOCKER_ROOT="${WORK}")"
+expect_in "the free space at the start" "The disk of Docker has " "${WORK}/log"
+expect_in "the least free space while the tests ran" " GB free at the least while the tests ran, of " "${WORK}/log"
+expect_in "the free space in the summary" "The disk of Docker had " "${WORK}/summary"
+expect "the warning about the disk with enough space" 0 "$(grep --count --fixed-strings 'title=Disk space' "${WORK}/log" || true)"
+expect "run-all.sh with a disk that ran low" 0 "$(run_all env E2E_VERSIONS=33 FAKE_DOCKER_ROOT="${WORK}" E2E_LOW_SPACE_MB=999999999)"
+expect_in "the warning about the disk that ran low" "::warning title=Disk space::The disk of Docker had only " "${WORK}/log"
+expect_in "the threshold in the warning" "below E2E_LOW_SPACE_MB, 999999999 MB" "${WORK}/log"
+expect "run-all.sh with a disk that ran low and a version that failed" 1 	"$(run_all env E2E_VERSIONS="33 34" FAKE_DOCKER_ROOT="${WORK}" E2E_LOW_SPACE_MB=999999999)"
+expect_in "the error about the disk that ran low" "::error title=Disk space::The disk of Docker had only " "${WORK}/log"
+expect_in "the cause in the error about the disk" "such as HTTP 507 of Nextcloud" "${WORK}/log"
+expect "run-all.sh with a disk that ran low, outside of GitHub Actions" 0 	"$(run_all env GITHUB_ACTIONS=false E2E_VERSIONS=33 FAKE_DOCKER_ROOT="${WORK}" E2E_LOW_SPACE_MB=999999999)"
+expect_in "the plain line about the disk that ran low" "The disk of Docker had only " "${WORK}/log"
+expect "the warning outside of GitHub Actions" 0 "$(grep --count --fixed-strings '::warning' "${WORK}/log" || true)"
+expect "run-all.sh with an E2E_LOW_SPACE_MB that isn't one" 1 "$(run_all env E2E_VERSIONS=33 E2E_LOW_SPACE_MB=lots)"
+expect_in "the message about an E2E_LOW_SPACE_MB that isn't one" "E2E_LOW_SPACE_MB is lots, but must be a number of MB" "${WORK}/log"
 
 # The image of each version. Without a pin, as in every run above, the floating tag, with
 # a notice; the summary names the release behind it and its digest, which finds the same
@@ -643,6 +671,7 @@ SCRIPT
 	cat >"${fakes}/gh" <<'SCRIPT'
 #!/usr/bin/env bash
 echo "gh $*" >>"${FAKE_DOCKER_LOG}"
+echo "gh cache ${XDG_CACHE_HOME:-}" >>"${FAKE_DOCKER_LOG}"
 exit "${FAKE_GH_STATUS:-0}"
 SCRIPT
 	cat >"${fakes}/docker" <<'SCRIPT'
@@ -680,11 +709,25 @@ SCRIPT
 		echo "${status}"
 	}
 
-	expect "upgrade.sh up to Docker" 1 "$(upgrade env)"
+	expect "upgrade.sh up to Docker" 1 "$(upgrade env XDG_CACHE_HOME="${WORK}/shared-cache")"
 	expect_in "the release that upgrade.sh upgrades from" "The release to upgrade from: v1.0.0" "${WORK}/log"
 	expect_in "the next patch version, as the checkout names the version of the release" "its package upgrades the release to 1.0.1." "${WORK}/log"
 	expect_in "the signature of the release" "The signature of paperless_unified_search.tar.gz matches the certificate of the app at the App Store." "${WORK}/log"
 	expect_in "the provenance of the release" "/paperless_unified_search.tar.gz --repo o/r --signer-workflow o/r/.github/workflows/build-release.yml --bundle " "${WORK}/docker.log"
+	# gh keeps the trusted root of Sigstore in a cache, which the upgrades that run-all.sh
+	# starts at the same time would share otherwise; there gh attestation verify fails at
+	# random, as the flaky-test bot found (#290). Each upgrade takes a cache of its own.
+	gh_cache="$(sed -n 's/^gh cache //p' "${WORK}/docker.log")"
+	expect "the cache of gh of the upgrade alone" gh-cache "${gh_cache##*/}"
+	expect "the cache of gh that the upgrades share" "" "$(grep --fixed-strings "${WORK}/shared-cache" <<<"${gh_cache}" || true)"
+	expect "the cache of gh after the upgrade" absent "$([[ -e "${gh_cache}" ]] && echo present || echo absent)"
+	# Beside the upgrade, the tests of the versions run on for minutes and need the disk
+	# that the files of its Nextcloud take, also on a runner of GitHub (#290).
+	expect "upgrade.sh on a runner of GitHub" 1 "$(upgrade env RUNNER_ENVIRONMENT=github-hosted)"
+	expect "the containers of the upgrade removed on a runner of GitHub" 		"docker compose --project-name paperless_unified_search_upgrade --file ${app}/tests/e2e/compose.yaml down --volumes --remove-orphans --timeout 0" 		"$(tail -n 1 "${WORK}/docker.log")"
+	expect "upgrade.sh with KEEP_E2E=1" 1 "$(upgrade env KEEP_E2E=1)"
+	expect_in "the containers of the upgrade kept with KEEP_E2E=1" "Upgrade environment kept at http://127.0.0.1:18182" "${WORK}/log"
+	expect "the removal of the containers with KEEP_E2E=1" 1 "$(grep --count --fixed-strings ' down --volumes ' "${WORK}/docker.log" || true)"
 	expect_in "the package of the checkout" "Packed 3 files of the checkout as version 1.0.1 into " "${WORK}/log"
 	expect_in "the start of Nextcloud after the checks" "docker compose --project-name paperless_unified_search_upgrade --file ${app}/tests/e2e/compose.yaml up " "${WORK}/docker.log"
 	expect "upgrade.sh with a checkout newer than the release" 1 "$(upgrade env E2E_UPGRADE_FROM=v0.9.0)"
