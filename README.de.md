@@ -299,6 +299,8 @@ Die Suche braucht eines von einer Synchronisierung: jedes Dokument von Paperless
 
 3. **Teile das Archiv nur lesend** mit den Benutzern, die seine Dokumente finden dürfen, und gib das Archiv-Konto in den Einstellungen ein, wie in der [Konfiguration](#konfiguration).
 
+Mit **Wer die Dokumente erhält** auf einer seiner Optionen **Jeder Benutzer** schreibt Paperless Sync die Dokumente jedes Benutzers stattdessen in dessen eigene Dateien, und die zeigt die Suche nicht, nur die des Archiv-Kontos, etwa die Dokumente ohne Eigentümer in Paperless; die Einstellungen, `occ paperless_unified_search:check` und die Übersicht warnen davor, mit dem, [was du tun kannst](https://dennis-otto.github.io/paperless-unified-search/de/troubleshooting.html#paperless-sync-gibt-jedem-benutzer-ein-eigenes-archiv).
+
 <!-- --8<-- [end:any-sync] -->
 <!-- --8<-- [start:requirements] -->
 
@@ -667,7 +669,7 @@ Ohne `--explain` entscheidet `search` so wie die Suche selbst, mit einer Suche i
 
 ### Die ganze Einrichtung prüfen
 
-`check` testet die Verbindung, was das Konto des API-Tokens darf, und das Archiv-Konto und vergleicht die Dokumente, die das Konto des API-Tokens in Paperless sieht, mit den Dateien des Archiv-Kontos, deren Namen ihre Kennungen tragen:
+`check` testet die Verbindung, was das Konto des API-Tokens darf, und das Archiv-Konto, mit einer Warnung, wenn Paperless Sync jedem Benutzer ein eigenes Archiv gibt, das die Suche nicht zeigt, und vergleicht die Dokumente, die das Konto des API-Tokens in Paperless sieht, mit den Dateien des Archiv-Kontos, deren Namen ihre Kennungen tragen:
 
 ```console
 $ occ paperless_unified_search:check
@@ -685,7 +687,7 @@ Zuletzt listet `check`, mit wem das Archiv-Konto seine Dateien teilt: die Benutz
 
 ### In der Übersicht der Verwaltung
 
-**Verwaltungseinstellungen → Übersicht** prüft die App unter den anderen Prüfungen der Einrichtung von Nextcloud, ebenso `occ setupchecks`. Sie warnt, wenn die Suche aus einem Grund, den ein Administrator beheben kann, keine Paperless-Dokumente zeigt, und verlinkt die Einstellungen der App: ein Token, das Nextcloud nicht mehr entschlüsseln kann, kein Archiv-Konto oder eines, das nicht existiert, oder eine fehlgeschlagene Suche, nach der keine mehr funktioniert hat. Danach warnt sie, wenn das Archiv-Konto Dateien mit Schreibrecht teilt, und wenn der letzte Test der Verbindung ergab, dass das Konto des Tokens Dokumente ändern oder keine Korrespondenten, Dokumenttypen oder Tags ansehen darf. Sonst nennt sie das Paperless, mit dem die App verbunden ist, mit der Version seiner letzten Antwort, und wie das Archiv geteilt ist. Sie liest nur, was die App gespeichert hat, und die Freigaben in der Datenbank von Nextcloud, und sendet keine Anfrage an Paperless, also öffnet sich die Übersicht so schnell wie ohne sie.
+**Verwaltungseinstellungen → Übersicht** prüft die App unter den anderen Prüfungen der Einrichtung von Nextcloud, ebenso `occ setupchecks`. Sie warnt, wenn die Suche aus einem Grund, den ein Administrator beheben kann, keine Paperless-Dokumente zeigt, und verlinkt die Einstellungen der App: ein Token, das Nextcloud nicht mehr entschlüsseln kann, kein Archiv-Konto oder eines, das nicht existiert, oder eine fehlgeschlagene Suche, nach der keine mehr funktioniert hat. Danach warnt sie, wenn das Archiv-Konto Dateien mit Schreibrecht teilt, wenn Paperless Sync jedem Benutzer ein eigenes Archiv gibt, das die Suche nicht zeigt, mit einem Link auf das, [was du tun kannst](https://dennis-otto.github.io/paperless-unified-search/de/troubleshooting.html#paperless-sync-gibt-jedem-benutzer-ein-eigenes-archiv), und wenn der letzte Test der Verbindung ergab, dass das Konto des Tokens Dokumente ändern oder keine Korrespondenten, Dokumenttypen oder Tags ansehen darf. Sonst nennt sie das Paperless, mit dem die App verbunden ist, mit der Version seiner letzten Antwort, und wie das Archiv geteilt ist. Sie liest nur, was die App gespeichert hat, und die Freigaben in der Datenbank von Nextcloud, und sendet keine Anfrage an Paperless, also öffnet sich die Übersicht so schnell wie ohne sie.
 
 <!-- --8<-- [end:automation] -->
 <!-- --8<-- [start:security-and-privacy] -->

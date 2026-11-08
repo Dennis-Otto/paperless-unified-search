@@ -8,6 +8,10 @@ description: "Fragen zu Paperless Unified Search beantwortet: ohne Paperless Syn
 
 Ja. Die Suche braucht jedes Dokument von Paperless als Datei des Archiv-Kontos mit der Kennung `[P<ID>]` im Namen, und jede Synchronisierung, die solche Dateien schreibt, funktioniert: die Dateinamen von Paperless selbst mit `{{ doc_pk }}`, rclone, der Desktop-Client von Nextcloud oder ein externer Speicher. [Funktioniert mit jeder Synchronisierung](configure.de.md#funktioniert-mit-jeder-synchronisierung) zeigt jeden davon. [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) ist die Begleit-App, die es innerhalb von Nextcloud erledigt, mit Ordnern nach Korrespondent, Typ und Jahr.
 
+## Durchsucht es das Archiv, das Paperless Sync jedem Benutzer gibt?
+
+Nein. Mit **Wer die Dokumente erhält** auf einer seiner Optionen **Jeder Benutzer** gibt [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync/blob/main/README.de.md#eigentum-je-benutzer) jedem Benutzer die Dokumente seines Benutzers von Paperless als eigene Dateien, und die Suche zeigt nur die Dateien des Archiv-Kontos: die Dokumente, die Paperless Sync keinem Benutzer selbst gibt, etwa die ohne Eigentümer in Paperless. Die Einstellungen, `occ paperless_unified_search:check` und die Übersicht der Verwaltungseinstellungen warnen davor, und die [Fehlerbehebung](troubleshooting.de.md#paperless-sync-gibt-jedem-benutzer-ein-eigenes-archiv) sagt, was du tun kannst.
+
 ## Braucht es Elasticsearch oder die App Full text search?
 
 Nein. Paperless hat den Text jedes Dokuments bereits erkannt und führt einen Index seiner Wörter; die App fragt diesen Index bei jeder Suche. Neben der App muss nichts installiert werden, kein zweiter Index aufgebaut oder aktuell gehalten werden, und es gibt keine zweite OCR. Der [Vergleich](compare.de.md) stellt sie neben die Apps, die einen Index führen.

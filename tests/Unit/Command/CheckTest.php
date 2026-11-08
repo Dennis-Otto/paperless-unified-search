@@ -143,6 +143,32 @@ final class CheckTest extends TestCase {
 	}
 
 	/**
+	 * Paperless Sync can give each user the documents of their user of Paperless as files
+	 * of their own, which the search doesn't show, and nothing said so (#338). The check
+	 * says what the search still shows and links what to do; the search works with the
+	 * files of the archive account, so the check passes.
+	 */
+	public function testWarnsWhenPaperlessSyncGivesEachUserAnArchiveOfTheirOwn(): void {
+		$this->connected('');
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.ownership'] = 'per-user';
+		$this->file('/archive/files/Paperless/Without an owner [P1].pdf');
+		$tester = $this->tester($this->documents([['id' => 1]], 1, [1]));
+
+		self::assertSame(Command::SUCCESS, $tester->execute([]));
+
+		self::assertSame(
+			"✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.\n"
+			. "✓ The account of the API token may change no document, and may view correspondents, document types and tags.\n"
+			. "✓ The archive account is archive, the account of Paperless Sync.\n"
+			. "! Paperless Sync puts the documents of each user into their own files, which the search doesn't show: it shows only the files of the archive account, such as the documents without an owner in Paperless. See https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html#paperless-sync-gives-each-user-their-own-archive\n"
+			. "✓ Coverage: 1 of 1 Paperless document(s) have a file of the archive account.\n"
+			. self::NO_SHARES,
+			$tester->getDisplay(),
+		);
+	}
+
+	/**
 	 * An archive account that exists but owns none of the synchronized files, or only
 	 * files without markers, leaves the search without a single Paperless document: the
 	 * mistake that a script that reads the exit code must notice.

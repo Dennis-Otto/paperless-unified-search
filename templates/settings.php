@@ -6,7 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2026 Dennis Otto
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * @var array{config: \OCA\PaperlessUnifiedSearch\Model\PublicConfig, tokenWarnings: list<string>, saveUrl: string, resetUrl: string, clearDiagnosticsUrl: string, tryUrl: string, accountUrl: string, syncUrl: string, syncAllowLocal: bool, history: ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, durationMs: int}>}, shares: ?array{summary: string, warnings: list<string>}} $_
+ * @var array{config: \OCA\PaperlessUnifiedSearch\Model\PublicConfig, tokenWarnings: list<string>, perUserArchives: string, perUserArchivesHelp: string, saveUrl: string, resetUrl: string, clearDiagnosticsUrl: string, tryUrl: string, accountUrl: string, syncUrl: string, syncAllowLocal: bool, history: ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, durationMs: int}>}, shares: ?array{summary: string, warnings: list<string>}} $_
  */
 
 script('paperless_unified_search', 'settings');
@@ -17,6 +17,11 @@ $history = $_['history'];
 $shares = $_['shares'];
 // The archive account in use: the one of the settings, or else that of Paperless Sync.
 $archiveAccount = $config->archiveOwner !== '' ? $config->archiveOwner : $config->syncAccount;
+// The warning that Paperless Sync gives each user an archive of their own, with a link to
+// what to do, below the archive account and with the result of Try a search.
+$perUserArchives = static function () use ($_, $l): void {
+	?><span><?php p($_['perUserArchives']); ?> <a href="<?php p($_['perUserArchivesHelp']); ?>" target="_blank" rel="noreferrer noopener"><?php p($l->t('What you can do')); ?><span aria-hidden="true"> ↗</span></a></span><?php
+};
 ?>
 
 <div
@@ -144,13 +149,18 @@ $archiveAccount = $config->archiveOwner !== '' ? $config->archiveOwner : $config
 				type="text"
 				autocomplete="off"
 				value="<?php p($config->archiveOwner); ?>"
-				aria-describedby="paperless-unified-search-archive-owner-missing paperless-unified-search-archive-owner-hint"
+				aria-describedby="paperless-unified-search-archive-owner-missing paperless-unified-search-per-user-archives paperless-unified-search-archive-owner-hint"
 				placeholder="<?php p($config->syncAccount !== '' ? $l->t('Paperless Sync: %s — leave blank to use it', [$config->syncAccount]) : $l->t('User ID of the account that owns the synchronized files')); ?>">
 		</p>
 
 		<p id="paperless-unified-search-archive-owner-missing" class="paperless-unified-search-warning"><?php if ($config->archiveOwnerMissing) {
 			p($l->t('The archive account %s does not exist.', [$archiveAccount]));
 		} ?></p>
+
+		<p id="paperless-unified-search-per-user-archives" class="paperless-unified-search-warning"><?php if ($config->perUserArchives) {
+			$perUserArchives();
+		} ?></p>
+		<template id="paperless-unified-search-per-user-archives-text"><?php $perUserArchives(); ?></template>
 
 		<p id="paperless-unified-search-archive-owner-hint" class="settings-hint">
 			<?php p($l->t('Only the files of this account stand for Paperless documents: a user sees a document when this account shares its file with them. Share the archive read-only. Without an archive account, the search shows no Paperless documents.')); ?>

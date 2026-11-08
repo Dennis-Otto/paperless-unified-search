@@ -283,6 +283,26 @@ final class SetupTest extends TestCase {
 	}
 
 	/**
+	 * The test of the connection warns when Paperless Sync gives each user the documents
+	 * of their user of Paperless as files of their own, which the search doesn't show
+	 * (#338), and links what to do; the settings are saved all the same.
+	 */
+	public function testWarnsWhenPaperlessSyncGivesEachUserAnArchiveOfTheirOwn(): void {
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.ownership'] = 'per-user-shared';
+		$tester = $this->tester($this->documents([], headers: []));
+		$tester->setInputs(['TEST_VALUE']);
+
+		self::assertSame(Command::SUCCESS, $tester->execute(['--url' => 'https://paperless.example.com', '--token-stdin' => true]));
+
+		self::assertSame([
+			'Paperless answers at https://paperless.example.com. The settings are saved.',
+			"Warning: Paperless Sync puts the documents of each user into their own files, which the search doesn't show: it shows only the files of the archive account, such as the documents without an owner in Paperless. See https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html#paperless-sync-gives-each-user-their-own-archive",
+			'Archive account: archive, the account of Paperless Sync',
+		], array_slice(self::lines($tester->getDisplay()), 0, 3));
+	}
+
+	/**
 	 * Where the terminal shows colours, an archive account that is gone shows in the
 	 * yellow of a warning, its name included.
 	 */

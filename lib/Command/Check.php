@@ -29,11 +29,13 @@ use Symfony\Component\Console\Output\OutputInterface;
 /**
  * occ paperless_unified_search:check: everything that the search needs, in one go. The
  * connection to Paperless, what the account of the API token may do, the archive account,
- * how many documents of Paperless have a file of the archive account, which the search
- * can show, and with whom the archive account shares its files, with a warning for each
- * share that allows changes. It exits with 1 when the search can show no document at
- * all, also when no document has a file, and with 0 otherwise: an account that may do
- * more or less than the search needs gets a warning, and the search works with it.
+ * with a warning when Paperless Sync gives each user an archive of their own, which the
+ * search doesn't show, how many documents of Paperless have a file of the archive
+ * account, which the search can show, and with whom the archive account shares its
+ * files, with a warning for each share that allows changes. It exits with 1 when the
+ * search can show no document at all, also when no document has a file, and with 0
+ * otherwise: an account that may do more or less than the search needs gets a warning,
+ * and the search works with it, as it does with the archives for each user.
  */
 final class Check extends Command {
 	use ReportsProblems;
@@ -57,7 +59,7 @@ final class Check extends Command {
 	protected function configure(): void {
 		$this->setName('paperless_unified_search:check')
 			->setDescription('Check the connection to Paperless-ngx, the API token, the archive account, how many documents have a file and how the archive is shared')
-			->setHelp('Tests the connection to Paperless, warns when the account of the API token may change documents or may not view correspondents, document types and tags, checks that the archive account exists, compares the documents of Paperless with the files of the archive account whose names carry their markers, such as [P412], and lists with whom the archive account shares its files, with a warning for each share that allows changes. Exits with 1 when the search can show no Paperless document, and with 0 otherwise.');
+			->setHelp('Tests the connection to Paperless, warns when the account of the API token may change documents or may not view correspondents, document types and tags, checks that the archive account exists, warns when Paperless Sync puts the documents of each user into their own files, which the search does not show, compares the documents of Paperless with the files of the archive account whose names carry their markers, such as [P412], and lists with whom the archive account shares its files, with a warning for each share that allows changes. Exits with 1 when the search can show no Paperless document, and with 0 otherwise.');
 	}
 
 	protected function execute(InputInterface $input, OutputInterface $output): int {
@@ -130,6 +132,9 @@ final class Check extends Command {
 		self::passed($output, $setting !== ''
 			? sprintf('The archive account is %s.', $archive->getUID())
 			: sprintf('The archive account is %s, the account of Paperless Sync.', $archive->getUID()));
+		if ($this->configService->hasPerUserArchives()) {
+			self::noted($output, sprintf('%s See %s', $this->messages->forPerUserArchives(), $this->messages->perUserArchivesHelp()));
+		}
 
 		return $archive;
 	}

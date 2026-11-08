@@ -57,6 +57,13 @@ final class ConfigService {
 	// And it reaches its Paperless at this address, maybe in the local network.
 	private const SYNC_URL_KEY = 'paperless_url';
 	private const SYNC_LOCAL_NETWORK_KEY = 'paperless_local_network';
+	/**
+	 * Since its version 1.1.0, Paperless Sync gives each user of Nextcloud the documents of
+	 * their user of Paperless as files of their own with these choices of its setting Who
+	 * gets the documents, Each user; with single, the target user gets every document.
+	 */
+	private const SYNC_OWNERSHIP_KEY = 'ownership';
+	private const SYNC_PER_USER = ['per-user', 'per-user-shared'];
 	private const DEFAULT_PORTS = ['http' => 80, 'https' => 443];
 	/**
 	 * A name of a host as DNS, a hosts file or the network of Docker know it: letters and
@@ -107,6 +114,7 @@ final class ConfigService {
 			$this->isPersonalAlwaysSearchAllowed(),
 			$this->getTokenWarnings(),
 			$this->isNewDocumentAlertsAllowed(),
+			$this->perUserArchives($archiveOwner, $syncAccount),
 		);
 	}
 
@@ -156,6 +164,19 @@ final class ConfigService {
 	 */
 	public function isSyncLocalNetworkAllowed(): bool {
 		return $this->config->getValueBool(self::SYNC_APP_ID, self::SYNC_LOCAL_NETWORK_KEY, false, lazy: true);
+	}
+
+	/**
+	 * Whether Paperless Sync gives each user the documents of their user of Paperless as
+	 * files of their own while the archive account is its target user, which the search
+	 * doesn't show: it shows only the files of the archive account, which then holds the
+	 * documents that Paperless Sync gives no user of their own, such as those without an
+	 * owner in Paperless. With another archive account, the files of Paperless Sync don't
+	 * count either way. Without the setting, as before Paperless Sync 1.1.0, or with a
+	 * choice that this version doesn't know, the target user gets every document.
+	 */
+	public function hasPerUserArchives(): bool {
+		return $this->perUserArchives($this->getArchiveOwnerSetting(), $this->getSyncAccount());
 	}
 
 	/**
@@ -400,6 +421,7 @@ final class ConfigService {
 			$personalAlwaysSearch,
 			$tokenWarnings ?? [],
 			$this->isNewDocumentAlertsAllowed(),
+			$this->perUserArchives($normalizedOwner, $syncAccount),
 		);
 	}
 
@@ -420,7 +442,7 @@ final class ConfigService {
 
 		$syncAccount = $this->getSyncAccount();
 
-		return new PublicConfig('', false, false, '', $syncAccount, false, $this->isMissing($syncAccount), newDocumentAlerts: $this->isNewDocumentAlertsAllowed());
+		return new PublicConfig('', false, false, '', $syncAccount, false, $this->isMissing($syncAccount), newDocumentAlerts: $this->isNewDocumentAlertsAllowed(), perUserArchives: $this->perUserArchives('', $syncAccount));
 	}
 
 	/**
@@ -555,6 +577,20 @@ final class ConfigService {
 		}
 
 		return $this->userManager->get($account)?->getUID() ?? '';
+	}
+
+	/**
+	 * Whether Paperless Sync gives each user an archive of their own while the archive
+	 * account, $owner as the settings store it or else $syncAccount, is its target user.
+	 */
+	private function perUserArchives(string $owner, string $syncAccount): bool {
+		$ownership = trim($this->config->getValueString(self::SYNC_APP_ID, self::SYNC_OWNERSHIP_KEY, '', lazy: true));
+		if (!in_array($ownership, self::SYNC_PER_USER, true)) {
+			return false;
+		}
+		$archive = $this->accountId($owner !== '' ? $owner : $syncAccount);
+
+		return $archive !== '' && $archive === $this->accountId($syncAccount);
 	}
 
 	/**

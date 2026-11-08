@@ -156,6 +156,10 @@
 		const newDocumentAlertsInput = document.getElementById('paperless-unified-search-new-document-alerts')
 		const archiveOwnerInput = document.getElementById('paperless-unified-search-archive-owner')
 		const archiveOwnerMissing = document.getElementById('paperless-unified-search-archive-owner-missing')
+		const perUserArchives = document.getElementById('paperless-unified-search-per-user-archives')
+		// The warning about the archives of Paperless Sync for each user, with its link, as
+		// the server words it.
+		const perUserArchivesText = document.getElementById('paperless-unified-search-per-user-archives-text')
 		const saveButton = document.getElementById('paperless-unified-search-save')
 		const resetButton = document.getElementById('paperless-unified-search-reset')
 		const status = document.getElementById('paperless-unified-search-status')
@@ -219,6 +223,7 @@
 			archiveOwnerMissing.textContent = config.archiveOwnerMissing
 				? translate('The archive account {account} does not exist.', { account: config.archiveOwner || config.syncAccount })
 				: ''
+			perUserArchives.replaceChildren(...(config.perUserArchives ? [perUserArchivesText.content.cloneNode(true)] : []))
 		}
 
 		// Disconnecting and the button of the history forget the problems of the search.
@@ -448,6 +453,13 @@
 				const warning = document.createElement('p')
 				warning.classList.add('paperless-unified-search-warning')
 				warning.textContent = translate('Nextcloud failed to read a file, so a document without a file below may have one.')
+				parts.push(warning)
+			}
+			// A document of a user's own archive is no file of the archive account below.
+			if (answer.perUserArchives) {
+				const warning = document.createElement('p')
+				warning.classList.add('paperless-unified-search-warning')
+				warning.append(perUserArchivesText.content.cloneNode(true))
 				parts.push(warning)
 			}
 			if (documents.length > 0) {

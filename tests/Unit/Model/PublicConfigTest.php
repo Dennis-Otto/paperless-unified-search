@@ -34,6 +34,7 @@ final class PublicConfigTest extends TestCase {
 			'personalAlwaysSearch' => true,
 			'tokenWarnings' => [],
 			'newDocumentAlerts' => false,
+			'perUserArchives' => false,
 		], (new PublicConfig('https://paperless.example.com', true, false))->jsonSerialize());
 	}
 
@@ -42,6 +43,14 @@ final class PublicConfigTest extends TestCase {
 
 		self::assertFalse($config->jsonSerialize()['personalAlwaysSearch']);
 		self::assertTrue((new PublicConfig('https://paperless.example.com', true, false, newDocumentAlerts: true))->jsonSerialize()['newDocumentAlerts']);
+	}
+
+	/**
+	 * The settings page warns when Paperless Sync gives each user an archive of their own,
+	 * which the search doesn't show (#338).
+	 */
+	public function testTheConfigurationTellsWhetherPaperlessSyncGivesEachUserAnArchive(): void {
+		self::assertTrue((new PublicConfig('https://paperless.example.com', true, false, perUserArchives: true))->jsonSerialize()['perUserArchives']);
 	}
 
 	public function testTheConfigurationNamesTheVersionOfPaperless(): void {

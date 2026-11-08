@@ -99,6 +99,7 @@ final class SettingsControllerTest extends TestCase {
 			'personalAlwaysSearch' => true,
 			'tokenWarnings' => [],
 			'newDocumentAlerts' => false,
+			'perUserArchives' => false,
 		], json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR));
 		self::assertStringNotContainsString('TEST_VALUE', $response->render());
 		self::assertNotContains(AppConstants::APP_ID . '.diagnostics', $deleted);
@@ -689,6 +690,7 @@ final class SettingsControllerTest extends TestCase {
 			'personalAlwaysSearch' => true,
 			'tokenWarnings' => [],
 			'newDocumentAlerts' => false,
+			'perUserArchives' => false,
 		], json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR));
 		self::assertContains(AppConstants::APP_ID . '.diagnostics', $deleted);
 	}

@@ -165,6 +165,9 @@ final class Setup extends Command {
 			? sprintf('Paperless answers at %s. The settings are saved.', $config->url)
 			: sprintf('Paperless %s (API %s) answers at %s. The settings are saved.', $version->version, $version->apiVersion, $config->url)));
 		self::warnAboutTheToken($output, $this->messages, $config->tokenWarnings);
+		if ($config->perUserArchives) {
+			$output->writeln('<comment>Warning:</comment> ' . OutputFormatter::escape(sprintf('%s See %s', $this->messages->forPerUserArchives(), $this->messages->perUserArchivesHelp())));
+		}
 		$this->describe($output, $config);
 
 		return self::SUCCESS;

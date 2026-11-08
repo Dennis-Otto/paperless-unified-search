@@ -107,6 +107,12 @@
 	display: none;
 }
 
+/* A link in a warning, such as to what to do about it, underlined as a link in a text. */
+.paperless-unified-search-settings .paperless-unified-search-warning a {
+	color: inherit;
+	text-decoration: underline;
+}
+
 /*
  * How the archive account shares its files, below its field, with a warning for each
  * share that allows changes.

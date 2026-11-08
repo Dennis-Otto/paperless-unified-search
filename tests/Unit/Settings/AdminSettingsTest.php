@@ -32,6 +32,7 @@ use OCP\IL10N;
 use OCP\IURLGenerator;
 use OCP\Security\ICredentialsManager;
 use OCP\Share\IShare;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use RuntimeException;
@@ -93,6 +94,7 @@ final class AdminSettingsTest extends TestCase {
 			'personalAlwaysSearch' => true,
 			'tokenWarnings' => [],
 			'newDocumentAlerts' => true,
+			'perUserArchives' => false,
 		], $params['config']->jsonSerialize());
 		self::assertStringNotContainsString('TEST_VALUE', json_encode($params, JSON_THROW_ON_ERROR));
 		self::assertNull($params['history']);
@@ -133,6 +135,43 @@ final class AdminSettingsTest extends TestCase {
 			'summary' => 'Shared: 1 user, 1 group.',
 			'warnings' => ['/Paperless is shared with the user sam with write permission, so the search shows sam none of the documents in it. Share it read-only.'],
 		], $params['shares']);
+	}
+
+	/**
+	 * The website has the help in English and in German.
+	 *
+	 * @return array<string, array{string, string}>
+	 */
+	public static function languagesOfTheWebsite(): array {
+		$english = 'https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html#paperless-sync-gives-each-user-their-own-archive';
+		$german = 'https://dennis-otto.github.io/paperless-unified-search/de/troubleshooting.html#paperless-sync-gibt-jedem-benutzer-ein-eigenes-archiv';
+
+		return [
+			'German' => ['de', $german],
+			'German, formal' => ['de_DE', $german],
+			'English' => ['en', $english],
+			'a language that the website lacks' => ['fr', $english],
+		];
+	}
+
+	/**
+	 * Below the archive account, the page warns when Paperless Sync gives each user the
+	 * documents of their user of Paperless as files of their own, which the search doesn't
+	 * show (#338), with a link to what to do on the website in the language of the
+	 * administrator.
+	 */
+	#[DataProvider('languagesOfTheWebsite')]
+	public function testTheFormWarnsOfTheArchivesForEachUserWithHelpInTheLanguageOfTheAdministrator(string $language, string $help): void {
+		$config = new MemoryAppConfig();
+		$config->seed('paperless_sync', 'target_user', 'sync', lazy: true);
+		$config->seed('paperless_sync', 'ownership', 'per-user', lazy: true);
+
+		$params = $this->settings($config, $this->createStub(ICredentialsManager::class), $this->createStub(IURLGenerator::class), $language)->getForm()->getParams();
+
+		self::assertInstanceOf(PublicConfig::class, $params['config']);
+		self::assertTrue($params['config']->perUserArchives);
+		self::assertSame("Paperless Sync puts the documents of each user into their own files, which the search doesn't show: it shows only the files of the archive account, such as the documents without an owner in Paperless.", $params['perUserArchives']);
+		self::assertSame($help, $params['perUserArchivesHelp']);
 	}
 
 	/**
@@ -257,9 +296,10 @@ final class AdminSettingsTest extends TestCase {
 		self::assertSame(50, $settings->getPriority());
 	}
 
-	private function settings(IAppConfig $config, ICredentialsManager $credentials, IURLGenerator $urlGenerator): AdminSettings {
+	private function settings(IAppConfig $config, ICredentialsManager $credentials, IURLGenerator $urlGenerator, string $language = 'en'): AdminSettings {
 		$l10n = $this->createStub(IL10N::class);
 		$l10n->method('t')->willReturnCallback(static fn (string $text, array $parameters = []): string => vsprintf($text, $parameters));
+		$l10n->method('getLanguageCode')->willReturn($language);
 		$formatter = $this->createStub(IDateTimeFormatter::class);
 		$formatter->method('formatDateTime')->willReturnCallback(static function (mixed $timestamp, string $date, string $time): string {
 			self::assertIsInt($timestamp);

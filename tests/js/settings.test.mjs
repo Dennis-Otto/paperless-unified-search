@@ -109,7 +109,7 @@ class Element {
 function page({ url = '', tokenConfigured = false, history = true, sync } = {}) {
 	const ids = [
 		'form', 'url', 'allow-local', 'token', 'token-unreadable', 'token-warnings', 'always-search', 'users-always-search', 'new-document-alerts', 'archive-owner',
-		'archive-owner-missing', 'save', 'reset', 'status', 'diagnostics',
+		'archive-owner-missing', 'per-user-archives', 'save', 'reset', 'status', 'diagnostics',
 		'superuser-token', 'view-new', 'view-existing', 'create-account',
 		'try-form', 'try-term', 'try-user', 'try', 'try-status', 'try-result',
 	]
@@ -129,6 +129,17 @@ function page({ url = '', tokenConfigured = false, history = true, sync } = {}) 
 	elements.get('paperless-unified-search-view-new').checked = true
 	elements.get('paperless-unified-search-view-existing').checked = true
 	elements.set('paperless-unified-search-settings', root)
+	// The template of the warning about the archives of Paperless Sync for each user, whose
+	// content each copy names.
+	const perUserArchivesText = new Element('per-user-archives-text', { tagName: 'TEMPLATE', copies: 0 })
+	perUserArchivesText.content = {
+		cloneNode(deep) {
+			assert.equal(deep, true)
+			perUserArchivesText.copies++
+			return { copy: perUserArchivesText.copies, text: 'Paperless Sync puts the documents of each user into their own files. What you can do' }
+		},
+	}
+	elements.set('paperless-unified-search-per-user-archives-text', perUserArchivesText)
 	const field = elements.get('paperless-unified-search-url')
 	field.value = url
 	field.defaultValue = url
@@ -407,6 +418,30 @@ test('the settings show the warnings that the stored settings call for', async f
 	await get('form').dispatch('submit')
 	assert.equal(get('token-unreadable').textContent, '')
 	assert.equal(get('archive-owner-missing').textContent, 'The archive account sync does not exist.')
+})
+
+// Paperless Sync can give each user the documents of their user of Paperless as files of
+// their own, which the search doesn't show (#338): a test of the connection that finds
+// them shows the warning with its link below the archive account, and one that doesn't
+// takes it away again.
+test('the settings warn when Paperless Sync gives each user an archive of their own', async function() {
+	const { get } = load(page(), {
+		answers: [
+			json({ ...CONFIG, perUserArchives: true }),
+			json({ ...CONFIG, perUserArchives: false }),
+			json(CONFIG),
+		],
+	})
+
+	await get('form').dispatch('submit')
+	assert.deepEqual(get('per-user-archives').children, [{ copy: 1, text: 'Paperless Sync puts the documents of each user into their own files. What you can do' }])
+
+	await get('form').dispatch('submit')
+	assert.deepEqual(get('per-user-archives').children, [])
+
+	get('per-user-archives').children = ['as the template rendered it']
+	await get('form').dispatch('submit')
+	assert.deepEqual(get('per-user-archives').children, [])
 })
 
 test('the settings show the warnings about the account of the token, which keep nothing from being saved', async function() {
@@ -692,6 +727,33 @@ test('Try a search warns when Nextcloud failed to read a file', async function()
 	assert.equal(warning.textContent, 'Nextcloud failed to read a file, so a document without a file below may have one.')
 	assert.deepEqual(rowsOf(table).rows, [['ID: 412', 'Title: Electricity invoice', 'Shown or why not: Shown']])
 	assert.equal(get('try-status').textContent, 'Shown to jamie: 1 of the first 1. Found by Paperless: 12.')
+})
+
+// A document of a user's own archive of Paperless Sync is no file of the archive account,
+// which the warning above the table explains (#338), after the warning about a file that
+// Nextcloud failed to read.
+test('Try a search warns when Paperless Sync gives each user an archive of their own', async function() {
+	const { get } = load(page(), {
+		answers: [
+			json({ ...TRIED, documents: TRIED.documents.slice(3, 4), fileError: true, perUserArchives: true }),
+			json({ ...TRIED, documents: TRIED.documents.slice(3, 4), perUserArchives: true }),
+		],
+	})
+
+	await get('try-form').dispatch('submit')
+
+	const [fileWarning, warning, table] = get('try-result').children
+	assert.equal(fileWarning.textContent, 'Nextcloud failed to read a file, so a document without a file below may have one.')
+	assert.equal(warning.tagName, 'P')
+	assert.equal(warning.classList.toString(), 'paperless-unified-search-warning')
+	assert.deepEqual(warning.children, [{ copy: 1, text: 'Paperless Sync puts the documents of each user into their own files. What you can do' }])
+	assert.deepEqual(rowsOf(table).rows, [['ID: 371', 'Title: <b>Internet</b> invoice', 'Shown or why not: Not a file of the archive account']])
+
+	await get('try-form').dispatch('submit')
+
+	const [again, againTable] = get('try-result').children
+	assert.deepEqual(again.children, [{ copy: 2, text: 'Paperless Sync puts the documents of each user into their own files. What you can do' }])
+	assert.equal(rowsOf(againTable).rows.length, 1)
 })
 
 test('a refused try shows the reason and no result', async function() {

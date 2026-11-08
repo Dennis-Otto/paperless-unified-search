@@ -22,6 +22,8 @@ OC.L10N.register(
 		'Paperless Sync: %s — leave blank to use it': 'Paperless Sync: %s — zum Übernehmen leer lassen',
 		'User ID of the account that owns the synchronized files': 'Benutzer-ID des Kontos, dem die synchronisierten Dateien gehören',
 		'The archive account %s does not exist.': 'Das Archiv-Konto %s existiert nicht.',
+		'Paperless Sync puts the documents of each user into their own files, which the search doesn\'t show: it shows only the files of the archive account, such as the documents without an owner in Paperless.': 'Paperless Sync legt die Dokumente jedes Benutzers in dessen eigene Dateien, und die Suche zeigt diese nicht: nur die Dateien des Archiv-Kontos, etwa die Dokumente ohne Eigentümer in Paperless.',
+		'What you can do': 'Was Sie tun können',
 		'Paperless Unified Search is not connected to Paperless.': 'Paperless Unified Search ist nicht mit Paperless verbunden.',
 		'A search failed on %s while looking for the files of the documents in Nextcloud, and none has worked since. Search problems in {section} shows what failed.': 'Eine Suche ist am %s bei der Suche nach den Dateien der Dokumente in Nextcloud fehlgeschlagen, und seitdem hat keine funktioniert. „Probleme der Suche“ in {section} zeigt, was fehlgeschlagen ist.',
 		'A search failed on %s while asking Paperless, and none has worked since. Search problems in {section} shows what failed.': 'Eine Suche ist am %s bei der Anfrage an Paperless fehlgeschlagen, und seitdem hat keine funktioniert. „Probleme der Suche“ in {section} zeigt, was fehlgeschlagen ist.',

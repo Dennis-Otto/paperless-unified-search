@@ -39,6 +39,10 @@ final class AdminSettings implements ISettings {
 			'config' => $config,
 			// What the account of the API token may do, as the last test found it.
 			'tokenWarnings' => array_map($this->messages->forTokenWarning(...), $config->tokenWarnings),
+			// The warning about the archives of Paperless Sync for each user, which the page
+			// shows whenever they come up, also after a test of the connection.
+			'perUserArchives' => $this->messages->forPerUserArchives(),
+			'perUserArchivesHelp' => $this->messages->perUserArchivesHelp(),
 			'saveUrl' => $this->urlGenerator->linkToRoute(AppConstants::APP_ID . '.settings.save'),
 			'resetUrl' => $this->urlGenerator->linkToRoute(AppConstants::APP_ID . '.settings.reset'),
 			'clearDiagnosticsUrl' => $this->urlGenerator->linkToRoute(AppConstants::APP_ID . '.settings.clearDiagnostics'),
