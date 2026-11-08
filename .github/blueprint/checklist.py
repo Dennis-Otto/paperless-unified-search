@@ -57,6 +57,13 @@ BEST_PRACTICES = "https://www.bestpractices.dev"
 BADGE = re.compile(r"bestpractices\.dev/projects/(\d+)/(badge|baseline)")
 # The button of each form of bestpractices.dev that reads .bestpractices.json anew.
 SAVE = "Save (and continue) 🤖"
+# The page of the social preview, and the attribute of the panel that a new repository
+# starts with: a drawing of its kind of project, made from the answers of copier copy.
+# A repository made before it keeps the card of the blueprint's checks that came first,
+# the same in every repository, since the page belongs to the project.
+SOCIAL_PREVIEW = ".github/social-preview.html"
+DEFAULT_PANEL = "data-default-panel"
+DEFAULT_PANELS = (DEFAULT_PANEL, '<div class="card checks">')
 
 
 @dataclass(frozen=True)
@@ -79,6 +86,25 @@ def reuse_compliant(
             # The error is the answer too, and holds its body until it is closed.
             error.close()
         return False
+
+
+def social_preview(root: Path) -> Step:
+    """The social preview of a new repository shows a drawing of its kind of project,
+    since the template knows no more of it: the project replaces it with itself."""
+    page = root / SOCIAL_PREVIEW
+    text = page.read_text(encoding="utf-8") if page.exists() else ""
+    # The template's comment names the mark that the project takes out: only the
+    # markup counts, not what a comment says of it.
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+    return Step(
+        "Social preview shows the project",
+        not any(mark in text for mark in DEFAULT_PANELS),
+        f"{SOCIAL_PREVIEW} still shows the blueprint's default panel, the same in"
+        " every project of its kind. Replace it with the project itself: a screenshot"
+        " of what it shows, such as one that scripts/screenshots.sh takes, or a"
+        f" faithful drawing of what it produces, without {DEFAULT_PANEL}. Then render"
+        " the picture with bash scripts/social-preview.sh and upload it.",
+    )
 
 
 def best_practices(readme: str) -> list[Step]:
@@ -470,6 +496,7 @@ def checklist(
             )
         )
     steps += [
+        social_preview(root),
         Step(
             "Social preview uploaded (bash scripts/social-preview.sh renders it)",
             bool(data["repository"]["usesCustomOpenGraphImage"]),

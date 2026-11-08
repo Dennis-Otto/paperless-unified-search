@@ -1,8 +1,9 @@
 """blueprint.py create: the repository on GitHub of a new copy of the blueprint.
 
 Copier writes the files of a project into a folder, and nothing more. create makes a
-repository of it: git init on the branch main, the first commit with a sign-off, and
-the repository on GitHub, which gh repo create makes and pushes to. The command line
+repository of it: git init on the branch main, the first commit with a sign-off, in
+which the scripts and the hook are executable on Windows too, and the repository on
+GitHub, which gh repo create makes and pushes to. The command line
 then applies the settings as code and shows the checklist. The owner and the name
 come from .copier-answers.yml, or from --repo, and the description from
 .github/repository.toml.
@@ -43,6 +44,26 @@ ANSWERS = ".copier-answers.yml"
 ACCEPTED = ".github/a11y-accepted.toml"
 BASELINE = re.compile(r"^(?:#.*\n){0,2}baseline\s*=\s*true[^\n]*\n", re.MULTILINE)
 MESSAGE = "chore: start from the blueprint"
+# The files that the template marks executable, by their names in a copy: the hook,
+# which Git runs only when it is executable, and the scripts, which run as
+# ./scripts/check.sh. Windows has no such mode: Copier can't give it to them there, and
+# git add records them as plain files, so create records them as executable before the
+# first commit, on every platform. A test keeps the list equal to the files of
+# template/ that Git has as executable.
+EXECUTABLES = (
+    ".devcontainer/setup.sh",
+    ".githooks/pre-push",
+    ".github/blueprint.py",
+    ".github/sign-tag.sh",
+    "app/entrypoint.sh",
+    "scripts/check.sh",
+    "scripts/chrome-for-testing.sh",
+    "scripts/deploy-worker.sh",
+    "scripts/diagrams.sh",
+    "scripts/package-extension.sh",
+    "scripts/screenshots.sh",
+    "scripts/social-preview.sh",
+)
 # What the command line runs after the commands of create, as the user would type it.
 AFTER = (
     ["python3", ".github/blueprint.py", "settings", "apply"],
@@ -239,11 +260,27 @@ def local_plan(root: Path, repo: str, run: Runner) -> Plan:
                 "the commits only: commit them, or stash them, and run create again"
             )
     else:
-        plan.steps += [
-            ["git", "add", "--all"],
-            ["git", "commit", "--signoff", "--message", MESSAGE],
-        ]
+        plan.steps.append(["git", "add", "--all"])
+        if executables := scripts_of(root):
+            plan.steps.append(["git", "update-index", "--chmod=+x", "--", *executables])
+        plan.steps.append(["git", "commit", "--signoff", "--message", MESSAGE])
     return plan
+
+
+def scripts_of(root: Path) -> list[str]:
+    """The names of EXECUTABLES that the copy has: those of its kind, which has only
+    the files of its kind."""
+    return [name for name in EXECUTABLES if (root / name).is_file()]
+
+
+def executable_on_disk(root: Path) -> None:
+    """Gives the scripts of the copy their executable bits on the disk too, as the
+    commit records them, so that the disk and the index agree: Git with core.fileMode
+    would see the copy changed after the first commit, and a create that goes on from
+    there would refuse it. Windows keeps no such bits, and the call changes nothing."""
+    for name in scripts_of(root):
+        path = root / name
+        path.chmod(path.stat().st_mode | 0o111)
 
 
 def no_baseline(root: Path) -> None:
@@ -620,6 +657,7 @@ def create(
         return None
     if plan.commits:
         no_baseline(root)
+        executable_on_disk(root)
     if plan.resume:
         print(f"Going on with {repo} on GitHub, from the first step that is left:")
     else:

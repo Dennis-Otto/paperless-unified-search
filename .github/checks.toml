@@ -161,8 +161,9 @@ the search finds its text; `scripts/check-site.sh` adds the checks of the projec
 the pages that differ from `main` in Chrome, and every page when a stylesheet, a script
 or `mkdocs.yml` differs, in both schemes, at the width of a desktop and of a phone, and
 names each serious or critical violation of WCAG 2.2 A or AA, also a page that scrolls
-sideways on a phone with the widest element that overflows, that
-`.github/a11y-accepted.toml` doesn't accept, at the Markdown of its page, or at
+sideways on a phone with the widest element that overflows, and a page that leads to
+another address as it shows before it leaves, that `.github/a11y-accepted.toml`
+doesn't accept, at the Markdown of its page, or at
 `mkdocs.yml` for a page without one. When the log names a font or a script that Material
 couldn't download, its server had a hiccup: that usually passes when the job runs again,
 and a build that finds them in the cache of the week, which a push to `main` saves,
@@ -190,7 +191,9 @@ lost it in the build: build the website with the lock of its tools and look for 
 plugin or the hook that takes it out, as mkdocs-glightbox did with selectolax 1.0.0
 and 1.0.1. A violation of accessibility has a link in the summary that explains its
 fix. A page that scrolls sideways lets what is wide wrap, or puts it in a frame that
-scrolls on its own, with `overflow-x: auto` and `tabindex="0"`. A violation that has to stay goes into `.github/a11y-accepted.toml`, with its page, its
+scrolls on its own, with `overflow-x: auto` and `tabindex="0"`. A page that leads to another
+address, such as one of an old address, needs a language and a title of its own: the
+check checks it, not the page where it leads. A violation that has to stay goes into `.github/a11y-accepted.toml`, with its page, its
 rule and the reason, and an entry without a reason stops the check. Install the tools of
 the website as the section Website of CONTRIBUTING.md shows, and build and check it as
 the check does (in the blueprint itself, the tool is `blueprint.py` without `.github/`);

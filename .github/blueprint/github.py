@@ -79,15 +79,25 @@ def gh_command(arguments: Sequence[str]) -> list[str]:
 def run_gh(
     arguments: Sequence[str], body: str | None
 ) -> subprocess.CompletedProcess[str]:
-    """Run the GitHub CLI; the tests replace this with a simulated GitHub."""
-    return subprocess.run(  # pragma: no cover - the tests simulate gh
-        gh_command(arguments), input=body, capture_output=True, text=True, check=False
+    """Run the GitHub CLI; the tests replace this with a simulated GitHub. gh reads
+    and prints UTF-8 on every machine, and so does the runner: Python would otherwise
+    take the code page of the locale, such as cp1252 on Windows, which can't read an
+    emoji of a pull request and can't write one of a body, so gh would wait for the
+    end of its input for ever."""
+    return subprocess.run(
+        gh_command(arguments),
+        input=body,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
     )
 
 
 def run_gh_as(token: str) -> Runner:
     """The GitHub CLI with a token other than that of the environment, for a request
-    that takes another right, such as those of the token of a job."""
+    that takes another right, such as those of the token of a job; in UTF-8, as
+    run_gh."""
 
     def run(
         arguments: Sequence[str], body: str | None
@@ -97,6 +107,7 @@ def run_gh_as(token: str) -> Runner:
             input=body,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
             env={**os.environ, "GH_TOKEN": token},
         )
