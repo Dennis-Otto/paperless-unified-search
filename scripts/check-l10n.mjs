@@ -11,7 +11,9 @@
 // that Nextcloud shows), the JavaScript catalog
 // that the browser loads holds the same as the JSON one that PHP loads, and
 // appinfo/info.xml gives the App Store a summary and a description in the language of
-// each catalog. The texts come from the calls ->t('…') and ->n('…', '…') in lib/ and
+// each catalog. Chinese, in the catalogs and for the App Store, writes its dash as Chinese
+// does, and Traditional Chinese the words of Taiwan, as the catalogs of Nextcloud for
+// Taiwan have them. The texts come from the calls ->t('…') and ->n('…', '…') in lib/ and
 // templates/, and translate('…') in js/, which must therefore name their texts
 // literally.
 //
@@ -165,21 +167,109 @@ function forms(text, translation) {
 	return translation.map((form, index) => [plural === null ? text : plural[index === 0 ? 1 : 2], form])
 }
 
-// The languages of the summaries and the descriptions in appinfo/info.xml that have a
-// text, or null without the file. The App Store shows them to whoever speaks a language,
-// and the English ones, without lang, to everyone else.
-function storeLanguages() {
+// Words of Simplified Chinese that slip into Traditional Chinese in its characters, with
+// the words of Taiwan that take their place. The catalogs of Nextcloud for Taiwan,
+// core/l10n/zh_TW.json and those of lib and of its apps, such as settings and files, have
+// none of them and write the words on the right; those of Paperless come from
+// src-ui/src/locale/messages.zh_TW.xlf of Paperless-ngx. Paperless Sync checks its
+// Traditional Chinese with the same list, so that the two apps read as one.
+const taiwanWords = {
+	日誌: '記錄檔 for the log of Nextcloud or of a server, and 事件記錄 for the logs of Paperless',
+	用戶: '使用者 for a user, and 客戶端 for a client, as Nextcloud writes them',
+	賬號: '帳號',
+	賬戶: '帳號',
+	文件夾: '資料夾',
+	文檔: '文件',
+	默認: '預設',
+	配置: '設定',
+	服務器: '伺服器',
+	網絡: '網路',
+	鏈接: '連結',
+	登錄: '登入',
+	緩存: '快取',
+	令牌: 'Token, as Paperless-ngx writes it',
+	模板: '範本',
+	導出: '匯出',
+	端口: '連接埠',
+	超時: '逾時',
+	軟件: '軟體',
+	信息: '資訊 or 訊息',
+	數據: '資料',
+	字段: '欄位',
+	刷新: '重新整理',
+	搜索: '搜尋',
+	激活: '啟用',
+	禁用: '停用',
+	創建: '建立',
+	獲取: '取得',
+	回收站: '垃圾桶',
+	會話: '工作階段',
+	視頻: '影片',
+	菜單: '選單',
+	窗口: '視窗',
+	屏幕: '螢幕',
+	實時: '即時',
+	兼容: '相容',
+	字節: '位元組',
+	調試: '除錯',
+	打印: '列印',
+	粘貼: '貼上',
+	郵箱: '電子郵件',
+	二維碼: 'QR code',
+}
+
+// Words of Taiwan for which the catalogs of Nextcloud for Taiwan write another word, with
+// that word: the credentials manager of Nextcloud, which keeps the API token, is its
+// 憑證管理器, as Paperless Sync names it too, and no catalog of Nextcloud writes 認證資訊.
+const nextcloudWords = {
+	認證資訊: '憑證 for credentials, as in 全域憑證 and 憑證管理器',
+}
+
+// What a Chinese text writes otherwise than Chinese does, with the line that holds it: a
+// dash as one —, where Chinese writes two, ——, a space beside the dash, and in Traditional
+// Chinese of Taiwan a word of Simplified Chinese or another word than Nextcloud's.
+function chineseProblems(language, where, text) {
+	const lineWith = (holds) => JSON.stringify(text.split('\n').find(holds).trim())
+	const found = []
+	const dash = /(?<!—)—(?!—)/
+	if (dash.test(text)) {
+		found.push(`${where} writes a dash as one —, but Chinese writes two, ——, without spaces around them: ${lineWith((line) => dash.test(line))}`)
+	}
+	const spacedDash = /[^\S\n]——|——[^\S\n]/
+	if (spacedDash.test(text)) {
+		found.push(`${where} writes a space beside the dash ——, but Chinese writes it without spaces around it: ${lineWith((line) => spacedDash.test(line))}`)
+	}
+	if (language === 'zh_TW') {
+		for (const [word, taiwan] of Object.entries(taiwanWords)) {
+			if (text.includes(word)) {
+				found.push(`${where} writes ${word}, a word of Simplified Chinese, where Taiwan writes ${taiwan}: ${lineWith((line) => line.includes(word))}`)
+			}
+		}
+		for (const [word, nextcloud] of Object.entries(nextcloudWords)) {
+			if (text.includes(word)) {
+				found.push(`${where} writes ${word}, where the catalogs of Nextcloud for Taiwan write ${nextcloud}: ${lineWith((line) => line.includes(word))}`)
+			}
+		}
+	}
+	return found
+}
+
+// The summaries and the descriptions in appinfo/info.xml that have a text, each by its
+// language, or null without the file. The App Store shows them to whoever speaks a
+// language, and the English ones, without lang, to everyone else.
+function storeTexts() {
 	const path = join(root, 'appinfo', 'info.xml')
 	if (!existsSync(path)) {
 		return null
 	}
-	const languages = { summary: new Set(), description: new Set() }
+	const byLanguage = { summary: new Map(), description: new Map() }
 	for (const match of readFileSync(path, 'utf8').matchAll(/<(summary|description)\s+lang="([^"]+)"\s*>([\s\S]*?)<\/\1>/g)) {
-		if (match[3].replace(/^\s*<!\[CDATA\[([\s\S]*)\]\]>\s*$/, '$1').trim() !== '') {
-			languages[match[1]].add(match[2])
+		const text = match[3].replace(/^\s*<!\[CDATA\[([\s\S]*)\]\]>\s*$/, '$1').trim()
+		if (text !== '') {
+			byLanguage[match[1]].set(match[2], text)
 		}
 	}
-	return languages
+	return byLanguage
 }
 
 // The code of the App Store for a language of Nextcloud, in the lang of <summary> and
@@ -213,7 +303,7 @@ if (catalogs.length === 0) {
 }
 
 const texts = usedTexts()
-const store = storeLanguages()
+const store = storeTexts()
 if (store === null && catalogs.length > 0) {
 	problems.push('appinfo/info.xml is missing, whose summary and description the App Store shows in the language of each catalog.')
 }
@@ -235,6 +325,8 @@ for (const file of catalogs) {
 	for (const element of ['summary', 'description']) {
 		if (store !== null && !store[element].has(storeLanguage)) {
 			problems.push(`appinfo/info.xml has no <${element} lang="${storeLanguage}">, so the App Store shows its English ${element} to whoever reads the app in ${name}; add one.`)
+		} else if (store !== null && language.startsWith('zh_')) {
+			problems.push(...chineseProblems(language, `appinfo/info.xml, in its <${element} lang="${storeLanguage}">,`, store[element].get(storeLanguage)))
 		}
 	}
 	const pluralForms = /^nplurals=(\d+);/.exec(catalog.pluralForm.replace(/\s/g, ''))
@@ -276,8 +368,14 @@ for (const file of catalogs) {
 		for (const [source, form] of forms(text, translation)) {
 			if (typeof form !== 'string' || form.trim() === '') {
 				problems.push(`${name} has an empty translation of ${JSON.stringify(text)}.`)
-			} else if (JSON.stringify(placeholders(form)) !== JSON.stringify(placeholders(source))) {
+				continue
+			}
+			if (JSON.stringify(placeholders(form)) !== JSON.stringify(placeholders(source))) {
 				problems.push(`${name} translates ${JSON.stringify(text)} with the placeholders ${placeholders(form).join(' ') || 'none'} instead of ${placeholders(source).join(' ') || 'none'}: ${JSON.stringify(form)}`)
+			}
+			// Chinese writes its dash, and Taiwan its words, as Nextcloud does there.
+			if (language.startsWith('zh_')) {
+				problems.push(...chineseProblems(language, name, form))
 			}
 		}
 	}
@@ -285,9 +383,9 @@ for (const file of catalogs) {
 
 if (problems.length > 0) {
 	process.stderr.write(`${problems.map((problem) => `- ${problem}`).join('\n')}\n`)
-	process.stderr.write(`The translations don't match the code, with ${problems.length} problem(s). Correct l10n/*.json, then write the JavaScript catalogs anew: node scripts/check-l10n.mjs --write\n`)
+	process.stderr.write(`The translations don't match the code, with ${problems.length} problem(s). Correct l10n/*.json, and appinfo/info.xml for the App Store, as each line says, then write the JavaScript catalogs anew: node scripts/check-l10n.mjs --write\n`)
 	process.exit(1)
 }
 
 const languages = catalogs.map((file) => file.replace(/\.json$/, '')).join(', ')
-process.stdout.write(`Each of the ${texts.size} texts of the code has a translation in ${languages}, with the same placeholders and the forms of its plurals, the JavaScript catalogs match the JSON ones, and appinfo/info.xml has a summary and a description for the App Store in each language.\n`)
+process.stdout.write(`Each of the ${texts.size} texts of the code has a translation in ${languages}, with the same placeholders and the forms of its plurals, the JavaScript catalogs match the JSON ones, appinfo/info.xml has a summary and a description for the App Store in each language, and Chinese writes its dashes, and in Taiwan its words, as Nextcloud does.\n`)
