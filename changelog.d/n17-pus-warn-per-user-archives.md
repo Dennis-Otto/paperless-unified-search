@@ -1,3 +1,0 @@
-### Bug fixes
-
-- When Paperless Sync gives each user their own archive, with **Who gets the documents** set to **Each user, those they own or may view in Paperless**, the search shows none of the documents in those archives, and nothing said so. Now the settings warn below the archive account, also after each test of the connection, and so do **Try a search**, `occ paperless_unified_search:check`, `occ paperless_unified_search:setup` and the overview of the administration settings: the search shows only the files of the archive account, such as the documents without an owner in Paperless. Each links a new entry of the troubleshooting guide, in English and German, with what you can do.
