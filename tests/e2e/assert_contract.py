@@ -1021,9 +1021,11 @@ def main():
         check_nextcloud(paperless, line, ids, version, api_version, shown, viewer, report)
         check_permissions(paperless, ids, viewer_id, viewer, report)
         check_syntax(paperless, ids, line, report)
-        check_owners(paperless, ids, viewer_id, viewer, report)
         check_parity(paperless, ids, line, viewer, stranger, report)
         check_search_account(paperless, report)
+        # Last: Paperless-ngx 2 indexes a document that changes its owner in a task of its
+        # own, whose writes to its database a bulk edit right after it could wait for.
+        check_owners(paperless, ids, viewer_id, viewer, report)
     except Broken as broken:
         status = 1
         report.failed(broken)
