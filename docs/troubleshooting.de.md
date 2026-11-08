@@ -9,6 +9,7 @@ Warum Paperless-Dokumente nicht erscheinen, und wie du es behebst. Fang dort an,
 - [Keine Paperless-Dokumente in der Suche](#keine-paperless-dokumente-in-der-suche), oder nicht das, das du suchst.
 - [Der Test der Verbindung schlägt fehl](#wenn-der-test-der-verbindung-fehlschlägt), wenn du die Einstellungen speicherst.
 - [Eine Warnung zum API-Token](#warnungen-zum-api-token) erscheint unter dem Token.
+- [Paperless Sync gibt jedem Benutzer ein eigenes Archiv](#paperless-sync-gibt-jedem-benutzer-ein-eigenes-archiv), das die Suche nicht zeigt.
 - [Probleme der Suche](#probleme-der-suche) am Ende der Einstellungen listet fehlgeschlagene Suchen.
 - [Die Suche ist langsam](#die-suche-ist-langsam).
 
@@ -48,12 +49,26 @@ Fehlt es immer noch? [Bitte um Hilfe](#um-hilfe-bitten), mit dem, was jeder dies
 | Das Archiv-Konto findet die Dokumente, andere Benutzer nicht | Das Archiv ist nicht mit ihnen geteilt | Teile es nur lesend mit ihnen oder ihrer Gruppe |
 | Ein Benutzer mit einer Freigabe, die Änderungen erlaubt, findet keines ihrer Dokumente | Eine Datei, die der Benutzer ändern darf, oder eine in einem Ordner, in den er Dateien legen darf, könnte jede Kennung tragen, also steht sie für kein Dokument | Teile sie nur lesend; die Einstellungen warnen vor jeder solchen Freigabe |
 | Manche Dokumente erscheinen, andere nicht | Das Konto des Tokens darf sie nicht ansehen, oder sie haben noch keine Datei mit ihrer Kennung | Fragen 4 und 5 oben |
+| Benutzer finden keines ihrer eigenen Dokumente, nur die ohne Eigentümer in Paperless, und die Einstellungen warnen vor Paperless Sync | Paperless Sync gibt jedem Benutzer ein eigenes Archiv, in seinen eigenen Dateien, die keine Dateien des Archiv-Kontos sind | [Unten](#paperless-sync-gibt-jedem-benutzer-ein-eigenes-archiv) |
 | Treffer zeigen keinen Korrespondenten, keinen Typ oder keine Tags, mit oder ohne Warnung in den Einstellungen | Die Verbindung wurde zuletzt vor einem Update der App getestet, also wissen die Einstellungen noch nicht, was das Konto nicht ansehen darf; oder das Konto des Tokens darf Korrespondenten, Dokumenttypen und Tags ansehen, aber nicht diese, die einem anderen Benutzer von Paperless gehören; die Einstellungen warnen, wenn die neuesten Dokumente einen davon nennen | Teste die Verbindung erneut: Sie warnt, wenn dem Konto **Anzeigen** für **Tag** fehlt. Lass das Konto dann die ansehen, die einem anderen Benutzer gehören, wie [Einrichten](configure.de.md#die-namen-von-korrespondenten-typen-und-tags) zeigt; die Treffer zeigen die Namen innerhalb von zehn Minuten |
 | Paperless-Dokumente sind nach einem Umzug oder einer Wiederherstellung von Nextcloud verschwunden | Das gespeicherte API-Token lässt sich mit dem neuen `secret` der `config.php` nicht entschlüsseln | Gib das Token in den Einstellungen erneut ein |
 | Paperless-Dokumente sind verschwunden, nachdem `allow_local_remote_servers` aus der `config.php` entfernt wurde | Nextcloud verweigert die Adresse von Paperless im lokalen Netzwerk | Wähle **Paperless läuft in meinem lokalen Netzwerk** und speichere |
 | Eine Anfrage in der Syntax von Paperless findet nichts, während du sie noch tippst | Paperless kann sie noch nicht verarbeiten, etwa `created:[2026 to` | Tippe die Anfrage zu Ende; Paperless 3 findet solange ihre Wörter |
 | Nur wenige Treffer und kein *Weitere Ergebnisse laden* | Der Benutzer kann die Dateien nur weniger der Dokumente öffnen, die Paperless zuerst einordnet | Normal: Die Suche geht für jede Seite mit Treffern bis zu 4 Seiten mit 25 Dokumenten von Paperless durch |
 | Gar keine Ergebnisse, nicht einmal aus Dateien, wenn du auf einem langsamen Server gleich nach dem Öffnen der Suche tippst | Nextcloud 33 und 34 suchen erst, wenn sie ihre Suchanbieter kennen, und versuchen es nicht noch einmal | Ändere den Suchbegriff. Nextcloud 35 sucht von selbst |
+
+## Paperless Sync gibt jedem Benutzer ein eigenes Archiv
+
+Seit seiner Version 1.1.0 kann [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync/blob/main/README.de.md#eigentum-je-benutzer) jedem Benutzer von Nextcloud die Dokumente geben, die seinem Benutzer von Paperless gehören, mit **Wer die Dokumente erhält** auf **Jeder Benutzer, die ihm in Paperless gehören**, und seit seiner Version 1.4.0 auch die, die er ansehen darf, mit **Jeder Benutzer, die ihm in Paperless gehören oder die er ansehen darf**. Es schreibt sie in die Dateien jedes Benutzers, unter demselben Basisordner, statt in die Dateien seines Zielbenutzers. Die Suche zeigt nur die Dateien des Archiv-Kontos, also zeigt sie keines dieser Dokumente, nicht einmal dem Benutzer, dem die Dateien gehören: *Suche ausprobieren* listet ein solches Dokument als *Keine Datei des Archiv-Kontos*, oder als *Keine Datei mit* seiner Kennung für einen Benutzer, der die Datei nicht öffnen kann.
+
+Was die Suche weiter zeigt, sind die Dateien des Archiv-Kontos, des Zielbenutzers von Paperless Sync, der die Dokumente behält, die Paperless Sync keinem Benutzer selbst gibt: die ohne Eigentümer in Paperless, die, deren Eigentümer keinen Benutzer in Nextcloud hat oder nicht in seiner Gruppe von **Nur Mitglieder dieser Gruppe** ist. Ein Dokument, das Paperless Sync keinem einzelnen Benutzer geben kann, etwa eines zweier Benutzer von Paperless für einen Benutzer von Nextcloud, bleibt, wo seine Kopie ist, und ein neues bekommt keine Kopie, also zeigt die Suche es auch nicht. Das Archiv-Konto teilt seine Dateien wie bisher.
+
+Die Einstellungen sagen es unter **Archiv-Konto**, auch nach jedem Test der Verbindung, und ebenso *Suche ausprobieren*, `occ paperless_unified_search:check` und `occ paperless_unified_search:setup` und die [Übersicht der Verwaltungseinstellungen](reference.de.md#in-der-übersicht-der-verwaltung), jeweils mit einem Link auf diese Seite. Zwei Auswege:
+
+- **Jedes Dokument durchsuchen.** Stell **Wer die Dokumente erhält** in Paperless Sync zurück auf **Der Zielbenutzer, alle**: Paperless Sync schreibt dann wieder jedes Dokument in die Dateien seines Zielbenutzers, und die Suche zeigt jedem Benutzer die Dokumente, deren Dateien das Archiv-Konto mit ihm teilt, wie [Konfigurieren](configure.de.md#das-archiv-nur-lesend-teilen) zeigt. Ein Testlauf von Paperless Sync listet jede Änderung vorher auf.
+- **Das Archiv jedes Benutzers behalten.** Jeder Benutzer findet seine eigenen Dokumente in *Dateien*, über die Namen der Dateien, und in Paperless, und die Suche zeigt allein die Dokumente des Archiv-Kontos. Die Warnung bleibt, solange Paperless Sync jedem Benutzer ein eigenes Archiv gibt.
+
+Die Warnung erscheint nicht, wenn das Archiv-Konto der Einstellungen ein anderes Konto ist als der Zielbenutzer von Paperless Sync: Die Suche zeigt dann ohnehin keine der Dateien von Paperless Sync, sondern die der Synchronisierung dieses Kontos.
 
 ## Wenn der Test der Verbindung fehlschlägt
 

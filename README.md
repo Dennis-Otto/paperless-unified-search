@@ -299,6 +299,8 @@ The search needs one thing from a synchronization: each document of Paperless-ng
 
 3. **Share the archive read-only** with the users who may find its documents, and enter the archive account in the settings, as in the [configuration](#configuration).
 
+With **Who gets the documents** set to one of its choices **Each user**, Paperless Sync writes the documents of each user into their own files instead, which the search doesn't show: it shows only those of the archive account, such as the documents without an owner in Paperless, and the settings, `occ paperless_unified_search:check` and the overview warn about it, with [what you can do](https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html#paperless-sync-gives-each-user-their-own-archive).
+
 <!-- --8<-- [end:any-sync] -->
 <!-- --8<-- [start:requirements] -->
 
@@ -327,7 +329,7 @@ The settings can create the Paperless account of steps 1 and 2 themselves: below
 3. In Nextcloud, open **Administration settings → Paperless Unified Search**.
 4. Enter the Paperless base URL and API token.
 5. When Nextcloud reaches Paperless at an address of your local network or by the name of its Docker service, such as `http://192.168.1.20:8000` or `http://paperless:8000`, select **Paperless runs in my local network** ([below](#paperless-in-your-local-network)).
-6. Under **Archive account**, enter the Nextcloud account that owns the synchronized files, or leave it blank to use the account that Paperless Sync writes the archive with. The settings store the ID as Nextcloud spells it, whatever its case, and warn when the account doesn't exist.
+6. Under **Archive account**, enter the Nextcloud account that owns the synchronized files, or leave it blank to use the account that Paperless Sync writes the archive with. The settings store the ID as Nextcloud spells it, whatever its case, and warn when the account doesn't exist, and when Paperless Sync gives each user their own archive, which the search doesn't show.
 7. Optionally enable **Always include Paperless in global search** to treat the configured Paperless server as trusted.
 8. Leave **Let users include Paperless in all their searches** on to let each user include Paperless in every search of their own, in their personal settings, or turn it off.
 9. Choose with **Let users ask for notifications about new documents** whether each user can save searches for notifications about new documents in their personal settings. Until you choose, it is on only where Nextcloud has a memory cache.
@@ -667,7 +669,7 @@ Without `--explain`, `search` decides as the search itself does, with one search
 
 ### Check the whole set-up
 
-`check` tests the connection, what the account of the API token may do and the archive account, and compares the documents that the account of the API token sees in Paperless with the files of the archive account whose names carry their markers:
+`check` tests the connection, what the account of the API token may do and the archive account, with a warning when Paperless Sync gives each user an archive of their own, which the search doesn't show, and compares the documents that the account of the API token sees in Paperless with the files of the archive account whose names carry their markers:
 
 ```console
 $ occ paperless_unified_search:check
@@ -685,7 +687,7 @@ Last, `check` lists with whom the archive account shares its files: the users, g
 
 ### In the administration overview
 
-**Administration settings → Overview** checks the app among the other setup checks of Nextcloud, and so does `occ setupchecks`. It warns when the search shows no Paperless documents for a reason that an administrator corrects, and links to the settings of the app: a token that Nextcloud can no longer decrypt, no archive account or one that doesn't exist, or a search that failed with none working since. After these, it warns when the archive account shares files with write permission, and when the last test of the connection found that the account of the token may change documents, or may not view correspondents, document types or tags. Otherwise it names the Paperless that the app is connected to, with the version of its last answer, and how the archive is shared. It reads only what the app stored and the shares in the database of Nextcloud, and sends no request to Paperless, so the overview opens as fast as without it.
+**Administration settings → Overview** checks the app among the other setup checks of Nextcloud, and so does `occ setupchecks`. It warns when the search shows no Paperless documents for a reason that an administrator corrects, and links to the settings of the app: a token that Nextcloud can no longer decrypt, no archive account or one that doesn't exist, or a search that failed with none working since. After these, it warns when the archive account shares files with write permission, when Paperless Sync gives each user an archive of their own, which the search doesn't show, with a link to [what you can do](https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html#paperless-sync-gives-each-user-their-own-archive), and when the last test of the connection found that the account of the token may change documents, or may not view correspondents, document types or tags. Otherwise it names the Paperless that the app is connected to, with the version of its last answer, and how the archive is shared. It reads only what the app stored and the shares in the database of Nextcloud, and sends no request to Paperless, so the overview opens as fast as without it.
 
 <!-- --8<-- [end:automation] -->
 <!-- --8<-- [start:security-and-privacy] -->

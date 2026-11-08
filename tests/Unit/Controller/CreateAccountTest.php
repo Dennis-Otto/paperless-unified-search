@@ -81,6 +81,7 @@ final class CreateAccountTest extends TestCase {
 			'personalAlwaysSearch' => false,
 			'tokenWarnings' => [],
 			'newDocumentAlerts' => true,
+			'perUserArchives' => false,
 			'searchAccount' => ['username' => 'nextcloud-search', 'workflow' => true, 'documents' => 2, 'names' => 1],
 		], $this->payload($response));
 		self::assertSame(self::ACCOUNT_TOKEN, $this->storedToken);

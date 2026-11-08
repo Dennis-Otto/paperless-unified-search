@@ -62,6 +62,7 @@ final class SettingsTemplateTest extends TestCase {
 		self::assertTrue($this->element($page, 'paperless-unified-search-reset')->hasAttribute('disabled'));
 		self::assertSame('', $this->text($this->element($page, 'paperless-unified-search-token-unreadable')));
 		self::assertSame('', $this->text($this->element($page, 'paperless-unified-search-archive-owner-missing')));
+		self::assertFalse($this->element($page, 'paperless-unified-search-per-user-archives')->hasChildNodes());
 		self::assertSame('', $this->text($this->element($page, 'paperless-unified-search-status')));
 		self::assertSame('No problem recorded.', $this->text($this->element($page, 'paperless-unified-search-diagnostics')));
 		self::assertNull($page->getElementById('paperless-unified-search-clear-diagnostics'));
@@ -117,6 +118,39 @@ final class SettingsTemplateTest extends TestCase {
 	}
 
 	/**
+	 * Below the archive account, the page warns when Paperless Sync gives each user the
+	 * documents of their user of Paperless as files of their own, which the search doesn't
+	 * show (#338), with a link to what to do in a tab of its own. The script shows the same
+	 * after a test of the connection that finds them, and with the result of Try a search,
+	 * from the template of the warning; without them, the paragraph is empty, so that the
+	 * field isn't described by it and the style hides it.
+	 */
+	public function testTheArchivesForEachUserShowBelowTheArchiveAccountWithALinkToWhatToDo(): void {
+		[, $page] = $this->render(new PublicConfig(self::STORED, true, false, perUserArchives: true));
+
+		$warning = $this->element($page, 'paperless-unified-search-per-user-archives');
+		self::assertSame('paperless-unified-search-warning', $warning->getAttribute('class'));
+		self::assertSame('Paperless Sync puts <b>documents</b> into their own files. What you can do ↗', $this->text($warning));
+		$links = $warning->getElementsByTagName('a');
+		self::assertCount(1, $links);
+		$link = $links->item(0);
+		self::assertInstanceOf(DOMElement::class, $link);
+		self::assertSame('https://example.com/help?a=1&b=2#archive', $link->getAttribute('href'));
+		self::assertSame('_blank', $link->getAttribute('target'));
+		self::assertSame('noreferrer noopener', $link->getAttribute('rel'));
+		$arrow = $link->getElementsByTagName('span')->item(0);
+		self::assertInstanceOf(DOMElement::class, $arrow);
+		self::assertSame('true', $arrow->getAttribute('aria-hidden'));
+		$template = $this->element($page, 'paperless-unified-search-per-user-archives-text');
+		self::assertSame('template', $template->tagName);
+		self::assertSame($page->saveHTML($warning->firstChild), $page->saveHTML($template->firstChild));
+
+		[, $page] = $this->render(new PublicConfig(self::STORED, true, false));
+		self::assertFalse($this->element($page, 'paperless-unified-search-per-user-archives')->hasChildNodes());
+		self::assertSame('Paperless Sync puts <b>documents</b> into their own files. What you can do ↗', $this->text($this->element($page, 'paperless-unified-search-per-user-archives-text')));
+	}
+
+	/**
 	 * The warnings that the last test of the connection found about the account of the
 	 * token show next to the token, one after the other, and nothing without them.
 	 */
@@ -151,7 +185,7 @@ final class SettingsTemplateTest extends TestCase {
 			'paperless-unified-search-superuser-token' => ['paperless-unified-search-account-hint'],
 			'paperless-unified-search-view-new' => ['paperless-unified-search-view-new-hint'],
 			'paperless-unified-search-view-existing' => ['paperless-unified-search-view-existing-hint'],
-			'paperless-unified-search-archive-owner' => ['paperless-unified-search-archive-owner-missing', 'paperless-unified-search-archive-owner-hint'],
+			'paperless-unified-search-archive-owner' => ['paperless-unified-search-archive-owner-missing', 'paperless-unified-search-per-user-archives', 'paperless-unified-search-archive-owner-hint'],
 			'paperless-unified-search-always-search' => ['paperless-unified-search-always-search-hint'],
 			'paperless-unified-search-users-always-search' => ['paperless-unified-search-users-always-search-hint'],
 			'paperless-unified-search-new-document-alerts' => ['paperless-unified-search-new-document-alerts-hint'],
@@ -444,6 +478,9 @@ final class SettingsTemplateTest extends TestCase {
 		$parameters = [
 			'config' => $config,
 			'tokenWarnings' => $tokenWarnings,
+			// As AdminSettings words it, with what a value must keep out of the page.
+			'perUserArchives' => 'Paperless Sync puts <b>documents</b> into their own files.',
+			'perUserArchivesHelp' => 'https://example.com/help?a=1&b=2#archive',
 			'saveUrl' => $saveUrl,
 			'resetUrl' => '/settings/reset',
 			'clearDiagnosticsUrl' => '/settings/diagnostics',

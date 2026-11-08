@@ -864,6 +864,29 @@ assert_occ shares "${TMP_DIR}/check-read-only.txt" '✓ Shared read-only: 1 user
 occ setupchecks --output=json >"${TMP_DIR}/setupchecks-read-only.json" || true
 assert_occ setupcheck "${TMP_DIR}/setupchecks-read-only.json" success 'with the archive account e2e-user. Shared read-only: 1 user.'
 
+# Since its version 1.1.0, Paperless Sync can give each user the documents of their user
+# of Paperless as files of their own, which the search doesn't show, and nothing said so
+# (#338). With its setting ownership on per-user and e2e-user, the archive account, as its
+# target user, occ check and the overview of the administration settings say what the
+# search still shows and link what to do, and Try a search tells the page to say so. The
+# check still passes: the search shows the documents of the archive account. Without the
+# setting, as before Paperless Sync 1.1.0, the warning is gone again.
+PER_USER='Paperless Sync puts the documents of each user into their own files'
+PER_USER_HELP='https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html#paperless-sync-gives-each-user-their-own-archive'
+occ config:app:set paperless_sync target_user --value=e2e-user --lazy >/dev/null
+occ config:app:set paperless_sync ownership --value=per-user --lazy >/dev/null
+occ paperless_unified_search:check >"${TMP_DIR}/check-per-user.txt"
+expect_text "! ${PER_USER}" "${TMP_DIR}/check-per-user.txt" "occ check didn't warn about the archives for each user: $(cat "${TMP_DIR}/check-per-user.txt")"
+expect_text "See ${PER_USER_HELP}" "${TMP_DIR}/check-per-user.txt" "occ check didn't link what to do: $(cat "${TMP_DIR}/check-per-user.txt")"
+occ setupchecks --output=json >"${TMP_DIR}/setupchecks-per-user.json" || true
+assert_occ setupcheck "${TMP_DIR}/setupchecks-per-user.json" warning "${PER_USER}" "${PER_USER_HELP}"
+try_search 200 e2e-other
+expect_text '"perUserArchives":true' "${TMP_DIR}/answer.json" "Try a search didn't say that Paperless Sync gives each user an archive: $(cat "${TMP_DIR}/answer.json")"
+occ config:app:delete paperless_sync ownership >/dev/null
+occ config:app:delete paperless_sync target_user >/dev/null
+occ setupchecks --output=json >"${TMP_DIR}/setupchecks-single.json" || true
+assert_occ setupcheck "${TMP_DIR}/setupchecks-single.json" success 'with the archive account e2e-user. Shared read-only: 1 user.'
+
 # Paperless ranks 40 documents for "pagetest", more than one page of 25 of the requests
 # of the app. The archive account shares the files of seven of them with e2e-other, in
 # one folder, none of the first 19 among them, and keeps the file of document 610 to
@@ -1128,4 +1151,4 @@ phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed in ${SECONDS} s: the set-up, the repair step that removes the last failure of version 0.3.0, the test, the explained search and the check of occ, the warnings of occ and of the overview about a token of a superuser, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, the dashboard widget with the newest documents that a user can open at one request to Paperless a minute, also in French, trusted mode, the choice of a user to include Paperless in every search of their own, which the administrators can disallow, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date and the name of its provider in English, German and French, its correspondent, its type and its tags, pages of results filled across pages of Paperless, documents similar to one with like:, the date filter in the timezone of the user, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, Try a search for administrators only with the IDs, titles, tags and verdicts alone, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."
+echo "Docker E2E passed in ${SECONDS} s: the set-up, the repair step that removes the last failure of version 0.3.0, the test, the explained search and the check of occ, the warnings of occ and of the overview about a token of a superuser and about the archives of Paperless Sync for each user, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, the dashboard widget with the newest documents that a user can open at one request to Paperless a minute, also in French, trusted mode, the choice of a user to include Paperless in every search of their own, which the administrators can disallow, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date and the name of its provider in English, German and French, its correspondent, its type and its tags, pages of results filled across pages of Paperless, documents similar to one with like:, the date filter in the timezone of the user, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, Try a search for administrators only with the IDs, titles, tags and verdicts alone, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."

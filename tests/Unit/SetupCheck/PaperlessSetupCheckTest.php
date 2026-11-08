@@ -251,6 +251,65 @@ final class PaperlessSetupCheckTest extends TestCase {
 		self::assertSame($parameters, $result->getDescriptionParameters());
 		// Nextcloud refuses a rich text whose placeholders lack their objects.
 		self::assertSame([[$description, $parameters]], $this->validated);
+		self::assertNull($result->getLinkToDoc());
+	}
+
+	/**
+	 * Paperless Sync can give each user the documents of their user of Paperless as files
+	 * of their own, which the search doesn't show, and nothing said so (#338). The overview
+	 * says what the search still shows and links what to do, also with the warnings about
+	 * the token, which it would hide for as long as the archives for each user stay.
+	 *
+	 * @return array<string, array{string, string, string}>
+	 */
+	public static function archivesForEachUser(): array {
+		$perUser = "Paperless Sync puts the documents of each user into their own files, which the search doesn't show: it shows only the files of the archive account, such as the documents without an owner in Paperless.";
+
+		return [
+			'each user, those they own' => ['per-user', '', $perUser],
+			'each user, those they own or may view' => ['per-user-shared', '', $perUser],
+			'with warnings about the token' => ['per-user', 'staff', $perUser . ' T:The API token belongs to an Admin of Paperless, who may also read its logs: whoever gets hold of the token can too. Use the token of an account that is neither Admin nor Superuser. Then test the connection again in {section}.'],
+		];
+	}
+
+	#[DataProvider('archivesForEachUser')]
+	public function testWarnsWhenPaperlessSyncGivesEachUserAnArchiveWithALinkToWhatToDo(string $ownership, string $tokenWarnings, string $description): void {
+		$this->connected('');
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.ownership'] = $ownership;
+		$this->settings[AppConstants::APP_ID . '.token_warnings'] = $tokenWarnings;
+
+		$result = $this->check()->run();
+
+		self::assertSame(SetupResult::WARNING, $result->getSeverity());
+		self::assertSame($description, $result->getDescription());
+		self::assertSame('https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html#paperless-sync-gives-each-user-their-own-archive', $result->getLinkToDoc());
+		self::assertSame(self::SECTION, $result->getDescriptionParameters()['section']['link'] ?? null);
+	}
+
+	/**
+	 * With the target user of Paperless Sync getting every document, or with an archive
+	 * account of its own, the search shows what Paperless Sync writes, or nothing of it.
+	 *
+	 * @return array<string, array{string, string}>
+	 */
+	public static function archivesOfOneAccount(): array {
+		return [
+			'the target user, all of them' => ['', 'single'],
+			'each user, with another archive account' => ['archive', 'per-user'],
+		];
+	}
+
+	#[DataProvider('archivesOfOneAccount')]
+	public function testPassesWhenTheArchiveAccountHoldsWhatPaperlessSyncWrites(string $archiveOwner, string $ownership): void {
+		$this->connected($archiveOwner);
+		$this->settings['paperless_sync.target_user'] = $archiveOwner === '' ? 'archive' : 'sync';
+		$this->settings['paperless_sync.ownership'] = $ownership;
+
+		$result = $this->check()->run();
+
+		self::assertSame(SetupResult::SUCCESS, $result->getSeverity());
+		self::assertNull($result->getLinkToDoc());
 	}
 
 	/**

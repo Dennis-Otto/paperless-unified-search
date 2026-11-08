@@ -71,6 +71,7 @@ final class ConfigServiceTest extends TestCase {
 			'personalAlwaysSearch' => true,
 			'tokenWarnings' => [],
 			'newDocumentAlerts' => false,
+			'perUserArchives' => false,
 		], $serialized);
 		self::assertStringNotContainsString('TEST_VALUE', json_encode($serialized, JSON_THROW_ON_ERROR));
 	}
@@ -156,6 +157,61 @@ final class ConfigServiceTest extends TestCase {
 
 		self::assertSame($missing, $publicConfig->archiveOwnerMissing);
 		self::assertSame($setting, $publicConfig->archiveOwner);
+	}
+
+	/**
+	 * Since its version 1.1.0, Paperless Sync can give each user the documents of their user
+	 * of Paperless as files of their own, which the search doesn't show, and nothing said so
+	 * (#338): with its choices of Each user, and only while the archive account is its
+	 * target user, whose files the search shows. Without the setting, as before Paperless
+	 * Sync 1.1.0, or with a choice that this version doesn't know, its target user gets every
+	 * document. It stores the setting as a lazy value, as all its settings.
+	 *
+	 * @return array<string, array{?string, string, string, bool}>
+	 */
+	public static function ownershipsOfPaperlessSync(): array {
+		return [
+			'the target user, all of them' => ['single', '', 'sync', false],
+			'each user, those they own' => ['per-user', '', 'sync', true],
+			'each user, those they own or may view' => ['per-user-shared', '', 'sync', true],
+			'each user, with blanks' => [' per-user ', '', 'sync', true],
+			'no choice, as before Paperless Sync 1.1.0' => [null, '', 'sync', false],
+			'a choice that this version does not know' => ['per-group', '', 'sync', false],
+			'each user, with its target user as the archive account' => ['per-user', 'Sync', 'sync', true],
+			'each user, with another archive account' => ['per-user', 'archive', 'sync', false],
+			'each user, with another archive account and no target user' => ['per-user', 'archive', '', false],
+			'each user, with a target user that does not exist' => ['per-user', '', 'deleted', false],
+		];
+	}
+
+	#[DataProvider('ownershipsOfPaperlessSync')]
+	public function testTellsWhetherPaperlessSyncGivesEachUserAnArchiveOfTheirOwn(?string $ownership, string $setting, string $syncAccount, bool $perUser): void {
+		$config = $this->settings([AppConstants::APP_ID . '.archive_owner' => $setting])->seed('paperless_sync', 'target_user', $syncAccount, true);
+		if ($ownership !== null) {
+			$config->seed('paperless_sync', 'ownership', $ownership, true);
+		}
+
+		$service = $this->service($config, $this->createStub(ICredentialsManager::class));
+
+		self::assertSame($perUser, $service->hasPerUserArchives());
+		self::assertSame($perUser, $service->getPublicConfig()->perUserArchives);
+		self::assertSame($perUser, $service->save('https://paperless.example.com', 'TEST_VALUE', false, $setting)->perUserArchives);
+	}
+
+	/**
+	 * Disconnecting forgets the archive account of the settings, so the target user of
+	 * Paperless Sync is the archive account again, and the warning stays for the next
+	 * connection.
+	 */
+	public function testResetTellsWhetherPaperlessSyncGivesEachUserAnArchiveOfTheirOwn(): void {
+		$config = $this->settings([AppConstants::APP_ID . '.archive_owner' => 'archive'])
+			->seed('paperless_sync', 'target_user', 'sync', true)
+			->seed('paperless_sync', 'ownership', 'per-user-shared', true);
+		$service = $this->service($config, $this->createStub(ICredentialsManager::class));
+		self::assertFalse($service->hasPerUserArchives());
+
+		self::assertTrue($service->reset()->perUserArchives);
+		self::assertTrue($service->hasPerUserArchives());
 	}
 
 	/**
@@ -658,6 +714,7 @@ final class ConfigServiceTest extends TestCase {
 			'personalAlwaysSearch' => true,
 			'tokenWarnings' => [],
 			'newDocumentAlerts' => false,
+			'perUserArchives' => false,
 		], $result->jsonSerialize());
 		self::assertSame('', $service->getToken());
 	}

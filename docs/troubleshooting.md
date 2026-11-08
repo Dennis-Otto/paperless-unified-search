@@ -9,6 +9,7 @@ Why Paperless documents don't show, and how to fix it. Start where your problem 
 - [No Paperless documents in the search](#no-paperless-documents-in-the-search), or not the one you look for.
 - [The test of the connection fails](#when-the-test-of-the-connection-fails) when you save the settings.
 - [A warning about the API token](#warnings-about-the-api-token) shows below the token.
+- [Paperless Sync gives each user their own archive](#paperless-sync-gives-each-user-their-own-archive), which the search doesn't show.
 - [Search problems](#search-problems) at the end of the settings lists failed searches.
 - [The search is slow](#the-search-is-slow).
 
@@ -48,12 +49,26 @@ Still missing? [Ask for help](#ask-for-help), with what each of these steps show
 | The archive account finds the documents, other users don't | The archive isn't shared with them | Share it read-only with them or their group |
 | A user with a share that allows changes finds none of its documents | A file that the user may change, or one in a folder where the user may add files, could carry any marker, so it stands for no document | Share it read-only; the settings warn about each such share |
 | Some documents show, others don't | The account of the token may not view them, or they have no file with their marker yet | Questions 4 and 5 above |
+| Users find none of their own documents, only those without an owner in Paperless, and the settings warn about Paperless Sync | Paperless Sync gives each user their own archive, in their own files, which are no files of the archive account | [Below](#paperless-sync-gives-each-user-their-own-archive) |
 | Results show no correspondent, no type or no tags, with or without a warning in the settings | The connection was last tested before an update of the app, so the settings don't know yet what the account may not view; or the account of the token may view correspondents, document types and tags, but not these ones, which another user of Paperless owns; the settings warn when the newest documents name one of them | Test the connection again: it warns if the account lacks **View** for **Tag**. Then let the account view the ones that another user owns, as [Configure](configure.md#the-names-of-correspondents-types-and-tags) shows; the results show the names within ten minutes |
 | Paperless documents vanished after a move or a restore of Nextcloud | The stored API token can't be decrypted with the new `secret` of `config.php` | Enter the token again in the settings |
 | Paperless documents vanished after `allow_local_remote_servers` was removed from `config.php` | Nextcloud refuses the address of Paperless in the local network | Select **Paperless runs in my local network** and save |
 | A query in the syntax of Paperless finds nothing while you still type it | Paperless can't parse it yet, such as `created:[2026 to` | Finish the query; Paperless 3 finds the words of it meanwhile |
 | Only a few results, and no *Load more results* | The user can open the files of only a few of the documents that Paperless ranks first | Normal: the search goes through up to 4 pages of 25 documents of Paperless for each page of results |
 | No results at all, not even from Files, when you type right after opening the search on a slow server | Nextcloud 33 and 34 search only once they know their search providers, and don't try again | Change the term. Nextcloud 35 searches by itself |
+
+## Paperless Sync gives each user their own archive
+
+Since its version 1.1.0, [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync#per-user-ownership) can give each user of Nextcloud the documents that their user of Paperless owns, with **Who gets the documents** set to **Each user, those they own in Paperless**, and since its version 1.4.0 also those that it may view, with **Each user, those they own or may view in Paperless**. It writes them into the files of each user, below the same base folder, instead of the files of its target user. The search shows only the files of the archive account, so it shows none of these documents, not even to the user whose files they are: *Try a search* lists such a document as *Not a file of the archive account*, or as *No file with* its marker for a user who can't open the file.
+
+What the search still shows are the files of the archive account, the target user of Paperless Sync, which keeps the documents that Paperless Sync gives no user of their own: those without an owner in Paperless, those whose owner has no user in Nextcloud or isn't in its group of **Only members of this group**. A document that Paperless Sync can't give to one user, such as one of two users of Paperless for one user of Nextcloud, stays where its copy is, and a new one gets no copy, so the search doesn't show it either. The archive account shares its files as before.
+
+The settings say so below **Archive account**, also after each test of the connection, and so do *Try a search*, `occ paperless_unified_search:check` and `occ paperless_unified_search:setup`, and the [overview of the administration settings](reference.md#in-the-administration-overview), each with a link to this page. Two ways out:
+
+- **Search every document.** Set **Who gets the documents** in Paperless Sync back to **The target user, all of them**: Paperless Sync then writes every document into the files of its target user again, and the search shows each user the documents whose files the archive account shares with them, as [Configure](configure.md#share-the-archive-read-only) shows. A dry-run of Paperless Sync lists each change first.
+- **Keep the archive of each user.** Each user finds their own documents in *Files*, by the names of the files, and in Paperless, and the search shows the documents of the archive account alone. The warning stays for as long as Paperless Sync gives each user their own archive.
+
+The warning doesn't come up when the archive account in the settings is another account than the target user of Paperless Sync: the search then shows none of the files of Paperless Sync anyway, but those of the synchronization of that account.
 
 ## When the test of the connection fails
 

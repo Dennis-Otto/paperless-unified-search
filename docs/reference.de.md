@@ -56,7 +56,7 @@ occ config:app:get paperless_unified_search paperless_url
 | `diagnostics` | Der Verlauf der Probleme der Suche, als JSON; ein Lazy-Schlüssel, den Nextcloud erst lädt, wenn er gelesen wird |
 | `diagnostics_pending` | Ob ein Fehler im Verlauf noch auf eine Suche wartet, die funktioniert |
 
-Das Konto von Paperless Sync ist `occ config:app:get paperless_sync target_user`.
+Das Konto von Paperless Sync ist `occ config:app:get paperless_sync target_user`. Ob es jedem Benutzer ein eigenes Archiv gibt, ist `occ config:app:get paperless_sync ownership` (`per-user` oder `per-user-shared`), wovor die Einstellungen [warnen](troubleshooting.de.md#paperless-sync-gibt-jedem-benutzer-ein-eigenes-archiv).
 
 Schlüssel, die eine ältere Version hinterlassen hat und diese nicht mehr liest, gehen mit dem nächsten Update: Nextcloud führt den Reparaturschritt *Remove the last failed search that Paperless Unified Search 0.3.0 kept* nach jedem Update der App und bei `occ maintenance:repair` aus, und er löscht `last_failure` und `last_recovery`, die der Verlauf der Probleme in 0.4.0 ersetzt hat.
 

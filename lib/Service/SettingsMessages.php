@@ -18,12 +18,19 @@ use OCP\IL10N;
 
 /**
  * What the settings page and occ say when the settings can't be saved or Paperless can't
- * be reached, or when the account of the API token may do more or less than the search
- * needs: what failed and what to correct, in the language of the administrator, or of
- * Nextcloud for occ. Each text stands in a call of t() of its own, where
- * scripts/check-l10n.mjs finds it.
+ * be reached, when the account of the API token may do more or less than the search
+ * needs, or when Paperless Sync gives each user an archive of their own: what failed and
+ * what to correct, in the language of the administrator, or of Nextcloud for occ. Each
+ * text stands in a call of t() of its own, where scripts/check-l10n.mjs finds it.
  */
 final class SettingsMessages {
+	/**
+	 * The entry of the troubleshooting guide about the archives of Paperless Sync for each
+	 * user, on the English and on the German website.
+	 */
+	private const PER_USER_ARCHIVES_HELP = 'https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html#paperless-sync-gives-each-user-their-own-archive';
+	private const PER_USER_ARCHIVES_HELP_DE = 'https://dennis-otto.github.io/paperless-unified-search/de/troubleshooting.html#paperless-sync-gibt-jedem-benutzer-ein-eigenes-archiv';
+
 	/** @psalm-suppress PossiblyUnusedMethod */
 	public function __construct(
 		private IL10N $l10n,
@@ -101,5 +108,22 @@ final class SettingsMessages {
 			TokenWarning::HidesTags => $this->l10n->t('The account of the API token may not view tags in Paperless, so results show without them. Give the account the permission View for Tags.'),
 			TokenWarning::HidesNamesOfOthers => $this->l10n->t('The account of the API token may not view some correspondents, document types or tags in Paperless, which another user owns, so results show without them. Select them in their lists in Paperless and add the account under Permissions, View.'),
 		};
+	}
+
+	/**
+	 * The warning that Paperless Sync gives each user the documents of their user of
+	 * Paperless as files of their own, with what the search still shows.
+	 */
+	public function forPerUserArchives(): string {
+		return $this->l10n->t('Paperless Sync puts the documents of each user into their own files, which the search doesn\'t show: it shows only the files of the archive account, such as the documents without an owner in Paperless.');
+	}
+
+	/**
+	 * The page that explains the archives of Paperless Sync for each user and what to do,
+	 * in German for an administrator who reads German, and else in English, the languages
+	 * of the website.
+	 */
+	public function perUserArchivesHelp(): string {
+		return str_starts_with($this->l10n->getLanguageCode(), 'de') ? self::PER_USER_ARCHIVES_HELP_DE : self::PER_USER_ARCHIVES_HELP;
 	}
 }

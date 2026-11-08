@@ -12,8 +12,9 @@ argument:
   try USER ID=VERDICT ...         the answer of Try a search of the settings page: the
                                   documents of USER with these verdicts, in this order,
                                   each with its ID, title and verdict and nothing more
-  setupcheck SEVERITY TEXT        the JSON of occ setupchecks: the check of the app has
-                                  this severity, and its description holds the text
+  setupcheck SEVERITY TEXT [DOC]  the JSON of occ setupchecks: the check of the app has
+                                  this severity, its description holds the text, and it
+                                  links this page of the documentation, or none
   shares SUMMARY WARNING ...      the text of paperless_unified_search:check: the line
                                   SUMMARY of the shares of the archive account, such as
                                   "✓ Shared read-only: 1 user.", and right after it
@@ -113,7 +114,7 @@ if mode == "try":
     sys.exit(0)
 
 if mode == "setupcheck":
-    severity, needle = sys.argv[2], sys.argv[3]
+    severity, needle, doc = sys.argv[2], sys.argv[3], (sys.argv[4:] or [None])[0]
     checks = {name: check for category in payload.values() for name, check in category.items()}
     check = checks.get(SETUP_CHECK)
     if check is None:
@@ -124,6 +125,8 @@ if mode == "setupcheck":
     link = parameters.get("section", {}).get("link", "")
     if severity != "success" and not link.endswith("/settings/admin/paperless_unified_search"):
         fail(f"The warning doesn't link to the settings of the app: {check!r}")
+    if check.get("linkToDoc") != doc:
+        fail(f"Expected the link {doc!r} to the documentation, got {check!r}")
     sys.exit(0)
 
 fail(f"Unknown assertion mode: {mode}")

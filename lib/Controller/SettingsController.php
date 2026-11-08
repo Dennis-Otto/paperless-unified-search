@@ -225,7 +225,9 @@ final class SettingsController extends Controller {
 	 * document by its ID, its title and its tags alone, without its content, an excerpt or
 	 * its file, and the log and the audit log record which administrator tried a search as
 	 * whom, without the term. The names of the tags only add to the answer, as they do to a
-	 * result: without them, the answer holds no tags.
+	 * result: without them, the answer holds no tags. It also says whether Paperless Sync
+	 * gives each user an archive of their own, whose documents show as files of no archive
+	 * account, so that the page can say why.
 	 */
 	#[FrontpageRoute(verb: 'POST', url: '/settings/try')]
 	public function trySearch(string $term = '', string $user = ''): JSONResponse {
@@ -292,6 +294,8 @@ final class SettingsController extends Controller {
 				$explanations,
 			),
 			'fileError' => $fileError !== null,
+			// A document of a user's own archive of Paperless Sync is no file of the archive account.
+			'perUserArchives' => $this->configService->hasPerUserArchives(),
 		]);
 	}
 

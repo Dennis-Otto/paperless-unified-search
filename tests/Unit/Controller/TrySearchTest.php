@@ -86,6 +86,7 @@ final class TrySearchTest extends TestCase {
 				['id' => 360, 'title' => 'Letter', 'tags' => [], 'verdict' => 'no_file'],
 			],
 			'fileError' => false,
+			'perUserArchives' => false,
 		], $this->payload($response));
 		[$url, $options] = $this->requests[0];
 		self::assertSame('https://paperless.example.com/api/documents/', $url);
@@ -171,9 +172,25 @@ final class TrySearchTest extends TestCase {
 
 	public function testSaysWhenPaperlessFindsNothing(): void {
 		self::assertSame(
-			['user' => 'jamie', 'archiveAccount' => 'archive', 'count' => 0, 'documents' => [], 'fileError' => false],
+			['user' => 'jamie', 'archiveAccount' => 'archive', 'count' => 0, 'documents' => [], 'fileError' => false, 'perUserArchives' => false],
 			$this->payload($this->controller($this->documents([], 0))->trySearch('nothing', 'jamie')),
 		);
+	}
+
+	/**
+	 * Paperless Sync gives jamie the documents of their user of Paperless as files of their
+	 * own, such as 360, which the search doesn't show (#338): the answer says so, for the
+	 * warning above the table, which explains why it is no file of the archive account.
+	 */
+	public function testSaysWhenPaperlessSyncGivesEachUserAnArchiveOfTheirOwn(): void {
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.ownership'] = 'per-user';
+		$this->file('/jamie/files/Paperless/Letter [P360].pdf', 'jamie');
+
+		$payload = $this->payload($this->controller($this->documents(self::HITS, 12))->trySearch('invoice', 'jamie'));
+
+		self::assertTrue($payload['perUserArchives']);
+		self::assertSame(['shown', 'not_shared', 'not_owned', 'not_owned'], array_column($payload['documents'], 'verdict'));
 	}
 
 	public function testSaysThatAFileFailedToAnswer(): void {
