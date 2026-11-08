@@ -18,8 +18,11 @@ corrected_pages rewrites those numbers on the pages of the checkout, and nothing
 render side by side, each on a runner of its own, whose folders collect puts together
 for the one pull request; the files besides pictures that the script renders and the
 bot commits, by their exact paths; and the hosts that the jobs that render may reach,
-of which Harden-Runner then lets through no other. Without it, one job renders every
-picture, the bot takes only pictures, and Harden-Runner only records the traffic.
+of which Harden-Runner then lets through no other. It can also leave hosts out of the
+wait for Harden-Runner before the script runs, give the script a time limit of its
+own, and name the folder that a failed render keeps for a person to see. Without it,
+one job renders every picture, the bot takes only pictures, and Harden-Runner only
+records the traffic.
 """
 
 from __future__ import annotations
@@ -55,6 +58,14 @@ HOST = re.compile(
     r"(?:\*\.)?[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+"
     r":(?P<port>[0-9]{1,5})"
 )
+# The time limit of the job render, in minutes, which a test keeps equal to that of the
+# workflow: the script gets it when the settings give it none of its own. A limit of
+# the settings leaves the steps around the script at least a quarter of an hour, for
+# the wait for the hosts, the tools, the comparison and the artifact of a failure.
+JOB_MINUTES = 60
+MOST_MINUTES = 45
+# The keys that .github/screenshots.toml may set, in the order of the documentation.
+KEYS = ("shards", "files", "hosts", "skip_wait", "timeout_minutes", "failure_folder")
 # The folders in which the bot writes no file besides pictures: the history, and the
 # workflows with the settings of the repository and of its bots.
 CLOSED = (".git", ".github")
@@ -126,12 +137,17 @@ class Picture:
 @dataclass(frozen=True)
 class Settings:
     """What .github/screenshots.toml sets: the shards that render side by side, the
-    files besides pictures that the bot commits, and the hosts that the jobs that
-    render may reach. Each stays empty without the file."""
+    files besides pictures that the bot commits, the hosts that the jobs that render
+    may reach and those of them that they don't wait for, the time limit of the
+    script in minutes and the folder that a failed render keeps. Each stays empty
+    without the file."""
 
     shards: tuple[str, ...] = ()
     files: tuple[str, ...] = ()
     hosts: tuple[str, ...] = ()
+    skip_wait: tuple[str, ...] = ()
+    timeout_minutes: int | None = None
+    failure_folder: str = ""
 
 
 @dataclass(frozen=True)
@@ -224,9 +240,11 @@ def listed(data: Mapping[str, Any], key: str, where: str) -> tuple[str, ...]:
 
 def settings(root: Path, path: Path = SETTINGS) -> Settings:
     """The settings of the screenshot bot in the file at path, checked: each shard a
-    plain name, each file one that the bot may commit, and each host as Harden-Runner
-    allows it. Raises ValueError for anything else, a key that the bot doesn't know
-    too, so that a typo never drops a host or a shard without a word."""
+    plain name, each file one that the bot may commit, each host as Harden-Runner
+    allows it and each that the jobs don't wait for one of those, the time limit a
+    whole number of minutes within that of the job, and the folder of a failure one of
+    plain names outside .git. Raises ValueError for anything else, a key that the bot
+    doesn't know too, so that a typo never drops a host or a shard without a word."""
     file = root / path
     if not file.is_file():
         return Settings()
@@ -235,11 +253,11 @@ def settings(root: Path, path: Path = SETTINGS) -> Settings:
         data = tomllib.loads(file.read_text(encoding="utf-8"))
     except (tomllib.TOMLDecodeError, UnicodeDecodeError) as error:
         raise ValueError(f"{where} is no TOML that the bot can read: {error}") from None
-    unknown = sorted(set(data) - {"shards", "files", "hosts"})
+    unknown = sorted(set(data) - set(KEYS))
     if unknown:
         raise ValueError(
             f"{where} sets {unknown[0]}, which the bot doesn't know; it knows "
-            "shards, files and hosts."
+            f"{', '.join(KEYS[:-1])} and {KEYS[-1]}."
         )
     shards = listed(data, "shards", where)
     for shard in shards:
@@ -267,14 +285,63 @@ def settings(root: Path, path: Path = SETTINGS) -> Settings:
                 "allows it, such as ghcr.io:443 or *.data.mcr.microsoft.com:443, in "
                 "small letters."
             )
-    return Settings(shards, files, hosts)
+    skip_wait = listed(data, "skip_wait", where)
+    for host in skip_wait:
+        if host not in hosts:
+            raise ValueError(
+                f"{where}: skip_wait names {host!r}, which hosts doesn't name; the "
+                "jobs leave out of their wait only a host of the project."
+            )
+    return Settings(
+        shards,
+        files,
+        hosts,
+        skip_wait,
+        time_limit(data, where),
+        failure_folder(data, where),
+    )
+
+
+def time_limit(data: Mapping[str, Any], where: str) -> int | None:
+    """The time limit of the script in the settings, in whole minutes within that of
+    the job, or nothing when they give none."""
+    minutes = data.get("timeout_minutes")
+    if minutes is None:
+        return None
+    # TOML's true and false are numbers to Python.
+    if isinstance(minutes, bool) or not isinstance(minutes, int):
+        raise ValueError(f"{where}: timeout_minutes is a whole number of minutes.")
+    if not 0 < minutes <= MOST_MINUTES:
+        raise ValueError(
+            f"{where}: timeout_minutes is {minutes}, but the script may take from 1 "
+            f"to {MOST_MINUTES} minutes, so that the steps after it in the job of "
+            f"{JOB_MINUTES} still keep what it left."
+        )
+    return minutes
+
+
+def failure_folder(data: Mapping[str, Any], where: str) -> str:
+    """The folder that a failed render keeps as an artifact, by a path of plain names
+    in the repository outside .git, or nothing when the settings name none."""
+    folder = data.get("failure_folder", "")
+    if not isinstance(folder, str):
+        raise ValueError(f"{where}: failure_folder is a string.")
+    if folder and (not is_plain(folder) or folder.split("/")[0] == ".git"):
+        raise ValueError(
+            f"{where}: the failure_folder {folder!r} is no path of plain names in the "
+            "repository outside .git, such as tests/e2e/artifacts."
+        )
+    return folder
 
 
 def plan(found: Settings) -> str:
     """The outputs of the job that starts a render, as lines of $GITHUB_OUTPUT: the
     shards as the matrix of the job render, one job named all for a project that
-    names none; and whether Harden-Runner blocks every host but those of the jobs and
-    of the settings, or, without hosts, only records the traffic."""
+    names none; whether Harden-Runner blocks every host but those of the jobs and of
+    the settings, or, without hosts, only records the traffic, and the hosts that the
+    jobs don't wait for; the time limit of the script, the most that the settings may
+    give when they give none, so that a hung script fails its step before the job
+    runs out of time and the folder of the failure is kept; and the folder that a failed render keeps, if any."""
     shards = [{"shard": shard, "id": shard} for shard in found.shards] or [
         {"shard": "", "id": WHOLE}
     ]
@@ -282,6 +349,9 @@ def plan(found: Settings) -> str:
         f"shards={json.dumps(shards, separators=(',', ':'))}\n"
         f"policy={'block' if found.hosts else 'audit'}\n"
         f"hosts={' '.join(found.hosts)}\n"
+        f"skip_wait={' '.join(found.skip_wait)}\n"
+        f"timeout_minutes={found.timeout_minutes or MOST_MINUTES}\n"
+        f"failure_folder={found.failure_folder}\n"
     )
 
 

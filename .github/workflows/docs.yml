@@ -49,6 +49,9 @@ concurrency:
 env:
   # The GitHub CLI of the jobs sends no telemetry to GitHub.
   GH_TELEMETRY: "false"
+  # Each call of its API asks for the version of the REST API that the steps are
+  # written for (decision 0125).
+  API_VERSION_HEADER: "X-GitHub-Api-Version: 2022-11-28"
   # The Material theme warns about MkDocs 2.0 in every run; it keeps MkDocs below 2.0
   # itself, so the warning says nothing about this website.
   NO_MKDOCS_2_WARNING: "true"
@@ -67,7 +70,7 @@ jobs:
       languages: ${{ steps.promises.outputs.languages }}
     steps:
       - name: Record the network traffic of the job
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -106,7 +109,7 @@ jobs:
             done
             # The settings bot sets GitHub Pages up from the [pages] table of
             # .github/repository.toml; until then, and in forks, nothing is published.
-            build_type="$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq .build_type 2>/dev/null || true)"
+            build_type="$(gh api --header "$API_VERSION_HEADER" "repos/$GITHUB_REPOSITORY/pages" --jq .build_type 2>/dev/null || true)"
             if [[ "$build_type" == workflow ]]; then
               echo "publish=true" >> "$GITHUB_OUTPUT"
               exit 0
@@ -376,7 +379,7 @@ jobs:
       pages: write # publishes the website
     steps:
       - name: Record the network traffic of the job
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
       - name: Publish the website on GitHub Pages

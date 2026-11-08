@@ -61,6 +61,7 @@ from blueprint.checklist import (
     answer_steps,
     release_app_name,
 )
+from blueprint.github import API_VERSION_HEADER
 
 KEY_NAME = "RELEASE_AUTOMATION_PRIVATE_KEY"
 ENVIRONMENT = "release"
@@ -360,6 +361,8 @@ def trade(run: Runner, root: Path, code: str, owner: str, organization: bool) ->
             "--method",
             "POST",
             f"app-manifests/{quote(code, safe='')}/conversions",
+            "--header",
+            API_VERSION_HEADER,
         ],
         root,
     )

@@ -37,6 +37,9 @@ permissions: {}
 # The GitHub CLI of the jobs sends no telemetry to GitHub.
 env:
   GH_TELEMETRY: "false"
+  # Each call of its API asks for the version of the REST API that the steps are
+  # written for (decision 0125).
+  API_VERSION_HEADER: "X-GitHub-Api-Version: 2022-11-28"
 
 jobs:
   verify:
@@ -49,7 +52,7 @@ jobs:
       contents: read
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: block
           disable-sudo-and-containers: true
@@ -86,14 +89,27 @@ jobs:
           deadline=$(($(date +%s) + 120))
           for endpoint in $HOSTS; do
             host="${endpoint%:*}"
-            # A wildcard names no host to ask.
-            [[ "$host" == '*.'* ]] && continue
-            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+            port="${endpoint##*:}"
+            # A wildcard names no host to ask, and a job may leave out a host that keeps it
+            # waiting although none of its steps needs it at once.
+            [[ "$host" == '*.'* || " $SKIP_WAIT " == *" $endpoint "* ]] && continue
+            # Each host on its own port, by HTTP on 80 and by HTTPS on any other. Only a host
+            # that curl can't resolve, or can't reach in time, is blocked: one that answers at
+            # all, in whatever protocol, is through.
+            scheme=https
+            [[ "$port" == 80 ]] && scheme=http
+            while true; do
+              status=0
+              curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "$scheme://$host:$port/" || status=$?
+              case "$status" in
+                6 | 7 | 28) ;;
+                *) break ;;
+              esac
               if (($(date +%s) >= deadline)); then
-                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                echo "::warning::Harden-Runner still blocks $endpoint after two minutes; a step that needs it will fail, and the job can run again."
                 break
               fi
-              echo "Harden-Runner still blocks $host, waiting 3 s."
+              echo "Harden-Runner still blocks $endpoint, waiting 3 s."
               sleep 3
             done
           done
@@ -131,7 +147,7 @@ jobs:
           fi
           echo "### The release $TAG" >> "$GITHUB_STEP_SUMMARY"
           # GitHub answers for a tag only with a published release, never with a draft.
-          release="$(gh api "repos/$GH_REPO/releases/tags/$TAG")" ||
+          release="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/releases/tags/$TAG")" ||
             stop "GitHub shows no published release with the tag $TAG: it is still a draft, there is none, or GitHub didn't answer."
           # A release from before the release workflow of the blueprint has none of
           # what it attaches; the weekly run waits for the next release instead.
@@ -145,9 +161,9 @@ jobs:
           else
             fail "The release is not immutable."
           fi
-          sha="$(gh api "repos/$GH_REPO/commits/$TAG" --jq .sha)" ||
+          sha="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/commits/$TAG" --jq .sha)" ||
             stop "GitHub doesn't show the commit of the tag $TAG."
-          if [[ "$(gh api "repos/$GH_REPO/commits/$sha" --jq .commit.verification.verified)" == true ]]; then
+          if [[ "$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/commits/$sha" --jq .commit.verification.verified)" == true ]]; then
             pass "Its commit $sha is signed."
           else
             fail "Its commit $sha is not signed."
@@ -328,11 +344,11 @@ jobs:
               # custom_components/<domain>/, where Home Assistant reads the domain and
               # the version of its manifest.json. It offers the latest release to every
               # user, and a prerelease only to those who show its betas.
-              hacs="$(gh api -H "Accept: application/vnd.github.raw+json" \
+              hacs="$(gh api --header "$API_VERSION_HEADER" -H "Accept: application/vnd.github.raw+json" \
                 "repos/$GH_REPO/contents/hacs.json?ref=$TAG" 2>/dev/null || true)"
               zip="$(jq -r 'if .zip_release == true then .filename // "" else "" end' \
                 <<<"$hacs" 2>/dev/null || true)"
-              domain="$(gh api "repos/$GH_REPO/contents/custom_components?ref=$TAG" \
+              domain="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/contents/custom_components?ref=$TAG" \
                 --jq '[.[] | select(.type == "dir") | .name] | join(" ")' 2>/dev/null || true)"
               if [[ -z "$zip" ]]; then
                 fail "hacs.json at $TAG names no zip_release and filename, so HACS installs the files of the tag, not the asset with the provenance."
@@ -356,7 +372,7 @@ jobs:
                   fail "The manifest.json of $zip has the version ${zipped_version:-none}, not $version."
                 fi
               fi
-              latest="$(gh api "repos/$GH_REPO/releases/latest" --jq .tag_name 2>/dev/null || true)"
+              latest="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/releases/latest" --jq .tag_name 2>/dev/null || true)"
               prerelease="$(jq -r .prerelease <<<"$release")"
               if [[ "$version" == *-* && "$prerelease" == true ]]; then
                 pass "HACS offers the prerelease $TAG only to those who show its betas."
@@ -396,7 +412,7 @@ jobs:
               fi
               ;;
             nextcloud-appstore)
-              app_id="$(gh api -H "Accept: application/vnd.github.raw+json" \
+              app_id="$(gh api --header "$API_VERSION_HEADER" -H "Accept: application/vnd.github.raw+json" \
                 "repos/$GH_REPO/contents/appinfo/info.xml?ref=$TAG" |
                 python3 -c 'import sys, xml.etree.ElementTree as t; print(t.parse(sys.stdin).getroot().findtext("id") or "")' 2>/dev/null || true)"
               if [[ -z "$app_id" ]]; then
@@ -446,7 +462,7 @@ jobs:
                 pass "A prerelease leaves the major tag where it is."
               else
                 major="v${version%%.*}"
-                target="$(gh api "repos/$GH_REPO/commits/$major" --jq .sha 2>/dev/null || true)"
+                target="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/commits/$major" --jq .sha 2>/dev/null || true)"
                 if [[ "$target" == "$sha" ]]; then
                   pass "The major tag $major points at the release."
                 else

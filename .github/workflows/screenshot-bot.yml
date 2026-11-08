@@ -15,7 +15,8 @@ name: Screenshots
 # their own, each with SCREENSHOTS_SHARD set to its name, the files besides pictures
 # that the script renders, such as a recording that a page plays, and the hosts that
 # the jobs that render may reach, of which Harden-Runner then lets through no other
-# (decision 0120). It compares each picture that changed with the one of main by its
+# (decision 0120); it can also leave hosts out of the wait, give the script a time
+# limit and name the folder that a failed shard keeps (decision 0124). It compares each picture that changed with the one of main by its
 # pixels: a picture whose pixels stayed the same keeps its file, so that a new
 # encoder, browser or runner changes nothing. When pixels changed, the job collect
 # puts the shards together, and the bot keeps one pull request from the branch
@@ -57,6 +58,9 @@ concurrency:
 env:
   # The GitHub CLI of the jobs sends no telemetry to GitHub.
   GH_TELEMETRY: "false"
+  # Each call of its API asks for the version of the REST API that the steps are
+  # written for (decision 0125).
+  API_VERSION_HEADER: "X-GitHub-Api-Version: 2022-11-28"
   # The branch of the pull request, and the first line of its commits and its title.
   BRANCH: bot/screenshots
   HEADLINE: "docs: update the screenshots"
@@ -84,7 +88,7 @@ jobs:
       contents: read
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: block
           disable-sudo-and-containers: true
@@ -103,14 +107,27 @@ jobs:
           deadline=$(($(date +%s) + 120))
           for endpoint in $HOSTS; do
             host="${endpoint%:*}"
-            # A wildcard names no host to ask.
-            [[ "$host" == '*.'* ]] && continue
-            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+            port="${endpoint##*:}"
+            # A wildcard names no host to ask, and a job may leave out a host that keeps it
+            # waiting although none of its steps needs it at once.
+            [[ "$host" == '*.'* || " $SKIP_WAIT " == *" $endpoint "* ]] && continue
+            # Each host on its own port, by HTTP on 80 and by HTTPS on any other. Only a host
+            # that curl can't resolve, or can't reach in time, is blocked: one that answers at
+            # all, in whatever protocol, is through.
+            scheme=https
+            [[ "$port" == 80 ]] && scheme=http
+            while true; do
+              status=0
+              curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "$scheme://$host:$port/" || status=$?
+              case "$status" in
+                6 | 7 | 28) ;;
+                *) break ;;
+              esac
               if (($(date +%s) >= deadline)); then
-                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                echo "::warning::Harden-Runner still blocks $endpoint after two minutes; a step that needs it will fail, and the job can run again."
                 break
               fi
-              echo "Harden-Runner still blocks $host, waiting 3 s."
+              echo "Harden-Runner still blocks $endpoint, waiting 3 s."
               sleep 3
             done
           done
@@ -153,7 +170,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh api --method POST "repos/$GH_REPO/actions/workflows/screenshot-bot.yml/dispatches" -f ref=main
+          gh api --header "$API_VERSION_HEADER" --method POST "repos/$GH_REPO/actions/workflows/screenshot-bot.yml/dispatches" -f ref=main
           echo "The bot started a run of this workflow by hand, which renders \`main\` once the render before it ended." >> "$GITHUB_STEP_SUMMARY"
       - name: Wait until Harden-Runner has removed Docker
         # Harden-Runner removes Docker with apt-get in the background; a job that ends
@@ -181,9 +198,12 @@ jobs:
       shards: ${{ steps.start.outputs.shards }}
       policy: ${{ steps.start.outputs.policy }}
       hosts: ${{ steps.start.outputs.hosts }}
+      skip_wait: ${{ steps.start.outputs.skip_wait }}
+      timeout_minutes: ${{ steps.start.outputs.timeout_minutes }}
+      failure_folder: ${{ steps.start.outputs.failure_folder }}
     steps:
       - name: Record the network traffic of the job
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
       # The newest commit of the branch, not that of the event: a run that waited for
@@ -212,8 +232,9 @@ jobs:
             exit 0
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          # The shards, the files and the hosts of .github/screenshots.toml; settings
-          # that the bot can't take fail here, with what is wrong.
+          # The shards, the files, the hosts, the time limit and the folder of a
+          # failure of .github/screenshots.toml; settings that the bot can't take fail
+          # here, with what is wrong.
           python3 "$tool" screenshots plan >> "$GITHUB_OUTPUT"
 
   render:
@@ -237,7 +258,7 @@ jobs:
       # the hosts of the steps of the job, for the code, uv, the packages of Python
       # and the artifacts.
       - name: Block the hosts that the project doesn't name
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: ${{ needs.start.outputs.policy }}
           allowed-endpoints: >-
@@ -250,6 +271,23 @@ jobs:
             files.pythonhosted.org:443
             *.actions.githubusercontent.com:443
             ${{ needs.start.outputs.hosts }}
+      # GitHub's DNS experiment on some of its runners hides the lookups of the job from
+      # Harden-Runner, which then blocks the hosts of the job and of the runner until the
+      # time limit (step-security/harden-runner#708). Harden-Runner takes it away unless
+      # its feature flags say no; a job that keeps sudo makes sure (decision 0123).
+      - name: Let Harden-Runner see the DNS lookups
+        if: needs.start.outputs.policy == 'block'
+        run: |
+          dropins=(/etc/systemd/resolved.conf.d/90-egress-proxy.conf /run/systemd/resolved.conf.d/90-egress-proxy.conf)
+          if [[ ! -e ${dropins[0]} && ! -e ${dropins[1]} ]] && ! grep -qs 127.0.0.100 /etc/resolv.conf; then
+            exit 0
+          fi
+          echo "::notice::GitHub's DNS experiment is on this runner; taking it out of the way of Harden-Runner."
+          sudo rm -f "${dropins[@]}"
+          sudo systemctl restart systemd-resolved
+          sudo ln -sfn /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+          sudo systemctl stop egress-dns-resolver.service egress-outbound-proxy.service || true
+          sudo resolvectl flush-caches || true
       - name: Wait until Harden-Runner lets the hosts through
         if: needs.start.outputs.policy == 'block'
         # The runner may have asked for an address past Harden-Runner, which then blocks
@@ -266,18 +304,34 @@ jobs:
             files.pythonhosted.org:443
             *.actions.githubusercontent.com:443
             ${{ needs.start.outputs.hosts }}
+          # Hosts of the project that keep a runner waiting, which its script asks
+          # for only later or tries again by itself.
+          SKIP_WAIT: ${{ needs.start.outputs.skip_wait }}
         run: |
           deadline=$(($(date +%s) + 120))
           for endpoint in $HOSTS; do
             host="${endpoint%:*}"
-            # A wildcard names no host to ask.
-            [[ "$host" == '*.'* ]] && continue
-            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+            port="${endpoint##*:}"
+            # A wildcard names no host to ask, and a job may leave out a host that keeps it
+            # waiting although none of its steps needs it at once.
+            [[ "$host" == '*.'* || " $SKIP_WAIT " == *" $endpoint "* ]] && continue
+            # Each host on its own port, by HTTP on 80 and by HTTPS on any other. Only a host
+            # that curl can't resolve, or can't reach in time, is blocked: one that answers at
+            # all, in whatever protocol, is through.
+            scheme=https
+            [[ "$port" == 80 ]] && scheme=http
+            while true; do
+              status=0
+              curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "$scheme://$host:$port/" || status=$?
+              case "$status" in
+                6 | 7 | 28) ;;
+                *) break ;;
+              esac
               if (($(date +%s) >= deadline)); then
-                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                echo "::warning::Harden-Runner still blocks $endpoint after two minutes; a step that needs it will fail, and the job can run again."
                 break
               fi
-              echo "Harden-Runner still blocks $host, waiting 3 s."
+              echo "Harden-Runner still blocks $endpoint, waiting 3 s."
               sleep 3
             done
           done
@@ -327,11 +381,16 @@ jobs:
           uv venv --quiet .venv-docs
           uv pip install --quiet --python .venv-docs --require-hashes -r "$requirements"
       # A shard renders and deletes only its own pictures; without shards, the script
-      # gets no name and renders every picture, as on your machine.
+      # gets no name and renders every picture, as on your machine. Within the time
+      # limit of the settings, or else that of the job; the script itself gets the
+      # SIGINT with which GitHub ends a step that runs out of time, so that it can
+      # stop its demo and say where it waited, and the step after it keeps the folder
+      # of the failure.
       - name: Render the pictures
+        timeout-minutes: ${{ fromJSON(needs.start.outputs.timeout_minutes) }}
         env:
           SCREENSHOTS_SHARD: ${{ matrix.shard }}
-        run: bash scripts/screenshots.sh
+        run: exec bash scripts/screenshots.sh
       - name: Compare the pictures with those of main
         id: keep
         env:
@@ -358,6 +417,17 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 1
+      # What the script left in the folder that .github/screenshots.toml names, such
+      # as the screenshots and the logs of a section that failed, for a person to see,
+      # by the shard and the attempt; under a name that the job collect never takes.
+      - name: Keep the folder of the failure
+        if: failure() && needs.start.outputs.failure_folder != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: failed-render-${{ matrix.id }}-attempt-${{ github.run_attempt }}
+          path: ${{ needs.start.outputs.failure_folder }}
+          if-no-files-found: warn
+          retention-days: 7
 
   collect:
     name: collect the screenshots
@@ -373,7 +443,7 @@ jobs:
       stale: ${{ steps.collect.outputs.stale }}
     steps:
       - name: Record the network traffic of the job
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
       # blueprint.py, which checks what each shard kept, and the settings, which name
@@ -469,7 +539,7 @@ jobs:
       contents: read
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: block
           disable-sudo-and-containers: true
@@ -490,14 +560,27 @@ jobs:
           deadline=$(($(date +%s) + 120))
           for endpoint in $HOSTS; do
             host="${endpoint%:*}"
-            # A wildcard names no host to ask.
-            [[ "$host" == '*.'* ]] && continue
-            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+            port="${endpoint##*:}"
+            # A wildcard names no host to ask, and a job may leave out a host that keeps it
+            # waiting although none of its steps needs it at once.
+            [[ "$host" == '*.'* || " $SKIP_WAIT " == *" $endpoint "* ]] && continue
+            # Each host on its own port, by HTTP on 80 and by HTTPS on any other. Only a host
+            # that curl can't resolve, or can't reach in time, is blocked: one that answers at
+            # all, in whatever protocol, is through.
+            scheme=https
+            [[ "$port" == 80 ]] && scheme=http
+            while true; do
+              status=0
+              curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "$scheme://$host:$port/" || status=$?
+              case "$status" in
+                6 | 7 | 28) ;;
+                *) break ;;
+              esac
               if (($(date +%s) >= deadline)); then
-                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                echo "::warning::Harden-Runner still blocks $endpoint after two minutes; a step that needs it will fail, and the job can run again."
                 break
               fi
-              echo "Harden-Runner still blocks $host, waiting 3 s."
+              echo "Harden-Runner still blocks $endpoint, waiting 3 s."
               sleep 3
             done
           done
@@ -512,7 +595,7 @@ jobs:
           SHA: ${{ needs.start.outputs.sha }}
         run: |
           [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$(gh api "repos/$GH_REPO/compare/$SHA...main" --jq .behind_by)" == 0 ]]
+          [[ "$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/compare/$SHA...main" --jq .behind_by)" == 0 ]]
       # blueprint.py, which checks what the job collect kept, the settings, which name
       # the files besides pictures that it takes, and the Markdown of the pages, whose
       # named sizes it corrects; none of the pictures of main. Of the commit that the
@@ -623,11 +706,11 @@ jobs:
           # rendered would conflict over each picture or page that main changed since.
           # Then the bot leaves the branch and the pull request as they are, and renders
           # main anew, as the commit that it renders is the newest one.
-          gh api "repos/$GH_REPO/compare/$SHA...main" \
+          gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/compare/$SHA...main" \
             --jq '{behind_by, files: [.files[]? | {filename, previous_filename}]}' > "$RUNNER_TEMP/compared.json"
           if python3 "$tool" --repo "$GH_REPO" screenshots overtaken "$kept" \
             --compared "$RUNNER_TEMP/compared.json" >> "$GITHUB_STEP_SUMMARY"; then
-            GH_TOKEN="$ACTIONS_TOKEN" gh api --method POST \
+            GH_TOKEN="$ACTIONS_TOKEN" gh api --header "$API_VERSION_HEADER" --method POST \
               "repos/$GH_REPO/actions/workflows/screenshot-bot.yml/dispatches" -f ref=main
             echo "The bot started a new run of this workflow, which renders main anew." >> "$GITHUB_STEP_SUMMARY"
             exit 0
@@ -638,10 +721,10 @@ jobs:
 
           # Points the branch of the pull request at a commit, new or moved.
           point() {
-            if gh api "repos/$GH_REPO/git/ref/heads/$1" > /dev/null 2>&1; then
-              gh api --method PATCH "repos/$GH_REPO/git/refs/heads/$1" -f sha="$2" -F force=true > /dev/null
+            if gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/git/ref/heads/$1" > /dev/null 2>&1; then
+              gh api --header "$API_VERSION_HEADER" --method PATCH "repos/$GH_REPO/git/refs/heads/$1" -f sha="$2" -F force=true > /dev/null
             else
-              gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/heads/$1" -f sha="$2" > /dev/null
+              gh api --header "$API_VERSION_HEADER" --method POST "repos/$GH_REPO/git/refs" -f ref="refs/heads/$1" -f sha="$2" > /dev/null
             fi
           }
           # The commits start from the commit that was rendered, so that there is one
@@ -651,15 +734,15 @@ jobs:
           # GitHub. That branch starts anew, so that one which a failed run left
           # behind can't stop the next run.
           scratch="$BRANCH-next"
-          if gh api "repos/$GH_REPO/git/ref/heads/$scratch" > /dev/null 2>&1; then
-            gh api --method DELETE "repos/$GH_REPO/git/refs/heads/$scratch" > /dev/null
+          if gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/git/ref/heads/$scratch" > /dev/null 2>&1; then
+            gh api --header "$API_VERSION_HEADER" --method DELETE "repos/$GH_REPO/git/refs/heads/$scratch" > /dev/null
           fi
-          gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/heads/$scratch" -f sha="$SHA" > /dev/null
+          gh api --header "$API_VERSION_HEADER" --method POST "repos/$GH_REPO/git/refs" -f ref="refs/heads/$scratch" -f sha="$SHA" > /dev/null
           # The commits go through GitHub's API as the release app: GitHub signs them,
           # as main requires, and they start the checks. The sign-off names the app's
           # account, which is the author of the commits. A large set of pictures goes
           # in several commits, each below the size of one request.
-          user_id="$(gh api "users/${APP_SLUG}[bot]" --jq .id)"
+          user_id="$(gh api --header "$API_VERSION_HEADER" "users/${APP_SLUG}[bot]" --jq .id)"
           body="Rendered by scripts/screenshots.sh on $SHA, the pictures whose pixels changed and the files of .github/screenshots.toml that changed: $URL
 
           Signed-off-by: ${APP_SLUG}[bot] <${user_id}+${APP_SLUG}[bot]@users.noreply.github.com>"
@@ -668,10 +751,10 @@ jobs:
           for ((part = 1; part <= parts; part++)); do
             python3 "$tool" --repo "$GH_REPO" screenshots commit "$kept" --branch "$scratch" \
               --head "$head" --headline "$HEADLINE" --body "$body" --part "$part" > "$RUNNER_TEMP/commit.json"
-            head="$(gh api graphql --input "$RUNNER_TEMP/commit.json" --jq .data.createCommitOnBranch.commit.oid)"
+            head="$(gh api --header "$API_VERSION_HEADER" graphql --input "$RUNNER_TEMP/commit.json" --jq .data.createCommitOnBranch.commit.oid)"
           done
           point "$BRANCH" "$head"
-          gh api --method DELETE "repos/$GH_REPO/git/refs/heads/$scratch" > /dev/null
+          gh api --header "$API_VERSION_HEADER" --method DELETE "repos/$GH_REPO/git/refs/heads/$scratch" > /dev/null
           python3 "$tool" --repo "$GH_REPO" screenshots report "$kept" --sha "$SHA" --run "$URL" > "$RUNNER_TEMP/body.md"
           if [[ -n "$open" ]]; then
             gh pr edit "$open" --title "$HEADLINE" --body-file "$RUNNER_TEMP/body.md"

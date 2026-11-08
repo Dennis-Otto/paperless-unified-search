@@ -1857,8 +1857,10 @@ def add_screenshots_parsers(
     screenshots_actions.add_parser(
         "plan",
         help="the shards of .github/screenshots.toml as the matrix of the job render, "
-        "and whether Harden-Runner blocks every host but those it names, as lines "
-        "of $GITHUB_OUTPUT; exits 2 for settings that the bot can't take",
+        "whether Harden-Runner blocks every host but those it names, the hosts that "
+        "the jobs don't wait for, the time limit of the script and the folder that a "
+        "failed render keeps, as lines of $GITHUB_OUTPUT; exits 2 for settings that "
+        "the bot can't take",
     )
     collect_parser = screenshots_actions.add_parser(
         "collect",

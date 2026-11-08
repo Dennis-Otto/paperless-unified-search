@@ -30,6 +30,12 @@ WAIT_BUDGET = 120
 PAGE = 100
 # The first GitHub CLI that reads every page into one list (gh api --slurp).
 MINIMUM_GH = "2.48"
+# The version of GitHub's REST API that the blueprint is written for. Each call of the
+# API asks for it, as GitHub recommends, so that a newer version that becomes GitHub's
+# default changes no answer before the blueprint moves to it (decision 0125). The
+# workflows ask with the same header, which tests/test_template.py keeps equal.
+API_VERSION = "2022-11-28"
+API_VERSION_HEADER = f"X-GitHub-Api-Version: {API_VERSION}"
 
 
 class GitHubError(Exception):
@@ -61,12 +67,21 @@ class Response:
 Runner = Callable[[Sequence[str], str | None], subprocess.CompletedProcess[str]]
 
 
+def gh_command(arguments: Sequence[str]) -> list[str]:
+    """The command of the GitHub CLI for the arguments: a call of the API asks at its
+    end for the version of the API. Every runner of an Api starts gh with it."""
+    command = ["gh", *arguments]
+    if command[1:2] == ["api"]:
+        command += ["--header", API_VERSION_HEADER]
+    return command
+
+
 def run_gh(
     arguments: Sequence[str], body: str | None
 ) -> subprocess.CompletedProcess[str]:
     """Run the GitHub CLI; the tests replace this with a simulated GitHub."""
     return subprocess.run(  # pragma: no cover - the tests simulate gh
-        ["gh", *arguments], input=body, capture_output=True, text=True, check=False
+        gh_command(arguments), input=body, capture_output=True, text=True, check=False
     )
 
 
@@ -78,7 +93,7 @@ def run_gh_as(token: str) -> Runner:
         arguments: Sequence[str], body: str | None
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            ["gh", *arguments],
+            gh_command(arguments),
             input=body,
             capture_output=True,
             text=True,

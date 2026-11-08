@@ -131,6 +131,9 @@ permissions: {}
 # The GitHub CLI of the jobs sends no telemetry to GitHub.
 env:
   GH_TELEMETRY: "false"
+  # Each call of its API asks for the version of the REST API that the steps are
+  # written for (decision 0125).
+  API_VERSION_HEADER: "X-GitHub-Api-Version: 2022-11-28"
 
 jobs:
   rerun:
@@ -155,7 +158,7 @@ jobs:
       checks: read
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: block
           disable-sudo-and-containers: true
@@ -172,14 +175,27 @@ jobs:
           deadline=$(($(date +%s) + 120))
           for endpoint in $HOSTS; do
             host="${endpoint%:*}"
-            # A wildcard names no host to ask.
-            [[ "$host" == '*.'* ]] && continue
-            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+            port="${endpoint##*:}"
+            # A wildcard names no host to ask, and a job may leave out a host that keeps it
+            # waiting although none of its steps needs it at once.
+            [[ "$host" == '*.'* || " $SKIP_WAIT " == *" $endpoint "* ]] && continue
+            # Each host on its own port, by HTTP on 80 and by HTTPS on any other. Only a host
+            # that curl can't resolve, or can't reach in time, is blocked: one that answers at
+            # all, in whatever protocol, is through.
+            scheme=https
+            [[ "$port" == 80 ]] && scheme=http
+            while true; do
+              status=0
+              curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "$scheme://$host:$port/" || status=$?
+              case "$status" in
+                6 | 7 | 28) ;;
+                *) break ;;
+              esac
               if (($(date +%s) >= deadline)); then
-                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                echo "::warning::Harden-Runner still blocks $endpoint after two minutes; a step that needs it will fail, and the job can run again."
                 break
               fi
-              echo "Harden-Runner still blocks $host, waiting 3 s."
+              echo "Harden-Runner still blocks $endpoint, waiting 3 s."
               sleep 3
             done
           done
@@ -205,7 +221,7 @@ jobs:
           # only the jobs it names.
           broken() {
             local jobs id conclusion name messages found=""
-            jobs="$(gh api "repos/$GH_REPO/actions/runs/$1/jobs" --paginate \
+            jobs="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$1/jobs" --paginate \
               --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | [.id, .conclusion, .name] | @tsv')" ||
               return 1
             while IFS=$'\t' read -r -u 4 id conclusion name; do
@@ -213,7 +229,7 @@ jobs:
                 continue
               fi
               if [[ "$conclusion" == cancelled ]]; then
-                messages="$(gh api "repos/$GH_REPO/check-runs/$id/annotations" --paginate --jq '.[].message')" ||
+                messages="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$id/annotations" --paginate --jq '.[].message')" ||
                   return 1
                 if grep -q "higher priority waiting request" <<<"$messages"; then
                   return 0
@@ -240,13 +256,13 @@ jobs:
           # can't be read, the jobs run once more.
           superseded() {
             local ids id messages
-            ids="$(gh api "repos/$GH_REPO/actions/runs/$1/jobs" --paginate \
+            ids="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$1/jobs" --paginate \
               --jq '.jobs[] | select(.conclusion == "cancelled") | .id')" || return 1
             while read -r -u 5 id; do
               if [[ -z "$id" ]]; then
                 continue
               fi
-              messages="$(gh api "repos/$GH_REPO/check-runs/$id/annotations" --paginate --jq '.[].message')" ||
+              messages="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$id/annotations" --paginate --jq '.[].message')" ||
                 return 1
               if grep -q "higher priority waiting request" <<<"$messages"; then
                 return 0
@@ -254,7 +270,7 @@ jobs:
             done 5<<<"$ids"
             return 1
           }
-          candidates="$(gh api --method GET "repos/$GH_REPO/actions/workflows/$WORKFLOW/runs" \
+          candidates="$(gh api --header "$API_VERSION_HEADER" --method GET "repos/$GH_REPO/actions/workflows/$WORKFLOW/runs" \
             -f branch="$BRANCH" -f event="$EVENT" -f status=completed -f per_page=30 \
             --jq ".workflow_runs | map(select(.id < $RUN and .head_sha != \"$SHA\" and .head_repository.full_name == \"$HEAD_REPO\")) | .[:5][] | [.id, .conclusion] | @tsv" ||
             true)"
@@ -306,7 +322,7 @@ jobs:
       issues: write
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: block
           disable-sudo-and-containers: true
@@ -323,14 +339,27 @@ jobs:
           deadline=$(($(date +%s) + 120))
           for endpoint in $HOSTS; do
             host="${endpoint%:*}"
-            # A wildcard names no host to ask.
-            [[ "$host" == '*.'* ]] && continue
-            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+            port="${endpoint##*:}"
+            # A wildcard names no host to ask, and a job may leave out a host that keeps it
+            # waiting although none of its steps needs it at once.
+            [[ "$host" == '*.'* || " $SKIP_WAIT " == *" $endpoint "* ]] && continue
+            # Each host on its own port, by HTTP on 80 and by HTTPS on any other. Only a host
+            # that curl can't resolve, or can't reach in time, is blocked: one that answers at
+            # all, in whatever protocol, is through.
+            scheme=https
+            [[ "$port" == 80 ]] && scheme=http
+            while true; do
+              status=0
+              curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "$scheme://$host:$port/" || status=$?
+              case "$status" in
+                6 | 7 | 28) ;;
+                *) break ;;
+              esac
               if (($(date +%s) >= deadline)); then
-                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                echo "::warning::Harden-Runner still blocks $endpoint after two minutes; a step that needs it will fail, and the job can run again."
                 break
               fi
-              echo "Harden-Runner still blocks $host, waiting 3 s."
+              echo "Harden-Runner still blocks $endpoint, waiting 3 s."
               sleep 3
             done
           done
@@ -374,8 +403,8 @@ jobs:
           # started again, failed in no test. In one that a person or a time limit
           # cancelled, only the jobs that ran out of time broke: a job that waits for the
           # others fails when they are cancelled.
-          first="$(gh api "repos/$GH_REPO/actions/runs/$RUN/attempts/1" --jq .conclusion)"
-          jobs="$(gh api "repos/$GH_REPO/actions/runs/$RUN/attempts/1/jobs" --paginate \
+          first="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN/attempts/1" --jq .conclusion)"
+          jobs="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN/attempts/1/jobs" --paginate \
             --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | [.id, .conclusion, .html_url, .name, ([.steps[]? | select(.conclusion == "failure" or .conclusion == "cancelled") | .name] | join(", "))] | @tsv')"
           rows=""
           # Each job with each of its tests, one to a line, for the count in the issue.
@@ -384,7 +413,7 @@ jobs:
             if [[ -z "$id" ]] || [[ "$conclusion" == failure && "$first" == cancelled ]]; then
               continue
             fi
-            errors="$(gh api "repos/$GH_REPO/check-runs/$id/annotations" --paginate \
+            errors="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$id/annotations" --paginate \
               --jq '.[] | select(.annotation_level == "failure") | .message | gsub("\\s+"; " ")' || true)"
             if grep -q "higher priority waiting request" <<<"$errors"; then
               rows=""
@@ -394,7 +423,7 @@ jobs:
             if [[ "$conclusion" == cancelled ]] && ! grep -q "has exceeded the maximum execution time" <<<"$errors"; then
               continue
             fi
-            log="$(gh api "repos/$GH_REPO/actions/jobs/$id/logs" 2>/dev/null |
+            log="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/jobs/$id/logs" 2>/dev/null |
               sed -E 's/\x1b\[[0-9;]*m//g; s/^[0-9-]+T[0-9:.]+Z //')"
             # The tests that pytest names in the log. Other tests, such as those of a
             # browser, write the marker and the name of each test or step as it starts:
@@ -591,7 +620,7 @@ jobs:
       actions: write
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: block
           disable-sudo-and-containers: true
@@ -608,14 +637,27 @@ jobs:
           deadline=$(($(date +%s) + 120))
           for endpoint in $HOSTS; do
             host="${endpoint%:*}"
-            # A wildcard names no host to ask.
-            [[ "$host" == '*.'* ]] && continue
-            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+            port="${endpoint##*:}"
+            # A wildcard names no host to ask, and a job may leave out a host that keeps it
+            # waiting although none of its steps needs it at once.
+            [[ "$host" == '*.'* || " $SKIP_WAIT " == *" $endpoint "* ]] && continue
+            # Each host on its own port, by HTTP on 80 and by HTTPS on any other. Only a host
+            # that curl can't resolve, or can't reach in time, is blocked: one that answers at
+            # all, in whatever protocol, is through.
+            scheme=https
+            [[ "$port" == 80 ]] && scheme=http
+            while true; do
+              status=0
+              curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "$scheme://$host:$port/" || status=$?
+              case "$status" in
+                6 | 7 | 28) ;;
+                *) break ;;
+              esac
               if (($(date +%s) >= deadline)); then
-                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                echo "::warning::Harden-Runner still blocks $endpoint after two minutes; a step that needs it will fail, and the job can run again."
                 break
               fi
-              echo "Harden-Runner still blocks $host, waiting 3 s."
+              echo "Harden-Runner still blocks $endpoint, waiting 3 s."
               sleep 3
             done
           done
@@ -628,7 +670,7 @@ jobs:
         run: |
           # A person or another bot may have run the release again before this job
           # started: then the run is theirs, and GitHub refuses a rerun while it runs.
-          state="$(gh api "repos/$GH_REPO/actions/runs/$RUN" --jq '"\(.status) \(.run_attempt)"')"
+          state="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN" --jq '"\(.status) \(.run_attempt)"')"
           if [[ "$state" != "completed 1" ]]; then
             case "${state%% *}" in
               completed) now="done" ;;
@@ -684,7 +726,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: block
           disable-sudo-and-containers: true
@@ -701,14 +743,27 @@ jobs:
           deadline=$(($(date +%s) + 120))
           for endpoint in $HOSTS; do
             host="${endpoint%:*}"
-            # A wildcard names no host to ask.
-            [[ "$host" == '*.'* ]] && continue
-            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+            port="${endpoint##*:}"
+            # A wildcard names no host to ask, and a job may leave out a host that keeps it
+            # waiting although none of its steps needs it at once.
+            [[ "$host" == '*.'* || " $SKIP_WAIT " == *" $endpoint "* ]] && continue
+            # Each host on its own port, by HTTP on 80 and by HTTPS on any other. Only a host
+            # that curl can't resolve, or can't reach in time, is blocked: one that answers at
+            # all, in whatever protocol, is through.
+            scheme=https
+            [[ "$port" == 80 ]] && scheme=http
+            while true; do
+              status=0
+              curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "$scheme://$host:$port/" || status=$?
+              case "$status" in
+                6 | 7 | 28) ;;
+                *) break ;;
+              esac
               if (($(date +%s) >= deadline)); then
-                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                echo "::warning::Harden-Runner still blocks $endpoint after two minutes; a step that needs it will fail, and the job can run again."
                 break
               fi
-              echo "Harden-Runner still blocks $host, waiting 3 s."
+              echo "Harden-Runner still blocks $endpoint, waiting 3 s."
               sleep 3
             done
           done
@@ -729,14 +784,14 @@ jobs:
           # Only the runs for the head of a pull request report its checks, and only
           # those for the head of main tell the state of main.
           if [[ "$EVENT" == push ]]; then
-            tip="$(gh api "repos/$GH_REPO/git/ref/heads/$BRANCH" --jq .object.sha)"
+            tip="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/git/ref/heads/$BRANCH" --jq .object.sha)"
             if [[ "$tip" != "$SHA" ]]; then
               echo "${SHA:0:7} is no longer the head of $BRANCH; its run of $NAME stays cancelled." >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             head="$BRANCH"
           else
-            number="$(gh api "repos/$GH_REPO/commits/$SHA/pulls" \
+            number="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/commits/$SHA/pulls" \
               --jq "map(select(.state == \"open\" and .head.sha == \"$SHA\")) | .[0].number // empty")"
             if [[ -z "$number" ]]; then
               echo "${SHA:0:7} is not the head of an open pull request; its run of $NAME stays cancelled." >> "$GITHUB_STEP_SUMMARY"
@@ -745,7 +800,7 @@ jobs:
             head="#$number"
           fi
           # A newer run of the same commit reports the checks itself.
-          newer="$(gh api "repos/$GH_REPO/actions/workflows/$WORKFLOW/runs?head_sha=$SHA" --paginate \
+          newer="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/workflows/$WORKFLOW/runs?head_sha=$SHA" --paginate \
             --jq ".workflow_runs[] | select(.id > $RUN) | .id")"
           if [[ -n "$newer" ]]; then
             echo "A newer run of $NAME for ${SHA:0:7} reports the checks of $head." >> "$GITHUB_STEP_SUMMARY"
@@ -753,12 +808,12 @@ jobs:
           fi
           # Cancelled by the concurrency of the workflow, or at the time limit of a job;
           # each says so on the job.
-          jobs="$(gh api "repos/$GH_REPO/actions/runs/$RUN/attempts/$ATTEMPT/jobs" --paginate \
+          jobs="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN/attempts/$ATTEMPT/jobs" --paginate \
             --jq '.jobs[] | select(.conclusion == "cancelled") | .id')"
           raced=false
           late=false
           for job in $jobs; do
-            messages="$(gh api "repos/$GH_REPO/check-runs/$job/annotations" --paginate --jq '.[].message')"
+            messages="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$job/annotations" --paginate --jq '.[].message')"
             if grep -q "higher priority waiting request" <<<"$messages"; then
               raced=true
               break
@@ -778,7 +833,7 @@ jobs:
           if [[ "$late" == true && "$ATTEMPT" == 1 && "$TESTS" != true ]]; then
             # The bot-health bot watches some of these workflows too and may have run it
             # again first: then the run is its own, and GitHub refuses a rerun while it runs.
-            state="$(gh api "repos/$GH_REPO/actions/runs/$RUN" --jq '"\(.status) \(.run_attempt)"')"
+            state="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN" --jq '"\(.status) \(.run_attempt)"')"
             if [[ "$state" != "completed 1" ]]; then
               echo "$NAME for the head of $head ran again already; the bot leaves it alone." >> "$GITHUB_STEP_SUMMARY"
               exit 0
@@ -832,7 +887,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: block
           disable-sudo-and-containers: true
@@ -851,14 +906,27 @@ jobs:
           deadline=$(($(date +%s) + 120))
           for endpoint in $HOSTS; do
             host="${endpoint%:*}"
-            # A wildcard names no host to ask.
-            [[ "$host" == '*.'* ]] && continue
-            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+            port="${endpoint##*:}"
+            # A wildcard names no host to ask, and a job may leave out a host that keeps it
+            # waiting although none of its steps needs it at once.
+            [[ "$host" == '*.'* || " $SKIP_WAIT " == *" $endpoint "* ]] && continue
+            # Each host on its own port, by HTTP on 80 and by HTTPS on any other. Only a host
+            # that curl can't resolve, or can't reach in time, is blocked: one that answers at
+            # all, in whatever protocol, is through.
+            scheme=https
+            [[ "$port" == 80 ]] && scheme=http
+            while true; do
+              status=0
+              curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "$scheme://$host:$port/" || status=$?
+              case "$status" in
+                6 | 7 | 28) ;;
+                *) break ;;
+              esac
               if (($(date +%s) >= deadline)); then
-                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                echo "::warning::Harden-Runner still blocks $endpoint after two minutes; a step that needs it will fail, and the job can run again."
                 break
               fi
-              echo "Harden-Runner still blocks $host, waiting 3 s."
+              echo "Harden-Runner still blocks $endpoint, waiting 3 s."
               sleep 3
             done
           done
@@ -978,7 +1046,7 @@ jobs:
       pull-requests: write # the suggestions on a pull request from a fork, and the comment when the bot fails
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: block
           disable-sudo-and-containers: true
@@ -997,14 +1065,27 @@ jobs:
           deadline=$(($(date +%s) + 120))
           for endpoint in $HOSTS; do
             host="${endpoint%:*}"
-            # A wildcard names no host to ask.
-            [[ "$host" == '*.'* ]] && continue
-            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+            port="${endpoint##*:}"
+            # A wildcard names no host to ask, and a job may leave out a host that keeps it
+            # waiting although none of its steps needs it at once.
+            [[ "$host" == '*.'* || " $SKIP_WAIT " == *" $endpoint "* ]] && continue
+            # Each host on its own port, by HTTP on 80 and by HTTPS on any other. Only a host
+            # that curl can't resolve, or can't reach in time, is blocked: one that answers at
+            # all, in whatever protocol, is through.
+            scheme=https
+            [[ "$port" == 80 ]] && scheme=http
+            while true; do
+              status=0
+              curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "$scheme://$host:$port/" || status=$?
+              case "$status" in
+                6 | 7 | 28) ;;
+                *) break ;;
+              esac
               if (($(date +%s) >= deadline)); then
-                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                echo "::warning::Harden-Runner still blocks $endpoint after two minutes; a step that needs it will fail, and the job can run again."
                 break
               fi
-              echo "Harden-Runner still blocks $host, waiting 3 s."
+              echo "Harden-Runner still blocks $endpoint, waiting 3 s."
               sleep 3
             done
           done
@@ -1225,7 +1306,7 @@ jobs:
       pull-requests: write # the title, the files and the commits of the pull request, and the comment when the bot fails
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: block
           disable-sudo-and-containers: true
@@ -1244,14 +1325,27 @@ jobs:
           deadline=$(($(date +%s) + 120))
           for endpoint in $HOSTS; do
             host="${endpoint%:*}"
-            # A wildcard names no host to ask.
-            [[ "$host" == '*.'* ]] && continue
-            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+            port="${endpoint##*:}"
+            # A wildcard names no host to ask, and a job may leave out a host that keeps it
+            # waiting although none of its steps needs it at once.
+            [[ "$host" == '*.'* || " $SKIP_WAIT " == *" $endpoint "* ]] && continue
+            # Each host on its own port, by HTTP on 80 and by HTTPS on any other. Only a host
+            # that curl can't resolve, or can't reach in time, is blocked: one that answers at
+            # all, in whatever protocol, is through.
+            scheme=https
+            [[ "$port" == 80 ]] && scheme=http
+            while true; do
+              status=0
+              curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "$scheme://$host:$port/" || status=$?
+              case "$status" in
+                6 | 7 | 28) ;;
+                *) break ;;
+              esac
               if (($(date +%s) >= deadline)); then
-                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                echo "::warning::Harden-Runner still blocks $endpoint after two minutes; a step that needs it will fail, and the job can run again."
                 break
               fi
-              echo "Harden-Runner still blocks $host, waiting 3 s."
+              echo "Harden-Runner still blocks $endpoint, waiting 3 s."
               sleep 3
             done
           done
@@ -1388,7 +1482,7 @@ jobs:
       HEADLINE: "docs: draw the diagrams anew"
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: block
           disable-sudo-and-containers: true
@@ -1407,14 +1501,27 @@ jobs:
           deadline=$(($(date +%s) + 120))
           for endpoint in $HOSTS; do
             host="${endpoint%:*}"
-            # A wildcard names no host to ask.
-            [[ "$host" == '*.'* ]] && continue
-            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+            port="${endpoint##*:}"
+            # A wildcard names no host to ask, and a job may leave out a host that keeps it
+            # waiting although none of its steps needs it at once.
+            [[ "$host" == '*.'* || " $SKIP_WAIT " == *" $endpoint "* ]] && continue
+            # Each host on its own port, by HTTP on 80 and by HTTPS on any other. Only a host
+            # that curl can't resolve, or can't reach in time, is blocked: one that answers at
+            # all, in whatever protocol, is through.
+            scheme=https
+            [[ "$port" == 80 ]] && scheme=http
+            while true; do
+              status=0
+              curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "$scheme://$host:$port/" || status=$?
+              case "$status" in
+                6 | 7 | 28) ;;
+                *) break ;;
+              esac
               if (($(date +%s) >= deadline)); then
-                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                echo "::warning::Harden-Runner still blocks $endpoint after two minutes; a step that needs it will fail, and the job can run again."
                 break
               fi
-              echo "Harden-Runner still blocks $host, waiting 3 s."
+              echo "Harden-Runner still blocks $endpoint, waiting 3 s."
               sleep 3
             done
           done
@@ -1432,7 +1539,7 @@ jobs:
           fi
           # The bot's own commit drew pictures that differ again: drawing them once more
           # would only repeat that.
-          if [[ "$(gh api "repos/$GH_REPO/commits/$SHA" --jq '.commit.message | split("\n")[0]')" == "$HEADLINE" ]]; then
+          if [[ "$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/commits/$SHA" --jq '.commit.message | split("\n")[0]')" == "$HEADLINE" ]]; then
             echo "::error::The diagrams that the diagram bot committed in ${SHA:0:7} differ again from what their sources draw; scripts/diagrams.sh doesn't draw them the same way twice."
             exit 1
           fi
@@ -1504,7 +1611,7 @@ jobs:
           SHA: ${{ github.event.workflow_run.head_sha }}
           URL: ${{ github.event.workflow_run.html_url }}
         run: |
-          head="$(gh api "repos/$GH_REPO/git/ref/heads/$BRANCH" --jq .object.sha)"
+          head="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/git/ref/heads/$BRANCH" --jq .object.sha)"
           if [[ "$head" != "$SHA" ]]; then
             echo "$BRANCH moved on from ${SHA:0:7}; the checks of its new head draw the diagrams again." >> "$GITHUB_STEP_SUMMARY"
             exit 0
@@ -1516,13 +1623,13 @@ jobs:
           # the push starts the checks again. The sign-off names the app's account, which
           # is the author of the commit. blueprint.py takes only sources, pictures and
           # pages of Markdown from what the check kept.
-          user_id="$(gh api "users/${APP_SLUG}[bot]" --jq .id)"
+          user_id="$(gh api --header "$API_VERSION_HEADER" "users/${APP_SLUG}[bot]" --jq .id)"
           body="Drawn by scripts/diagrams.sh --extract from the sources in docs/diagrams/, in the check diagrams: $URL
 
           Signed-off-by: ${APP_SLUG}[bot] <${user_id}+${APP_SLUG}[bot]@users.noreply.github.com>"
           python3 "$tool" --repo "$GH_REPO" diagrams commit "$kept" --branch "$BRANCH" \
             --head "$SHA" --headline "$HEADLINE" --body "$body" > "$RUNNER_TEMP/commit.json"
-          commit="$(gh api graphql --input "$RUNNER_TEMP/commit.json" --jq .data.createCommitOnBranch.commit.oid)"
+          commit="$(gh api --header "$API_VERSION_HEADER" graphql --input "$RUNNER_TEMP/commit.json" --jq .data.createCommitOnBranch.commit.oid)"
           echo "Committed the diagrams onto $BRANCH: $commit" >> "$GITHUB_STEP_SUMMARY"
           python3 "$tool" diagrams report "$kept" --for comment > "$RUNNER_TEMP/comment.md"
           if [[ -s "$RUNNER_TEMP/comment.md" ]]; then
