@@ -651,61 +651,24 @@ jobs:
           [[ "$TAG" == *-* ]] && channel=next
           npm publish ./*.tgz --provenance --access public --tag "$channel"
 
+  # The image is built in a reusable workflow of its own, as the other assets are, so
+  # that its provenance names that build alone, as SLSA Build Level 3 asks.
   ghcr:
     name: deliver to GHCR
     needs: [release-please, publish]
     if: vars.PUBLISH_TO == 'ghcr'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
     permissions:
       attestations: write
       contents: read
       id-token: write
       packages: write
-    steps:
-      - name: Record the network traffic of the job
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.release-please.outputs.tag }}
-          persist-credentials: false
-      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Name the image in the lowercase that registries require
-        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
-      - name: Name the image and its tags
-        id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        with:
-          images: ${{ env.IMAGE }}
-          tags: |
-            type=semver,pattern={{version}},value=${{ needs.release-please.outputs.version }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.version }}
-            type=semver,pattern={{major}},value=${{ needs.release-please.outputs.version }}
-      - name: Build and push the image with SBOM and provenance
-        id: push
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          provenance: mode=max
-          sbom: true
-      - name: Attest the provenance of the image
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-name: ${{ env.IMAGE }}
-          subject-digest: ${{ steps.push.outputs.digest }}
-          push-to-registry: true
+    uses: ./.github/workflows/build-image.yml
+    # The build of the image gets no secret of the release either, only the token of
+    # its job.
+    with:
+      tag: ${{ needs.release-please.outputs.tag }}
+      sha: ${{ needs.release-please.outputs.sha }}
+      version: ${{ needs.release-please.outputs.version }}
 
   nextcloud-appstore:
     name: deliver to the Nextcloud App Store

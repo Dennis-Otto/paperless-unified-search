@@ -546,10 +546,20 @@ def screenshots_command(arguments: argparse.Namespace, root: Path) -> int:
         )
         print(reason)
         return 0 if ready else 1
+    # The settings of the checkout: in the job with the release app, those of main.
+    found_settings = screenshots.settings(root)
+    if arguments.action == "plan":
+        print(screenshots.plan(found_settings), end="")
+        return 0
+    files = found_settings.files
+    if arguments.action == "collect":
+        collected = screenshots.collect(arguments.folder, arguments.shards, files)
+        print(screenshots.summary(collected), end="")
+        return 0
     if arguments.action in ("keep", "restore"):
         folder = arguments.folder if arguments.action == "keep" else None
         try:
-            found = screenshots.keep(root, folder)
+            found = screenshots.keep(root, folder, files)
         except ModuleNotFoundError as error:
             # Pillow compares the pixels; a project's own tools may not have it.
             wanted = ".github/screenshots-requirements.txt"
@@ -573,13 +583,13 @@ def screenshots_command(arguments: argparse.Namespace, root: Path) -> int:
         print("blueprint.py: screenshots commit needs --repo", file=sys.stderr)
         return 2
     repository = arguments.repo or screenshots.repository_of(root)
-    pages = screenshots.pages_of_folder(root, arguments.folder, repository)
+    pages = screenshots.pages_of_folder(root, arguments.folder, repository, files)
     if arguments.action == "parts":
-        print(len(screenshots.parts(arguments.folder, pages=pages)))
+        print(len(screenshots.parts(arguments.folder, pages=pages, files=files)))
         return 0
     if arguments.action == "overtaken":
         moved, reason = screenshots.overtaken(
-            screenshots.written(arguments.folder, pages),
+            screenshots.written(arguments.folder, pages, files),
             json.loads(arguments.compared.read_text(encoding="utf-8")),
             arguments.base,
         )
@@ -596,11 +606,12 @@ def screenshots_command(arguments: argparse.Namespace, root: Path) -> int:
             arguments.body,
             arguments.part,
             pages,
+            files,
         )
         print(json.dumps(request))
         return 0
     text = screenshots.report(
-        arguments.folder, arguments.sha, arguments.run, arguments.script, pages
+        arguments.folder, arguments.sha, arguments.run, arguments.script, pages, files
     )
     print(text, end="")
     return 0
@@ -1843,6 +1854,21 @@ def add_screenshots_parsers(
         "for the screenshot bot",
     )
     shots_keep_parser.add_argument("folder", type=Path)
+    screenshots_actions.add_parser(
+        "plan",
+        help="the shards of .github/screenshots.toml as the matrix of the job render, "
+        "and whether Harden-Runner blocks every host but those it names, as lines "
+        "of $GITHUB_OUTPUT; exits 2 for settings that the bot can't take",
+    )
+    collect_parser = screenshots_actions.add_parser(
+        "collect",
+        help="put the folders of keep of the shards together into one folder, each "
+        "checked, for the job that opens the pull request",
+    )
+    collect_parser.add_argument("folder", type=Path)
+    collect_parser.add_argument(
+        "shards", type=Path, nargs="*", help="the folder of keep of each shard"
+    )
     parts_parser = screenshots_actions.add_parser(
         "parts",
         help="how many commits carry the pictures of a folder of keep and the pages "

@@ -8,6 +8,7 @@
 	<summary lang="fr">Recherchez dans le contenu OCR de Paperless-ngx depuis Nextcloud et ouvrez les fichiers trouvés directement dans sa visionneuse</summary>
 	<summary lang="nl">Doorzoek de OCR-inhoud van Paperless-ngx vanuit Nextcloud en open gevonden bestanden direct in de viewer</summary>
 	<summary lang="zh-hans">在 Nextcloud 中搜索 Paperless-ngx 的 OCR 内容，并直接在其查看器中打开匹配的文件</summary>
+	<summary lang="zh-hant">在 Nextcloud 中搜尋 Paperless-ngx 的 OCR 內容，並直接在其檢視器中開啟符合的檔案</summary>
 	<description><![CDATA[
 Full-text search of your Paperless-ngx archive in Nextcloud's search bar, without Elasticsearch, a second index or another container: Paperless answers, Nextcloud decides who sees the file.
 
@@ -254,7 +255,48 @@ Paperless 通过服务器之间的通信进行查询。API 令牌存储在 Nextc
 
 文档（英文）：<https://dennis-otto.github.io/paperless-unified-search/>
 ]]></description>
-	<version>1.4.0</version>
+	<description lang="zh-hant"><![CDATA[
+在 Nextcloud 的搜尋列中對您的 Paperless-ngx 封存進行全文搜尋，無須 Elasticsearch、第二個索引或額外的容器：由 Paperless 給出搜尋結果，由 Nextcloud 決定誰能看到檔案。
+
+尋找發票、合約、信件、對帳單，以及文件中辨識出的任何文字，並在 Nextcloud 的檢視器中開啟已同步的檔案——無須離開 Nextcloud。
+
+### 在 Paperless 中搜尋，在 Nextcloud 中工作。
+
+- 使用 Paperless-ngx 原生的 OCR 與全文搜尋，無須建立或維護自己的索引
+- 直接在 Nextcloud 的全域搜尋中顯示結果，每筆結果都附有文件預覽、以您的語言顯示的日期、關聯方、文件類型和標籤
+- 在 Talk、Text、Deck 和 Mail 的智慧型挑選程式中尋找文件，並插入指向其檔案的連結
+- 透過「Paperless 新文件」小工具，在 Nextcloud 儀表板上列出您可以開啟的最新 Paperless 文件
+- 當 Paperless 新增了您某個已儲存搜尋能找到、且您可以開啟的文件時，以通知告訴您
+- 在網頁、iOS 和 Android 上以 Nextcloud 內建的檢視器開啟已同步的檔案
+- 透過 `[P123]` 這類穩定的標記比對文件
+- 只向有權開啟其已同步檔案的使用者顯示文件
+- 自動排除尚未同步的文件
+- 診斷：設定會測試連線，並保留失敗搜尋及其錯誤的歷史紀錄，即使代管業者不讓管理員查看 Nextcloud 的記錄檔也能使用
+- 給管理員：無須瀏覽器，以 occ 設定並測試本應用程式，以 occ 查詢某位使用者為何看不到某個文件，並在管理設定的概覽中查看搜尋的狀態
+
+### 隱私與存取控制
+
+Paperless 透過伺服器之間的通訊進行查詢。API Token 儲存在 Nextcloud 加密的認證資訊管理器中，絕不會暴露給瀏覽器。
+
+預設情況下，只有當使用者開啟「搜尋已連結的服務」時，Nextcloud 的搜尋才會將搜尋詞傳送到 Paperless；智慧型挑選程式也只有在使用者從中選取 Paperless 文件時才會傳送；向搜尋 API 請求此提供者的用戶端同樣會傳送。管理員可以選擇將其 Paperless 伺服器標記為受信任，並自動將其包含在每次全域搜尋中。用於通知的已儲存搜尋會保存在每位使用者自己的帳號中，有新文件時由背景作業將其傳送到 Paperless。
+
+建議使用專用的唯讀 Paperless 帳號。
+
+### 需求
+
+- Nextcloud 33 至 35
+- 可連線且可使用其 API 的 Paperless-ngx 站台
+- 已同步的檔案：其名稱包含 Paperless 文件標記（例如 `[P123]`），由一個 Nextcloud 帳號（即封存帳號）擁有，並以唯讀方式分享給有權查看它們的使用者
+
+本應用程式只提供搜尋整合。它不會在 Paperless 與 Nextcloud 之間同步文件，沒有這樣的檔案，搜尋就不會顯示任何 Paperless 文件。
+
+### 原生同步夥伴
+
+獨立的 Nextcloud 應用程式 [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) 會將這些檔案寫入封存帳號。兩個應用程式使用相同的穩定文件標記 `[P123]`，可以分別維護和更新。
+
+說明文件（英文）：<https://dennis-otto.github.io/paperless-unified-search/>
+]]></description>
+	<version>1.5.0</version>
 	<licence>AGPL-3.0-or-later</licence>
 	<author homepage="https://github.com/Dennis-Otto">Dennis Otto</author>
 	<namespace>PaperlessUnifiedSearch</namespace>
@@ -270,13 +312,13 @@ Paperless 通过服务器之间的通信进行查询。API 令牌存储在 Nextc
 	<discussion>https://github.com/Dennis-Otto/paperless-unified-search/discussions</discussion>
 	<bugs>https://github.com/Dennis-Otto/paperless-unified-search/issues</bugs>
 	<repository type="git">https://github.com/Dennis-Otto/paperless-unified-search.git</repository>
-	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.4.0/screenshots/01-unified-search.png</screenshot><!-- x-release-please-version -->
-	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.4.0/screenshots/02-nextcloud-pdf-viewer.png</screenshot><!-- x-release-please-version -->
-	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.4.0/screenshots/07-smart-picker.png</screenshot><!-- x-release-please-version -->
-	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.4.0/screenshots/11-dashboard.png</screenshot><!-- x-release-please-version -->
-	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.4.0/screenshots/03-admin-settings.png</screenshot><!-- x-release-please-version -->
-	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.4.0/screenshots/04-mobile-search.png</screenshot><!-- x-release-please-version -->
-	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.4.0/screenshots/06-search-problems.png</screenshot><!-- x-release-please-version -->
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.5.0/screenshots/01-unified-search.png</screenshot><!-- x-release-please-version -->
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.5.0/screenshots/02-nextcloud-pdf-viewer.png</screenshot><!-- x-release-please-version -->
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.5.0/screenshots/07-smart-picker.png</screenshot><!-- x-release-please-version -->
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.5.0/screenshots/11-dashboard.png</screenshot><!-- x-release-please-version -->
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.5.0/screenshots/03-admin-settings.png</screenshot><!-- x-release-please-version -->
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.5.0/screenshots/04-mobile-search.png</screenshot><!-- x-release-please-version -->
+	<screenshot>https://raw.githubusercontent.com/Dennis-Otto/paperless-unified-search/v1.5.0/screenshots/06-search-problems.png</screenshot><!-- x-release-please-version -->
 	<donation type="other" title="GitHub Sponsors">https://github.com/sponsors/Dennis-Otto</donation>
 	<dependencies>
 		<php min-version="8.2"/>

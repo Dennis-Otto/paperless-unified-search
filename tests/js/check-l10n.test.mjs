@@ -282,6 +282,20 @@ test('takes the code of the App Store for a variant that its schema lists, such 
 	}
 })
 
+test('takes zh-hant for Traditional Chinese, zh_TW, which shares no code of the App Store with Simplified Chinese', function() {
+	const catalogs = { zh_TW: { 'Paperless URL': 'Paperless URL' } }
+
+	assert.equal(check(written(app({ 'appinfo/info.xml': info('zh-hant') }, catalogs))).status, 0)
+	// zh-hans is the code of Simplified Chinese: Taiwan reading it would get the English texts.
+	for (const language of ['zh-hans', 'zh_TW', 'zh']) {
+		const result = check(written(app({ 'appinfo/info.xml': info(language) }, catalogs)))
+
+		assert.equal(result.status, 1)
+		assert.match(result.output, /appinfo\/info\.xml has no <summary lang="zh-hant">, so the App Store shows its English summary to whoever reads the app in l10n\/zh_TW\.json/)
+		assert.match(result.output, /appinfo\/info\.xml has no <description lang="zh-hant">/)
+	}
+})
+
 test('fails without appinfo/info.xml', function() {
 	const root = written(app({ 'appinfo/info.xml': null }))
 

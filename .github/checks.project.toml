@@ -72,7 +72,10 @@ the change itself, or, in the pull request of Renovate that moves those pins, fr
 new release of Nextcloud that it brings. A failure of the weekly run, which tests the
 newest release behind each floating tag also in a week without a change of the app,
 opens the issue *A supported Nextcloud release breaks the app* with the versions that
-broke, or adds the run to it, and the next run that passes closes it."""
+broke, or adds the run to it, and the next run that passes closes it. The annotation
+*Disk space* says that the disk of Docker ran low while the tests ran: a version that
+failed then, such as with HTTP 507 of Nextcloud, may have failed for the lack of space
+on the runner rather than for the change."""
 why = """Only these tests run the app in Nextcloud itself, as its users meet it: the
 search of Nextcloud with its files and shares, the settings, occ, the dashboard and the
 smart picker, in a browser on a laptop and on a phone. The check is required, so that
@@ -93,7 +96,9 @@ request of its own, and test it with `E2E_IMAGES=floating`, against that release
 pull request of Renovate passes once that is merged. To repeat a run, give
 `NEXTCLOUD_IMAGE` the image that the summary of the run names. A version that took too
 long on a busy runner usually passes when the job runs again, which the flaky-test bot
-does once by itself."""
+does once by itself; so does a version that failed with the annotation *Disk space*, and
+when it comes back, the tests need less disk, such as fewer versions at the same time, or
+a runner with more."""
 commands = [
   "bash tests/e2e/run-all.sh",
   "E2E_IMAGES=floating E2E_VERSIONS=35 bash tests/e2e/run-all.sh",

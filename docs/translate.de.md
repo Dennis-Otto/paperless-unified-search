@@ -6,7 +6,7 @@ description: "Eine Übersetzung von Paperless Unified Search korrigieren oder ei
 
 [Sprachen](configure.de.md#sprachen) · [FAQ](faq.de.md) · [Mitwirken](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CONTRIBUTING.md)
 
-Die App spricht Englisch, Deutsch, Französisch, Spanisch, Niederländisch und vereinfachtes Chinesisch. Die französischen, spanischen, niederländischen und chinesischen Texte sind mit Hilfe einer KI entstanden, mit den Wörtern, die Nextcloud selbst in diesen Sprachen verwendet, und warten darauf, dass Muttersprachler sie lesen: Ein Wort, das dir in Nextcloud falsch klingt, ist einen Pull Request wert, und eine Sprache, die die App noch nicht spricht, ebenso. Du brauchst einen Texteditor oder den Editor von GitHub, kein PHP und keinen Build.
+Die App spricht Englisch, Deutsch, Französisch, Spanisch, Niederländisch, vereinfachtes und traditionelles Chinesisch. Die französischen, spanischen, niederländischen und chinesischen Texte sind mit Hilfe einer KI entstanden, mit den Wörtern, die Nextcloud selbst in diesen Sprachen verwendet, und warten darauf, dass Muttersprachler sie lesen: Ein Wort, das dir in Nextcloud falsch klingt, ist einen Pull Request wert, und eine Sprache, die die App noch nicht spricht, ebenso. Du brauchst einen Texteditor oder den Editor von GitHub, kein PHP und keinen Build.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/diagrams/how-a-translation-reaches-its-readers.de.dark.svg">
@@ -23,8 +23,9 @@ Die App spricht Englisch, Deutsch, Französisch, Spanisch, Niederländisch und v
 | Spanisch | `l10n/es.json` | *tú* | einer KI, wartet auf Durchsicht |
 | Niederländisch | `l10n/nl.json` | *je* | einer KI, wartet auf Durchsicht |
 | Vereinfachtes Chinesisch | `l10n/zh_CN.json` | *您* | einer KI, wartet auf Durchsicht |
+| Traditionelles Chinesisch, wie man es in Taiwan schreibt | `l10n/zh_TW.json` | *您* | einer KI, wartet auf Durchsicht |
 
-Nextcloud nimmt den Katalog der Sprache eines Kontos und die englischen Texte des Codes, wo die App keinen Katalog in dieser Sprache hat. Es nimmt einen Katalog nur für genau diese Sprache: Ein Konto mit einer regionalen Variante, etwa *Español (México)*, `es_MX`, braucht einen eigenen Katalog, auch einen, der `l10n/es.json` kopiert.
+Nextcloud nimmt den Katalog der Sprache eines Kontos und die englischen Texte des Codes, wo die App keinen Katalog in dieser Sprache hat. Es nimmt einen Katalog nur für genau diese Sprache: Ein Konto mit einer regionalen Variante, etwa *Español (México)*, `es_MX`, braucht einen eigenen Katalog, auch einen, der `l10n/es.json` kopiert. Darum liest ein Konto mit *正體中文（香港）*, `zh_HK`, die App auf Englisch: Der Katalog des traditionellen Chinesisch ist der von Taiwan, `zh_TW`.
 
 ## Wo die Texte sind
 
@@ -51,9 +52,11 @@ Jede Zeile verbindet einen Text des Codes, auf Englisch, mit seiner Übersetzung
 - **Der englische Text links bleibt, wie er ist,** Zeichen für Zeichen: Der Code sucht die Übersetzung über ihn. Ändere nur den Text rechts.
 - **Platzhalter bleiben,** etwa `%s`, `%1$s`, `%n`, `{status}` und `{account}`: Die App setzt dort einen Namen, eine Zahl oder einen Link ein. Die Wörter um sie herum dürfen wandern, und `%1$s` und `%2$s` dürfen die Plätze tauschen.
 - **Ein Plural,** dessen Text `_singular_::_plural_` lautet, hat so viele Formen, wie `pluralForm` mit `nplurals` nennt: Deutsch und Niederländisch eins und andere, Französisch und Spanisch drei, Chinesisch eine für jede Zahl. Nextcloud wählt für Französisch und Spanisch aber nur *eins* oder *andere* (Form 0 oder 1), nie die dritte Form für Millionen. Darum wiederholt die mittlere Form die Form *andere*, wie in Nextclouds eigenen Katalogen; sonst schlägt `scripts/check-l10n.mjs` fehl. `pluralForm` ist die des Katalogs von Nextcloud selbst für die Sprache.
-- **Die Wörter von Nextcloud:** Ein Wort, das auch Nextcloud zeigt, bekommt die Übersetzung von Nextcloud, etwa *Search connected services*, auf Französisch *Rechercher dans les services connectés*, auf Spanisch *Buscar servicios conectados*, auf Niederländisch *Verbonden diensten zoeken* und auf Chinesisch *搜索已连接的服务*; die [Kataloge des Servers von Nextcloud](https://github.com/nextcloud/server/tree/master/core/l10n) haben sie. Die Wörter von Paperless, etwa die Berechtigung *View* für *Correspondents*, bekommen die von Paperless-ngx in der Sprache.
+- **Die Wörter von Nextcloud:** Ein Wort, das auch Nextcloud zeigt, bekommt die Übersetzung von Nextcloud, etwa *Search connected services*, auf Französisch *Rechercher dans les services connectés*, auf Spanisch *Buscar servicios conectados*, auf Niederländisch *Verbonden diensten zoeken*, auf vereinfachtem Chinesisch *搜索已连接的服务* und auf traditionellem *搜尋已連結的服務*; die [Kataloge des Servers von Nextcloud](https://github.com/nextcloud/server/tree/master/core/l10n) haben sie. Die Wörter von Paperless, etwa die Berechtigung *View* für *Correspondents*, bekommen die von Paperless-ngx in der Sprache.
 - **Die Wörter von Paperless Sync:** Wo [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync), der Begleiter dieser App, dasselbe benennt, etwa das Archiv, die Kennung, das API-Token oder die Korrespondenten, nimmt eine Übersetzung sein Wort in der Sprache, damit sich die beiden Apps wie eine lesen.
+- **Traditionelles Chinesisch ist kein vereinfachtes Chinesisch in anderen Zeichen:** Es nimmt die Wörter der Kataloge von Nextcloud und Paperless-ngx für Taiwan, etwa *檔案* für eine Datei, *資料夾* für einen Ordner, *帳號* für ein Konto, *使用者* für einen Benutzer, *分享* für eine Freigabe und *關聯方* für den Korrespondenten, wo vereinfachtes Chinesisch *文件*, *文件夹*, *账号*, *用户*, *共享* und *往来方* hat; *文件* selbst ist im vereinfachten Chinesisch eine Datei, in Taiwan aber ein Dokument, wie in Paperless-ngx. Ein Text, der Zeichen für Zeichen aus `l10n/zh_CN.json` umgewandelt ist, liest sich in Taiwan falsch.
 - **Französische Typografie:** ein geschütztes Leerzeichen vor `:`, `;`, `?` und `!` und innerhalb von `«` und `»`, wie Nextcloud Französisch schreibt.
+- **Chinesische Typografie:** die Satzzeichen voller Breite des Chinesischen, etwa `，`, `。`, `：` und `（）`, mit den Anführungszeichen `“”` im vereinfachten und `「」` im traditionellen Chinesisch, wie Nextcloud sie hat, und ein Leerzeichen zwischen einem chinesischen Wort und einem Wort in lateinischen Buchstaben, einer Zahl oder einem Platzhalter, etwa `Paperless 文件` und `%n 個新文件`.
 
 ## Eine Übersetzung korrigieren
 
@@ -74,7 +77,7 @@ Jede Zeile verbindet einen Text des Codes, auf Englisch, mit seiner Übersetzung
 
 1. Kopiere `l10n/de.json` nach `l10n/<language>.json`, benannt mit dem Code der Sprache in Nextcloud, etwa `it` für Italienisch oder `pt_BR` für brasilianisches Portugiesisch, den Namen der Dateien in den [Katalogen des Servers von Nextcloud](https://github.com/nextcloud/server/tree/master/core/l10n).
 2. Übersetze jeden Text rechts und setze `pluralForm` auf die aus `core/l10n/<language>.json` von Nextcloud, mit so vielen Formen für jeden Plural, wie sie nennt.
-3. Füge `<summary lang="it">` und `<description lang="it">` zu `appinfo/info.xml` hinzu, nach denen der anderen Sprachen, übersetzt aus den englischen; die Beschreibung endet mit dem Link auf die englische Dokumentation. `lang` ist der Code der Sprache im App Store: die Sprache allein, etwa `it`, und `de` für `de_DE`, aber ein eigener Code für die wenigen Varianten, die das [Schema des App Stores](https://apps.nextcloud.com/schema/apps/info.xsd) nennt, etwa `pt-br` für `pt_BR` und `zh-hans` für `zh_CN`. Die Prüfung unten nennt ihn.
+3. Füge `<summary lang="it">` und `<description lang="it">` zu `appinfo/info.xml` hinzu, nach denen der anderen Sprachen, übersetzt aus den englischen; die Beschreibung endet mit dem Link auf die englische Dokumentation. `lang` ist der Code der Sprache im App Store: die Sprache allein, etwa `it`, und `de` für `de_DE`, aber ein eigener Code für die wenigen Varianten, die das [Schema des App Stores](https://apps.nextcloud.com/schema/apps/info.xsd) nennt, etwa `pt-br` für `pt_BR`, `zh-hans` für `zh_CN` und `zh-hant` für `zh_TW`. Die Prüfung unten nennt ihn.
 4. Führe die beiden Befehle oben aus, die `l10n/<language>.js` schreiben und jeden Katalog prüfen.
 5. Nenne die Sprache dort, wo die anderen genannt sind: [Sprachen](configure.de.md#sprachen) in `README.md` und `README.de.md`, die FAQ in `docs/faq.md` und `docs/faq.de.md`, die Tabelle oben auf dieser Seite und ihrem englischen Zwilling, die Sprachen des App Stores in `tests/Unit/AppInfo/AppStoreListingTest.php` und die Versionen von Nextcloud in der neuen Beschreibung für `scripts/check-project.sh`, etwa `- Nextcloud 33 a 35`.
 6. Öffne einen Pull Request mit einem Titel wie `feat(l10n): speak Italian`, der die Sprache mit dem nächsten Release ausliefert.
@@ -87,6 +90,6 @@ Jede Zeile verbindet einen Text des Codes, auf Englisch, mit seiner Übersetzung
 - eine Übersetzung leer ist oder andere Platzhalter hat als ihr Text;
 - ein Plural eine andere Zahl von Formen hat, als die `pluralForm` seines Katalogs nennt;
 - ein Katalog für den Browser, `l10n/<language>.js`, etwas anderes enthält als seine `l10n/<language>.json`;
-- `appinfo/info.xml` keine Zusammenfassung oder keine Beschreibung für den App Store in der Sprache eines Katalogs hat, wobei eine regionale Variante wie `de_DE` die ihrer Sprache nimmt, `de`, und eine Variante, die der App Store kennt, die ihres Codes, etwa `zh-hans` für `zh_CN`.
+- `appinfo/info.xml` keine Zusammenfassung oder keine Beschreibung für den App Store in der Sprache eines Katalogs hat, wobei eine regionale Variante wie `de_DE` die ihrer Sprache nimmt, `de`, und eine Variante, die der App Store kennt, die ihres Codes, etwa `zh-hans` für `zh_CN` und `zh-hant` für `zh_TW`.
 
 Jedes Problem nennt die Datei, den Text und die Lösung. Eine gute Übersetzung von einer schlechten unterscheiden kann die Prüfung nicht: Dafür braucht es Muttersprachler.

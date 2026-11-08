@@ -94,6 +94,25 @@ jobs:
           EVENT: ${{ github.event_name }}
           BEFORE: ${{ github.event.before }}
         run: bash tests/e2e/scope.sh
+      # The tests take about 12 GB of disk on main and 10 GB in a pull request: the
+      # images of Nextcloud, of the mock and of the browser, and the files of each
+      # Nextcloud (tests/e2e/README.md). Most runners of GitHub have far more free, but
+      # some little more than that, and there a full disk failed a version with HTTP 507
+      # (#290). On such a runner the step deletes toolchains of the image that the job
+      # doesn't use, Android, .NET, Haskell and CodeQL; elsewhere it costs nothing.
+      - name: Make room on a runner with a small disk
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          free_space() { df -Pm / | awk 'NR == 2 { print $4 }'; }
+          free="$(free_space)"
+          if [[ ! "${free}" =~ ^[0-9]+$ ]]; then
+            echo "df names no free space of the disk, so the step leaves it as it is."
+          elif ((free < 20480)); then
+            sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+            echo "The disk had $((free / 1024)) GB free, and has $(($(free_space) / 1024)) GB without the toolchains that the job doesn't use."
+          else
+            echo "The disk has $((free / 1024)) GB free, enough for the tests."
+          fi
       - name: Run the end-to-end tests against every supported Nextcloud version
         id: tests
         if: steps.scope.outputs.run == 'true'

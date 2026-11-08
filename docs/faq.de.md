@@ -70,7 +70,7 @@ Nein. Die Einstellungen halten ein Paperless, für alle Benutzer der Nextcloud. 
 
 ## Welche Sprachen spricht es?
 
-Englisch, Deutsch, Französisch, Spanisch, Niederländisch und vereinfachtes Chinesisch, wie es die Sprache des Kontos sagt: Deutsch mit *du* oder mit *Sie*, Französisch mit *vous*, Spanisch mit *tú*, Niederländisch mit *je* und vereinfachtes Chinesisch mit *您*, und Englisch in jeder anderen Sprache. Die Suche findet Dokumente in jeder Sprache, die Paperless erkennt, denn Paperless durchsucht ihren Text. [Sprachen](configure.de.md#sprachen) hat die Details, [Übersetzen](translate.de.md) zeigt, wie du eine Übersetzung korrigierst oder eine Sprache hinzufügst, und diese Website gibt es auf Englisch und, bis auf die Seiten des Projekts, auf Deutsch.
+Englisch, Deutsch, Französisch, Spanisch, Niederländisch, vereinfachtes Chinesisch und traditionelles Chinesisch, wie man es in Taiwan schreibt, wie es die Sprache des Kontos sagt: Deutsch mit *du* oder mit *Sie*, Französisch mit *vous*, Spanisch mit *tú*, Niederländisch mit *je* und Chinesisch mit *您*, und Englisch in jeder anderen Sprache. Die Suche findet Dokumente in jeder Sprache, die Paperless erkennt, denn Paperless durchsucht ihren Text. [Sprachen](configure.de.md#sprachen) hat die Details, [Übersetzen](translate.de.md) zeigt, wie du eine Übersetzung korrigierst oder eine Sprache hinzufügst, und diese Website gibt es auf Englisch und, bis auf die Seiten des Projekts, auf Deutsch.
 
 ## Welche Versionen von Nextcloud und Paperless unterstützt es?
 
