@@ -56,7 +56,7 @@ occ config:app:get paperless_unified_search paperless_url
 | `diagnostics` | The history of the problems of the search, as JSON; a lazy key, which Nextcloud loads only when it is read |
 | `diagnostics_pending` | Whether a failure in the history still waits for a search that works |
 
-The account of Paperless Sync is `occ config:app:get paperless_sync target_user`.
+The account of Paperless Sync is `occ config:app:get paperless_sync target_user`. Whether it gives each user their own archive is `occ config:app:get paperless_sync ownership` (`per-user` or `per-user-shared`), which the settings [warn about](troubleshooting.md#paperless-sync-gives-each-user-their-own-archive).
 
 Keys that an older version left and this one no longer reads go with the next update: Nextcloud runs the repair step *Remove the last failed search that Paperless Unified Search 0.3.0 kept* after every update of the app and on `occ maintenance:repair`, and it deletes `last_failure` and `last_recovery`, which the history of the problems replaced in 0.4.0.
 

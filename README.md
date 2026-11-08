@@ -329,7 +329,7 @@ The settings can create the Paperless account of steps 1 and 2 themselves: below
 3. In Nextcloud, open **Administration settings → Paperless Unified Search**.
 4. Enter the Paperless base URL and API token.
 5. When Nextcloud reaches Paperless at an address of your local network or by the name of its Docker service, such as `http://192.168.1.20:8000` or `http://paperless:8000`, select **Paperless runs in my local network** ([below](#paperless-in-your-local-network)).
-6. Under **Archive account**, enter the Nextcloud account that owns the synchronized files, or leave it blank to use the account that Paperless Sync writes the archive with. The settings store the ID as Nextcloud spells it, whatever its case, and warn when the account doesn't exist.
+6. Under **Archive account**, enter the Nextcloud account that owns the synchronized files, or leave it blank to use the account that Paperless Sync writes the archive with. The settings store the ID as Nextcloud spells it, whatever its case, and warn when the account doesn't exist, and when Paperless Sync gives each user their own archive, which the search doesn't show.
 7. Optionally enable **Always include Paperless in global search** to treat the configured Paperless server as trusted.
 8. Leave **Let users include Paperless in all their searches** on to let each user include Paperless in every search of their own, in their personal settings, or turn it off.
 9. Choose with **Let users ask for notifications about new documents** whether each user can save searches for notifications about new documents in their personal settings. Until you choose, it is on only where Nextcloud has a memory cache.

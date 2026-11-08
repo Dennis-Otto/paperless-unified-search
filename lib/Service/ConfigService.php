@@ -58,9 +58,10 @@ final class ConfigService {
 	private const SYNC_URL_KEY = 'paperless_url';
 	private const SYNC_LOCAL_NETWORK_KEY = 'paperless_local_network';
 	/**
-	 * Since its version 1.1.0, Paperless Sync gives each user of Nextcloud the documents of
-	 * their user of Paperless as files of their own with these choices of its setting Who
-	 * gets the documents, Each user; with single, the target user gets every document.
+	 * Paperless Sync gives each user of Nextcloud the documents of their user of Paperless as
+	 * files of their own with these choices of its setting Who gets the documents, Each user:
+	 * per-user since its version 1.1.0, per-user-shared since 1.4.0; with single, the target
+	 * user gets every document.
 	 */
 	private const SYNC_OWNERSHIP_KEY = 'ownership';
 	private const SYNC_PER_USER = ['per-user', 'per-user-shared'];
