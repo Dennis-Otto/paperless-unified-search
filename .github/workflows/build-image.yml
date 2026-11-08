@@ -31,6 +31,9 @@ permissions: {}
 # The GitHub CLI of the jobs sends no telemetry to GitHub.
 env:
   GH_TELEMETRY: "false"
+  # Each call of its API asks for the version of the REST API that the steps are
+  # written for (decision 0125).
+  API_VERSION_HEADER: "X-GitHub-Api-Version: 2022-11-28"
 
 jobs:
   image:
@@ -49,7 +52,7 @@ jobs:
       VERSION: ${{ inputs.version }}
     steps:
       - name: Record the network traffic of the job
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
       # Anybody with a token that may push could create the tag of a coming release
@@ -62,7 +65,7 @@ jobs:
           SHA: ${{ inputs.sha }}
         run: |
           set -euo pipefail
-          gh api -H "Accept: application/vnd.github.raw+json" \
+          gh api --header "$API_VERSION_HEADER" -H "Accept: application/vnd.github.raw+json" \
             "repos/$GITHUB_REPOSITORY/contents/.github/sign-tag.sh?ref=$GITHUB_SHA" > "$RUNNER_TEMP/sign-tag.sh"
           bash "$RUNNER_TEMP/sign-tag.sh" verify "$TAG" "$SHA"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

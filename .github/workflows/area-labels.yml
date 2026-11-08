@@ -28,7 +28,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: block
           disable-sudo-and-containers: true
@@ -45,14 +45,27 @@ jobs:
           deadline=$(($(date +%s) + 120))
           for endpoint in $HOSTS; do
             host="${endpoint%:*}"
-            # A wildcard names no host to ask.
-            [[ "$host" == '*.'* ]] && continue
-            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+            port="${endpoint##*:}"
+            # A wildcard names no host to ask, and a job may leave out a host that keeps it
+            # waiting although none of its steps needs it at once.
+            [[ "$host" == '*.'* || " $SKIP_WAIT " == *" $endpoint "* ]] && continue
+            # Each host on its own port, by HTTP on 80 and by HTTPS on any other. Only a host
+            # that curl can't resolve, or can't reach in time, is blocked: one that answers at
+            # all, in whatever protocol, is through.
+            scheme=https
+            [[ "$port" == 80 ]] && scheme=http
+            while true; do
+              status=0
+              curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "$scheme://$host:$port/" || status=$?
+              case "$status" in
+                6 | 7 | 28) ;;
+                *) break ;;
+              esac
               if (($(date +%s) >= deadline)); then
-                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                echo "::warning::Harden-Runner still blocks $endpoint after two minutes; a step that needs it will fail, and the job can run again."
                 break
               fi
-              echo "Harden-Runner still blocks $host, waiting 3 s."
+              echo "Harden-Runner still blocks $endpoint, waiting 3 s."
               sleep 3
             done
           done

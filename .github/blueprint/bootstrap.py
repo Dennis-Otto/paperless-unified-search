@@ -34,7 +34,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from blueprint.github import MINIMUM_GH
+from blueprint.github import API_VERSION_HEADER, MINIMUM_GH
 from blueprint.settings import BRANCH
 
 ANSWERS = ".copier-answers.yml"
@@ -180,7 +180,7 @@ def installed(
 
 def ask(run: Runner, root: Path, *arguments: str) -> Answer:
     """GitHub's answer to gh api, which only reads."""
-    result = run(["gh", "api", *arguments], root)
+    result = run(["gh", "api", *arguments, "--header", API_VERSION_HEADER], root)
     if result.returncode == 0:
         return Answer(True, result.stdout)
     message = problem(result)
