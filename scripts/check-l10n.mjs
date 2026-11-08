@@ -19,6 +19,7 @@
 //
 //   node scripts/check-l10n.mjs              checks
 //   node scripts/check-l10n.mjs --write      writes each l10n/*.js anew from its .json
+//                                           and the dashes of Chinese as Chinese writes them
 //   node scripts/check-l10n.mjs --root=DIR   checks the app in DIR, as the tests do
 
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
@@ -254,6 +255,37 @@ function chineseProblems(language, where, text) {
 	return found
 }
 
+// A Chinese text with its dashes written as Chinese writes them: a lone — becomes two,
+// ——, and a dash loses the spaces around it, the one fix of chineseProblems() that is
+// certain; a word of Simplified Chinese can have more than one word of Taiwan, so a person
+// picks it.
+function chineseDashes(text) {
+	return text.replace(/[^\S\n]*(?<!—)—(?!—)[^\S\n]*/g, '——').replace(/[^\S\n]*——[^\S\n]*/g, '——')
+}
+
+// With --write, the dashes of Chinese in the translations of the zh_* catalogs and in the
+// Chinese texts of appinfo/info.xml as Chinese writes them, before the check reads them.
+// The catalogs change only in their translations, never in a text of the code, and keep
+// their layout.
+function writeChineseDashes(catalogFiles) {
+	for (const file of catalogFiles.filter((name) => name.startsWith('zh_'))) {
+		const path = join(catalogFolder, file)
+		const json = readFileSync(path, 'utf8')
+		const fixed = json.replace(/"(?:[^"\\]|\\.)*"(\s*:)?/g, (string, key) => key === undefined ? chineseDashes(string) : string)
+		if (fixed !== json) {
+			writeFileSync(path, fixed)
+		}
+	}
+	const infoPath = join(root, 'appinfo', 'info.xml')
+	if (existsSync(infoPath)) {
+		const xml = readFileSync(infoPath, 'utf8')
+		const fixed = xml.replace(/(<(summary|description)\s+lang="zh-[^"]*"\s*>)([\s\S]*?)(<\/\2>)/g, (element, start, name, text, end) => `${start}${chineseDashes(text)}${end}`)
+		if (fixed !== xml) {
+			writeFileSync(infoPath, fixed)
+		}
+	}
+}
+
 // The summaries and the descriptions in appinfo/info.xml that have a text, each by its
 // language, or null without the file. The App Store shows them to whoever speaks a
 // language, and the English ones, without lang, to everyone else.
@@ -302,6 +334,9 @@ if (catalogs.length === 0) {
 	problems.push('l10n/ holds no catalog.')
 }
 
+if (write) {
+	writeChineseDashes(catalogs)
+}
 const texts = usedTexts()
 const store = storeTexts()
 if (store === null && catalogs.length > 0) {

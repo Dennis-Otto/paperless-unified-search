@@ -268,8 +268,8 @@ requests of `.github/workflows/visual.yml`; for a picture of a German page, show
 there too, at the same place,
 with its alt text in German; for a screenshot of `README.md`, show it on the page of
 `docs/` about its topic and on its German twin; for a text of the code, add its translation to each `l10n/*.json`;
-for Chinese, write the dash and the word that the output names, in the catalog or in
-`appinfo/info.xml`;
+for Chinese, write the word that the output names, in the catalog or in
+`appinfo/info.xml`, and the dash, which the third command writes anew as `——`;
 for a language of a catalog without its texts of the App Store, add a `<summary lang>`
 and a `<description lang>` in that language to `appinfo/info.xml`, as
 [Translate](https://dennis-otto.github.io/paperless-unified-search/translate.html) shows;
