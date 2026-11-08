@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [1.6.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.5.0...v1.6.0) (2026-11-08)
+
+
+### Features
+
+* **search:** find the documents that Paperless Sync writes into each user's own files ([#345](https://github.com/Dennis-Otto/paperless-unified-search/issues/345)) ([b420151](https://github.com/Dennis-Otto/paperless-unified-search/commit/b420151884a0958f8e161b2ca305d6818c8fc0f7))
+* **settings:** set up the read-only search account in Paperless with one click ([#337](https://github.com/Dennis-Otto/paperless-unified-search/issues/337)) ([df6df94](https://github.com/Dennis-Otto/paperless-unified-search/commit/df6df948b613208789717b977a09ffad8280f93d))
+
+
+### Bug fixes
+
+* **settings:** warn when Paperless Sync gives each user their own archive, which the search doesn't show ([#341](https://github.com/Dennis-Otto/paperless-unified-search/issues/341)) ([af1ec74](https://github.com/Dennis-Otto/paperless-unified-search/commit/af1ec747eb07f017aa9db70f86985de3198ab027))
+
 ## [1.5.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.4.0...v1.5.0) (2026-11-07)
 
 ### Features
