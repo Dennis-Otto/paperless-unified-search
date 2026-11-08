@@ -6,16 +6,14 @@ All notable changes to this project are documented in this file.
 
 ## [1.6.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.5.0...v1.6.0) (2026-11-08)
 
-
 ### Features
 
-* **search:** find the documents that Paperless Sync writes into each user's own files ([#345](https://github.com/Dennis-Otto/paperless-unified-search/issues/345)) ([b420151](https://github.com/Dennis-Otto/paperless-unified-search/commit/b420151884a0958f8e161b2ca305d6818c8fc0f7))
-* **settings:** set up the read-only search account in Paperless with one click ([#337](https://github.com/Dennis-Otto/paperless-unified-search/issues/337)) ([df6df94](https://github.com/Dennis-Otto/paperless-unified-search/commit/df6df948b613208789717b977a09ffad8280f93d))
-
+- The administration settings create the Paperless account of the search with one click: below the API token, **No token yet? Create the search account in Paperless** takes the API token of a superuser of Paperless, which is used for this alone and never stored or logged, adds the user `nextcloud-search`, which may only view, and saves the settings with its token. Two choices, both on at first, let it view each new document with a workflow and add it to the permissions of the documents, correspondents, document types and tags that Paperless has, without taking away anyone else's. `occ paperless_unified_search:setup --create-account` does the same in scripts. An empty form now starts with the Paperless URL of Paperless Sync and its choice of the local network.
+- The search finds the documents that Paperless Sync writes into each user's own files, with **Who gets the documents** set to **Each user, those they own in Paperless**: a file of the user whom Paperless Sync gives the owner of a document in Paperless stands for that document, besides the files of the archive account, in the search, on the dashboard, in the notifications and in the smart picker, also for others who may only read it through a share. A file renamed after a document of another owner still stands for none, and **Try a search** and `occ paperless_unified_search:search --explain` call it *Owned in Paperless by another user*. The search learns the usernames of the owners from Paperless, so the account of the API token needs **View** for **User**: the search account that the settings create gets it, and the settings, `occ` and the overview warn about an account without it. With **Each user, those they own or may view in Paperless**, the search still shows only the files of the archive account, and the settings still warn.
 
 ### Bug fixes
 
-* **settings:** warn when Paperless Sync gives each user their own archive, which the search doesn't show ([#341](https://github.com/Dennis-Otto/paperless-unified-search/issues/341)) ([af1ec74](https://github.com/Dennis-Otto/paperless-unified-search/commit/af1ec747eb07f017aa9db70f86985de3198ab027))
+- When Paperless Sync gives each user their own archive, with **Who gets the documents** set to **Each user, those they own or may view in Paperless**, the search shows none of the documents in those archives, and nothing said so. Now the settings warn below the archive account, also after each test of the connection, and so do **Try a search**, `occ paperless_unified_search:check`, `occ paperless_unified_search:setup` and the overview of the administration settings: the search shows only the files of the archive account, such as the documents without an owner in Paperless. Each links a new entry of the troubleshooting guide, in English and German, with what you can do.
 
 ## [1.5.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.4.0...v1.5.0) (2026-11-07)
 
