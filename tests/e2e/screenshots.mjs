@@ -988,8 +988,9 @@ async function setupAnimation(browser, theme) {
 	await frame(300)
 	await clickAndRest(field('archive-owner'))
 	await type(field('archive-owner'), ARCHIVE)
-	// Above the buttons shows what the form saves, below them the message.
-	await scroll(field('form').locator('.paperless-unified-search-actions'), 'end', 56)
+	// Above the buttons shows what the form saves, below them the message: the buttons of
+	// the form, not those of the closed box of the search account.
+	await scroll(field('save').locator('xpath=..'), 'end', 56)
 	await clickAndRest(field('save'))
 	await page.getByText('Connection successful. Settings saved.').waitFor()
 	await settle(page, 300)
