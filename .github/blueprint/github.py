@@ -180,13 +180,17 @@ class Answer:
         """How long to wait before the request tries again; None when another try
         can't change the answer, or only after too long a wait. Without gateway, a
         gateway error isn't tried again: GitHub may have done the request anyway."""
+        after = self.headers.get("retry-after", "")
         if gateway and self.status in GATEWAY_ERRORS:
             seconds: float = GATEWAY_WAIT
-        elif rate_limited(self.status, self.message):
+        elif rate_limited(self.status, self.message) or (
+            # Too many requests, with the time to wait: what the code search answers
+            # after a few searches in a minute, without a word of a rate limit.
+            self.status == 429 and after.isdecimal()
+        ):
             seconds = RATE_LIMIT_WAIT
         else:
             return None
-        after = self.headers.get("retry-after", "")
         reset = self.headers.get("x-ratelimit-reset", "")
         if after.isdecimal():
             seconds = int(after)

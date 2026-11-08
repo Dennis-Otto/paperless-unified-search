@@ -88,6 +88,7 @@
 .github/workflows/area-labels.yml
 .github/workflows/blueprint-update.yml
 .github/workflows/bot-health.yml
+.github/workflows/build-image.yml
 .github/workflows/build-release.yml
 .github/workflows/ci.yml
 .github/workflows/cleanup.yml
