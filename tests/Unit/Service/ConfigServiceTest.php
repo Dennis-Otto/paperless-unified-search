@@ -161,31 +161,35 @@ final class ConfigServiceTest extends TestCase {
 
 	/**
 	 * Since its version 1.1.0, Paperless Sync can give each user the documents of their user
-	 * of Paperless as files of their own, which the search doesn't show, and nothing said so
-	 * (#338): with its choices of Each user, and only while the archive account is its
-	 * target user, whose files the search shows. Without the setting, as before Paperless
-	 * Sync 1.1.0, or with a choice that this version doesn't know, its target user gets every
-	 * document. It stores the setting as a lazy value, as all its settings.
+	 * of Paperless as files of their own: with its choices of Each user, and only while the
+	 * archive account is its target user, whose files the search shows. With the documents
+	 * that each user owns, the files of the users count as well (decision 0013); with those
+	 * that each user may view, they don't, which the settings say (#338). Without the
+	 * setting, as before Paperless Sync 1.1.0, or with a choice that this version doesn't
+	 * know, its target user gets every document. It stores the setting as a lazy value, as
+	 * all its settings.
 	 *
-	 * @return array<string, array{?string, string, string, bool}>
+	 * @return array<string, array{?string, string, string, bool, bool}>
 	 */
 	public static function ownershipsOfPaperlessSync(): array {
 		return [
-			'the target user, all of them' => ['single', '', 'sync', false],
-			'each user, those they own' => ['per-user', '', 'sync', true],
-			'each user, those they own or may view' => ['per-user-shared', '', 'sync', true],
-			'each user, with blanks' => [' per-user ', '', 'sync', true],
-			'no choice, as before Paperless Sync 1.1.0' => [null, '', 'sync', false],
-			'a choice that this version does not know' => ['per-group', '', 'sync', false],
-			'each user, with its target user as the archive account' => ['per-user', 'Sync', 'sync', true],
-			'each user, with another archive account' => ['per-user', 'archive', 'sync', false],
-			'each user, with another archive account and no target user' => ['per-user', 'archive', '', false],
-			'each user, with a target user that does not exist' => ['per-user', '', 'deleted', false],
+			'the target user, all of them' => ['single', '', 'sync', false, false],
+			'each user, those they own' => ['per-user', '', 'sync', false, true],
+			'each user, those they own or may view' => ['per-user-shared', '', 'sync', true, false],
+			'each user, with blanks' => [' per-user ', '', 'sync', false, true],
+			'each user, also those they may view, with blanks' => [' per-user-shared ', '', 'sync', true, false],
+			'no choice, as before Paperless Sync 1.1.0' => [null, '', 'sync', false, false],
+			'a choice that this version does not know' => ['per-group', '', 'sync', false, false],
+			'each user, with its target user as the archive account' => ['per-user', 'Sync', 'sync', false, true],
+			'each user, with another archive account' => ['per-user', 'archive', 'sync', false, false],
+			'each user, also those they may view, with another archive account' => ['per-user-shared', 'archive', 'sync', false, false],
+			'each user, with another archive account and no target user' => ['per-user', 'archive', '', false, false],
+			'each user, with a target user that does not exist' => ['per-user', '', 'deleted', false, false],
 		];
 	}
 
 	#[DataProvider('ownershipsOfPaperlessSync')]
-	public function testTellsWhetherPaperlessSyncGivesEachUserAnArchiveOfTheirOwn(?string $ownership, string $setting, string $syncAccount, bool $perUser): void {
+	public function testTellsWhetherPaperlessSyncGivesEachUserAnArchiveOfTheirOwn(?string $ownership, string $setting, string $syncAccount, bool $perUser, bool $eachOwner): void {
 		$config = $this->settings([AppConstants::APP_ID . '.archive_owner' => $setting])->seed('paperless_sync', 'target_user', $syncAccount, true);
 		if ($ownership !== null) {
 			$config->seed('paperless_sync', 'ownership', $ownership, true);
@@ -194,6 +198,7 @@ final class ConfigServiceTest extends TestCase {
 		$service = $this->service($config, $this->createStub(ICredentialsManager::class));
 
 		self::assertSame($perUser, $service->hasPerUserArchives());
+		self::assertSame($eachOwner, $service->hasArchivesOfEachOwner());
 		self::assertSame($perUser, $service->getPublicConfig()->perUserArchives);
 		self::assertSame($perUser, $service->save('https://paperless.example.com', 'TEST_VALUE', false, $setting)->perUserArchives);
 	}

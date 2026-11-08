@@ -11,7 +11,7 @@ Copy [the template](0000-template.md) to the next free number, replace the descr
 | Record | Decision | Status |
 | --- | --- | --- |
 | [0001](0001-record-decisions.md) | Record the decisions that shape the project | accepted |
-| [0002](0002-trust-the-archive-account.md) | Trust the owner of a file, not its name | accepted |
+| [0002](0002-trust-the-archive-account.md) | Trust the owner of a file, not its name | accepted, amended by [0013](0013-trust-the-files-of-each-owner.md) |
 | [0003](0003-bind-the-token-to-its-server.md) | Send the stored token only to the server it was saved for | accepted |
 | [0004](0004-local-network-opt-in.md) | Allow the local network for this Paperless alone, by a switch of the settings | accepted |
 | [0005](0005-name-the-cause-of-a-failed-connection-test.md) | Name the cause of a failed test of the connection, in the language of the administrator | accepted |
@@ -22,3 +22,4 @@ Copy [the template](0000-template.md) to the next free number, replace the descr
 | [0010](0010-warn-about-what-the-token-may-do.md) | Warn about what the account of the API token may do, without refusing it | accepted |
 | [0011](0011-notify-about-new-documents-when-their-files-arrive.md) | Notify each user about new documents when their files arrive, from searches that the user saved | accepted |
 | [0012](0012-create-the-search-account-with-a-one-time-superuser-token.md) | Create the search account with a token of a superuser that serves only this | accepted |
+| [0013](0013-trust-the-files-of-each-owner.md) | Trust the files of the user of each owner, for that owner's documents alone | accepted |

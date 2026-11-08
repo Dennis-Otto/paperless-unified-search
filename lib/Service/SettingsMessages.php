@@ -107,12 +107,13 @@ final class SettingsMessages {
 			TokenWarning::HidesDocumentTypes => $this->l10n->t('The account of the API token may not view document types in Paperless, so results show without them. Give the account the permission View for Document Types.'),
 			TokenWarning::HidesTags => $this->l10n->t('The account of the API token may not view tags in Paperless, so results show without them. Give the account the permission View for Tags.'),
 			TokenWarning::HidesNamesOfOthers => $this->l10n->t('The account of the API token may not view some correspondents, document types or tags in Paperless, which another user owns, so results show without them. Select them in their lists in Paperless and add the account under Permissions, View.'),
+			TokenWarning::HidesUsers => $this->l10n->t('The account of the API token may not view users in Paperless, so the search shows only the files of the archive account, not the documents that Paperless Sync puts into the files of each user. Give the account the permission View for Users.'),
 		};
 	}
 
 	/**
-	 * The warning that Paperless Sync gives each user the documents of their user of
-	 * Paperless as files of their own, with what the search still shows.
+	 * The warning that Paperless Sync gives each user the documents that their user of
+	 * Paperless may view as files of their own, with what the search still shows.
 	 */
 	public function forPerUserArchives(): string {
 		return $this->l10n->t('Paperless Sync puts the documents of each user into their own files, which the search doesn\'t show: it shows only the files of the archive account, such as the documents without an owner in Paperless.');

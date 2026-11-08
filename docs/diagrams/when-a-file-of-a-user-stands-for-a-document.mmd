@@ -1,0 +1,22 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: When a file of a user stands for a document
+    accDescr: Paperless Sync gives each user the documents that they own in Paperless. jamie can open a file with [P412] in its name. A file of the archive account stands for document 412, as before. A file of another user, sam, stands for it only when Paperless Sync gives sam the owner of document 412 in Paperless, by its table, the same ID or its group; otherwise sam could have renamed the file after a document of someone else, and it stands for no document. A file of another account stands for 412 only when jamie may only read it.
+
+    file["jamie can open a file<br>with [P412] in its name"] --> owner{"Who owns<br>the file?"}
+    owner -- "the archive<br>account" --> read{"May jamie only<br>read it, or is<br>it jamie's own?"}
+    owner -- "a user, sam" --> paperless{"Does Paperless Sync give<br>sam the owner of 412<br>in Paperless?"}
+    paperless -- "yes, by its table,<br>the same ID<br>or its group" --> read
+    paperless -- "no, sam could<br>have renamed it" --> ignored["The file stands<br>for no document"]
+    read -- "yes" --> shown["jamie sees<br>document 412: its<br>title and excerpt"]
+    read -- "no, jamie could<br>have renamed it" --> ignored
+
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class shown yes
+    class ignored no

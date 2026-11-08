@@ -449,7 +449,7 @@ test('the settings show the warnings about the account of the token, which keep 
 		answers: [
 			json({ ...CONFIG, tokenWarnings: ['superuser'] }),
 			// A value that a newer server names, which this page doesn't know, shows nothing.
-			json({ ...CONFIG, tokenWarnings: ['staff', 'changes_documents', 'retired', 'hides_correspondents', 'hides_document_types', 'hides_tags', 'hides_names_of_others'] }),
+			json({ ...CONFIG, tokenWarnings: ['staff', 'changes_documents', 'retired', 'hides_correspondents', 'hides_document_types', 'hides_tags', 'hides_names_of_others', 'hides_users'] }),
 			json({ ...CONFIG, tokenWarnings: [] }),
 		],
 	})
@@ -459,10 +459,21 @@ test('the settings show the warnings about the account of the token, which keep 
 	assert.equal(get('status').textContent, 'Connection successful. Settings saved.')
 
 	await get('form').dispatch('submit')
-	assert.equal(get('token-warnings').textContent, 'The API token belongs to an Admin of Paperless, who may also read its logs: whoever gets hold of the token can too. Use the token of an account that is neither Admin nor Superuser. The account of the API token may add, change or delete documents in Paperless: whoever gets hold of the token can too. Use the token of an account that may only view documents. The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents. The account of the API token may not view document types in Paperless, so results show without them. Give the account the permission View for Document Types. The account of the API token may not view tags in Paperless, so results show without them. Give the account the permission View for Tags. The account of the API token may not view some correspondents, document types or tags in Paperless, which another user owns, so results show without them. Select them in their lists in Paperless and add the account under Permissions, View.')
+	assert.equal(get('token-warnings').textContent, 'The API token belongs to an Admin of Paperless, who may also read its logs: whoever gets hold of the token can too. Use the token of an account that is neither Admin nor Superuser. The account of the API token may add, change or delete documents in Paperless: whoever gets hold of the token can too. Use the token of an account that may only view documents. The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents. The account of the API token may not view document types in Paperless, so results show without them. Give the account the permission View for Document Types. The account of the API token may not view tags in Paperless, so results show without them. Give the account the permission View for Tags. The account of the API token may not view some correspondents, document types or tags in Paperless, which another user owns, so results show without them. Select them in their lists in Paperless and add the account under Permissions, View. The account of the API token may not view users in Paperless, so the search shows only the files of the archive account, not the documents that Paperless Sync puts into the files of each user. Give the account the permission View for Users.')
 
 	await get('form').dispatch('submit')
 	assert.equal(get('token-warnings').textContent, '')
+})
+
+test('the settings know every warning about the account of the token that the server names', function() {
+	// The values of lib/Model/TokenWarning.php and the keys of TOKEN_WARNINGS: a value that
+	// the page doesn't know shows nothing, so a new one needs its text here as well.
+	const php = readFileSync(new URL('../../lib/Model/TokenWarning.php', import.meta.url), 'utf8')
+	const server = [...php.matchAll(/^\tcase \w+ = '(\w+)';$/gm)].map((match) => match[1]).sort()
+	const settings = readFileSync(url, 'utf8').match(/const TOKEN_WARNINGS = \{\r?\n([\s\S]*?)\r?\n\t\}/)[1]
+
+	assert.notDeepEqual(server, [])
+	assert.deepEqual([...settings.matchAll(/^\t\t(\w+): /gm)].map((match) => match[1]).sort(), server)
 })
 
 test('a placeholder without its value stays as it is', async function() {
@@ -619,6 +630,7 @@ const TRIED = {
 		{ id: 377, title: 'Receipt', verdict: 'writable' },
 		{ id: 389, title: 'Home insurance', verdict: 'not_shared' },
 		{ id: 371, title: '<b>Internet</b> invoice', verdict: 'not_owned' },
+		{ id: 365, title: 'Payslip', verdict: 'other_owner' },
 		{ id: 360, title: 'Letter', verdict: 'no_file' },
 		{ id: 7, title: 'Old', verdict: 'hidden' },
 	],
@@ -655,7 +667,7 @@ test('Try a search sends the term and the user, and shows why each document show
 	}])
 	// While the server works, the form is busy and the earlier result gone.
 	assert.deepEqual(tries, [{ text: 'Searching Paperless as jamie…', kind: PENDING, busy: 'true', button: 'disabled', result: 0 }])
-	assert.equal(get('try-status').textContent, 'Shown to jamie: 1 of the first 6. Found by Paperless: 12.')
+	assert.equal(get('try-status').textContent, 'Shown to jamie: 1 of the first 7. Found by Paperless: 12.')
 	assert.equal(get('try-status').classList.toString(), SUCCESS)
 	assert.equal(get('try-form').getAttribute('aria-busy'), 'false')
 	assert.equal(get('try').disabled, false)
@@ -676,6 +688,8 @@ test('Try a search sends the term and the user, and shows why each document show
 			['ID: 389', 'Title: Home insurance', 'Shown or why not: Not shared with jamie'],
 			// A title is text, never markup.
 			['ID: 371', 'Title: <b>Internet</b> invoice', 'Shown or why not: Not a file of the archive account'],
+			// Paperless Sync gives each owner an archive, and the file is of another user.
+			['ID: 365', 'Title: Payslip', 'Shown or why not: Owned in Paperless by another user'],
 			['ID: 360', 'Title: Letter', 'Shown or why not: No file with [P360]'],
 			['ID: 7', 'Title: Old', 'Shown or why not: Hidden'],
 		],
@@ -785,7 +799,7 @@ test('the verdicts of a try go through the translation of Nextcloud', async func
 
 	await get('try-form').dispatch('submit')
 
-	assert.equal(get('try-status').textContent, 'DE:Shown to jamie: 1 of the first 6. Found by Paperless: 12.')
+	assert.equal(get('try-status').textContent, 'DE:Shown to jamie: 1 of the first 7. Found by Paperless: 12.')
 	assert.deepEqual(rowsOf(get('try-result').children[0]).rows[2], ['DE:ID: 389', 'DE:Title: Home insurance', 'DE:Shown or why not: DE:Not shared with jamie'])
 })
 

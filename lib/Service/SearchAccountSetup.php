@@ -44,10 +44,11 @@ final class SearchAccountSetup {
 	public const USERNAME = 'nextcloud-search';
 	/**
 	 * The permissions of the search account, as Paperless names them: View for documents,
-	 * correspondents, document types and tags, which the search reads, and for its UI
-	 * settings, which tell the test of the connection what the account may do.
+	 * correspondents, document types and tags, which the search reads, for users, whose
+	 * names tell whom Paperless Sync gives the documents of each owner (decision 0013), and
+	 * for its UI settings, which tell the test of the connection what the account may do.
 	 */
-	public const PERMISSIONS = ['view_document', 'view_correspondent', 'view_documenttype', 'view_tag', 'view_uisettings'];
+	public const PERMISSIONS = ['view_document', 'view_correspondent', 'view_documenttype', 'view_tag', 'view_user', 'view_uisettings'];
 	/** The name of the workflow that lets the search account view each new document. */
 	public const WORKFLOW = 'Nextcloud search: view new documents';
 	/** The lists of names that the search shows, as the bulk editor of Paperless names them. */

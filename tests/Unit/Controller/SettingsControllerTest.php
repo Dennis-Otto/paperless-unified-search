@@ -24,6 +24,7 @@ use OCA\PaperlessUnifiedSearch\Service\SearchExplainer;
 use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryAppConfig;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\Owners;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -49,6 +50,7 @@ use Throwable;
 
 final class SettingsControllerTest extends TestCase {
 	use Accounts;
+	use Owners;
 
 	private const NO_DOCUMENTS = '{"count":0,"next":null,"results":[]}';
 	private const STORED_URL = 'https://paperless.example.com';
@@ -747,7 +749,7 @@ final class SettingsControllerTest extends TestCase {
 			new SettingsMessages($l10n),
 			$l10n,
 			$logger ?? $this->createStub(LoggerInterface::class),
-			new SearchExplainer(new NextcloudFileLocator($this->createStub(IRootFolder::class), $this->createStub(LoggerInterface::class)), $accounts),
+			new SearchExplainer(new NextcloudFileLocator($this->createStub(IRootFolder::class), $this->createStub(LoggerInterface::class)), $accounts, $this->documentOwners($api, $configService, $accounts)),
 			$accounts,
 			$this->createStub(IUserSession::class),
 			$this->createStub(IEventDispatcher::class),

@@ -60,7 +60,7 @@ final class Test extends Command {
 			? sprintf('Paperless answers at %s.', $url)
 			: sprintf('Paperless %s (API %s) answers at %s.', $status->version->version, $status->version->apiVersion, $url)));
 		$output->writeln(sprintf('The account of the API token may view %s document(s).', number_format($status->documents)));
-		self::warnAboutTheToken($output, $this->messages, $status->tokenWarnings ?? []);
+		self::warnAboutTheToken($output, $this->messages, $this->configService->shownTokenWarnings($status->tokenWarnings ?? []));
 
 		return self::SUCCESS;
 	}

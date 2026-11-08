@@ -164,7 +164,7 @@ final class AdminSettingsTest extends TestCase {
 	public function testTheFormWarnsOfTheArchivesForEachUserWithHelpInTheLanguageOfTheAdministrator(string $language, string $help): void {
 		$config = new MemoryAppConfig();
 		$config->seed('paperless_sync', 'target_user', 'sync', lazy: true);
-		$config->seed('paperless_sync', 'ownership', 'per-user', lazy: true);
+		$config->seed('paperless_sync', 'ownership', 'per-user-shared', lazy: true);
 
 		$params = $this->settings($config, $this->createStub(ICredentialsManager::class), $this->createStub(IURLGenerator::class), $language)->getForm()->getParams();
 

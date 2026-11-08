@@ -15,6 +15,7 @@ use OCA\PaperlessUnifiedSearch\Service\NewDocumentAlerts;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\SavedSearches;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppServices;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\Owners;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\UserPreferences;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\Job;
@@ -34,6 +35,7 @@ use SimpleXMLElement;
  */
 final class NotifyNewDocumentsTest extends TestCase {
 	use AppServices;
+	use Owners;
 	use UserPreferences;
 
 	private ?ITimeFactory $clock = null;
@@ -67,19 +69,21 @@ final class NotifyNewDocumentsTest extends TestCase {
 		$accounts = $this->createStub(IUserManager::class);
 		$configService = $this->configService($accounts);
 		$this->clock = $this->createStub(ITimeFactory::class);
+		$paperlessApi = $this->paperlessApi($configService, $this->paperless());
 
 		return new NotifyNewDocuments(
 			$this->clock,
 			new NewDocumentAlerts(
 				$configService,
 				new SavedSearches($this->userConfig()),
-				$this->paperlessApi($configService, $this->paperless()),
+				$paperlessApi,
 				new NextcloudFileLocator($this->createStub(IRootFolder::class), $this->createStub(LoggerInterface::class)),
 				$accounts,
 				$this->createStub(IManager::class),
 				$this->appConfig(),
 				$this->createStub(ITimeFactory::class),
 				$this->createStub(LoggerInterface::class),
+				$this->documentOwners($paperlessApi, $configService, $accounts),
 			),
 		);
 	}

@@ -27,22 +27,23 @@ SUPERUSER_TOKEN = "e2e-superuser-token"
 
 # Like Paperless, the mock answers /api/ui_settings/ with the user of the token and the
 # permissions of its account, as Paperless-ngx 3.3.1 does without the settings of its UI:
-# TOKEN belongs to an account that may view documents, correspondents, document types, tags
-# and its UI settings, the account that the documentation recommends, and SUPERUSER_TOKEN to
-# a superuser, for whom Paperless names every permission of Django.
+# TOKEN belongs to an account that may view documents, correspondents, document types, tags,
+# users and its UI settings, the account that the documentation recommends with the archives
+# that Paperless Sync gives each owner, and SUPERUSER_TOKEN to a superuser, for whom
+# Paperless names every permission of Django.
 UI_SETTINGS_PATH = "/api/ui_settings/"
 ACCOUNTS = {
     TOKEN: {
         "user": {"id": 3, "username": "nextcloud", "is_staff": False, "is_superuser": False, "groups": []},
         "settings": {},
-        "permissions": ["view_document", "view_correspondent", "view_documenttype", "view_tag", "view_uisettings"],
+        "permissions": ["view_document", "view_correspondent", "view_documenttype", "view_tag", "view_user", "view_uisettings"],
     },
     SUPERUSER_TOKEN: {
         "user": {"id": 1, "username": "admin", "is_staff": True, "is_superuser": True, "groups": []},
         "settings": {},
         "permissions": [
             "add_document", "change_document", "delete_document", "view_document",
-            "view_correspondent", "view_documenttype", "view_tag", "view_uisettings",
+            "view_correspondent", "view_documenttype", "view_tag", "view_user", "view_uisettings",
         ],
     },
 }
@@ -104,7 +105,10 @@ SET_UP_PATHS = {
     ("POST", "/api/documents/bulk_edit/"),
     ("POST", "/api/bulk_edit_objects/"),
 }
-USERS = {1: "admin", 3: "nextcloud"}
+# Like Paperless, the mock lists its users to an account that may view them, page by page,
+# with every field of a user as Paperless sends them, for the archives that Paperless Sync
+# gives each owner: e2e-writer owns document 999 (#342).
+USERS = {1: "admin", 3: "nextcloud", 4: "e2e-writer"}
 _passwords = {}
 _workflows = {}
 _set_up_lock = threading.Lock()
@@ -121,7 +125,7 @@ ORDERING_FIELDS = {"added", "created", "id", "title"}
 # Paperless, it refuses a request that names none, for which Paperless sends every field,
 # the whole OCR text of every document among them, so that the end-to-end tests notice when
 # the app stops naming them.
-NO_VALUE = {"correspondent": None, "document_type": None, "tags": []}
+NO_VALUE = {"correspondent": None, "document_type": None, "tags": [], "owner": None}
 
 # The documents of the demo that scripts/screenshots.sh searches for with the term
 # "invoice", for the screenshots and the animation of the README. The OCR text of the
@@ -213,6 +217,7 @@ MOBILE_DOCUMENTS = [
         "title": "Mobile viewer test",
         "created": "2026-08-26",
         "added": "2026-08-27T14:00:00.000000+02:00",
+        "owner": 1,
         "correspondent": 7,
         "document_type": 3,
         "tags": [1, 4],
@@ -228,6 +233,7 @@ MOBILE_DOCUMENTS = [
         "title": "Inaccessible document",
         "created": "2026-08-25",
         "added": "2026-08-28T09:30:00.000000+02:00",
+        "owner": 4,
         "correspondent": 9,
         "content": "Synthetic OCR text of a document no file stands for. " * 1000,
         "notes": [],
@@ -513,6 +519,10 @@ class Handler(BaseHTTPRequestHandler):
             self._json(406, {"detail": 'Invalid version in "Accept" header.'})
             return
         token = self.headers.get("Authorization", "").removeprefix("Token ")
+        query = parse_qs(urlparse(self.path).query)
+        if method == "GET" and path == "/api/users/" and "username__iexact" not in query and token in ACCOUNTS:
+            self._users(query)
+            return
         if path != "/api/token/" and token != SUPERUSER_TOKEN:
             self._json(401 if token not in ACCOUNTS else 403, {"detail": "You do not have permission to perform this action."})
             return
@@ -556,6 +566,49 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(201, {"id": workflow, **body})
             else:
                 self._json(200, {"result": "OK"})
+
+    def _users(self, parameters):
+        """A page of the users of Paperless with every field of a user, as Paperless-ngx sends
+        them to an account that may view users, as both accounts of the mock may."""
+        self.versioned = True
+        size = number(parameters, "page_size", DEFAULT_PAGE_SIZE)
+        page = number(parameters, "page", 1)
+        with _set_up_lock:
+            users = sorted(USERS.items())
+        if size is None or page is None or (page - 1) * size >= max(len(users), 1):
+            self._json(404, {"detail": "Invalid page."})
+            return
+        start = (page - 1) * size
+
+        def link(number):
+            return f"http://{self.headers.get('Host')}/api/users/?" + urlencode({"page": number, "page_size": size})
+
+        results = [
+            {
+                "id": user,
+                "username": username,
+                "email": "",
+                "password": "**********",
+                "first_name": "",
+                "last_name": "",
+                "date_joined": "2026-08-01T08:00:00.000000+02:00",
+                "is_staff": user == 1,
+                "is_active": True,
+                "is_superuser": user == 1,
+                "groups": [],
+                "user_permissions": [],
+                "inherited_permissions": [],
+                "is_mfa_enabled": False,
+            }
+            for user, username in users[start:start + size]
+        ]
+        self._json(200, {
+            "count": len(users),
+            "next": link(page + 1) if start + size < len(users) else None,
+            "previous": link(page - 1) if page > 1 else None,
+            "all": [user for user, _ in users],
+            "results": results,
+        })
 
     def _list(self, names, parameters, *, tags=False):
         """A page of a list of Paperless, such as its correspondents, with every field of an

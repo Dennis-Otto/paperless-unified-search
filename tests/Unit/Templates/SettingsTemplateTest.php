@@ -300,7 +300,7 @@ final class SettingsTemplateTest extends TestCase {
 		foreach ((new DOMXPath($page))->query('//ul[@class="paperless-unified-search-reasons"]/li') ?: [] as $reason) {
 			$reasons[] = explode(':', $this->text($reason))[0];
 		}
-		self::assertSame(['Shared with write permission', 'Not shared', 'Not a file of the archive account', 'No file'], $reasons);
+		self::assertSame(['Shared with write permission', 'Not shared', 'Not a file of the archive account', 'Owned in Paperless by another user', 'No file'], $reasons);
 	}
 
 	public function testEveryIdIsUnique(): void {

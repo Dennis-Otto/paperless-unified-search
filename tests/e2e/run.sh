@@ -864,23 +864,74 @@ assert_occ shares "${TMP_DIR}/check-read-only.txt" '✓ Shared read-only: 1 user
 occ setupchecks --output=json >"${TMP_DIR}/setupchecks-read-only.json" || true
 assert_occ setupcheck "${TMP_DIR}/setupchecks-read-only.json" success 'with the archive account e2e-user. Shared read-only: 1 user.'
 
-# Since its version 1.1.0, Paperless Sync can give each user the documents of their user
-# of Paperless as files of their own, which the search doesn't show, and nothing said so
-# (#338). With its setting ownership on per-user and e2e-user, the archive account, as its
-# target user, occ check and the overview of the administration settings say what the
-# search still shows and link what to do, and Try a search tells the page to say so. The
-# check still passes: the search shows the documents of the archive account. Without the
-# setting, as before Paperless Sync 1.1.0, the warning is gone again.
+# Since its version 1.1.0, Paperless Sync can give each user the documents that their user
+# of Paperless owns as files of their own, and the search shows them (#342, decision 0013):
+# with its setting ownership on per-user and e2e-user, the archive account, as its target
+# user, the own file of e2e-writer stands for document 999, which the mock names e2e-writer
+# the owner of, through the users of Paperless that the account of the token may view.
+# e2e-other's file renamed after 999 stands for nothing: occ and Try a search name the file
+# of e2e-writer, which isn't shared with e2e-other, and once it is gone, the file of another
+# user than the owner. The check passes, counts the files of the archive account alone, and
+# warns of nothing.
 PER_USER='Paperless Sync puts the documents of each user into their own files'
 PER_USER_HELP='https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html#paperless-sync-gives-each-user-their-own-archive'
 occ config:app:set paperless_sync target_user --value=e2e-user --lazy >/dev/null
 occ config:app:set paperless_sync ownership --value=per-user --lazy >/dev/null
+OWN="${BASE_URL}/remote.php/dav/files/e2e-writer/Own%20%5BP999%5D.txt"
+RENAMED="${BASE_URL}/remote.php/dav/files/e2e-other/Renamed%20%5BP999%5D.txt"
+printf '%s\n' 'Document 999 in the own files of e2e-writer.' \
+	| curl --fail-with-body --silent --show-error --user "e2e-writer:${PASSWORD}" --upload-file - "${OWN}" >/dev/null
+printf '%s\n' 'Not document 999.' \
+	| curl --fail-with-body --silent --show-error --user "e2e-other:${PASSWORD}" --upload-file - "${RENAMED}" >/dev/null
+occ paperless_unified_search:search e2e-other mobiletest --explain --json >"${TMP_DIR}/explain-own.json"
+assert_occ verdicts "${TMP_DIR}/explain-own.json" '123=shown=/Mobile viewer test [P123].pdf' '999=not_shared=/Own [P999].txt'
+occ paperless_unified_search:check >"${TMP_DIR}/check-own.txt"
+expect_text 'which this count leaves out' "${TMP_DIR}/check-own.txt" "occ check didn't say that it counts the files of the archive account alone: $(cat "${TMP_DIR}/check-own.txt")"
+if grep --fixed-strings "! ${PER_USER}, which the search doesn't show" "${TMP_DIR}/check-own.txt" >/dev/null; then
+	echo "occ check warned about the archives of each owner, which the search shows: $(cat "${TMP_DIR}/check-own.txt")" >&2
+	exit 1
+fi
+occ setupchecks --output=json >"${TMP_DIR}/setupchecks-own.json" || true
+assert_occ setupcheck "${TMP_DIR}/setupchecks-own.json" success 'with the archive account e2e-user. Shared read-only: 1 user.'
+# Apache caches the configuration of the apps for up to 3 seconds, so right after occ
+# set the ownership, the search may still answer as before: it asks again for up to 10.
+for _ in {1..10}; do
+	search e2e-writer 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/own.json"
+	if assert_response own "${TMP_DIR}/own.json" >/dev/null 2>&1; then
+		break
+	fi
+	sleep 1
+done
+assert_response own "${TMP_DIR}/own.json"
+search e2e-other 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/renamed.json"
+assert_response shared "${TMP_DIR}/renamed.json"
+expect_status 204 'Deleting the own file of e2e-writer' --user "e2e-writer:${PASSWORD}" --request DELETE "${OWN}"
+occ paperless_unified_search:search e2e-other mobiletest --explain --json >"${TMP_DIR}/explain-renamed.json"
+assert_occ verdicts "${TMP_DIR}/explain-renamed.json" '123=shown=/Mobile viewer test [P123].pdf' '999=other_owner=/Renamed [P999].txt'
+try_search 200 e2e-other
+assert_occ try "${TMP_DIR}/answer.json" e2e-other 123=shown 999=other_owner
+expect_status 204 'Deleting the renamed file of e2e-other' --user "e2e-other:${PASSWORD}" --request DELETE "${RENAMED}"
+
+# With the documents that each user may view as well, the search shows only the files of
+# the archive account, and nothing said so (#338): with ownership on per-user-shared, occ
+# check and the overview of the administration settings say what the search still shows
+# and link what to do, and Try a search tells the page to say so. The check still passes:
+# the search shows the documents of the archive account. Without the setting, as before
+# Paperless Sync 1.1.0, the warning is gone again.
+occ config:app:set paperless_sync ownership --value=per-user-shared --lazy >/dev/null
 occ paperless_unified_search:check >"${TMP_DIR}/check-per-user.txt"
 expect_text "! ${PER_USER}" "${TMP_DIR}/check-per-user.txt" "occ check didn't warn about the archives for each user: $(cat "${TMP_DIR}/check-per-user.txt")"
 expect_text "See ${PER_USER_HELP}" "${TMP_DIR}/check-per-user.txt" "occ check didn't link what to do: $(cat "${TMP_DIR}/check-per-user.txt")"
 occ setupchecks --output=json >"${TMP_DIR}/setupchecks-per-user.json" || true
 assert_occ setupcheck "${TMP_DIR}/setupchecks-per-user.json" warning "${PER_USER}" "${PER_USER_HELP}"
-try_search 200 e2e-other
+# The page asked as before a moment ago, so Apache may still hold the ownership of then.
+for _ in {1..10}; do
+	try_search 200 e2e-other
+	if grep --fixed-strings '"perUserArchives":true' "${TMP_DIR}/answer.json" >/dev/null; then
+		break
+	fi
+	sleep 1
+done
 expect_text '"perUserArchives":true' "${TMP_DIR}/answer.json" "Try a search didn't say that Paperless Sync gives each user an archive: $(cat "${TMP_DIR}/answer.json")"
 occ config:app:delete paperless_sync ownership >/dev/null
 occ config:app:delete paperless_sync target_user >/dev/null
@@ -1151,4 +1202,4 @@ phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed in ${SECONDS} s: the set-up, the repair step that removes the last failure of version 0.3.0, the test, the explained search and the check of occ, the warnings of occ and of the overview about a token of a superuser and about the archives of Paperless Sync for each user, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, the dashboard widget with the newest documents that a user can open at one request to Paperless a minute, also in French, trusted mode, the choice of a user to include Paperless in every search of their own, which the administrators can disallow, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date and the name of its provider in English, German and French, its correspondent, its type and its tags, pages of results filled across pages of Paperless, documents similar to one with like:, the date filter in the timezone of the user, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, Try a search for administrators only with the IDs, titles, tags and verdicts alone, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."
+echo "Docker E2E passed in ${SECONDS} s: the set-up, the repair step that removes the last failure of version 0.3.0, the test, the explained search and the check of occ, the warnings of occ and of the overview about a token of a superuser and about the archives of Paperless Sync for each user, the own files of the user of the owner of a document, which no renamed file of another user replaces, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, the dashboard widget with the newest documents that a user can open at one request to Paperless a minute, also in French, trusted mode, the choice of a user to include Paperless in every search of their own, which the administrators can disallow, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date and the name of its provider in English, German and French, its correspondent, its type and its tags, pages of results filled across pages of Paperless, documents similar to one with like:, the date filter in the timezone of the user, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, Try a search for administrators only with the IDs, titles, tags and verdicts alone, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."

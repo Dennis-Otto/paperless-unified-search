@@ -77,6 +77,9 @@ DEADLINE = 240
 # settings, without which Paperless doesn't say what the account may do. And those that
 # change documents, which the app warns about (lib/Model/TokenWarning.php).
 VIEWER_PERMISSIONS = ["view_document", "view_correspondent", "view_documenttype", "view_tag", "view_uisettings"]
+# The same and the usernames, which the archives that Paperless Sync gives each owner need
+# (decision 0013): the permissions of the search account that the settings create.
+SEARCH_ACCOUNT_PERMISSIONS = [*VIEWER_PERMISSIONS, "view_user"]
 CHANGING_DOCUMENTS = {"add_document", "change_document", "delete_document"}
 
 # The correspondent, the type and the tag of the invoice, which the superuser adds and
@@ -901,7 +904,7 @@ def check_search_account(paperless, report):
         expect(len(users) == 1, f"Paperless has {len(users)} users {SEARCH_ACCOUNT}.")
         user = users[0]
         expect(not user.get("is_superuser") and not user.get("is_staff"), f"The search account is a superuser or staff: {user!r}")
-        expect(sorted(user.get("user_permissions", [])) == sorted(VIEWER_PERMISSIONS), f"The search account may {sorted(user.get('user_permissions', []))}, not only {sorted(VIEWER_PERMISSIONS)}.")
+        expect(sorted(user.get("user_permissions", [])) == sorted(SEARCH_ACCOUNT_PERMISSIONS), f"The search account may {sorted(user.get('user_permissions', []))}, not only {sorted(SEARCH_ACCOUNT_PERMISSIONS)}.")
         workflows = [workflow for workflow in paperless.get("/api/workflows/", page_size=100).json("The workflows").get("results", []) if workflow.get("name") == SEARCH_WORKFLOW]
         expect(len(workflows) == 1, f"Paperless has {len(workflows)} workflows {SEARCH_WORKFLOW!r}.")
         # The documents of the superuser, once Paperless has their new permissions in the
@@ -925,6 +928,43 @@ def check_search_account(paperless, report):
                 paperless.send(f"/api/workflows/{workflow['id']}/", None, method="DELETE")
         for user in paperless.get("/api/users/", username__iexact=SEARCH_ACCOUNT).json("The users").get("results", []):
             paperless.send(f"/api/users/{user['id']}/", None, method="DELETE")
+
+
+def check_owners(paperless, ids, viewer_id, viewer, report):
+    """What the search reads when Paperless Sync gives each user the documents that they own
+    (decision 0013), with two owners: the field owner of each document of a search, the ID
+    of its owner, and the usernames of /api/users/ by those IDs, page by page, which Paperless
+    lists only to an account that may view users. The check gives the letter to the viewer
+    and back to the superuser afterwards, so that the other checks find it as before."""
+    letter = ids["Contract letter"]
+    superuser_id = paperless.ui_settings(paperless.token).json("/api/ui_settings/")["user"]["id"]
+    # The document itself, as its dialog in Paperless changes its owner: the bulk editor
+    # gives an owner only to documents without one, when it merges the permissions.
+    changed = paperless.send(f"/api/documents/{letter}/", {"owner": viewer_id}, method="PATCH")
+    expect(changed.status == 200, f"Paperless didn't give the letter to the viewer (HTTP {changed.status}): {changed.body[:300]!r}")
+    try:
+        owners = {hit["id"]: hit.get("owner", "absent") for hit in hits(paperless, paperless.token, EVERY_TERM)}
+        expected = {document: viewer_id if document == letter else superuser_id for document in ids.values()}
+        expect(owners == expected, f"A search with the fields of the app names the owners {owners!r}, not {expected!r}.")
+
+        users = paperless.get("/api/users/", page=1, page_size=1000)
+        expect(users.status == 200, f"/api/users/ answered the superuser with HTTP {users.status}: {users.body[:300]!r}")
+        listed = {user.get("id"): user.get("username") for user in users.json("/api/users/").get("results", [])}
+        expect(listed.get(superuser_id) == PAPERLESS_USER[0] and str(listed.get(viewer_id, "")).startswith("contract-viewer-"), f"/api/users/ lists {listed!r}, without the superuser and the viewer by their IDs.")
+        refused = paperless.as_account(viewer, "/api/users/", page=1, page_size=1000)
+        expect(refused.status == 403, f"/api/users/ answered an account without the permission to view users with HTTP {refused.status}, not 403.")
+        # The viewer may view users for a moment, as an administrator grants it under
+        # Users & Groups: Paperless allows few new tokens a minute, so no new account.
+        granted = paperless.send(f"/api/users/{viewer_id}/", {"user_permissions": SEARCH_ACCOUNT_PERMISSIONS}, method="PATCH")
+        expect(granted.status == 200, f"Paperless didn't let the viewer view users (HTTP {granted.status}): {granted.body[:300]!r}")
+        allowed = paperless.as_account(viewer, "/api/users/", page=1, page_size=1000)
+        expect(allowed.status == 200, f"/api/users/ answered an account that may view users with HTTP {allowed.status}: {allowed.body[:300]!r}")
+        seen = {user.get("id"): user.get("username") for user in allowed.json("/api/users/").get("results", [])}
+        expect(seen == listed, f"/api/users/ lists {seen!r} to an account that may view users, not {listed!r} as to the superuser.")
+    finally:
+        paperless.send(f"/api/users/{viewer_id}/", {"user_permissions": VIEWER_PERMISSIONS}, method="PATCH")
+        paperless.send(f"/api/documents/{letter}/", {"owner": superuser_id}, method="PATCH")
+    report.passed("View for users, and the owners of documents", f"{code('owner')} of each result is the ID of its owner; {code('/api/users/')} names the usernames by ID, and answers HTTP 403 without the permission")
 
 
 def check_parity(paperless, ids, line, viewer, stranger, report):
@@ -983,6 +1023,9 @@ def main():
         check_syntax(paperless, ids, line, report)
         check_parity(paperless, ids, line, viewer, stranger, report)
         check_search_account(paperless, report)
+        # Last: Paperless-ngx 2 indexes a document that changes its owner in a task of its
+        # own, whose writes to its database a bulk edit right after it could wait for.
+        check_owners(paperless, ids, viewer_id, viewer, report)
     except Broken as broken:
         status = 1
         report.failed(broken)

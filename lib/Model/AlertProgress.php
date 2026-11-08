@@ -19,10 +19,15 @@ final class AlertProgress {
 	 * @param ?int $lastSeen the highest ID of a document that the job has seen, null before
 	 *                       Paperless first told
 	 * @param int $checkedAt the moment that Paperless last answered which documents are new
-	 * @param array<int, array{title: string, since: int}> $waiting the new documents without
-	 *                                                              a file yet, by ID, highest first,
-	 *                                                              with the moment that the job
-	 *                                                              first saw each
+	 * @param array<int, array{title: string, since: int, owner?: int}> $waiting the new
+	 *                                                                           documents without a
+	 *                                                                           file yet, by ID,
+	 *                                                                           highest first, with
+	 *                                                                           the moment that the
+	 *                                                                           job first saw each,
+	 *                                                                           and the ID of the
+	 *                                                                           owner in Paperless
+	 *                                                                           of those with one
 	 * @param int $failures how many runs failed since Paperless last answered them all
 	 * @param int $restingUntil the moment before which no run asks Paperless, 0 for none
 	 */
@@ -55,8 +60,9 @@ final class AlertProgress {
 			$since = self::numberOf($document, 'since');
 			/** @psalm-suppress MixedAssignment The title is checked before use. */
 			$title = is_array($document) ? $document['title'] ?? null : null;
+			$owner = self::numberOf($document, 'owner');
 			if ($id !== null && $since !== null && is_string($title)) {
-				$waiting[$id] = ['title' => $title, 'since' => $since];
+				$waiting[$id] = ['title' => $title, 'since' => $since] + ($owner !== null ? ['owner' => $owner] : []);
 			}
 		}
 
@@ -84,12 +90,12 @@ final class AlertProgress {
 	 * The progress as the settings store it: the documents as a list, since JSON would turn
 	 * the keys of a list that isn't numbered from 0 into text.
 	 *
-	 * @return array{server: string, lastSeen: ?int, checkedAt: int, waiting: list<array{id: int, title: string, since: int}>, failures: int, restingUntil: int}
+	 * @return array{server: string, lastSeen: ?int, checkedAt: int, waiting: list<array{id: int, title: string, since: int, owner?: int}>, failures: int, restingUntil: int}
 	 */
 	public function toStored(): array {
 		$waiting = [];
 		foreach ($this->waiting as $id => $document) {
-			$waiting[] = ['id' => $id, 'title' => $document['title'], 'since' => $document['since']];
+			$waiting[] = ['id' => $id, 'title' => $document['title'], 'since' => $document['since']] + (isset($document['owner']) ? ['owner' => $document['owner']] : []);
 		}
 
 		return [

@@ -13,6 +13,7 @@ use DateTime;
 use Exception;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
+use OCA\PaperlessUnifiedSearch\Service\DocumentOwners;
 use OCA\PaperlessUnifiedSearch\Service\FilePictures;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
@@ -62,6 +63,7 @@ final class RecentDocumentsWidget implements IAPIWidgetV2, IIconWidget, IButtonW
 		private FilePictures $pictures,
 		private IDateTimeFormatter $dateTimeFormatter,
 		private LoggerInterface $logger,
+		private DocumentOwners $documentOwners,
 	) {
 	}
 
@@ -185,7 +187,7 @@ final class RecentDocumentsWidget implements IAPIWidgetV2, IIconWidget, IButtonW
 				$ids[] = $id;
 			}
 		}
-		$files = $this->fileLocator->findAllForUser($user, $ids, $archiveOwner)->files;
+		$files = $this->fileLocator->findAllForUser($user, $ids, $archiveOwner, $this->documentOwners->of($documents))->files;
 
 		/** @var list<array{array<array-key, mixed>, File}> $shown the documents with a file, and the file */
 		$shown = [];

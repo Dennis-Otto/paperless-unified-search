@@ -364,6 +364,7 @@ $perUserArchives = static function () use ($_, $l): void {
 				<li><?php p($l->t('Shared with write permission: the user may change the file of the archive account, or add files to its folder, so its name proves nothing. Share it read-only with the user.')); ?></li>
 				<li><?php p($l->t('Not shared: the archive account has the file of the document, but hasn\'t shared it with the user. Share the file, or a folder that holds it, read-only with the user.')); ?></li>
 				<li><?php p($l->t('Not a file of the archive account: the user sees a file with the marker of the document, but only the files of the archive account stand for documents.')); ?></li>
+				<li><?php p($l->t('Owned in Paperless by another user: Paperless Sync puts the documents of each user into their own files, and the user sees a file with the marker of the document that belongs to someone else than its owner in Paperless. Only the files of its owner and of the archive account stand for it.')); ?></li>
 				<li><?php p($l->t('No file: no file of the archive account has the marker of the document, such as [P123], in its name. The synchronization hasn\'t written it yet, or names files without it.')); ?></li>
 			</ul>
 		</div>

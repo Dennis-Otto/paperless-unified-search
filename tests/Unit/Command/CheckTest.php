@@ -143,15 +143,15 @@ final class CheckTest extends TestCase {
 	}
 
 	/**
-	 * Paperless Sync can give each user the documents of their user of Paperless as files
-	 * of their own, which the search doesn't show, and nothing said so (#338). The check
-	 * says what the search still shows and links what to do; the search works with the
-	 * files of the archive account, so the check passes.
+	 * Paperless Sync can give each user the documents that their user of Paperless owns or
+	 * may view as files of their own, which the search doesn't show, and nothing said so
+	 * (#338). The check says what the search still shows and links what to do; the search
+	 * works with the files of the archive account, so the check passes.
 	 */
 	public function testWarnsWhenPaperlessSyncGivesEachUserAnArchiveOfTheirOwn(): void {
 		$this->connected('');
 		$this->settings['paperless_sync.target_user'] = 'archive';
-		$this->settings['paperless_sync.ownership'] = 'per-user';
+		$this->settings['paperless_sync.ownership'] = 'per-user-shared';
 		$this->file('/archive/files/Paperless/Without an owner [P1].pdf');
 		$tester = $this->tester($this->documents([['id' => 1]], 1, [1]));
 
@@ -164,6 +164,50 @@ final class CheckTest extends TestCase {
 			. "! Paperless Sync puts the documents of each user into their own files, which the search doesn't show: it shows only the files of the archive account, such as the documents without an owner in Paperless. See https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html#paperless-sync-gives-each-user-their-own-archive\n"
 			. "✓ Coverage: 1 of 1 Paperless document(s) have a file of the archive account.\n"
 			. self::NO_SHARES,
+			$tester->getDisplay(),
+		);
+	}
+
+	/**
+	 * With the documents of each owner in the files of their user (decision 0013), the
+	 * archive account holds only those that Paperless Sync gives no user, and maybe none:
+	 * the check counts its files alone, says so, warns about nothing else and passes. Users
+	 * that the account of the token can't view would leave the search with the archive
+	 * account alone, which the check names.
+	 */
+	public function testCountsOnlyTheArchiveAccountWhenPaperlessSyncGivesEachOwnerAnArchive(): void {
+		$this->connected('');
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.ownership'] = 'per-user';
+		$this->privileges = $this->uiSettings(['view_document', 'view_correspondent', 'view_documenttype', 'view_tag']);
+		$tester = $this->tester($this->documents([['id' => 1]], 2, [1, 2]));
+
+		self::assertSame(Command::SUCCESS, $tester->execute([]));
+
+		self::assertSame(
+			"✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.\n"
+			. "! The account of the API token may not view users in Paperless, so the search shows only the files of the archive account, not the documents that Paperless Sync puts into the files of each user. Give the account the permission View for Users.\n"
+			. "✓ The archive account is archive, the account of Paperless Sync.\n"
+			. "! Coverage: 0 of 2 Paperless document(s) have a file of the archive account. Without one: 1, 2. Paperless Sync puts the documents of each user into their own files, which this count leaves out.\n"
+			. self::NO_SHARES,
+			$tester->getDisplay(),
+		);
+	}
+
+	/**
+	 * Without the archives of each owner, the check doesn't name users that the account of
+	 * the token can't view: the search reads none. Only Paperless names them.
+	 */
+	public function testCountsDocumentsWithoutNamingThemAlsoForTheArchivesOfEachOwner(): void {
+		$this->connected('');
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.ownership'] = 'per-user';
+		$tester = $this->tester($this->documents([['id' => 1]], 4));
+
+		self::assertSame(Command::SUCCESS, $tester->execute([]));
+
+		self::assertStringContainsString(
+			"! Coverage: 0 document(s) have a file of the archive account; Paperless has 4 document(s), without naming them. Paperless Sync puts the documents of each user into their own files, which this count leaves out.\n",
 			$tester->getDisplay(),
 		);
 	}
@@ -281,7 +325,7 @@ final class CheckTest extends TestCase {
 		);
 		self::assertSame('https://paperless.example.com/api/ui_settings/', $this->requests[1][0]);
 		// The overview of the administration settings warns until the next test.
-		self::assertSame('staff,changes_documents,hides_correspondents,hides_document_types,hides_tags', $this->settings[AppConstants::APP_ID . '.token_warnings']);
+		self::assertSame('staff,changes_documents,hides_correspondents,hides_document_types,hides_tags,hides_users', $this->settings[AppConstants::APP_ID . '.token_warnings']);
 	}
 
 	/**

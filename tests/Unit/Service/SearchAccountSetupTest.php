@@ -102,7 +102,7 @@ final class SearchAccountSetupTest extends TestCase {
 			'is_active' => true,
 			'is_staff' => false,
 			'is_superuser' => false,
-			'user_permissions' => ['view_document', 'view_correspondent', 'view_documenttype', 'view_tag', 'view_uisettings'],
+			'user_permissions' => ['view_document', 'view_correspondent', 'view_documenttype', 'view_tag', 'view_user', 'view_uisettings'],
 		], $this->requests[3][2]['json']);
 		// Its token comes for its password alone, without the token of the superuser.
 		self::assertSame(['username' => 'nextcloud-search', 'password' => self::PASSWORD], $this->requests[4][2]['json']);

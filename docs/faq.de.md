@@ -10,7 +10,7 @@ Ja. Die Suche braucht jedes Dokument von Paperless als Datei des Archiv-Kontos m
 
 ## Durchsucht es das Archiv, das Paperless Sync jedem Benutzer gibt?
 
-Nein. Mit **Wer die Dokumente erhält** auf einer seiner Optionen **Jeder Benutzer** gibt [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync/blob/main/README.de.md#eigentum-je-benutzer) jedem Benutzer die Dokumente seines Benutzers von Paperless als eigene Dateien, und die Suche zeigt nur die Dateien des Archiv-Kontos: die Dokumente, die Paperless Sync keinem Benutzer selbst gibt, etwa die ohne Eigentümer in Paperless. Die Einstellungen, `occ paperless_unified_search:check` und die Übersicht der Verwaltungseinstellungen warnen davor, und die [Fehlerbehebung](troubleshooting.de.md#paperless-sync-gibt-jedem-benutzer-ein-eigenes-archiv) sagt, was du tun kannst.
+Ja, mit **Wer die Dokumente erhält** auf **Jeder Benutzer, die ihm in Paperless gehören** in [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync/blob/main/README.de.md#eigentum-je-benutzer): Eine Datei des Benutzers, dem Paperless Sync den Eigentümer eines Dokuments gibt, steht für dieses Dokument, neben den Dateien des Archiv-Kontos, sobald das Konto des API-Tokens die Benutzer von Paperless ansehen darf. Mit **Jeder Benutzer, die ihm in Paperless gehören oder die er ansehen darf** nicht: Die Suche zeigt nur die Dateien des Archiv-Kontos, etwa die Dokumente ohne Eigentümer in Paperless, und die Einstellungen, `occ paperless_unified_search:check` und die Übersicht der Verwaltungseinstellungen warnen davor. Die [Fehlerbehebung](troubleshooting.de.md#paperless-sync-gibt-jedem-benutzer-ein-eigenes-archiv) hat die Einzelheiten.
 
 ## Braucht es Elasticsearch oder die App Full text search?
 

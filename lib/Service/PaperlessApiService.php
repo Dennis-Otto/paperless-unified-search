@@ -28,24 +28,27 @@ use UnexpectedValueException;
 final class PaperlessApiService {
 	/**
 	 * The fields of a document that a result shows, its correspondent, its type and its
-	 * tags as IDs, and __search_hit__ with the excerpt. Without them, Paperless sends the
-	 * whole OCR text of every document, with its notes, custom fields, permissions and
-	 * versions, half a megabyte for a long document, and runs queries of its own for them.
+	 * tags as IDs, and __search_hit__ with the excerpt, and the ID of its owner, whose own
+	 * files stand for it when Paperless Sync gives each owner an archive (decision 0013).
+	 * Without them, Paperless sends the whole OCR text of every document, with its notes,
+	 * custom fields, permissions and versions, half a megabyte for a long document, and
+	 * runs queries of its own for them.
 	 */
-	private const SEARCH_FIELDS = 'id,title,created,correspondent,document_type,tags,__search_hit__';
+	private const SEARCH_FIELDS = 'id,title,created,correspondent,document_type,tags,owner,__search_hit__';
 
 	/**
 	 * The fields of a document that the dashboard shows, with the moment that Paperless
 	 * added it, by which the dashboard lists the newest documents, instead of the date of
-	 * the document and the excerpt of a search.
+	 * the document and the excerpt of a search, and with its owner, as for a search.
 	 */
-	private const RECENT_FIELDS = 'id,title,added,correspondent,document_type,tags';
+	private const RECENT_FIELDS = 'id,title,added,correspondent,document_type,tags,owner';
 
 	/**
 	 * The fields of a document that the job of the notifications reads from the newest
-	 * documents, and the only one that it reads from the documents that a term finds.
+	 * documents, with its owner, as for a search, and the only one that it reads from the
+	 * documents that a term finds.
 	 */
-	private const NEW_FIELDS = 'id,title';
+	private const NEW_FIELDS = 'id,title,owner';
 	private const MATCH_FIELDS = 'id';
 
 	/**
@@ -93,6 +96,13 @@ final class PaperlessApiService {
 	 * in all: Paperless has just answered the search, and a result shows without the names.
 	 */
 	private const NAMES_TIMEOUT = 3;
+
+	/**
+	 * How many users of Paperless one request for their names asks for, and for how many
+	 * pages of them at most: Paperless sends up to 100,000 objects on a page.
+	 */
+	private const USERS_PAGE_SIZE = 1000;
+	private const MOST_USER_PAGES = 10;
 
 	/**
 	 * The seconds that the request for what the account of the token may do may take in
@@ -590,6 +600,49 @@ final class PaperlessApiService {
 	}
 
 	/**
+	 * The usernames of every user of Paperless, by ID, as /api/users/ lists them to an
+	 * account that may view users, for the archives that Paperless Sync gives each owner
+	 * (decision 0013). The app asks for the pages by their numbers, never by the link of the
+	 * next one that Paperless writes into its answer, which could name another host. Like
+	 * the names, they only add to results: each request gets one try, the shorter time and
+	 * no place in the history of the problems of the search.
+	 *
+	 * @return array<int, string> the usernames, by ID
+	 * @throws PaperlessRequestException when Paperless answers, but not with a list, such as
+	 *                                   HTTP 403 for an account that may not view users, or
+	 *                                   with more users than the app reads
+	 * @throws Throwable the error of a request without answer
+	 */
+	public function findUsers(): array {
+		$url = $this->configService->getUrl();
+		$token = $this->configService->getToken();
+		if ($url === '' || $token === '') {
+			return [];
+		}
+
+		$users = [];
+		for ($page = 1; $page <= self::MOST_USER_PAGES; $page++) {
+			$data = $this->listFrom($url, $token, $this->configService->isLocalNetworkAllowed(), 'users', [
+				'page' => $page,
+				'page_size' => self::USERS_PAGE_SIZE,
+			]);
+			/** @psalm-suppress MixedAssignment JSON values are validated before use. */
+			foreach ($data['results'] as $user) {
+				$id = is_array($user) ? ($user['id'] ?? null) : null;
+				$name = is_array($user) ? ($user['username'] ?? null) : null;
+				if (is_int($id) && is_string($name)) {
+					$users[$id] = $name;
+				}
+			}
+			if (($data['next'] ?? null) === null) {
+				return $users;
+			}
+		}
+
+		throw PaperlessRequestException::notPaperless(sprintf('Paperless lists more than %d users.', self::USERS_PAGE_SIZE * self::MOST_USER_PAGES));
+	}
+
+	/**
 	 * @param string $list the path of the list in the API of Paperless: correspondents, document_types or tags
 	 * @param non-empty-array<int, int> $ids
 	 * @param bool $withInbox whether the tag of the inbox, which no result shows, keeps its name
@@ -600,12 +653,39 @@ final class PaperlessApiService {
 	private function namesFrom(string $url, string $token, bool $allowLocal, string $list, array $ids, bool $withInbox = false): array {
 		// Paperless-ngx 2 and 3 filter their lists by id__in; they send every field of an
 		// object, also when asked for fewer, which for a correspondent is a few hundred bytes.
+		$data = $this->listFrom($url, $token, $allowLocal, $list, [
+			'id__in' => implode(',', $ids),
+			'page_size' => count($ids),
+		]);
+
+		$names = [];
+		/** @psalm-suppress MixedAssignment JSON values are validated before use. */
+		foreach ($data['results'] as $object) {
+			$id = is_array($object) ? ($object['id'] ?? null) : null;
+			$name = is_array($object) ? ($object['name'] ?? null) : null;
+			$inbox = is_array($object) && ($object['is_inbox_tag'] ?? null) === true;
+			if (is_int($id) && is_string($name) && ($withInbox || !$inbox)) {
+				$names[$id] = $name;
+			}
+		}
+
+		return $names;
+	}
+
+	/**
+	 * A page of a list of Paperless other than its documents, such as its correspondents,
+	 * in one request with the shorter time of the names.
+	 *
+	 * @param string $list the path of the list in the API of Paperless, such as correspondents or users
+	 * @param array<string, int|string> $query
+	 * @return array{results: array<array-key, mixed>, ...<array-key, mixed>}
+	 * @throws PaperlessRequestException when Paperless answers, but not with a list
+	 * @throws Throwable the error of a request without answer
+	 */
+	private function listFrom(string $url, string $token, bool $allowLocal, string $list, array $query): array {
 		$response = $this->client->get(
 			rtrim($url, '/') . '/api/' . $list . '/',
-			$this->options($token, $allowLocal, [
-				'id__in' => implode(',', $ids),
-				'page_size' => count($ids),
-			], self::NAMES_TIMEOUT),
+			$this->options($token, $allowLocal, $query, self::NAMES_TIMEOUT),
 		);
 		$status = $response->getStatusCode();
 		if ($status < 200 || $status >= 300) {
@@ -622,18 +702,7 @@ final class PaperlessApiService {
 			throw PaperlessRequestException::notPaperless('Paperless returned an invalid list.');
 		}
 
-		$names = [];
-		/** @psalm-suppress MixedAssignment JSON values are validated before use. */
-		foreach ($data['results'] as $object) {
-			$id = is_array($object) ? ($object['id'] ?? null) : null;
-			$name = is_array($object) ? ($object['name'] ?? null) : null;
-			$inbox = is_array($object) && ($object['is_inbox_tag'] ?? null) === true;
-			if (is_int($id) && is_string($name) && ($withInbox || !$inbox)) {
-				$names[$id] = $name;
-			}
-		}
-
-		return $names;
+		return $data;
 	}
 
 	/**

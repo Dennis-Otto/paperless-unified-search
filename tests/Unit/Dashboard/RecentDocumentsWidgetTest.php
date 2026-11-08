@@ -22,6 +22,7 @@ use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppServices;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Files;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryCache;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\Owners;
 use OCP\Dashboard\Model\WidgetButton;
 use OCP\Files\File;
 use OCP\Files\Folder;
@@ -41,6 +42,7 @@ use RuntimeException;
 
 final class RecentDocumentsWidgetTest extends TestCase {
 	use Accounts;
+	use Owners;
 	use AppServices;
 	use Files;
 
@@ -162,6 +164,26 @@ final class RecentDocumentsWidgetTest extends TestCase {
 			static fn (array $call): array => [$call[0]->format(DATE_ATOM), $call[1], $call[2]],
 			$this->formatted,
 		));
+	}
+
+	/**
+	 * When Paperless Sync gives each owner an archive (decision 0013), jamie's own file of
+	 * 371 stands for it, as Paperless names jamie its owner, with one request for the users
+	 * of Paperless.
+	 */
+	public function testListsTheOwnFilesOfTheUserOfTheOwner(): void {
+		$this->connected('');
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.ownership'] = 'per-user';
+		$documents = self::DOCUMENTS;
+		$documents[3]['owner'] = 5;
+		[$newest, $correspondents, $types] = $this->answers($documents, self::NAMES);
+		$users = $this->answer(200, (string)json_encode(['count' => 1, 'next' => null, 'results' => [['id' => 5, 'username' => 'jamie']]]));
+
+		$items = $this->widget($this->paperless($newest, $users, $correspondents, $types))->getItemsV2('jamie')->jsonSerialize();
+
+		self::assertSame(['Electricity invoice - August 2026', 'Home insurance renewal', 'Internet invoice - July 2026'], array_column($items['items'], 'title'));
+		self::assertSame('https://paperless.example.com/api/users/', $this->requests[1][0]);
 	}
 
 	/**
@@ -564,6 +586,7 @@ final class RecentDocumentsWidgetTest extends TestCase {
 			new FilePictures($previewManager, $this->createStub(IMimeTypeDetector::class), $urlGenerator),
 			$dateTimeFormatter,
 			$logger,
+			$this->documentOwners($paperlessApi, $configService, $accounts, $cacheFactory),
 		);
 	}
 }

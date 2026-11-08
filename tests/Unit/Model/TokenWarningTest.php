@@ -20,8 +20,8 @@ use PHPUnit\Framework\TestCase;
  * among them.
  */
 final class TokenWarningTest extends TestCase {
-	/** What the search needs: to view documents, correspondents, document types and tags. */
-	private const VIEWS = ['view_document', 'view_correspondent', 'view_documenttype', 'view_tag'];
+	/** What the search needs: to view documents, correspondents, document types, tags and users. */
+	private const VIEWS = ['view_document', 'view_correspondent', 'view_documenttype', 'view_tag', 'view_user'];
 
 	/**
 	 * @return array<string, array{array<string, mixed>, list<TokenWarning>}>
@@ -43,16 +43,18 @@ final class TokenWarningTest extends TestCase {
 			'one that may change users' => [['user' => $user, 'permissions' => [...self::VIEWS, 'change_user']], [TokenWarning::ChangesDocuments]],
 			'one that may change groups' => [['user' => $user, 'permissions' => [...self::VIEWS, 'change_group']], [TokenWarning::ChangesDocuments]],
 			// Viewing users and groups, or adding a group of no member, grants nothing.
-			'one that may view users and add groups' => [['user' => $user, 'permissions' => [...self::VIEWS, 'view_user', 'view_group', 'add_group']], []],
+			'one that may view groups and add them' => [['user' => $user, 'permissions' => [...self::VIEWS, 'view_group', 'add_group']], []],
 			// Changing a tag or a note changes no document of the search.
 			'one that may change tags and notes' => [['user' => $user, 'permissions' => [...self::VIEWS, 'change_tag', 'add_note']], []],
-			'one that may not view correspondents' => [['user' => $user, 'permissions' => ['view_document', 'view_documenttype', 'view_tag']], [TokenWarning::HidesCorrespondents]],
-			'one that may not view document types' => [['user' => $user, 'permissions' => ['view_document', 'view_correspondent', 'view_tag']], [TokenWarning::HidesDocumentTypes]],
-			'one that may not view tags' => [['user' => $user, 'permissions' => ['view_document', 'view_correspondent', 'view_documenttype']], [TokenWarning::HidesTags]],
-			'one that may view documents alone' => [['user' => $user, 'permissions' => ['view_document']], [TokenWarning::HidesCorrespondents, TokenWarning::HidesDocumentTypes, TokenWarning::HidesTags]],
+			'one that may not view correspondents' => [['user' => $user, 'permissions' => ['view_document', 'view_documenttype', 'view_tag', 'view_user']], [TokenWarning::HidesCorrespondents]],
+			'one that may not view document types' => [['user' => $user, 'permissions' => ['view_document', 'view_correspondent', 'view_tag', 'view_user']], [TokenWarning::HidesDocumentTypes]],
+			'one that may not view tags' => [['user' => $user, 'permissions' => ['view_document', 'view_correspondent', 'view_documenttype', 'view_user']], [TokenWarning::HidesTags]],
+			// The archives that Paperless Sync gives each owner need them (decision 0013).
+			'one that may not view users' => [['user' => $user, 'permissions' => ['view_document', 'view_correspondent', 'view_documenttype', 'view_tag']], [TokenWarning::HidesUsers]],
+			'one that may view documents alone' => [['user' => $user, 'permissions' => ['view_document']], [TokenWarning::HidesCorrespondents, TokenWarning::HidesDocumentTypes, TokenWarning::HidesTags, TokenWarning::HidesUsers]],
 			'a staff account that may change documents and view nothing else' => [
 				['user' => ['is_staff' => true] + $user, 'permissions' => ['change_document']],
-				[TokenWarning::Staff, TokenWarning::ChangesDocuments, TokenWarning::HidesCorrespondents, TokenWarning::HidesDocumentTypes, TokenWarning::HidesTags],
+				[TokenWarning::Staff, TokenWarning::ChangesDocuments, TokenWarning::HidesCorrespondents, TokenWarning::HidesDocumentTypes, TokenWarning::HidesTags, TokenWarning::HidesUsers],
 			],
 			// Only true makes a superuser or staff, and only a text names a permission.
 			'a user without the flags' => [['user' => [], 'permissions' => self::VIEWS], []],

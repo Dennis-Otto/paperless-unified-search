@@ -27,6 +27,7 @@ use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\FileCache;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryAppConfig;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryCache;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\Owners;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\UserPreferences;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -59,6 +60,7 @@ use RuntimeException;
 
 final class PaperlessSearchProviderTest extends TestCase {
 	use Accounts;
+	use Owners;
 	use FileCache;
 	use UserPreferences;
 
@@ -127,7 +129,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 					return $options['headers']['Authorization'] === 'Token TEST_VALUE'
 						&& $options['headers']['User-Agent'] === 'Nextcloud-Paperless-Unified-Search/0.5.1'
 						&& $options['query']['query'] === 'gross salary'
-						&& $options['query']['fields'] === 'id,title,created,correspondent,document_type,tags,__search_hit__';
+						&& $options['query']['fields'] === 'id,title,created,correspondent,document_type,tags,owner,__search_hit__';
 				}),
 			)
 			->willReturn($response);
@@ -186,6 +188,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			...$this->presentation($paperlessApi, $configService, $urlGenerator),
 			alwaysSearch: new AlwaysSearch($configService, $this->userConfig()),
 			userSession: $this->session('dennis'),
+			documentOwners: $this->documentOwners($paperlessApi, $configService, $this->accounts('archive')),
 		);
 
 		self::assertTrue($provider->isExternalProvider());
@@ -251,6 +254,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			alwaysSearch: new AlwaysSearch($configService, $this->userConfig()),
 			// Also where no user signed in, such as in occ.
 			userSession: $this->session(null),
+			documentOwners: $this->documentOwners($paperlessApi, $configService, $this->accounts()),
 		);
 
 		self::assertFalse($provider->isExternalProvider());
@@ -449,7 +453,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 					'query' => 'invoice',
 					'page' => $page,
 					'page_size' => 25,
-					'fields' => 'id,title,created,correspondent,document_type,tags,__search_hit__',
+					'fields' => 'id,title,created,correspondent,document_type,tags,owner,__search_hit__',
 				]),
 			)
 			->willReturn($this->response(['count' => 0, 'next' => null, 'results' => []]));
@@ -1668,6 +1672,30 @@ final class PaperlessSearchProviderTest extends TestCase {
 		self::assertSame([], $result['entries']);
 	}
 
+	/**
+	 * When Paperless Sync gives each owner an archive (decision 0013), dennis finds his own
+	 * file of a document that Paperless names him the owner of, but not his file renamed
+	 * after a document of sam (#222), with one request for the users of Paperless.
+	 */
+	public function testFindsTheOwnFilesOfTheUserOfTheOwnerOfEachDocument(): void {
+		$this->config->seed('paperless_sync', 'ownership', 'per-user', true);
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options): IResponse {
+			$this->requests[] = $url;
+
+			return str_ends_with($url, '/api/users/')
+				? $this->response(['count' => 2, 'next' => null, 'results' => [['id' => 5, 'username' => 'Dennis'], ['id' => 6, 'username' => 'sam']]])
+				: $this->response(['count' => 2, 'next' => null, 'results' => [['id' => 7, 'title' => 'Payslip', 'owner' => 5], ['id' => 8, 'title' => 'Letter of sam', 'owner' => 6]]]);
+		});
+
+		$result = $this->provider($client, [7 => $this->file(7, 'Payslip [P7].pdf', 'dennis'), 8 => $this->file(8, 'Renamed [P8].pdf', 'dennis')], archiveOwner: '', syncAccount: 'sync')
+			->search($this->user(), $this->query('payslip'))
+			->jsonSerialize();
+
+		self::assertSame(['Payslip'], array_map(static fn (SearchResultEntry $entry): string => $entry->jsonSerialize()['title'], $result['entries']));
+		self::assertSame(['https://paperless.example.com/api/documents/', 'https://paperless.example.com/api/users/'], $this->requests);
+	}
+
 	public function testTheAccountOfPaperlessSyncIsTheArchiveAccountByDefault(): void {
 		$client = $this->paperless(['count' => 1, 'next' => null, 'results' => [['id' => 7, 'title' => 'Invoice']]]);
 
@@ -1816,6 +1844,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			...$this->presentation($paperlessApi, $configService, $urlGenerator, $previews, $locale, $timeZone),
 			alwaysSearch: new AlwaysSearch($configService, $this->userConfig()),
 			userSession: $this->session('dennis'),
+			documentOwners: $this->documentOwners($paperlessApi, $configService, $this->accounts('dennis', 'sam')),
 		);
 	}
 

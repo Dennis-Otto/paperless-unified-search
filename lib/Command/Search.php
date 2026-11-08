@@ -50,6 +50,7 @@ final class Search extends Command {
 		'writable' => 'writable',
 		'not_shared' => 'not shared',
 		'not_owned' => 'not owned',
+		'other_owner' => 'other owner',
 		'no_file' => 'no file',
 	];
 
@@ -72,9 +73,12 @@ final class Search extends Command {
 				documents that Paperless ranks first, with whether each shows to the user. With
 				--explain, each hidden document names its reason:
 
-				  not shared  the archive account has a file of it, but hasn't shared it with the user
-				  not owned   the user sees a file with its marker, but another account owns that file
-				  no file     no file of the archive account carries its marker, such as [P412]
+				  not shared   the archive account, or the user of its owner, has a file of it,
+				               but hasn't shared it with the user
+				  not owned    the user sees a file with its marker, but another account owns that file
+				  other owner  the user sees a file with its marker of another user than the one
+				               whom Paperless Sync gives the owner of the document
+				  no file      no file of the archive account carries its marker, such as [P412]
 				HELP)
 			->addArgument('user', InputArgument::REQUIRED, 'The ID of the Nextcloud account that searches')
 			->addArgument('term', InputArgument::REQUIRED, 'What to search for, as in the search of Nextcloud')
@@ -136,7 +140,8 @@ final class Search extends Command {
 		// search does.
 		/** @var array<int, string> $titles by document ID, in the order of Paperless */
 		$titles = [];
-		foreach (array_slice($response['results'], 0, (int)$limit) as $hit) {
+		$hits = array_slice($response['results'], 0, (int)$limit);
+		foreach ($hits as $hit) {
 			if (isset($hit['id']) && is_numeric($hit['id'])) {
 				$titles[(int)$hit['id']] = isset($hit['title']) && is_string($hit['title']) ? trim($hit['title']) : '';
 			}
@@ -144,8 +149,8 @@ final class Search extends Command {
 
 		$explain = $input->getOption('explain') === true;
 		[$explanations, $fileError] = $explain
-			? $this->explainer->explain($user, array_keys($titles), $archiveOwner)
-			: $this->explainer->verdicts($user, array_keys($titles), $archiveOwner);
+			? $this->explainer->explain($user, array_keys($titles), $archiveOwner, $hits)
+			: $this->explainer->verdicts($user, array_keys($titles), $archiveOwner, $hits);
 
 		if ($input->getOption('json') === true) {
 			$output->writeln((string)json_encode([
@@ -201,7 +206,7 @@ final class Search extends Command {
 		return match ($explanation->verdict) {
 			Verdict::Writable => sprintf('%s of %s, %s may write it', $explanation->path, $explanation->owner, $user->getUID()),
 			Verdict::NotShared => sprintf('%s of %s, not shared with %s', $explanation->path, $explanation->owner, $user->getUID()),
-			Verdict::NotOwned => sprintf('%s of %s', $explanation->path, $explanation->owner !== '' ? $explanation->owner : 'no account'),
+			Verdict::NotOwned, Verdict::OtherOwner => sprintf('%s of %s', $explanation->path, $explanation->owner !== '' ? $explanation->owner : 'no account'),
 			default => $explanation->path,
 		};
 	}
@@ -240,8 +245,11 @@ final class Search extends Command {
 		// %1$s is the user, %2$s the archive account, %3$s the IDs and %4$s the first marker.
 		$reasons = [
 			[Verdict::Writable, 'Writable (%3$s): %1$s may change the file of the archive account %2$s, or add files to its folder, so anyone with that share could have given it the marker of the document. Share it read-only with %1$s.'],
-			[Verdict::NotShared, 'Not shared (%3$s): the archive account %2$s has the file, but hasn\'t shared it with %1$s. Share the file, or a folder that holds it, read-only with %1$s.'],
+			[Verdict::NotShared, $this->configService->hasArchivesOfEachOwner()
+				? 'Not shared (%3$s): the archive account %2$s, or the user whom Paperless Sync gives the owner of the document, has the file, but hasn\'t shared it with %1$s. Share the file, or a folder that holds it, read-only with %1$s.'
+				: 'Not shared (%3$s): the archive account %2$s has the file, but hasn\'t shared it with %1$s. Share the file, or a folder that holds it, read-only with %1$s.'],
 			[Verdict::NotOwned, 'Not owned (%3$s): %1$s sees a file with the marker of the document, but only the files of the archive account %2$s stand for documents.'],
+			[Verdict::OtherOwner, 'Other owner (%3$s): %1$s sees a file with the marker of the document, but Paperless names another owner of it, and only the files of the archive account %2$s and of the user whom Paperless Sync gives that owner stand for it.'],
 			[Verdict::NoFile, 'No file (%3$s): no file of the archive account %2$s has the marker of the document, such as %4$s, in its name. The synchronization hasn\'t written it yet, or names files without it.'],
 		];
 		foreach ($reasons as [$verdict, $reason]) {

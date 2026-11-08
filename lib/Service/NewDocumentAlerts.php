@@ -79,6 +79,7 @@ final class NewDocumentAlerts {
 		private IAppConfig $appConfig,
 		private ITimeFactory $timeFactory,
 		private LoggerInterface $logger,
+		private DocumentOwners $documentOwners,
 	) {
 	}
 
@@ -110,7 +111,8 @@ final class NewDocumentAlerts {
 			}
 
 			$progress = $this->withNewDocuments($progress, $progress->lastSeen, $now);
-			$files = $this->filesOfTheArchive($progress, $archiveOwner);
+			$documentUsers = $this->documentOwners->of(self::ownersOf($progress));
+			$files = $this->filesOfTheArchive($progress, $archiveOwner, $documentUsers);
 			$found = $files === [] ? [] : $this->findTerms($choices, array_keys($files));
 		} catch (Throwable $error) {
 			$this->rest($progress, $now, $error);
@@ -132,7 +134,7 @@ final class NewDocumentAlerts {
 
 		foreach ($choices as $userId => $choice) {
 			// PHP keeps the ID of a user like 12345 as a number in the keys of the array.
-			$this->notifyUser((string)$userId, self::wantedOf($choice, array_keys($files), $found), $progress, $archiveOwner);
+			$this->notifyUser((string)$userId, self::wantedOf($choice, array_keys($files), $found), $progress, $archiveOwner, $documentUsers);
 		}
 	}
 
@@ -162,7 +164,9 @@ final class NewDocumentAlerts {
 			if (is_int($id) && $id > $lastSeen) {
 				/** @psalm-suppress MixedAssignment The title is checked before use. */
 				$title = $document['title'] ?? null;
-				$new[$id] = ['title' => is_string($title) ? PlainText::oneLine($title) : '', 'since' => $now];
+				/** @psalm-suppress MixedAssignment The owner is checked before use. */
+				$owner = $document['owner'] ?? null;
+				$new[$id] = ['title' => is_string($title) ? PlainText::oneLine($title) : '', 'since' => $now] + (is_int($owner) ? ['owner' => $owner] : []);
 				$highest = max($highest, $id);
 			}
 		}
@@ -189,18 +193,45 @@ final class NewDocumentAlerts {
 	}
 
 	/**
-	 * The files of the waiting documents in the archive account, highest ID first, of those
+	 * The waiting documents with the IDs of their owners in Paperless, as DocumentOwners
+	 * reads them.
+	 *
+	 * @return list<array{id: int, owner: ?int}>
+	 */
+	private static function ownersOf(AlertProgress $progress): array {
+		$documents = [];
+		foreach ($progress->waiting as $id => $document) {
+			$documents[] = ['id' => $id, 'owner' => $document['owner'] ?? null];
+		}
+
+		return $documents;
+	}
+
+	/**
+	 * The files of the waiting documents in the archive account, or in the files of the
+	 * user whom Paperless Sync gives their owner (decision 0013), highest ID first, of those
 	 * that have one by now. Who else can open them, each user's run below finds out.
 	 *
+	 * @param array<int, string> $documentUsers the user of the owner, by the ID of the document
 	 * @return array<int, File>
 	 */
-	private function filesOfTheArchive(AlertProgress $progress, string $archiveOwner): array {
+	private function filesOfTheArchive(AlertProgress $progress, string $archiveOwner, array $documentUsers): array {
 		$archive = $this->userManager->get($archiveOwner);
 		if ($archive === null) {
 			return [];
 		}
 
-		return $this->fileLocator->findAllForUser($archive, array_keys($progress->waiting), $archiveOwner)->files;
+		$files = $this->fileLocator->findAllForUser($archive, array_keys($progress->waiting), $archiveOwner, $documentUsers)->files;
+		foreach (array_unique($documentUsers) as $holder) {
+			$account = $this->userManager->get($holder);
+			$held = array_values(array_diff(array_keys($documentUsers, $holder, true), array_keys($files)));
+			if ($account !== null && $held !== []) {
+				$files += $this->fileLocator->findAllForUser($account, $held, $archiveOwner, $documentUsers)->files;
+			}
+		}
+		krsort($files);
+
+		return $files;
 	}
 
 	/**
@@ -284,15 +315,16 @@ final class NewDocumentAlerts {
 	 * any. A user whose files fail to answer costs only their own notification.
 	 *
 	 * @param list<int> $documentIds
+	 * @param array<int, string> $documentUsers the user of the owner, by the ID of the document
 	 */
-	private function notifyUser(string $userId, array $documentIds, AlertProgress $progress, string $archiveOwner): void {
+	private function notifyUser(string $userId, array $documentIds, AlertProgress $progress, string $archiveOwner, array $documentUsers): void {
 		try {
 			$user = $this->userManager->get($userId);
 			if ($user === null || !$user->isEnabled()) {
 				return;
 			}
 
-			$files = $this->fileLocator->findAllForUser($user, $documentIds, $archiveOwner)->files;
+			$files = $this->fileLocator->findAllForUser($user, $documentIds, $archiveOwner, $documentUsers)->files;
 			if ($files !== []) {
 				$this->notify($user, $files, $progress);
 			}

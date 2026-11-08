@@ -47,7 +47,7 @@ EMPTY = "no elements"
 
 # The fields that either server may leave empty for a document of its own: that one sends
 # null for them says nothing about the other, which may have a value.
-NULLABLE = {"correspondent", "document_type", "note_highlights", "corrected_query"}
+NULLABLE = {"correspondent", "document_type", "owner", "note_highlights", "corrected_query"}
 # The texts of an excerpt, whose markup and entities are compared besides their type.
 EXCERPTS = {"highlights", "note_highlights"}
 # The settings of the web interface of Paperless, which the app doesn't read.
@@ -199,6 +199,7 @@ def requests_of_the_app(fields, recent_fields):
         Ask("The names of correspondents", "/api/correspondents/", {"id__in": f"{{correspondent}},{UNKNOWN_ID}", "page_size": 2}),
         Ask("The names of types", "/api/document_types/", {"id__in": f"{{document_type}},{UNKNOWN_ID}", "page_size": 2}),
         Ask("The names of tags", "/api/tags/", {"id__in": f"{{tag}},{UNKNOWN_ID}", "page_size": 2}),
+        Ask("The users", "/api/users/", {"page": 1, "page_size": 1000}, token="superuser"),
         Ask("What an account may do", "/api/ui_settings/"),
         Ask("What a superuser may do", "/api/ui_settings/", token="superuser"),
         Ask("Documents similar to one", DOCUMENTS, {"more_like_id": "{document}", **search}),

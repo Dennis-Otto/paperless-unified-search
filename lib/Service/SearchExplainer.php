@@ -23,11 +23,14 @@ use Throwable;
  * a document without one is left out without a trace. The explanation looks further, with
  * a search of the file cache each, and only for the documents that are still unexplained:
  *
- * 1. a file of the archive account that the user can open: the document shows;
+ * 1. a file of the archive account that the user can open: the document shows, as for a
+ *    file of the user whom Paperless Sync gives the owner of the document (decision 0013);
  * 2. such a file that the user may also write: it is shared with write permission, which
  *    the same search finds;
- * 3. a file of the archive account in its own folders: it isn't shared with the user;
- * 4. a file with the marker that the user can see, of another account: it doesn't count;
+ * 3. a file of the archive account in its own folders, or of the owner's user in theirs:
+ *    it isn't shared with the user;
+ * 4. a file with the marker that the user can see, of another account: it doesn't count,
+ *    and of another user than the owner's when Paperless names one, it belongs to them;
  * 5. otherwise no file of the archive account carries the marker: it isn't synchronized.
  */
 final class SearchExplainer {
@@ -35,6 +38,7 @@ final class SearchExplainer {
 	public function __construct(
 		private NextcloudFileLocator $fileLocator,
 		private IUserManager $userManager,
+		private DocumentOwners $documentOwners,
 	) {
 	}
 
@@ -43,12 +47,14 @@ final class SearchExplainer {
 	 * search of the file cache: shown or hidden, in their order, each document once.
 	 *
 	 * @param list<int> $documentIds
+	 * @param iterable<array-key, array<array-key, mixed>> $documents the documents as Paperless
+	 *                                                                sent them, with their owners
 	 * @return array{list<Explanation>, ?Throwable} the verdicts, and the error of the first
 	 *                                              file that failed to answer
 	 */
-	public function verdicts(IUser $user, array $documentIds, string $archiveOwner): array {
+	public function verdicts(IUser $user, array $documentIds, string $archiveOwner, iterable $documents = []): array {
 		$explanations = $this->unexplainedOf($documentIds);
-		$shown = $this->fileLocator->findAllForUser($user, array_keys($explanations), $archiveOwner);
+		$shown = $this->fileLocator->findAllForUser($user, array_keys($explanations), $archiveOwner, $this->documentOwners->of($documents));
 		$this->explainWith($explanations, $shown->files, Verdict::Shown, $user);
 
 		return [$this->listOf($explanations, Verdict::Hidden), $shown->error];
@@ -59,27 +65,43 @@ final class SearchExplainer {
 	 * once.
 	 *
 	 * @param list<int> $documentIds
+	 * @param iterable<array-key, array<array-key, mixed>> $documents the documents as Paperless
+	 *                                                                sent them, with their owners
 	 * @return array{list<Explanation>, ?Throwable} the explanations, and the error of the
 	 *                                              first file that failed to answer: a
 	 *                                              document without a file may have had it
 	 */
-	public function explain(IUser $user, array $documentIds, string $archiveOwner): array {
+	public function explain(IUser $user, array $documentIds, string $archiveOwner, iterable $documents = []): array {
 		$explanations = $this->unexplainedOf($documentIds);
-		$shown = $this->fileLocator->findAllForUser($user, $this->unexplained($explanations), $archiveOwner);
+		$documentUsers = $this->documentOwners->of($documents);
+		$shown = $this->fileLocator->findAllForUser($user, $this->unexplained($explanations), $archiveOwner, $documentUsers);
 		$error = $shown->error;
 		$this->explainWith($explanations, $shown->files, Verdict::Shown, $user);
 		$this->explainWith($explanations, $shown->writable, Verdict::Writable, $user);
 
-		$archive = $archiveOwner !== '' ? $this->userManager->get($archiveOwner) : null;
-		if ($archive !== null && $archive->getUID() !== $user->getUID()) {
-			$archived = $this->fileLocator->findAllForUser($archive, $this->unexplained($explanations), $archiveOwner);
-			$error ??= $archived->error;
-			$this->explainWith($explanations, $archived->files, Verdict::NotShared, $archive);
+		// The accounts that may have a file of a document in their own folders: the archive
+		// account, and for each document with one, the user of its owner.
+		$holders = array_unique([...($archiveOwner !== '' ? [$archiveOwner] : []), ...array_values($documentUsers)]);
+		foreach ($holders as $holder) {
+			$account = $this->userManager->get($holder);
+			$heldIds = $holder === $archiveOwner ? array_keys($explanations) : array_keys($documentUsers, $holder, true);
+			$unexplained = array_values(array_intersect($this->unexplained($explanations), $heldIds));
+			if ($account !== null && $account->getUID() !== $user->getUID() && $unexplained !== []) {
+				$held = $this->fileLocator->findAllForUser($account, $unexplained, $archiveOwner, $documentUsers);
+				$error ??= $held->error;
+				$this->explainWith($explanations, $held->files, Verdict::NotShared, $account);
+			}
 		}
 
 		$others = $this->fileLocator->findAnyForUser($user, $this->unexplained($explanations));
 		$error ??= $others->error;
-		$this->explainWith($explanations, $others->files, Verdict::NotOwned, $user);
+		foreach ($others->files as $documentId => $file) {
+			// A file of another user than the one of the owner that Paperless names, rather
+			// than of an account whose files stand for no document at all.
+			$owner = $this->ownerOf($file);
+			$verdict = isset($documentUsers[$documentId]) && $owner !== $documentUsers[$documentId] && $owner !== $archiveOwner ? Verdict::OtherOwner : Verdict::NotOwned;
+			$this->explainWith($explanations, [$documentId => $file], $verdict, $user);
+		}
 
 		return [$this->listOf($explanations, Verdict::NoFile), $error];
 	}

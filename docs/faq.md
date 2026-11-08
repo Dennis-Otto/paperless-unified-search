@@ -10,7 +10,7 @@ Yes. The search needs each document of Paperless as a file of the archive accoun
 
 ## Does it search the archive that Paperless Sync gives each user?
 
-No. With **Who gets the documents** set to one of its choices **Each user**, [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync#per-user-ownership) gives each user the documents of their user of Paperless as files of their own, and the search shows only the files of the archive account: the documents that Paperless Sync gives no user of their own, such as those without an owner in Paperless. The settings, `occ paperless_unified_search:check` and the overview of the administration settings warn about it, and [Troubleshooting](troubleshooting.md#paperless-sync-gives-each-user-their-own-archive) says what you can do.
+Yes, with **Who gets the documents** set to **Each user, those they own in Paperless** in [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync#per-user-ownership): a file of the user whom Paperless Sync gives the owner of a document stands for that document, besides the files of the archive account, once the account of the API token may view the users of Paperless. With **Each user, those they own or may view in Paperless**, no: the search shows only the files of the archive account, such as the documents without an owner in Paperless, and the settings, `occ paperless_unified_search:check` and the overview of the administration settings warn about it. [Troubleshooting](troubleshooting.md#paperless-sync-gives-each-user-their-own-archive) has the details.
 
 ## Does it need Elasticsearch, or the app Full text search?
 
