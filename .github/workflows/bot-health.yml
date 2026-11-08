@@ -8,7 +8,9 @@ name: Bot health
 # failed jobs once more if a second try can pass, as it does with a job that GitHub
 # cancelled at its time limit; a failure that stays keeps one
 # issue per workflow open, with the label bot-failure, the failed jobs, their steps
-# and their first errors, and the next run that passes closes it. Every night it
+# and their first errors, and the next run that passes closes it once every job that
+# failed ran again in it, in every leg of its matrix, and passed: a run that skipped
+# such a job, as a push that only plans the screenshots, leaves it open. Every night it
 # also looks at the latest run of every workflow, those of the project and the
 # checks of main too, in case GitHub lost an event, and starts a workflow whose
 # schedule GitHub missed or switched off. A failure of Lint at a commit that the

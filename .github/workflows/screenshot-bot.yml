@@ -29,8 +29,8 @@ name: Screenshots
 # workflows, and for a picture that came out at another size the width and the
 # height that the pages of main name for it, so that the pull request passes a check
 # of those sizes; without the release app, the run warns and keeps the pictures as an
-# artifact. A failed run keeps an issue of the bot-health bot open until a run passes
-# again.
+# artifact. A failed run keeps an issue of the bot-health bot open until the jobs
+# that failed pass again in a run; a push that only plans leaves it open.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:

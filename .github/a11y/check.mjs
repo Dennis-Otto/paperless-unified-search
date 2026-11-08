@@ -7,14 +7,18 @@
 // reflow, which names the widest element that overflows.
 // A violation whose impact is serious or critical fails it, with the page,
 // the rule, the elements and a link that explains the fix; the lesser ones it counts.
-// Each scheme and width has a browser of its own, whose system shows that scheme, and each page
-// loads in it as a new reader's would, without a scheme that an earlier page saved;
+// Each page loads in a browser of its own for each scheme and width, whose system shows
+// that scheme, as a new reader's would, without a scheme that another page saved;
 // a website whose palette doesn't follow the system switches with its toggle, and a
 // page that shows neither way the scheme of its toggle is a violation as well. A page
 // of a further language without a translation, whose text is that of the page in the
 // default language, is checked through that page. The pages come from the folder
 // alone: a request to the address of the website is answered from there, and one to
 // another server is refused and named, so the check reads nothing from the network.
+// A page that leads to another address, by its refresh or its script, is checked as it
+// shows before it leaves, and the summary names where it leads: the check follows no
+// such page, whose address may be that of a page of another website, which the folder
+// doesn't have.
 // After a build, on your machine:
 //
 //   npm ci --prefix .github/a11y --ignore-scripts
@@ -75,16 +79,22 @@ const SCHEMES = { light: "default", dark: "slate" };
 // which would zoom out of a page that is too wide instead of showing it.
 const DESKTOP = { width: 1280, height: 900 };
 const PHONE = { width: 375, height: 812 };
-// How the check shows each page.
-const SHOWN = `in the light and the dark scheme, at ${DESKTOP.width} and ${PHONE.width} px wide`;
+// The property of a page that keeps where it would lead.
+const LEADS = "blueprintLeadsTo";
+// The browsers that show each page: one for each scheme at each width.
+export const BROWSERS = [DESKTOP, PHONE].flatMap((screen) => Object.keys(SCHEMES).map((scheme) => ({ scheme, screen })));
 // The finding of a page that scrolls sideways on a phone; axe-core has no such rule.
 const SIDEWAYS = {
   rule: "reflow",
   impact: "serious",
   link: "https://www.w3.org/WAI/WCAG22/Understanding/reflow.html",
 };
-// Pages that are checked at the same time: one for each core, from two to eight.
+// Pages that are checked at the same time, each in one browser: one for each core,
+// from two to eight.
 const PARALLEL = Math.min(8, Math.max(2, availableParallelism()));
+// How long a page may take to show a scheme, in milliseconds, before the check switches
+// with its toggle, and again after that; checkSite takes another.
+const SCHEME_TIMEOUT = 3_000;
 // The address of a website without one in its pages.
 const NOWHERE = "https://website.test/";
 // The violations that this repository accepts, each with its reason.
@@ -377,21 +387,24 @@ async function serve(context, site, address, foreign) {
   });
 }
 
-/** Waits until the page shows a scheme, as Material sets it with its script; a page
+/** Whether the page shows a scheme, as Material sets it with its script; a page
  * without the schemes of Material, such as the dashboard, shows each one. */
+/* node:coverage disable */
+function shownIn(wanted) {
+  const body = document.body;
+  return !body?.hasAttribute("data-md-color-scheme") ||
+    body.getAttribute("data-md-color-scheme") === wanted;
+}
+/* node:coverage enable */
+
+/** Waits until the page shows a scheme, for timeout ms at most: a page that shows it
+ * already passes at once, however long Chrome takes to answer. */
 async function showing(tab, scheme, timeout) {
+  if (await tab.evaluate(shownIn, SCHEMES[scheme])) {
+    return true;
+  }
   try {
-    await tab.waitForFunction(
-      /* node:coverage disable */
-      (wanted) => {
-        const body = document.body;
-        return !body?.hasAttribute("data-md-color-scheme") ||
-          body.getAttribute("data-md-color-scheme") === wanted;
-      },
-      /* node:coverage enable */
-      SCHEMES[scheme],
-      { timeout },
-    );
+    await tab.waitForFunction(shownIn, SCHEMES[scheme], { timeout });
     return true;
   } catch {
     return false;
@@ -489,8 +502,8 @@ async function violations(tab, page, scheme, width) {
  * the media of that scheme follows, or else after the toggle of the website switched
  * to it. Null for a page whose toggle doesn't offer it, such as a website with one
  * scheme alone. */
-async function shows(tab, scheme) {
-  if (await showing(tab, scheme, 3_000)) {
+async function shows(tab, scheme, timeout) {
+  if (await showing(tab, scheme, timeout)) {
     return true;
   }
   /* node:coverage disable */
@@ -500,71 +513,107 @@ async function shows(tab, scheme) {
     return option !== null;
   }, SCHEMES[scheme]);
   /* node:coverage enable */
-  return offered ? showing(tab, scheme, 3_000) : null;
+  return offered ? showing(tab, scheme, timeout) : null;
 }
 
-/** The violations of one page in each scheme that the website offers and at each
- * width, each in the browser of that scheme and width. */
-async function check(contexts, address, page) {
-  const found = [];
-  for (const { context, scheme, screen } of contexts) {
-    const tab = await context.newPage();
-    try {
-      await tab.goto(new URL(page, address).href, { waitUntil: "load", timeout: 60_000 });
-      const shown = await shows(tab, scheme);
-      if (shown) {
-        await settled(tab);
-        if (screen === PHONE) {
-          found.push(...(await reflow(tab, page, scheme)));
-        }
-        found.push(...(await violations(tab, page, scheme, screen.width)));
-      } else if (shown === false) {
-        const help = `The page doesn't show the ${scheme} scheme that its toggle offers, neither as the system shows it nor after the toggle, so it can't be checked in it`;
-        found.push({ ...UNSHOWN, page, scheme, width: screen.width, help });
-      }
-    } finally {
-      await tab.close();
-    }
-  }
-  return found;
-}
-
-/** A browser for each scheme at each width, whose system shows that scheme and whose
- * pages read the website from the folder; each page loads without what an earlier one
- * saved, such as the scheme that Material keeps. */
-async function contextsOf(browser, site, address, foreign) {
+/** The tabs of the browsers, which the pages take turns in, each tab in a browser of
+ * its own, of one scheme and one width, whose system shows that scheme and whose pages
+ * read the website from the folder: take(kind) gives a free tab of the browser of that
+ * kind among browsers, or opens one, give() frees it again, and close() closes them all.
+ * A page in a tab loads as a new reader's would, without what an earlier one saved,
+ * such as the scheme that Material keeps, and no other tab of its browser can save
+ * anything while it shows. A tab that a page takes again opens the next page faster
+ * than a new one would, for Chrome starts no process for it.
+ * A page that leads to another address, by its refresh or its script, stays: the event
+ * navigate of the Navigation API cancels each navigation of the page to another
+ * document before it starts, and LEADS keeps where it leads. An answer such as 204 No
+ * Content to the request of that navigation would keep the page as well, but not with
+ * a script that leads away as the page loads: Chrome then draws no frame of it any more,
+ * and the event load of the page never comes. */
+function tabsOf(browser, browsers, site, address, foreign) {
+  const free = browsers.map(() => []);
   const contexts = [];
-  for (const screen of [DESKTOP, PHONE]) {
-    for (const scheme of Object.keys(SCHEMES)) {
+  return {
+    async take(kind) {
+      const ready = free[kind].pop();
+      if (ready) {
+        return ready;
+      }
+      const { scheme, screen } = browsers[kind];
       const context = await browser.newContext({ viewport: screen, colorScheme: scheme });
+      contexts.push(context);
       /* node:coverage disable */
-      await context.addInitScript(() => {
+      await context.addInitScript((leads) => {
         try {
           localStorage.clear();
+          sessionStorage.clear();
         } catch {
           // A frame without storage keeps nothing.
         }
-      });
+        if (window === window.top && window.navigation) {
+          window.navigation.addEventListener("navigate", (event) => {
+            if (!event.destination.sameDocument) {
+              event.preventDefault();
+              Object.defineProperty(window, leads, { value: event.destination.url, configurable: true });
+            }
+          });
+        }
+      }, LEADS);
       /* node:coverage enable */
       await serve(context, site, address, foreign);
-      contexts.push({ context, scheme, screen });
-    }
-  }
-  return contexts;
+      return context.newPage();
+    },
+    give(kind, tab) {
+      free[kind].push(tab);
+    },
+    close() {
+      return Promise.all(contexts.map((context) => context.close()));
+    },
+  };
 }
 
-/** Runs each task with at most PARALLEL at a time. */
+/** The violations of one page in a tab of one kind of browser, as the page shows when
+ * it has loaded, and where it leads, if it leads to another address. */
+async function check(setup, kind, page) {
+  const { tabs, browsers, address, redirects, schemeTimeout } = setup;
+  const { scheme, screen } = browsers[kind];
+  const found = [];
+  const tab = await tabs.take(kind);
+  await tab.goto(new URL(page, address).href, { waitUntil: "load", timeout: 60_000 });
+  const shown = await shows(tab, scheme, schemeTimeout);
+  if (shown) {
+    await settled(tab);
+    if (screen === PHONE) {
+      found.push(...(await reflow(tab, page, scheme)));
+    }
+    found.push(...(await violations(tab, page, scheme, screen.width)));
+  } else if (shown === false) {
+    const help = `The page doesn't show the ${scheme} scheme that its toggle offers, neither as the system shows it nor after the toggle, so it can't be checked in it`;
+    found.push({ ...UNSHOWN, page, scheme, width: screen.width, help });
+  }
+  /* node:coverage disable */
+  const target = await tab.evaluate((leads) => window[leads] ?? null, LEADS);
+  /* node:coverage enable */
+  if (target) {
+    redirects.set(page, target);
+  }
+  tabs.give(kind, tab);
+  return found;
+}
+
+/** Runs each task with at most PARALLEL at a time, and returns what they found in the
+ * order of the tasks, whichever finishes first. */
 async function pool(tasks) {
   const results = [];
   let next = 0;
   async function worker() {
     while (next < tasks.length) {
-      const task = tasks[next++];
-      results.push(...(await task()));
+      const index = next++;
+      results[index] = await tasks[index]();
     }
   }
   await Promise.all(Array.from({ length: Math.min(PARALLEL, tasks.length) }, worker));
-  return results;
+  return results.flat();
 }
 
 /** The findings of the same rule on the same page, with the schemes and the widths
@@ -602,8 +651,23 @@ function described(group) {
   return `${group.help}: ${group.elements.length} element(s) in ${placesOf(group)}, ${shown}${more}.`;
 }
 
+/** How the check shows each page, such as in the light and the dark scheme, at 1280
+ * and 375 px wide. */
+function shownBy(browsers) {
+  const schemes = [...new Set(browsers.map(({ scheme }) => scheme))];
+  const widths = [...new Set(browsers.map(({ screen }) => screen.width))];
+  return `in the ${schemes.join(" and the ")} scheme, at ${widths.join(" and ")} px wide`;
+}
+
+/** What the check says of the pages that lead to another address. */
+function leading(redirects) {
+  const shown = redirects.slice(0, 3).map(({ page, target }) => `\`${page}\` to ${target}`).join(", ");
+  const more = redirects.length > 3 ? ` and ${redirects.length - 3} more` : "";
+  return `It checked ${redirects.length} page(s) that lead to another address, by a refresh or a script, as they show before they leave, and followed none: ${shown}${more}.`;
+}
+
 /** What failed, why it matters and how to fix it, for the summary of the job. */
-function summary({ fresh, known, gone, lesser, scope, why, foreign, baseline }) {
+function summary({ fresh, known, gone, lesser, scope, why, foreign, redirects, baseline }) {
   const lines = ["## Accessibility of the website", ""];
   if (why) {
     lines.push(`It checked every page, because ${why}.`, "");
@@ -662,20 +726,25 @@ function summary({ fresh, known, gone, lesser, scope, why, foreign, baseline }) 
   if (foreign.size > 0) {
     lines.push("", `The pages asked other servers, which the check refused: ${[...foreign].sort().join(", ")}.`);
   }
+  if (redirects.length > 0) {
+    lines.push("", leading(redirects));
+  }
   return `${lines.join("\n")}\n`;
 }
 
 /** Starts the Chrome of the runner, or the one that CHROME names. */
-export function launch() {
-  const executablePath = process.env.CHROME || undefined;
+export function launch(env = process.env) {
+  const executablePath = env.CHROME || undefined;
   return chromium.launch(executablePath ? { executablePath } : { channel: "chrome" });
 }
 
 /** The findings of the pages of the website in the folder site, or of the pages
  * named alone when there are any, and of those among changed alone when it is a list:
  * the pages checked, those left out for the page of their default language, the
- * findings and the other servers that the pages asked. */
-export async function checkSite(browser, site, named = [], changed = null) {
+ * findings, the other servers that the pages asked, and the pages that lead to another
+ * address with where they lead. Each page is checked in each of browsers, at the same
+ * time as others; schemeTimeout is how long a page may take to show a scheme. */
+export async function checkSite(browser, site, named = [], changed = null, { browsers = BROWSERS, schemeTimeout = SCHEME_TIMEOUT } = {}) {
   const all = pagesAmong(await namesOf(site));
   const { checked, same } = named.length > 0
     ? { checked: all.filter((page) => named.includes(page)), same: [] }
@@ -683,12 +752,15 @@ export async function checkSite(browser, site, named = [], changed = null) {
   const pages = changed ? checked.filter((page) => changed.includes(page)) : checked;
   const address = await addressOf(site);
   const foreign = new Set();
-  const contexts = await contextsOf(browser, site, address, foreign);
+  const leads = new Map();
+  const tabs = tabsOf(browser, browsers, site, address, foreign);
   try {
-    const findings = await pool(pages.map((page) => () => check(contexts, address, page)));
-    return { pages, same: changed ? [] : same, findings, foreign };
+    const setup = { tabs, browsers, address, redirects: leads, schemeTimeout };
+    const findings = await pool(pages.flatMap((page) => browsers.map((_, kind) => () => check(setup, kind, page))));
+    const redirects = [...leads].sort(([a], [b]) => a.localeCompare(b)).map(([page, target]) => ({ page, target }));
+    return { pages, same: changed ? [] : same, findings, foreign, redirects };
   } finally {
-    await Promise.all(contexts.map(({ context }) => context.close()));
+    await tabs.close();
   }
 }
 
@@ -707,17 +779,25 @@ function argumentsOf(argv) {
 }
 
 /** The check on the command line, in the folder root of the repository: 0 when it
- * passes, 1 when a violation fails it, and 2 when it can't run. */
-export async function main(argv, root = ".") {
+ * passes, 1 when a violation fails it, and 2 when it can't run. It reads the variables
+ * of env and writes with log and logError. It starts Chrome and closes it again, or
+ * checks in the browser given, which stays open, in each of browsers. */
+export async function main(argv, root = ".", {
+  env = process.env,
+  log = console.log,
+  logError = console.error,
+  browser: given = null,
+  browsers = BROWSERS,
+} = {}) {
   const args = argumentsOf(argv);
   if (!args?.site || !existsSync(path.join(args.site, "index.html"))) {
-    console.error(USAGE);
+    logError(USAGE);
     return 2;
   }
   const { values, site, named } = args;
   const missing = named.filter((page) => !existsSync(path.join(site, page)));
   if (missing.length > 0) {
-    console.error(`The website has no page ${missing.join(", ")}.`);
+    logError(`The website has no page ${missing.join(", ")}.`);
     return 2;
   }
   const acceptedFile = path.join(root, ACCEPTED);
@@ -726,13 +806,13 @@ export async function main(argv, root = ".") {
   try {
     accepted = parseAccepted(acceptedText);
   } catch (error) {
-    console.error(error.message);
-    if (process.env.GITHUB_ACTIONS === "true") {
+    logError(error.message);
+    if (env.GITHUB_ACTIONS === "true") {
       const title = escaped("Accessibility: the accepted violations", true);
-      console.log(`::error file=${escaped(ACCEPTED, true)},title=${title}::${escaped(error.message)}`);
+      log(`::error file=${escaped(ACCEPTED, true)},title=${title}::${escaped(error.message)}`);
     }
-    if (process.env.GITHUB_STEP_SUMMARY) {
-      await appendFile(process.env.GITHUB_STEP_SUMMARY, `## Accessibility of the website\n\nThe check can't read what it accepts, so it stopped before it opened a page.\n\n**The problem:** ${error.message}\n\n**How to fix it:** every \`[[accepted]]\` entry in \`${ACCEPTED}\` has a \`page\`, a \`rule\` and a \`reason\`, and the file holds nothing else than those and the line \`baseline = true\`.\n`);
+    if (env.GITHUB_STEP_SUMMARY) {
+      await appendFile(env.GITHUB_STEP_SUMMARY, `## Accessibility of the website\n\nThe check can't read what it accepts, so it stopped before it opened a page.\n\n**The problem:** ${error.message}\n\n**How to fix it:** every \`[[accepted]]\` entry in \`${ACCEPTED}\` has a \`page\`, a \`rule\` and a \`reason\`, and the file holds nothing else than those and the line \`baseline = true\`.\n`);
     }
     return 2;
   }
@@ -745,76 +825,84 @@ export async function main(argv, root = ".") {
     : { pages: null, reason: "" };
   if (changed?.length === 0) {
     const nothing = "No page differs from the website of main, so the check has nothing to open.";
-    if (process.env.GITHUB_STEP_SUMMARY) {
-      await appendFile(process.env.GITHUB_STEP_SUMMARY, `## Accessibility of the website\n\n${nothing}\n`);
+    if (env.GITHUB_STEP_SUMMARY) {
+      await appendFile(env.GITHUB_STEP_SUMMARY, `## Accessibility of the website\n\n${nothing}\n`);
     }
-    console.log(nothing);
+    log(nothing);
     return 0;
   }
-  let browser;
-  try {
-    browser = await launch();
-  } catch (error) {
-    console.error(`Chrome doesn't start: ${error.message.split("\n")[0]}`);
-    console.error("Install Google Chrome, or name another Chrome or Chromium with CHROME=/path/to/chrome.");
-    return 2;
+  let browser = given;
+  if (!browser) {
+    try {
+      browser = await launch(env);
+    } catch (error) {
+      logError(`Chrome doesn't start: ${error.message.split("\n")[0]}`);
+      logError("Install Google Chrome, or name another Chrome or Chromium with CHROME=/path/to/chrome.");
+      return 2;
+    }
   }
   let result;
   try {
-    result = await checkSite(browser, site, named, changed);
+    result = await checkSite(browser, site, named, changed, { browsers });
   } finally {
-    await browser.close();
+    if (!given) {
+      await browser.close();
+    }
   }
-  const { pages, same, findings, foreign } = result;
+  const { pages, same, findings, foreign, redirects } = result;
   const groups = grouped(findings);
+  const shown = shownBy(browsers);
   const scope = changed
-    ? `the ${pages.length} changed page(s) of ${Object.keys(digest.pages).length} ${SHOWN}`
-    : `${pages.length} page(s) ${SHOWN}` + (same.length > 0
+    ? `the ${pages.length} changed page(s) of ${Object.keys(digest.pages).length} ${shown}`
+    : `${pages.length} page(s) ${shown}` + (same.length > 0
       ? `, which stand in for ${same.length} more of another language without a translation`
       : "");
   const failing = groups.filter((group) => FAILING.has(group.impact));
   const lesser = groups.filter((group) => !FAILING.has(group.impact));
   const { fresh, known, gone } = sorted(failing, accepted.entries, pages, Object.keys(digest.pages));
-  const actions = process.env.GITHUB_ACTIONS === "true";
+  const actions = env.GITHUB_ACTIONS === "true";
   // A check that only reports annotates with warnings.
-  const reports = process.env.REPORT_ONLY === "true" || accepted.baseline;
+  const reports = env.REPORT_ONLY === "true" || accepted.baseline;
   const level = reports ? "warning" : "error";
   for (const group of fresh) {
     if (actions) {
-      console.log(annotation(group, level, root));
+      log(annotation(group, level, root));
     } else {
-      console.log(`${group.impact} ${group.rule} on ${group.page}: ${described(group)} ${group.link}`);
+      log(`${group.impact} ${group.rule} on ${group.page}: ${described(group)} ${group.link}`);
     }
   }
   for (const entry of gone) {
     const message = `${ACCEPTED} accepts ${entry.rule} on ${entry.page}, which the check no longer finds: take the entry out.`;
     const title = escaped("Accessibility: an accepted violation is gone", true);
-    console.log(actions ? `::warning file=${escaped(ACCEPTED, true)},title=${title}::${escaped(message)}` : message);
+    log(actions ? `::warning file=${escaped(ACCEPTED, true)},title=${title}::${escaped(message)}` : message);
   }
   // A run of every page on a website with the line baseline = true accepts what it
   // found. Only such a run: another one hasn't seen what the website has.
   const written = accepted.baseline && named.length === 0 && changed === null;
   if (written) {
     await writeFile(acceptedFile, withBaseline(acceptedText, fresh));
-    console.log(`${ACCEPTED} now accepts the ${fresh.length} violation(s) that this run found: commit it. From then on, every other one fails the check.`);
-    if (process.env.GITHUB_OUTPUT) {
-      await appendFile(process.env.GITHUB_OUTPUT, "written=true\n");
+    log(`${ACCEPTED} now accepts the ${fresh.length} violation(s) that this run found: commit it. From then on, every other one fails the check.`);
+    if (env.GITHUB_OUTPUT) {
+      await appendFile(env.GITHUB_OUTPUT, "written=true\n");
     }
   }
-  const text = summary({ fresh, known, gone, lesser, scope, why, foreign, baseline: accepted.baseline });
-  if (process.env.GITHUB_STEP_SUMMARY) {
-    await appendFile(process.env.GITHUB_STEP_SUMMARY, text);
+  const text = summary({ fresh, known, gone, lesser, scope, why, foreign, redirects, baseline: accepted.baseline });
+  if (env.GITHUB_STEP_SUMMARY) {
+    await appendFile(env.GITHUB_STEP_SUMMARY, text);
   }
   if (why) {
-    console.log(`It checked every page, because ${why}.`);
+    log(`It checked every page, because ${why}.`);
   }
-  console.log(
+  log(
     fresh.length === 0
       ? `No new serious or critical violation of WCAG 2.2 A or AA on ${scope}; ${known.length} accepted, ${lesser.length} lesser one(s).`
       : `${fresh.length} serious or critical violation(s) of WCAG 2.2 A or AA on ${scope}.`,
   );
   if (foreign.size > 0) {
-    console.log(`The pages asked other servers, which the check refused: ${[...foreign].sort().join(", ")}.`);
+    log(`The pages asked other servers, which the check refused: ${[...foreign].sort().join(", ")}.`);
+  }
+  if (redirects.length > 0) {
+    log(leading(redirects));
   }
   return fresh.length === 0 || reports ? 0 : 1;
 }
