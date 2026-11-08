@@ -296,6 +296,104 @@ test('takes zh-hant for Traditional Chinese, zh_TW, which shares no code of the 
 	}
 })
 
+// An app whose settings translate $texts, with a catalog of one form for every count for
+// each language of $catalogs and the texts of the App Store in Chinese, of which $store
+// replaces a summary or a description by its lang and element, such as
+// { 'zh-hant description': '…' }, with its JavaScript catalogs written unless $javaScript
+// is false, since --write also writes the dashes of Chinese anew.
+function chineseApp(texts, catalogs, store = {}, javaScript = true) {
+	let xml = info('zh-hans', 'zh-hant')
+	for (const [where, text] of Object.entries(store)) {
+		const [language, element] = where.split(' ')
+		xml = element === 'summary'
+			? xml.replace(`<summary lang="${language}">Summary`, `<summary lang="${language}">${text}`)
+			: xml.replace(`<description lang="${language}"><![CDATA[\nDescription`, `<description lang="${language}"><![CDATA[\n${text}`)
+	}
+	const root = app({
+		'templates/settings.php': `<?php ${texts.map((text) => Array.isArray(text) ? `$l->n('${text[0]}', '${text[1]}', $count);` : `p($l->t('${text}'));`).join(' ')}`,
+		'appinfo/info.xml': xml,
+	}, {})
+	mkdirSync(join(root, 'l10n'))
+	for (const [language, translations] of Object.entries(catalogs)) {
+		writeFileSync(join(root, `l10n/${language}.json`), JSON.stringify({ translations, pluralForm: 'nplurals=1; plural=0;' }))
+	}
+	return javaScript ? written(root) : root
+}
+
+test('fails on a dash of Chinese written as one —, or with a space beside ——', function() {
+	const root = chineseApp(['Configured — leave blank to keep it'], {
+		zh_CN: { 'Configured — leave blank to keep it': '已配置 — 留空则保持不变' },
+		zh_TW: { 'Configured — leave blank to keep it': '已設定 —— 留空即保持不變' },
+	}, {}, false)
+
+	const result = check(root)
+
+	assert.equal(result.status, 1)
+	assert.match(result.output, /l10n\/zh_CN\.json writes a dash as one —, but Chinese writes two, ——, without spaces around them: "已配置 — 留空则保持不变"/)
+	assert.match(result.output, /l10n\/zh_TW\.json writes a space beside the dash ——, but Chinese writes it without spaces around it: "已設定 —— 留空即保持不變"/)
+	assert.doesNotMatch(result.output, /zh_CN\.json writes a space/)
+	assert.doesNotMatch(result.output, /zh_TW\.json writes a dash as one/)
+})
+
+test('writes the dashes of Chinese anew with --write, in the translations and for the App Store, but not in a text of the code', function() {
+	const root = chineseApp(['Configured — leave blank to keep it'], {
+		zh_CN: { 'Configured — leave blank to keep it': '已配置 — 留空则保持不变' },
+		zh_TW: { 'Configured — leave blank to keep it': '已設定 —— 留空即保持不變' },
+	}, { 'zh-hans summary': '在 Nextcloud 中搜索 Paperless — 并打开文件', 'zh-hant description': '搜尋 Paperless ——\n並開啟檔案' }, false)
+
+	const result = check(root, '--write')
+
+	assert.equal(result.status, 0, result.output)
+	assert.deepEqual(JSON.parse(readFileSync(join(root, 'l10n/zh_CN.json'), 'utf8')).translations, { 'Configured — leave blank to keep it': '已配置——留空则保持不变' })
+	assert.deepEqual(JSON.parse(readFileSync(join(root, 'l10n/zh_TW.json'), 'utf8')).translations, { 'Configured — leave blank to keep it': '已設定——留空即保持不變' })
+	const xml = readFileSync(join(root, 'appinfo/info.xml'), 'utf8')
+	assert.match(xml, /<summary lang="zh-hans">在 Nextcloud 中搜索 Paperless——并打开文件<\/summary>/)
+	assert.match(xml, /搜尋 Paperless——\n並開啟檔案/)
+	assert.match(xml, /<summary>Summary<\/summary>/)
+})
+
+test('fails on a word of Simplified Chinese in Traditional Chinese, in a text and in each form of a plural, with the word of Taiwan', function() {
+	const root = chineseApp(['Check the log of Paperless.', ['%n new document', '%n new documents']], {
+		zh_TW: {
+			'Check the log of Paperless.': '請檢查 Paperless 的日誌。',
+			'_%n new document_::_%n new documents_': ['%n 個新文檔'],
+		},
+	})
+
+	const result = check(root)
+
+	assert.equal(result.status, 1)
+	assert.match(result.output, /l10n\/zh_TW\.json writes 日誌, a word of Simplified Chinese, where Taiwan writes 記錄檔 for the log of Nextcloud or of a server, and 事件記錄 for the logs of Paperless: "請檢查 Paperless 的日誌。"/)
+	assert.match(result.output, /l10n\/zh_TW\.json writes 文檔, a word of Simplified Chinese, where Taiwan writes 文件: "%n 個新文檔"/)
+})
+
+test('leaves the words of Simplified Chinese, such as 配置 and 搜索, to Simplified Chinese', function() {
+	const root = chineseApp(['Configured — leave blank to keep it'], {
+		zh_CN: { 'Configured — leave blank to keep it': '已配置——留空则保持不变，搜索照常' },
+		zh_TW: { 'Configured — leave blank to keep it': '已設定——留空即保持不變，搜尋照常' },
+	})
+
+	const result = check(root)
+
+	assert.equal(result.status, 0, result.output)
+	assert.match(result.output, /and Chinese writes its dashes, and in Taiwan its words, as Nextcloud does/)
+})
+
+test('reads the Chinese of the App Store as well, with its dashes and the words of Taiwan and of Nextcloud', function() {
+	const root = chineseApp([], { zh_CN: {}, zh_TW: {} }, {
+		'zh-hans summary': '在 Nextcloud 中搜索 Paperless — 并打开文件',
+		'zh-hant description': '- 只向有權開啟其已同步檔案的用戶顯示文件\n\nAPI Token 儲存在 Nextcloud 加密的認證資訊管理器中。',
+	}, false)
+
+	const result = check(root)
+
+	assert.equal(result.status, 1)
+	assert.match(result.output, /appinfo\/info\.xml, in its <summary lang="zh-hans">, writes a dash as one —, but Chinese writes two, ——, without spaces around them: "在 Nextcloud 中搜索 Paperless — 并打开文件"/)
+	assert.match(result.output, /appinfo\/info\.xml, in its <description lang="zh-hant">, writes 用戶, a word of Simplified Chinese, where Taiwan writes 使用者 for a user, and 客戶端 for a client, as Nextcloud writes them: "- 只向有權開啟其已同步檔案的用戶顯示文件"/)
+	assert.match(result.output, /appinfo\/info\.xml, in its <description lang="zh-hant">, writes 認證資訊, where the catalogs of Nextcloud for Taiwan write 憑證 for credentials, as in 全域憑證 and 憑證管理器: "API Token 儲存在 Nextcloud 加密的認證資訊管理器中。"/)
+	assert.doesNotMatch(result.output, /lang="zh-hans">, writes 搜索/)
+})
+
 test('fails without appinfo/info.xml', function() {
 	const root = written(app({ 'appinfo/info.xml': null }))
 

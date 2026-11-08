@@ -240,7 +240,9 @@ translation in every catalog of `l10n/`, with its placeholders, each plural with
 many forms as the `pluralForm` of its catalog, each JavaScript catalog, which the
 browser loads, holds the same as its JSON catalog, which PHP loads, and
 `appinfo/info.xml` has a summary and a description for the App Store in the language of
-each catalog."""
+each catalog, and Chinese, in a catalog and for the App Store, writes its dash as two,
+`——`, without spaces, and Traditional Chinese the words of Nextcloud for Taiwan, not a
+word of Simplified Chinese such as 日誌 or 用戶, nor 認證資訊 for credentials."""
 why = """These checks keep what only this app has working: the browser of the end-to-end
 tests, the pictures and links of the documentation in English and German, the sections
 of the READMEs that the pages of the website include, its versions, the explanations of
@@ -266,6 +268,8 @@ requests of `.github/workflows/visual.yml`; for a picture of a German page, show
 there too, at the same place,
 with its alt text in German; for a screenshot of `README.md`, show it on the page of
 `docs/` about its topic and on its German twin; for a text of the code, add its translation to each `l10n/*.json`;
+for Chinese, write the word that the output names, in the catalog or in
+`appinfo/info.xml`, and the dash, which the third command writes anew as `——`;
 for a language of a catalog without its texts of the App Store, add a `<summary lang>`
 and a `<description lang>` in that language to `appinfo/info.xml`, as
 [Translate](https://dennis-otto.github.io/paperless-unified-search/translate.html) shows;

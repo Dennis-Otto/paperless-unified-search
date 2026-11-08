@@ -577,7 +577,8 @@ echo "${#scripts[@]} JavaScript file(s) parse."
 # stand-in for their page and every answer of Nextcloud, and each line and branch of
 # them runs in one of them. Every
 # text that the code translates has a translation in each catalog of l10n/, with its
-# placeholders, and the JavaScript catalogs match the JSON ones; the tests of the check
+# placeholders, the JavaScript catalogs match the JSON ones, and Chinese writes its dash,
+# and Taiwan its words, as Nextcloud does there; the tests of the check
 # make sure that it notices each kind of mismatch.
 mapfile -t tests < <(git ls-files --cached --others --exclude-standard 'tests/js/*.test.mjs' | sort -u)
 node --test --experimental-test-coverage --test-coverage-include='js/*.js' \
