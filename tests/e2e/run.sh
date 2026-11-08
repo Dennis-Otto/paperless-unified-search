@@ -924,7 +924,14 @@ expect_text "! ${PER_USER}" "${TMP_DIR}/check-per-user.txt" "occ check didn't wa
 expect_text "See ${PER_USER_HELP}" "${TMP_DIR}/check-per-user.txt" "occ check didn't link what to do: $(cat "${TMP_DIR}/check-per-user.txt")"
 occ setupchecks --output=json >"${TMP_DIR}/setupchecks-per-user.json" || true
 assert_occ setupcheck "${TMP_DIR}/setupchecks-per-user.json" warning "${PER_USER}" "${PER_USER_HELP}"
-try_search 200 e2e-other
+# The page asked as before a moment ago, so Apache may still hold the ownership of then.
+for _ in {1..10}; do
+	try_search 200 e2e-other
+	if grep --fixed-strings '"perUserArchives":true' "${TMP_DIR}/answer.json" >/dev/null; then
+		break
+	fi
+	sleep 1
+done
 expect_text '"perUserArchives":true' "${TMP_DIR}/answer.json" "Try a search didn't say that Paperless Sync gives each user an archive: $(cat "${TMP_DIR}/answer.json")"
 occ config:app:delete paperless_sync ownership >/dev/null
 occ config:app:delete paperless_sync target_user >/dev/null
