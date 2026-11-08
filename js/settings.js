@@ -309,6 +309,16 @@
 			}
 		})
 
+		// Enter in the field of the token of a superuser creates the search account, as the
+		// button below it does, instead of submitting the form, whose save ignores that field.
+		superuserTokenInput.addEventListener('keydown', function(event) {
+			if (event.key !== 'Enter' || event.isComposing) {
+				return
+			}
+			event.preventDefault()
+			accountButton.click()
+		})
+
 		resetButton.addEventListener('click', async function() {
 			if (!window.confirm(translate('Disconnect Paperless and delete the stored API token?'))) {
 				return

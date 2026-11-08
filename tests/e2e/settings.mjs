@@ -7,7 +7,8 @@
 // a network failure, in the colour of an error; Disconnect declined and confirmed; a
 // failed first save that keeps Disconnect off, as nothing is stored to disconnect; the
 // search account, created in Paperless with the token of a superuser, which saves the
-// settings with its token, and refused the second time; a save after which the URL field
+// settings with its token, and refused the second time, and once more while only its
+// user is deleted, as Paperless names each workflow once; a save after which the URL field
 // shows the URL as Nextcloud stored it; and Try a search,
 // which names for each document whether it shows to a user and why not. The answers that
 // Nextcloud itself would give only in maintenance mode or after the session ended come
@@ -38,6 +39,8 @@ const SUPERUSER_TOKEN_FIELD = '#paperless-unified-search-superuser-token'
 const CREATE_ACCOUNT_BUTTON = '#paperless-unified-search-create-account'
 const ACCOUNT_CREATED = 'Created the account nextcloud-search in Paperless and saved the settings with its token.'
 const ACCOUNT_EXISTS = 'The user nextcloud-search exists in Paperless already, and stays as it is. Save the settings with its API token, or delete the user in Paperless and try again.'
+const WORKFLOW = 'Nextcloud search: view new documents'
+const WORKFLOW_EXISTS = `The workflow “${WORKFLOW}” exists in Paperless already, and stays as it is. Delete it in Paperless and try again, or turn off “Let it view each new document”.`
 const REJECTED = 'Paperless rejected the API token (HTTP 401). Check the token, and that its account may view documents.'
 // The route of the settings, which saves with POST and disconnects with DELETE.
 const isSettingsRoute = (url) => url.pathname.endsWith('/apps/paperless_unified_search/settings')
@@ -136,14 +139,16 @@ const CONFIGURED = {
 	disconnect: 'enabled',
 }
 
-// The mock forgets the search account again, as a Paperless whose administrator deletes
-// the user, so that settings.mjs creates it anew when it runs once more on kept containers.
-async function forgetTheSearchAccount() {
+// The mock forgets the user of the search account again, as a Paperless whose
+// administrator deletes it, and with `workflow` its workflow too, so that settings.mjs
+// creates both anew when it runs once more on kept containers.
+async function forgetTheSearchAccount({ workflow = true } = {}) {
 	const headers = { Accept: 'application/json; version=9', Authorization: `Token ${SUPERUSER_TOKEN}` }
 	const users = await (await fetch(`${MOCK_URL}/api/users/?username__iexact=nextcloud-search`, { headers })).json()
-	for (const user of users.results) {
-		const removed = await fetch(`${MOCK_URL}/api/users/${user.id}/`, { method: 'DELETE', headers })
-		expectEqual(removed.status, 204, `The removal of the user ${user.id} from the mock`)
+	const workflows = workflow ? (await (await fetch(`${MOCK_URL}/api/workflows/`, { headers })).json()).results.filter((each) => each.name === WORKFLOW) : []
+	for (const [kind, object] of [...users.results.map((user) => ['users', user]), ...workflows.map((each) => ['workflows', each])]) {
+		const removed = await fetch(`${MOCK_URL}/api/${kind}/${object.id}/`, { method: 'DELETE', headers })
+		expectEqual(removed.status, 204, `The removal of ${kind} ${object.id} from the mock`)
 	}
 }
 
@@ -258,6 +263,15 @@ try {
 	await expectStatus(page, ACCOUNT_EXISTS, 'error')
 	expectForm(await form(page), CONFIGURED, 'The settings after a second search account')
 	console.log('Settings page, a second search account: refused, the user stays as it is.')
+
+	// Without the user, the workflow of the first one stays, as Paperless names each
+	// workflow once, and the set-up says so before it adds a user.
+	await forgetTheSearchAccount({ workflow: false })
+	await page.locator(SUPERUSER_TOKEN_FIELD).fill(SUPERUSER_TOKEN)
+	await act(page, CREATE_ACCOUNT_BUTTON)
+	await expectStatus(page, WORKFLOW_EXISTS, 'error')
+	expectForm(await form(page), CONFIGURED, 'The settings after a search account whose workflow exists')
+	console.log('Settings page, a search account whose workflow exists: refused, the workflow stays as it is.')
 	await forgetTheSearchAccount()
 
 	// A save shows the URL as Nextcloud stored it, without the slash at its end, and

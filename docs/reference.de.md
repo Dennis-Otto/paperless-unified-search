@@ -95,7 +95,8 @@ curl -u admin -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
 | `unknown_archive_account` | Das Archiv-Konto existiert nicht |
 | `superuser_token_required`, `not_superuser` | Beim Anlegen des Suchkontos: Kein Token eines Superusers wurde eingegeben, oder das Token gehört keinem Superuser von Paperless |
 | `search_account_exists` | Beim Anlegen des Suchkontos: Paperless hat den Benutzer `nextcloud-search` schon, der bleibt, wie er ist |
-| `search_account_left` | Das Anlegen des Suchkontos ist auf halbem Weg gescheitert, und Paperless hat abgelehnt, den Benutzer wieder zu entfernen: Lösche ihn in Paperless |
+| `search_workflow_exists` | Beim Anlegen des Suchkontos mit **Jedes neue Dokument ansehen lassen**: Paperless hat den Workflow *Nextcloud search: view new documents* schon, der bleibt, wie er ist; lösche ihn, oder schalte die Wahl aus |
+| `search_account_left` | Das Anlegen des Suchkontos ist auf halbem Weg gescheitert, und Paperless hat abgelehnt, den Benutzer, den Workflow oder beide wieder zu entfernen: Lösche in Paperless, was die Meldung nennt |
 | `unauthorized` | Paperless hat das Token abgelehnt, mit HTTP 401 oder 403 |
 | `not_found` | HTTP 404: Der Pfad der URL ist falsch |
 | `redirect` | Die URL leitet weiter, und mit dem lokalen Netzwerk folgt Nextcloud keiner Weiterleitung |

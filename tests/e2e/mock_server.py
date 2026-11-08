@@ -89,9 +89,9 @@ NEW_DOCUMENT_PATH = "/e2e/documents"
 
 # Like Paperless, the mock lets the token of a superuser set up the search account of the
 # settings (decision 0012): it lists its users by name, adds one, gives its token for its
-# username and password, adds a workflow, and merges permissions with the bulk editor, for
-# documents and for correspondents, types and tags; and it deletes a user or a workflow
-# again. The search account gets TOKEN, the token of the account that the documentation
+# username and password, lists its workflows and adds one, whose name, as in Paperless,
+# no other workflow has, and merges permissions with the bulk editor, for documents and
+# for correspondents, types and tags; and it deletes a user or a workflow again. The search account gets TOKEN, the token of the account that the documentation
 # recommends, so that the tests that follow search as before. Unlike Paperless, the mock
 # keeps the users and the workflows in memory only and changes no permission: it doesn't
 # check them.
@@ -99,6 +99,7 @@ SET_UP_PATHS = {
     ("GET", "/api/users/"),
     ("POST", "/api/users/"),
     ("POST", "/api/token/"),
+    ("GET", "/api/workflows/"),
     ("POST", "/api/workflows/"),
     ("POST", "/api/documents/bulk_edit/"),
     ("POST", "/api/bulk_edit_objects/"),
@@ -519,7 +520,10 @@ class Handler(BaseHTTPRequestHandler):
         self.versioned = True
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"null")
         with _set_up_lock:
-            if method == "GET":
+            if method == "GET" and path == "/api/workflows/":
+                workflows = [{"id": workflow, **body} for workflow, body in sorted(_workflows.items())]
+                self._json(200, {"count": len(workflows), "next": None, "previous": None, "all": [workflow["id"] for workflow in workflows], "results": workflows})
+            elif method == "GET":
                 name = parse_qs(urlparse(self.path).query).get("username__iexact", [""])[0].lower()
                 users = [{"id": user, "username": username, "is_superuser": user == 1} for user, username in sorted(USERS.items()) if username.lower() == name]
                 self._json(200, {"count": len(users), "next": None, "previous": None, "all": [user["id"] for user in users], "results": users})
@@ -544,6 +548,9 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 self._json(200, {"token": TOKEN})
             elif path == "/api/workflows/":
+                if any(other["name"] == body["name"] for other in _workflows.values()):
+                    self._json(400, {"name": ["workflow with this name already exists."]})
+                    return
                 workflow = max(_workflows, default=0) + 1
                 _workflows[workflow] = body
                 self._json(201, {"id": workflow, **body})

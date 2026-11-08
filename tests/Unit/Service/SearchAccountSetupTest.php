@@ -66,6 +66,7 @@ final class SearchAccountSetupTest extends TestCase {
 		self::assertSame([
 			'GET /api/ui_settings/',
 			'GET /api/users/',
+			'GET /api/workflows/',
 			'POST /api/users/',
 			'POST /api/token/',
 			'POST /api/workflows/',
@@ -93,6 +94,7 @@ final class SearchAccountSetupTest extends TestCase {
 			'nextcloud' => ['allow_local_address' => true],
 		], $this->requests[0][2]);
 		self::assertSame(['username__iexact' => 'nextcloud-search', 'page' => 1, 'page_size' => 100], $this->requests[1][2]['query']);
+		self::assertSame(['page' => 1, 'page_size' => 100], $this->requests[2][2]['query']);
 		// A user that may only view what the search reads, with a random password.
 		self::assertSame([
 			'username' => 'nextcloud-search',
@@ -101,28 +103,28 @@ final class SearchAccountSetupTest extends TestCase {
 			'is_staff' => false,
 			'is_superuser' => false,
 			'user_permissions' => ['view_document', 'view_correspondent', 'view_documenttype', 'view_tag', 'view_uisettings'],
-		], $this->requests[2][2]['json']);
+		], $this->requests[3][2]['json']);
 		// Its token comes for its password alone, without the token of the superuser.
-		self::assertSame(['username' => 'nextcloud-search', 'password' => self::PASSWORD], $this->requests[3][2]['json']);
-		self::assertArrayNotHasKey('Authorization', $this->requests[3][2]['headers']);
+		self::assertSame(['username' => 'nextcloud-search', 'password' => self::PASSWORD], $this->requests[4][2]['json']);
+		self::assertArrayNotHasKey('Authorization', $this->requests[4][2]['headers']);
 		self::assertSame([
 			'name' => 'Nextcloud search: view new documents',
 			'order' => 0,
 			'enabled' => true,
 			'triggers' => [['type' => 2]],
 			'actions' => [['type' => 1, 'assign_view_users' => [7], 'assign_view_groups' => []]],
-		], $this->requests[4][2]['json']);
-		self::assertSame(['page' => 1, 'page_size' => 1, 'fields' => 'id'], $this->requests[5][2]['query']);
-		self::assertSame(['page' => 1, 'page_size' => 1], $this->requests[7][2]['query']);
+		], $this->requests[5][2]['json']);
+		self::assertSame(['page' => 1, 'page_size' => 1, 'fields' => 'id'], $this->requests[6][2]['query']);
+		self::assertSame(['page' => 1, 'page_size' => 1], $this->requests[8][2]['query']);
 		// The permissions only add the user, to each document and name that Paperless has.
 		self::assertSame([
 			'documents' => [1, 2, 3],
 			'method' => 'set_permissions',
 			'parameters' => ['set_permissions' => self::PERMISSIONS, 'merge' => true],
-		], $this->requests[6][2]['json']);
-		self::assertSame(60, $this->requests[6][2]['timeout']);
-		self::assertSame(['objects' => [5], 'object_type' => 'correspondents', 'operation' => 'set_permissions', 'permissions' => self::PERMISSIONS, 'merge' => true], $this->requests[8][2]['json']);
-		self::assertSame(['objects' => [8, 9], 'object_type' => 'tags', 'operation' => 'set_permissions', 'permissions' => self::PERMISSIONS, 'merge' => true], $this->requests[11][2]['json']);
+		], $this->requests[7][2]['json']);
+		self::assertSame(60, $this->requests[7][2]['timeout']);
+		self::assertSame(['objects' => [5], 'object_type' => 'correspondents', 'operation' => 'set_permissions', 'permissions' => self::PERMISSIONS, 'merge' => true], $this->requests[9][2]['json']);
+		self::assertSame(['objects' => [8, 9], 'object_type' => 'tags', 'operation' => 'set_permissions', 'permissions' => self::PERMISSIONS, 'merge' => true], $this->requests[12][2]['json']);
 		self::assertStringNotContainsString(self::SUPERUSER_TOKEN, (string)json_encode($account));
 		self::assertStringNotContainsString(self::ACCOUNT_TOKEN, (string)json_encode($account));
 	}
@@ -183,6 +185,41 @@ final class SearchAccountSetupTest extends TestCase {
 	}
 
 	/**
+	 * Paperless names each workflow once, so a workflow of the name, such as the one of an
+	 * earlier set-up whose user was deleted, stays as it is, on whichever page of the
+	 * workflows it is, and Paperless changes nothing; only that very name counts.
+	 */
+	public function testAWorkflowOfTheNameStaysAsItIs(): void {
+		$others = array_map(static fn (int $id): array => ['id' => $id, 'name' => 'Workflow ' . $id], range(1, 99));
+		$pages = [
+			1 => (string)json_encode(['count' => 102, 'results' => [...$others, ['id' => 100, 'name' => 'nextcloud search: view new documents']]]),
+			2 => (string)json_encode(['count' => 102, 'results' => ['odd', ['id' => 101, 'name' => 'Nextcloud search: view new documents']]]),
+		];
+		$workflows = static fn (array $options): IResponse => self::answer(200, $pages[$options['query']['page']]);
+
+		$this->expectRefusal(SettingProblem::SearchWorkflowExists, fn () => $this->accountSetup($this->paperless(['GET /api/workflows/' => $workflows]))
+			->create(self::URL, self::SUPERUSER_TOKEN, false, true, true, $this->saves()));
+		self::assertSame(['GET /api/ui_settings/', 'GET /api/users/', 'GET /api/workflows/', 'GET /api/workflows/'], $this->asked());
+		self::assertSame([['page' => 1, 'page_size' => 100], ['page' => 2, 'page_size' => 100]], [$this->requests[2][2]['query'], $this->requests[3][2]['query']]);
+	}
+
+	/**
+	 * The workflows end with their last page, or with an empty one, however many Paperless
+	 * counted.
+	 */
+	public function testTheWorkflowsEndWithAnEmptyPage(): void {
+		$pages = [
+			1 => '{"count":5,"results":[{"id":1,"name":"Tag the invoices"}]}',
+			2 => '{"count":5,"results":[]}',
+		];
+		$workflows = static fn (array $options): IResponse => self::answer(200, $pages[$options['query']['page']]);
+
+		$this->accountSetup($this->paperless(['GET /api/workflows/' => $workflows]))->create(self::URL, self::SUPERUSER_TOKEN, false, true, false, $this->saves());
+
+		self::assertSame(['GET /api/workflows/', 'GET /api/workflows/', 'POST /api/users/'], array_slice($this->asked(), 2, 3));
+	}
+
+	/**
 	 * A refused token fails as the test of the connection fails, with the message that
 	 * names its status, and so does a URL that answers but not as Paperless.
 	 *
@@ -197,6 +234,9 @@ final class SearchAccountSetupTest extends TestCase {
 			'no object' => [['GET /api/ui_settings/' => self::answer(200, '"Paperless"')], RequestFailure::NotPaperless, null],
 			'no user' => [['GET /api/ui_settings/' => self::answer(200, '{}')], RequestFailure::NotPaperless, null],
 			'no list of users' => [['GET /api/users/' => self::answer(200, '{"detail":"none"}')], RequestFailure::NotPaperless, null],
+			'no list of workflows' => [['GET /api/workflows/' => self::answer(200, '{"count":1}')], RequestFailure::NotPaperless, null],
+			'workflows without their count' => [['GET /api/workflows/' => self::answer(200, '{"results":[]}')], RequestFailure::NotPaperless, null],
+			'workflows that Paperless fails to list' => [['GET /api/workflows/' => self::answer(500, 'Server Error')], RequestFailure::Http, 500],
 			'a user that Paperless refuses' => [['POST /api/users/' => self::answer(400, '{"username":["Enter a valid username."]}')], RequestFailure::Http, 400],
 			'a user without an ID' => [['POST /api/users/' => self::answer(201, '{"username":"nextcloud-search"}')], RequestFailure::NotPaperless, null],
 		];
@@ -306,16 +346,20 @@ final class SearchAccountSetupTest extends TestCase {
 	}
 
 	/**
-	 * A user that can't be removed again stays in Paperless, and the failure says so, with
-	 * the failure of the set-up as its cause; each removal is tried all the same.
+	 * A user or a workflow that can't be removed again stays in Paperless, and the failure
+	 * names what stays, with the failure of the set-up as its cause; each removal is tried
+	 * all the same.
 	 *
-	 * @return array<string, array{array<string, IResponse|Throwable>}>
+	 * @return array<string, array{array<string, IResponse|Throwable>, bool, ?string}>
 	 */
 	public static function failedRemovals(): array {
+		$workflow = 'Nextcloud search: view new documents';
+
 		return [
-			'a refused removal of the user' => [['DELETE /api/users/7/' => self::answer(403, '{"detail":"none"}')]],
-			'a removal of the user without an answer' => [['DELETE /api/users/7/' => new Exception('cURL error 7: Failed to connect')]],
-			'a refused removal of the workflow' => [['DELETE /api/workflows/4/' => self::answer(500, '')]],
+			'a refused removal of the user' => [['DELETE /api/users/7/' => self::answer(403, '{"detail":"none"}')], true, null],
+			'a removal of the user without an answer' => [['DELETE /api/users/7/' => new Exception('cURL error 7: Failed to connect')], true, null],
+			'a refused removal of the workflow' => [['DELETE /api/workflows/4/' => self::answer(500, '')], false, $workflow],
+			'refused removals of both' => [['DELETE /api/workflows/4/' => new Exception('cURL error 7: Failed to connect'), 'DELETE /api/users/7/' => self::answer(500, '')], true, $workflow],
 		];
 	}
 
@@ -323,17 +367,19 @@ final class SearchAccountSetupTest extends TestCase {
 	 * @param array<string, IResponse|Throwable> $answers
 	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider('failedRemovals')]
-	public function testAUserThatCannotBeRemovedIsNamed(array $answers): void {
+	public function testWhatCannotBeRemovedIsNamed(array $answers, bool $userRemains, ?string $workflow): void {
 		try {
 			$this->accountSetup($this->paperless(['POST /api/documents/bulk_edit/' => self::answer(500, '')] + $answers))
 				->create(self::URL, self::SUPERUSER_TOKEN, false, true, true, $this->saves());
 			self::fail('The set-up succeeded.');
 		} catch (SearchAccountUnfinished $exception) {
 			self::assertSame('nextcloud-search', $exception->username);
+			self::assertSame([$userRemains, $workflow], [$exception->userRemains, $exception->workflow]);
 			$cause = $exception->getPrevious();
 			self::assertInstanceOf(PaperlessRequestException::class, $cause);
 			self::assertSame(500, $cause->status);
 			self::assertStringNotContainsString(self::SUPERUSER_TOKEN, $exception->getMessage());
+			self::assertStringContainsString($workflow === null ? 'and the user nextcloud-search remains' : ($userRemains ? 'and the user nextcloud-search and the workflow "' . $workflow . '" remain' : 'and the workflow "' . $workflow . '" remains'), $exception->getMessage());
 		}
 
 		self::assertSame(['DELETE /api/workflows/4/', 'DELETE /api/users/7/'], array_slice($this->asked(), -2));
@@ -342,13 +388,14 @@ final class SearchAccountSetupTest extends TestCase {
 	/**
 	 * The answers of a Paperless 3.x to the set-up, with these instead.
 	 *
-	 * @param array<string, IResponse|Throwable> $instead
-	 * @return array<string, IResponse|Throwable>
+	 * @param array<string, IResponse|Throwable|\Closure> $instead
+	 * @return array<string, IResponse|Throwable|\Closure>
 	 */
 	private function paperless(array $instead = []): array {
 		return $instead + [
 			'GET /api/ui_settings/' => self::answer(200, self::SUPERUSER),
 			'GET /api/users/' => self::answer(200, self::NO_USERS),
+			'GET /api/workflows/' => self::answer(200, '{"count":1,"next":null,"previous":null,"all":[2],"results":[{"id":2,"name":"Tag the invoices"}]}'),
 			'POST /api/users/' => self::answer(201, '{"id":7,"username":"nextcloud-search","is_superuser":false}'),
 			'POST /api/token/' => self::answer(200, '{"token":" ' . self::ACCOUNT_TOKEN . '"}'),
 			'POST /api/workflows/' => self::answer(201, '{"id":4,"name":"Nextcloud search: view new documents"}'),
@@ -364,7 +411,7 @@ final class SearchAccountSetupTest extends TestCase {
 	}
 
 	/**
-	 * @param array<string, IResponse|Throwable> $answers by the method and the path of a request
+	 * @param array<string, IResponse|Throwable|\Closure> $answers by the method and the path of a request, or what answers its options
 	 */
 	private function accountSetup(array $answers): SearchAccountSetup {
 		$client = $this->createStub(IClient::class);
@@ -374,6 +421,9 @@ final class SearchAccountSetupTest extends TestCase {
 				$request = strtoupper($verb) . ' ' . substr($url, strlen(self::URL));
 				$this->requests[] = [strtoupper($verb), substr($url, strlen(self::URL)), $options];
 				$answer = $answers[$request] ?? self::fail('Paperless got the unexpected request ' . $request . '.');
+				if ($answer instanceof \Closure) {
+					$answer = $answer($options);
+				}
 				if ($answer instanceof Throwable) {
 					throw $answer;
 				}

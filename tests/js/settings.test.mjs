@@ -91,10 +91,15 @@ class Element {
 
 	// Runs the listeners of the event and waits for them, as the page would until the
 	// server has answered.
-	async dispatch(type) {
-		const event = { type, defaultPrevented: false, preventDefault() { this.defaultPrevented = true } }
+	async dispatch(type, properties = {}) {
+		const event = { type, defaultPrevented: false, preventDefault() { this.defaultPrevented = true }, ...properties }
 		await Promise.all((this.listeners.get(type) ?? []).map((listener) => listener(event)))
 		return event
+	}
+
+	// A click of a button, which a disabled one ignores, as in the browser.
+	click() {
+		return this.disabled ? undefined : this.dispatch('click')
 	}
 }
 
@@ -808,6 +813,26 @@ test('no button works while the search account is being created', async function
 		busy: 'false',
 	})
 	assert.equal(get('create-account').disabled, false)
+})
+
+test('Enter in the field of the token of a superuser creates the search account instead of submitting the form', async function() {
+	const { get, requests } = load(page(), {
+		answers: [json({ ...CONFIG, url: 'http://paperless:8000', tokenWarnings: [], searchAccount: { username: 'nextcloud-search', workflow: true, documents: 0, names: 0 } })],
+	})
+	get('url').value = 'http://paperless:8000'
+	get('superuser-token').value = 'superuser-token'
+
+	// Other keys, and Enter while an input method composes a character, type as usual.
+	assert.equal((await get('superuser-token').dispatch('keydown', { key: 'a' })).defaultPrevented, false)
+	assert.equal((await get('superuser-token').dispatch('keydown', { key: 'Enter', isComposing: true })).defaultPrevented, false)
+	assert.deepEqual(requests, [])
+
+	const event = await get('superuser-token').dispatch('keydown', { key: 'Enter', isComposing: false })
+	await new Promise((resolve) => setImmediate(resolve))
+
+	assert.equal(event.defaultPrevented, true)
+	assert.deepEqual(requests.map((request) => [request.url, request.body.superuserToken]), [[ACCOUNT_URL, 'superuser-token']])
+	assert.equal(get('status').textContent, 'Created the account nextcloud-search in Paperless and saved the settings with its token.')
 })
 
 test('a refused search account keeps the token of the superuser for a correction', async function() {

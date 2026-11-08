@@ -56,6 +56,7 @@ trait SearchAccountPaperless {
 		$answers = [
 			'GET /api/ui_settings/' => $this->uiSettings(['add_user', 'view_document'], superuser: true, staff: true),
 			'GET /api/users/' => self::reply(200, '{"count":0,"results":[]}'),
+			'GET /api/workflows/' => self::reply(200, '{"count":0,"results":[]}'),
 			'POST /api/users/' => self::reply(201, '{"id":7,"username":"nextcloud-search"}'),
 			'POST /api/token/' => self::reply(200, '{"token":"' . $account . '"}'),
 			'POST /api/workflows/' => self::reply(201, '{"id":4}'),

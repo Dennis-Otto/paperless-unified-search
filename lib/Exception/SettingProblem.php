@@ -34,4 +34,6 @@ enum SettingProblem: string {
 	case NotSuperuser = 'not_superuser';
 	/** Paperless has a user of the name of the search account already, which stays as it is. */
 	case SearchAccountExists = 'search_account_exists';
+	/** Paperless has a workflow of the name of the one that the set-up adds, which stays as it is. */
+	case SearchWorkflowExists = 'search_workflow_exists';
 }

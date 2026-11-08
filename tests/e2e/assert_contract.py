@@ -878,8 +878,10 @@ def check_search_account(paperless, report):
     of the superuser creates a user that is neither superuser nor staff and may only view,
     the workflow Document Added and the permissions on what Paperless has, and the settings
     are saved with the token of the user, which then finds the documents of another owner,
-    the superuser, in Nextcloud's search; a second one leaves the user as it is. Then it
-    removes the user and the workflow again, so that a kept Paperless passes once more."""
+    the superuser, in Nextcloud's search; a second one leaves the user as it is, and so
+    does one after only the user is deleted with the workflow, whose name Paperless gives
+    one workflow alone. Then it removes the user and the workflow again, so that a kept
+    Paperless passes once more."""
     def create():
         return nextcloud(
             "/apps/paperless_unified_search/settings/account",
@@ -911,6 +913,11 @@ def check_search_account(paperless, report):
         )
         again = create()
         expect((again.status, again.json("A second search account").get("code")) == (400, "search_account_exists"), f"A second search account got HTTP {again.status}: {again.body[:300]!r}")
+        # Paperless keeps the workflow of a deleted user, and names each workflow once.
+        paperless.send(f"/api/users/{user['id']}/", None, method="DELETE")
+        third = create()
+        expect((third.status, third.json("A search account whose workflow exists").get("code")) == (400, "search_workflow_exists"), f"A search account whose workflow exists got HTTP {third.status}: {third.body[:300]!r}")
+        expect(paperless.get("/api/users/", username__iexact=SEARCH_ACCOUNT).json("The users").get("results") == [], f"A search account whose workflow exists left a user {SEARCH_ACCOUNT} in Paperless.")
         report.passed("The search account, created with one click", f"{code(SEARCH_ACCOUNT)} may only view, a workflow lets it view each new document, and the search with its token finds the documents of the superuser")
     finally:
         for workflow in paperless.get("/api/workflows/", page_size=100).json("The workflows").get("results", []):

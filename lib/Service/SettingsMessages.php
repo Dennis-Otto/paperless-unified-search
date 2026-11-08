@@ -11,6 +11,7 @@ namespace OCA\PaperlessUnifiedSearch\Service;
 
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
 use OCA\PaperlessUnifiedSearch\Exception\RequestFailure;
+use OCA\PaperlessUnifiedSearch\Exception\SearchAccountUnfinished;
 use OCA\PaperlessUnifiedSearch\Exception\SettingProblem;
 use OCA\PaperlessUnifiedSearch\Model\TokenWarning;
 use OCP\IL10N;
@@ -44,15 +45,24 @@ final class SettingsMessages {
 			SettingProblem::SuperuserTokenRequired => $this->l10n->t('Enter the API token of a superuser of Paperless. It sets up the search account and is not stored.'),
 			SettingProblem::NotSuperuser => $this->l10n->t('This API token belongs to no superuser of Paperless, so it can\'t set up the search account. Enter the token of a superuser; it is not stored.'),
 			SettingProblem::SearchAccountExists => $this->l10n->t('The user %s exists in Paperless already, and stays as it is. Save the settings with its API token, or delete the user in Paperless and try again.', [SearchAccountSetup::USERNAME]),
+			SettingProblem::SearchWorkflowExists => $this->l10n->t('The workflow “%s” exists in Paperless already, and stays as it is. Delete it in Paperless and try again, or turn off “Let it view each new document”.', [SearchAccountSetup::WORKFLOW]),
 		};
 	}
 
 	/**
 	 * The message for a set-up of the search account that failed after Paperless had added
-	 * its user, and that couldn't remove the user again.
+	 * its user, and that couldn't remove the user, the workflow or both again: it names
+	 * what remains.
 	 */
-	public function forUnfinishedAccount(string $username): string {
-		return $this->l10n->t('Paperless did not finish setting up the search account, and the user %s remains in it. Delete the user in Paperless, then try again.', [$username]);
+	public function forUnfinishedAccount(SearchAccountUnfinished $unfinished): string {
+		if ($unfinished->workflow === null) {
+			return $this->l10n->t('Paperless did not finish setting up the search account, and the user %s remains in it. Delete the user in Paperless, then try again.', [$unfinished->username]);
+		}
+		if (!$unfinished->userRemains) {
+			return $this->l10n->t('Paperless did not finish setting up the search account, and the workflow “%s” remains in it. Delete the workflow in Paperless, then try again.', [$unfinished->workflow]);
+		}
+
+		return $this->l10n->t('Paperless did not finish setting up the search account, and the user %1$s and the workflow “%2$s” remain in it. Delete both in Paperless, then try again.', [$unfinished->username, $unfinished->workflow]);
 	}
 
 	/**

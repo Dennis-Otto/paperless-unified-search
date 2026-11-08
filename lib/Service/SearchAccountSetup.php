@@ -84,7 +84,9 @@ final class SearchAccountSetup {
 	 * Sets the search account up in the Paperless at $url, as the token of a superuser may,
 	 * and hands its token to $save, which saves the settings with it. A failure once
 	 * Paperless has added the user removes the user and the workflow again, so that a
-	 * second try starts afresh; the permissions of the user go with it.
+	 * second try starts afresh; the permissions of the user go with it. A user or, with
+	 * $viewNew, a workflow of the names that the set-up adds is refused before Paperless
+	 * changes anything.
 	 *
 	 * @param string $url the Paperless URL, as ConfigService::normalizeUrl() returns it
 	 * @param bool $allowLocal whether Nextcloud may reach this Paperless at an address of
@@ -95,10 +97,12 @@ final class SearchAccountSetup {
 	 * @param Closure(string): PublicConfig $save tests the connection with the token of
 	 *                                            the account and saves the settings
 	 * @throws InvalidSettingException when the token is blank or belongs to no superuser,
-	 *                                 or the user exists already
+	 *                                 or the user exists already, or with $viewNew the
+	 *                                 workflow
 	 * @throws PaperlessRequestException when Paperless doesn't answer as asked; nothing of
 	 *                                   the account remains then
-	 * @throws SearchAccountUnfinished when a step failed and the user couldn't be removed
+	 * @throws SearchAccountUnfinished when a step failed and the user or the workflow
+	 *                                 couldn't be removed
 	 * @throws Throwable what $save throws, once the account is removed again
 	 */
 	public function create(string $url, #[SensitiveParameter] string $superuserToken, bool $allowLocal, bool $viewNew, bool $viewExisting, Closure $save): SearchAccount {
@@ -109,6 +113,9 @@ final class SearchAccountSetup {
 
 		$this->requireSuperuser($url, $token, $allowLocal);
 		$this->requireNoUser($url, $token, $allowLocal);
+		if ($viewNew) {
+			$this->requireNoWorkflow($url, $token, $allowLocal);
+		}
 		$password = $this->random->generate(self::PASSWORD_LENGTH, ISecureRandom::CHAR_ALPHANUMERIC);
 		$userId = $this->addUser($url, $token, $allowLocal, $password);
 		$workflowId = null;
@@ -120,8 +127,9 @@ final class SearchAccountSetup {
 			[$documents, $names] = $viewExisting ? $this->letView($url, $token, $allowLocal, $userId) : [0, 0];
 			$config = $save($accountToken);
 		} catch (Throwable $failure) {
-			if (!$this->remove($url, $token, $allowLocal, $userId, $workflowId)) {
-				throw new SearchAccountUnfinished(self::USERNAME, $failure);
+			[$userRemains, $workflowRemains] = $this->remove($url, $token, $allowLocal, $userId, $workflowId);
+			if ($userRemains || $workflowRemains) {
+				throw new SearchAccountUnfinished(self::USERNAME, $userRemains, $workflowRemains ? self::WORKFLOW : null, $failure);
 			}
 
 			throw $failure;
@@ -164,6 +172,36 @@ final class SearchAccountSetup {
 				throw new InvalidSettingException(SettingProblem::SearchAccountExists, 'Paperless has the user ' . self::USERNAME . ' already.');
 			}
 		}
+	}
+
+	/**
+	 * Paperless names each workflow once, so a workflow of the name, such as the one of an
+	 * earlier set-up whose user an administrator deleted, would refuse the new one after
+	 * Paperless had added the user. It stays as it is, as the user does, and the set-up
+	 * changes nothing: whoever made or changed it may need it. Paperless filters its
+	 * workflows by no name, so this reads each page of them.
+	 *
+	 * @throws InvalidSettingException when Paperless has the workflow already
+	 */
+	private function requireNoWorkflow(string $url, #[SensitiveParameter] string $token, bool $allowLocal): void {
+		$page = 1;
+		$seen = 0;
+		do {
+			$answer = $this->answer('GET', $url, '/api/workflows/', $token, $allowLocal, query: ['page' => $page, 'page_size' => 100]);
+			$workflows = $answer['results'] ?? null;
+			$count = $answer['count'] ?? null;
+			if (!is_array($workflows) || !is_int($count)) {
+				throw PaperlessRequestException::notPaperless('Paperless listed no workflows.');
+			}
+			/** @psalm-suppress MixedAssignment Every workflow is checked before use. */
+			foreach ($workflows as $workflow) {
+				if (is_array($workflow) && ($workflow['name'] ?? null) === self::WORKFLOW) {
+					throw new InvalidSettingException(SettingProblem::SearchWorkflowExists, 'Paperless has the workflow ' . self::WORKFLOW . ' already.');
+				}
+			}
+			$seen += count($workflows);
+			$page++;
+		} while ($workflows !== [] && $seen < $count);
 	}
 
 	/**
@@ -274,24 +312,28 @@ final class SearchAccountSetup {
 
 	/**
 	 * Removes the workflow and the user of a set-up that failed, and with the user its
-	 * permissions. A workflow or a user that Paperless doesn't have any more is gone.
+	 * permissions; each removal is tried, whatever the other does.
 	 *
-	 * @return bool whether both are gone
+	 * @return array{bool, bool} whether the user, and whether the workflow, remain
 	 */
-	private function remove(string $url, #[SensitiveParameter] string $token, bool $allowLocal, int $userId, ?int $workflowId): bool {
-		$paths = $workflowId === null ? [] : ['/api/workflows/' . $workflowId . '/'];
-		$paths[] = '/api/users/' . $userId . '/';
-		$removed = true;
-		foreach ($paths as $path) {
-			try {
-				$status = $this->send('DELETE', $url, $path, $token, $allowLocal, null, [], self::TIMEOUT)->getStatusCode();
-				$removed = $removed && ($status === 204 || $status === 404);
-			} catch (Exception) {
-				$removed = false;
-			}
+	private function remove(string $url, #[SensitiveParameter] string $token, bool $allowLocal, int $userId, ?int $workflowId): array {
+		$workflowRemains = $workflowId !== null && !$this->removed($url, '/api/workflows/' . $workflowId . '/', $token, $allowLocal);
+		$userRemains = !$this->removed($url, '/api/users/' . $userId . '/', $token, $allowLocal);
+
+		return [$userRemains, $workflowRemains];
+	}
+
+	/**
+	 * Whether Paperless removed what the path names, or doesn't have it any more.
+	 */
+	private function removed(string $url, string $path, #[SensitiveParameter] string $token, bool $allowLocal): bool {
+		try {
+			$status = $this->send('DELETE', $url, $path, $token, $allowLocal, null, [], self::TIMEOUT)->getStatusCode();
+		} catch (Exception) {
+			return false;
 		}
 
-		return $removed;
+		return $status === 204 || $status === 404;
 	}
 
 	/**

@@ -116,6 +116,10 @@ final class SetupCreateAccountTest extends TestCase {
 				['POST /api/token/' => self::reply(500, ''), 'DELETE /api/users/7/' => self::reply(500, '')],
 				['Paperless did not finish setting up the search account, and the user nextcloud-search remains in it. Delete the user in Paperless, then try again.'],
 			],
+			'a workflow of the name' => [
+				['GET /api/workflows/' => self::reply(200, '{"count":1,"results":[{"id":4,"name":"Nextcloud search: view new documents"}]}')],
+				['The workflow “Nextcloud search: view new documents” exists in Paperless already, and stays as it is. Delete it in Paperless and try again, or turn off “Let it view each new document”.'],
+			],
 			'no answer that repeats the token' => [
 				['GET /api/ui_settings/' => $repeated],
 				[

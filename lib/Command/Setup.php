@@ -141,7 +141,7 @@ final class Setup extends Command {
 				$config = $save($effectiveToken);
 			}
 		} catch (SearchAccountUnfinished $exception) {
-			self::error($output, $this->messages->forUnfinishedAccount($exception->username));
+			self::error($output, $this->messages->forUnfinishedAccount($exception));
 
 			return self::FAILURE;
 		} catch (InvalidSettingException $exception) {

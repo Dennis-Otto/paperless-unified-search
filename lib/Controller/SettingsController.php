@@ -173,7 +173,7 @@ final class SettingsController extends Controller {
 		} catch (SearchAccountUnfinished $exception) {
 			$this->logFailedAccount(self::CODE_ACCOUNT_LEFT, $exception, $superuserToken);
 
-			return $this->refusal($this->messages->forUnfinishedAccount($exception->username), self::CODE_ACCOUNT_LEFT);
+			return $this->refusal($this->messages->forUnfinishedAccount($exception), self::CODE_ACCOUNT_LEFT);
 		} catch (PaperlessRequestException $exception) {
 			$this->logFailedAccount($exception->reason->value, $exception, $superuserToken);
 
