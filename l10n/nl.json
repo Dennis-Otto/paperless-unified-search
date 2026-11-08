@@ -172,7 +172,21 @@
 		"ID": "ID",
 		"Title": "Titel",
 		"Tags": "Labels",
-		"Shown or why not": "Getoond of waarom niet"
+		"Shown or why not": "Getoond of waarom niet",
+		"Enter the API token of a superuser of Paperless. It sets up the search account and is not stored.": "Voer het API-token van een superuser van Paperless in. Het richt het zoekaccount in en wordt niet opgeslagen.",
+		"This API token belongs to no superuser of Paperless, so it can't set up the search account. Enter the token of a superuser; it is not stored.": "Dit API-token hoort bij geen superuser van Paperless en kan het zoekaccount dus niet inrichten. Voer het token van een superuser in; het wordt niet opgeslagen.",
+		"The user %s exists in Paperless already, and stays as it is. Save the settings with its API token, or delete the user in Paperless and try again.": "De gebruiker %s bestaat al in Paperless en blijft zoals hij is. Sla de instellingen op met zijn API-token, of verwijder de gebruiker in Paperless en probeer het opnieuw.",
+		"Paperless did not finish setting up the search account, and the user %s remains in it. Delete the user in Paperless, then try again.": "Paperless heeft het zoekaccount niet volledig ingericht, en de gebruiker %s blijft erin staan. Verwijder de gebruiker in Paperless en probeer het dan opnieuw.",
+		"No token yet? Create the search account in Paperless": "Nog geen token? Maak het zoekaccount aan in Paperless",
+		"Creates the user %s in Paperless, which is neither Superuser nor Admin and may only view documents, correspondents, document types, tags and its UI settings, and saves the settings with its token. The token of a superuser that you enter here only sets up the account: it is neither stored nor logged.": "Maakt in Paperless de gebruiker %s aan, die beheerder noch superuser is en alleen documenten, correspondenten, documenttypen, labels en zijn UI-instellingen mag bekijken, en slaat de instellingen op met zijn token. Het token van een superuser dat je hier invoert, richt alleen het account in: het wordt niet opgeslagen en niet gelogd.",
+		"API token of a superuser of Paperless": "API-token van een superuser van Paperless",
+		"Let it view each new document": "Het elk nieuw document laten bekijken",
+		"Adds the workflow “%s” to Paperless: when Paperless adds a document, it assigns the account the permission to view it.": "Voegt de workflow “%s” toe aan Paperless: wanneer Paperless een document toevoegt, krijgt het account het recht om het te bekijken.",
+		"Let it view what Paperless has": "Het laten bekijken wat Paperless al heeft",
+		"Adds the account to the permission to view of every document, correspondent, document type and tag that Paperless has. Everyone who may view or change them keeps it.": "Voegt het account toe aan het recht Bekijken van elk document, elke correspondent, elk documenttype en elk label in Paperless. Wie ze mag bekijken of wijzigen, houdt dat.",
+		"Create the search account and save": "Zoekaccount aanmaken en opslaan",
+		"Creating the search account in Paperless…": "Zoekaccount aanmaken in Paperless…",
+		"Created the account {account} in Paperless and saved the settings with its token.": "Het account {account} is aangemaakt in Paperless, en de instellingen zijn opgeslagen met zijn token."
 	},
 	"pluralForm": "nplurals=2; plural=(n != 1);"
 }

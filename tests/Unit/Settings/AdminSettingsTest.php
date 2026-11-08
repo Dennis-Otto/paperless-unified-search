@@ -19,6 +19,7 @@ use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
 use OCA\PaperlessUnifiedSearch\Settings\AdminSection;
 use OCA\PaperlessUnifiedSearch\Settings\AdminSettings;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryAppConfig;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Shares;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -52,13 +53,14 @@ final class AdminSettingsTest extends TestCase {
 		$credentials->method('retrieve')->willReturn('TEST_VALUE');
 
 		$urlGenerator = $this->createMock(IURLGenerator::class);
-		$urlGenerator->expects(self::exactly(4))
+		$urlGenerator->expects(self::exactly(5))
 			->method('linkToRoute')
 			->willReturnCallback(static fn (string $routeName): string => match ($routeName) {
 				AppConstants::APP_ID . '.settings.save' => '/apps/paperless_unified_search/settings#save',
 				AppConstants::APP_ID . '.settings.reset' => '/apps/paperless_unified_search/settings#reset',
 				AppConstants::APP_ID . '.settings.clearDiagnostics' => '/apps/paperless_unified_search/settings/diagnostics',
 				AppConstants::APP_ID . '.settings.trySearch' => '/apps/paperless_unified_search/settings/try',
+				AppConstants::APP_ID . '.settings.createAccount' => '/apps/paperless_unified_search/settings/account',
 			});
 
 		$form = $this->settings($config, $credentials, $urlGenerator)->getForm();
@@ -72,6 +74,10 @@ final class AdminSettingsTest extends TestCase {
 		self::assertSame('/apps/paperless_unified_search/settings#reset', $params['resetUrl']);
 		self::assertSame('/apps/paperless_unified_search/settings/diagnostics', $params['clearDiagnosticsUrl']);
 		self::assertSame('/apps/paperless_unified_search/settings/try', $params['tryUrl']);
+		self::assertSame('/apps/paperless_unified_search/settings/account', $params['accountUrl']);
+		// A form with a URL keeps it, whatever Paperless Sync names.
+		self::assertSame('', $params['syncUrl']);
+		self::assertFalse($params['syncAllowLocal']);
 		self::assertInstanceOf(PublicConfig::class, $params['config']);
 		self::assertSame([
 			'url' => 'https://paperless.example.com',
@@ -94,6 +100,21 @@ final class AdminSettingsTest extends TestCase {
 		// The shares of the account of Paperless Sync, the archive account in use.
 		self::assertSame(['summary' => 'The archive account shares none of its files, so only it finds its documents.', 'warnings' => []], $params['shares']);
 		self::assertSame(['sync'], $this->askedForSharesOf);
+	}
+
+	/**
+	 * The empty form starts with the Paperless of Paperless Sync, as Paperless Sync stores
+	 * its address and whether it runs in the local network: lazy values.
+	 */
+	public function testTheEmptyFormStartsWithThePaperlessOfPaperlessSync(): void {
+		$config = new MemoryAppConfig();
+		$config->seed('paperless_sync', 'paperless_url', ' http://paperless:8000/ ', lazy: true);
+		$config->seed('paperless_sync', 'paperless_local_network', true, lazy: true);
+
+		$params = $this->settings($config, $this->createStub(ICredentialsManager::class), $this->createStub(IURLGenerator::class))->getForm()->getParams();
+
+		self::assertSame('http://paperless:8000', $params['syncUrl']);
+		self::assertTrue($params['syncAllowLocal']);
 	}
 
 	/**

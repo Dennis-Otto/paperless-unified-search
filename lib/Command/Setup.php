@@ -11,11 +11,15 @@ namespace OCA\PaperlessUnifiedSearch\Command;
 
 use OCA\PaperlessUnifiedSearch\Exception\InvalidSettingException;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
+use OCA\PaperlessUnifiedSearch\Exception\SearchAccountUnfinished;
 use OCA\PaperlessUnifiedSearch\Exception\SettingProblem;
 use OCA\PaperlessUnifiedSearch\Model\PublicConfig;
+use OCA\PaperlessUnifiedSearch\Model\SearchAccount;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
+use OCA\PaperlessUnifiedSearch\Service\SearchAccountSetup;
 use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
+use SensitiveParameter;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Input\InputInterface;
@@ -29,7 +33,9 @@ use UnexpectedValueException;
  * Docker and other set-ups by script. It saves nothing until Paperless answers at the URL
  * with the token, as the settings page does, and takes the token from the standard input
  * or from an environment variable, never from an argument, which the history of the shell
- * and the list of processes would show to others.
+ * and the list of processes would show to others. With --create-account, that token is
+ * the one of a superuser of Paperless, which creates the search account and is not stored
+ * (decision 0012).
  */
 final class Setup extends Command {
 	use ReportsProblems;
@@ -39,6 +45,7 @@ final class Setup extends Command {
 		private ConfigService $configService,
 		private PaperlessApiService $paperlessApi,
 		private SettingsMessages $messages,
+		private SearchAccountSetup $accountSetup,
 	) {
 		parent::__construct();
 	}
@@ -59,6 +66,15 @@ final class Setup extends Command {
 
 				Without either, the stored token stays, for the server that it was saved for.
 
+				With --create-account, the token is the one of a superuser of Paperless: it
+				creates the user nextcloud-search, which may only view, and is not stored. The
+				settings are saved with the token of the new user. A workflow lets the user
+				view each new document, unless --no-view-new-documents, and it may view the
+				documents, correspondents, document types and tags that Paperless has, unless
+				--no-view-existing:
+
+				  printf '%s' "$SUPERUSER_TOKEN" | occ paperless_unified_search:setup --url=https://paperless.example.com --create-account --token-stdin
+
 				Exits with 0 once the settings are saved, with 1 when Paperless doesn't answer
 				or a setting is wrong, and with 2 for a wrong call, such as a missing --url or
 				an empty token source.
@@ -70,7 +86,10 @@ final class Setup extends Command {
 			->addOption('always-search', null, InputOption::VALUE_NEGATABLE, 'Include Paperless in every global search as a trusted service, or not')
 			->addOption('personal-always-search', null, InputOption::VALUE_NEGATABLE, 'Let users include Paperless in all their searches in their personal settings, or not')
 			->addOption('new-document-alerts', null, InputOption::VALUE_NEGATABLE, 'Let users ask for a notification about new documents in their personal settings, or not')
-			->addOption('allow-local', null, InputOption::VALUE_NEGATABLE, 'Allow this Paperless, and only this one, at an address of the local network, or not');
+			->addOption('allow-local', null, InputOption::VALUE_NEGATABLE, 'Allow this Paperless, and only this one, at an address of the local network, or not')
+			->addOption('create-account', null, InputOption::VALUE_NONE, 'Create the search account ' . SearchAccountSetup::USERNAME . ' in Paperless with the token of a superuser, which is not stored, and save the settings with its token')
+			->addOption('view-new-documents', null, InputOption::VALUE_NEGATABLE, 'With --create-account: add a workflow that lets the account view each new document (the default), or not')
+			->addOption('view-existing', null, InputOption::VALUE_NEGATABLE, 'With --create-account: let the account view the documents, correspondents, document types and tags that Paperless has (the default), or not');
 	}
 
 	protected function execute(InputInterface $input, OutputInterface $output): int {
@@ -88,6 +107,12 @@ final class Setup extends Command {
 
 			return self::INVALID;
 		}
+		$createAccount = $input->getOption('create-account') === true;
+		if ($createAccount && $token === '') {
+			self::error($output, 'Pass the API token of a superuser of Paperless with --token-stdin or --token-env=NAME: it creates the search account and is not stored.');
+
+			return self::INVALID;
+		}
 
 		$alwaysSearch = self::switchOf($input, 'always-search', $this->configService->isAlwaysSearchEnabled());
 		$personalAlwaysSearch = self::switchOf($input, 'personal-always-search', $this->configService->isPersonalAlwaysSearchAllowed());
@@ -97,13 +122,28 @@ final class Setup extends Command {
 		$archiveAccount = $input->getOption('archive-account');
 		$archiveOwner = is_string($archiveAccount) ? $archiveAccount : $this->configService->getArchiveOwnerSetting();
 
-		$effectiveToken = '';
+		// With --create-account, the token of the superuser, which no message may show either.
+		$effectiveToken = $token;
+		$account = null;
 		try {
 			$normalizedUrl = $this->configService->normalizeUrl($url);
-			$effectiveToken = $this->configService->resolveToken($token, $normalizedUrl);
+			$effectiveToken = $createAccount ? $token : $this->configService->resolveToken($token, $normalizedUrl);
 			$owner = $this->configService->resolveArchiveOwner($archiveOwner);
-			$status = $this->paperlessApi->probe($normalizedUrl, $effectiveToken, $allowLocal);
-			$config = $this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner, $allowLocal, $status->version, $personalAlwaysSearch, $status->tokenWarnings, $newDocumentAlerts);
+			$save = function (#[SensitiveParameter] string $tokenToSave) use ($normalizedUrl, $alwaysSearch, $owner, $allowLocal, $personalAlwaysSearch, $newDocumentAlerts): PublicConfig {
+				$status = $this->paperlessApi->probe($normalizedUrl, $tokenToSave, $allowLocal);
+
+				return $this->configService->save($normalizedUrl, $tokenToSave, $alwaysSearch, $owner, $allowLocal, $status->version, $personalAlwaysSearch, $status->tokenWarnings, $newDocumentAlerts);
+			};
+			if ($createAccount) {
+				$account = $this->accountSetup->create($normalizedUrl, $token, $allowLocal, self::switchOf($input, 'view-new-documents', true), self::switchOf($input, 'view-existing', true), $save);
+				$config = $account->config;
+			} else {
+				$config = $save($effectiveToken);
+			}
+		} catch (SearchAccountUnfinished $exception) {
+			self::error($output, $this->messages->forUnfinishedAccount($exception->username));
+
+			return self::FAILURE;
 		} catch (InvalidSettingException $exception) {
 			self::error($output, $this->messages->forSetting($exception->problem, trim($archiveOwner)));
 			if (in_array($exception->problem, [SettingProblem::TokenRequired, SettingProblem::TokenForOtherServer], true)) {
@@ -117,6 +157,9 @@ final class Setup extends Command {
 			return self::FAILURE;
 		}
 
+		if ($account !== null) {
+			self::describeAccount($output, $account);
+		}
 		$version = $config->paperlessVersion;
 		$output->writeln(OutputFormatter::escape($version === null
 			? sprintf('Paperless answers at %s. The settings are saved.', $config->url)
@@ -171,6 +214,19 @@ final class Setup extends Command {
 		$value = $input->getOption($name);
 
 		return is_bool($value) ? $value : $stored;
+	}
+
+	/**
+	 * What the set-up of the search account did in Paperless.
+	 */
+	private static function describeAccount(OutputInterface $output, SearchAccount $account): void {
+		$output->writeln(sprintf('Created the user %s in Paperless, which may only view documents, correspondents, document types, tags and its UI settings.', $account->username));
+		if ($account->workflow) {
+			$output->writeln(sprintf('The workflow "%s" lets it view each new document.', SearchAccountSetup::WORKFLOW));
+		}
+		if ($account->documents > 0 || $account->names > 0) {
+			$output->writeln(sprintf('It may view the %d documents and the %d correspondents, document types and tags that Paperless has.', $account->documents, $account->names));
+		}
 	}
 
 	/**

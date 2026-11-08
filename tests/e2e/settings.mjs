@@ -5,8 +5,10 @@
 // one it asked for, and when the administrator disconnects: one short sentence for the
 // HTML page of maintenance mode, for the page of a proxy, for an expired session and for
 // a network failure, in the colour of an error; Disconnect declined and confirmed; a
-// failed first save that keeps Disconnect off, as nothing is stored to disconnect; and a
-// save after which the URL field shows the URL as Nextcloud stored it; and Try a search,
+// failed first save that keeps Disconnect off, as nothing is stored to disconnect; the
+// search account, created in Paperless with the token of a superuser, which saves the
+// settings with its token, and refused the second time; a save after which the URL field
+// shows the URL as Nextcloud stored it; and Try a search,
 // which names for each document whether it shows to a user and why not. The answers that
 // Nextcloud itself would give only in maintenance mode or after the session ended come
 // from Playwright, the rest from Nextcloud and the mock of Paperless. It runs last of the
@@ -29,6 +31,13 @@ const DIAGNOSTICS = '#paperless-unified-search-diagnostics'
 const TRY_STATUS = '#paperless-unified-search-try-status'
 const MOCK_URL = 'http://paperless-mock:8080'
 const TOKEN = 'e2e-only-token'
+// The token of a superuser of the mock, which gives the search account TOKEN.
+const SUPERUSER_TOKEN = 'e2e-superuser-token'
+const ACCOUNT_BOX = '#paperless-unified-search-account'
+const SUPERUSER_TOKEN_FIELD = '#paperless-unified-search-superuser-token'
+const CREATE_ACCOUNT_BUTTON = '#paperless-unified-search-create-account'
+const ACCOUNT_CREATED = 'Created the account nextcloud-search in Paperless and saved the settings with its token.'
+const ACCOUNT_EXISTS = 'The user nextcloud-search exists in Paperless already, and stays as it is. Save the settings with its API token, or delete the user in Paperless and try again.'
 const REJECTED = 'Paperless rejected the API token (HTTP 401). Check the token, and that its account may view documents.'
 // The route of the settings, which saves with POST and disconnects with DELETE.
 const isSettingsRoute = (url) => url.pathname.endsWith('/apps/paperless_unified_search/settings')
@@ -127,6 +136,17 @@ const CONFIGURED = {
 	disconnect: 'enabled',
 }
 
+// The mock forgets the search account again, as a Paperless whose administrator deletes
+// the user, so that settings.mjs creates it anew when it runs once more on kept containers.
+async function forgetTheSearchAccount() {
+	const headers = { Accept: 'application/json; version=9', Authorization: `Token ${SUPERUSER_TOKEN}` }
+	const users = await (await fetch(`${MOCK_URL}/api/users/?username__iexact=nextcloud-search`, { headers })).json()
+	for (const user of users.results) {
+		const removed = await fetch(`${MOCK_URL}/api/users/${user.id}/`, { method: 'DELETE', headers })
+		expectEqual(removed.status, 204, `The removal of the user ${user.id} from the mock`)
+	}
+}
+
 const browser = await chromium.launch()
 try {
 	const session = await signIn(browser, USER)
@@ -220,8 +240,29 @@ try {
 	}, 'The settings after a failed first save')
 	console.log('Settings page, a failed first save: Disconnect stays off.')
 
+	// The search account, created in Paperless with the token of a superuser from the box
+	// below the token: the settings are saved with the token of the account, which may
+	// only view, so no warning shows, and the field forgets the token of the superuser.
+	await page.locator(`${ACCOUNT_BOX} summary`).click()
+	await page.locator(SUPERUSER_TOKEN_FIELD).fill(SUPERUSER_TOKEN)
+	await act(page, CREATE_ACCOUNT_BUTTON)
+	await expectStatus(page, ACCOUNT_CREATED, 'success')
+	expectForm(await form(page), CONFIGURED, 'The settings after creating the search account')
+	expectEqual(await page.locator(SUPERUSER_TOKEN_FIELD).inputValue(), '', 'The token of the superuser after creating the search account')
+	expectEqual((await page.locator('#paperless-unified-search-token-warnings').textContent()).trim(), '', 'The warnings about the token of the search account')
+	console.log('Settings page, the search account: created in Paperless, and the settings saved with its token.')
+
+	// A second one finds the user in Paperless and leaves it, and the settings, as they are.
+	await page.locator(SUPERUSER_TOKEN_FIELD).fill(SUPERUSER_TOKEN)
+	await act(page, CREATE_ACCOUNT_BUTTON)
+	await expectStatus(page, ACCOUNT_EXISTS, 'error')
+	expectForm(await form(page), CONFIGURED, 'The settings after a second search account')
+	console.log('Settings page, a second search account: refused, the user stays as it is.')
+	await forgetTheSearchAccount()
+
 	// A save shows the URL as Nextcloud stored it, without the slash at its end, and
 	// offers Disconnect.
+	await page.locator(URL_FIELD).fill(`${MOCK_URL}/`)
 	await page.locator(TOKEN_FIELD).fill(TOKEN)
 	await act(page, SAVE_BUTTON)
 	await expectStatus(page, 'Connection successful. Settings saved.', 'success')

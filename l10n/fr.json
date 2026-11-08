@@ -172,7 +172,21 @@
 		"ID": "ID",
 		"Title": "Titre",
 		"Tags": "Étiquettes",
-		"Shown or why not": "Affiché ou pourquoi pas"
+		"Shown or why not": "Affiché ou pourquoi pas",
+		"Enter the API token of a superuser of Paperless. It sets up the search account and is not stored.": "Saisissez le jeton d’API d’un super-utilisateur de Paperless. Il configure le compte de recherche et n’est pas enregistré.",
+		"This API token belongs to no superuser of Paperless, so it can't set up the search account. Enter the token of a superuser; it is not stored.": "Ce jeton d’API n’appartient à aucun super-utilisateur de Paperless : il ne peut donc pas configurer le compte de recherche. Saisissez le jeton d’un super-utilisateur ; il n’est pas enregistré.",
+		"The user %s exists in Paperless already, and stays as it is. Save the settings with its API token, or delete the user in Paperless and try again.": "L’utilisateur %s existe déjà dans Paperless et reste tel quel. Enregistrez les paramètres avec son jeton d’API, ou supprimez l’utilisateur dans Paperless et réessayez.",
+		"Paperless did not finish setting up the search account, and the user %s remains in it. Delete the user in Paperless, then try again.": "Paperless n’a pas fini de configurer le compte de recherche, et l’utilisateur %s y reste. Supprimez l’utilisateur dans Paperless, puis réessayez.",
+		"No token yet? Create the search account in Paperless": "Pas encore de jeton ? Créez le compte de recherche dans Paperless",
+		"Creates the user %s in Paperless, which is neither Superuser nor Admin and may only view documents, correspondents, document types, tags and its UI settings, and saves the settings with its token. The token of a superuser that you enter here only sets up the account: it is neither stored nor logged.": "Crée dans Paperless l’utilisateur %s, qui n’est ni super-utilisateur ni administrateur et ne peut qu’afficher les documents, les correspondants, les types de document, les étiquettes et ses paramètres d’interface, puis enregistre les paramètres avec son jeton. Le jeton d’un super-utilisateur que vous saisissez ici ne sert qu’à configurer le compte : il n’est ni enregistré ni journalisé.",
+		"API token of a superuser of Paperless": "Jeton d’API d’un super-utilisateur de Paperless",
+		"Let it view each new document": "Lui permettre d’afficher chaque nouveau document",
+		"Adds the workflow “%s” to Paperless: when Paperless adds a document, it assigns the account the permission to view it.": "Ajoute à Paperless le workflow « %s » : quand Paperless ajoute un document, il donne au compte la permission de l’afficher.",
+		"Let it view what Paperless has": "Lui permettre d’afficher ce que Paperless contient",
+		"Adds the account to the permission to view of every document, correspondent, document type and tag that Paperless has. Everyone who may view or change them keeps it.": "Ajoute le compte à la permission d’afficher de chaque document, correspondant, type de document et étiquette de Paperless. Quiconque peut déjà les afficher ou les modifier le garde.",
+		"Create the search account and save": "Créer le compte de recherche et enregistrer",
+		"Creating the search account in Paperless…": "Création du compte de recherche dans Paperless…",
+		"Created the account {account} in Paperless and saved the settings with its token.": "Le compte {account} a été créé dans Paperless, et les paramètres ont été enregistrés avec son jeton."
 	},
 	"pluralForm": "nplurals=3; plural=(n == 0 || n == 1) ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;"
 }

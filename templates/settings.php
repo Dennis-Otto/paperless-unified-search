@@ -6,7 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2026 Dennis Otto
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * @var array{config: \OCA\PaperlessUnifiedSearch\Model\PublicConfig, tokenWarnings: list<string>, saveUrl: string, resetUrl: string, clearDiagnosticsUrl: string, tryUrl: string, history: ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, durationMs: int}>}, shares: ?array{summary: string, warnings: list<string>}} $_
+ * @var array{config: \OCA\PaperlessUnifiedSearch\Model\PublicConfig, tokenWarnings: list<string>, saveUrl: string, resetUrl: string, clearDiagnosticsUrl: string, tryUrl: string, accountUrl: string, syncUrl: string, syncAllowLocal: bool, history: ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, durationMs: int}>}, shares: ?array{summary: string, warnings: list<string>}} $_
  */
 
 script('paperless_unified_search', 'settings');
@@ -26,6 +26,9 @@ $archiveAccount = $config->archiveOwner !== '' ? $config->archiveOwner : $config
 	data-reset-url="<?php p($_['resetUrl']); ?>"
 	data-clear-diagnostics-url="<?php p($_['clearDiagnosticsUrl']); ?>"
 	data-try-url="<?php p($_['tryUrl']); ?>"
+	data-account-url="<?php p($_['accountUrl']); ?>"
+	data-sync-url="<?php p($_['syncUrl']); ?>"
+	data-sync-allow-local="<?php p($_['syncAllowLocal'] ? 'true' : 'false'); ?>"
 	data-token-configured="<?php p($config->tokenConfigured ? 'true' : 'false'); ?>">
 	<h2><?php p($l->t('Paperless Unified Search')); ?></h2>
 
@@ -85,6 +88,53 @@ $archiveAccount = $config->archiveOwner !== '' ? $config->archiveOwner : $config
 		<p id="paperless-unified-search-token-hint" class="settings-hint">
 			<?php p($l->t('Use a dedicated, read-only Paperless account. The token is encrypted by Nextcloud and is never returned to the browser. It is only sent to the server it was saved for, so another server needs it entered again.')); ?>
 		</p>
+
+		<?php /* With the token of a superuser, which serves these requests alone (decision 0012). */ ?>
+		<details id="paperless-unified-search-account" class="paperless-unified-search-account">
+			<summary><?php p($l->t('No token yet? Create the search account in Paperless')); ?></summary>
+			<p id="paperless-unified-search-account-hint" class="settings-hint">
+				<?php p($l->t('Creates the user %s in Paperless, which is neither Superuser nor Admin and may only view documents, correspondents, document types, tags and its UI settings, and saves the settings with its token. The token of a superuser that you enter here only sets up the account: it is neither stored nor logged.', [\OCA\PaperlessUnifiedSearch\Service\SearchAccountSetup::USERNAME])); ?>
+			</p>
+			<p>
+				<label for="paperless-unified-search-superuser-token"><?php p($l->t('API token of a superuser of Paperless')); ?></label>
+				<input
+					id="paperless-unified-search-superuser-token"
+					type="password"
+					autocomplete="off"
+					aria-describedby="paperless-unified-search-account-hint">
+			</p>
+			<div class="paperless-unified-search-option">
+				<input
+					id="paperless-unified-search-view-new"
+					type="checkbox"
+					aria-describedby="paperless-unified-search-view-new-hint"
+					checked>
+				<label for="paperless-unified-search-view-new">
+					<?php p($l->t('Let it view each new document')); ?>
+				</label>
+				<p id="paperless-unified-search-view-new-hint" class="settings-hint">
+					<?php p($l->t('Adds the workflow “%s” to Paperless: when Paperless adds a document, it assigns the account the permission to view it.', [\OCA\PaperlessUnifiedSearch\Service\SearchAccountSetup::WORKFLOW])); ?>
+				</p>
+			</div>
+			<div class="paperless-unified-search-option">
+				<input
+					id="paperless-unified-search-view-existing"
+					type="checkbox"
+					aria-describedby="paperless-unified-search-view-existing-hint"
+					checked>
+				<label for="paperless-unified-search-view-existing">
+					<?php p($l->t('Let it view what Paperless has')); ?>
+				</label>
+				<p id="paperless-unified-search-view-existing-hint" class="settings-hint">
+					<?php p($l->t('Adds the account to the permission to view of every document, correspondent, document type and tag that Paperless has. Everyone who may view or change them keeps it.')); ?>
+				</p>
+			</div>
+			<div class="paperless-unified-search-actions">
+				<button id="paperless-unified-search-create-account" type="button">
+					<?php p($l->t('Create the search account and save')); ?>
+				</button>
+			</div>
+		</details>
 
 		<p>
 			<label for="paperless-unified-search-archive-owner"><?php p($l->t('Archive account')); ?></label>

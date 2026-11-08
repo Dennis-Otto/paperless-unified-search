@@ -8,7 +8,7 @@ Three things make Paperless documents show in Nextcloud's search: a Paperless ac
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/diagrams/setting-up-the-search.dark.svg">
-  <img src="images/diagrams/setting-up-the-search.svg" alt="Setting up the search: Install the app. In Paperless-ngx, create an account that may read the documents and an API token for it. In the administration settings of Nextcloud, enter the URL, the token and the archive account, select Paperless runs in my local network when Nextcloud reaches Paperless at such an address, and select Test connection and save. When Paperless answers, the settings are saved; otherwise nothing is saved and the message says what to correct. The archive account shares its archive read-only with the users who may find its documents, and they find them under Paperless documents in Nextcloud's search, with Search connected services switched on.">
+  <img src="images/diagrams/setting-up-the-search.svg" alt="Setting up the search: Install the app. In the administration settings of Nextcloud, enter the URL and the archive account, and select Paperless runs in my local network when Nextcloud reaches Paperless at such an address. Then connect a Paperless account that may only read: let the settings create it with the token of a superuser of Paperless, which is not stored, with Create the search account and save; or create the account and its API token in Paperless-ngx, enter the token and select Test connection and save. When Paperless answers, the settings are saved; otherwise nothing is saved and the message says what to correct. The archive account shares its archive read-only with the users who may find its documents, and they find them under Paperless documents in Nextcloud's search, with Search connected services switched on.">
 </picture>
 
 <div class="pus-animation" markdown>
@@ -22,7 +22,20 @@ Three things make Paperless documents show in Nextcloud's search: a Paperless ac
 
 ## A Paperless account for the search
 
-The search asks Paperless with the API token of one Paperless account, and Paperless answers with the documents that this account may view, and no others. The account thus sets the limit of what anyone in Nextcloud can find: a document that it can't view never shows, whoever searches. Give it a Paperless account of its own that may only view documents, so that a token that leaks can change nothing. Four steps in Paperless set it up, and the pictures show them in Paperless-ngx 3.
+The search asks Paperless with the API token of one Paperless account, and Paperless answers with the documents that this account may view, and no others. The account thus sets the limit of what anyone in Nextcloud can find: a document that it can't view never shows, whoever searches. Give it a Paperless account of its own that may only view documents, so that a token that leaks can change nothing. The settings set it up with one click, or four steps in Paperless do, which the pictures show in Paperless-ngx 3.
+
+### With one click
+
+Below the token, open **No token yet? Create the search account in Paperless**, enter the API token of a superuser of Paperless, and select **Create the search account and save**. The settings then add the user `nextcloud-search` to Paperless, which is neither **Superuser** nor **Admin** and may only view documents, correspondents, document types, tags and its UI settings, with a random password that nobody learns; get its API token; and save the settings with it, together with the URL, the archive account and the switches of the form, once the test of the connection passes. The token of the superuser only sets up the account: it is never stored, logged or sent back to the browser, and it goes only to the Paperless URL of the form, without redirects ([decision 0012](decisions/0012-create-the-search-account-with-a-one-time-superuser-token.md)). As for saving, Nextcloud asks for your password when you haven't confirmed it in the last 30 minutes.
+
+Two choices, both on at first, say what else changes in Paperless. Each only adds the account: whoever may view or change something keeps it.
+
+- **Let it view each new document** adds the workflow *Nextcloud search: view new documents*, with the trigger *Document Added* and an action *Assignment* that gives the account the permission to view, as under [Its documents](#its-documents).
+- **Let it view what Paperless has** adds the account to the permission to view of every document, correspondent, document type and tag that Paperless has, as the bulk editor does with **Merge with existing permissions** on.
+
+A user `nextcloud-search` that Paperless has already stays as it is: save the settings with its token, or delete the user in Paperless and try again. A set-up that fails halfway removes the user and the workflow again, so that a second try starts afresh; when Paperless refuses that as well, the message names the user that remains. Correspondents, types and tags that someone adds later in the web interface of Paperless still need the account in the **Default View Permissions** of that person, as [below](#the-names-of-correspondents-types-and-tags) says. Paperless takes new permissions into the index of its search a moment later, so right after the set-up a search may find a few documents less for some seconds. `occ paperless_unified_search:setup --create-account` does the same in a script ([Set up the app](reference.md#set-up-the-app)).
+
+The steps below set up the same account by hand, for administrators who would rather not enter the token of a superuser in Nextcloud.
 
 ### The account
 

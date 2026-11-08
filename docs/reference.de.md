@@ -66,11 +66,12 @@ Schlüssel, die eine ältere Version hinterlassen hat und diese nicht mehr liest
 
 ## Die Routen der Einstellungen
 
-Die Seite der Einstellungen speichert über vier Routen der App, die nur Administratoren aufrufen dürfen, jede mit dem CSRF-Token von Nextcloud, und die persönlichen Einstellungen über zwei weitere, die jeder angemeldete Benutzer aufrufen darf. Ein Skript ruft die vier mit der Anmeldung eines Administrators auf und diese zwei mit der Anmeldung des Benutzers, dessen Wahl sie speichern, jede mit dem Header `OCS-APIRequest: true`, wie es die End-to-End-Tests tun; `/index.php` steht vor `/apps`, wo Nextcloud ohne Pretty URLs läuft.
+Die Seite der Einstellungen speichert über fünf Routen der App, die nur Administratoren aufrufen dürfen, jede mit dem CSRF-Token von Nextcloud, und die persönlichen Einstellungen über zwei weitere, die jeder angemeldete Benutzer aufrufen darf. Ein Skript ruft die fünf mit der Anmeldung eines Administrators auf und diese zwei mit der Anmeldung des Benutzers, dessen Wahl sie speichern, jede mit dem Header `OCS-APIRequest: true`, wie es die End-to-End-Tests tun; `/index.php` steht vor `/apps`, wo Nextcloud ohne Pretty URLs läuft.
 
 | Route | Tut |
 | --- | --- |
 | `POST /apps/paperless_unified_search/settings` | Testet die Verbindung und speichert, mit den Parametern `url`, `token`, `archiveOwner`, `allowLocal`, `alwaysSearch` und `personalAlwaysSearch`; fragt nach dem Passwort wie **Verbindung testen und speichern** |
+| `POST /apps/paperless_unified_search/settings/account` | **Suchkonto anlegen und speichern**: legt das Suchkonto `nextcloud-search` in Paperless an, mit dem Parameter `superuserToken`, dem API-Token eines Superusers, das es weder speichert noch protokolliert, und mit `viewNew` und `viewExisting`, beide an, solange nicht `false`; testet dann die Verbindung mit dem Token des Kontos und speichert damit, mit den übrigen Parametern der Route oben; fragt nach dem Passwort, und das Protokoll und das Audit-Protokoll halten fest, welcher Administrator das Konto angelegt hat. Es antwortet mit den Einstellungen und `searchAccount`: seinem `username`, ob ein `workflow` es neue Dokumente ansehen lässt, und wie viele `documents` und `names` es seit der Einrichtung ansehen darf |
 | `DELETE /apps/paperless_unified_search/settings` | **Verbindung trennen**: löscht die Einstellungen, das Token und den Verlauf; fragt nach dem Passwort |
 | `DELETE /apps/paperless_unified_search/settings/diagnostics` | **Verlauf leeren** |
 | `POST /apps/paperless_unified_search/settings/try` | **Suche ausprobieren**: sucht mit dem Parameter `term` als das Konto `user` und sagt für jedes Dokument, ob es angezeigt wird und warum nicht, nur mit seiner ID, seinem Titel und seinen Tags; das Protokoll hält fest, welcher Administrator als wer gesucht hat, ohne den Begriff |
@@ -92,6 +93,9 @@ curl -u admin -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
 | `invalid_url`, `unsupported_scheme`, `url_extras`, `host_not_ascii` | Die URL ist keine, ist nicht HTTP oder HTTPS, hat Zugangsdaten, eine Abfrage oder ein Fragment, oder einen Host, der nicht in seiner ASCII-Form ist |
 | `token_required`, `token_for_other_server` | Es ist kein Token gespeichert, oder das gespeicherte ist für einen anderen Server |
 | `unknown_archive_account` | Das Archiv-Konto existiert nicht |
+| `superuser_token_required`, `not_superuser` | Beim Anlegen des Suchkontos: Kein Token eines Superusers wurde eingegeben, oder das Token gehört keinem Superuser von Paperless |
+| `search_account_exists` | Beim Anlegen des Suchkontos: Paperless hat den Benutzer `nextcloud-search` schon, der bleibt, wie er ist |
+| `search_account_left` | Das Anlegen des Suchkontos ist auf halbem Weg gescheitert, und Paperless hat abgelehnt, den Benutzer wieder zu entfernen: Lösche ihn in Paperless |
 | `unauthorized` | Paperless hat das Token abgelehnt, mit HTTP 401 oder 403 |
 | `not_found` | HTTP 404: Der Pfad der URL ist falsch |
 | `redirect` | Die URL leitet weiter, und mit dem lokalen Netzwerk folgt Nextcloud keiner Weiterleitung |
@@ -200,6 +204,8 @@ Die App schreibt in das Protokoll von Nextcloud mit `app` auf `paperless_unified
 | --- | --- | --- |
 | Warning | The test of the connection to Paperless failed: *reason* (*error*) | **Verbindung testen und speichern** ist fehlgeschlagen; der Grund ist der `code` der Routen oben |
 | Error | The settings of Paperless Unified Search could not be saved (*error*) | Etwas nach dem Test ist fehlgeschlagen, etwa die Datenbank |
+| Warning | The search account could not be set up in Paperless: *reason* (*error*) | **Suchkonto anlegen und speichern** ist fehlgeschlagen; der Grund ist der `code` der Routen oben, und der Fehler ist ohne das Token des Superusers |
+| Info | *admin* created the search account *account* in Paperless | **Suchkonto anlegen und speichern** hat geklappt; das Audit-Protokoll hält es auch fest |
 | Warning | Paperless unified search failed (*error*) | Eine Suche ist fehlgeschlagen; *Probleme der Suche* enthält sie auch |
 | Warning | Paperless unified search left out *n* result(s) it could not show (*error*) | Treffer, deren Dateien nicht geantwortet haben, wurden weggelassen |
 | Warning | Paperless unified search skipped *n* file(s) it could not read (*error*) | Dateien des Archivs, die Nextcloud nicht lesen konnte |

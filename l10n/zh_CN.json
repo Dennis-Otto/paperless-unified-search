@@ -172,7 +172,21 @@
 		"ID": "ID",
 		"Title": "标题",
 		"Tags": "标签",
-		"Shown or why not": "已显示或未显示的原因"
+		"Shown or why not": "已显示或未显示的原因",
+		"Enter the API token of a superuser of Paperless. It sets up the search account and is not stored.": "请输入 Paperless 超级用户的 API 令牌。它仅用于设置搜索账号，不会被保存。",
+		"This API token belongs to no superuser of Paperless, so it can't set up the search account. Enter the token of a superuser; it is not stored.": "该 API 令牌不属于 Paperless 的超级用户，因此无法设置搜索账号。请输入超级用户的令牌；它不会被保存。",
+		"The user %s exists in Paperless already, and stays as it is. Save the settings with its API token, or delete the user in Paperless and try again.": "Paperless 中已存在用户 %s，它将保持不变。请使用其 API 令牌保存设置，或在 Paperless 中删除该用户后重试。",
+		"Paperless did not finish setting up the search account, and the user %s remains in it. Delete the user in Paperless, then try again.": "Paperless 未能完成搜索账号的设置，用户 %s 仍留在其中。请在 Paperless 中删除该用户，然后重试。",
+		"No token yet? Create the search account in Paperless": "还没有令牌？在 Paperless 中创建搜索账号",
+		"Creates the user %s in Paperless, which is neither Superuser nor Admin and may only view documents, correspondents, document types, tags and its UI settings, and saves the settings with its token. The token of a superuser that you enter here only sets up the account: it is neither stored nor logged.": "在 Paperless 中创建用户 %s：它既不是超级用户也不是管理员，只能查看文档、往来方、文档类型、标签及其界面设置；然后使用其令牌保存设置。您在此输入的超级用户令牌仅用于设置该账号：既不会被保存，也不会被记录到日志。",
+		"API token of a superuser of Paperless": "Paperless 超级用户的 API 令牌",
+		"Let it view each new document": "允许其查看每个新文档",
+		"Adds the workflow “%s” to Paperless: when Paperless adds a document, it assigns the account the permission to view it.": "向 Paperless 添加工作流“%s”：每当 Paperless 添加文档时，都会为该账号分配查看权限。",
+		"Let it view what Paperless has": "允许其查看 Paperless 中已有的内容",
+		"Adds the account to the permission to view of every document, correspondent, document type and tag that Paperless has. Everyone who may view or change them keeps it.": "将该账号加入 Paperless 中每个文档、往来方、文档类型和标签的查看权限。原本可以查看或更改它们的人保留其权限。",
+		"Create the search account and save": "创建搜索账号并保存",
+		"Creating the search account in Paperless…": "正在 Paperless 中创建搜索账号…",
+		"Created the account {account} in Paperless and saved the settings with its token.": "已在 Paperless 中创建账号 {account}，并已使用其令牌保存设置。"
 	},
 	"pluralForm": "nplurals=1; plural=0;"
 }

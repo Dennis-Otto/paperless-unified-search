@@ -108,14 +108,14 @@ Er braucht Docker mit Compose und Bash, unter Windows Git Bash, und erzeugt die 
 <!-- --8<-- [start:quick-start] -->
 
 1. Installiere **Paperless Unified Search** aus dem [Nextcloud App Store](https://apps.nextcloud.com/apps/paperless_unified_search) unter *Apps* oder mit `occ app:install paperless_unified_search`.
-2. Lege in Paperless-ngx ein Konto an, das die zu durchsuchenden Dokumente lesen darf, und ein API-Token dafür.
-3. Öffne in Nextcloud **Verwaltungseinstellungen → Paperless Unified Search**, gib die Paperless-URL und das Token ein und wähle **Verbindung testen und speichern**. Erreicht Nextcloud Paperless unter einer Adresse deines lokalen Netzwerks oder über den Namen seines Docker-Dienstes, etwa `http://192.168.1.20:8000` oder `http://paperless:8000`, wähle auch **Paperless läuft in meinem lokalen Netzwerk**. Ist [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) installiert, ist das Konto, mit dem es das Archiv schreibt, das **Archiv-Konto**; sonst gib das Konto ein, dem die synchronisierten Dateien gehören.
+2. Öffne in Nextcloud **Verwaltungseinstellungen → Paperless Unified Search** und gib die Paperless-URL ein. Erreicht Nextcloud Paperless unter einer Adresse deines lokalen Netzwerks oder über den Namen seines Docker-Dienstes, etwa `http://192.168.1.20:8000` oder `http://paperless:8000`, wähle auch **Paperless läuft in meinem lokalen Netzwerk**; ist [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) eingerichtet, beginnt das Formular mit seiner URL und dieser Wahl. Ist Paperless Sync installiert, ist das Konto, mit dem es das Archiv schreibt, das **Archiv-Konto**; sonst gib das Konto ein, dem die synchronisierten Dateien gehören.
+3. Verbinde ein Paperless-Konto, das nur lesen darf. Mit einem Klick: Öffne **Noch kein Token? Lege das Suchkonto in Paperless an**, gib das API-Token eines Superusers von Paperless ein, das nur das Konto einrichtet und nie gespeichert wird, und wähle **Suchkonto anlegen und speichern**. Oder von Hand: Lege ein solches Konto und sein API-Token in Paperless-ngx an, gib das Token ein und wähle **Verbindung testen und speichern**.
 4. Teile als Archiv-Konto das Archiv nur lesend mit den Benutzern, die seine Dokumente finden dürfen, wie jeden Ordner in Nextcloud. Das Archiv-Konto selbst findet sie alle.
 5. Suche in Nextcloud, schalte **Verbundene Dienste durchsuchen** ein und sieh unter **Paperless-Dokumente** nach. Ein Treffer erscheint für jedes Dokument, dessen synchronisierte Datei du öffnen kannst: eine Datei des Archiv-Kontos mit `[P<ID>]` im Namen, deine eigene, wenn du dieses Konto bist, oder eine, die es mit dir geteilt hat. [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) erzeugt solche Dateien.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/setting-up-the-search.de.dark.svg">
-  <img src="docs/images/diagrams/setting-up-the-search.de.svg" alt="Die Suche einrichten: Installiere die App. Lege in Paperless-ngx ein Konto an, das die Dokumente lesen darf, und ein API-Token dafür. Gib in den Verwaltungseinstellungen von Nextcloud die URL, das Token und das Archiv-Konto ein, wähle Paperless läuft in meinem lokalen Netzwerk, wenn Nextcloud Paperless unter einer solchen Adresse erreicht, und wähle Verbindung testen und speichern. Antwortet Paperless, sind die Einstellungen gespeichert; sonst wird nichts gespeichert, und die Meldung sagt, was zu korrigieren ist. Das Archiv-Konto teilt sein Archiv nur lesend mit den Benutzern, die seine Dokumente finden dürfen, und sie finden sie unter Paperless-Dokumente in der Suche von Nextcloud, mit eingeschaltetem Verbundene Dienste durchsuchen.">
+  <img src="docs/images/diagrams/setting-up-the-search.de.svg" alt="Die Suche einrichten: Installiere die App. Gib in den Verwaltungseinstellungen von Nextcloud die URL und das Archiv-Konto ein, und wähle Paperless läuft in meinem lokalen Netzwerk, wenn Nextcloud Paperless unter einer solchen Adresse erreicht. Verbinde dann ein Paperless-Konto, das nur lesen darf: Lass die Einstellungen es mit dem Token eines Superusers von Paperless anlegen, das nicht gespeichert wird, mit Suchkonto anlegen und speichern; oder lege das Konto und sein API-Token in Paperless-ngx an, gib das Token ein und wähle Verbindung testen und speichern. Antwortet Paperless, sind die Einstellungen gespeichert; sonst wird nichts gespeichert, und die Meldung sagt, was zu korrigieren ist. Das Archiv-Konto teilt sein Archiv nur lesend mit den Benutzern, die seine Dokumente finden dürfen, und sie finden sie unter Paperless-Dokumente in der Suche von Nextcloud, mit eingeschaltetem Verbundene Dienste durchsuchen.">
 </picture>
 
 <!-- --8<-- [end:quick-start] -->
@@ -313,6 +313,8 @@ Die Suche braucht eines von einer Synchronisierung: jedes Dokument von Paperless
 <!-- --8<-- [start:configuration] -->
 
 ## Konfiguration
+
+Die Einstellungen können das Paperless-Konto der Schritte 1 und 2 selbst anlegen: Öffne unter dem Token **Noch kein Token? Lege das Suchkonto in Paperless an**, gib das API-Token eines Superusers von Paperless ein, das nur dazu dient und nie gespeichert wird, und wähle **Suchkonto anlegen und speichern** statt Schritt 10. [Mit einem Klick](https://dennis-otto.github.io/paperless-unified-search/de/configure.html#mit-einem-klick) sagt, was es in Paperless ändert.
 
 1. Lege ein eigenes Paperless-Konto an, weder **Superuser** noch **Admin**, mit nur den Rechten zum Ansehen, die die Suche braucht: **Anzeigen** (*View*) für **Dokument** (*Document*), für **Korrespondent** (*Correspondent*), **Dokumenttyp** (*DocumentType*) und **Tag** (*Tag*), deren Namen die Treffer zeigen, und für **UI-Einstellungen** (*UISettings*), aus denen der Test der Verbindung erfährt, was das Konto darf. Lass es die Dokumente, Korrespondenten, Typen und Tags ansehen, die einem anderen Benutzer gehören, etwa einem Administrator, der sie anlegt; [Ein Paperless-Konto für die Suche](https://dennis-otto.github.io/paperless-unified-search/de/configure.html#ein-paperless-konto-für-die-suche) zeigt jeden Schritt in Paperless, mit einem Workflow, der es für jedes neue Dokument erledigt.
 
@@ -593,12 +595,22 @@ Das Token kommt nie auf die Befehlszeile, wo der Verlauf der Shell und die Liste
 | `--always-search`, `--no-always-search` | **Paperless immer in die globale Suche einbeziehen** |
 | `--personal-always-search`, `--no-personal-always-search` | **Benutzern erlauben, Paperless in alle ihre Suchen einzubeziehen** |
 | `--new-document-alerts`, `--no-new-document-alerts` | **Benutzern Benachrichtigungen über neue Dokumente erlauben** |
+| `--create-account` | Legt das Suchkonto `nextcloud-search` in Paperless an, mit dem API-Token eines Superusers aus `--token-stdin` oder `--token-env`, das nicht gespeichert wird, und speichert die Einstellungen mit dem Token des Kontos, wie **Suchkonto anlegen und speichern** |
+| `--view-new-documents`, `--no-view-new-documents` | Mit `--create-account`: **Jedes neue Dokument ansehen lassen**, an, solange du es nicht ausschaltest |
+| `--view-existing`, `--no-view-existing` | Mit `--create-account`: **Alles ansehen lassen, was Paperless hat**, an, solange du es nicht ausschaltest |
 
 Auf einem Server, als Benutzer des Webservers:
 
 ```sh
 printf '%s\n' "$PAPERLESS_TOKEN" | sudo -u www-data php occ paperless_unified_search:setup \
   --url=https://paperless.example.com --archive-account=paperless --token-stdin
+```
+
+Mit dem Token eines Superusers von Paperless, das das Suchkonto anlegt und sonst nirgends hingeht:
+
+```sh
+printf '%s\n' "$PAPERLESS_SUPERUSER_TOKEN" | sudo -u www-data php occ paperless_unified_search:setup \
+  --url=https://paperless.example.com --archive-account=paperless --create-account --token-stdin
 ```
 
 Mit Docker Compose und dem Image von Nextcloud, aus einer Datei, die nur du lesen kannst:
