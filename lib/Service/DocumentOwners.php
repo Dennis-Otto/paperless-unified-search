@@ -120,7 +120,10 @@ final class DocumentOwners {
 	 * @return ?array<int, string>
 	 */
 	private function paperlessUsers(): ?array {
-		$server = hash('sha256', $this->configService->getUrl());
+		// The token is part of the key: after the administrator gives its account the
+		// permission View for Users and saves a new token, or another one, the users count at
+		// once, without waiting until a refused list rests no longer.
+		$server = hash('sha256', $this->configService->getUrl() . ' ' . $this->configService->getToken());
 		$cached = self::usersIn($this->getCache()->get(self::usersKey($server)));
 		if ($cached !== null) {
 			return $cached;

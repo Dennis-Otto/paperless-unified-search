@@ -214,7 +214,7 @@ final class DocumentOwnersTest extends TestCase {
 	#[DataProvider('wrongCacheContents')]
 	public function testWhatTheCacheHoldsWronglyCountsForNothing(mixed $cached): void {
 		$owners = $this->owners($this->users(self::USERS));
-		$this->cache()->set('users-' . hash('sha256', 'https://paperless.example.com'), $cached);
+		$this->cache()->set('users-' . hash('sha256', 'https://paperless.example.com TEST_VALUE'), $cached);
 
 		self::assertSame([1 => 'jamie'], $owners->of([['id' => 1, 'owner' => 5]]));
 		self::assertCount(1, $this->requests);
@@ -246,6 +246,21 @@ final class DocumentOwnersTest extends TestCase {
 		self::assertSame([1 => 'jamie'], $owners->of([['id' => 1, 'owner' => 5]]));
 		self::assertSame('info', $this->logged[0][0]);
 		self::assertStringContainsString('only the files of the archive account stand for documents', $this->logged[0][1]);
+	}
+
+	/**
+	 * Another token, such as one of an account that the administrator gave View for Users
+	 * after the warning, asks Paperless at once, while the list of the old one still rests.
+	 */
+	public function testAnotherTokenAsksForTheUsersAtOnce(): void {
+		$owners = $this->owners($this->answer(403, '{"detail":"You do not have permission to perform this action."}'));
+		self::assertSame([], $owners->of([['id' => 1, 'owner' => 5]]));
+
+		$this->storedToken = 'OTHER_TEST_VALUE';
+		$owners = $this->owners($this->users(self::USERS));
+
+		self::assertSame([1 => 'jamie'], $owners->of([['id' => 1, 'owner' => 5]]));
+		self::assertCount(2, $this->requests);
 	}
 
 	public function testAnAnswerThatIsNoListRestsForAMinute(): void {

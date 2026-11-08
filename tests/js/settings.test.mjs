@@ -449,7 +449,7 @@ test('the settings show the warnings about the account of the token, which keep 
 		answers: [
 			json({ ...CONFIG, tokenWarnings: ['superuser'] }),
 			// A value that a newer server names, which this page doesn't know, shows nothing.
-			json({ ...CONFIG, tokenWarnings: ['staff', 'changes_documents', 'retired', 'hides_correspondents', 'hides_document_types', 'hides_tags', 'hides_names_of_others'] }),
+			json({ ...CONFIG, tokenWarnings: ['staff', 'changes_documents', 'retired', 'hides_correspondents', 'hides_document_types', 'hides_tags', 'hides_names_of_others', 'hides_users'] }),
 			json({ ...CONFIG, tokenWarnings: [] }),
 		],
 	})
@@ -459,10 +459,21 @@ test('the settings show the warnings about the account of the token, which keep 
 	assert.equal(get('status').textContent, 'Connection successful. Settings saved.')
 
 	await get('form').dispatch('submit')
-	assert.equal(get('token-warnings').textContent, 'The API token belongs to an Admin of Paperless, who may also read its logs: whoever gets hold of the token can too. Use the token of an account that is neither Admin nor Superuser. The account of the API token may add, change or delete documents in Paperless: whoever gets hold of the token can too. Use the token of an account that may only view documents. The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents. The account of the API token may not view document types in Paperless, so results show without them. Give the account the permission View for Document Types. The account of the API token may not view tags in Paperless, so results show without them. Give the account the permission View for Tags. The account of the API token may not view some correspondents, document types or tags in Paperless, which another user owns, so results show without them. Select them in their lists in Paperless and add the account under Permissions, View.')
+	assert.equal(get('token-warnings').textContent, 'The API token belongs to an Admin of Paperless, who may also read its logs: whoever gets hold of the token can too. Use the token of an account that is neither Admin nor Superuser. The account of the API token may add, change or delete documents in Paperless: whoever gets hold of the token can too. Use the token of an account that may only view documents. The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents. The account of the API token may not view document types in Paperless, so results show without them. Give the account the permission View for Document Types. The account of the API token may not view tags in Paperless, so results show without them. Give the account the permission View for Tags. The account of the API token may not view some correspondents, document types or tags in Paperless, which another user owns, so results show without them. Select them in their lists in Paperless and add the account under Permissions, View. The account of the API token may not view users in Paperless, so the search shows only the files of the archive account, not the documents that Paperless Sync puts into the files of each user. Give the account the permission View for Users.')
 
 	await get('form').dispatch('submit')
 	assert.equal(get('token-warnings').textContent, '')
+})
+
+test('the settings know every warning about the account of the token that the server names', function() {
+	// The values of lib/Model/TokenWarning.php and the keys of TOKEN_WARNINGS: a value that
+	// the page doesn't know shows nothing, so a new one needs its text here as well.
+	const php = readFileSync(new URL('../../lib/Model/TokenWarning.php', import.meta.url), 'utf8')
+	const server = [...php.matchAll(/^\tcase \w+ = '(\w+)';$/gm)].map((match) => match[1]).sort()
+	const settings = readFileSync(url, 'utf8').match(/const TOKEN_WARNINGS = \{\r?\n([\s\S]*?)\r?\n\t\}/)[1]
+
+	assert.notDeepEqual(server, [])
+	assert.deepEqual([...settings.matchAll(/^\t\t(\w+): /gm)].map((match) => match[1]).sort(), server)
 })
 
 test('a placeholder without its value stays as it is', async function() {

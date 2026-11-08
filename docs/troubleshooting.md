@@ -104,7 +104,7 @@ The test of the connection also asks Paperless what the account of the API token
 | The account of the API token may not view document types | Give the account **View** for **DocumentType**; until then the results and the dashboard show no type |
 | The account of the API token may not view tags | Give the account **View** for **Tag**; until then the results and the dashboard show no tags |
 | The account of the API token may not view some correspondents, document types or tags | Let the account view those that another user owns, as [Configure](configure.md#the-names-of-correspondents-types-and-tags) shows; the results show their names within ten minutes, and the next test of the connection no longer warns |
-| The account of the API token may not view users | Give the account **View** for **User**: while Paperless Sync gives each user the documents that they own, the search needs the usernames of Paperless to tell whose files stand for a document, and until then it shows only the files of the archive account |
+| The account of the API token may not view users | Give the account **View** for **User**: while Paperless Sync gives each user the documents that they own, the search needs the usernames of Paperless to tell whose files stand for a document, and until then it shows only the files of the archive account. With a new token the files of the owners count at once, with the same one within ten minutes |
 | Paperless doesn't say what the account of the API token may do (`occ paperless_unified_search:check` alone) | Give the account **View** for **UISettings**: Paperless tells what an account may do only to one that may view its UI settings, and without it the settings warn about nothing |
 
 ## Paperless in your local network
