@@ -13,6 +13,13 @@ commit_request turns that folder into commits of the release app, which take not
 but pictures, by paths of plain names, from that folder. A picture that came out at
 another size would leave a page that names its width and height with the wrong shape:
 corrected_pages rewrites those numbers on the pages of the checkout, and nothing else.
+
+.github/screenshots.toml, which belongs to the project, can name the shards that
+render side by side, each on a runner of its own, whose folders collect puts together
+for the one pull request; the files besides pictures that the script renders and the
+bot commits, by their exact paths; and the hosts that the jobs that render may reach,
+of which Harden-Runner then lets through no other. Without it, one job renders every
+picture, the bot takes only pictures, and Harden-Runner only records the traffic.
 """
 
 from __future__ import annotations
@@ -26,7 +33,8 @@ import posixpath
 import re
 import struct
 import subprocess
-from collections.abc import Mapping, Sequence
+import tomllib
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -34,6 +42,22 @@ from urllib.parse import SplitResult, unquote, urlsplit
 
 SCRIPT = Path("scripts/screenshots.sh")
 PATHS = Path(".github/screenshots-paths.txt")
+SETTINGS = Path(".github/screenshots.toml")
+# A shard, as it names a job, an artifact and the variable SCREENSHOTS_SHARD.
+SHARD = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+# The most jobs that one matrix of GitHub Actions runs.
+MOST_SHARDS = 256
+# The one job of a project that names no shards, which renders every picture.
+WHOLE = "all"
+# A host as Harden-Runner allows it, by its name in small letters, or *. and a name
+# for every name below it, and its port.
+HOST = re.compile(
+    r"(?:\*\.)?[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+"
+    r":(?P<port>[0-9]{1,5})"
+)
+# The folders in which the bot writes no file besides pictures: the history, and the
+# workflows with the settings of the repository and of its bots.
+CLOSED = (".git", ".github")
 # The pictures that the bot commits, by their endings, and how each file starts; an
 # MP4 starts with the size of its first box, which looks_like_its_kind skips. A
 # video, such as one that a website plays in place of a GIF, has no pixels that
@@ -89,12 +113,25 @@ class Picture:
     """A picture that the script changed: its path, whether it is new, changed or
     deleted, the share of its pixels that changed, when the two have the same size
     and number of frames, and the size of the committed file when the new one has
-    another."""
+    another. A file besides pictures that the settings name is of the kind file,
+    with neither."""
 
     path: str
     status: str
     share: float | None = None
     before: Size | None = None
+    kind: str = "picture"
+
+
+@dataclass(frozen=True)
+class Settings:
+    """What .github/screenshots.toml sets: the shards that render side by side, the
+    files besides pictures that the bot commits, and the hosts that the jobs that
+    render may reach. Each stays empty without the file."""
+
+    shards: tuple[str, ...] = ()
+    files: tuple[str, ...] = ()
+    hosts: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -156,6 +193,96 @@ def is_picture(path: str) -> bool:
     if path.split("/")[0] == ".git" or path.startswith(".github/workflows/"):
         return False
     return Path(path).suffix.lower() in SIGNATURES
+
+
+def refused_file(path: str) -> str:
+    """Why the bot may not commit a file besides pictures that the settings name, or
+    nothing for one by a path of plain names, outside .git and .github, that is no
+    picture, which the bot takes anyway."""
+    if not is_plain(path):
+        return "is no path of plain names in the repository"
+    if path.split("/")[0] in CLOSED:
+        return (
+            "is in .git or .github, which hold the history, the workflows and the "
+            "settings, never a file that a script renders"
+        )
+    if Path(path).suffix.lower() in SIGNATURES:
+        return "is a picture, which the bot takes anyway"
+    return ""
+
+
+def listed(data: Mapping[str, Any], key: str, where: str) -> tuple[str, ...]:
+    """A list of strings of the settings, in its order, with none named twice."""
+    value = data.get(key, [])
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError(f"{where}: {key} is a list of strings.")
+    twice = [item for index, item in enumerate(value) if item in value[:index]]
+    if twice:
+        raise ValueError(f"{where}: {key} names {twice[0]} twice.")
+    return tuple(value)
+
+
+def settings(root: Path, path: Path = SETTINGS) -> Settings:
+    """The settings of the screenshot bot in the file at path, checked: each shard a
+    plain name, each file one that the bot may commit, and each host as Harden-Runner
+    allows it. Raises ValueError for anything else, a key that the bot doesn't know
+    too, so that a typo never drops a host or a shard without a word."""
+    file = root / path
+    if not file.is_file():
+        return Settings()
+    where = path.as_posix()
+    try:
+        data = tomllib.loads(file.read_text(encoding="utf-8"))
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError) as error:
+        raise ValueError(f"{where} is no TOML that the bot can read: {error}") from None
+    unknown = sorted(set(data) - {"shards", "files", "hosts"})
+    if unknown:
+        raise ValueError(
+            f"{where} sets {unknown[0]}, which the bot doesn't know; it knows "
+            "shards, files and hosts."
+        )
+    shards = listed(data, "shards", where)
+    for shard in shards:
+        if not SHARD.fullmatch(shard):
+            raise ValueError(
+                f"{where}: the shard {shard!r} is no plain name of letters, digits, "
+                "dots, underscores and hyphens, up to 64 from a letter or a digit."
+            )
+    if len(shards) > MOST_SHARDS:
+        raise ValueError(
+            f"{where} names {len(shards)} shards, more than the {MOST_SHARDS} jobs "
+            "that one matrix of GitHub Actions runs."
+        )
+    files = listed(data, "files", where)
+    for name in files:
+        reason = refused_file(name)
+        if reason:
+            raise ValueError(f"{where}: the file {name!r} {reason}.")
+    hosts = listed(data, "hosts", where)
+    for host in hosts:
+        found = HOST.fullmatch(host)
+        if not found or not 0 < int(found["port"]) < 65536:
+            raise ValueError(
+                f"{where}: the host {host!r} is no host and port as Harden-Runner "
+                "allows it, such as ghcr.io:443 or *.data.mcr.microsoft.com:443, in "
+                "small letters."
+            )
+    return Settings(shards, files, hosts)
+
+
+def plan(found: Settings) -> str:
+    """The outputs of the job that starts a render, as lines of $GITHUB_OUTPUT: the
+    shards as the matrix of the job render, one job named all for a project that
+    names none; and whether Harden-Runner blocks every host but those of the jobs and
+    of the settings, or, without hosts, only records the traffic."""
+    shards = [{"shard": shard, "id": shard} for shard in found.shards] or [
+        {"shard": "", "id": WHOLE}
+    ]
+    return (
+        f"shards={json.dumps(shards, separators=(',', ':'))}\n"
+        f"policy={'block' if found.hosts else 'audit'}\n"
+        f"hosts={' '.join(found.hosts)}\n"
+    )
 
 
 def looks_like_its_kind(path: str, data: bytes) -> bool:
@@ -235,11 +362,14 @@ def picture_size(path: str, data: bytes) -> Size | None:
     return found[0], found[1]
 
 
-def patterns(root: Path, paths: Path = PATHS, script: Path = SCRIPT) -> list[str]:
+def patterns(
+    root: Path, paths: Path = PATHS, script: Path = SCRIPT, config: Path = SETTINGS
+) -> list[str]:
     """The patterns of the files whose change can change the pictures: those of the
     list, one on each line, without its comments and empty lines, and always the
-    script and the list itself. A pattern that starts with ! leaves files out."""
-    found = [script.as_posix(), paths.as_posix()]
+    script, the list itself and the settings, whose shards, files and hosts a render
+    tries out. A pattern that starts with ! leaves files out."""
+    found = [script.as_posix(), paths.as_posix(), config.as_posix()]
     listed = root / paths
     if listed.is_file():
         for line in listed.read_text(encoding="utf-8").splitlines():
@@ -371,13 +501,71 @@ def size_before(path: str, before: bytes, after: bytes) -> Size | None:
     return old if old != picture_size(path, after) else None
 
 
-def keep(root: Path, folder: Path | None = None) -> Kept:
+def kind_of(path: str, files: Sequence[str] = ()) -> str:
+    """How the bot takes a path that the script changed: as a picture, as a file
+    besides pictures that the settings name, or, with nothing, not at all."""
+    if is_picture(path):
+        return "picture"
+    if path in files and not refused_file(path):
+        return "file"
+    return ""
+
+
+def is_text(data: bytes) -> bool:
+    """Whether a file is text in UTF-8, which a pull request shows line by line."""
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return True
+
+
+def store(folder: Path, found: Kept, read: Callable[[str], bytes]) -> None:
+    """Writes what keep or collect found into folder, for the screenshot bot: each new
+    or changed picture or file under files/ at its path, as read gives it, the paths
+    of the deleted ones in deleted.txt and the list of all with their changes in
+    report.json."""
+    # Also when the script only deleted pictures, which leaves nothing to copy.
+    folder.mkdir(parents=True, exist_ok=True)
+    for picture in found.pictures:
+        if picture.status != "deleted":
+            target = folder / "files" / picture.path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(read(picture.path))
+    deleted = [p.path for p in found.pictures if p.status == "deleted"]
+    if deleted:
+        (folder / "deleted.txt").write_text(
+            "".join(f"{path}\n" for path in deleted), encoding="utf-8", newline="\n"
+        )
+    (folder / REPORT).write_text(
+        json.dumps(
+            {
+                "pictures": [
+                    {
+                        "path": p.path,
+                        "status": p.status,
+                        "share": p.share,
+                        "before": p.before,
+                    }
+                    for p in found.pictures
+                ],
+                "ignored": list(found.ignored),
+            },
+            indent=1,
+        )
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+def keep(root: Path, folder: Path | None = None, files: Sequence[str] = ()) -> Kept:
     """Compares each picture that the script changed in the work tree with the one
     that the commit has, by its pixels: one that looks the same gets the committed
-    file back. Copies what is left into folder, when there is one, for the screenshot
-    bot: each new or changed picture under files/ at its path, the paths of the
-    deleted ones in deleted.txt and the list of all with their changes in
-    report.json. The folder stays away when no picture changed."""
+    file back. A file of files, besides pictures, which the settings name, counts as
+    changed when its bytes do, and has to be text in UTF-8. Copies what is left into
+    folder, when there is one, for the screenshot bot, as store writes it. The
+    folder stays away when nothing changed."""
     status = git(
         root,
         "status",
@@ -390,13 +578,23 @@ def keep(root: Path, folder: Path | None = None) -> Kept:
     ignored: list[str] = []
     for entry in filter(None, status.split("\0")):
         code, path = entry[:2], entry[3:]
-        if not is_picture(path):
+        kind = kind_of(path, files)
+        if not kind:
             ignored.append(path)
             continue
         if not (root / path).is_file():
-            pictures.append(Picture(path, "deleted"))
+            pictures.append(Picture(path, "deleted", kind=kind))
             continue
         data = (root / path).read_bytes()
+        if kind == "file":
+            if not is_text(data):
+                raise ValueError(
+                    f"The script wrote {path}, which {SETTINGS.as_posix()} names as "
+                    "a file besides pictures, but which is no text in UTF-8."
+                )
+            status_of = "new" if code == "??" else "changed"
+            pictures.append(Picture(path, status_of, kind=kind))
+            continue
         if not looks_like_its_kind(path, data):
             raise ValueError(
                 f"The script wrote {path}, which is no "
@@ -419,40 +617,8 @@ def keep(root: Path, folder: Path | None = None) -> Kept:
     pictures = still_videos(root, pictures)
     pictures.sort(key=lambda picture: picture.path)
     found = Kept(tuple(pictures), tuple(sorted(ignored)))
-    if folder is None or not pictures:
-        return found
-    # Also when the script only deleted pictures, which leaves nothing to copy.
-    folder.mkdir(parents=True, exist_ok=True)
-    for picture in pictures:
-        if picture.status != "deleted":
-            target = folder / "files" / picture.path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes((root / picture.path).read_bytes())
-    deleted = [picture.path for picture in pictures if picture.status == "deleted"]
-    if deleted:
-        (folder / "deleted.txt").write_text(
-            "".join(f"{path}\n" for path in deleted), encoding="utf-8", newline="\n"
-        )
-    (folder / REPORT).write_text(
-        json.dumps(
-            {
-                "pictures": [
-                    {
-                        "path": p.path,
-                        "status": p.status,
-                        "share": p.share,
-                        "before": p.before,
-                    }
-                    for p in pictures
-                ],
-                "ignored": list(found.ignored),
-            },
-            indent=1,
-        )
-        + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
+    if folder is not None and pictures:
+        store(folder, found, lambda path: (root / path).read_bytes())
     return found
 
 
@@ -464,26 +630,35 @@ def reported_size(value: Any) -> Size | None:
     return int(width), int(height)
 
 
-def kept(folder: Path) -> Kept:
+def kept(folder: Path, files: Sequence[str] = ()) -> Kept:
     """What a run of keep left in folder, once it is checked: the render job runs the
     script of the project, so the bot takes nothing but pictures, whose files start
-    as their kind does, at the paths of the report, and deletes nothing but
-    pictures. Raises ValueError for anything else."""
-    files = folder / "files"
+    as their kind does, and the text of the files of files, which the settings of
+    main name, at the paths of the report, and deletes nothing else. The kind of each
+    comes from its path, never from the run. Raises ValueError for anything else."""
+    others = f"no picture and no file that {SETTINGS.as_posix()} names"
+    stored = folder / "files"
     written = set()
-    for directory, folders, names in os.walk(files):
+    for directory, folders, names in os.walk(stored):
         links = [name for name in folders if Path(directory, name).is_symlink()]
         for name in sorted(names + links):
             path = Path(directory, name)
-            relative = path.relative_to(files).as_posix()
-            if path.is_symlink() or not is_picture(relative):
+            relative = path.relative_to(stored).as_posix()
+            kind = "" if path.is_symlink() else kind_of(relative, files)
+            if not kind:
                 raise ValueError(
-                    f"The screenshots of the run hold {relative}, which is no picture."
+                    f"The screenshots of the run hold {relative}, which is {others}."
                 )
-            if not looks_like_its_kind(relative, path.read_bytes()):
+            data = path.read_bytes()
+            if kind == "picture" and not looks_like_its_kind(relative, data):
                 raise ValueError(
                     f"The screenshots of the run hold {relative}, which is no "
                     f"{Path(relative).suffix.lower()[1:].upper()} picture."
+                )
+            if kind == "file" and not is_text(data):
+                raise ValueError(
+                    f"The screenshots of the run hold {relative}, which is no text "
+                    "in UTF-8."
                 )
             written.add(relative)
     listed = folder / "deleted.txt"
@@ -491,9 +666,9 @@ def kept(folder: Path) -> Kept:
         set(listed.read_text(encoding="utf-8").split()) if listed.is_file() else set()
     )
     for gone in sorted(deleted):
-        if not is_picture(gone):
+        if not kind_of(gone, files):
             raise ValueError(
-                f"The screenshots of the run would delete {gone}, which is no picture."
+                f"The screenshots of the run would delete {gone}, which is {others}."
             )
     try:
         report = json.loads((folder / REPORT).read_text(encoding="utf-8"))
@@ -503,6 +678,7 @@ def kept(folder: Path) -> Kept:
                 str(entry["status"]),
                 None if entry["share"] is None else float(entry["share"]),
                 reported_size(entry["before"]),
+                kind_of(str(entry["path"]), files),
             )
             for entry in report["pictures"]
         )
@@ -520,6 +696,35 @@ def kept(folder: Path) -> Kept:
     if not pictures:
         raise ValueError("The screenshots of the run hold nothing to commit.")
     return Kept(pictures, ignored)
+
+
+def collect(folder: Path, shards: Sequence[Path], files: Sequence[str] = ()) -> Kept:
+    """Puts together what keep left in the folder of each shard, each checked as the
+    job that commits checks it, in folder, as one run of keep over every picture
+    would have left it. Each picture belongs to one shard: a path that two shards
+    changed raises ValueError rather than take either. The folder stays away when no
+    shard kept anything."""
+    sources: dict[str, Path] = {}
+    pictures: list[Picture] = []
+    ignored: set[str] = set()
+    for shard in shards:
+        found = kept(shard, files)
+        for picture in found.pictures:
+            if picture.path in sources:
+                raise ValueError(
+                    f"The shards {sources[picture.path].name} and {shard.name} both "
+                    f"changed {picture.path}, which only one of them may render."
+                )
+            sources[picture.path] = shard
+            pictures.append(picture)
+        ignored.update(found.ignored)
+    pictures.sort(key=lambda picture: picture.path)
+    merged = Kept(tuple(pictures), tuple(sorted(ignored)))
+    if pictures:
+        store(
+            folder, merged, lambda path: (sources[path] / "files" / path).read_bytes()
+        )
+    return merged
 
 
 def repository_of(root: Path) -> str:
@@ -680,10 +885,13 @@ def corrected_pages(
     return pages
 
 
-def pages_of_folder(root: Path, folder: Path, repository: str) -> list[Page]:
+def pages_of_folder(
+    root: Path, folder: Path, repository: str, files: Sequence[str] = ()
+) -> list[Page]:
     """The pages that the pictures of a folder of keep correct, for the job with the
     release app, which reads these numbers from the files once kept checked them."""
-    return corrected_pages(root, resized(kept(folder), folder / "files"), repository)
+    found = kept(folder, files)
+    return corrected_pages(root, resized(found, folder / "files"), repository)
 
 
 def correct_work_tree(root: Path, found: Kept, repository: str) -> list[Page]:
@@ -705,10 +913,12 @@ def contents(folder: Path, change: Picture | Page) -> bytes | None:
     return (folder / "files" / change.path).read_bytes()
 
 
-def written(folder: Path, pages: Sequence[Page] = ()) -> list[str]:
-    """The paths that the commits of the bot write: each picture of folder, a deleted
-    one too, and each corrected page."""
-    return [picture.path for picture in kept(folder).pictures] + [
+def written(
+    folder: Path, pages: Sequence[Page] = (), files: Sequence[str] = ()
+) -> list[str]:
+    """The paths that the commits of the bot write: each picture and file of folder,
+    a deleted one too, and each corrected page."""
+    return [picture.path for picture in kept(folder, files).pictures] + [
         page.path for page in pages
     ]
 
@@ -754,13 +964,16 @@ def overtaken(
 
 
 def parts(
-    folder: Path, largest: int = LARGEST, pages: Sequence[Page] = ()
+    folder: Path,
+    largest: int = LARGEST,
+    pages: Sequence[Page] = (),
+    files: Sequence[str] = (),
 ) -> list[list[Picture | Page]]:
-    """The pictures of folder, then the corrected pages, in the commits that carry
-    them, each request below largest once its files are in base64."""
+    """The pictures and files of folder, then the corrected pages, in the commits
+    that carry them, each request below largest once its files are in base64."""
     found: list[list[Picture | Page]] = [[]]
     size = 0
-    changes: list[Picture | Page] = [*kept(folder).pictures, *pages]
+    changes: list[Picture | Page] = [*kept(folder, files).pictures, *pages]
     for change in changes:
         data = contents(folder, change)
         length = 0 if data is None else len(data) * 4 // 3
@@ -781,11 +994,12 @@ def commit_request(
     body: str,
     part: int = 1,
     pages: Sequence[Page] = (),
+    files: Sequence[str] = (),
 ) -> dict[str, Any]:
     """The request to GitHub's GraphQL API that commits the part of what keep left in
     folder, and of the corrected pages, onto a branch, as whoever sends it, and only
     while the branch is still at head. The headline of one of several parts names it."""
-    every = parts(folder, LARGEST, pages)
+    every = parts(folder, LARGEST, pages, files)
     if not 1 <= part <= len(every):
         raise ValueError(
             f"The screenshots of the run have no part {part}, of {len(every)}."
@@ -831,9 +1045,23 @@ def listing(found: Kept) -> str:
     to each."""
     rows = ["| Picture | Change | Pixels changed |", "| --- | --- | ---: |"]
     for picture in found.pictures:
+        if picture.kind != "picture":
+            continue
         share = shown_share(picture.share) if picture.status == "changed" else ""
         rows.append(f"| `{picture.path}` | {picture.status} | {share} |")
     return "".join(f"{row}\n" for row in rows)
+
+
+def file_listing(found: Kept) -> str:
+    """The files besides pictures of a commit of the screenshot bot, as a sentence
+    with a table of what happened to each; nothing when there are none."""
+    rows = [f"| `{p.path}` | {p.status} |" for p in found.pictures if p.kind == "file"]
+    if not rows:
+        return ""
+    return (
+        f"These files that `{SETTINGS.as_posix()}` names besides pictures changed:\n\n"
+        "| File | Change |\n| --- | --- |\n" + "".join(f"{row}\n" for row in rows)
+    )
 
 
 def others(found: Kept) -> str:
@@ -846,7 +1074,8 @@ def others(found: Kept) -> str:
         named += f" and {len(found.ignored) - 10} more"
     return (
         "The script changed other files too, which the bot leaves out, because it "
-        f"takes only pictures from the script: {named}.\n"
+        "takes only pictures from the script, and the files that "
+        f"`{SETTINGS.as_posix()}` names: {named}.\n"
     )
 
 
@@ -869,13 +1098,17 @@ def corrections(pages: Sequence[Page]) -> str:
 
 
 def summary(found: Kept) -> str:
-    """What keep found, for the summary of the run or the terminal."""
-    if found.pictures:
+    """What keep or collect found, for the summary of the run or the terminal."""
+    if any(picture.kind == "picture" for picture in found.pictures):
         text = "These pictures look different:\n\n" + listing(found)
+    elif found.pictures:
+        text = "Every picture looks as committed.\n"
     else:
         text = "Every picture looks as committed, so no file changes.\n"
-    extra = others(found)
-    return f"{text}\n{extra}" if extra else text
+    for extra in (file_listing(found), others(found)):
+        if extra:
+            text += f"\n{extra}"
+    return text
 
 
 def report(
@@ -884,17 +1117,19 @@ def report(
     run: str,
     script: Path = SCRIPT,
     pages: Sequence[Page] = (),
+    files: Sequence[str] = (),
 ) -> str:
-    """The description of the bot's pull request, for the pictures of script and the
-    pages that they correct."""
-    found = kept(folder)
-    text = (
-        f"`bash {script.as_posix()}` rendered the pictures of `main` anew, on {sha}, "
-        "and these look different:\n\n" + listing(found)
-    )
-    corrected = corrections(pages)
-    if corrected:
-        text += f"\n{corrected}"
+    """The description of the bot's pull request, for the pictures and files of
+    script and the pages that they correct."""
+    found = kept(folder, files)
+    text = f"`bash {script.as_posix()}` rendered the pictures of `main` anew, on {sha}"
+    if any(picture.kind == "picture" for picture in found.pictures):
+        text += ", and these look different:\n\n" + listing(found)
+    else:
+        text += ", and every picture looks as committed.\n"
+    for extra in (file_listing(found), corrections(pages)):
+        if extra:
+            text += f"\n{extra}"
     if any(picture.path == SOCIAL_PREVIEW for picture in found.pictures):
         text += (
             f"\n`{SOCIAL_PREVIEW}` changed: once this pull request is merged, upload "

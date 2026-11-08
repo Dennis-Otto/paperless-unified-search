@@ -5,24 +5,31 @@ name: Screenshots
 # preview take them from, and lists in .github/screenshots-paths.txt the files whose
 # change can change them, as the paths of a workflow; without the script, every run
 # ends after its plan. After a change of main that touches a file of the list, after
-# every release, whose version a picture may show, every week and on demand, it runs
-# the script without secrets, with Docker, the whole history and the tools of the
-# website in .venv-docs as CONTRIBUTING.md sets them up; the script of a new
-# repository photographs the website and, by its kind, the integration in Home
-# Assistant or the app in Nextcloud, each in Docker. It compares each picture that
-# changed with the one of main by its pixels: a picture whose pixels stayed the same
-# keeps its file, so that a new encoder, browser or runner changes nothing. When
-# pixels changed, it keeps one pull request from the branch bot/screenshots, as the
-# release app, which merges
-# itself once every check passes, and closes it when main looks as rendered without
-# it. It renders the newest main, and when main changed a picture or a page of the
-# pull request while it rendered, as when the pull request before merged, it starts
-# itself anew rather than open one that conflicts; the branch bot starts it for one
-# that conflicts later (decision 0118). The bot commits only pictures, by plain
-# paths, outside .git and the workflows, and for a picture that came out at another size the width and the height that the
-# pages of main name for it, so that the pull request passes a check of those sizes;
-# without the release app, the run warns and keeps the pictures as an artifact. A
-# failed run keeps an issue of the bot-health bot open until a run passes again.
+# every release, whose version a picture may show, and every week, the plan starts a
+# run that renders, as the branch bot and a person do by hand. That run renders the
+# newest main, one at a time, without secrets, with Docker, the whole history and the
+# tools of the website in .venv-docs as CONTRIBUTING.md sets them up; the script of a
+# new repository photographs the website and, by its kind, the integration in Home
+# Assistant or the app in Nextcloud, each in Docker. .github/screenshots.toml, which
+# belongs to the project, can name shards, which render side by side on runners of
+# their own, each with SCREENSHOTS_SHARD set to its name, the files besides pictures
+# that the script renders, such as a recording that a page plays, and the hosts that
+# the jobs that render may reach, of which Harden-Runner then lets through no other
+# (decision 0120). It compares each picture that changed with the one of main by its
+# pixels: a picture whose pixels stayed the same keeps its file, so that a new
+# encoder, browser or runner changes nothing. When pixels changed, the job collect
+# puts the shards together, and the bot keeps one pull request from the branch
+# bot/screenshots, as the release app, which merges itself once every check passes,
+# and closes it when main looks as rendered without it. When main changed a picture or
+# a page of the pull request while it rendered, as when the pull request before
+# merged, it starts itself anew rather than open one that conflicts; the branch bot
+# starts it for one that conflicts later (decision 0118). The bot commits only
+# pictures and the files of the settings, by plain paths, outside .git and the
+# workflows, and for a picture that came out at another size the width and the
+# height that the pages of main name for it, so that the pull request passes a check
+# of those sizes; without the release app, the run warns and keeps the pictures as an
+# artifact. A failed run keeps an issue of the bot-health bot open until a run passes
+# again.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -38,6 +45,15 @@ on:
 
 permissions: {}
 
+# One render at a time: a run by hand, which the plan of a due change, the branch bot
+# and a person start, waits for the render before it, and a newer one that waits
+# replaces it, since it renders a newer main. Every other run only plans, in a group
+# of its own, so that a push that changes none of the listed files never replaces a
+# waiting render of one that did.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && 'render' || github.run_id }}
+  cancel-in-progress: false
+
 env:
   # The GitHub CLI of the jobs sends no telemetry to GitHub.
   GH_TELEMETRY: "false"
@@ -50,9 +66,10 @@ jobs:
     name: plan the screenshots
     # Of the runs of the Release workflow, only one that passed for the push of the
     # merge of a release pull request made a release; its daily, manual and restarted
-    # runs see the same release commit while main stays on it.
+    # runs see the same release commit while main stays on it. A run by hand renders
+    # without a plan.
     if: >-
-      !github.event.repository.fork && (
+      !github.event.repository.fork && github.event_name != 'workflow_dispatch' && (
         github.event_name != 'workflow_run' || (
           github.event.workflow_run.conclusion == 'success' &&
           github.event.workflow_run.event == 'push' &&
@@ -61,15 +78,42 @@ jobs:
       )
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    # Actions for the token of the job, which starts the run that renders.
     permissions:
+      actions: write
       contents: read
-    outputs:
-      due: ${{ steps.plan.outputs.due }}
     steps:
-      - name: Record the network traffic of the job
+      - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
-          egress-policy: audit
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
+      - name: Wait until Harden-Runner lets the hosts through
+        # The runner may have asked for an address past Harden-Runner, which then blocks
+        # that address for as long as systemd-resolved keeps it, up to a minute.
+        timeout-minutes: 4
+        env:
+          HOSTS: >-
+            api.github.com:443
+            github.com:443
+        run: |
+          deadline=$(($(date +%s) + 120))
+          for endpoint in $HOSTS; do
+            host="${endpoint%:*}"
+            # A wildcard names no host to ask.
+            [[ "$host" == '*.'* ]] && continue
+            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+              if (($(date +%s) >= deadline)); then
+                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                break
+              fi
+              echo "Harden-Runner still blocks $host, waiting 3 s."
+              sleep 3
+            done
+          done
       # The history without the contents of the files, to see what a push changed,
       # and only the files of the bot.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -100,44 +144,160 @@ jobs:
           elif (($? != 1)); then
             exit 1
           fi
+      # The run that renders waits for the one before it; one that waits already
+      # renders the newer main instead.
+      - name: Start the run that renders the pictures
+        if: steps.plan.outputs.due == 'true'
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh api --method POST "repos/$GH_REPO/actions/workflows/screenshot-bot.yml/dispatches" -f ref=main
+          echo "The bot started a run of this workflow by hand, which renders \`main\` once the render before it ended." >> "$GITHUB_STEP_SUMMARY"
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
+
+  start:
+    name: start the render
+    # A run by hand: started by the plan, the branch bot or a person.
+    if: >-
+      !github.event.repository.fork && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      due: ${{ steps.start.outputs.due }}
+      sha: ${{ steps.start.outputs.sha }}
+      shards: ${{ steps.start.outputs.shards }}
+      policy: ${{ steps.start.outputs.policy }}
+      hosts: ${{ steps.start.outputs.hosts }}
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      # The newest commit of the branch, not that of the event: a run that waited for
+      # the one before renders main as it is now, with the pictures that its pull
+      # request merged meanwhile, so that the pull request of this one doesn't
+      # conflict there. Every shard renders that one commit, and the commits of the
+      # pull request start from it; only the files of the bot.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.ref }}
+          sparse-checkout: |
+            .github
+            blueprint
+            scripts
+      - name: Name the commit and the shards that render
+        id: start
+        run: |
+          tool=.github/blueprint.py
+          [[ -f "$tool" ]] || tool=blueprint.py
+          if python3 "$tool" screenshots due >> "$GITHUB_STEP_SUMMARY"; then
+            echo "due=true" >> "$GITHUB_OUTPUT"
+          elif (($? != 1)); then
+            exit 1
+          else
+            exit 0
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          # The shards, the files and the hosts of .github/screenshots.toml; settings
+          # that the bot can't take fail here, with what is wrong.
+          python3 "$tool" screenshots plan >> "$GITHUB_OUTPUT"
 
   render:
-    name: render the screenshots
-    needs: plan
-    if: needs.plan.outputs.due == 'true'
-    # One render at a time. Only a due run waits here, so a push that changes none
-    # of the listed files never replaces a waiting render of one that did; a newer
-    # render that replaces it renders a newer main.
-    concurrency:
-      group: ${{ github.workflow }}-render
-      cancel-in-progress: false
+    name: render the screenshots${{ matrix.shard && format(' ({0})', matrix.shard) || '' }}
+    needs: start
+    if: needs.start.outputs.due == 'true'
     runs-on: ubuntu-24.04
     # The script may start a demo of the project in containers.
     timeout-minutes: 60
     permissions:
       contents: read
-    outputs:
-      sha: ${{ steps.rendered.outputs.sha }}
-      stale: ${{ steps.keep.outputs.stale }}
+    strategy:
+      # The other shards render on when one fails, so that a rerun of the failed jobs
+      # renders only that one; the pull request takes every shard or none.
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.start.outputs.shards) }}
     steps:
-      # The script reaches whatever the project needs, its images and packages.
-      - name: Record the network traffic of the job
+      # The script reaches whatever the project needs, its images and packages: every
+      # host while .github/screenshots.toml names none, and otherwise only those and
+      # the hosts of the steps of the job, for the code, uv, the packages of Python
+      # and the artifacts.
+      - name: Block the hosts that the project doesn't name
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
-          egress-policy: audit
+          egress-policy: ${{ needs.start.outputs.policy }}
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            releases.astral.sh:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            *.actions.githubusercontent.com:443
+            ${{ needs.start.outputs.hosts }}
+      - name: Wait until Harden-Runner lets the hosts through
+        if: needs.start.outputs.policy == 'block'
+        # The runner may have asked for an address past Harden-Runner, which then blocks
+        # that address for as long as systemd-resolved keeps it, up to a minute.
+        timeout-minutes: 4
+        env:
+          HOSTS: >-
+            api.github.com:443
+            github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            releases.astral.sh:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            *.actions.githubusercontent.com:443
+            ${{ needs.start.outputs.hosts }}
+        run: |
+          deadline=$(($(date +%s) + 120))
+          for endpoint in $HOSTS; do
+            host="${endpoint%:*}"
+            # A wildcard names no host to ask.
+            [[ "$host" == '*.'* ]] && continue
+            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+              if (($(date +%s) >= deadline)); then
+                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                break
+              fi
+              echo "Harden-Runner still blocks $host, waiting 3 s."
+              sleep 3
+            done
+          done
       # With the whole history, as the Docs workflow checks it out: a picture of the
-      # website shows the date of each page's last change, which git keeps. The newest
-      # commit of the branch, not that of the event: a render that waited for the one
-      # before renders main as it is now, with the pictures that its pull request
-      # merged meanwhile, so that the pull request of this one doesn't conflict there.
+      # website shows the date of each page's last change, which git keeps.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
           ref: ${{ github.ref }}
-      - name: Name the commit that the job renders
-        id: rendered
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      # The commit that the job start named, the same for every shard, and one of the
+      # branch of the run: git checks out the commit itself, so that no input of
+      # actions/checkout takes a commit from the output of another job.
+      - name: Check out the commit that the job start names
+        env:
+          COMMIT: ${{ needs.start.outputs.sha }}
+        run: |
+          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$COMMIT" HEAD
+          git checkout --quiet --detach "$COMMIT"
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         timeout-minutes: 5
         with:
@@ -166,10 +326,89 @@ jobs:
           [[ -f "$requirements" ]] || requirements=stacks/docs/requirements-docs.txt
           uv venv --quiet .venv-docs
           uv pip install --quiet --python .venv-docs --require-hashes -r "$requirements"
+      # A shard renders and deletes only its own pictures; without shards, the script
+      # gets no name and renders every picture, as on your machine.
       - name: Render the pictures
+        env:
+          SCREENSHOTS_SHARD: ${{ matrix.shard }}
         run: bash scripts/screenshots.sh
       - name: Compare the pictures with those of main
         id: keep
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          tool=.github/blueprint.py
+          [[ -f "$tool" ]] || tool=blueprint.py
+          kept="$RUNNER_TEMP/screenshots"
+          "$RUNNER_TEMP/pictures/bin/python" "$tool" screenshots keep "$kept" > "$RUNNER_TEMP/summary.md"
+          {
+            echo "### Screenshots${SHARD:+ of the shard $SHARD}"
+            cat "$RUNNER_TEMP/summary.md"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ -f "$kept/report.json" ]]; then
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Keep the pictures for the job collect
+        if: steps.keep.outputs.stale == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: screenshots-${{ matrix.id }}
+          path: ${{ runner.temp }}/screenshots/
+          # Pictures in .github/ as well, such as the social preview.
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  collect:
+    name: collect the screenshots
+    needs: [start, render]
+    # Once every shard rendered: the pull request takes the pictures of every shard or
+    # none, so that it never drops one that a shard rendered before.
+    if: needs.render.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      stale: ${{ steps.collect.outputs.stale }}
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      # blueprint.py, which checks what each shard kept, and the settings, which name
+      # the files besides pictures, of the commit that the shards rendered, with the
+      # history that holds it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/blueprint.py
+            /.github/blueprint/
+            /.github/screenshots.toml
+            /blueprint.py
+            /blueprint/
+      # The commit that the job start named, the same for every shard, and one of the
+      # branch of the run: git checks out the commit itself, so that no input of
+      # actions/checkout takes a commit from the output of another job.
+      - name: Check out the commit that the job start names
+        env:
+          COMMIT: ${{ needs.start.outputs.sha }}
+        run: |
+          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$COMMIT" HEAD
+          git checkout --quiet --detach "$COMMIT"
+      # Each into a folder of its own, but one alone into the folder itself.
+      - name: Fetch what each shard kept
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: screenshots-*
+          path: ${{ runner.temp }}/shards
+      - name: Put the shards together
+        id: collect
         env:
           # The release app, which opens the pull request; without it, the run says
           # what to do.
@@ -178,7 +417,13 @@ jobs:
           tool=.github/blueprint.py
           [[ -f "$tool" ]] || tool=blueprint.py
           kept="$RUNNER_TEMP/screenshots"
-          "$RUNNER_TEMP/pictures/bin/python" "$tool" screenshots keep "$kept" > "$RUNNER_TEMP/summary.md"
+          shopt -s nullglob
+          if [[ -f "$RUNNER_TEMP/shards/report.json" ]]; then
+            shards=("$RUNNER_TEMP/shards")
+          else
+            shards=("$RUNNER_TEMP"/shards/*/)
+          fi
+          python3 "$tool" screenshots collect "$kept" "${shards[@]}" > "$RUNNER_TEMP/summary.md"
           {
             echo "### Screenshots"
             cat "$RUNNER_TEMP/summary.md"
@@ -192,7 +437,7 @@ jobs:
           fi
           echo "stale=true" >> "$GITHUB_OUTPUT"
       - name: Keep the pictures for the pull request
-        if: steps.keep.outputs.stale == 'true'
+        if: steps.collect.outputs.stale == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: screenshots
@@ -204,9 +449,9 @@ jobs:
 
   pull-request:
     name: keep the pull request of the screenshots
-    needs: render
+    needs: [start, collect]
     # Once main was rendered, to open, update or close the pull request.
-    if: vars.RELEASE_AUTOMATION_CLIENT_ID != '' && needs.render.result == 'success'
+    if: vars.RELEASE_AUTOMATION_CLIENT_ID != '' && needs.collect.result == 'success'
     # One run at a time ends what it started with the branch and the pull request.
     concurrency:
       group: ${{ github.workflow }}-pull-request
@@ -218,7 +463,7 @@ jobs:
       name: release
       deployment: false
     # Actions for the token of the job, which starts the workflow anew when main changed
-    # a file of the pull request while the job render ran.
+    # a file of the pull request while the shards rendered.
     permissions:
       actions: write
       contents: read
@@ -256,35 +501,37 @@ jobs:
               sleep 3
             done
           done
-      # The job render runs the script of the project and its tools; the code that runs
+      # The jobs render run the script of the project and its tools; the code that runs
       # below with the token of the release app comes only from a commit of main, never
-      # from one that a render job that went wrong names, such as that of a fork.
-      - name: Check that main has the commit that the job render names
+      # from one that a run by hand on another branch names, such as that of a fork.
+      - name: Check that main has the commit that the job start names
         timeout-minutes: 2
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          SHA: ${{ needs.render.outputs.sha }}
+          SHA: ${{ needs.start.outputs.sha }}
         run: |
           [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$(gh api "repos/$GH_REPO/compare/$SHA...main" --jq .behind_by)" == 0 ]]
-      # blueprint.py, which checks what the job render kept, and the Markdown of the
-      # pages, whose named sizes it corrects; none of the pictures of main. Of the
-      # commit that the job render rendered, which the commits start from.
+      # blueprint.py, which checks what the job collect kept, the settings, which name
+      # the files besides pictures that it takes, and the Markdown of the pages, whose
+      # named sizes it corrects; none of the pictures of main. Of the commit that the
+      # shards rendered, which the commits start from.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ needs.render.outputs.sha }}
+          ref: ${{ needs.start.outputs.sha }}
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /.github/blueprint.py
             /.github/blueprint/
+            /.github/screenshots.toml
             /blueprint.py
             /blueprint/
             /*.md
             /docs/**/*.md
-      - name: Fetch the pictures that the job render kept
-        if: needs.render.outputs.stale == 'true'
+      - name: Fetch the pictures that the job collect kept
+        if: needs.collect.outputs.stale == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: screenshots
@@ -300,7 +547,7 @@ jobs:
           # run fails then.
           BOT: the screenshot bot
           TASK: open the pull request of the screenshots
-          WITHOUT: the artifact screenshots of the job render holds them
+          WITHOUT: the artifact screenshots of the job collect holds them
           REQUIRED: "false"
         run: |
           if [[ -z "$CLIENT_ID" ]]; then
@@ -337,7 +584,8 @@ jobs:
           # branch of an open pull request moves from a commit on an older main to one
           # on the newest, and GitHub refuses that move without workflows when main
           # changed a workflow in between. The commits themselves hold only what
-          # blueprint.py lets through: pictures, and new sizes on the pages of main.
+          # blueprint.py lets through: pictures, the files that the settings of main
+          # name, and new sizes on the pages of main.
           permission-contents: write
           permission-pull-requests: write
           permission-workflows: write
@@ -348,8 +596,8 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
           APP_SLUG: ${{ steps.app.outputs.app-slug }}
-          STALE: ${{ needs.render.outputs.stale }}
-          SHA: ${{ needs.render.outputs.sha }}
+          STALE: ${{ needs.collect.outputs.stale }}
+          SHA: ${{ needs.start.outputs.sha }}
           URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           # The token of the job, which may start a run of this workflow.
           ACTIONS_TOKEN: ${{ github.token }}
@@ -370,7 +618,7 @@ jobs:
           tool=.github/blueprint.py
           [[ -f "$tool" ]] || tool=blueprint.py
           kept="$RUNNER_TEMP/screenshots"
-          # main may have moved on while the job render ran, such as by the merge of the
+          # main may have moved on while the shards rendered, such as by the merge of the
           # pull request before this one: a pull request from the commit that was
           # rendered would conflict over each picture or page that main changed since.
           # Then the bot leaves the branch and the pull request as they are, and renders
@@ -412,7 +660,7 @@ jobs:
           # account, which is the author of the commits. A large set of pictures goes
           # in several commits, each below the size of one request.
           user_id="$(gh api "users/${APP_SLUG}[bot]" --jq .id)"
-          body="Rendered by scripts/screenshots.sh on $SHA, the pictures whose pixels changed: $URL
+          body="Rendered by scripts/screenshots.sh on $SHA, the pictures whose pixels changed and the files of .github/screenshots.toml that changed: $URL
 
           Signed-off-by: ${APP_SLUG}[bot] <${user_id}+${APP_SLUG}[bot]@users.noreply.github.com>"
           head="$SHA"
