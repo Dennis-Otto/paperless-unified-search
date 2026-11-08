@@ -148,6 +148,9 @@ final class SettingsTemplateTest extends TestCase {
 		self::assertSame([
 			'paperless-unified-search-allow-local' => ['paperless-unified-search-allow-local-hint'],
 			'paperless-unified-search-token' => ['paperless-unified-search-token-unreadable', 'paperless-unified-search-token-warnings', 'paperless-unified-search-token-hint'],
+			'paperless-unified-search-superuser-token' => ['paperless-unified-search-account-hint'],
+			'paperless-unified-search-view-new' => ['paperless-unified-search-view-new-hint'],
+			'paperless-unified-search-view-existing' => ['paperless-unified-search-view-existing-hint'],
 			'paperless-unified-search-archive-owner' => ['paperless-unified-search-archive-owner-missing', 'paperless-unified-search-archive-owner-hint'],
 			'paperless-unified-search-always-search' => ['paperless-unified-search-always-search-hint'],
 			'paperless-unified-search-users-always-search' => ['paperless-unified-search-users-always-search-hint'],
@@ -158,6 +161,47 @@ final class SettingsTemplateTest extends TestCase {
 			'Treat this Paperless server as a trusted service. When enabled, every global search term',
 			$this->text($this->element($page, 'paperless-unified-search-always-search-hint')),
 		);
+	}
+
+	/**
+	 * Below the token, a closed box creates the search account with the token of a
+	 * superuser, which no field of the form takes over and no browser fills in or keeps:
+	 * it says which user it creates, what that user may do and what each choice, both on
+	 * at first, changes in Paperless.
+	 */
+	public function testTheSearchAccountIsCreatedBelowTheToken(): void {
+		[, $page] = $this->render(new PublicConfig('', false, false));
+
+		self::assertSame('/settings/account', $this->element($page, 'paperless-unified-search-settings')->getAttribute('data-account-url'));
+		$box = $this->element($page, 'paperless-unified-search-account');
+		self::assertSame('details', $box->tagName);
+		self::assertFalse($box->hasAttribute('open'));
+		self::assertSame('No token yet? Create the search account in Paperless', $this->text($box->getElementsByTagName('summary')->item(0) ?? $box));
+		self::assertStringStartsWith('Creates the user nextcloud-search in Paperless, which is neither Superuser nor Admin', $this->text($this->element($page, 'paperless-unified-search-account-hint')));
+		self::assertStringEndsWith('it is neither stored nor logged.', $this->text($this->element($page, 'paperless-unified-search-account-hint')));
+		$token = $this->element($page, 'paperless-unified-search-superuser-token');
+		self::assertSame('password', $token->getAttribute('type'));
+		self::assertSame('off', $token->getAttribute('autocomplete'));
+		self::assertFalse($token->hasAttribute('name'));
+		self::assertTrue($this->element($page, 'paperless-unified-search-view-new')->hasAttribute('checked'));
+		self::assertTrue($this->element($page, 'paperless-unified-search-view-existing')->hasAttribute('checked'));
+		self::assertSame('Adds the workflow “Nextcloud search: view new documents” to Paperless: when Paperless adds a document, it assigns the account the permission to view it.', $this->text($this->element($page, 'paperless-unified-search-view-new-hint')));
+		$button = $this->element($page, 'paperless-unified-search-create-account');
+		self::assertSame('button', $button->getAttribute('type'));
+		self::assertSame('Create the search account and save', $this->text($button));
+		// The URL of Paperless Sync is only offered while the settings name none.
+		self::assertSame('', $this->element($page, 'paperless-unified-search-settings')->getAttribute('data-sync-url'));
+		self::assertSame('false', $this->element($page, 'paperless-unified-search-settings')->getAttribute('data-sync-allow-local'));
+	}
+
+	public function testTheEmptyFormNamesThePaperlessOfPaperlessSync(): void {
+		[, $page] = $this->render(new PublicConfig('', false, false), syncUrl: 'http://paperless:8000', syncAllowLocal: true);
+
+		$root = $this->element($page, 'paperless-unified-search-settings');
+		self::assertSame('http://paperless:8000', $root->getAttribute('data-sync-url'));
+		self::assertSame('true', $root->getAttribute('data-sync-allow-local'));
+		// The page fills in the field, which keeps no stored URL.
+		self::assertSame('', $this->element($page, 'paperless-unified-search-url')->getAttribute('value'));
 	}
 
 	/**
@@ -321,6 +365,7 @@ final class SettingsTemplateTest extends TestCase {
 			$history,
 			self::HOSTILE,
 			['summary' => 'Shared: ' . self::HOSTILE_TAG, 'warnings' => [self::HOSTILE . ' is shared with ' . self::HOSTILE_TAG]],
+			syncUrl: self::HOSTILE_TAG . self::HOSTILE,
 		);
 
 		self::assertStringNotContainsString('<script>alert', $html);
@@ -331,6 +376,7 @@ final class SettingsTemplateTest extends TestCase {
 		self::assertCount(0, $xpath->query('//script | //img | //*[@onerror]') ?: []);
 		// The browser reads the values back as they were.
 		self::assertSame(self::HOSTILE, $this->element($page, 'paperless-unified-search-url')->getAttribute('value'));
+		self::assertSame(self::HOSTILE_TAG . self::HOSTILE, $this->element($page, 'paperless-unified-search-settings')->getAttribute('data-sync-url'));
 		self::assertSame(self::HOSTILE, $this->element($page, 'paperless-unified-search-settings')->getAttribute('data-save-url'));
 		self::assertSame(self::HOSTILE_TAG, $this->element($page, 'paperless-unified-search-archive-owner')->getAttribute('value'));
 		self::assertSame('Paperless Sync: ' . self::HOSTILE . ' — leave blank to use it', $this->element($page, 'paperless-unified-search-archive-owner')->getAttribute('placeholder'));
@@ -390,7 +436,7 @@ final class SettingsTemplateTest extends TestCase {
 	 * @param list<string> $tokenWarnings the warnings about the account of the API token, as AdminSettings words them
 	 * @return array{string, DOMDocument}
 	 */
-	private function render(PublicConfig $config, ?array $history = null, string $saveUrl = '/settings/save', ?array $shares = null, array $tokenWarnings = []): array {
+	private function render(PublicConfig $config, ?array $history = null, string $saveUrl = '/settings/save', ?array $shares = null, array $tokenWarnings = [], string $syncUrl = '', bool $syncAllowLocal = false): array {
 		$l10n = $this->createStub(IL10N::class);
 		$l10n->method('t')->willReturnCallback(
 			static fn (string $text, array $parameters = []): string => vsprintf($text, $parameters),
@@ -402,6 +448,9 @@ final class SettingsTemplateTest extends TestCase {
 			'resetUrl' => '/settings/reset',
 			'clearDiagnosticsUrl' => '/settings/diagnostics',
 			'tryUrl' => '/settings/try',
+			'accountUrl' => '/settings/account',
+			'syncUrl' => $syncUrl,
+			'syncAllowLocal' => $syncAllowLocal,
 			'history' => $history,
 			'shares' => $shares,
 		];

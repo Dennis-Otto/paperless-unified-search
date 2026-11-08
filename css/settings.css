@@ -52,6 +52,28 @@
 	margin: 4px 0 0;
 }
 
+/*
+ * The set-up of the search account, below the token: a box that opens with its summary,
+ * which looks like a link and is as easy to hit as a button. A line at its start marks
+ * what belongs to it, and its fields keep the width of the others.
+ */
+.paperless-unified-search-account {
+	margin-block: 12px 20px;
+}
+
+.paperless-unified-search-account summary {
+	color: var(--color-primary-element, #00679e);
+	cursor: pointer;
+	font-weight: 600;
+	min-height: 34px;
+	padding-block: 8px;
+}
+
+.paperless-unified-search-account[open] {
+	border-block-end: 1px solid var(--color-border, #ededed);
+	padding-block-end: 8px;
+}
+
 /* Every field of text is as wide as the others, up to the width of a long URL. */
 .paperless-unified-search-settings input[type='url'],
 .paperless-unified-search-settings input[type='password'],

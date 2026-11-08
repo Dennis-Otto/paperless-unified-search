@@ -6,25 +6,31 @@ config:
 ---
 flowchart TB
     accTitle: Setting up the search
-    accDescr: Install the app. In Paperless-ngx, create an account that may read the documents and an API token for it. In the administration settings of Nextcloud, enter the URL, the token and the archive account, select Paperless runs in my local network when Nextcloud reaches Paperless at such an address, and select Test connection and save. When Paperless answers, the settings are saved; otherwise nothing is saved and the message says what to correct. The archive account shares its archive read-only with the users who may find its documents, and they find them under Paperless documents in Nextcloud's search, with Search connected services switched on.
+    accDescr: Install the app. In the administration settings of Nextcloud, enter the URL and the archive account, and select Paperless runs in my local network when Nextcloud reaches Paperless at such an address. Then connect a Paperless account that may only read: let the settings create it with the token of a superuser of Paperless, which is not stored, with Create the search account and save; or create the account and its API token in Paperless-ngx, enter the token and select Test connection and save. When Paperless answers, the settings are saved; otherwise nothing is saved and the message says what to correct. The archive account shares its archive read-only with the users who may find its documents, and they find them under Paperless documents in Nextcloud's search, with Search connected services switched on.
 
     install["1 · Install the app"]
-    token["2 · In Paperless-ngx: an account<br>that may read the documents,<br>and its API token"]
-    save["`3 · In the administration<br>settings: URL, token,<br>archive account and, in a<br>local network, its switch, then<br>**Test connection and save**`"]
+    save["2 · In the administration<br>settings: URL, archive account<br>and, in a local network,<br>its switch"]
+    account{"3 · A Paperless<br>account that may<br>only read"}
+    oneclick["`**Create the search account<br>and save**, with the token of<br>a superuser, not stored`"]
+    byhand["`In Paperless-ngx: the<br>account and its API token,<br>then **Test connection<br>and save**`"]
     answers{"Paperless<br>answers?"}
     fix["Nothing is saved;<br>the message says<br>what to correct"]
     share["4 · The archive account<br>shares its archive<br>read-only"]
     search["`5 · Search with<br>**Search connected<br>services** on`"]
     found(["Paperless documents<br>in the results"])
 
-    install --> token --> save --> answers
+    install --> save --> account
+    account -- "with one click" --> oneclick --> answers
+    account -- "by hand" --> byhand --> answers
     answers -- "yes, saved" --> share --> search --> found
     answers -- "no" --> fix
     fix -.-> save
 
     classDef person fill:#f59e0b2e,stroke:#f59e0b,stroke-width:2px
+    classDef app fill:#526cfe2e,stroke:#526cfe,stroke-width:2px
     classDef done fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
     classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
-    class install,token,save,share,search person
+    class install,save,account,byhand,share,search person
+    class oneclick app
     class found done
     class fix no

@@ -43,6 +43,10 @@ final class AdminSettings implements ISettings {
 			'resetUrl' => $this->urlGenerator->linkToRoute(AppConstants::APP_ID . '.settings.reset'),
 			'clearDiagnosticsUrl' => $this->urlGenerator->linkToRoute(AppConstants::APP_ID . '.settings.clearDiagnostics'),
 			'tryUrl' => $this->urlGenerator->linkToRoute(AppConstants::APP_ID . '.settings.trySearch'),
+			'accountUrl' => $this->urlGenerator->linkToRoute(AppConstants::APP_ID . '.settings.createAccount'),
+			// The empty form starts with the Paperless of Paperless Sync.
+			'syncUrl' => $config->url === '' ? $this->configService->getSyncUrl() : '',
+			'syncAllowLocal' => $config->url === '' && $this->configService->isSyncLocalNetworkAllowed(),
 			'history' => $this->getHistory(),
 			'shares' => $this->getShares(),
 		]);

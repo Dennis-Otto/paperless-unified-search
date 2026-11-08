@@ -13,21 +13,25 @@ use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Controller\SettingsController;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
+use OCA\PaperlessUnifiedSearch\Service\SearchAccountSetup;
 use OCA\PaperlessUnifiedSearch\Service\SearchExplainer;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppServices;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Files;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryCache;
+use OCP\App\IAppManager;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\JSONResponse;
 use OCP\EventDispatcher\IEventDispatcher;
 use OCP\Files\File;
+use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
 use OCP\ICacheFactory;
 use OCP\IL10N;
 use OCP\IRequest;
 use OCP\IUserSession;
 use OCP\Log\Audit\CriticalActionPerformedEvent;
+use OCP\Security\ISecureRandom;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -369,6 +373,7 @@ final class TrySearchTest extends TestCase {
 			$session,
 			$this->events ?? $this->createStub(IEventDispatcher::class),
 			new PaperlessNames($api, $configService, $cacheFactory, $this->createStub(LoggerInterface::class)),
+			new SearchAccountSetup($this->createStub(IClientService::class), $this->createStub(ISecureRandom::class), $this->createStub(IAppManager::class)),
 		);
 	}
 

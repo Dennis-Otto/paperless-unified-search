@@ -28,4 +28,12 @@ enum SettingProblem: string {
 	case TokenForOtherServer = 'token_for_other_server';
 	/** No account has the ID entered as the archive account. */
 	case UnknownArchiveAccount = 'unknown_archive_account';
+	/** No token of a superuser was entered to create the search account with. */
+	case SuperuserTokenRequired = 'superuser_token_required';
+	/** The token entered to create the search account belongs to no superuser of Paperless. */
+	case NotSuperuser = 'not_superuser';
+	/** Paperless has a user of the name of the search account already, which stays as it is. */
+	case SearchAccountExists = 'search_account_exists';
+	/** Paperless has a workflow of the name of the one that the set-up adds, which stays as it is. */
+	case SearchWorkflowExists = 'search_workflow_exists';
 }

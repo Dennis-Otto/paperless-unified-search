@@ -101,6 +101,10 @@ RECEIPT = ("contract-receipt.txt", "Contract receipt", "2026-04-02")
 # Document Added, and Assignment.
 DOCUMENT_ADDED = 2
 ASSIGNMENT = 1
+# The search account that the settings create with the token of a superuser, and the
+# workflow that lets it view each new document (lib/Service/SearchAccountSetup.php).
+SEARCH_ACCOUNT = "nextcloud-search"
+SEARCH_WORKFLOW = "Nextcloud search: view new documents"
 
 # What only the search syntax of README.md looks for: a single word as a tag, which
 # Paperless-ngx 2 keeps whole, and removes again, the archive serial number, the storage
@@ -869,6 +873,60 @@ def check_syntax(paperless, ids, line, report):
     report.passed("The owner of a document", f"{code('owner:')} finds the documents of an account in Paperless-ngx 2 alone" if line == "2" else f"{code('owner:')} is no field of Paperless-ngx 3")
 
 
+def check_search_account(paperless, report):
+    """The search account, set up with one click in the settings (decision 0012): the token
+    of the superuser creates a user that is neither superuser nor staff and may only view,
+    the workflow Document Added and the permissions on what Paperless has, and the settings
+    are saved with the token of the user, which then finds the documents of another owner,
+    the superuser, in Nextcloud's search; a second one leaves the user as it is, and so
+    does one after only the user is deleted with the workflow, whose name Paperless gives
+    one workflow alone. Then it removes the user and the workflow again, so that a kept
+    Paperless passes once more."""
+    def create():
+        return nextcloud(
+            "/apps/paperless_unified_search/settings/account",
+            method="POST",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            data=urlencode({"url": PAPERLESS, "superuserToken": paperless.token, "allowLocal": "1", "archiveOwner": NEXTCLOUD_USER[0]}).encode(),
+        )
+
+    answer = create()
+    created = answer.json("The search account")
+    try:
+        expect(answer.status == 200, f"The settings didn't create the search account (HTTP {answer.status}): {created!r}")
+        expect(created.get("searchAccount", {}).get("username") == SEARCH_ACCOUNT, f"The settings name no search account: {created!r}")
+        expect(created.get("tokenWarnings") == [], f"The settings warn about the token of the search account: {created.get('tokenWarnings')!r}")
+        expect(paperless.token not in answer.body.decode(), "The answer of the settings repeats the token of the superuser.")
+        users = paperless.get("/api/users/", username__iexact=SEARCH_ACCOUNT).json("The users").get("results", [])
+        expect(len(users) == 1, f"Paperless has {len(users)} users {SEARCH_ACCOUNT}.")
+        user = users[0]
+        expect(not user.get("is_superuser") and not user.get("is_staff"), f"The search account is a superuser or staff: {user!r}")
+        expect(sorted(user.get("user_permissions", [])) == sorted(VIEWER_PERMISSIONS), f"The search account may {sorted(user.get('user_permissions', []))}, not only {sorted(VIEWER_PERMISSIONS)}.")
+        workflows = [workflow for workflow in paperless.get("/api/workflows/", page_size=100).json("The workflows").get("results", []) if workflow.get("name") == SEARCH_WORKFLOW]
+        expect(len(workflows) == 1, f"Paperless has {len(workflows)} workflows {SEARCH_WORKFLOW!r}.")
+        # The documents of the superuser, once Paperless has their new permissions in the
+        # index of its search.
+        expected = ["Contract insurance", "Contract invoice"]
+        until(
+            f"Nextcloud's search with the token of the search account didn't show {expected} for {TERM!r}",
+            lambda: sorted(entry.get("title") for entry in search_nextcloud(TERM)) == expected,
+        )
+        again = create()
+        expect((again.status, again.json("A second search account").get("code")) == (400, "search_account_exists"), f"A second search account got HTTP {again.status}: {again.body[:300]!r}")
+        # Paperless keeps the workflow of a deleted user, and names each workflow once.
+        paperless.send(f"/api/users/{user['id']}/", None, method="DELETE")
+        third = create()
+        expect((third.status, third.json("A search account whose workflow exists").get("code")) == (400, "search_workflow_exists"), f"A search account whose workflow exists got HTTP {third.status}: {third.body[:300]!r}")
+        expect(paperless.get("/api/users/", username__iexact=SEARCH_ACCOUNT).json("The users").get("results") == [], f"A search account whose workflow exists left a user {SEARCH_ACCOUNT} in Paperless.")
+        report.passed("The search account, created with one click", f"{code(SEARCH_ACCOUNT)} may only view, a workflow lets it view each new document, and the search with its token finds the documents of the superuser")
+    finally:
+        for workflow in paperless.get("/api/workflows/", page_size=100).json("The workflows").get("results", []):
+            if workflow.get("name") == SEARCH_WORKFLOW:
+                paperless.send(f"/api/workflows/{workflow['id']}/", None, method="DELETE")
+        for user in paperless.get("/api/users/", username__iexact=SEARCH_ACCOUNT).json("The users").get("results", []):
+            paperless.send(f"/api/users/{user['id']}/", None, method="DELETE")
+
+
 def check_parity(paperless, ids, line, viewer, stranger, report):
     """The mock against this Paperless: the requests of the app to both, whose answers have
     to have the same form (parity.py). The required check "nextcloud" believes the mock, so
@@ -924,6 +982,7 @@ def main():
         check_permissions(paperless, ids, viewer_id, viewer, report)
         check_syntax(paperless, ids, line, report)
         check_parity(paperless, ids, line, viewer, stranger, report)
+        check_search_account(paperless, report)
     except Broken as broken:
         status = 1
         report.failed(broken)

@@ -66,11 +66,12 @@ Change the settings in the administration settings, which test the connection fi
 
 ## The routes of the settings
 
-The settings page saves through four routes of the app, which only administrators may call, each with Nextcloud's CSRF token, and the personal settings through two more that every user who signed in may call. A script calls the four with the login of an administrator, and these two with the login of the user whose choice they store, each with the header `OCS-APIRequest: true`, as the end-to-end tests do; `/index.php` goes before `/apps` where Nextcloud runs without pretty URLs.
+The settings page saves through five routes of the app, which only administrators may call, each with Nextcloud's CSRF token, and the personal settings through two more that every user who signed in may call. A script calls the five with the login of an administrator, and these two with the login of the user whose choice they store, each with the header `OCS-APIRequest: true`, as the end-to-end tests do; `/index.php` goes before `/apps` where Nextcloud runs without pretty URLs.
 
 | Route | Does |
 | --- | --- |
 | `POST /apps/paperless_unified_search/settings` | Tests the connection and saves, with the parameters `url`, `token`, `archiveOwner`, `allowLocal`, `alwaysSearch` and `personalAlwaysSearch`; asks for the password like **Test connection and save** |
+| `POST /apps/paperless_unified_search/settings/account` | **Create the search account and save**: creates the search account `nextcloud-search` in Paperless with the parameter `superuserToken`, the API token of a superuser, which it neither stores nor logs, and with `viewNew` and `viewExisting`, both on unless `false`; then tests the connection with the token of the account and saves with it, with the other parameters of the route above; asks for the password, and the log and the audit log record which administrator created the account. It answers the settings with `searchAccount`: its `username`, whether a `workflow` lets it view new documents, and how many `documents` and `names` it may view since the set-up |
 | `DELETE /apps/paperless_unified_search/settings` | **Disconnect**: deletes the settings, the token and the history; asks for the password |
 | `DELETE /apps/paperless_unified_search/settings/diagnostics` | **Clear history** |
 | `POST /apps/paperless_unified_search/settings/try` | **Try a search**: searches with the parameter `term` as the account `user` and says for each document whether it shows and why not, with its ID, title and tags alone; the log records which administrator tried a search as whom, without the term |
@@ -92,6 +93,10 @@ curl -u admin -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
 | `invalid_url`, `unsupported_scheme`, `url_extras`, `host_not_ascii` | The URL isn't one, isn't HTTP or HTTPS, has credentials, a query or a fragment, or a host that isn't in its ASCII form |
 | `token_required`, `token_for_other_server` | No token is stored, or the stored one is for another server |
 | `unknown_archive_account` | The archive account doesn't exist |
+| `superuser_token_required`, `not_superuser` | Creating the search account: no token of a superuser was entered, or the token belongs to no superuser of Paperless |
+| `search_account_exists` | Creating the search account: Paperless has the user `nextcloud-search` already, which stays as it is |
+| `search_workflow_exists` | Creating the search account with **Let it view each new document**: Paperless has the workflow *Nextcloud search: view new documents* already, which stays as it is; delete it, or turn the choice off |
+| `search_account_left` | Creating the search account failed halfway, and Paperless refused to remove the user, the workflow or both again: delete what the message names in Paperless |
 | `unauthorized` | Paperless refused the token, with HTTP 401 or 403 |
 | `not_found` | HTTP 404: the path of the URL is wrong |
 | `redirect` | The URL forwards, and with the local network Nextcloud follows no redirect |
@@ -200,6 +205,8 @@ The app writes to the log of Nextcloud with `app` set to `paperless_unified_sear
 | --- | --- | --- |
 | Warning | The test of the connection to Paperless failed: *reason* (*error*) | **Test connection and save** failed; the reason is the `code` of the routes above |
 | Error | The settings of Paperless Unified Search could not be saved (*error*) | Something after the test failed, such as the database |
+| Warning | The search account could not be set up in Paperless: *reason* (*error*) | **Create the search account and save** failed; the reason is the `code` of the routes above, and the error is without the token of the superuser |
+| Info | *admin* created the search account *account* in Paperless | **Create the search account and save** worked; the audit log records it too |
 | Warning | Paperless unified search failed (*error*) | A search failed; *Search problems* has it too |
 | Warning | Paperless unified search left out *n* result(s) it could not show (*error*) | Results whose files failed to answer were left out |
 | Warning | Paperless unified search skipped *n* file(s) it could not read (*error*) | Files of the archive that Nextcloud couldn't read |

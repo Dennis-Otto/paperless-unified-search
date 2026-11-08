@@ -55,6 +55,7 @@ final class SettingsControllerRoutesTest extends TestCase {
 	public static function routes(): array {
 		return [
 			'save' => ['save', 'POST', '/settings'],
+			'create the search account' => ['createAccount', 'POST', '/settings/account'],
 			'reset' => ['reset', 'DELETE', '/settings'],
 			'clear the diagnostics' => ['clearDiagnostics', 'DELETE', '/settings/diagnostics'],
 			'try a search' => ['trySearch', 'POST', '/settings/try'],
@@ -107,6 +108,7 @@ final class SettingsControllerRoutesTest extends TestCase {
 	public static function passwordConfirmations(): array {
 		return [
 			'save' => ['save', true],
+			'create the search account' => ['createAccount', true],
 			'reset' => ['reset', true],
 			'clear the diagnostics' => ['clearDiagnostics', false],
 			'try a search' => ['trySearch', false],

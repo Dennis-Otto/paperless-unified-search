@@ -160,6 +160,10 @@
 		const resetButton = document.getElementById('paperless-unified-search-reset')
 		const status = document.getElementById('paperless-unified-search-status')
 		const diagnostics = document.getElementById('paperless-unified-search-diagnostics')
+		const superuserTokenInput = document.getElementById('paperless-unified-search-superuser-token')
+		const viewNewInput = document.getElementById('paperless-unified-search-view-new')
+		const viewExistingInput = document.getElementById('paperless-unified-search-view-existing')
+		const accountButton = document.getElementById('paperless-unified-search-create-account')
 
 		// Disconnect has something to forget only while a token or a URL is stored: the
 		// default value of the URL field, not what the administrator typed.
@@ -170,6 +174,7 @@
 		function setBusy(busy) {
 			form.setAttribute('aria-busy', busy ? 'true' : 'false')
 			saveButton.disabled = busy
+			accountButton.disabled = busy
 			if (busy) {
 				resetButton.disabled = true
 			} else {
@@ -237,9 +242,28 @@
 			showStatusIn(status, message, kind)
 		}
 
+		// An empty form starts with the Paperless of Paperless Sync, which the page names only
+		// while the settings store none: as the value of the field, not as the stored URL.
+		if (urlInput.value === '' && root.dataset.syncUrl) {
+			urlInput.value = root.dataset.syncUrl
+			allowLocalInput.checked = root.dataset.syncAllowLocal === 'true'
+		}
+
 		urlInput.addEventListener('input', updateToken)
 		updateToken()
 		updateResetButton()
+
+		// The settings of the form, which both buttons save.
+		function settingsOfTheForm() {
+			return {
+				url: urlInput.value,
+				allowLocal: allowLocalInput.checked,
+				alwaysSearch: alwaysSearchInput.checked,
+				personalAlwaysSearch: personalAlwaysSearchInput.checked,
+				newDocumentAlerts: newDocumentAlertsInput.checked,
+				archiveOwner: archiveOwnerInput.value,
+			}
+		}
 
 		form.addEventListener('submit', async function(event) {
 			event.preventDefault()
@@ -248,21 +272,51 @@
 			try {
 				await confirmPassword()
 				showStatus(translate('Testing the Paperless connection…'), 'pending')
-				showConfig(await request(root.dataset.saveUrl, 'POST', {
-					url: urlInput.value,
-					allowLocal: allowLocalInput.checked,
-					token: tokenInput.value,
-					alwaysSearch: alwaysSearchInput.checked,
-					personalAlwaysSearch: personalAlwaysSearchInput.checked,
-					newDocumentAlerts: newDocumentAlertsInput.checked,
-					archiveOwner: archiveOwnerInput.value,
-				}))
+				showConfig(await request(root.dataset.saveUrl, 'POST', { ...settingsOfTheForm(), token: tokenInput.value }))
 				showStatus(translate('Connection successful. Settings saved.'), 'success')
 			} catch (error) {
 				showStatus(messageOf(error), 'error')
 			} finally {
 				setBusy(false)
 			}
+		})
+
+		// The search account in Paperless, set up with the token of a superuser, which the
+		// server uses for this alone; the settings are then saved with the token of the
+		// account. The field forgets the token of the superuser once it has served.
+		accountButton.addEventListener('click', async function() {
+			setBusy(true)
+			try {
+				await confirmPassword()
+				showStatus(translate('Creating the search account in Paperless…'), 'pending')
+				const answer = await request(root.dataset.accountUrl, 'POST', {
+					...settingsOfTheForm(),
+					superuserToken: superuserTokenInput.value,
+					viewNew: viewNewInput.checked,
+					viewExisting: viewExistingInput.checked,
+				})
+				const account = answer.searchAccount?.username
+				if (typeof account !== 'string') {
+					throw new Error(translate('Nextcloud gave an unexpected answer. Reload the page and try again.'))
+				}
+				showConfig(answer)
+				superuserTokenInput.value = ''
+				showStatus(translate('Created the account {account} in Paperless and saved the settings with its token.', { account }), 'success')
+			} catch (error) {
+				showStatus(messageOf(error), 'error')
+			} finally {
+				setBusy(false)
+			}
+		})
+
+		// Enter in the field of the token of a superuser creates the search account, as the
+		// button below it does, instead of submitting the form, whose save ignores that field.
+		superuserTokenInput.addEventListener('keydown', function(event) {
+			if (event.key !== 'Enter' || event.isComposing) {
+				return
+			}
+			event.preventDefault()
+			accountButton.click()
 		})
 
 		resetButton.addEventListener('click', async function() {

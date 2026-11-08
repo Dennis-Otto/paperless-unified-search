@@ -172,7 +172,24 @@
 		"ID": "ID",
 		"Title": "Título",
 		"Tags": "Etiquetas",
-		"Shown or why not": "Mostrado o por qué no"
+		"Shown or why not": "Mostrado o por qué no",
+		"Enter the API token of a superuser of Paperless. It sets up the search account and is not stored.": "Introduce el token de API de un superusuario de Paperless. Configura la cuenta de búsqueda y no se guarda.",
+		"This API token belongs to no superuser of Paperless, so it can't set up the search account. Enter the token of a superuser; it is not stored.": "Este token de API no pertenece a ningún superusuario de Paperless, así que no puede configurar la cuenta de búsqueda. Introduce el token de un superusuario; no se guarda.",
+		"The user %s exists in Paperless already, and stays as it is. Save the settings with its API token, or delete the user in Paperless and try again.": "El usuario %s ya existe en Paperless y se queda como está. Guarda la configuración con su token de API, o elimina el usuario en Paperless y vuelve a intentarlo.",
+		"The workflow “%s” exists in Paperless already, and stays as it is. Delete it in Paperless and try again, or turn off “Let it view each new document”.": "El flujo de trabajo “%s” ya existe en Paperless y se queda como está. Elimínalo en Paperless y vuelve a intentarlo, o desactiva “Dejar que vea cada documento nuevo”.",
+		"Paperless did not finish setting up the search account, and the user %s remains in it. Delete the user in Paperless, then try again.": "Paperless no terminó de configurar la cuenta de búsqueda, y el usuario %s sigue en él. Elimina el usuario en Paperless y vuelve a intentarlo.",
+		"Paperless did not finish setting up the search account, and the workflow “%s” remains in it. Delete the workflow in Paperless, then try again.": "Paperless no terminó de configurar la cuenta de búsqueda, y el flujo de trabajo “%s” sigue en él. Elimina el flujo de trabajo en Paperless y vuelve a intentarlo.",
+		"Paperless did not finish setting up the search account, and the user %1$s and the workflow “%2$s” remain in it. Delete both in Paperless, then try again.": "Paperless no terminó de configurar la cuenta de búsqueda, y el usuario %1$s y el flujo de trabajo “%2$s” siguen en él. Elimina ambos en Paperless y vuelve a intentarlo.",
+		"No token yet? Create the search account in Paperless": "¿Aún no tienes token? Crea la cuenta de búsqueda en Paperless",
+		"Creates the user %s in Paperless, which is neither Superuser nor Admin and may only view documents, correspondents, document types, tags and its UI settings, and saves the settings with its token. The token of a superuser that you enter here only sets up the account: it is neither stored nor logged.": "Crea en Paperless el usuario %s, que no es superusuario ni administrador y solo puede ver documentos, interlocutores, tipos de documento, etiquetas y sus ajustes de la interfaz, y guarda la configuración con su token. El token de superusuario que introduces aquí solo configura la cuenta: no se guarda ni se registra.",
+		"API token of a superuser of Paperless": "Token de API de un superusuario de Paperless",
+		"Let it view each new document": "Dejar que vea cada documento nuevo",
+		"Adds the workflow “%s” to Paperless: when Paperless adds a document, it assigns the account the permission to view it.": "Añade a Paperless el flujo de trabajo “%s”: cuando Paperless añade un documento, asigna a la cuenta el permiso para verlo.",
+		"Let it view what Paperless has": "Dejar que vea lo que ya tiene Paperless",
+		"Adds the account to the permission to view of every document, correspondent, document type and tag that Paperless has. Everyone who may view or change them keeps it.": "Añade la cuenta al permiso de ver de cada documento, interlocutor, tipo de documento y etiqueta que tiene Paperless. Quien ya pueda verlos o cambiarlos lo conserva.",
+		"Create the search account and save": "Crear la cuenta de búsqueda y guardar",
+		"Creating the search account in Paperless…": "Creando la cuenta de búsqueda en Paperless…",
+		"Created the account {account} in Paperless and saved the settings with its token.": "Se creó la cuenta {account} en Paperless y se guardó la configuración con su token."
 	},
 	"pluralForm": "nplurals=3; plural=n == 1 ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;"
 }

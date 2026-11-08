@@ -13,10 +13,13 @@ use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Exception\InvalidSettingException;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessQueryRejected;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
+use OCA\PaperlessUnifiedSearch\Exception\SearchAccountUnfinished;
 use OCA\PaperlessUnifiedSearch\Model\Explanation;
+use OCA\PaperlessUnifiedSearch\Model\PublicConfig;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
+use OCA\PaperlessUnifiedSearch\Service\SearchAccountSetup;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCA\PaperlessUnifiedSearch\Service\SearchExplainer;
 use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
@@ -48,6 +51,12 @@ final class SettingsController extends Controller {
 	private const CODE_INTERNAL = 'internal';
 
 	/**
+	 * The code of a set-up of the search account that failed halfway, after which the user
+	 * remains in Paperless.
+	 */
+	private const CODE_ACCOUNT_LEFT = 'search_account_left';
+
+	/**
 	 * How many documents of the ranking of Paperless Try a search goes through: those
 	 * that an administrator reads in one table.
 	 */
@@ -68,6 +77,7 @@ final class SettingsController extends Controller {
 		private IUserSession $userSession,
 		private IEventDispatcher $events,
 		private PaperlessNames $names,
+		private SearchAccountSetup $accountSetup,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -124,6 +134,72 @@ final class SettingsController extends Controller {
 				Http::STATUS_INTERNAL_SERVER_ERROR,
 			);
 		}
+	}
+
+	/**
+	 * Create the search account in Paperless (decision 0012): with the token of a superuser
+	 * of Paperless, which serves these requests alone and is neither stored, nor logged,
+	 * nor answered, it adds the user nextcloud-search, which may only view, and saves the
+	 * settings with its token, as save() does with a token entered, so that the warnings
+	 * about the token stay silent. $viewNew adds a workflow that lets it view each new
+	 * document, and $viewExisting adds it to the permission to view of the documents,
+	 * correspondents, document types and tags that Paperless has. Nothing in Paperless
+	 * changes while the URL or the archive account is invalid, and a set-up that fails
+	 * halfway removes the user again. Like save(), it asks for the password of the
+	 * administrator, and its refusals have a message and a code; the log and the audit
+	 * log record which administrator created the account.
+	 */
+	#[FrontpageRoute(verb: 'POST', url: '/settings/account')]
+	#[PasswordConfirmationRequired]
+	public function createAccount(string $url, #[SensitiveParameter] string $superuserToken = '', bool $viewNew = true, bool $viewExisting = true, bool $alwaysSearch = false, string $archiveOwner = '', bool $allowLocal = false, ?bool $personalAlwaysSearch = null, ?bool $newDocumentAlerts = null): JSONResponse {
+		try {
+			$normalizedUrl = $this->configService->normalizeUrl($url);
+			$owner = $this->configService->resolveArchiveOwner($archiveOwner);
+			$personal = $personalAlwaysSearch ?? $this->configService->isPersonalAlwaysSearchAllowed();
+			$account = $this->accountSetup->create(
+				$normalizedUrl,
+				$superuserToken,
+				$allowLocal,
+				$viewNew,
+				$viewExisting,
+				function (#[SensitiveParameter] string $token) use ($normalizedUrl, $alwaysSearch, $owner, $allowLocal, $personal, $newDocumentAlerts): PublicConfig {
+					$status = $this->paperlessApi->probe($normalizedUrl, $token, $allowLocal);
+
+					return $this->configService->save($normalizedUrl, $token, $alwaysSearch, $owner, $allowLocal, $status->version, $personal, $status->tokenWarnings, $newDocumentAlerts);
+				},
+			);
+		} catch (InvalidSettingException $exception) {
+			return $this->refusal($this->messages->forSetting($exception->problem, trim($archiveOwner)), $exception->problem->value);
+		} catch (SearchAccountUnfinished $exception) {
+			$this->logFailedAccount(self::CODE_ACCOUNT_LEFT, $exception, $superuserToken);
+
+			return $this->refusal($this->messages->forUnfinishedAccount($exception), self::CODE_ACCOUNT_LEFT);
+		} catch (PaperlessRequestException $exception) {
+			$this->logFailedAccount($exception->reason->value, $exception, $superuserToken);
+
+			return $this->refusal($this->messages->forFailure($exception), $exception->reason->value);
+		} catch (Throwable $exception) {
+			$this->logFailedAccount(self::CODE_INTERNAL, $exception, $superuserToken);
+
+			return $this->refusal(
+				$this->l10n->t('The settings could not be saved. The log of Nextcloud has the details.'),
+				self::CODE_INTERNAL,
+				Http::STATUS_INTERNAL_SERVER_ERROR,
+			);
+		}
+
+		$admin = $this->userSession->getUser()?->getUID() ?? '';
+		$this->logger->info('{admin} created the search account {account} in Paperless', [
+			'app' => AppConstants::APP_ID,
+			'admin' => $admin,
+			'account' => $account->username,
+		]);
+		$this->events->dispatchTyped(new CriticalActionPerformedEvent(
+			'Paperless Unified Search: %s created the search account %s in Paperless',
+			['admin' => $admin, 'account' => $account->username],
+		));
+
+		return new JSONResponse($account);
 	}
 
 	#[FrontpageRoute(verb: 'DELETE', url: '/settings')]
@@ -244,6 +320,20 @@ final class SettingsController extends Controller {
 	 */
 	private static function titleOf(array $hit): string {
 		return isset($hit['title']) && is_string($hit['title']) ? trim($hit['title']) : '';
+	}
+
+	/**
+	 * A set-up of the search account that failed goes into the log with the code of its
+	 * refusal and its cause, without the token of the superuser and the query of a URL.
+	 */
+	private function logFailedAccount(string $reason, Throwable $exception, #[SensitiveParameter] string $superuserToken): void {
+		$cause = $exception->getPrevious() ?? $exception;
+		$this->logger->warning('The search account could not be set up in Paperless: {reason} ({errorType}: {detail})', [
+			'app' => AppConstants::APP_ID,
+			'reason' => $reason,
+			'errorType' => $cause::class,
+			'detail' => SearchDiagnostics::describe($cause->getMessage(), [trim($superuserToken)]),
+		]);
 	}
 
 	/**

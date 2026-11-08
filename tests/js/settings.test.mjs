@@ -20,6 +20,7 @@ const script = new Script(readFileSync(url, 'utf8'), { filename: url.href })
 const SAVE_URL = '/apps/paperless_unified_search/settings'
 const CLEAR_URL = '/apps/paperless_unified_search/settings/diagnostics'
 const TRY_URL = '/apps/paperless_unified_search/settings/try'
+const ACCOUNT_URL = '/apps/paperless_unified_search/settings/account'
 const STORED = 'https://paperless.example.com'
 const SUCCESS = 'paperless-unified-search-status--success'
 const ERROR = 'paperless-unified-search-status--error'
@@ -90,19 +91,26 @@ class Element {
 
 	// Runs the listeners of the event and waits for them, as the page would until the
 	// server has answered.
-	async dispatch(type) {
-		const event = { type, defaultPrevented: false, preventDefault() { this.defaultPrevented = true } }
+	async dispatch(type, properties = {}) {
+		const event = { type, defaultPrevented: false, preventDefault() { this.defaultPrevented = true }, ...properties }
 		await Promise.all((this.listeners.get(type) ?? []).map((listener) => listener(event)))
 		return event
+	}
+
+	// A click of a button, which a disabled one ignores, as in the browser.
+	click() {
+		return this.disabled ? undefined : this.dispatch('click')
 	}
 }
 
 // The page as templates/settings.php renders it for $stored, the settings that Nextcloud
-// keeps; `history: false` leaves out the button of the history, as without problems.
-function page({ url = '', tokenConfigured = false, history = true } = {}) {
+// keeps; `history: false` leaves out the button of the history, as without problems, and
+// `sync` names the Paperless of Paperless Sync, which the template names while none is stored.
+function page({ url = '', tokenConfigured = false, history = true, sync } = {}) {
 	const ids = [
 		'form', 'url', 'allow-local', 'token', 'token-unreadable', 'token-warnings', 'always-search', 'users-always-search', 'new-document-alerts', 'archive-owner',
 		'archive-owner-missing', 'save', 'reset', 'status', 'diagnostics',
+		'superuser-token', 'view-new', 'view-existing', 'create-account',
 		'try-form', 'try-term', 'try-user', 'try', 'try-status', 'try-result',
 	]
 	const elements = new Map(ids.map((id) => [`paperless-unified-search-${id}`, new Element(id)]))
@@ -112,8 +120,14 @@ function page({ url = '', tokenConfigured = false, history = true } = {}) {
 		resetUrl: SAVE_URL,
 		clearDiagnosticsUrl: CLEAR_URL,
 		tryUrl: TRY_URL,
+		accountUrl: ACCOUNT_URL,
+		syncUrl: sync?.url ?? '',
+		syncAllowLocal: sync?.allowLocal ? 'true' : 'false',
 		tokenConfigured: tokenConfigured ? 'true' : 'false',
 	}
+	// Both choices of the search account start on.
+	elements.get('paperless-unified-search-view-new').checked = true
+	elements.get('paperless-unified-search-view-existing').checked = true
 	elements.set('paperless-unified-search-settings', root)
 	const field = elements.get('paperless-unified-search-url')
 	field.value = url
@@ -711,4 +725,148 @@ test('the verdicts of a try go through the translation of Nextcloud', async func
 
 	assert.equal(get('try-status').textContent, 'DE:Shown to jamie: 1 of the first 6. Found by Paperless: 12.')
 	assert.deepEqual(rowsOf(get('try-result').children[0]).rows[2], ['DE:ID: 389', 'DE:Title: Home insurance', 'DE:Shown or why not: DE:Not shared with jamie'])
+})
+
+test('an empty form starts with the Paperless of Paperless Sync, which it doesn\'t store', function() {
+	const { get } = load(page({ sync: { url: 'http://paperless:8000', allowLocal: true } }))
+
+	assert.equal(get('url').value, 'http://paperless:8000')
+	assert.equal(get('url').defaultValue, '')
+	assert.equal(get('allow-local').checked, true)
+	assert.equal(get('token').required, true)
+	assert.equal(get('reset').disabled, true)
+})
+
+test('stored settings keep their URL, whatever Paperless Sync names', function() {
+	const { get } = load(page({ url: STORED, tokenConfigured: true, sync: { url: 'http://paperless:8000', allowLocal: true } }))
+
+	assert.equal(get('url').value, STORED)
+	assert.equal(get('allow-local').checked, false)
+})
+
+test('creating the search account sends the form with the token of the superuser, then shows the settings as stored', async function() {
+	const { get, requests, statuses } = load(page(), {
+		answers: [json({ ...CONFIG, url: 'http://paperless:8000', allowLocal: true, archiveOwner: 'archive', tokenWarnings: [], searchAccount: { username: 'nextcloud-search', workflow: true, documents: 3, names: 2 } })],
+	})
+	get('url').value = 'http://paperless:8000/'
+	get('allow-local').checked = true
+	get('token').value = 'left-over'
+	get('archive-owner').value = 'Archive'
+	get('superuser-token').value = 'superuser-token'
+	get('view-existing').checked = false
+
+	await get('create-account').dispatch('click')
+
+	assert.deepEqual(requests, [{
+		url: ACCOUNT_URL,
+		method: 'POST',
+		credentials: 'same-origin',
+		headers: { Accept: 'application/json', 'Content-Type': 'application/json', requesttoken: 'request-token' },
+		body: {
+			url: 'http://paperless:8000/',
+			allowLocal: true,
+			alwaysSearch: false,
+			personalAlwaysSearch: false,
+			newDocumentAlerts: false,
+			archiveOwner: 'Archive',
+			superuserToken: 'superuser-token',
+			viewNew: true,
+			viewExisting: false,
+		},
+	}])
+	assert.deepEqual(statuses, [{ text: 'Creating the search account in Paperless…', kind: PENDING }])
+	assert.deepEqual(state(get), {
+		status: 'Created the account nextcloud-search in Paperless and saved the settings with its token.',
+		kind: SUCCESS,
+		disconnect: 'enabled',
+		save: 'enabled',
+		busy: 'false',
+	})
+	assert.equal(get('create-account').disabled, false)
+	// The field forgets the token of the superuser, and the token of the account is stored.
+	assert.equal(get('superuser-token').value, '')
+	assert.equal(get('token').value, '')
+	assert.equal(get('token').required, false)
+	assert.equal(get('url').defaultValue, 'http://paperless:8000')
+	assert.equal(get('archive-owner').value, 'archive')
+})
+
+test('no button works while the search account is being created', async function() {
+	let release
+	const answer = new Promise((resolve) => {
+		release = resolve
+	})
+	const { get } = load(page(), { answers: [answer] })
+
+	const created = get('create-account').dispatch('click')
+	await new Promise((resolve) => setImmediate(resolve))
+	assert.deepEqual(state(get), { status: 'Creating the search account in Paperless…', kind: PENDING, disconnect: 'disabled', save: 'disabled', busy: 'true' })
+	assert.equal(get('create-account').disabled, true)
+	release(json({ message: 'Paperless did not finish setting up the search account, and the user nextcloud-search remains in it. Delete the user in Paperless, then try again.', code: 'search_account_left' }, 400))
+	await created
+
+	assert.deepEqual(state(get), {
+		status: 'Paperless did not finish setting up the search account, and the user nextcloud-search remains in it. Delete the user in Paperless, then try again.',
+		kind: ERROR,
+		disconnect: 'disabled',
+		save: 'enabled',
+		busy: 'false',
+	})
+	assert.equal(get('create-account').disabled, false)
+})
+
+test('Enter in the field of the token of a superuser creates the search account instead of submitting the form', async function() {
+	const { get, requests } = load(page(), {
+		answers: [json({ ...CONFIG, url: 'http://paperless:8000', tokenWarnings: [], searchAccount: { username: 'nextcloud-search', workflow: true, documents: 0, names: 0 } })],
+	})
+	get('url').value = 'http://paperless:8000'
+	get('superuser-token').value = 'superuser-token'
+
+	// Other keys, and Enter while an input method composes a character, type as usual.
+	assert.equal((await get('superuser-token').dispatch('keydown', { key: 'a' })).defaultPrevented, false)
+	assert.equal((await get('superuser-token').dispatch('keydown', { key: 'Enter', isComposing: true })).defaultPrevented, false)
+	assert.deepEqual(requests, [])
+
+	const event = await get('superuser-token').dispatch('keydown', { key: 'Enter', isComposing: false })
+	await new Promise((resolve) => setImmediate(resolve))
+
+	assert.equal(event.defaultPrevented, true)
+	assert.deepEqual(requests.map((request) => [request.url, request.body.superuserToken]), [[ACCOUNT_URL, 'superuser-token']])
+	assert.equal(get('status').textContent, 'Created the account nextcloud-search in Paperless and saved the settings with its token.')
+})
+
+test('a refused search account keeps the token of the superuser for a correction', async function() {
+	const { get } = load(page(), { answers: [json({ message: 'This API token belongs to no superuser of Paperless.', code: 'not_superuser' }, 400)] })
+	get('superuser-token').value = 'not-a-superuser'
+
+	await get('create-account').dispatch('click')
+
+	assert.equal(get('status').textContent, 'This API token belongs to no superuser of Paperless.')
+	assert.equal(get('status').classList.contains(ERROR), true)
+	assert.equal(get('superuser-token').value, 'not-a-superuser')
+})
+
+test('an answer without the search account is unexpected, and shows nothing as stored', async function() {
+	const { get } = load(page(), { answers: [json({ ...CONFIG, url: 'http://paperless:8000' })] })
+	get('url').value = 'http://paperless:8000'
+
+	await get('create-account').dispatch('click')
+
+	assert.equal(get('status').textContent, 'Nextcloud gave an unexpected answer. Reload the page and try again.')
+	assert.equal(get('url').defaultValue, '')
+})
+
+test('creating the search account stops when the password is not confirmed', async function() {
+	const password = {
+		requiresPasswordConfirmation: () => true,
+		requirePasswordConfirmation(confirmed, options, rejected) {
+			rejected()
+		},
+	}
+	const { get, requests } = load(page(), { password })
+
+	await get('create-account').dispatch('click')
+
+	assert.deepEqual(requests, [])
+	assert.equal(get('status').textContent, 'Confirm your password to change the settings.')
 })

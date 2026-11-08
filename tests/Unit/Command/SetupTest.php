@@ -13,6 +13,7 @@ use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Command\Setup;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppServices;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\SearchAccountPaperless;
 use OCP\Http\Client\IResponse;
 use OCP\Http\Client\LocalServerException;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -26,6 +27,7 @@ use Throwable;
 final class SetupTest extends TestCase {
 	use Accounts;
 	use AppServices;
+	use SearchAccountPaperless;
 
 	private const ENVIRONMENT_VARIABLE = 'PAPERLESS_UNIFIED_SEARCH_TEST_TOKEN';
 
@@ -372,7 +374,9 @@ final class SetupTest extends TestCase {
 	private function command(IResponse|Throwable ...$answers): Setup {
 		$configService = $this->configService($this->accounts('archive', 'alex'));
 
-		return new Setup($configService, $this->paperlessApi($configService, $this->paperless(...$answers)), $this->messages());
+		$client = $this->paperless(...$answers);
+
+		return new Setup($configService, $this->paperlessApi($configService, $client), $this->messages(), $this->searchAccountSetup($client));
 	}
 
 	/**

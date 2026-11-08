@@ -87,6 +87,28 @@ DATE_FILTERS = {
 # searches that find it. So the end-to-end tests see the notifications about it.
 NEW_DOCUMENT_PATH = "/e2e/documents"
 
+# Like Paperless, the mock lets the token of a superuser set up the search account of the
+# settings (decision 0012): it lists its users by name, adds one, gives its token for its
+# username and password, lists its workflows and adds one, whose name, as in Paperless,
+# no other workflow has, and merges permissions with the bulk editor, for documents and
+# for correspondents, types and tags; and it deletes a user or a workflow again. The search account gets TOKEN, the token of the account that the documentation
+# recommends, so that the tests that follow search as before. Unlike Paperless, the mock
+# keeps the users and the workflows in memory only and changes no permission: it doesn't
+# check them.
+SET_UP_PATHS = {
+    ("GET", "/api/users/"),
+    ("POST", "/api/users/"),
+    ("POST", "/api/token/"),
+    ("GET", "/api/workflows/"),
+    ("POST", "/api/workflows/"),
+    ("POST", "/api/documents/bulk_edit/"),
+    ("POST", "/api/bulk_edit_objects/"),
+}
+USERS = {1: "admin", 3: "nextcloud"}
+_passwords = {}
+_workflows = {}
+_set_up_lock = threading.Lock()
+
 # Like Paperless, the mock orders a list by the field that ordering names, the newest
 # first with a minus, as the dashboard of the app asks for the documents that Paperless
 # added last: ordering=-added. Unlike Paperless, which ignores a field that it can't order
@@ -330,7 +352,11 @@ def sent(document, fields, rank):
 class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         self.versioned = False
-        if urlparse(self.path).path != NEW_DOCUMENT_PATH:
+        path = urlparse(self.path).path
+        if ("POST", path) in SET_UP_PATHS:
+            self._set_up("POST", path)
+            return
+        if path != NEW_DOCUMENT_PATH:
             self._json(404, {"detail": "Not found"})
             return
 
@@ -346,12 +372,20 @@ class Handler(BaseHTTPRequestHandler):
         })
         self._json(201, {"id": document["id"]})
 
+    def do_DELETE(self):
+        self.versioned = False
+        self._set_up("DELETE", urlparse(self.path).path)
+
     def do_GET(self):
         # Only an answer to a valid token names the version, as with Paperless.
         self.versioned = False
         parsed = urlparse(self.path)
         if parsed.path == "/health":
             self._json(200, {"status": "ok"})
+            return
+
+        if ("GET", parsed.path) in SET_UP_PATHS:
+            self._set_up("GET", parsed.path)
             return
 
         if parsed.path not in (API_PATH, UI_SETTINGS_PATH) and parsed.path not in LISTS:
@@ -472,12 +506,63 @@ class Handler(BaseHTTPRequestHandler):
             },
         )
 
+    def _set_up(self, method, path):
+        """What the set-up of the search account asks of Paperless, as a superuser may: only
+        the token of the superuser, but /api/token/, which takes a username and a password."""
+        if unknown_version(self.headers.get("Accept", "")):
+            self._json(406, {"detail": 'Invalid version in "Accept" header.'})
+            return
+        token = self.headers.get("Authorization", "").removeprefix("Token ")
+        if path != "/api/token/" and token != SUPERUSER_TOKEN:
+            self._json(401 if token not in ACCOUNTS else 403, {"detail": "You do not have permission to perform this action."})
+            return
+
+        self.versioned = True
+        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"null")
+        with _set_up_lock:
+            if method == "GET" and path == "/api/workflows/":
+                workflows = [{"id": workflow, **body} for workflow, body in sorted(_workflows.items())]
+                self._json(200, {"count": len(workflows), "next": None, "previous": None, "all": [workflow["id"] for workflow in workflows], "results": workflows})
+            elif method == "GET":
+                name = parse_qs(urlparse(self.path).query).get("username__iexact", [""])[0].lower()
+                users = [{"id": user, "username": username, "is_superuser": user == 1} for user, username in sorted(USERS.items()) if username.lower() == name]
+                self._json(200, {"count": len(users), "next": None, "previous": None, "all": [user["id"] for user in users], "results": users})
+            elif method == "DELETE":
+                kind, _, identifier = path.removeprefix("/api/").rstrip("/").partition("/")
+                store = USERS if kind == "users" else _workflows
+                found = identifier.isdigit() and store.pop(int(identifier), None) is not None
+                self.send_response(204 if found else 404)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            elif path == "/api/users/":
+                if body["username"] in USERS.values():
+                    self._json(400, {"username": ["A user with that username already exists."]})
+                    return
+                user = max(USERS) + 1
+                USERS[user] = body["username"]
+                _passwords[body["username"]] = body["password"]
+                self._json(201, {"id": user, "username": body["username"], "is_superuser": False, "user_permissions": body["user_permissions"]})
+            elif path == "/api/token/":
+                if _passwords.get(body.get("username")) != body.get("password"):
+                    self._json(400, {"non_field_errors": ["Unable to log in with provided credentials."]})
+                    return
+                self._json(200, {"token": TOKEN})
+            elif path == "/api/workflows/":
+                if any(other["name"] == body["name"] for other in _workflows.values()):
+                    self._json(400, {"name": ["workflow with this name already exists."]})
+                    return
+                workflow = max(_workflows, default=0) + 1
+                _workflows[workflow] = body
+                self._json(201, {"id": workflow, **body})
+            else:
+                self._json(200, {"result": "OK"})
+
     def _list(self, names, parameters, *, tags=False):
         """A page of a list of Paperless, such as its correspondents, with every field of an
-        object as Paperless sends them, filtered by the IDs of id__in; a tag also with its
-        colors, whether it is the tag of the inbox, and its place in the tree of tags, and
-        the list of tags with how many it holds there."""
-        wanted = {int(value) for value in parameters.get("id__in", [""])[0].split(",") if value.isdigit()}
+        object as Paperless sends them, filtered by the IDs of id__in, or all of them without
+        it; a tag also with its colors, whether it is the tag of the inbox, and its place in
+        the tree of tags, and the list of tags with how many it holds there."""
+        wanted = {int(value) for value in parameters.get("id__in", [""])[0].split(",") if value.isdigit()} if "id__in" in parameters else set(names)
         results = [
             {
                 "id": object_id,

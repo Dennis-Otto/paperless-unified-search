@@ -90,13 +90,17 @@ async function saveSettings(page, expected = 'Connection successful. Settings sa
 	await expectStatus(page, expected, kind)
 }
 
-// The fields of text, those of Try a search among them, are as wide as each other, and
-// each checkbox, at least 20 pixels big, sits on the line of its label, in front of it.
+// The fields of text, those of Try a search and of the open box of the search account
+// among them, are as wide as each other, and each checkbox, at least 20 pixels big, sits
+// on the line of its label, in front of it.
 async function expectFormLayout(page, size) {
+	await page.locator('#paperless-unified-search-account').evaluate((box) => {
+		box.open = true
+	})
 	const widths = await page.locator(SETTINGS_SCOPE).evaluate((root) => [
 		...root.querySelectorAll('input[type="url"], input[type="password"], input[type="text"], input[type="search"]'),
 	].map((input) => Math.round(input.getBoundingClientRect().width)))
-	expectEqual(widths.length, 5, `Fields of text on a ${size}`)
+	expectEqual(widths.length, 6, `Fields of text on a ${size}`)
 	expectEqual(
 		widths.every((width) => width === widths[0]),
 		true,

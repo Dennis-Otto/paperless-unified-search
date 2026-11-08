@@ -18,6 +18,7 @@ use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
+use OCA\PaperlessUnifiedSearch\Service\SearchAccountSetup;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCA\PaperlessUnifiedSearch\Service\SearchExplainer;
 use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
@@ -39,6 +40,7 @@ use OCP\IL10N;
 use OCP\IRequest;
 use OCP\IUserSession;
 use OCP\Security\ICredentialsManager;
+use OCP\Security\ISecureRandom;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -748,6 +750,7 @@ final class SettingsControllerTest extends TestCase {
 			$this->createStub(IUserSession::class),
 			$this->createStub(IEventDispatcher::class),
 			new PaperlessNames($api, $configService, $this->createStub(ICacheFactory::class), $this->createStub(LoggerInterface::class)),
+			new SearchAccountSetup($this->createStub(IClientService::class), $this->createStub(ISecureRandom::class), $this->createStub(IAppManager::class)),
 		);
 	}
 

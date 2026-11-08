@@ -54,6 +54,9 @@ final class ConfigService {
 	// Paperless Sync writes the archive into the files of this account.
 	private const SYNC_APP_ID = 'paperless_sync';
 	private const SYNC_ACCOUNT_KEY = 'target_user';
+	// And it reaches its Paperless at this address, maybe in the local network.
+	private const SYNC_URL_KEY = 'paperless_url';
+	private const SYNC_LOCAL_NETWORK_KEY = 'paperless_local_network';
 	private const DEFAULT_PORTS = ['http' => 80, 'https' => 443];
 	/**
 	 * A name of a host as DNS, a hosts file or the network of Docker know it: letters and
@@ -136,6 +139,23 @@ final class ConfigService {
 	 */
 	public function getSyncAccount(): string {
 		return trim($this->config->getValueString(self::SYNC_APP_ID, self::SYNC_ACCOUNT_KEY, '', lazy: true));
+	}
+
+	/**
+	 * The address of the Paperless that Paperless Sync synchronizes, without the slashes at
+	 * its end, or '' when it has none: the empty form of the settings starts with it, as the
+	 * search most often asks the same Paperless. Paperless Sync stores it as a lazy value.
+	 */
+	public function getSyncUrl(): string {
+		return rtrim(trim($this->config->getValueString(self::SYNC_APP_ID, self::SYNC_URL_KEY, '', lazy: true)), '/');
+	}
+
+	/**
+	 * Whether Paperless Sync reaches its Paperless at an address of the local network, which
+	 * the empty form of the settings takes over with its address.
+	 */
+	public function isSyncLocalNetworkAllowed(): bool {
+		return $this->config->getValueBool(self::SYNC_APP_ID, self::SYNC_LOCAL_NETWORK_KEY, false, lazy: true);
 	}
 
 	/**
