@@ -25,10 +25,19 @@ enum Verdict: string {
 	 * could have given it the marker.
 	 */
 	case Writable = 'writable';
-	/** The archive account has a file of the document, but hasn't shared it with the user. */
+	/**
+	 * The archive account, or the user of the owner of the document, has a file of the
+	 * document, but hasn't shared it with the user.
+	 */
 	case NotShared = 'not_shared';
 	/** The user sees a file with the marker of the document, but another account owns it. */
 	case NotOwned = 'not_owned';
+	/**
+	 * The user sees a file with the marker of the document of a user of Nextcloud, while
+	 * Paperless names another owner of the document, whose user's files alone stand for it
+	 * besides those of the archive account (decision 0013).
+	 */
+	case OtherOwner = 'other_owner';
 	/** No file of the archive account carries the marker of the document. */
 	case NoFile = 'no_file';
 }

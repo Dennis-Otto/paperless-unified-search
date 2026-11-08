@@ -19,6 +19,7 @@ use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppServices;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Files;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryCache;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\Owners;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\JSONResponse;
@@ -47,6 +48,7 @@ use Throwable;
  */
 final class TrySearchTest extends TestCase {
 	use Accounts;
+	use Owners;
 	use AppServices;
 	use Files;
 
@@ -178,19 +180,47 @@ final class TrySearchTest extends TestCase {
 	}
 
 	/**
-	 * Paperless Sync gives jamie the documents of their user of Paperless as files of their
-	 * own, such as 360, which the search doesn't show (#338): the answer says so, for the
-	 * warning above the table, which explains why it is no file of the archive account.
+	 * Paperless Sync gives jamie the documents that their user of Paperless may view as
+	 * files of their own, such as 360, which the search doesn't show (#338): the answer says
+	 * so, for the warning above the table, which explains why it is no file of the archive
+	 * account.
 	 */
 	public function testSaysWhenPaperlessSyncGivesEachUserAnArchiveOfTheirOwn(): void {
 		$this->settings['paperless_sync.target_user'] = 'archive';
-		$this->settings['paperless_sync.ownership'] = 'per-user';
+		$this->settings['paperless_sync.ownership'] = 'per-user-shared';
 		$this->file('/jamie/files/Paperless/Letter [P360].pdf', 'jamie');
 
 		$payload = $this->payload($this->controller($this->documents(self::HITS, 12))->trySearch('invoice', 'jamie'));
 
 		self::assertTrue($payload['perUserArchives']);
 		self::assertSame(['shown', 'not_shared', 'not_owned', 'not_owned'], array_column($payload['documents'], 'verdict'));
+	}
+
+	/**
+	 * With the documents of each owner in the files of their user (decision 0013), the file
+	 * of 371 that sam shares with jamie read-only shows, as Paperless names sam its owner,
+	 * and so does sam's own; jamie's own file renamed after 360, which Paperless names sam the
+	 * owner of, counts for nobody. The answer warns of nothing then.
+	 */
+	public function testShowsTheFilesOfTheUserOfTheOwnerOfEachDocument(): void {
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.ownership'] = 'per-user';
+		$this->file('/jamie/files/Forged [P360].pdf', 'jamie');
+		$this->file('/sam/files/Copy [P371].pdf', 'sam');
+		$hits = [
+			['owner' => 5] + self::HITS[0],
+			['owner' => null] + self::HITS[1],
+			['owner' => 6] + self::HITS[2],
+			['owner' => 6] + self::HITS[3],
+		];
+		$users = $this->answer(200, (string)json_encode(['count' => 2, 'next' => null, 'results' => [['id' => 5, 'username' => 'jamie'], ['id' => 6, 'username' => 'Sam']]]));
+
+		$jamie = $this->payload($this->controller($this->documents($hits, 12), null, 'alex', $users)->trySearch('invoice', 'jamie'));
+		$sam = $this->payload($this->controller($this->documents($hits, 12), null, 'alex', $users)->trySearch('invoice', 'sam'));
+
+		self::assertFalse($jamie['perUserArchives']);
+		self::assertSame([412 => 'shown', 389 => 'not_shared', 371 => 'shown', 360 => 'other_owner'], array_combine(array_column($jamie['documents'], 'id'), array_column($jamie['documents'], 'verdict')));
+		self::assertSame([412 => 'not_shared', 389 => 'not_shared', 371 => 'shown', 360 => 'no_file'], array_combine(array_column($sam['documents'], 'id'), array_column($sam['documents'], 'verdict')));
 	}
 
 	public function testSaysThatAFileFailedToAnswer(): void {
@@ -385,7 +415,7 @@ final class TrySearchTest extends TestCase {
 			$this->messages(),
 			$l10n,
 			$logger ?? $this->createStub(LoggerInterface::class),
-			new SearchExplainer($locator, $accounts),
+			new SearchExplainer($locator, $accounts, $this->documentOwners($api, $configService, $accounts, $cacheFactory)),
 			$accounts,
 			$session,
 			$this->events ?? $this->createStub(IEventDispatcher::class),

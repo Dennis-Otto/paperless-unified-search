@@ -18,6 +18,7 @@ use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
 use OCA\PaperlessUnifiedSearch\Service\SearchExplainer;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppServices;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\Owners;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\SearchAccountPaperless;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\JSONResponse;
@@ -46,6 +47,7 @@ use Throwable;
  */
 final class CreateAccountTest extends TestCase {
 	use Accounts;
+	use Owners;
 	use AppServices;
 	use SearchAccountPaperless;
 
@@ -291,7 +293,7 @@ final class CreateAccountTest extends TestCase {
 			$this->messages(),
 			$l10n,
 			$logger,
-			new SearchExplainer(new NextcloudFileLocator($this->createStub(IRootFolder::class), $logger), $accounts),
+			new SearchExplainer(new NextcloudFileLocator($this->createStub(IRootFolder::class), $logger), $accounts, $this->documentOwners($api, $configService, $accounts)),
 			$accounts,
 			$session,
 			$events,

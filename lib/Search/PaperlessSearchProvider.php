@@ -18,6 +18,7 @@ use OCA\PaperlessUnifiedSearch\Exception\PaperlessQueryRejected;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCA\PaperlessUnifiedSearch\Service\AlwaysSearch;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
+use OCA\PaperlessUnifiedSearch\Service\DocumentOwners;
 use OCA\PaperlessUnifiedSearch\Service\FilePictures;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
@@ -88,6 +89,7 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 		private IDateTimeZone $dateTimeZone,
 		private AlwaysSearch $alwaysSearch,
 		private IUserSession $userSession,
+		private DocumentOwners $documentOwners,
 	) {
 	}
 
@@ -173,8 +175,9 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 				$response = $this->paperlessApi->searchDocuments($term, $pager->getPage(), PaperlessPager::PAGE_SIZE, $filters);
 				$hits = $pager->getHitsFromOffset($response['results']);
 				$step = SearchEvent::STEP_FILES;
-				// The files of all documents of the page, in one search of the file cache.
-				$found = $this->fileLocator->findAllForUser($user, $this->getDocumentIds($hits), $archiveOwner);
+				// The files of all documents of the page, in one search of the file cache,
+				// of the archive account or of the user whom Paperless Sync gives the owner.
+				$found = $this->fileLocator->findAllForUser($user, $this->getDocumentIds($hits), $archiveOwner, $this->documentOwners->of($hits));
 
 				// The names of the correspondents, the types and the tags of the documents with
 				// a file, with one request per kind at most, which never fails the search.

@@ -114,7 +114,7 @@ final class SetupTest extends TestCase {
 			'Warning: The account of the API token may not view correspondents in Paperless, so results show without them. Give the account the permission View for Correspondents.',
 			'Archive account: archive',
 		], array_slice(self::lines($tester->getDisplay()), 0, 4));
-		self::assertSame('changes_documents,hides_correspondents', $this->settings[AppConstants::APP_ID . '.token_warnings']);
+		self::assertSame('changes_documents,hides_correspondents,hides_users', $this->settings[AppConstants::APP_ID . '.token_warnings']);
 	}
 
 	public function testTakesTheTokenFromAnEnvironmentVariable(): void {

@@ -1099,7 +1099,7 @@ PYTHON
 		"GET /api/documents/?query=mobiletest&fields=id&created__date__gte=2026-08-01 HTTP/1.1 200|GET /api/documents/?query=mobiletest&fields=id&created__date__gte=2026-08-01 HTTP/1.1 200|GET /api/documents/?query=mobiletest&fields=id HTTP/1.1 401" \
 		"$(tail -n +2 "${WORK}/journal" | grep --invert-match '^account ' | paste -s -d "|")"
 	expect "the accounts of the tokens of the mock, as /api/ui_settings/ names them" \
-		"account superuser=False staff=False view_document,view_correspondent,view_documenttype,view_tag,view_uisettings|account superuser=True staff=True add_document,change_document,delete_document,view_document,view_correspondent,view_documenttype,view_tag,view_uisettings" \
+		"account superuser=False staff=False view_document,view_correspondent,view_documenttype,view_tag,view_user,view_uisettings|account superuser=True staff=True add_document,change_document,delete_document,view_document,view_correspondent,view_documenttype,view_tag,view_user,view_uisettings" \
 		"$(grep '^account ' "${WORK}/journal" | paste -s -d "|")"
 else
 	echo "Python 3.9 or newer is not installed here; the CI tests the journal of the mock."
@@ -1156,8 +1156,8 @@ import parity  # noqa: E402
 
 mock_server.REQUESTS = sys.argv[2]
 ACCEPT = "application/json; version=9"
-FIELDS = "id,title,created,correspondent,document_type,tags,__search_hit__"
-RECENT_FIELDS = "id,title,added,correspondent,document_type,tags"
+FIELDS = "id,title,created,correspondent,document_type,tags,owner,__search_hit__"
+RECENT_FIELDS = "id,title,added,correspondent,document_type,tags,owner"
 
 
 class Quiet(mock_server.Handler):
@@ -1337,7 +1337,7 @@ PYTHON
 	expect "no results, which say nothing about their form" none "$(parity_says 'nothing found')"
 	expect "every known difference of Paperless-ngx 2 seen" "5 of 5" "$(parity_says 'line 2 known')"
 	expect "no other difference of Paperless-ngx 2" 0 "$(parity_says 'line 2 differences')"
-	expect "the requests that the app sends to Paperless-ngx 2" 23 "$(parity_says 'line 2 requests')"
+	expect "the requests that the app sends to Paperless-ngx 2" 24 "$(parity_says 'line 2 requests')"
 	expect "known differences that no longer hold" "display_count,header X-Api-Version,header X-Version,results[].__search_hit__.highlights, its entities,results[].__search_hit__.highlights, its markup" "$(parity_says stale)"
 	# shellcheck disable=SC2016 # The backticks are Markdown of the table, not a command.
 	expect "the row of a difference in the summary" '| `status` | `403` | `401` | A wrong token, No token |' "$(parity_says 'first row')"

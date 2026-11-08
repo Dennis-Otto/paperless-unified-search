@@ -60,11 +60,19 @@ final class ConfigService {
 	/**
 	 * Paperless Sync gives each user of Nextcloud the documents of their user of Paperless as
 	 * files of their own with these choices of its setting Who gets the documents, Each user:
-	 * per-user since its version 1.1.0, per-user-shared since 1.4.0; with single, the target
-	 * user gets every document.
+	 * per-user since its version 1.1.0, which the search shows (decision 0013), and
+	 * per-user-shared since 1.4.0, also with the documents that their user of Paperless may
+	 * view, which it doesn't; with single, the target user gets every document.
 	 */
 	private const SYNC_OWNERSHIP_KEY = 'ownership';
-	private const SYNC_PER_USER = ['per-user', 'per-user-shared'];
+	private const SYNC_PER_USER = 'per-user';
+	private const SYNC_PER_USER_SHARED = 'per-user-shared';
+	/**
+	 * And with either, its table Paperless users with another Nextcloud ID, one line such as
+	 * jdoe = john.doe for each, and the group whose members alone get documents of their own.
+	 */
+	private const SYNC_USER_MAP_KEY = 'user_map';
+	private const SYNC_USER_GROUP_KEY = 'user_group';
 	private const DEFAULT_PORTS = ['http' => 80, 'https' => 443];
 	/**
 	 * A name of a host as DNS, a hosts file or the network of Docker know it: letters and
@@ -169,15 +177,59 @@ final class ConfigService {
 
 	/**
 	 * Whether Paperless Sync gives each user the documents of their user of Paperless as
-	 * files of their own while the archive account is its target user, which the search
-	 * doesn't show: it shows only the files of the archive account, which then holds the
-	 * documents that Paperless Sync gives no user of their own, such as those without an
-	 * owner in Paperless. With another archive account, the files of Paperless Sync don't
-	 * count either way. Without the setting, as before Paperless Sync 1.1.0, or with a
-	 * choice that this version doesn't know, the target user gets every document.
+	 * files of their own, with the documents that their user may view as well, while the
+	 * archive account is its target user, which the search doesn't show: it shows only the
+	 * files of the archive account, which then holds the documents that Paperless Sync gives
+	 * no user of their own, such as those without an owner in Paperless. With another
+	 * archive account, the files of Paperless Sync don't count either way. Without the
+	 * setting, as before Paperless Sync 1.1.0, or with a choice that this version doesn't
+	 * know, the target user gets every document; with the documents of each owner alone,
+	 * the search shows them (hasArchivesOfEachOwner()).
 	 */
 	public function hasPerUserArchives(): bool {
 		return $this->perUserArchives($this->getArchiveOwnerSetting(), $this->getSyncAccount());
+	}
+
+	/**
+	 * Whether Paperless Sync gives each user the documents that their user of Paperless owns
+	 * as files of their own, while the archive account is its target user: then the files of
+	 * the user whom Paperless Sync gives the owner of a document stand for it as well
+	 * (decision 0013).
+	 */
+	public function hasArchivesOfEachOwner(): bool {
+		return $this->syncOwnership($this->getArchiveOwnerSetting(), $this->getSyncAccount()) === self::SYNC_PER_USER;
+	}
+
+	/**
+	 * The table Paperless users with another Nextcloud ID of Paperless Sync, as it stores it:
+	 * one line such as jdoe = john.doe for each such user of Paperless.
+	 */
+	public function getSyncUserMap(): string {
+		return $this->config->getValueString(self::SYNC_APP_ID, self::SYNC_USER_MAP_KEY, '', lazy: true);
+	}
+
+	/**
+	 * The group of Nextcloud whose members alone get documents of their own from Paperless
+	 * Sync, or '' for every user.
+	 */
+	public function getSyncUserGroup(): string {
+		return trim($this->config->getValueString(self::SYNC_APP_ID, self::SYNC_USER_GROUP_KEY, '', lazy: true));
+	}
+
+	/**
+	 * The warnings about the account of the API token that matter here: without the archives
+	 * of each owner, the search reads no users of Paperless, so that the account may not
+	 * view them says nothing.
+	 *
+	 * @param list<TokenWarning> $warnings
+	 * @return list<TokenWarning>
+	 */
+	public function shownTokenWarnings(array $warnings): array {
+		if ($this->hasArchivesOfEachOwner()) {
+			return $warnings;
+		}
+
+		return array_values(array_filter($warnings, static fn (TokenWarning $warning): bool => $warning !== TokenWarning::HidesUsers));
 	}
 
 	/**
@@ -305,7 +357,7 @@ final class ConfigService {
 	 * @return list<TokenWarning>
 	 */
 	public function getTokenWarnings(): array {
-		return TokenWarning::fromStored($this->config->getValueString(AppConstants::APP_ID, self::TOKEN_WARNINGS_KEY, '', lazy: true));
+		return $this->shownTokenWarnings(TokenWarning::fromStored($this->config->getValueString(AppConstants::APP_ID, self::TOKEN_WARNINGS_KEY, '', lazy: true)));
 	}
 
 	/**
@@ -420,7 +472,7 @@ final class ConfigService {
 			$allowLocal,
 			$paperlessVersion,
 			$personalAlwaysSearch,
-			$tokenWarnings ?? [],
+			$this->shownTokenWarnings($tokenWarnings ?? []),
 			$this->isNewDocumentAlertsAllowed(),
 			$this->perUserArchives($normalizedOwner, $syncAccount),
 		);
@@ -581,17 +633,28 @@ final class ConfigService {
 	}
 
 	/**
-	 * Whether Paperless Sync gives each user an archive of their own while the archive
+	 * Whether Paperless Sync gives each user an archive of their own that the search doesn't
+	 * show, with the documents that their user of Paperless may view, while the archive
 	 * account, $owner as the settings store it or else $syncAccount, is its target user.
 	 */
 	private function perUserArchives(string $owner, string $syncAccount): bool {
+		return $this->syncOwnership($owner, $syncAccount) === self::SYNC_PER_USER_SHARED;
+	}
+
+	/**
+	 * Whom Paperless Sync gives the documents, per-user or per-user-shared, while the archive
+	 * account, $owner as the settings store it or else $syncAccount, is its target user, and
+	 * '' otherwise: as for single, a choice that this version doesn't know, or another
+	 * archive account, whose files Paperless Sync doesn't write.
+	 */
+	private function syncOwnership(string $owner, string $syncAccount): string {
 		$ownership = trim($this->config->getValueString(self::SYNC_APP_ID, self::SYNC_OWNERSHIP_KEY, '', lazy: true));
-		if (!in_array($ownership, self::SYNC_PER_USER, true)) {
-			return false;
+		if ($ownership !== self::SYNC_PER_USER && $ownership !== self::SYNC_PER_USER_SHARED) {
+			return '';
 		}
 		$archive = $this->accountId($owner !== '' ? $owner : $syncAccount);
 
-		return $archive !== '' && $archive === $this->accountId($syncAccount);
+		return $archive !== '' && $archive === $this->accountId($syncAccount) ? $ownership : '';
 	}
 
 	/**

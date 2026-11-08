@@ -18,11 +18,13 @@ use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\SavedSearches;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppServices;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Files;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\Owners;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\UserPreferences;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
 use OCP\Http\Client\IClient;
+use OCP\Http\Client\IResponse;
 use OCP\IAppConfig;
 use OCP\IUser;
 use OCP\IUserManager;
@@ -40,6 +42,7 @@ use RuntimeException;
  */
 final class NewDocumentAlertsTest extends TestCase {
 	use AppServices;
+	use Owners;
 	use Files;
 	use UserPreferences;
 
@@ -131,7 +134,7 @@ final class NewDocumentAlertsTest extends TestCase {
 			'ordering' => '-id',
 			'page' => 1,
 			'page_size' => 1,
-			'fields' => 'id,title',
+			'fields' => 'id,title,owner',
 		], $this->requests[0][1]['query']);
 		self::assertSame([], $this->sent);
 		self::assertSame(412, $this->stored()['lastSeen']);
@@ -180,7 +183,7 @@ final class NewDocumentAlertsTest extends TestCase {
 			'ordering' => '-id',
 			'page' => 1,
 			'page_size' => 100,
-			'fields' => 'id,title',
+			'fields' => 'id,title,owner',
 			'added__date__gte' => gmdate('Y-m-d', self::NOW - 300 - 86400),
 		], $this->requests[0][1]['query']);
 		self::assertSame([], $this->sent);
@@ -221,6 +224,36 @@ final class NewDocumentAlertsTest extends TestCase {
 		], $this->requests[1][1]['query']);
 		self::assertCount(1, $this->sent);
 		self::assertSame('New letter', $this->sent[0]['subject']['documents'][0]['title']);
+		self::assertSame([], $this->stored()['waiting']);
+	}
+
+	/**
+	 * When Paperless Sync gives each owner an archive (decision 0013), a new document of
+	 * jamie's waits for its file in jamie's own folders, not in those of the archive
+	 * account, and its owner waits with it from one run to the next: jamie hears about it,
+	 * and sam, with a file renamed after it, doesn't.
+	 */
+	public function testANewDocumentOfAnOwnerArrivesInTheFilesOfTheirUser(): void {
+		$this->connected('');
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.ownership'] = 'per-user';
+		$this->wants('jamie', true);
+		$this->wants('sam', true);
+		$this->seen(412);
+		$users = fn (): IResponse => $this->answer(200, (string)json_encode(['count' => 1, 'next' => null, 'results' => [['id' => 5, 'username' => 'jamie']]]));
+
+		$this->runJob($this->paperless($this->documents([['id' => 413, 'title' => 'Letter', 'owner' => 5]]), $users()));
+
+		self::assertSame([], $this->sent);
+		self::assertSame([['id' => 413, 'title' => 'Letter', 'since' => self::NOW, 'owner' => 5]], $this->stored()['waiting']);
+
+		$this->now += 300;
+		$this->file('/jamie/files/Paperless/Letter [P413].pdf', 'jamie');
+		$this->file('/sam/files/Renamed [P413].pdf', 'sam');
+		$this->runJob($this->paperless($this->documents([['id' => 413, 'title' => 'Letter', 'owner' => 5]]), $users()));
+
+		self::assertSame(['jamie'], array_column($this->sent, 'user'));
+		self::assertSame('/Paperless/Letter [P413].pdf', $this->sent[0]['subject']['documents'][0]['path']);
 		self::assertSame([], $this->stored()['waiting']);
 	}
 
@@ -831,16 +864,18 @@ final class NewDocumentAlertsTest extends TestCase {
 		$clock->method('getTime')->willReturnCallback(fn (): int => $this->now);
 		$clock->method('getDateTime')->willReturnCallback(fn (): DateTime => new DateTime('@' . $this->now));
 
+		$paperlessApi = $this->paperlessApi($configService, $client);
 		(new NewDocumentAlerts(
 			$configService,
 			new SavedSearches($this->userConfig()),
-			$this->paperlessApi($configService, $client),
+			$paperlessApi,
 			new NextcloudFileLocator($this->brokenAwareRoot(), $this->createStub(LoggerInterface::class)),
 			$accounts,
 			$notifications ?? $this->notifications(),
 			$appConfig ?? $this->appConfig(),
 			$clock,
 			$logger,
+			$this->documentOwners($paperlessApi, $configService, $accounts),
 		))->run();
 	}
 

@@ -380,6 +380,8 @@
 				return translate('Not shared with {user}', { user })
 			case 'not_owned':
 				return translate('Not a file of the archive account')
+			case 'other_owner':
+				return translate('Owned in Paperless by another user')
 			case 'no_file':
 				return translate('No file with {marker}', { marker: '[P' + found.id + ']' })
 			default:

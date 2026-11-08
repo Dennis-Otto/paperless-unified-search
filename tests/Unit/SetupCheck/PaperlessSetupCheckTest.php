@@ -255,10 +255,11 @@ final class PaperlessSetupCheckTest extends TestCase {
 	}
 
 	/**
-	 * Paperless Sync can give each user the documents of their user of Paperless as files
-	 * of their own, which the search doesn't show, and nothing said so (#338). The overview
-	 * says what the search still shows and links what to do, also with the warnings about
-	 * the token, which it would hide for as long as the archives for each user stay.
+	 * Paperless Sync can give each user the documents that their user of Paperless owns or
+	 * may view as files of their own, which the search doesn't show, and nothing said so
+	 * (#338). The overview says what the search still shows and links what to do, also with
+	 * the warnings about the token, which it would hide for as long as the archives for each
+	 * user stay.
 	 *
 	 * @return array<string, array{string, string, string}>
 	 */
@@ -266,9 +267,8 @@ final class PaperlessSetupCheckTest extends TestCase {
 		$perUser = "Paperless Sync puts the documents of each user into their own files, which the search doesn't show: it shows only the files of the archive account, such as the documents without an owner in Paperless.";
 
 		return [
-			'each user, those they own' => ['per-user', '', $perUser],
 			'each user, those they own or may view' => ['per-user-shared', '', $perUser],
-			'with warnings about the token' => ['per-user', 'staff', $perUser . ' T:The API token belongs to an Admin of Paperless, who may also read its logs: whoever gets hold of the token can too. Use the token of an account that is neither Admin nor Superuser. Then test the connection again in {section}.'],
+			'with warnings about the token' => ['per-user-shared', 'staff', $perUser . ' T:The API token belongs to an Admin of Paperless, who may also read its logs: whoever gets hold of the token can too. Use the token of an account that is neither Admin nor Superuser. Then test the connection again in {section}.'],
 		];
 	}
 
@@ -296,8 +296,38 @@ final class PaperlessSetupCheckTest extends TestCase {
 	public static function archivesOfOneAccount(): array {
 		return [
 			'the target user, all of them' => ['', 'single'],
+			// The search shows the files of each owner too (decision 0013).
+			'each user, those they own' => ['', 'per-user'],
 			'each user, with another archive account' => ['archive', 'per-user'],
 		];
+	}
+
+	/**
+	 * The files of each owner count only when the account of the token may view the users
+	 * of Paperless (decision 0013): the overview warns when it may not, and only while
+	 * Paperless Sync gives each owner an archive, which needs them.
+	 *
+	 * @return array<string, array{string, string}>
+	 */
+	public static function usersThatTheTokenCanNotSee(): array {
+		return [
+			'each user, those they own' => ['per-user', SetupResult::WARNING],
+			'each user, those they own or may view' => ['per-user-shared', SetupResult::WARNING],
+			'the target user, all of them' => ['single', SetupResult::SUCCESS],
+		];
+	}
+
+	#[DataProvider('usersThatTheTokenCanNotSee')]
+	public function testWarnsAboutUsersThatTheTokenCanNotSeeOnlyForTheArchivesOfEachOwner(string $ownership, string $severity): void {
+		$this->connected('');
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.ownership'] = $ownership;
+		$this->settings[AppConstants::APP_ID . '.token_warnings'] = 'hides_users';
+
+		$result = $this->check()->run();
+
+		self::assertSame($severity, $result->getSeverity());
+		self::assertSame($ownership === 'per-user', str_contains($result->getDescription(), 'may not view users'), $result->getDescription());
 	}
 
 	#[DataProvider('archivesOfOneAccount')]

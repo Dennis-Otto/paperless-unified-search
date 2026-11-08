@@ -109,10 +109,11 @@ final class Check extends Command {
 			return;
 		}
 
-		if ($status->tokenWarnings === []) {
+		$warnings = $this->configService->shownTokenWarnings($status->tokenWarnings);
+		if ($warnings === []) {
 			self::passed($output, 'The account of the API token may change no document, and may view correspondents, document types and tags.');
 		}
-		foreach ($status->tokenWarnings as $warning) {
+		foreach ($warnings as $warning) {
 			self::noted($output, $this->messages->forTokenWarning($warning));
 		}
 	}
@@ -141,20 +142,26 @@ final class Check extends Command {
 
 	/**
 	 * Compares the documents of Paperless with the files of the archive account: by their
-	 * IDs where Paperless lists them, and else only by their number.
+	 * IDs where Paperless lists them, and else only by their number. When Paperless Sync
+	 * gives each owner an archive, the files of the users count too, which the comparison
+	 * doesn't look through, so the documents without a file of the archive account may have
+	 * one there.
 	 *
 	 * @return bool whether the search can show a document, or Paperless has none to show
 	 */
 	private function checkTheCoverage(OutputInterface $output, PaperlessStatus $status, IUser $archive): bool {
 		$archived = $this->fileLocator->findArchivedDocumentIds($archive);
+		$eachOwner = $this->configService->hasArchivesOfEachOwner();
+		$others = $eachOwner ? ' Paperless Sync puts the documents of each user into their own files, which this count leaves out.' : '';
 		if ($status->documentIds === null) {
 			self::noted($output, sprintf(
-				'Coverage: %s document(s) have a file of the archive account; Paperless has %s document(s), without naming them.',
+				'Coverage: %s document(s) have a file of the archive account; Paperless has %s document(s), without naming them.%s',
 				number_format(count($archived)),
 				number_format($status->documents),
+				$others,
 			));
 
-			return self::showsDocuments($output, $archive, $archived !== [] || $status->documents === 0);
+			return self::showsDocuments($output, $archive, $eachOwner || $archived !== [] || $status->documents === 0);
 		}
 
 		$missing = array_diff($status->documentIds, $archived);
@@ -164,9 +171,10 @@ final class Check extends Command {
 			self::passed($output, $coverage);
 		} else {
 			self::noted($output, $coverage . sprintf(
-				' Without one%s: %s.',
+				' Without one%s: %s.%s',
 				count($missing) > self::EXAMPLES ? ', among others' : '',
 				implode(', ', array_slice($missing, 0, self::EXAMPLES)),
+				$others,
 			));
 		}
 
@@ -178,7 +186,7 @@ final class Check extends Command {
 			));
 		}
 
-		return self::showsDocuments($output, $archive, $covered > 0 || $status->documentIds === []);
+		return self::showsDocuments($output, $archive, $eachOwner || $covered > 0 || $status->documentIds === []);
 	}
 
 	/**

@@ -277,7 +277,7 @@ final class SettingsController extends Controller {
 		}
 
 		$hits = self::hitsOf($response['results']);
-		[$explanations, $fileError] = $this->explainer->explain($account, array_keys($hits), $archiveOwner);
+		[$explanations, $fileError] = $this->explainer->explain($account, array_keys($hits), $archiveOwner, $hits);
 		$names = $this->names->of($hits, PaperlessNames::TAGS);
 
 		return new JSONResponse([

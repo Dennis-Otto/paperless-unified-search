@@ -12,8 +12,9 @@ namespace OCA\PaperlessUnifiedSearch\Model;
 /**
  * What the account of the API token may do in Paperless beyond what the search needs, or
  * may not do of what the results show, as Paperless names it in its answer to
- * /api/ui_settings/. The search only reads: it needs to view documents, and to view
- * correspondents, document types and tags for their names in the results. A token that
+ * /api/ui_settings/. The search only reads: it needs to view documents, to view
+ * correspondents, document types and tags for their names in the results, and to view
+ * users for the archives that Paperless Sync gives each owner. A token that
  * may do more lets whoever gets hold of it do the same; one that may do less shows
  * results without the names. Each is a warning, never an error: the search works either way.
  */
@@ -40,6 +41,13 @@ enum TokenWarning: string {
 	 * /api/ui_settings/, which of() reads: the permission is there.
 	 */
 	case HidesNamesOfOthers = 'hides_names_of_others';
+	/**
+	 * An account that may not view users, so that the search can't tell whom Paperless Sync
+	 * gives the documents of each owner, and shows only the files of the archive account
+	 * (decision 0013). Only the archives of each owner need it, and only then does the app
+	 * show it (ConfigService::shownTokenWarnings()).
+	 */
+	case HidesUsers = 'hides_users';
 
 	/**
 	 * The permissions of Django on documents beyond viewing them, as Paperless names them
@@ -96,6 +104,9 @@ enum TokenWarning: string {
 		}
 		if (!isset($granted['view_tag'])) {
 			$warnings[] = self::HidesTags;
+		}
+		if (!isset($granted['view_user'])) {
+			$warnings[] = self::HidesUsers;
 		}
 
 		return $warnings;

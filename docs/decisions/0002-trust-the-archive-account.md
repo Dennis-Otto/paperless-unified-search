@@ -4,7 +4,7 @@ description: "Why a Paperless document appears only through a file that the arch
 
 # Trust the owner of a file, not its name
 
-- Status: accepted
+- Status: accepted, amended by [0013](0013-trust-the-files-of-each-owner.md)
 - Date: 2026-10-08
 
 ## Context
@@ -30,4 +30,4 @@ Option 2. The archive account is the one of the settings, or else the account th
 
 ## Consequences
 
-Nextcloud's shares stay the only way to give access, as for the files themselves, and the apps stay independent of each other's releases: option 3 would tie the app to the database of Paperless Sync, option 4 would read every file and ask Paperless once more for each result, and option 5 would need a Paperless account for every user. Whoever may write into a folder of the archive account can still give a file of that account the marker of any document, so the archive should be shared read-only; [0009](0009-count-only-files-that-the-user-may-only-read.md) counts such a file for no document for that user, and shows administrators how the archive is shared.
+Nextcloud's shares stay the only way to give access, as for the files themselves, and the apps stay independent of each other's releases: option 3 would tie the app to the database of Paperless Sync, option 4 would read every file and ask Paperless once more for each result, and option 5 would need a Paperless account for every user. Whoever may write into a folder of the archive account can still give a file of that account the marker of any document, so the archive should be shared read-only; [0009](0009-count-only-files-that-the-user-may-only-read.md) counts such a file for no document for that user, and shows administrators how the archive is shared. When Paperless Sync gives each user the documents that they own, [0013](0013-trust-the-files-of-each-owner.md) lets the files of the user of each owner stand for that owner's documents as well.

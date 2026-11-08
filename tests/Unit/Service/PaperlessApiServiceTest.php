@@ -40,7 +40,7 @@ use UnexpectedValueException;
 final class PaperlessApiServiceTest extends TestCase {
 	private const NOW = 1791500000;
 	private const NO_DOCUMENTS = '{"count":0,"next":null,"results":[]}';
-	private const FIELDS = 'id,title,created,correspondent,document_type,tags,__search_hit__';
+	private const FIELDS = 'id,title,created,correspondent,document_type,tags,owner,__search_hit__';
 	/** The headers of an answer of Paperless 3.3.0, as it names its version. */
 	private const PAPERLESS_3 = ['X-Version' => '3.3.0', 'X-Api-Version' => '10'];
 	private const PAPERLESS_2 = ['X-Version' => '2.20.13', 'X-Api-Version' => '9'];
@@ -49,10 +49,10 @@ final class PaperlessApiServiceTest extends TestCase {
 	private const VERSION_KEYS = [AppConstants::APP_ID . '.paperless_version', AppConstants::APP_ID . '.paperless_api_version'];
 	/**
 	 * The answer of /api/ui_settings/ to the token of an account that may view documents,
-	 * correspondents, document types, tags and its UI settings, and nothing else, as
+	 * correspondents, document types, tags, users and its UI settings, and nothing else, as
 	 * Paperless-ngx 3.3.1 sends it, without the settings of the UI.
 	 */
-	private const VIEWER = '{"user":{"id":3,"username":"nextcloud","is_staff":false,"is_superuser":false,"groups":[]},"settings":{},"permissions":["view_document","view_correspondent","view_documenttype","view_tag","view_uisettings"]}';
+	private const VIEWER = '{"user":{"id":3,"username":"nextcloud","is_staff":false,"is_superuser":false,"groups":[]},"settings":{},"permissions":["view_document","view_correspondent","view_documenttype","view_tag","view_user","view_uisettings"]}';
 
 	/** The first document of the test of the connection, of three that the account may view. */
 	private const FIRST_DOCUMENT = '{"count":3,"next":null,"results":[{"id":3}]}';
@@ -231,7 +231,7 @@ final class PaperlessApiServiceTest extends TestCase {
 						'query' => 'invoice',
 						'page' => $expectedPage,
 						'page_size' => $expectedPageSize,
-						'fields' => 'id,title,created,correspondent,document_type,tags,__search_hit__',
+						'fields' => 'id,title,created,correspondent,document_type,tags,owner,__search_hit__',
 					]),
 			)
 			->willReturn($this->response(200, self::NO_DOCUMENTS));
@@ -1362,7 +1362,7 @@ final class PaperlessApiServiceTest extends TestCase {
 	public function testTheWarningAboutTheNamesOfOthersComesAfterTheOthers(): void {
 		$client = $this->createStub(IClient::class);
 		$client->method('get')->willReturnCallback(fn (string $url, array $options): IResponse => match (true) {
-			str_ends_with($url, '/api/ui_settings/') => $this->response(200, '{"user":{"is_staff":false,"is_superuser":false},"permissions":["view_document","view_documenttype","view_tag","view_uisettings"]}'),
+			str_ends_with($url, '/api/ui_settings/') => $this->response(200, '{"user":{"is_staff":false,"is_superuser":false},"permissions":["view_document","view_documenttype","view_tag","view_user","view_uisettings"]}'),
 			str_ends_with($url, '/api/correspondents/') => $this->response(403, '{"detail":"You do not have permission to perform this action."}'),
 			str_ends_with($url, '/api/document_types/') => $this->response(200, self::NO_DOCUMENTS),
 			$options['query']['fields'] === 'id' => $this->response(200, self::FIRST_DOCUMENT),
@@ -1648,6 +1648,83 @@ final class PaperlessApiServiceTest extends TestCase {
 	}
 
 	/**
+	 * The users of Paperless come page by page, as Paperless numbers them: never by the link
+	 * to the next page in its answer, which could name another host. Only a user with a
+	 * number and a username counts.
+	 */
+	public function testTheUsersComePageByPageByTheirNumbers(): void {
+		$queries = [];
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options) use (&$queries): IResponse {
+			self::assertSame('https://paperless.example.com/api/users/', $url);
+			self::assertSame(3, $options['timeout']);
+			$queries[] = $options['query'];
+
+			return $this->response(200, (string)json_encode($options['query']['page'] === 1
+				? ['count' => 1002, 'next' => 'https://elsewhere.example.com/api/users/?page=2', 'results' => [
+					['id' => 5, 'username' => 'jamie', 'email' => 'jamie@example.com', 'groups' => [2]],
+					['id' => '6', 'username' => 'ID as text'],
+					['id' => 7],
+					'no user',
+				]]
+				: ['count' => 1002, 'next' => null, 'results' => [['id' => 8, 'username' => 'Sam']]]));
+		});
+
+		self::assertSame([5 => 'jamie', 8 => 'Sam'], $this->service($client)->findUsers());
+		self::assertSame([['page' => 1, 'page_size' => 1000], ['page' => 2, 'page_size' => 1000]], $queries);
+	}
+
+	/**
+	 * More users than ten pages hold are more than the app reads: whom a user of Nextcloud
+	 * gets can't be told without all of them.
+	 */
+	public function testMoreUsersThanTheAppReadsAreNone(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::exactly(10))->method('get')->willReturnCallback(
+			fn (): IResponse => $this->response(200, '{"count":20000,"next":"https://paperless.example.com/api/users/?page=11","results":[]}'),
+		);
+
+		$this->expectException(PaperlessRequestException::class);
+		$this->expectExceptionMessage('Paperless lists more than 10000 users.');
+
+		$this->service($client)->findUsers();
+	}
+
+	/**
+	 * @return array<string, array{string, ?string}>
+	 */
+	public static function usersWithoutSettings(): array {
+		return [
+			'no URL' => ['', 'TEST_VALUE'],
+			'no token' => ['https://paperless.example.com', null],
+		];
+	}
+
+	#[DataProvider('usersWithoutSettings')]
+	public function testTheUsersNeedTheSettings(string $url, ?string $token): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::never())->method('get');
+
+		self::assertSame([], $this->service($client, $url, $token)->findUsers());
+	}
+
+	/**
+	 * An account that may not view users gets HTTP 403, which the owners of documents take
+	 * for a list that rests.
+	 */
+	public function testUsersThatTheAccountMayNotViewFailTheRequest(): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response(403, '{"detail":"You do not have permission to perform this action."}'));
+
+		try {
+			$this->service($client)->findUsers();
+			self::fail('The users came without the permission to view them.');
+		} catch (PaperlessRequestException $failure) {
+			self::assertSame(RequestFailure::Unauthorized, $failure->reason);
+		}
+	}
+
+	/**
 	 * @return array<string, array{list<int>, string, ?string}>
 	 */
 	public static function lookupsWithoutRequest(): array {
@@ -1732,7 +1809,7 @@ final class PaperlessApiServiceTest extends TestCase {
 					'ordering' => '-added',
 					'page' => 1,
 					'page_size' => 25,
-					'fields' => 'id,title,added,correspondent,document_type,tags',
+					'fields' => 'id,title,added,correspondent,document_type,tags,owner',
 				]
 					&& $options['headers'] === [
 						'Authorization' => 'Token TEST_VALUE',
@@ -1898,7 +1975,7 @@ final class PaperlessApiServiceTest extends TestCase {
 			->method('get')
 			->with(
 				'https://paperless.example.com/api/documents/',
-				self::callback(static fn (array $options): bool => $options['query'] === ['ordering' => '-id', 'page' => 1, 'page_size' => 100, 'fields' => 'id,title', 'added__date__gte' => '2026-10-07']
+				self::callback(static fn (array $options): bool => $options['query'] === ['ordering' => '-id', 'page' => 1, 'page_size' => 100, 'fields' => 'id,title,owner', 'added__date__gte' => '2026-10-07']
 					&& $options['timeout'] === 10),
 			)
 			->willReturn($this->response(200, (string)json_encode(['count' => 1, 'next' => null, 'results' => [['id' => 412, 'title' => 'Electricity invoice'], 'no document']]), self::PAPERLESS_3));
@@ -1924,7 +2001,7 @@ final class PaperlessApiServiceTest extends TestCase {
 		$client = $this->createMock(IClient::class);
 		$client->expects(self::once())
 			->method('get')
-			->with(self::anything(), self::callback(static fn (array $options): bool => $options['query'] === ['ordering' => '-id', 'page' => 1, 'page_size' => $pageSize, 'fields' => 'id,title']))
+			->with(self::anything(), self::callback(static fn (array $options): bool => $options['query'] === ['ordering' => '-id', 'page' => 1, 'page_size' => $pageSize, 'fields' => 'id,title,owner']))
 			->willReturn($this->response(200, '{"results": []}'));
 
 		self::assertSame([], $this->service($client)->findNewestDocuments($count, null));

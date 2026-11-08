@@ -116,6 +116,13 @@ if mode == "page":
     print(data.get("cursor"))
     sys.exit(0)
 
+if mode == "own":
+    # The own file of e2e-writer, whom Paperless Sync gives the owner of document 999 (#342).
+    found = [(entry.get("title"), entry.get("attributes", {}).get("path")) for entry in data.get("entries", [])]
+    if found != [("Inaccessible document", "/Own [P999].txt")]:
+        fail(f"Expected the own file of document 999, got {found!r}")
+    sys.exit(0)
+
 entries = data.get("entries", [])
 if len(entries) != 1:
     fail(f"Expected one accessible result, got {entries!r}")

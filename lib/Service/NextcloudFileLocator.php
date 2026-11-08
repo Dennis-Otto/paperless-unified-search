@@ -57,29 +57,35 @@ final class NextcloudFileLocator {
 	/**
 	 * The files of Paperless documents that the user can open, by the ID of their document:
 	 * for each document a file of the archive account whose name carries its marker
-	 * [P<ID>], of several such files the one with the first path. The marker alone proves
-	 * nothing, since anyone can give a file such a name; the files of the archive account
-	 * reach other users only through its shares.
+	 * [P<ID>], or one of the user whom Paperless Sync gives the owner of the document in
+	 * Paperless (decision 0013), of several such files the one with the first path. The
+	 * marker alone proves nothing, since anyone can give a file such a name; the files of
+	 * the archive account reach other users only through its shares, and so do those of
+	 * each owner, whose own files count only for the documents of that owner.
 	 *
-	 * A user other than the archive account counts only the files that the user may only
-	 * read: whoever may change a file of the archive account, or add one to its folder,
-	 * through a share with write permission, can give it the marker of any document. The
-	 * archive account writes its own files, and counts them all.
+	 * A user counts the files of another account only when the user may only read them:
+	 * whoever may change a file of the archive account, or add one to its folder, through a
+	 * share with write permission, can give it the marker of any document. The archive
+	 * account writes its own files, and counts them all, as each owner counts their own for
+	 * the documents of their own.
 	 *
 	 * A search of the file cache compares the names of all files that the user can see,
 	 * which no index serves, so one search looks for the markers of all documents at once.
 	 *
 	 * @param list<int> $documentIds
+	 * @param array<int, string> $documentUsers the user of Nextcloud whose own files stand
+	 *                                          for a document as well, by the ID of the
+	 *                                          document, as DocumentOwners finds them
 	 * @return FoundFiles the files in the order of the IDs, without a document that has no
 	 *                    such file, the error of the first file that failed to answer, and
 	 *                    the files that the user may write of the documents without a file
 	 */
-	public function findAllForUser(IUser $user, array $documentIds, string $archiveOwner): FoundFiles {
+	public function findAllForUser(IUser $user, array $documentIds, string $archiveOwner, array $documentUsers = []): FoundFiles {
 		if ($archiveOwner === '') {
 			return new FoundFiles([]);
 		}
 
-		return $this->find($user, $documentIds, $archiveOwner, $user->getUID() !== $archiveOwner);
+		return $this->find($user, $documentIds, $archiveOwner, $documentUsers);
 	}
 
 	/**
@@ -91,7 +97,7 @@ final class NextcloudFileLocator {
 	 * @return FoundFiles as findAllForUser() returns them, of any owner
 	 */
 	public function findAnyForUser(IUser $user, array $documentIds): FoundFiles {
-		return $this->find($user, $documentIds, null, false);
+		return $this->find($user, $documentIds, null, []);
 	}
 
 	/**
@@ -132,12 +138,14 @@ final class NextcloudFileLocator {
 
 	/**
 	 * The files with the markers of the documents among those that the user can see, of the
-	 * owner, or of any owner for null, and for $readOnly only those that the user may only
-	 * read, with the others apart.
+	 * archive account or of the user of each document, and of another account only those
+	 * that the user may only read, with the others apart; or of any owner, and all of them,
+	 * for null.
 	 *
 	 * @param list<int> $documentIds
+	 * @param array<int, string> $documentUsers by the ID of the document
 	 */
-	private function find(IUser $user, array $documentIds, ?string $owner, bool $readOnly): FoundFiles {
+	private function find(IUser $user, array $documentIds, ?string $archiveOwner, array $documentUsers): FoundFiles {
 		/** @var array<int, string> $markers by document ID */
 		$markers = [];
 		foreach ($documentIds as $documentId) {
@@ -153,12 +161,14 @@ final class NextcloudFileLocator {
 		$nodes = $this->canQueryTheFileCache()
 			? $this->searchAll($userFolder, $user, array_values($markers))
 			: $this->searchEach($userFolder, array_values($markers));
+		// The accounts whose files may stand for a document.
+		$owners = $archiveOwner === null ? [] : [$archiveOwner => true] + array_fill_keys(array_values($documentUsers), true);
 
 		/** @var array<int, list<array{string, File}>> $candidates the path and the file of each file of each document, by document ID */
 		$candidates = [];
 		/** @var array<int, true> $writableIds the IDs of the files that the user may write through any of their paths */
 		$writableIds = [];
-		/** @var array<string, bool> $openFolders whether the user may add files to each folder so far, by its path */
+		/** @var array<string, bool> $openFolders whether the user may add files of an owner to each folder so far, by the owner and its path */
 		$openFolders = [];
 		$skipped = 0;
 		$firstError = null;
@@ -170,11 +180,16 @@ final class NextcloudFileLocator {
 					continue;
 				}
 				$documentIdsOfTheName = self::documentIdsIn($node->getName());
-				if ($documentIdsOfTheName === [] || ($owner !== null && $node->getOwner()?->getUID() !== $owner)) {
+				if ($documentIdsOfTheName === []) {
 					continue;
 				}
+				$owner = $archiveOwner !== null ? (string)$node->getOwner()?->getUID() : '';
+				if ($archiveOwner !== null && !isset($owners[$owner])) {
+					continue;
+				}
+				$readOnly = $archiveOwner !== null && $owner !== $user->getUID();
 				if ($readOnly && self::isTheRootOfAShare($node)) {
-					$documentIdsOfTheName = self::documentIdsIn($this->nameOfTheOwner($node, (string)$owner));
+					$documentIdsOfTheName = self::documentIdsIn($this->nameOfTheOwner($node, $owner));
 				}
 
 				$path = $node->getPath();
@@ -185,7 +200,9 @@ final class NextcloudFileLocator {
 					$writableIds[$node->getId()] = true;
 				}
 				foreach ($documentIdsOfTheName as $documentId) {
-					if (isset($markers[$documentId])) {
+					// A file of the user of a document counts for that document alone, not for
+					// one of another owner that its name may carry.
+					if (isset($markers[$documentId]) && ($archiveOwner === null || $owner === $archiveOwner || ($documentUsers[$documentId] ?? null) === $owner)) {
 						$candidates[$documentId][] = [$path, $node];
 					}
 				}
@@ -281,21 +298,22 @@ final class NextcloudFileLocator {
 	 * user, where a file that the user adds is the user's own; the name that the user gives
 	 * the share itself counts for nothing (see nameOfTheOwner()).
 	 *
-	 * @param array<string, bool> $openFolders whether the user may add files to each
-	 *                                         folder so far, by its path, which this adds to
+	 * @param array<string, bool> $openFolders whether the user may add files of the owner
+	 *                                         to each folder so far, by the owner and the
+	 *                                         path, which this adds to
 	 */
-	private static function mayWrite(File $file, string $path, ?string $owner, array &$openFolders): bool {
+	private static function mayWrite(File $file, string $path, string $owner, array &$openFolders): bool {
 		if ($file->isUpdateable()) {
 			return true;
 		}
 
-		$folderPath = dirname($path);
-		if (!isset($openFolders[$folderPath])) {
-			$folder = $file->getParent();
-			$openFolders[$folderPath] = $folder->getOwner()?->getUID() === $owner && $folder->isCreatable();
+		$folder = $owner . '/' . dirname($path);
+		if (!isset($openFolders[$folder])) {
+			$parent = $file->getParent();
+			$openFolders[$folder] = $parent->getOwner()?->getUID() === $owner && $parent->isCreatable();
 		}
 
-		return $openFolders[$folderPath];
+		return $openFolders[$folder];
 	}
 
 	private function logSkipped(int $skipped, ?Throwable $firstError): void {

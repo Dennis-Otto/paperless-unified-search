@@ -16,6 +16,7 @@ use OCA\PaperlessUnifiedSearch\Service\SearchExplainer;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppServices;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Files;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\Owners;
 use OCP\Files\File;
 use OCP\Http\Client\IResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -35,6 +36,7 @@ use Throwable;
  */
 final class SearchTest extends TestCase {
 	use Accounts;
+	use Owners;
 	use AppServices;
 	use Files;
 
@@ -392,6 +394,28 @@ final class SearchTest extends TestCase {
 		self::assertSame('How many documents of the ranking of Paperless to go through, up to 50', $command->getDefinition()->getOption('limit')->getDescription());
 	}
 
+	/**
+	 * When Paperless Sync gives each owner an archive (decision 0013), the table and the
+	 * reasons below it name the file of another user than the one of the owner, and a file
+	 * that the user of the owner hasn't shared.
+	 */
+	public function testExplainsTheFilesOfTheUsersOfTheOwners(): void {
+		$this->connected('');
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.ownership'] = 'per-user';
+		$this->file('/jamie/files/Renamed [P502].pdf', 'jamie');
+		$this->file('/sam/files/Insurance [P501].pdf', 'sam');
+		$users = $this->answer(200, (string)json_encode(['count' => 1, 'next' => null, 'results' => [['id' => 6, 'username' => 'sam']]]));
+		$tester = $this->tester($this->documents([['id' => 501, 'title' => 'Home insurance', 'owner' => 6], ['id' => 502, 'title' => 'Internet invoice', 'owner' => 6]], 2), $users);
+
+		self::assertSame(Command::SUCCESS, $tester->execute(['user' => 'jamie', 'term' => 'invoice', '--explain' => true]));
+
+		$display = $tester->getDisplay();
+		self::assertStringContainsString('| other owner | /Renamed [P502].pdf of jamie', $display);
+		self::assertStringContainsString('Not shared (501): the archive account archive, or the user whom Paperless Sync gives the owner of the document, has the file, but hasn\'t shared it with jamie.', $display);
+		self::assertStringContainsString('Other owner (502): jamie sees a file with the marker of the document, but Paperless names another owner of it, and only the files of the archive account archive and of the user whom Paperless Sync gives that owner stand for it.', $display);
+	}
+
 	private function tester(IResponse|Throwable ...$answers): CommandTester {
 		return new CommandTester($this->command(...$answers));
 	}
@@ -401,10 +425,12 @@ final class SearchTest extends TestCase {
 		$configService = $this->configService($accounts);
 		$locator = new NextcloudFileLocator($this->rootFolder(), $this->createStub(LoggerInterface::class));
 
+		$paperlessApi = $this->paperlessApi($configService, $this->paperless(...$answers));
+
 		return new Search(
 			$configService,
-			$this->paperlessApi($configService, $this->paperless(...$answers)),
-			new SearchExplainer($locator, $accounts),
+			$paperlessApi,
+			new SearchExplainer($locator, $accounts, $this->documentOwners($paperlessApi, $configService, $accounts)),
 			$accounts,
 			$this->messages(),
 		);

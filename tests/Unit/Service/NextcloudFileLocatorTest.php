@@ -321,6 +321,48 @@ final class NextcloudFileLocatorTest extends TestCase {
 	}
 
 	/**
+	 * When Paperless Sync gives each owner an archive (decision 0013), a user's own file
+	 * stands for the documents of that user's owner in Paperless, as a file of the archive
+	 * account stands for every document, which the user may write: they are the user's
+	 * own. A file renamed after a document of another owner, or of none, stands for nothing
+	 * (#222), also when its name carries the marker of an own document as well.
+	 */
+	public function testAUsersOwnFileStandsOnlyForTheDocumentsOfTheirOwner(): void {
+		$own = $this->file('Own [P5].pdf', '/dennis/files/Paperless/Own [P5].pdf', 'dennis', updateable: true, folder: $this->parentFolder('dennis', true));
+		$forged = $this->file('Forged [P6].pdf', '/dennis/files/Forged [P6].pdf', 'dennis', updateable: true, folder: $this->parentFolder('dennis', true));
+		$both = $this->file('Both [P7] [P8].pdf', '/dennis/files/Both [P7] [P8].pdf', 'dennis', updateable: true, folder: $this->parentFolder('dennis', true));
+		$noOwner = $this->file('No owner [P9].pdf', '/dennis/files/No owner [P9].pdf', 'dennis', updateable: true, folder: $this->parentFolder('dennis', true));
+
+		$found = $this->locator([$own, $forged, $both, $noOwner])->findAllForUser($this->user(), [5, 6, 7, 8, 9], self::ARCHIVE, [5 => 'dennis', 6 => 'sam', 7 => 'dennis', 8 => 'sam']);
+
+		self::assertSame([5 => $own, 7 => $both], $found->files);
+		self::assertSame([], $found->writable);
+		self::assertNull($found->error);
+	}
+
+	/**
+	 * The file of an owner reaches other users through the shares of that owner, as a file
+	 * of the archive account does: it stands for the owner's document for whoever may only
+	 * read it, by the name that the owner gave a file shared on its own, and for nobody who
+	 * may change it or add files to its folder. A file of another user stands for nothing.
+	 */
+	public function testTheFileOfAnOwnerCountsForOthersOnlyWhenTheyMayOnlyReadIt(): void {
+		$shared = $this->file('Shared [P5].pdf', '/dennis/files/Sam/Shared [P5].pdf', 'sam', folder: $this->parentFolder('sam', false));
+		$writable = $this->file('Writable [P6].pdf', '/dennis/files/Inbox/Writable [P6].pdf', 'sam', folder: $this->parentFolder('sam', true));
+		$other = $this->file('Other [P7].pdf', '/dennis/files/Alex/Other [P7].pdf', 'alex', folder: $this->parentFolder('alex', false));
+		$renamed = $this->file('Renamed [P8].pdf', '/dennis/files/Renamed [P8].pdf', 'sam', id: 42, shareRoot: true);
+		$samFolder = $this->createStub(Folder::class);
+		$samFolder->method('getFirstNodeById')->willReturn($this->file('Letter [P8].pdf', '/sam/files/Letter [P8].pdf', 'sam', id: 42));
+		$root = $this->createStub(IRootFolder::class);
+		$root->method('getUserFolder')->willReturnCallback(fn (string $uid): Folder => $uid === 'sam' ? $samFolder : $this->userFolder([$shared, $writable, $other, $renamed]));
+
+		$found = (new NextcloudFileLocator($root, $this->createStub(LoggerInterface::class)))->findAllForUser($this->user(), [5, 6, 7, 8], self::ARCHIVE, [5 => 'sam', 6 => 'sam', 7 => 'sam', 8 => 'sam']);
+
+		self::assertSame([5 => $shared, 8 => $renamed], $found->files);
+		self::assertSame([6 => $writable], $found->writable);
+	}
+
+	/**
 	 * The archive account writes its own files, and finds them all.
 	 */
 	public function testTheArchiveAccountFindsTheFilesThatItMayWrite(): void {
