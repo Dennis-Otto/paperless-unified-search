@@ -276,9 +276,18 @@ function writeChineseDashes(catalogFiles) {
 			writeFileSync(path, fixed)
 		}
 	}
+	// Read without a check before, so that nothing can change the file between the check
+	// and the write; the check below names a missing appinfo/info.xml.
 	const infoPath = join(root, 'appinfo', 'info.xml')
-	if (existsSync(infoPath)) {
-		const xml = readFileSync(infoPath, 'utf8')
+	let xml = null
+	try {
+		xml = readFileSync(infoPath, 'utf8')
+	} catch (error) {
+		if (error.code !== 'ENOENT') {
+			throw error
+		}
+	}
+	if (xml !== null) {
 		const fixed = xml.replace(/(<(summary|description)\s+lang="zh-[^"]*"\s*>)([\s\S]*?)(<\/\2>)/g, (element, start, name, text, end) => `${start}${chineseDashes(text)}${end}`)
 		if (fixed !== xml) {
 			writeFileSync(infoPath, fixed)
