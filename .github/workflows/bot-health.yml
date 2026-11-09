@@ -16,7 +16,10 @@ name: Bot health
 # schedule GitHub missed or switched off. A failure of Lint at a commit that the
 # branch has left says nothing any more, because a pull request reaches the branch
 # only when it passes Lint: it gets no issue, and an open one starts Lint by hand, so
-# that a run that passes closes it. Runs of pull requests start nothing here.
+# that a run that passes closes it. The same look compares the social preview that
+# GitHub shows with .github/social-preview.png, which only a person can upload, and
+# keeps one issue open, Upload the new social preview, until they are the same. Runs
+# of pull requests start nothing here.
 # It checks out the default branch only, for blueprint.py, never the code of a pull
 # request; blueprint.py bot-health holds the logic.
 # https://github.com/Dennis-Otto/repo-blueprint
@@ -151,6 +154,8 @@ jobs:
       contents: read
       issues: write
     steps:
+      # GitHub's host of uploads too, which serves the uploaded social preview that the
+      # look compares with .github/social-preview.png.
       - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
@@ -159,6 +164,7 @@ jobs:
           allowed-endpoints: >-
             api.github.com:443
             github.com:443
+            repository-images.githubusercontent.com:443
       - name: Wait until Harden-Runner lets the hosts through
         # The runner may have asked for an address past Harden-Runner, which then blocks
         # that address for as long as systemd-resolved keeps it, up to a minute.
@@ -167,6 +173,7 @@ jobs:
           HOSTS: >-
             api.github.com:443
             github.com:443
+            repository-images.githubusercontent.com:443
         run: |
           deadline=$(($(date +%s) + 120))
           for endpoint in $HOSTS; do
@@ -201,7 +208,7 @@ jobs:
           sparse-checkout: |
             .github
             blueprint
-      - name: Look at the latest run of every workflow, and start the missed ones
+      - name: Look at the latest run of every workflow, start the missed ones, and compare the social preview
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

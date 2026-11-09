@@ -206,6 +206,21 @@ else
   echo "Python 3.12 or newer is not installed here; the CI checks the files of the project."
 fi
 
+step "Binary files"
+# No program, library, compiled code or archive in Git, whatever the name of its file,
+# and no other binary file that nobody can review, as the OSPS Baseline of OpenSSF asks:
+# a release builds what it ships from the sources. Pictures, videos, sounds, fonts,
+# documents and the inputs of the fuzz tests in fuzz/ pass. The Python and blueprint.py
+# of the step Pages in one column.
+if [[ -n "$python" ]]; then
+  "$python" "$tool" binaries
+elif [[ -n "${CI:-}" ]]; then
+  echo "Checking the binary files needs Python 3.12 or newer, which this runner lacks."
+  exit 1
+else
+  echo "Python 3.12 or newer is not installed here; the CI checks the binary files."
+fi
+
 step "Changelog fragments"
 # Every fragment of changelog.d/ as the release takes it in, those that wait on main
 # for the next release too: rules that get stricter, in blueprint.py or in an update

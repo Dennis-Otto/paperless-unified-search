@@ -78,7 +78,6 @@ patterns_allowed = [
   "google/osv-scanner-action/osv-reporter-action@*",
   "google/osv-scanner-action/osv-scanner-action@*",
   "googleapis/release-please-action@*",
-  "lycheeverse/lychee-action@*",
   # Run by the reusable workflow of the issue assistant.
   "openai/codex-action@*",
   "ossf/scorecard-action@*",

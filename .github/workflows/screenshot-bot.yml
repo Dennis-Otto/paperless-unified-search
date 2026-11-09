@@ -18,7 +18,9 @@ name: Screenshots
 # (decision 0120); it can also leave hosts out of the wait, give the script a time
 # limit and name the folder that a failed shard keeps (decision 0124). It compares each picture that changed with the one of main by its
 # pixels: a picture whose pixels stayed the same keeps its file, so that a new
-# encoder, browser or runner changes nothing. When pixels changed, the job collect
+# encoder, browser or runner changes nothing; for each other one of the same size
+# and frames, it draws the changed pixels in red into diff/ of the artifact, which the
+# bot never commits (decision 0131). When pixels changed, the job collect
 # puts the shards together, and the bot keeps one pull request from the branch
 # bot/screenshots, as the release app, which merges itself once every check passes,
 # and closes it when main looks as rendered without it. When main changed a picture or

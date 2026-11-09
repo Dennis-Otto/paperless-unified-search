@@ -21,6 +21,7 @@
 .github/blueprint/advisories.py
 .github/blueprint/annotate.py
 .github/blueprint/app.py
+.github/blueprint/binaries.py
 .github/blueprint/bootstrap.py
 .github/blueprint/bot_health.py
 .github/blueprint/branches.py
@@ -46,6 +47,7 @@
 .github/blueprint/screenshots.py
 .github/blueprint/settings.py
 .github/blueprint/site_check.py
+.github/blueprint/social_preview.py
 .github/blueprint/stale_runs.py
 .github/blueprint/update.py
 .github/blueprint/versions.py
@@ -55,8 +57,10 @@
 .github/copier-requirements.txt
 .github/dependabot.yml
 .github/docs-requirements.txt
+.github/download.sh
 .github/egress-firewall.yaml
 .github/issue-assistant/config.toml
+.github/lychee.sh
 .github/markdownlint.jsonc
 .github/mkdocs-blueprint-diagrams/from-a-change-to-a-release.dark.svg
 .github/mkdocs-blueprint-diagrams/from-a-change-to-a-release.de.dark.svg

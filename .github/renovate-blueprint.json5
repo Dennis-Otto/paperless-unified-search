@@ -171,12 +171,12 @@
       enabled: false,
     },
     {
-      // And the tools that they and .github/sign-tag.sh download and check by
+      // And the tools that they and the scripts of .github download and check by
       // their sha256, each on its line "# renovate:": the blueprint writes the
       // checksum of each new version beside it.
       matchManagers: ["custom.regex"],
-      matchDepNames: ["sigstore/gitsign", "infection/infection", "ChristophWurst/krankerl", "nextcloud/server", "anchore/syft"],
-      matchFileNames: [".github/workflows/**", ".github/sign-tag.sh"],
+      matchDepNames: ["sigstore/gitsign", "infection/infection", "ChristophWurst/krankerl", "nextcloud/server", "anchore/syft", "lycheeverse/lychee"],
+      matchFileNames: [".github/workflows/**", ".github/sign-tag.sh", ".github/lychee.sh"],
       enabled: false,
     },
     {

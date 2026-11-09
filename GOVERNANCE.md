@@ -8,6 +8,10 @@ Paperless Unified Search is maintained by Dennis Otto.
 | --- | --- | --- |
 | [@Dennis-Otto](https://github.com/Dennis-Otto) | Maintainer | Repository administration, releases and security advisories |
 
+Nobody gets access on their own. GitHub gives a new collaborator no access until a maintainer invites them by hand and they accept, in an organization with the role that the invitation names, and the settings as code give no person any access. Nobody needs access to propose a change: a pull request from a fork is enough.
+
+Before a person gets escalated permissions, such as the right to push, to merge or to administer the repository, the secrets of its environments, its apps or its security advisories, the maintainers review them: a record of contributions to the project that the maintainers reviewed, an identity that the maintainers can trace, two-factor authentication on their account on GitHub and verified signatures on their commits. A person gets the least access that their task needs, recorded in a public issue or pull request of the project, and loses it when the task ends; the secrets that they could use are replaced then, as [SECURITY.md](SECURITY.md#secrets-and-credentials) says.
+
 ## Roles and responsibilities
 
 | Role | Who | Responsibilities |
@@ -24,6 +28,10 @@ Decisions are discussed in public issues and pull requests whenever they contain
 ## Reviews
 
 Every change reaches `main` through a pull request that passes all required checks: the tests and checks of the project, the lint of the workflows, the licenses (REUSE) and sign-offs (DCO), CodeQL, the dependency review and the secret scan.
+
+- **How a pull request is reviewed.** The required checks run first, on every pull request and against the latest `main`; the PR coach explains each failure, and the fix bot fixes what a command can. Then the maintainer reads the whole change of every pull request of another person and asks for changes in a review or merges it. The pull requests of the maintainers pass the same checks, and the update pull requests of the bots merge on their own once every check passes, as [Automation](#automation) says.
+- **What the review checks.** That the change does what its title and description say, and nothing else; that tests cover each change of behavior, and that a bug fix comes with a test that fails without it; that the documentation and the changelog say what changes for users; that no secret, no personal data and no binary file that nobody can review comes with it; that a workflow keeps the least permissions and puts no untrusted input into a script; and that a new dependency is needed, as [SECURITY.md](SECURITY.md#dependencies) says.
+- **What is acceptable.** A pull request merges once every required check passes on the latest `main`, every commit carries a sign-off and a verified signature, it meets the requirements of [CONTRIBUTING.md](CONTRIBUTING.md#requirements-for-changes), and the maintainer accepts it by merging it. What no check can judge, such as the design of a feature, the maintainer decides in the pull request.
 
 ## Automation
 
