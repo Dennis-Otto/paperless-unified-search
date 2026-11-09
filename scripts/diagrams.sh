@@ -24,7 +24,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 # The command line of mermaid with its Chromium, which Renovate keeps current.
-image="minlag/mermaid-cli:12.0.1@sha256:2c5d27365df71da06c288beebe531ea3637cf9b422b871239a3b016233591d24"
+image="minlag/mermaid-cli:12.0.1@sha256:18938e53497376d524e04b1fc0bf7b6d61a491ce9ff7032bb2855d57155acb10"
 sources=docs/diagrams
 pictures=docs/images/diagrams
 # The tags of HTML in labels other than <br>, as python3 blueprint.py diagrams extract
