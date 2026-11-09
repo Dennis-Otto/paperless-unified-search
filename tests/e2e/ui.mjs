@@ -14,9 +14,9 @@
 // Only scripts/screenshots.sh runs screenshots.mjs, for the visual check, the screenshot
 // bot and, with --demo, the weekly run of the demo, and some steps here serve only it:
 // search() with a group, searchConnectedServices(), paperlessResult(), the drawn PDF of
-// waitForViewer() and openInViewer(). After a change here, run `bash scripts/screenshots.sh` once and see
-// that it still takes every picture; `git checkout screenshots/` drops the pictures
-// again if they shouldn't change.
+// waitForViewer() and openInViewer(). After a change here, run
+// `bash scripts/screenshots.sh` once and see that it still takes every picture;
+// `git checkout screenshots/` drops the pictures again if they shouldn't change.
 
 export const BASE_URL = process.env.E2E_BASE_URL ?? 'http://nextcloud'
 export const PASSWORD = process.env.E2E_PASSWORD ?? 'e2e-only-password'
@@ -142,7 +142,9 @@ export async function waitForViewer(page, name, { drawn = true } = {}) {
 // their edges than in one go. How far the first slice gets depends on the speed of the
 // machine, so on a runner the picture of the same page changed from run to run, from
 // a different line on. With the clock standing still, the viewer draws each page in
-// one slice, the same pixels in every run.
+// one slice, the same pixels in every run. The clock stays still for the rest of the
+// browser context, also after a new navigation, so take the picture and close the
+// context afterwards: a debounce by Date.now(), such as that of the search, never fires.
 export async function openInViewer(page, open, name) {
 	await page.clock.setFixedTime(await page.evaluate(() => Date.now()))
 	await open()
