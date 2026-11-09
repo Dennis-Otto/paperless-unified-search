@@ -17,9 +17,12 @@ use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppServices;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Files;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryCache;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\Owners;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Shares;
 use OCP\Constants;
 use OCP\Http\Client\IResponse;
+use OCP\ICacheFactory;
 use OCP\Share\IShare;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -37,7 +40,14 @@ final class CheckTest extends TestCase {
 	use Accounts;
 	use AppServices;
 	use Files;
+	use Owners;
 	use Shares;
+
+	/** The users of Paperless of the tests of the archives of each owner: jamie and Sam. */
+	private const USERS = '{"count":2,"next":null,"results":[{"id":5,"username":"jamie"},{"id":6,"username":"Sam"}]}';
+
+	/** The cache of the users of Paperless, when a test fills it before the check. */
+	private ?MemoryCache $cache = null;
 
 	private const NO_SHARES = "! The archive account shares none of its files, so only it finds its documents.\n";
 
@@ -144,16 +154,26 @@ final class CheckTest extends TestCase {
 
 	/**
 	 * Paperless Sync can give each user the documents that their user of Paperless owns or
-	 * may view as files of their own, which the search doesn't show, and nothing said so
-	 * (#338). The check says what the search still shows and links what to do; the search
-	 * works with the files of the archive account, so the check passes.
+	 * may view as files of their own. The copies of the owners count, as with the documents
+	 * that each user owns, but not those of the users who may only view a document, and
+	 * nothing said so (#338). The check says what the search still shows and links what to
+	 * do; the search works with the files of the archive account and of the owners, so the
+	 * check passes.
 	 */
-	public function testWarnsWhenPaperlessSyncGivesEachUserAnArchiveOfTheirOwn(): void {
+	public function testWarnsWhenPaperlessSyncGivesEachUserTheDocumentsThatTheyMayView(): void {
 		$this->connected('');
 		$this->settings['paperless_sync.target_user'] = 'archive';
 		$this->settings['paperless_sync.ownership'] = 'per-user-shared';
 		$this->file('/archive/files/Paperless/Without an owner [P1].pdf');
-		$tester = $this->tester($this->documents([['id' => 1]], 1, [1]));
+		$this->file('/jamie/files/Paperless/Own [P2].pdf', 'jamie');
+		// The copy of a document that sam may only view.
+		$this->file('/sam/files/Paperless/Shared with me [P2].pdf', 'sam');
+		$tester = $this->tester(
+			$this->documents([['id' => 1]], 2, [1, 2]),
+			$this->documents([]),
+			$this->documents([['id' => 1, 'owner' => null], ['id' => 2, 'owner' => 5]]),
+			$this->answer(200, self::USERS),
+		);
 
 		self::assertSame(Command::SUCCESS, $tester->execute([]));
 
@@ -161,11 +181,140 @@ final class CheckTest extends TestCase {
 			"✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.\n"
 			. "✓ The account of the API token may change no document, and may view correspondents, document types and tags.\n"
 			. "✓ The archive account is archive, the account of Paperless Sync.\n"
-			. "! Paperless Sync puts the documents of each user into their own files, which the search doesn't show: it shows only the files of the archive account, such as the documents without an owner in Paperless. See https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html#paperless-sync-gives-each-user-their-own-archive\n"
-			. "✓ Coverage: 1 of 1 Paperless document(s) have a file of the archive account.\n"
+			. "! Paperless Sync also puts copies of the documents that each user may view in Paperless into their own files, which the search doesn't show: it shows the files of the archive account and of the owner of each document. See https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html#paperless-sync-gives-each-user-their-own-archive\n"
+			. "✓ Coverage: 2 of 2 Paperless document(s) have a file of the archive account or of the user of their owner.\n"
 			. self::NO_SHARES,
 			$tester->getDisplay(),
 		);
+	}
+
+	/**
+	 * With the documents of each owner in the files of their user (decision 0013), the
+	 * check counts them as the search finds them: a file of the user whom Paperless Sync
+	 * gives the owner of the document, in that user's folders, besides the files of the
+	 * archive account. A file that another user renamed after a document of someone else
+	 * counts for nothing, and neither does one that the user only received through a share.
+	 * The owners come page by page, with only their IDs.
+	 */
+	public function testCountsTheFilesOfTheUserOfEachOwner(): void {
+		$this->connected('');
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.ownership'] = 'per-user';
+		$this->file('/archive/files/Paperless/Without an owner [P3].pdf');
+		$this->file('/jamie/files/Paperless/Own [P1].pdf', 'jamie');
+		$this->file('/jamie/files/Paperless/Also own [P5].pdf', 'jamie');
+		$this->file('/sam/files/Paperless/Renamed [P4].pdf', 'sam');
+		$this->file('/sam/files/Shared/Of jamie [P2].pdf', 'jamie');
+		$tester = $this->tester(
+			$this->documents([['id' => 1]], 5, [1, 2, 3, 4, 5]),
+			$this->documents([]),
+			$this->documents([['id' => 1, 'owner' => 5], ['id' => 2, 'owner' => 6], ['id' => 3, 'owner' => null], ['id' => 4, 'owner' => 5], ['id' => 5, 'owner' => 5]]),
+			$this->answer(200, self::USERS),
+		);
+
+		self::assertSame(Command::SUCCESS, $tester->execute([]));
+
+		self::assertSame(
+			"✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.\n"
+			. "✓ The account of the API token may change no document, and may view correspondents, document types and tags.\n"
+			. "✓ The archive account is archive, the account of Paperless Sync.\n"
+			. "! Coverage: 3 of 5 Paperless document(s) have a file of the archive account or of the user of their owner. Without one: 2, 4.\n"
+			. self::NO_SHARES,
+			$tester->getDisplay(),
+		);
+		self::assertSame(['ordering' => 'id', 'page' => 1, 'page_size' => 1000, 'fields' => 'id,owner'], $this->requests[3][1]['query']);
+		self::assertSame('https://paperless.example.com/api/users/', $this->requests[4][0]);
+	}
+
+	/**
+	 * A user of Nextcloud whose ID is a number, as some directories of users give them,
+	 * counts as any other.
+	 */
+	public function testCountsTheFilesOfAUserWhoseIdIsANumber(): void {
+		$this->connected('');
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.ownership'] = 'per-user';
+		$this->file('/1234/files/Paperless/Own [P1].pdf', '1234');
+		$tester = $this->tester(
+			$this->documents([['id' => 1]], 1, [1]),
+			$this->documents([]),
+			$this->documents([['id' => 1, 'owner' => 7]]),
+			$this->answer(200, '{"count":1,"next":null,"results":[{"id":7,"username":"1234"}]}'),
+		);
+
+		self::assertSame(Command::SUCCESS, $tester->execute([]));
+
+		self::assertStringContainsString("✓ Coverage: 1 of 1 Paperless document(s) have a file of the archive account or of the user of their owner.\n", $tester->getDisplay());
+	}
+
+	/**
+	 * The users of Paperless that Paperless refused a moment ago, before the account got
+	 * View for Users, would rest for ten minutes: the check asks for them anew, so that it
+	 * tells what the search finds now, and the search does too from then on.
+	 */
+	public function testAsksAgainForTheUsersThatPaperlessRefusedBefore(): void {
+		$this->connected('');
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.ownership'] = 'per-user';
+		$this->file('/jamie/files/Paperless/Own [P1].pdf', 'jamie');
+		$this->cache = new MemoryCache(static fn (): int => 0);
+		$resting = 'users-resting-' . hash('sha256', 'https://paperless.example.com TEST_VALUE');
+		$this->cache->set($resting, true, 600);
+		$tester = $this->tester(
+			$this->documents([['id' => 1]], 1, [1]),
+			$this->documents([]),
+			$this->documents([['id' => 1, 'owner' => 5]]),
+			$this->answer(200, self::USERS),
+		);
+
+		self::assertSame(Command::SUCCESS, $tester->execute([]));
+
+		self::assertStringContainsString("✓ Coverage: 1 of 1 Paperless document(s) have a file of the archive account or of the user of their owner.\n", $tester->getDisplay());
+		self::assertNull($this->cache->get($resting));
+	}
+
+	/**
+	 * When the owners of the documents don't come, as from a Paperless that doesn't answer
+	 * in time, the check can't look through the files of the users: it counts the files of
+	 * the archive account alone, says so, and passes.
+	 */
+	public function testCountsOnlyTheArchiveAccountWithoutTheOwnersOfTheDocuments(): void {
+		$this->connected('');
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.ownership'] = 'per-user';
+		$this->file('/jamie/files/Paperless/Own [P1].pdf', 'jamie');
+		$tester = $this->tester(
+			$this->documents([['id' => 1]], 1, [1]),
+			$this->documents([]),
+			new RuntimeException('cURL error 28: Operation timed out after 10000 milliseconds'),
+		);
+
+		self::assertSame(Command::SUCCESS, $tester->execute([]));
+
+		self::assertStringContainsString("! Coverage: 0 of 1 Paperless document(s) have a file of the archive account. Without one: 1. Paperless Sync puts the documents of each user into their own files, which this count leaves out.\n", $tester->getDisplay());
+	}
+
+	/**
+	 * Once the check could look through the files of the owners, not one document with a
+	 * file in either place is the mistake that it is there to find: the search shows no
+	 * document, and the check fails.
+	 */
+	public function testFailsWhenNoDocumentHasAFileOfTheArchiveAccountOrOfItsOwner(): void {
+		$this->connected('');
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.ownership'] = 'per-user';
+		$this->file('/sam/files/Paperless/Renamed [P1].pdf', 'sam');
+		$tester = $this->tester(
+			$this->documents([['id' => 1]], 2, [1, 2]),
+			$this->documents([]),
+			$this->documents([['id' => 1, 'owner' => 5], ['id' => 2, 'owner' => 6]]),
+			$this->answer(200, self::USERS),
+		);
+
+		self::assertSame(Command::FAILURE, $tester->execute([], ['capture_stderr_separately' => true]));
+
+		self::assertStringContainsString("! Coverage: 0 of 2 Paperless document(s) have a file of the archive account or of the user of their owner. Without one: 1, 2.\n", $tester->getDisplay());
+		self::assertStringContainsString('No document of Paperless has a file of the archive account archive or of the user of its owner, so the search shows no Paperless documents.', $tester->getErrorOutput());
 	}
 
 	/**
@@ -180,7 +329,12 @@ final class CheckTest extends TestCase {
 		$this->settings['paperless_sync.target_user'] = 'archive';
 		$this->settings['paperless_sync.ownership'] = 'per-user';
 		$this->privileges = $this->uiSettings(['view_document', 'view_correspondent', 'view_documenttype', 'view_tag']);
-		$tester = $this->tester($this->documents([['id' => 1]], 2, [1, 2]));
+		$tester = $this->tester(
+			$this->documents([['id' => 1]], 2, [1, 2]),
+			$this->documents([]),
+			$this->documents([['id' => 1, 'owner' => 5], ['id' => 2, 'owner' => 6]]),
+			$this->answer(403, '{"detail":"You do not have permission to perform this action."}'),
+		);
 
 		self::assertSame(Command::SUCCESS, $tester->execute([]));
 
@@ -329,12 +483,38 @@ final class CheckTest extends TestCase {
 	}
 
 	/**
+	 * A question for what the account may do that gets no answer in time, or no answer of
+	 * Paperless, says nothing about the account: the check says that it can't tell this
+	 * time, without the permission that it doesn't lack, keeps the warnings of the last
+	 * test for the overview, and passes.
+	 */
+	public function testSaysWhenPaperlessDoesNotAnswerWhatTheAccountOfTheTokenMayDo(): void {
+		$this->connected();
+		$this->file('/archive/files/Paperless/Document [P1].pdf');
+		$this->settings[AppConstants::APP_ID . '.token_warnings'] = 'changes_documents';
+		$this->privileges = new RuntimeException('cURL error 28: Operation timed out after 3000 milliseconds');
+		$tester = $this->tester($this->documents([['id' => 1]], 1, [1]));
+
+		self::assertSame(Command::SUCCESS, $tester->execute([]));
+
+		self::assertStringContainsString(
+			"✓ Paperless 3.3.0 (API 10) answers at https://paperless.example.com.\n"
+			. "! Paperless didn't answer in time, or not as Paperless does, what the account of the API token may do, so the check can't tell this time whether it may change documents, and the overview keeps the warnings of the last test. Run the check again.\n"
+			. "✓ The archive account is archive.\n",
+			$tester->getDisplay(),
+		);
+		self::assertSame('changes_documents', $this->settings[AppConstants::APP_ID . '.token_warnings']);
+	}
+
+	/**
 	 * Paperless tells what the account may do only when it may view its UI settings; the
-	 * check says that it can't tell, and passes.
+	 * check says that it can't tell, and passes. The warnings of an earlier test belong to
+	 * an account that has changed since, so the overview forgets them.
 	 */
 	public function testSaysWhenPaperlessDoesNotTellWhatTheAccountOfTheTokenMayDo(): void {
 		$this->connected();
 		$this->file('/archive/files/Paperless/Document [P1].pdf');
+		$this->settings[AppConstants::APP_ID . '.token_warnings'] = 'superuser';
 		$this->privileges = $this->answer(403, '{"detail":"You do not have permission to perform this action."}');
 		$tester = $this->tester($this->documents([['id' => 1]], 1, [1]));
 
@@ -346,6 +526,7 @@ final class CheckTest extends TestCase {
 			. "✓ The archive account is archive.\n",
 			$tester->getDisplay(),
 		);
+		self::assertArrayNotHasKey(AppConstants::APP_ID . '.token_warnings', $this->settings);
 	}
 
 	public function testFailsWithoutAnArchiveAccount(): void {
@@ -457,17 +638,24 @@ final class CheckTest extends TestCase {
 	}
 
 	private function command(IResponse|Throwable ...$answers): Check {
-		$accounts = $this->accounts('archive', 'sam');
+		$accounts = $this->accounts('archive', 'sam', 'jamie', '1234');
 		$configService = $this->configService($accounts);
+		$paperlessApi = $this->paperlessApi($configService, $this->paperless(...$answers));
+		$cacheFactory = null;
+		if ($this->cache !== null) {
+			$cacheFactory = $this->createStub(ICacheFactory::class);
+			$cacheFactory->method('createDistributed')->willReturn($this->cache);
+		}
 
 		return new Check(
 			$configService,
-			$this->paperlessApi($configService, $this->paperless(...$answers)),
+			$paperlessApi,
 			new NextcloudFileLocator($this->rootFolder(), $this->createStub(LoggerInterface::class)),
 			$this->diagnostics(),
 			$accounts,
 			$this->messages(),
 			$this->archiveShares(),
+			$this->documentOwners($paperlessApi, $configService, $accounts, $cacheFactory),
 		);
 	}
 }

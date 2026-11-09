@@ -24,12 +24,17 @@ final class PaperlessStatus {
 	 * @param ?list<TokenWarning> $tokenWarnings the warnings about the account of the
 	 *                                           token, null when Paperless doesn't say
 	 *                                           what it may do
+	 * @param bool $privilegesRefused whether Paperless refused to say what the account may
+	 *                                do, with HTTP 403, as to an account that may
+	 *                                not view its UI settings, rather than failing to
+	 *                                answer the question in time or with JSON
 	 */
 	public function __construct(
 		public readonly ?PaperlessVersion $version,
 		public readonly int $documents,
 		public readonly ?array $documentIds = null,
 		public readonly ?array $tokenWarnings = null,
+		public readonly bool $privilegesRefused = false,
 	) {
 	}
 }

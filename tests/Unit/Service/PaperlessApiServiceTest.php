@@ -1216,53 +1216,107 @@ final class PaperlessApiServiceTest extends TestCase {
 
 	/**
 	 * A test of the stored settings after which Paperless doesn't say what the account of
-	 * the token may do keeps the warnings that an earlier test found, and one that finds
-	 * none forgets them.
+	 * the token may do, as when the question gets no answer in time or not one of JSON,
+	 * keeps the warnings that an earlier test found, and one that finds none forgets them.
+	 *
+	 * @return array<string, array{?int, ?string}>
 	 */
-	public function testProbingTheSettingsKeepsTheWarningsWhenPaperlessDoesNotSay(): void {
-		$privileges = $this->response(403, '{"detail":"You do not have permission to perform this action."}');
+	public static function passingFailures(): array {
+		return [
+			'no answer in time' => [null, null],
+			'an error of the server' => [500, '<html>Internal Server Error</html>'],
+			'a page of HTML' => [200, '<!doctype html><title>Sign in</title>'],
+		];
+	}
+
+	#[DataProvider('passingFailures')]
+	public function testProbingTheSettingsKeepsTheWarningsWhenPaperlessDoesNotAnswer(?int $status, ?string $body): void {
+		$answered = false;
 		$client = $this->createStub(IClient::class);
-		$client->method('get')->willReturnCallback(function (string $url) use (&$privileges): IResponse {
-			return str_ends_with($url, '/api/documents/') ? $this->response(200, self::NO_DOCUMENTS) : $privileges;
+		$client->method('get')->willReturnCallback(function (string $url) use (&$answered, $status, $body): IResponse {
+			if (str_ends_with($url, '/api/documents/')) {
+				return $this->response(200, self::NO_DOCUMENTS);
+			}
+			if ($answered) {
+				return $this->response(200, self::VIEWER);
+			}
+			if ($status === null) {
+				throw new RuntimeException('cURL error 28: Operation timed out after 3000 milliseconds');
+			}
+
+			return $this->response($status, $body);
 		});
 		$this->config->seed(AppConstants::APP_ID, 'token_warnings', 'staff', true);
 		$service = $this->service($client);
 
-		self::assertNull($service->probeTheSettings()->tokenWarnings);
+		$probed = $service->probeTheSettings();
+		self::assertNull($probed->tokenWarnings);
+		self::assertFalse($probed->privilegesRefused);
 		self::assertSame('staff', $this->config->stored(AppConstants::APP_ID, 'token_warnings'));
 
-		$privileges = $this->response(200, self::VIEWER);
+		$answered = true;
 		self::assertSame([], $service->probeTheSettings()->tokenWarnings);
 		self::assertNull($this->config->stored(AppConstants::APP_ID, 'token_warnings'));
 	}
 
 	/**
-	 * @return array<string, array{int, ?string, ?list<TokenWarning>}>
+	 * A test after which Paperless refuses to say what the account may do forgets the
+	 * warnings of an earlier one: the account may no longer view its UI settings, so it is
+	 * no longer the superuser that they warn about, and they belong to an account that has
+	 * changed since.
+	 *
+	 * @return array<string, array{int}>
+	 */
+	public static function refusals(): array {
+		return [
+			'HTTP 403' => [403],
+		];
+	}
+
+	#[DataProvider('refusals')]
+	public function testProbingTheSettingsForgetsTheWarningsWhenPaperlessRefusesToSay(int $status): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(fn (string $url): IResponse => str_ends_with($url, '/api/documents/')
+			? $this->response(200, self::NO_DOCUMENTS)
+			: $this->response($status, '{"detail":"You do not have permission to perform this action."}'));
+		$this->config->seed(AppConstants::APP_ID, 'token_warnings', 'superuser', true);
+
+		$probed = $this->service($client)->probeTheSettings();
+
+		self::assertNull($probed->tokenWarnings);
+		self::assertTrue($probed->privilegesRefused);
+		self::assertNull($this->config->stored(AppConstants::APP_ID, 'token_warnings'));
+	}
+
+	/**
+	 * @return array<string, array{int, ?string, ?list<TokenWarning>, bool}>
 	 */
 	public static function privileges(): array {
 		return [
-			'an account that may only view' => [200, self::VIEWER, []],
-			'a superuser' => [200, self::SUPERUSER, [TokenWarning::Superuser]],
+			'an account that may only view' => [200, self::VIEWER, [], false],
+			'a superuser' => [200, self::SUPERUSER, [TokenWarning::Superuser], false],
 			// Paperless answers it only to an account that may view its UI settings.
-			'an account that may not view its UI settings' => [403, '{"detail":"You do not have permission to perform this action."}', null],
-			'a Paperless without the list, or a proxy that hides it' => [404, '{"detail":"Not found."}', null],
-			'a refusal with the answer of a superuser' => [500, self::SUPERUSER, null],
-			'another answer of success' => [204, self::SUPERUSER, null],
-			'a page of HTML' => [200, '<!doctype html><title>Sign in</title>', null],
-			'an answer without the permissions' => [200, '{"user":{"is_superuser":true}}', null],
-			'no answer at all' => [200, null, null],
+			'an account that may not view its UI settings' => [403, '{"detail":"You do not have permission to perform this action."}', null, true],
+			// A proxy that doesn't pass the page on says nothing of the account.
+			'a proxy that hides the list' => [404, '{"detail":"Not found."}', null, false],
+			'a refusal with the answer of a superuser' => [500, self::SUPERUSER, null, false],
+			'another answer of success' => [204, self::SUPERUSER, null, false],
+			'a page of HTML' => [200, '<!doctype html><title>Sign in</title>', null, false],
+			'an answer without the permissions' => [200, '{"user":{"is_superuser":true}}', null, false],
+			'no answer at all' => [200, null, null, false],
+			'a token that Paperless no longer takes' => [401, '{"detail":"Invalid token."}', null, false],
 		];
 	}
 
 	/**
 	 * After Paperless has answered the test of the connection, the test asks what the
-	 * account of the token may do; whatever answer doesn't say leaves it unknown, and the
-	 * test passes either way.
+	 * account of the token may do; whatever answer doesn't say leaves it unknown, only HTTP
+	 * 403 is a refusal to say, and the test passes either way.
 	 *
 	 * @param ?list<TokenWarning> $warnings
 	 */
 	#[DataProvider('privileges')]
-	public function testTheProbeNamesWhatTheAccountOfTheTokenMayDo(int $status, ?string $body, ?array $warnings): void {
+	public function testTheProbeNamesWhatTheAccountOfTheTokenMayDo(int $status, ?string $body, ?array $warnings, bool $refused): void {
 		$client = $this->createStub(IClient::class);
 		$client->method('get')->willReturnCallback(fn (string $url): IResponse => str_ends_with($url, '/api/documents/')
 			? $this->response(200, self::NO_DOCUMENTS, self::PAPERLESS_3)
@@ -1272,6 +1326,7 @@ final class PaperlessApiServiceTest extends TestCase {
 
 		self::assertSame('3.3.0', $probed->version?->version);
 		self::assertSame($warnings, $probed->tokenWarnings);
+		self::assertSame($refused, $probed->privilegesRefused);
 	}
 
 	/**
@@ -1672,6 +1727,58 @@ final class PaperlessApiServiceTest extends TestCase {
 
 		self::assertSame([5 => 'jamie', 8 => 'Sam'], $this->service($client)->findUsers());
 		self::assertSame([['page' => 1, 'page_size' => 1000], ['page' => 2, 'page_size' => 1000]], $queries);
+	}
+
+	/**
+	 * The check of occ reads the owner of every document, page by page by their numbers,
+	 * ordered by ID, with only the fields id and owner, one try each and no place in the
+	 * history of the problems of the search.
+	 */
+	public function testTheOwnersOfTheDocumentsComePageByPageByTheirNumbers(): void {
+		$queries = [];
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options) use (&$queries): IResponse {
+			self::assertSame('https://paperless.example.com/api/documents/', $url);
+			self::assertSame(10, $options['timeout']);
+			$queries[] = $options['query'];
+
+			return $this->response(200, (string)json_encode($options['query']['page'] === 1
+				? ['count' => 1001, 'next' => 'https://elsewhere.example.com/api/documents/?page=2', 'results' => [['id' => 1, 'owner' => 5], 'no document', ['id' => 2, 'owner' => null]]]
+				: ['count' => 1001, 'next' => null, 'results' => [['id' => 1001, 'owner' => 6]]]));
+		});
+
+		self::assertSame([['id' => 1, 'owner' => 5], ['id' => 2, 'owner' => null], ['id' => 1001, 'owner' => 6]], $this->service($client)->findDocumentOwners());
+		self::assertSame([
+			['ordering' => 'id', 'page' => 1, 'page_size' => 1000, 'fields' => 'id,owner'],
+			['ordering' => 'id', 'page' => 2, 'page_size' => 1000, 'fields' => 'id,owner'],
+		], $queries);
+	}
+
+	/**
+	 * More documents than a hundred pages hold are more than the check reads.
+	 */
+	public function testMoreDocumentsThanTheCheckReadsAreNone(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::exactly(100))->method('get')->willReturnCallback(
+			fn (): IResponse => $this->response(200, '{"count":200000,"next":"https://paperless.example.com/api/documents/?page=101","results":[]}'),
+		);
+
+		$this->expectException(PaperlessRequestException::class);
+		$this->expectExceptionMessage('Paperless lists more than 100000 documents.');
+
+		$this->service($client)->findDocumentOwners();
+	}
+
+	/**
+	 * A request that fails fails them all, without a second try: no search waits for it.
+	 */
+	public function testTheOwnersOfTheDocumentsGetOneTry(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())->method('get')->willThrowException(new RuntimeException('cURL error 7: Failed to connect'));
+
+		$this->expectException(RuntimeException::class);
+
+		$this->service($client)->findDocumentOwners();
 	}
 
 	/**

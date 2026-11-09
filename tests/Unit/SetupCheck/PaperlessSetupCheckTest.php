@@ -256,15 +256,16 @@ final class PaperlessSetupCheckTest extends TestCase {
 
 	/**
 	 * Paperless Sync can give each user the documents that their user of Paperless owns or
-	 * may view as files of their own, which the search doesn't show, and nothing said so
-	 * (#338). The overview says what the search still shows and links what to do, also with
+	 * may view as files of their own, of which the search shows the copies of the owners
+	 * alone, and nothing said so (#338). The overview says what the search still shows and
+	 * links what to do, also with
 	 * the warnings about the token, which it would hide for as long as the archives for each
 	 * user stay.
 	 *
 	 * @return array<string, array{string, string, string}>
 	 */
 	public static function archivesForEachUser(): array {
-		$perUser = "Paperless Sync puts the documents of each user into their own files, which the search doesn't show: it shows only the files of the archive account, such as the documents without an owner in Paperless.";
+		$perUser = "Paperless Sync also puts copies of the documents that each user may view in Paperless into their own files, which the search doesn't show: it shows the files of the archive account and of the owner of each document.";
 
 		return [
 			'each user, those they own or may view' => ['per-user-shared', '', $perUser],
@@ -305,20 +306,21 @@ final class PaperlessSetupCheckTest extends TestCase {
 	/**
 	 * The files of each owner count only when the account of the token may view the users
 	 * of Paperless (decision 0013): the overview warns when it may not, and only while
-	 * Paperless Sync gives each owner an archive, which needs them.
+	 * Paperless Sync gives each owner an archive, which needs them, also with the documents
+	 * that each user may view.
 	 *
-	 * @return array<string, array{string, string}>
+	 * @return array<string, array{string, string, bool}>
 	 */
 	public static function usersThatTheTokenCanNotSee(): array {
 		return [
-			'each user, those they own' => ['per-user', SetupResult::WARNING],
-			'each user, those they own or may view' => ['per-user-shared', SetupResult::WARNING],
-			'the target user, all of them' => ['single', SetupResult::SUCCESS],
+			'each user, those they own' => ['per-user', SetupResult::WARNING, true],
+			'each user, those they own or may view' => ['per-user-shared', SetupResult::WARNING, true],
+			'the target user, all of them' => ['single', SetupResult::SUCCESS, false],
 		];
 	}
 
 	#[DataProvider('usersThatTheTokenCanNotSee')]
-	public function testWarnsAboutUsersThatTheTokenCanNotSeeOnlyForTheArchivesOfEachOwner(string $ownership, string $severity): void {
+	public function testWarnsAboutUsersThatTheTokenCanNotSeeOnlyForTheArchivesOfEachOwner(string $ownership, string $severity, bool $warns): void {
 		$this->connected('');
 		$this->settings['paperless_sync.target_user'] = 'archive';
 		$this->settings['paperless_sync.ownership'] = $ownership;
@@ -327,7 +329,7 @@ final class PaperlessSetupCheckTest extends TestCase {
 		$result = $this->check()->run();
 
 		self::assertSame($severity, $result->getSeverity());
-		self::assertSame($ownership === 'per-user', str_contains($result->getDescription(), 'may not view users'), $result->getDescription());
+		self::assertSame($warns, str_contains($result->getDescription(), 'may not view users'), $result->getDescription());
 	}
 
 	#[DataProvider('archivesOfOneAccount')]

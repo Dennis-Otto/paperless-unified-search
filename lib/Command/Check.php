@@ -15,6 +15,7 @@ use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
 use OCA\PaperlessUnifiedSearch\Model\PaperlessStatus;
 use OCA\PaperlessUnifiedSearch\Service\ArchiveShares;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
+use OCA\PaperlessUnifiedSearch\Service\DocumentOwners;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
@@ -25,17 +26,20 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
+use Throwable;
 
 /**
  * occ paperless_unified_search:check: everything that the search needs, in one go. The
  * connection to Paperless, what the account of the API token may do, the archive account,
- * with a warning when Paperless Sync gives each user an archive of their own, which the
- * search doesn't show, how many documents of Paperless have a file of the archive
- * account, which the search can show, and with whom the archive account shares its
+ * with a warning when Paperless Sync gives each user copies of the documents that they may
+ * view, which the search doesn't show, how many documents of Paperless have a file of the
+ * archive account, or of the user of their owner when Paperless Sync gives each owner an
+ * archive, which the search can show, and with whom the archive account shares its
  * files, with a warning for each share that allows changes. It exits with 1 when the
  * search can show no document at all, also when no document has a file, and with 0
  * otherwise: an account that may do more or less than the search needs gets a warning,
- * and the search works with it, as it does with the archives for each user.
+ * and the search works with it, as it does with the copies for the users who may view a
+ * document.
  */
 final class Check extends Command {
 	use ReportsProblems;
@@ -52,6 +56,7 @@ final class Check extends Command {
 		private IUserManager $userManager,
 		private SettingsMessages $messages,
 		private ArchiveShares $archiveShares,
+		private DocumentOwners $documentOwners,
 	) {
 		parent::__construct();
 	}
@@ -59,7 +64,7 @@ final class Check extends Command {
 	protected function configure(): void {
 		$this->setName('paperless_unified_search:check')
 			->setDescription('Check the connection to Paperless-ngx, the API token, the archive account, how many documents have a file and how the archive is shared')
-			->setHelp('Tests the connection to Paperless, warns when the account of the API token may change documents or may not view correspondents, document types and tags, checks that the archive account exists, warns when Paperless Sync puts the documents of each user into their own files, which the search does not show, compares the documents of Paperless with the files of the archive account whose names carry their markers, such as [P412], and lists with whom the archive account shares its files, with a warning for each share that allows changes. Exits with 1 when the search can show no Paperless document, and with 0 otherwise.');
+			->setHelp('Tests the connection to Paperless, warns when the account of the API token may change documents or may not view correspondents, document types and tags, checks that the archive account exists, warns when Paperless Sync also puts the documents that each user may view into their own files, which the search does not show, compares the documents of Paperless with the files whose names carry their markers, such as [P412], of the archive account and, when Paperless Sync gives each user the documents that they own, of the user of their owner, and lists with whom the archive account shares its files, with a warning for each share that allows changes. Exits with 1 when the search can show no Paperless document, and with 0 otherwise.');
 	}
 
 	protected function execute(InputInterface $input, OutputInterface $output): int {
@@ -104,7 +109,9 @@ final class Check extends Command {
 	 */
 	private function checkTheToken(OutputInterface $output, PaperlessStatus $status): void {
 		if ($status->tokenWarnings === null) {
-			self::noted($output, 'Paperless doesn\'t say what the account of the API token may do, so the check can\'t tell whether it may change documents. Give the account the permission View for UI Settings in Paperless, so that the check can tell.');
+			self::noted($output, $status->privilegesRefused
+				? 'Paperless doesn\'t say what the account of the API token may do, so the check can\'t tell whether it may change documents. Give the account the permission View for UI Settings in Paperless, so that the check can tell.'
+				: 'Paperless didn\'t answer in time, or not as Paperless does, what the account of the API token may do, so the check can\'t tell this time whether it may change documents, and the overview keeps the warnings of the last test. Run the check again.');
 
 			return;
 		}
@@ -143,16 +150,18 @@ final class Check extends Command {
 	/**
 	 * Compares the documents of Paperless with the files of the archive account: by their
 	 * IDs where Paperless lists them, and else only by their number. When Paperless Sync
-	 * gives each owner an archive, the files of the users count too, which the comparison
-	 * doesn't look through, so the documents without a file of the archive account may have
-	 * one there.
+	 * gives each owner an archive, the files of the user of the owner of each document count
+	 * too, as for the search: the comparison looks through them where Paperless names the
+	 * owners of the documents and its users, and otherwise says that it leaves them out, so
+	 * that the documents without a file of the archive account may have one there.
 	 *
 	 * @return bool whether the search can show a document, or Paperless has none to show
 	 */
 	private function checkTheCoverage(OutputInterface $output, PaperlessStatus $status, IUser $archive): bool {
 		$archived = $this->fileLocator->findArchivedDocumentIds($archive);
 		$eachOwner = $this->configService->hasArchivesOfEachOwner();
-		$others = $eachOwner ? ' Paperless Sync puts the documents of each user into their own files, which this count leaves out.' : '';
+		$owned = $eachOwner && $status->documentIds !== null && $status->documentIds !== [] ? $this->findTheFilesOfTheOwners() : null;
+		$others = $eachOwner && $owned === null ? ' Paperless Sync puts the documents of each user into their own files, which this count leaves out.' : '';
 		if ($status->documentIds === null) {
 			self::noted($output, sprintf(
 				'Coverage: %s document(s) have a file of the archive account; Paperless has %s document(s), without naming them.%s',
@@ -164,9 +173,14 @@ final class Check extends Command {
 			return self::showsDocuments($output, $archive, $eachOwner || $archived !== [] || $status->documents === 0);
 		}
 
-		$missing = array_diff($status->documentIds, $archived);
+		$missing = array_diff($status->documentIds, $archived, $owned ?? []);
 		$covered = count($status->documentIds) - count($missing);
-		$coverage = sprintf('Coverage: %s of %s Paperless document(s) have a file of the archive account.', number_format($covered), number_format(count($status->documentIds)));
+		$coverage = sprintf(
+			'Coverage: %s of %s Paperless document(s) have a file of the archive account%s.',
+			number_format($covered),
+			number_format(count($status->documentIds)),
+			$owned === null ? '' : ' or of the user of their owner',
+		);
 		if ($missing === []) {
 			self::passed($output, $coverage);
 		} else {
@@ -186,7 +200,47 @@ final class Check extends Command {
 			));
 		}
 
-		return self::showsDocuments($output, $archive, $eachOwner || $covered > 0 || $status->documentIds === []);
+		return self::showsDocuments($output, $archive, $others !== '' || $covered > 0 || $status->documentIds === [], $owned !== null);
+	}
+
+	/**
+	 * The documents that have a file of the user whom Paperless Sync gives their owner, in
+	 * the folders of that user, as the search finds them (decision 0013), or null when the
+	 * check can't tell: when Paperless names no users, or not the owners of its documents.
+	 * The users of Paperless come anew, not from the cache, so that the check tells what
+	 * the search finds now, also right after the account got View for Users.
+	 *
+	 * @return ?list<int>
+	 */
+	private function findTheFilesOfTheOwners(): ?array {
+		try {
+			$documents = $this->paperlessApi->findDocumentOwners();
+		} catch (Throwable) {
+			// Such as a request without answer, or more documents than the check reads.
+			return null;
+		}
+		$this->documentOwners->forget();
+		$accounts = $this->documentOwners->accountsOf($documents);
+		if ($accounts === null) {
+			return null;
+		}
+
+		// Each user once; PHP would turn the key of an ID such as 1234 into a number.
+		$users = [];
+		foreach ($accounts as $account) {
+			$users[$account->getUID()] = $account;
+		}
+		$owned = [];
+		foreach ($users as $account) {
+			$uid = $account->getUID();
+			foreach ($this->fileLocator->findArchivedDocumentIds($account) as $documentId) {
+				if (isset($accounts[$documentId]) && $accounts[$documentId]->getUID() === $uid) {
+					$owned[] = $documentId;
+				}
+			}
+		}
+
+		return $owned;
 	}
 
 	/**
@@ -194,13 +248,15 @@ final class Check extends Command {
 	 * archive account exists, the mistake that the check is above all there to find.
 	 *
 	 * @param bool $shows whether a document has a file, or Paperless has none
+	 * @param bool $ofTheOwners whether the files of the users of the owners counted as well
 	 * @return bool the same, for the exit code of the check
 	 */
-	private static function showsDocuments(OutputInterface $output, IUser $archive, bool $shows): bool {
+	private static function showsDocuments(OutputInterface $output, IUser $archive, bool $shows, bool $ofTheOwners = false): bool {
 		if (!$shows) {
 			self::error($output, sprintf(
-				'No document of Paperless has a file of the archive account %s, so the search shows no Paperless documents. Name the account that owns the synchronized files with occ paperless_unified_search:setup --archive-account, and check that their names carry the markers of the documents, such as [P412].',
+				'No document of Paperless has a file of the archive account %s%s, so the search shows no Paperless documents. Name the account that owns the synchronized files with occ paperless_unified_search:setup --archive-account, and check that their names carry the markers of the documents, such as [P412].',
 				$archive->getUID(),
+				$ofTheOwners ? ' or of the user of its owner' : '',
 			));
 		}
 

@@ -22,7 +22,7 @@ OC.L10N.register(
 		'Paperless Sync: %s — leave blank to use it': 'Paperless Sync：%s——留空即使用此账号',
 		'User ID of the account that owns the synchronized files': '拥有已同步文件的账号的用户 ID',
 		'The archive account %s does not exist.': '归档账号 %s 不存在。',
-		'Paperless Sync puts the documents of each user into their own files, which the search doesn\'t show: it shows only the files of the archive account, such as the documents without an owner in Paperless.': 'Paperless Sync 会把每个用户的文档放进其自己的文件中，而搜索不会显示这些文件：搜索只显示归档账号的文件，例如在 Paperless 中没有所有者的文档。',
+		'Paperless Sync also puts copies of the documents that each user may view in Paperless into their own files, which the search doesn\'t show: it shows the files of the archive account and of the owner of each document.': 'Paperless Sync 还会把每个用户在 Paperless 中有权查看的文档的副本放进其自己的文件中，而搜索不会显示这些副本：搜索显示归档账号的文件和每个文档所有者的文件。',
 		'What you can do': '你可以怎么做',
 		'Paperless Unified Search is not connected to Paperless.': 'Paperless Unified Search 尚未连接到 Paperless。',
 		'A search failed on %s while looking for the files of the documents in Nextcloud, and none has worked since. Search problems in {section} shows what failed.': '一次搜索于 %s 在 Nextcloud 中查找文档的文件时失败，此后再没有搜索成功过。{section} 中的“搜索问题”会显示失败的内容。',

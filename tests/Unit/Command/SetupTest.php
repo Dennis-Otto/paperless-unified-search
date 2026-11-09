@@ -13,9 +13,12 @@ use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Command\Setup;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppServices;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryCache;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\Owners;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\SearchAccountPaperless;
 use OCP\Http\Client\IResponse;
 use OCP\Http\Client\LocalServerException;
+use OCP\ICacheFactory;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
@@ -27,6 +30,10 @@ use Throwable;
 final class SetupTest extends TestCase {
 	use Accounts;
 	use AppServices;
+	use Owners;
+
+	/** The cache of the users of Paperless, when a test fills it before the set-up. */
+	private ?MemoryCache $cache = null;
 	use SearchAccountPaperless;
 
 	private const ENVIRONMENT_VARIABLE = 'PAPERLESS_UNIFIED_SEARCH_TEST_TOKEN';
@@ -94,6 +101,23 @@ final class SetupTest extends TestCase {
 		// the names of its newest documents, of which these name none.
 		self::assertSame('http://paperless:8000/api/ui_settings/', $this->requests[1][0]);
 		self::assertSame('http://paperless:8000/api/documents/', $this->requests[2][0]);
+	}
+
+	/**
+	 * As the settings page, the set-up ends the rest of the users of Paperless that it
+	 * refused a moment ago, before the account got View for Users: the search asks for them
+	 * anew, also with the same token.
+	 */
+	public function testSavingEndsTheRestOfTheUsersThatPaperlessRefused(): void {
+		$this->cache = new MemoryCache(static fn (): int => 1791500000);
+		$this->cache->set('users-resting-' . hash('sha256', 'https://paperless.example.com TEST_VALUE'), true, 600);
+		$tester = $this->tester($this->documents([]));
+		$tester->setInputs(['TEST_VALUE']);
+
+		$status = $tester->execute(['--url' => 'https://paperless.example.com', '--token-stdin' => true, '--archive-account' => 'archive'], ['capture_stderr_separately' => true]);
+
+		self::assertSame(Command::SUCCESS, $status, $tester->getErrorOutput());
+		self::assertSame([], $this->cache->values());
 	}
 
 	/**
@@ -297,7 +321,7 @@ final class SetupTest extends TestCase {
 
 		self::assertSame([
 			'Paperless answers at https://paperless.example.com. The settings are saved.',
-			"Warning: Paperless Sync puts the documents of each user into their own files, which the search doesn't show: it shows only the files of the archive account, such as the documents without an owner in Paperless. See https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html#paperless-sync-gives-each-user-their-own-archive",
+			"Warning: Paperless Sync also puts copies of the documents that each user may view in Paperless into their own files, which the search doesn't show: it shows the files of the archive account and of the owner of each document. See https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html#paperless-sync-gives-each-user-their-own-archive",
 			'Archive account: archive, the account of Paperless Sync',
 		], array_slice(self::lines($tester->getDisplay()), 0, 3));
 	}
@@ -392,11 +416,18 @@ final class SetupTest extends TestCase {
 	}
 
 	private function command(IResponse|Throwable ...$answers): Setup {
-		$configService = $this->configService($this->accounts('archive', 'alex'));
+		$accounts = $this->accounts('archive', 'alex');
+		$configService = $this->configService($accounts);
 
 		$client = $this->paperless(...$answers);
+		$api = $this->paperlessApi($configService, $client);
+		$cacheFactory = null;
+		if ($this->cache !== null) {
+			$cacheFactory = $this->createStub(ICacheFactory::class);
+			$cacheFactory->method('createDistributed')->willReturn($this->cache);
+		}
 
-		return new Setup($configService, $this->paperlessApi($configService, $client), $this->messages(), $this->searchAccountSetup($client));
+		return new Setup($configService, $api, $this->messages(), $this->searchAccountSetup($client), $this->documentOwners($api, $configService, $accounts, $cacheFactory));
 	}
 
 	/**

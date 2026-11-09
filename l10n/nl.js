@@ -22,7 +22,7 @@ OC.L10N.register(
 		'Paperless Sync: %s — leave blank to use it': 'Paperless Sync: %s — laat leeg om dit te gebruiken',
 		'User ID of the account that owns the synchronized files': 'Gebruikers-ID van het account dat eigenaar is van de gesynchroniseerde bestanden',
 		'The archive account %s does not exist.': 'Het archiefaccount %s bestaat niet.',
-		'Paperless Sync puts the documents of each user into their own files, which the search doesn\'t show: it shows only the files of the archive account, such as the documents without an owner in Paperless.': 'Paperless Sync zet de documenten van elke gebruiker in diens eigen bestanden, die de zoekfunctie niet toont: die toont alleen de bestanden van het archiefaccount, zoals de documenten zonder eigenaar in Paperless.',
+		'Paperless Sync also puts copies of the documents that each user may view in Paperless into their own files, which the search doesn\'t show: it shows the files of the archive account and of the owner of each document.': 'Paperless Sync zet ook kopieën van de documenten die elke gebruiker in Paperless mag bekijken in diens eigen bestanden, die de zoekfunctie niet toont: die toont de bestanden van het archiefaccount en die van de eigenaar van elk document.',
 		'What you can do': 'Wat je kunt doen',
 		'Paperless Unified Search is not connected to Paperless.': 'Paperless Unified Search is niet verbonden met Paperless.',
 		'A search failed on %s while looking for the files of the documents in Nextcloud, and none has worked since. Search problems in {section} shows what failed.': 'Een zoekopdracht is op %s mislukt bij het zoeken naar de bestanden van de documenten in Nextcloud, en sindsdien heeft er geen meer gewerkt. “Zoekproblemen” in {section} laat zien wat er mislukte.',

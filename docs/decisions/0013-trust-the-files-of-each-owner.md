@@ -4,7 +4,7 @@ description: "Why a file of the user whom Paperless Sync gives the owner of a do
 
 # Trust the files of the user of each owner, for that owner's documents alone
 
-- Status: accepted, amends [0002](0002-trust-the-archive-account.md)
+- Status: accepted, amends [0002](0002-trust-the-archive-account.md), amended by [0014](0014-count-the-copies-of-the-owners-and-check-them.md)
 - Date: 2026-11-08
 
 ## Context

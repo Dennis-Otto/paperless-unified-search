@@ -29,9 +29,9 @@ final class PublicConfig implements JsonSerializable {
 	 *                                          the connection found it
 	 * @param bool $newDocumentAlerts users may ask for a notification about new documents,
 	 *                                in their personal settings
-	 * @param bool $perUserArchives Paperless Sync gives each user an archive of their own
-	 *                              while the archive account is its target user, which
-	 *                              the search doesn't show
+	 * @param bool $perUserArchives Paperless Sync also gives each user copies of the
+	 *                              documents that they may view, while the archive account
+	 *                              is its target user, which the search doesn't show
 	 */
 	public function __construct(
 		public readonly string $url,

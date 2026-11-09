@@ -405,6 +405,7 @@ final class TrySearchTest extends TestCase {
 		$api = $this->paperlessApi($configService, $this->paperless(...($answer === null ? [] : [$answer, ...$more])));
 		$cacheFactory = $this->createStub(ICacheFactory::class);
 		$cacheFactory->method('createDistributed')->willReturn(new MemoryCache(static fn (): int => 1791500000));
+		$owners = $this->documentOwners($api, $configService, $accounts, $cacheFactory);
 
 		return new SettingsController(
 			AppConstants::APP_ID,
@@ -415,12 +416,13 @@ final class TrySearchTest extends TestCase {
 			$this->messages(),
 			$l10n,
 			$logger ?? $this->createStub(LoggerInterface::class),
-			new SearchExplainer($locator, $accounts, $this->documentOwners($api, $configService, $accounts, $cacheFactory)),
+			new SearchExplainer($locator, $accounts, $owners),
 			$accounts,
 			$session,
 			$this->events ?? $this->createStub(IEventDispatcher::class),
 			new PaperlessNames($api, $configService, $cacheFactory, $this->createStub(LoggerInterface::class)),
 			new SearchAccountSetup($this->createStub(IClientService::class), $this->createStub(ISecureRandom::class), $this->createStub(IAppManager::class)),
+			$owners,
 		);
 	}
 
