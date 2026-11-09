@@ -284,6 +284,8 @@ final class CreateAccountTest extends TestCase {
 			}
 		};
 
+		$owners = $this->documentOwners($api, $configService, $accounts);
+
 		return new SettingsController(
 			AppConstants::APP_ID,
 			$this->createStub(IRequest::class),
@@ -293,12 +295,13 @@ final class CreateAccountTest extends TestCase {
 			$this->messages(),
 			$l10n,
 			$logger,
-			new SearchExplainer(new NextcloudFileLocator($this->createStub(IRootFolder::class), $logger), $accounts, $this->documentOwners($api, $configService, $accounts)),
+			new SearchExplainer(new NextcloudFileLocator($this->createStub(IRootFolder::class), $logger), $accounts, $owners),
 			$accounts,
 			$session,
 			$events,
 			new PaperlessNames($api, $configService, $this->createStub(ICacheFactory::class), $logger),
 			$this->searchAccountSetup($client),
+			$owners,
 		);
 	}
 

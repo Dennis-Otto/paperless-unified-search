@@ -29,6 +29,7 @@ from blueprint.settings import (
 from blueprint.social_preview import (
     DEFAULT_PANEL,
     PICTURE,
+    PRIVATE,
     SOURCE,
     Unreadable,
     preview,
@@ -112,7 +113,8 @@ def social_preview_uploaded(
 ) -> Step:
     """GitHub shows the uploaded picture, which only a person can upload: once the
     repository holds one, the step compares the upload with it, so that a picture that
-    changed after its upload shows as well. Without one, an upload is enough."""
+    changed after its upload shows as well. Without one, an upload is enough. A
+    private repository shows no social preview: its step waits until it is public."""
     page = settings_page(repo)
     upload = f"upload {PICTURE} under Settings → General → Social preview: {page}"
     try:
@@ -124,12 +126,13 @@ def social_preview_uploaded(
             f"Couldn't read the uploaded picture ({error}). Compare it with {PICTURE},"
             f" or {upload}",
         )
+    title = "Social preview uploaded and current"
     if not found.picture:
-        return Step(
-            "Social preview uploaded (bash scripts/social-preview.sh renders it)",
-            found.uploaded,
-            page,
-        )
+        title = "Social preview uploaded (bash scripts/social-preview.sh renders it)"
+    if not found.public:
+        return Step(title, None, f"{PRIVATE}: once it is public, {upload}")
+    if not found.picture:
+        return Step(title, found.uploaded, page)
     how = ""
     if not found.fits:
         how = (
@@ -141,7 +144,7 @@ def social_preview_uploaded(
         how = f"GitHub shows a card of its own: {upload}"
     elif not found.current:
         how = f"The uploaded picture is not {PICTURE} of this checkout: {upload}"
-    return Step("Social preview uploaded and current", found.current, how)
+    return Step(title, found.current, how)
 
 
 def best_practices(readme: str) -> list[Step]:

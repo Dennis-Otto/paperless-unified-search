@@ -14,6 +14,7 @@ use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppServices;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryCache;
 use OCP\Http\Client\IResponse;
+use OCP\ICache;
 use OCP\ICacheFactory;
 use OCP\IGroupManager;
 use OCP\IUser;
@@ -93,6 +94,18 @@ final class DocumentOwnersTest extends TestCase {
 	}
 
 	/**
+	 * With the documents that each user may view as well, Paperless Sync still gives the
+	 * owner of each document a copy, which stands for it by the same rules; the copies of the
+	 * users who may only view it don't, since only its permissions in Paperless tell who
+	 * they are.
+	 */
+	public function testWithTheDocumentsThatEachUserMayViewTheCopiesOfTheOwnersCount(): void {
+		$this->settings['paperless_sync.ownership'] = 'per-user-shared';
+
+		self::assertSame([1 => 'jamie', 2 => 'sam'], $this->owners($this->users(self::USERS))->of([['id' => 1, 'owner' => 5], ['id' => 2, 'owner' => 6]]));
+	}
+
+	/**
 	 * Only while Paperless Sync gives each user the documents that their owner owns, and the
 	 * archive account is its target user, do the files of the owners count.
 	 *
@@ -101,8 +114,8 @@ final class DocumentOwnersTest extends TestCase {
 	public static function otherArchives(): array {
 		return [
 			'the target user, all of them' => ['single', ''],
-			'each user, also those they may view' => ['per-user-shared', ''],
 			'another archive account' => ['per-user', 'jamie'],
+			'another archive account, also with the documents that each user may view' => ['per-user-shared', 'jamie'],
 		];
 	}
 
@@ -112,7 +125,23 @@ final class DocumentOwnersTest extends TestCase {
 		$this->settings['paperless_sync.ownership'] = $ownership;
 
 		self::assertSame([], $this->owners()->of([['id' => 1, 'owner' => 5]]));
+		self::assertSame([], $this->owners()->accountsOf([['id' => 1, 'owner' => 5]]));
 		self::assertSame([], $this->requests);
+	}
+
+	/**
+	 * occ paperless_unified_search:check needs the accounts of the users, and to know when
+	 * Paperless named no users, which leaves it unable to look through their files: no
+	 * users are none, unknown users are null.
+	 */
+	public function testTheAccountsOfTheOwnersAreUnknownWithoutTheUsersOfPaperless(): void {
+		$accounts = $this->owners($this->users(self::USERS))->accountsOf([['id' => 1, 'owner' => 5], ['id' => 3, 'owner' => 8]]);
+		self::assertSame([1], array_keys($accounts ?? []));
+		self::assertSame('jamie', $accounts[1]->getUID());
+
+		$this->storedToken = 'OTHER_TEST_VALUE';
+		self::assertNull($this->owners($this->answer(403, '{"detail":"You do not have permission to perform this action."}'))->accountsOf([['id' => 1, 'owner' => 5]]));
+		self::assertSame([], $this->owners()->accountsOf([['id' => 1, 'owner' => null]]));
 	}
 
 	/**
@@ -263,6 +292,43 @@ final class DocumentOwnersTest extends TestCase {
 		self::assertCount(2, $this->requests);
 	}
 
+	/**
+	 * After the administrator gave the account View for Users, a save of the settings with
+	 * the same token, or occ paperless_unified_search:check, ends the rest of the refused
+	 * list at once (forget()), and so do changed usernames, which the cache would keep for
+	 * ten minutes. The users of another token stay.
+	 */
+	public function testForgettingEndsTheRestOfARefusedListAtOnce(): void {
+		$owners = $this->owners($this->answer(403, '{"detail":"You do not have permission to perform this action."}'), $this->users(self::USERS), $this->users([['id' => 5, 'username' => 'sam']]));
+		$this->cache()->set('users-other', [5 => 'alex']);
+
+		self::assertSame([], $owners->of([['id' => 1, 'owner' => 5]]));
+		$owners->forget();
+		self::assertSame([1 => 'jamie'], $owners->of([['id' => 1, 'owner' => 5]]));
+		$owners->forget();
+		self::assertSame([1 => 'sam'], $owners->of([['id' => 1, 'owner' => 5]]));
+		self::assertCount(3, $this->requests);
+		self::assertSame([5 => 'alex'], $this->cache()->get('users-other'));
+	}
+
+	/**
+	 * A cache that fails while it forgets only leaves the users until they expire: the save
+	 * of the settings and the check go on.
+	 */
+	public function testACacheThatFailsToForgetLeavesTheUsers(): void {
+		$cache = $this->createStub(ICache::class);
+		$cache->method('remove')->willThrowException(new RuntimeException('Redis is gone'));
+		$this->cache = null;
+		$cacheFactory = $this->createStub(ICacheFactory::class);
+		$cacheFactory->method('createDistributed')->willReturn($cache);
+
+		$this->ownersWith([], cacheFactory: $cacheFactory)->forget();
+
+		self::assertSame('warning', $this->logged[0][0]);
+		self::assertStringContainsString('could not be removed from the cache', $this->logged[0][1]);
+		self::assertSame(RuntimeException::class, $this->logged[0][2]['errorType']);
+	}
+
 	public function testAnAnswerThatIsNoListRestsForAMinute(): void {
 		$owners = $this->owners($this->answer(502, '<html>Bad gateway</html>'), $this->users(self::USERS));
 
@@ -305,12 +371,14 @@ final class DocumentOwnersTest extends TestCase {
 	/**
 	 * @param list<IResponse|Throwable> $answers
 	 */
-	private function ownersWith(array $answers, ?IUserManager $accounts = null, ?IGroupManager $groups = null): DocumentOwners {
+	private function ownersWith(array $answers, ?IUserManager $accounts = null, ?IGroupManager $groups = null, ?ICacheFactory $cacheFactory = null): DocumentOwners {
 		// The settings find the archive account among the users of the test, whatever $accounts finds.
 		$configService = $this->configService($this->accounts('archive'));
 		$accounts ??= $this->accounts('archive', 'jamie', 'sam', 'alex');
-		$cacheFactory = $this->createStub(ICacheFactory::class);
-		$cacheFactory->method('createDistributed')->willReturn($this->cache());
+		if ($cacheFactory === null) {
+			$cacheFactory = $this->createStub(ICacheFactory::class);
+			$cacheFactory->method('createDistributed')->willReturn($this->cache());
+		}
 		$logger = $this->createStub(LoggerInterface::class);
 		foreach (['info', 'warning'] as $level) {
 			$logger->method($level)->willReturnCallback(function (string $message, array $context) use ($level): void {

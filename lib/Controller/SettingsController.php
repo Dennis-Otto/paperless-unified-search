@@ -17,6 +17,7 @@ use OCA\PaperlessUnifiedSearch\Exception\SearchAccountUnfinished;
 use OCA\PaperlessUnifiedSearch\Model\Explanation;
 use OCA\PaperlessUnifiedSearch\Model\PublicConfig;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
+use OCA\PaperlessUnifiedSearch\Service\DocumentOwners;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
 use OCA\PaperlessUnifiedSearch\Service\SearchAccountSetup;
@@ -78,6 +79,7 @@ final class SettingsController extends Controller {
 		private IEventDispatcher $events,
 		private PaperlessNames $names,
 		private SearchAccountSetup $accountSetup,
+		private DocumentOwners $documentOwners,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -92,6 +94,8 @@ final class SettingsController extends Controller {
 	 * include Paperless in all their searches, in their personal settings, and
 	 * $newDocumentAlerts lets them ask for a notification about new documents there; a save
 	 * without one of these keeps its stored choice, so that no script turns it back on.
+	 * After a save, the search asks Paperless for its users anew, also when it refused them
+	 * a moment ago, as before the account got View for Users.
 	 *
 	 * A refusal answers the message to show, in the language of the administrator, and a
 	 * code that says what failed, such as unauthorized or invalid_url. A failed test of the
@@ -107,8 +111,10 @@ final class SettingsController extends Controller {
 			$effectiveToken = $this->configService->resolveToken($token, $normalizedUrl);
 			$owner = $this->configService->resolveArchiveOwner($archiveOwner);
 			$status = $this->paperlessApi->probe($normalizedUrl, $effectiveToken, $allowLocal);
+			$config = $this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner, $allowLocal, $status->version, $personalAlwaysSearch ?? $this->configService->isPersonalAlwaysSearchAllowed(), $status->tokenWarnings, $newDocumentAlerts);
+			$this->documentOwners->forget();
 
-			return new JSONResponse($this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner, $allowLocal, $status->version, $personalAlwaysSearch ?? $this->configService->isPersonalAlwaysSearchAllowed(), $status->tokenWarnings, $newDocumentAlerts));
+			return new JSONResponse($config);
 		} catch (InvalidSettingException $exception) {
 			return $this->refusal($this->messages->forSetting($exception->problem, trim($archiveOwner)), $exception->problem->value);
 		} catch (PaperlessRequestException $exception) {

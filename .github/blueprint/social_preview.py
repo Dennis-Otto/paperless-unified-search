@@ -7,7 +7,7 @@ of links only once a person uploads it again. GitHub serves the uploaded file by
 byte at the `openGraphImageUrl` of the repository: right after an upload, the sha256
 of that download is the sha256 of the committed picture, and it differs once the
 picture changes and nobody uploads it. The checklist and the bot-health bot compare
-the two.
+the two, in a public repository: GitHub shows the social preview of no private one.
 """
 
 from __future__ import annotations
@@ -46,6 +46,14 @@ TIMEOUT = 30
 # the requests to GitHub's API do, so that one bad answer doesn't fail the nightly look.
 ATTEMPTS = 2
 PAUSE = 5
+# GitHub shares the uploaded picture only from a public repository, and takes a new
+# upload in a private one only where someone uploaded one before: until the repository
+# is public, nobody sees the picture, so the bots compare nothing and download no
+# upload that GitHub may serve to no one without a token.
+PRIVATE = (
+    "The repository is private, and GitHub shows the social preview only for a public"
+    " repository"
+)
 
 
 class Unreadable(Exception):
@@ -62,6 +70,8 @@ class Preview:
     shown: str = ""
     # Whether GitHub takes the committed picture at all: an upload is at most 1 MB.
     fits: bool = True
+    # Whether GitHub shows the social preview at all: only for a public repository.
+    public: bool = True
 
     @property
     def current(self) -> bool:
@@ -118,19 +128,20 @@ def preview(
     opener: Callable[..., Any] | None = None,
 ) -> Preview:
     """The committed picture and the uploaded one; the upload is read only when there
-    is a picture to compare it with."""
+    is a picture to compare it with, in a public repository."""
     owner, name = repo.split("/", 1)
     data = api.graphql(
         f'{{ repository(owner: "{owner}", name: "{name}") '
-        "{ usesCustomOpenGraphImage openGraphImageUrl } }"
+        "{ isPrivate usesCustomOpenGraphImage openGraphImageUrl } }"
     )["repository"]
     uploaded = bool(data["usesCustomOpenGraphImage"])
+    public = not data["isPrivate"]
     path = root / PICTURE
     data_of_picture = path.read_bytes() if path.is_file() else b""
     picture = digest(data_of_picture) if path.is_file() else ""
     fits = len(data_of_picture) <= LARGEST
-    if not (picture and uploaded):
-        return Preview(picture, uploaded, fits=fits)
+    if not (picture and uploaded and public):
+        return Preview(picture, uploaded, fits=fits, public=public)
     return Preview(
         picture,
         uploaded,

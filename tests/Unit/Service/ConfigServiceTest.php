@@ -163,8 +163,9 @@ final class ConfigServiceTest extends TestCase {
 	 * Since its version 1.1.0, Paperless Sync can give each user the documents of their user
 	 * of Paperless as files of their own: with its choices of Each user, and only while the
 	 * archive account is its target user, whose files the search shows. With the documents
-	 * that each user owns, the files of the users count as well (decision 0013); with those
-	 * that each user may view, they don't, which the settings say (#338). Without the
+	 * that each user owns, the files of the users count as well (decision 0013), and so do
+	 * the copies of the owners with those that each user may view, whose other copies don't,
+	 * which the settings say (#338). Without the
 	 * setting, as before Paperless Sync 1.1.0, or with a choice that this version doesn't
 	 * know, its target user gets every document. It stores the setting as a lazy value, as
 	 * all its settings.
@@ -175,9 +176,9 @@ final class ConfigServiceTest extends TestCase {
 		return [
 			'the target user, all of them' => ['single', '', 'sync', false, false],
 			'each user, those they own' => ['per-user', '', 'sync', false, true],
-			'each user, those they own or may view' => ['per-user-shared', '', 'sync', true, false],
+			'each user, those they own or may view' => ['per-user-shared', '', 'sync', true, true],
 			'each user, with blanks' => [' per-user ', '', 'sync', false, true],
-			'each user, also those they may view, with blanks' => [' per-user-shared ', '', 'sync', true, false],
+			'each user, also those they may view, with blanks' => [' per-user-shared ', '', 'sync', true, true],
 			'no choice, as before Paperless Sync 1.1.0' => [null, '', 'sync', false, false],
 			'a choice that this version does not know' => ['per-group', '', 'sync', false, false],
 			'each user, with its target user as the archive account' => ['per-user', 'Sync', 'sync', false, true],

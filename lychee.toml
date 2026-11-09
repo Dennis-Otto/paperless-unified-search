@@ -58,4 +58,16 @@ exclude = [
   '^https://cwe\.mitre\.org/',
 ]
 
-exclude_path = ["CHANGELOG.md", "LICENSES", "node_modules", "vendor", ".venv", "build", "dist", "template"]
+# The documents that the check doesn't read. lychee searches the path of a document, as
+# its arguments name it, such as ./docs/guide.md, for each regular expression anywhere
+# in it, so each one names a whole folder or file: a bare word such as "template" left
+# out every document whose name holds it, such as docs/decisions/0000-template.md (#749).
+exclude_path = [
+  # The changelog, with the links of release-please to each commit and comparison.
+  '(^|/)CHANGELOG\.md$',
+  # The texts of the licenses, and the folders of the dependencies and of a build.
+  '(^|/)(LICENSES|node_modules|vendor|\.venv|build|dist)/',
+  # template/ of the blueprint, whose links hold the answers of a project until a
+  # repository made from it renders them; such a repository has no folder of the name.
+  '^(\./)?template/',
+]

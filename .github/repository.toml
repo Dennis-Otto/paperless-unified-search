@@ -55,7 +55,6 @@ allowed_actions = "selected"
 github_owned_allowed = true
 verified_allowed = false
 patterns_allowed = [
-  "anchore/sbom-action@*",
   # Run by the reusable workflow of the issue assistant.
   "anthropics/claude-code-action@*",
   "astral-sh/setup-uv@*",

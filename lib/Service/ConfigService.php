@@ -60,9 +60,10 @@ final class ConfigService {
 	/**
 	 * Paperless Sync gives each user of Nextcloud the documents of their user of Paperless as
 	 * files of their own with these choices of its setting Who gets the documents, Each user:
-	 * per-user since its version 1.1.0, which the search shows (decision 0013), and
-	 * per-user-shared since 1.4.0, also with the documents that their user of Paperless may
-	 * view, which it doesn't; with single, the target user gets every document.
+	 * per-user since its version 1.1.0, with those that their user owns, which the search
+	 * shows (decision 0013), and per-user-shared since 1.4.0, also with those that their user
+	 * may view, of which the search shows the copies of the owners alone; with single, the
+	 * target user gets every document.
 	 */
 	private const SYNC_OWNERSHIP_KEY = 'ownership';
 	private const SYNC_PER_USER = 'per-user';
@@ -176,15 +177,16 @@ final class ConfigService {
 	}
 
 	/**
-	 * Whether Paperless Sync gives each user the documents of their user of Paperless as
-	 * files of their own, with the documents that their user may view as well, while the
-	 * archive account is its target user, which the search doesn't show: it shows only the
-	 * files of the archive account, which then holds the documents that Paperless Sync gives
-	 * no user of their own, such as those without an owner in Paperless. With another
-	 * archive account, the files of Paperless Sync don't count either way. Without the
-	 * setting, as before Paperless Sync 1.1.0, or with a choice that this version doesn't
-	 * know, the target user gets every document; with the documents of each owner alone,
-	 * the search shows them (hasArchivesOfEachOwner()).
+	 * Whether Paperless Sync gives each user of Nextcloud the documents that their user of
+	 * Paperless may view as files of their own as well, while the archive account is its
+	 * target user, whose copies the search doesn't show: a copy counts only for the owner of
+	 * its document, as hasArchivesOfEachOwner() says, and who else may view a document only
+	 * its permissions in Paperless tell. So a user finds a document that they may only view
+	 * through a file of its owner or of the archive account, which holds the documents that
+	 * Paperless Sync gives no user of their own, such as those without an owner in
+	 * Paperless. With another archive account, the files of Paperless Sync don't count
+	 * either way. Without the setting, as before Paperless Sync 1.1.0, or with a choice
+	 * that this version doesn't know, the target user gets every document.
 	 */
 	public function hasPerUserArchives(): bool {
 		return $this->perUserArchives($this->getArchiveOwnerSetting(), $this->getSyncAccount());
@@ -192,12 +194,12 @@ final class ConfigService {
 
 	/**
 	 * Whether Paperless Sync gives each user the documents that their user of Paperless owns
-	 * as files of their own, while the archive account is its target user: then the files of
-	 * the user whom Paperless Sync gives the owner of a document stand for it as well
-	 * (decision 0013).
+	 * as files of their own, with those that it may view or not, while the archive account
+	 * is its target user: then the files of the user whom Paperless Sync gives the owner of a
+	 * document stand for it as well (decision 0013).
 	 */
 	public function hasArchivesOfEachOwner(): bool {
-		return $this->syncOwnership($this->getArchiveOwnerSetting(), $this->getSyncAccount()) === self::SYNC_PER_USER;
+		return $this->syncOwnership($this->getArchiveOwnerSetting(), $this->getSyncAccount()) !== '';
 	}
 
 	/**
@@ -362,14 +364,18 @@ final class ConfigService {
 
 	/**
 	 * Stores the warnings that a test of the connection with the stored settings found.
-	 * A test after which Paperless didn't say what the account may do keeps the stored
-	 * ones, as an answer without a version keeps the stored version.
+	 * A test after which Paperless didn't say what the account may do, as when the question
+	 * got no answer in time, keeps the stored ones, as an answer without a version keeps the
+	 * stored version. One that Paperless refused to answer forgets them: the account may
+	 * not view its UI settings, so it is no superuser, and what an earlier test found
+	 * belongs to an account that has changed since.
 	 *
 	 * @param ?list<TokenWarning> $warnings null when Paperless didn't say
+	 * @param bool $refused whether Paperless refused to say what the account may do
 	 */
-	public function rememberTokenWarnings(?array $warnings): void {
-		if ($warnings !== null) {
-			$this->storeTokenWarnings($warnings);
+	public function rememberTokenWarnings(?array $warnings, bool $refused = false): void {
+		if ($warnings !== null || $refused) {
+			$this->storeTokenWarnings($warnings ?? []);
 		}
 	}
 
@@ -633,9 +639,9 @@ final class ConfigService {
 	}
 
 	/**
-	 * Whether Paperless Sync gives each user an archive of their own that the search doesn't
-	 * show, with the documents that their user of Paperless may view, while the archive
-	 * account, $owner as the settings store it or else $syncAccount, is its target user.
+	 * Whether Paperless Sync gives each user copies of the documents that their user of
+	 * Paperless may view, which the search doesn't show, while the archive account, $owner
+	 * as the settings store it or else $syncAccount, is its target user.
 	 */
 	private function perUserArchives(string $owner, string $syncAccount): bool {
 		return $this->syncOwnership($owner, $syncAccount) === self::SYNC_PER_USER_SHARED;

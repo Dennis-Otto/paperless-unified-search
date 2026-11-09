@@ -170,7 +170,7 @@ final class AdminSettingsTest extends TestCase {
 
 		self::assertInstanceOf(PublicConfig::class, $params['config']);
 		self::assertTrue($params['config']->perUserArchives);
-		self::assertSame("Paperless Sync puts the documents of each user into their own files, which the search doesn't show: it shows only the files of the archive account, such as the documents without an owner in Paperless.", $params['perUserArchives']);
+		self::assertSame("Paperless Sync also puts copies of the documents that each user may view in Paperless into their own files, which the search doesn't show: it shows the files of the archive account and of the owner of each document.", $params['perUserArchives']);
 		self::assertSame($help, $params['perUserArchivesHelp']);
 	}
 
