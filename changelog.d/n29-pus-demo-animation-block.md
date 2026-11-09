@@ -1,0 +1,3 @@
+### Bug fixes
+
+- **The job that opens the pull request of the demo animation reaches GitHub alone.** It holds the private key of the release app, whose token may write the contents of the repository, yet Harden-Runner only recorded where it connected. Now it blocks every host but GitHub's API, `github.com` and the receiver of the artifacts, the hosts that its runs reached, and it runs without `sudo` and Docker, which could lift the block. It and the four weekly jobs that open issues now also stop when Harden-Runner doesn't block, as in GitHub's outage of 8 November 2026, instead of reaching every host.
