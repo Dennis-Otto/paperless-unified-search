@@ -212,6 +212,26 @@ jobs:
           HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
+          # GitHub answers a call now and then with an error of its own, a 5xx, or not in
+          # time, and for minutes in an outage, as on 8 November 2026: each call of gh
+          # tries again then, four times in all, 10, 20 and 40 seconds apart, with what
+          # it printed only once it worked. Any other error, such as a refusal, stops it
+          # at once; the last one stays in $RUNNER_TEMP/gh-errors.
+          tried() {
+            local wait output
+            for wait in 10 20 40 0; do
+              if output="$("$@" 2>"$RUNNER_TEMP/gh-errors")"; then
+                printf '%s\n' "$output"
+                return 0
+              fi
+              if ((wait == 0)) || ! grep -qiE 'HTTP 5[0-9]{2}|timeout|timed out|connection reset|unexpected EOF' "$RUNNER_TEMP/gh-errors"; then
+                cat "$RUNNER_TEMP/gh-errors" >&2
+                return 1
+              fi
+              echo "GitHub failed, so gh tries again in $wait seconds: $(head -n 1 "$RUNNER_TEMP/gh-errors")" >&2
+              sleep "$wait"
+            done
+          }
           # The jobs of an attempt that failed or ran out of time, by name, given the
           # conclusion of the attempt: GitHub cancels a job at its time limit and says
           # so in an annotation. An attempt that a newer run cancelled broke nothing; it
@@ -221,7 +241,7 @@ jobs:
           # only the jobs it names.
           broken() {
             local jobs id conclusion name messages found=""
-            jobs="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$1/jobs" --paginate \
+            jobs="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$1/jobs" --paginate \
               --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | [.id, .conclusion, .name] | @tsv')" ||
               return 1
             while IFS=$'\t' read -r -u 4 id conclusion name; do
@@ -229,7 +249,7 @@ jobs:
                 continue
               fi
               if [[ "$conclusion" == cancelled ]]; then
-                messages="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$id/annotations" --paginate --jq '.[].message')" ||
+                messages="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$id/annotations" --paginate --jq '.[].message')" ||
                   return 1
                 if grep -q "higher priority waiting request" <<<"$messages"; then
                   return 0
@@ -256,13 +276,13 @@ jobs:
           # can't be read, the jobs run once more.
           superseded() {
             local ids id messages
-            ids="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$1/jobs" --paginate \
+            ids="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$1/jobs" --paginate \
               --jq '.jobs[] | select(.conclusion == "cancelled") | .id')" || return 1
             while read -r -u 5 id; do
               if [[ -z "$id" ]]; then
                 continue
               fi
-              messages="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$id/annotations" --paginate --jq '.[].message')" ||
+              messages="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$id/annotations" --paginate --jq '.[].message')" ||
                 return 1
               if grep -q "higher priority waiting request" <<<"$messages"; then
                 return 0
@@ -270,7 +290,7 @@ jobs:
             done 5<<<"$ids"
             return 1
           }
-          candidates="$(gh api --header "$API_VERSION_HEADER" --method GET "repos/$GH_REPO/actions/workflows/$WORKFLOW/runs" \
+          candidates="$(tried gh api --header "$API_VERSION_HEADER" --method GET "repos/$GH_REPO/actions/workflows/$WORKFLOW/runs" \
             -f branch="$BRANCH" -f event="$EVENT" -f status=completed -f per_page=30 \
             --jq ".workflow_runs | map(select(.id < $RUN and .head_sha != \"$SHA\" and .head_repository.full_name == \"$HEAD_REPO\")) | .[:5][] | [.id, .conclusion] | @tsv" ||
             true)"
@@ -291,7 +311,14 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          gh run rerun "$RUN" --failed
+          # A person or a try before may have started it again already, which is fine.
+          if ! tried gh run rerun "$RUN" --failed; then
+            if grep -q "already running" "$RUNNER_TEMP/gh-errors"; then
+              echo "The failed jobs of $NAME run once more already." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            exit 1
+          fi
           echo "The failed jobs of $NAME run once more: a flaky test passes now." >> "$GITHUB_STEP_SUMMARY"
       - name: Wait until Harden-Runner has removed Docker
         # Harden-Runner removes Docker with apt-get in the background; a job that ends
@@ -397,6 +424,20 @@ jobs:
               printf '–'
             fi
           }
+          # A text on one line for a warning of the run, which keeps no control
+          # character and escapes each percent sign, the start of an escape of the
+          # runner's, as %25, which the run shows as a percent sign again.
+          plain() {
+            printf '%s' "$1" | tr '\000-\037\177' ' ' | sed 's/%/%25/g'
+          }
+          # A log keeps the colors of the commands that its steps ran. Since v2.97.0,
+          # gh api prints a raw answer with such escape sequences only with
+          # --allow-escape-sequences, and fails without it; an older gh knows no such
+          # option and prints the log as it is.
+          allow=()
+          if [[ "$(gh help api)" == *--allow-escape-sequences* ]]; then
+            allow=(--allow-escape-sequences)
+          fi
           # Each job that failed in the first attempt, or ran out of time there, with
           # the step that broke, its tests and the first error that it reported. An
           # attempt that a newer run cancelled, as one that the bot for cancelled checks
@@ -423,8 +464,13 @@ jobs:
             if [[ "$conclusion" == cancelled ]] && ! grep -q "has exceeded the maximum execution time" <<<"$errors"; then
               continue
             fi
-            log="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/jobs/$id/logs" 2>/dev/null |
-              sed -E 's/\x1b\[[0-9;]*m//g; s/^[0-9-]+T[0-9:.]+Z //')"
+            # A log that GitHub doesn't give, such as that of a job that never started,
+            # leaves the row without its tests, and a warning of the run says why.
+            if ! log="$(gh api --header "$API_VERSION_HEADER" "${allow[@]}" "repos/$GH_REPO/actions/jobs/$id/logs" 2> "$RUNNER_TEMP/log-error")"; then
+              echo "::warning::The log of the job $(plain "$name") couldn't be read, so the report names none of its tests: $(plain "$(head -n 1 "$RUNNER_TEMP/log-error")")"
+              log=""
+            fi
+            log="$(sed -E 's/\x1b\[[0-9;]*m//g; s/^[0-9-]+T[0-9:.]+Z //' <<<"$log")"
             # The tests that pytest names in the log. Other tests, such as those of a
             # browser, write the marker and the name of each test or step as it starts:
             # the one that the log names last before its first error failed, and the

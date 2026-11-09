@@ -330,6 +330,25 @@ jobs:
           gh api --header "$API_VERSION_HEADER" -H "Accept: application/vnd.github.raw+json" \
             "repos/$GITHUB_REPOSITORY/contents/.github/sign-tag.sh?ref=$GITHUB_SHA" > "$RUNNER_TEMP/sign-tag.sh"
           bash "$RUNNER_TEMP/sign-tag.sh" verify "$TAG" "$SHA"
+      # The tools of the build from their releases, checked by their sha256: syft for
+      # the SBOMs and krankerl for a Nextcloud app. .github/download.sh of the commit
+      # that runs this workflow, as above, downloads them through the API with the token
+      # of the job, which survives an outage of GitHub's downloads without a token
+      # (decision 0133), before the checkout and in a step of its own, so that no step
+      # that builds the project has the token.
+      - name: Download the tools of the build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --header "$API_VERSION_HEADER" -H "Accept: application/vnd.github.raw+json" \
+            "repos/$GITHUB_REPOSITORY/contents/.github/download.sh?ref=$GITHUB_SHA" > "$RUNNER_TEMP/download.sh"
+          bash "$RUNNER_TEMP/download.sh" anchore/syft "v$SBOM_SYFT_VERSION" \
+            "syft_${SBOM_SYFT_VERSION}_linux_amd64.tar.gz" "$RUNNER_TEMP/syft.tar.gz" "$SBOM_SYFT_SHA256"
+          if [[ "$PUBLISH_TO" == nextcloud-appstore ]]; then
+            bash "$RUNNER_TEMP/download.sh" ChristophWurst/krankerl "v$KRANKERL_VERSION" \
+              "krankerl_${KRANKERL_VERSION}_amd64.deb" "$RUNNER_TEMP/krankerl.deb" "$KRANKERL_SHA256"
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.tag }}
@@ -458,10 +477,9 @@ jobs:
           echo "app-id=$app_id" >> "$GITHUB_OUTPUT"
           # Each download tries again after a passing error of the network or of its
           # server, which would otherwise leave the release a draft. A release builds
-          # without the cache of the checks.
-          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
-            --connect-timeout 15 --max-time 300 --output "$RUNNER_TEMP/krankerl.deb" \
-            "https://github.com/ChristophWurst/krankerl/releases/download/v$KRANKERL_VERSION/krankerl_${KRANKERL_VERSION}_amd64.deb"
+          # without the cache of the checks: krankerl comes from the step that downloads
+          # the tools, and is checked again here, as the checks check the one of their
+          # cache.
           echo "$KRANKERL_SHA256  $RUNNER_TEMP/krankerl.deb" | sha256sum --check --strict
           sudo dpkg --install "$RUNNER_TEMP/krankerl.deb"
           krankerl package
@@ -625,9 +643,7 @@ jobs:
           SYFT_CHECK_FOR_APP_UPDATE: "false"
         run: |
           set -euo pipefail
-          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
-            --connect-timeout 15 --max-time 300 --output "$RUNNER_TEMP/syft.tar.gz" \
-            "https://github.com/anchore/syft/releases/download/v$SBOM_SYFT_VERSION/syft_${SBOM_SYFT_VERSION}_linux_amd64.tar.gz"
+          # From the step that downloads the tools, and checked again.
           echo "$SBOM_SYFT_SHA256  $RUNNER_TEMP/syft.tar.gz" | sha256sum --check --strict
           mkdir -p "$RUNNER_TEMP/syft"
           tar --extract --gzip --file "$RUNNER_TEMP/syft.tar.gz" --directory "$RUNNER_TEMP/syft" syft

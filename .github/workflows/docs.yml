@@ -20,8 +20,8 @@ name: Docs
 # locked tools of .github/a11y/: on a pull request those that differ from main, by the
 # digest that main keeps in the cache, and on main and every week every page. A serious
 # or critical violation fails the check, unless .github/a11y-accepted.toml accepts it
-# with its reason. The job that publishes the website signs its provenance and asks the
-# published website for its pages.
+# with its reason. The job that publishes the website signs its provenance, and the job
+# website, which holds no token, asks the published website for its pages.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -133,7 +133,7 @@ jobs:
       # package. Its cache keeps only the wheels that it built from source, under a
       # key of the lock file: pre-built ones download faster than a cache restores
       # them.
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         if: steps.site.outputs.build == 'true'
         timeout-minutes: 5
         with:
@@ -214,14 +214,18 @@ jobs:
       # alone and asks no server, so a site that is down can't fail it; the Links
       # workflow checks the links to other sites every week. It runs in site/, away
       # from lychee.toml and .lycheeignore, which are the rules of those links.
+      # .github/lychee.sh downloads lychee through the API, with the token of the job,
+      # once in the job (decision 0133).
       - name: Check the links and anchors of the website
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         timeout-minutes: 5
-        with:
-          workingDirectory: site
-          args: --offline --include-fragments --root-dir ${{ runner.temp }}/address --no-progress '**/*.html'
-          output: ${{ runner.temp }}/website-links.md
+        working-directory: site
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ADDRESS: ${{ runner.temp }}/address
+        run: |
+          bash "$GITHUB_WORKSPACE/.github/lychee.sh" "$RUNNER_TEMP/website-links.md" \
+            --offline --include-fragments --root-dir "$ADDRESS" --no-progress '**/*.html'
       # llms.txt links the pages by their full addresses, which lychee leaves out with
       # --offline, so reading the file alone would check none of them: the rule of
       # blueprint.py site-check leads the addresses of the website to the files of
@@ -229,12 +233,14 @@ jobs:
       # addresses there too, which its site-check tells apart.
       - name: Check the links of the map of the website
         if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.promises.outputs.map != '' }}
-        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         timeout-minutes: 5
-        with:
-          workingDirectory: site
-          args: --offline --no-progress --remap '${{ steps.promises.outputs.map }}' llms.txt
-          output: ${{ runner.temp }}/website-map-links.md
+        working-directory: site
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAP: ${{ steps.promises.outputs.map }}
+        run: |
+          bash "$GITHUB_WORKSPACE/.github/lychee.sh" "$RUNNER_TEMP/website-map-links.md" \
+            --offline --no-progress --remap "$MAP" llms.txt
       # The checks of this project alone on its website, such as those of its
       # robots.txt, in scripts/check-site.sh, which gets the folder of the website.
       # The blueprint never writes that file, so it stays the project's own.
@@ -373,15 +379,62 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    # The address of the website, which the job website asks.
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
     permissions:
       attestations: write # keeps the signed provenance of the website
       id-token: write # proves to GitHub Pages and to Sigstore which workflow publishes
       pages: write # publishes the website
     steps:
-      - name: Record the network traffic of the job
+      - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            fulcio.sigstore.dev:443
+            rekor.sigstore.dev:443
+            *.actions.githubusercontent.com:443
+      - name: Wait until Harden-Runner lets the hosts through
+        # The runner may have asked for an address past Harden-Runner, which then blocks
+        # that address for as long as systemd-resolved keeps it, up to a minute.
+        timeout-minutes: 4
+        env:
+          HOSTS: >-
+            api.github.com:443
+            fulcio.sigstore.dev:443
+            rekor.sigstore.dev:443
+            *.actions.githubusercontent.com:443
+        run: |
+          deadline=$(($(date +%s) + 120))
+          for endpoint in $HOSTS; do
+            host="${endpoint%:*}"
+            port="${endpoint##*:}"
+            # A wildcard names no host to ask, and a job may leave out a host that keeps it
+            # waiting although none of its steps needs it at once.
+            [[ "$host" == '*.'* || " $SKIP_WAIT " == *" $endpoint "* ]] && continue
+            # Each host on its own port, by HTTP on 80 and by HTTPS on any other. Only a host
+            # that curl can't resolve, or can't reach in time, is blocked: one that answers at
+            # all, in whatever protocol, is through.
+            scheme=https
+            [[ "$port" == 80 ]] && scheme=http
+            while true; do
+              status=0
+              curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "$scheme://$host:$port/" || status=$?
+              case "$status" in
+                6 | 7 | 28) ;;
+                *) break ;;
+              esac
+              if (($(date +%s) >= deadline)); then
+                echo "::warning::Harden-Runner still blocks $endpoint after two minutes; a step that needs it will fail, and the job can run again."
+                break
+              fi
+              echo "Harden-Runner still blocks $endpoint, waiting 3 s."
+              sleep 3
+            done
+          done
       - name: Publish the website on GitHub Pages
         id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
@@ -401,6 +454,32 @@ jobs:
         timeout-minutes: 5
         with:
           subject-path: ${{ runner.temp }}/pages/artifact.tar
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
+
+  # The published website, asked by a job of its own: the job that publishes holds
+  # the tokens for GitHub Pages and Sigstore and reaches only their hosts, while this
+  # one reaches the domain of the website, which may be the repository's own, and
+  # holds no token at all.
+  website:
+    name: ask the published website
+    needs: [docs, deploy]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions: {}
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
       # The published website answers: the home page of every language with a page,
       # and an address that leads nowhere with the status 404. The servers of GitHub
       # Pages may take a moment after the deployment, so each request is tried again
@@ -408,7 +487,7 @@ jobs:
       - name: Ask the published website for its pages
         timeout-minutes: 5
         env:
-          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          PAGE_URL: ${{ needs.deploy.outputs.page_url }}
           LANGUAGES: ${{ needs.docs.outputs.languages }}
         run: |
           home="${PAGE_URL%/}/"

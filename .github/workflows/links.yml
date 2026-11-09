@@ -5,7 +5,8 @@ name: Links
 # or of a page of HTML in docs/, and every week, since sites move without a change here.
 # A pull request checks the documents that it changes, so that a site that is down for a
 # moment fails only the pull requests that link to it; one that changes the rules or
-# moves or deletes a file checks every document, as main and the weekly run do. The
+# lychee itself, such as an update of its version in .github/lychee.sh, or moves or
+# deletes a file checks every document, as main and the weekly run do. The
 # answers of the sites stay in a cache for a day. A broken link fails the check of a
 # pull request; the weekly run keeps one issue with the broken links open until they are
 # fixed, and closes it then. lychee.toml holds the rules, .lycheeignore the exceptions
@@ -25,6 +26,8 @@ on:
       - lychee.toml
       - .lycheeignore
       - .github/workflows/links.yml
+      - .github/lychee.sh
+      - .github/download.sh
   pull_request:
     paths:
       - "**/*.md"
@@ -34,6 +37,8 @@ on:
       - lychee.toml
       - .lycheeignore
       - .github/workflows/links.yml
+      - .github/lychee.sh
+      - .github/download.sh
   schedule:
     - cron: "23 5 * * 5"
   workflow_dispatch:
@@ -61,9 +66,12 @@ jobs:
       github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # The check reaches every host that the documents link to, so its token only reads;
+    # the job issue below writes the issue of broken links.
     permissions:
       contents: read
-      issues: write
+    outputs:
+      exit-code: ${{ steps.lychee.outputs.exit_code }}
     steps:
       - name: Record the network traffic of the job
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -84,12 +92,12 @@ jobs:
         run: |
           # The documents that a pull request adds or changes, since the merge base, so
           # none that only main changed, but the changelog. One that changes the rules,
-          # or moves or deletes a file that a document may link to, checks every
-          # document; no document links to a fragment of the changelog. lychee gets the
-          # names through a shell, so a name with another character checks every
-          # document too.
+          # or lychee itself in .github/lychee.sh, or moves or deletes a file that a
+          # document may link to, checks every document; no document links to a
+          # fragment of the changelog. lychee gets the names through a shell, so a name
+          # with another character checks every document too.
           if [[ "$EVENT" == pull_request ]] &&
-            [[ -z "$(git diff --name-only "origin/$BASE_REF...HEAD" -- lychee.toml .lycheeignore .github/workflows/links.yml)" ]] &&
+            [[ -z "$(git diff --name-only "origin/$BASE_REF...HEAD" -- lychee.toml .lycheeignore .github/workflows/links.yml .github/lychee.sh .github/download.sh)" ]] &&
             [[ -z "$(git diff --name-only --diff-filter=DR "origin/$BASE_REF...HEAD" -- . ':!changelog.d')" ]]; then
             mapfile -t changed < <(git diff --name-only --diff-filter=AM "origin/$BASE_REF...HEAD" -- '*.md' 'docs/*.html' ':!CHANGELOG.md' ':!changelog.d')
             if ((${#changed[@]} == 0)); then
@@ -113,22 +121,113 @@ jobs:
           path: .lycheecache
           key: lychee-${{ github.run_id }}
           restore-keys: lychee-
+      # .github/lychee.sh downloads lychee through the API, with the token of the job,
+      # which lychee takes for the links to GitHub as well (decision 0133). The weekly
+      # run keeps an issue of the broken links instead of failing.
       - name: Check the links of the documentation
         id: lychee
         if: steps.documents.outputs.files != ''
-        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
-        with:
-          args: --config lychee.toml --no-progress --cache --max-cache-age 1d ${{ steps.documents.outputs.files }}
-          output: ${{ runner.temp }}/links.md
-          fail: ${{ github.event_name != 'schedule' }}
+        timeout-minutes: 10
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          FILES: ${{ steps.documents.outputs.files }}
+          EVERY: ${{ steps.documents.outputs.every }}
+        run: |
+          options=()
+          [[ "$EVENT" != schedule ]] || options+=(--no-fail)
           # A changed document may have no link at all.
-          failIfEmpty: ${{ steps.documents.outputs.every == 'true' }}
+          [[ "$EVERY" == true ]] || options+=(--may-find-none)
+          # The names of the documents, each in quotes, as the step before wrote them,
+          # which lychee reads as patterns of its own.
+          eval "documents=($FILES)"
+          bash .github/lychee.sh "${options[@]}" "$RUNNER_TEMP/links.md" \
+            --config lychee.toml --no-progress --cache --max-cache-age 1d "${documents[@]}"
+      # The report of the weekly run, for the job issue.
+      - name: Keep the report of the broken links
+        if: github.event_name == 'schedule' && steps.lychee.outputs.exit_code != '0'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: links
+          path: ${{ runner.temp }}/links.md
+          retention-days: 1
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.toml.
+      - name: Explain the failure
+        if: failure()
+        env:
+          CHECK: links
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" coach explain "$CHECK"
+
+  # The one issue of broken links, which the weekly run keeps: a job of its own, so
+  # that only it may write issues, and it reaches only GitHub.
+  issue:
+    name: links issue
+    needs: links
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Block every host that the job doesn't need
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            results-receiver.actions.githubusercontent.com:443
+      - name: Wait until Harden-Runner lets the hosts through
+        # The runner may have asked for an address past Harden-Runner, which then blocks
+        # that address for as long as systemd-resolved keeps it, up to a minute.
+        timeout-minutes: 4
+        env:
+          HOSTS: >-
+            api.github.com:443
+            results-receiver.actions.githubusercontent.com:443
+        run: |
+          deadline=$(($(date +%s) + 120))
+          for endpoint in $HOSTS; do
+            host="${endpoint%:*}"
+            port="${endpoint##*:}"
+            # A wildcard names no host to ask, and a job may leave out a host that keeps it
+            # waiting although none of its steps needs it at once.
+            [[ "$host" == '*.'* || " $SKIP_WAIT " == *" $endpoint "* ]] && continue
+            # Each host on its own port, by HTTP on 80 and by HTTPS on any other. Only a host
+            # that curl can't resolve, or can't reach in time, is blocked: one that answers at
+            # all, in whatever protocol, is through.
+            scheme=https
+            [[ "$port" == 80 ]] && scheme=http
+            while true; do
+              status=0
+              curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "$scheme://$host:$port/" || status=$?
+              case "$status" in
+                6 | 7 | 28) ;;
+                *) break ;;
+              esac
+              if (($(date +%s) >= deadline)); then
+                echo "::warning::Harden-Runner still blocks $endpoint after two minutes; a step that needs it will fail, and the job can run again."
+                break
+              fi
+              echo "Harden-Runner still blocks $endpoint, waiting 3 s."
+              sleep 3
+            done
+          done
+      - name: Take the report of the broken links
+        if: needs.links.outputs.exit-code != '0'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: links
+          path: ${{ runner.temp }}
       - name: Keep the issue of broken links current
-        if: github.event_name == 'schedule'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          EXIT_CODE: ${{ steps.lychee.outputs.exit_code }}
+          EXIT_CODE: ${{ needs.links.outputs.exit-code }}
           REPORT: ${{ runner.temp }}/links.md
         run: |
           title="Broken links in the documentation"
@@ -148,13 +247,13 @@ jobs:
           else
             gh issue create --title "$title" --label documentation --body "$body"
           fi
-      # The PR coach: what failed, why it matters and how to fix it, in the summary
-      # of the check and as its annotation, from .github/checks.toml.
-      - name: Explain the failure
-        if: failure()
-        env:
-          CHECK: links
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
         run: |
-          script=.github/blueprint.py
-          [[ -f "$script" ]] || script=blueprint.py
-          python3 "$script" coach explain "$CHECK"
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."

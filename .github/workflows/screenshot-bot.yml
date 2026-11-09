@@ -18,7 +18,9 @@ name: Screenshots
 # (decision 0120); it can also leave hosts out of the wait, give the script a time
 # limit and name the folder that a failed shard keeps (decision 0124). It compares each picture that changed with the one of main by its
 # pixels: a picture whose pixels stayed the same keeps its file, so that a new
-# encoder, browser or runner changes nothing. When pixels changed, the job collect
+# encoder, browser or runner changes nothing; for each other one of the same size
+# and frames, it draws the changed pixels in red into diff/ of the artifact, which the
+# bot never commits (decision 0131). When pixels changed, the job collect
 # puts the shards together, and the bot keeps one pull request from the branch
 # bot/screenshots, as the release app, which merges itself once every check passes,
 # and closes it when main looks as rendered without it. When main changed a picture or
@@ -352,7 +354,7 @@ jobs:
           [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]]
           git merge-base --is-ancestor "$COMMIT" HEAD
           git checkout --quiet --detach "$COMMIT"
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         timeout-minutes: 5
         with:
           # renovate: datasource=pypi depName=uv
