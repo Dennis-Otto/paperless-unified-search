@@ -25,7 +25,7 @@ final class PaperlessStatus {
 	 *                                           token, null when Paperless doesn't say
 	 *                                           what it may do
 	 * @param bool $privilegesRefused whether Paperless refused to say what the account may
-	 *                                do, with HTTP 403 or 404, as to an account that may
+	 *                                do, with HTTP 403, as to an account that may
 	 *                                not view its UI settings, rather than failing to
 	 *                                answer the question in time or with JSON
 	 */

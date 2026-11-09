@@ -127,9 +127,10 @@ final class PaperlessApiService {
 	/**
 	 * The answers of /api/ui_settings/ with which Paperless refuses to say what the
 	 * account of the token may do: HTTP 403 to an account that may not view its UI
-	 * settings, and HTTP 404 where it hides the page.
+	 * settings. HTTP 404 is none: Paperless has just answered the documents, so it comes
+	 * from a proxy that doesn't pass the page on, for an account that may be unchanged.
 	 */
-	private const PRIVILEGES_REFUSED = [403, 404];
+	private const PRIVILEGES_REFUSED = [403];
 
 	/**
 	 * The seconds that the request for the newest documents may take in all: the
@@ -246,9 +247,8 @@ final class PaperlessApiService {
 	 * What the account of the token may do beyond what the search needs, or may not do of
 	 * what the results show, as /api/ui_settings/ of Paperless names it: the user of the
 	 * token and the permissions of its account and its groups. Paperless answers it only to
-	 * an account that may view its UI settings, and refuses it with HTTP 403 otherwise, or
-	 * with HTTP 404 where it hides the page. The warnings only add to a test that Paperless
-	 * has passed, so the request gets one try, a short time and no place in the history of
+	 * an account that may view its UI settings, and refuses it with HTTP 403 otherwise. The
+	 * warnings only add to a test that Paperless has passed, so the request gets one try, a short time and no place in the history of
 	 * the problems of the search; a refusal, a request without an answer, another answer
 	 * than HTTP 200 and one that isn't JSON leave the warnings unknown, but only a refusal
 	 * says that Paperless won't tell until the account may view its UI settings.

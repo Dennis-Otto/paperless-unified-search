@@ -1270,7 +1270,6 @@ final class PaperlessApiServiceTest extends TestCase {
 	public static function refusals(): array {
 		return [
 			'HTTP 403' => [403],
-			'HTTP 404' => [404],
 		];
 	}
 
@@ -1298,7 +1297,8 @@ final class PaperlessApiServiceTest extends TestCase {
 			'a superuser' => [200, self::SUPERUSER, [TokenWarning::Superuser], false],
 			// Paperless answers it only to an account that may view its UI settings.
 			'an account that may not view its UI settings' => [403, '{"detail":"You do not have permission to perform this action."}', null, true],
-			'a Paperless without the list, or a proxy that hides it' => [404, '{"detail":"Not found."}', null, true],
+			// A proxy that doesn't pass the page on says nothing of the account.
+			'a proxy that hides the list' => [404, '{"detail":"Not found."}', null, false],
 			'a refusal with the answer of a superuser' => [500, self::SUPERUSER, null, false],
 			'another answer of success' => [204, self::SUPERUSER, null, false],
 			'a page of HTML' => [200, '<!doctype html><title>Sign in</title>', null, false],
@@ -1311,7 +1311,7 @@ final class PaperlessApiServiceTest extends TestCase {
 	/**
 	 * After Paperless has answered the test of the connection, the test asks what the
 	 * account of the token may do; whatever answer doesn't say leaves it unknown, only HTTP
-	 * 403 and 404 are a refusal to say, and the test passes either way.
+	 * 403 is a refusal to say, and the test passes either way.
 	 *
 	 * @param ?list<TokenWarning> $warnings
 	 */
