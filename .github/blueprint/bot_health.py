@@ -33,6 +33,7 @@ from typing import Any
 from blueprint.github import Api, GitHubError, Json
 from blueprint.social_preview import (
     PICTURE,
+    PRIVATE,
     SOURCE,
     Unreadable,
     preview,
@@ -1131,8 +1132,9 @@ def preview_report(
     current: open while GitHub shows another picture, closed once it shows this one.
     A page that still shows the default panel of its kind has no picture to upload
     yet, since the checklist asks first to replace the panel, and a repository
-    without the picture has none. The line of the summary; empty when there is
-    nothing to say."""
+    without the picture has none. A private repository shows no social preview, so
+    it waits for none until it is public. The line of the summary; empty when there
+    is nothing to say."""
     if not (root / PICTURE).is_file() or not shows_the_project(root):
         if issue is None:
             return ""
@@ -1146,6 +1148,17 @@ def preview_report(
         )
         return f"No picture to upload: closed #{issue.number}."
     found = preview(api, repo, root, opener)
+    if not found.public:
+        if issue is None:
+            return f"{PRIVATE}: the look compares nothing until it is public."
+        close_issue(
+            api,
+            repo,
+            issue.number,
+            f"{PRIVATE}: the nightly look asks for the upload again once it is public.",
+            reason="not_planned",
+        )
+        return f"The repository is private: closed #{issue.number}."
     if found.current:
         if issue is None:
             return f"GitHub shows `{PICTURE}`."

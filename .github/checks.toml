@@ -240,7 +240,10 @@ problem = """A commit of the pull request has no signature that GitHub verified,
 the rules of the branch that it goes into require one. The check names each commit with
 the reason that GitHub gives, such as `unsigned` for a commit without a signature, or
 `unknown_key` and `bad_email` when GitHub can't match its key or its email to the
-account of its author."""
+account of its author.
+When the step *Make sure that Harden-Runner blocks* stopped the job, Harden-Runner
+had no agent that blocks, mostly because an outage of GitHub kept it from downloading
+it: that is no problem of the change, and the check passes when it runs again."""
 why = """GitHub blocks the merge with *Commits must have verified signatures* until
 every commit is signed, whatever the other checks say, and nobody merges past that
 block. A signature shows who made a commit, so that nobody can push one in the name of
@@ -308,7 +311,10 @@ decision of a maintainer; the next update of the blueprint brings it back."""
 [check."conventional title"]
 title = "The title of the pull request"
 problem = """The title of the pull request is no Conventional Commit, such as
-`feat(settings): add a dark mode` or `fix: keep the token secret`."""
+`feat(settings): add a dark mode` or `fix: keep the token secret`.
+When the step *Make sure that Harden-Runner blocks* stopped the job, Harden-Runner
+had no agent that blocks, mostly because an outage of GitHub kept it from downloading
+it: that is no problem of the change, and the check passes when it runs again."""
 why = """The pull request becomes one commit named after its title. The release bot
 reads these titles to choose the next version, `fix` a patch, `feat` a minor and `!`
 a major one, and to write the changelog."""
@@ -358,7 +364,10 @@ problem = """CodeQL couldn't analyze the code, or couldn't upload what it found.
 findings are a check of their own, CodeQL; this one fails when the analysis itself
 breaks. A private repository without code scanning, where `CODE_SCANNING` is `off`,
 doesn't run CodeQL, whose terms allow it on private code only with GitHub Code
-Security or Advanced Security: there this check passes with a notice."""
+Security or Advanced Security: there this check passes with a notice.
+When the step *Make sure that Harden-Runner blocks* stopped the job, Harden-Runner
+had no agent that blocks, mostly because an outage of GitHub kept it from downloading
+it: that is no problem of the change, and the check passes when it runs again."""
 why = """The rules of `main` require that every language is analyzed, so that no security
 problem goes unseen."""
 fix = """Read the log of the check. A failure of the analysis is rarely caused by the
@@ -390,7 +399,10 @@ autofix = """A security problem needs a person, who knows where the data may go.
 title = "The upload of the taint analysis"
 problem = """The paths that the taint analysis of `check (php)` found couldn't reach
 code scanning; the log of the check says why. The analysis itself ran in
-`check (php)`, which shows its findings in its log."""
+`check (php)`, which shows its findings in its log.
+When the step *Make sure that Harden-Runner blocks* stopped the job, Harden-Runner
+had no agent that blocks, mostly because an outage of GitHub kept it from downloading
+it: that is no problem of the change, and the check passes when it runs again."""
 why = """Code scanning shows each path at the lines of the pull request and keeps the
 alerts of `main` in the Security tab."""
 fix = """Run the check again; if it fails again, open an issue with the log. The job blocks every host but those
@@ -502,7 +514,10 @@ autofix = """A rule of Home Assistant that the integration breaks needs a person
 title = "The security of the workflows (zizmor)"
 problem = """zizmor found a security problem in a workflow, such as an expression of the
 event in a script, the credentials that a checkout keeps or an action that isn't pinned
-to a commit."""
+to a commit.
+When the step *Make sure that Harden-Runner blocks* stopped the job, Harden-Runner
+had no agent that blocks, mostly because an outage of GitHub kept it from downloading
+it: that is no problem of the change, and the check passes when it runs again."""
 why = """A workflow runs with the token of the repository; a weakness in it can give a
 pull request, a branch name or an issue the power to change the repository. The rules
 of `main` stop the merge while the pull request adds an alert of zizmor, of any
@@ -585,7 +600,10 @@ accepts, with its reason and its end, and opens again each one that it closed on
 acceptance is gone, and it couldn't: GitHub refused the app a token with the
 permission *Dependabot alerts* (read and write), or refused the alerts to its token.
 The summary of the run names the app: the settings app once the variable
-`SETTINGS_APP_CLIENT_ID` names it, the release app until then."""
+`SETTINGS_APP_CLIENT_ID` names it, the release app until then.
+When the step *Make sure that Harden-Runner blocks* stopped the job, Harden-Runner
+had no agent that blocks, mostly because an outage of GitHub kept it from downloading
+it: that is no problem of the change, and the check passes when it runs again."""
 why = """The token of a workflow can't read the Dependabot alerts, so only an app of the
 owner can close them. Until it may, Dependabot keeps an alert open for every advisory
 that the project accepts, such as each of the Pillow that Home Assistant pins for the
@@ -817,7 +835,10 @@ autofix = """It passes once every part of the run measures its mutants."""
 title = "The issue of a dropped mutation score"
 problem = """The job that opens, keeps or closes the one issue of a mutation score of the
 default branch that dropped couldn't do so, mostly because GitHub refused the
-request; the log shows its answer."""
+request; the log shows its answer.
+When the step *Make sure that Harden-Runner blocks* stopped the job, Harden-Runner
+had no agent that blocks, mostly because an outage of GitHub kept it from downloading
+it: that is no problem of the change, and the check passes when it runs again."""
 why = """A drop of the score that opens no issue goes unnoticed until someone reads the
 summary of the weekly run."""
 fix = """Run the workflow Mutation again; a hiccup of GitHub usually passes."""
@@ -847,7 +868,10 @@ problem = """`scripts/release-assets.sh` failed in the build of the release, or 
 before it, such as `npm ci --ignore-scripts`; or it wrote no asset into the folder of
 its first argument, or one that the release can't ship: a folder, a link, a name that
 GitHub would change, or a name that the release keeps for its own files or its
-registry. An annotation or the log of the job says which."""
+registry. An annotation or the log of the job says which.
+When the step *Make sure that Harden-Runner blocks* stopped the job, Harden-Runner
+had no agent that blocks, mostly because an outage of GitHub kept it from downloading
+it: that is no problem of the change, and the check passes when it runs again."""
 why = """The release stays a draft with its signed tag until each of its assets is built
 and attested, so nobody gets this version, and no registry does either."""
 fix = """When the log shows a hiccup of GitHub or npm, re-run the failed jobs of this run,
