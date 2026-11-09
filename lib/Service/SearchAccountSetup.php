@@ -69,6 +69,18 @@ final class SearchAccountSetup {
 	private const TIMEOUT = 10;
 	/** The seconds that one request of the bulk editor may take. */
 	private const BULK_TIMEOUT = 60;
+	/**
+	 * The pauses before each further try of an edit that Paperless failed to make, in
+	 * milliseconds (edit()): five tries within a quarter of a minute, which outlast the
+	 * task of Paperless-ngx 2 for a batch of documents.
+	 */
+	private const EDIT_PAUSES_MS = [1000, 2000, 4000, 8000];
+	/**
+	 * How Paperless-ngx 2 and 3 begin the answer, as plain text with HTTP 400, to an edit
+	 * of the bulk editor that failed while they made it, such as "Error performing bulk
+	 * permissions edit, check logs for more detail."
+	 */
+	private const EDIT_FAILED = 'Error performing bulk ';
 
 	private IClient $client;
 
@@ -254,37 +266,78 @@ final class SearchAccountSetup {
 	/**
 	 * Adds the user to the permission to view of every document, correspondent, document
 	 * type and tag of Paperless, as its bulk editor does with Merge with existing
-	 * permissions: whoever may view or change one keeps it, and so does its owner.
+	 * permissions: whoever may view or change one keeps it, and so does its owner. The
+	 * names come first: Paperless-ngx 2 updates the documents of an edit afterwards, in a
+	 * task of its worker, and on SQLite each edit in that time fails (edit()); the names
+	 * start no such task.
 	 *
 	 * @return array{int, int} how many documents, and how many names, it may view now
 	 */
 	private function letView(string $url, #[SensitiveParameter] string $token, bool $allowLocal, int $userId): array {
 		$permissions = ['view' => ['users' => [$userId], 'groups' => []], 'change' => ['users' => [], 'groups' => []]];
-		$documents = $this->idsOf($url, $token, $allowLocal, 'documents');
-		foreach (array_chunk($documents, self::BATCH) as $batch) {
-			$this->answer('POST', $url, '/api/documents/bulk_edit/', $token, $allowLocal, [
-				'documents' => $batch,
-				'method' => 'set_permissions',
-				'parameters' => ['set_permissions' => $permissions, 'merge' => true],
-			], timeout: self::BULK_TIMEOUT);
-		}
-
 		$names = 0;
 		foreach (self::NAMES as $list) {
 			$ids = $this->idsOf($url, $token, $allowLocal, $list);
 			foreach (array_chunk($ids, self::BATCH) as $batch) {
-				$this->answer('POST', $url, '/api/bulk_edit_objects/', $token, $allowLocal, [
+				$this->edit($url, '/api/bulk_edit_objects/', $token, $allowLocal, [
 					'objects' => $batch,
 					'object_type' => $list,
 					'operation' => 'set_permissions',
 					'permissions' => $permissions,
 					'merge' => true,
-				], timeout: self::BULK_TIMEOUT);
+				]);
 			}
 			$names += count($ids);
 		}
 
+		$documents = $this->idsOf($url, $token, $allowLocal, 'documents');
+		foreach (array_chunk($documents, self::BATCH) as $batch) {
+			$this->edit($url, '/api/documents/bulk_edit/', $token, $allowLocal, [
+				'documents' => $batch,
+				'method' => 'set_permissions',
+				'parameters' => ['set_permissions' => $permissions, 'merge' => true],
+			]);
+		}
+
 		return [count($documents), $names];
+	}
+
+	/**
+	 * An edit of the bulk editor of Paperless, made again after a pause while Paperless
+	 * fails to make it: Paperless-ngx 2 on SQLite updates the documents of an edit in a
+	 * task of its worker, and the writes of the task lock the database, so that an edit
+	 * that comes meanwhile, such as the next batch, fails with "database is locked" (#346).
+	 * Paperless-ngx 3 waits for the lock instead. Each edit only adds the permission, so
+	 * another try changes nothing that the first made; a refused edit, whose reason
+	 * Paperless gives in JSON, would fail again and ends the set-up at once.
+	 *
+	 * @param array<string, mixed> $json
+	 * @throws PaperlessRequestException when Paperless doesn't make the edit
+	 */
+	private function edit(string $url, string $path, #[SensitiveParameter] string $token, bool $allowLocal, array $json): void {
+		$pauses = self::EDIT_PAUSES_MS;
+		$pause = 0;
+		do {
+			$response = $this->sent('POST', $url, $path, $token, $allowLocal, $json, [], self::BULK_TIMEOUT, $pause);
+			$pause = array_shift($pauses);
+		} while ($pause !== null && self::failedToEdit($response));
+
+		self::dataOf($response, 200);
+	}
+
+	/**
+	 * Whether Paperless failed while it made an edit of its bulk editor, rather than
+	 * refused it: it answers HTTP 400 with the text of EDIT_FAILED, where it gives the
+	 * reason of a refusal in JSON. The client of Nextcloud hands out the body of an answer
+	 * once, so only an answer with HTTP 400 is read here; dataOf() reads any other.
+	 */
+	private static function failedToEdit(IResponse $response): bool {
+		if ($response->getStatusCode() !== 400) {
+			return false;
+		}
+		$body = $response->getBody();
+
+		return is_string($body) && str_starts_with($body, self::EDIT_FAILED);
 	}
 
 	/**
@@ -347,13 +400,34 @@ final class SearchAccountSetup {
 	 *                                   expected status and JSON
 	 */
 	private function answer(string $method, string $url, string $path, #[SensitiveParameter] string $token, bool $allowLocal, ?array $json = null, array $query = [], int $expected = 200, int $timeout = self::TIMEOUT): array {
+		return self::dataOf($this->sent($method, $url, $path, $token, $allowLocal, $json, $query, $timeout), $expected);
+	}
+
+	/**
+	 * The answer of Paperless to a request, whatever its status.
+	 *
+	 * @param ?array<string, mixed> $json
+	 * @param array<string, int|string> $query
+	 * @param int $pause the milliseconds to wait before the request
+	 * @throws PaperlessRequestException when Paperless doesn't answer
+	 */
+	private function sent(string $method, string $url, string $path, #[SensitiveParameter] string $token, bool $allowLocal, ?array $json, array $query, int $timeout, int $pause = 0): IResponse {
 		try {
-			$response = $this->send($method, $url, $path, $token, $allowLocal, $json, $query, $timeout);
+			return $this->send($method, $url, $path, $token, $allowLocal, $json, $query, $timeout, $pause);
 		} catch (Exception $error) {
 			// The errors of the client of Nextcloud, such as a timeout.
 			throw PaperlessRequestException::unanswered($error);
 		}
+	}
 
+	/**
+	 * The JSON of an answer of Paperless, once its status is the expected one.
+	 *
+	 * @return array<array-key, mixed>
+	 * @throws PaperlessRequestException when the status is another, or the body no JSON
+	 *                                   object
+	 */
+	private static function dataOf(IResponse $response, int $expected): array {
 		$status = $response->getStatusCode();
 		if ($status !== $expected) {
 			throw PaperlessRequestException::forStatus($status);
@@ -373,12 +447,14 @@ final class SearchAccountSetup {
 	/**
 	 * A request to Paperless that follows no redirect, which could take the token of the
 	 * superuser to another server, and allows the local network only as the settings do.
-	 * Every answer reaches the check of its status, whatever the status is.
+	 * Every answer reaches the check of its status, whatever the status is. A pause waits
+	 * in the client, by the option delay of Guzzle, before the request goes out.
 	 *
 	 * @param ?array<string, mixed> $json
 	 * @param array<string, int|string> $query
+	 * @param int $pause the milliseconds to wait before the request
 	 */
-	private function send(string $method, string $url, string $path, #[SensitiveParameter] string $token, bool $allowLocal, ?array $json, array $query, int $timeout): IResponse {
+	private function send(string $method, string $url, string $path, #[SensitiveParameter] string $token, bool $allowLocal, ?array $json, array $query, int $timeout, int $pause = 0): IResponse {
 		$options = [
 			'headers' => [
 				'Accept' => self::ACCEPT,
@@ -389,7 +465,7 @@ final class SearchAccountSetup {
 			'http_errors' => false,
 			'allow_redirects' => false,
 			'nextcloud' => ['allow_local_address' => $allowLocal],
-		] + ($query !== [] ? ['query' => $query] : []) + ($json !== null ? ['json' => $json] : []);
+		] + ($query !== [] ? ['query' => $query] : []) + ($json !== null ? ['json' => $json] : []) + ($pause > 0 ? ['delay' => $pause] : []);
 
 		return match ($method) {
 			'GET' => $this->client->get($url . $path, $options),

@@ -15,7 +15,9 @@
 #    signature .sig with the certificate of the app at the App Store, as Nextcloud
 #    checks an update from there, and, where gh is installed, its signed provenance
 #    from the isolated build, build-release.yml. A repository without a release yet
-#    skips the test with a notice.
+#    skips the test with a notice. In GitHub Actions, with the token of the job in
+#    GH_TOKEN, it asks the API of GitHub for the release and its assets, which works
+#    when GitHub's pages of the releases fail requests without a token (#346).
 # 2. It packs the checkout as krankerl does for a release (package.sh), with the next
 #    patch version when the checkout still names the version of the release, since
 #    Nextcloud upgrades an app only to a newer version.
@@ -201,6 +203,46 @@ download() {
 		--connect-timeout 15 --max-time 300 --output "$1" "$2"
 }
 
+# The release goes through the API of GitHub with the token of GH_TOKEN, as the CI has
+# it: on 8 November 2026, GitHub answered the pages of its releases to requests without a
+# token with 504 or not at all, for hours, while its API kept working, and the upgrade
+# failed on three pull requests (#346). .github/download.sh tries again after an error
+# of GitHub and checks the digest that GitHub keeps of the asset. It needs gh, timeout
+# and sha256sum, which a runner of GitHub has and a Mac lacks by default, so the API
+# serves only the CI; elsewhere, also with a token, curl asks the pages of the release.
+with_api() {
+	[[ "${GITHUB_ACTIONS:-}" == true && -n "${GH_TOKEN:-}" ]] && command -v gh >/dev/null 2>&1
+}
+
+# A call of the API of GitHub with the arguments of gh api, tried again 5 and 10 seconds
+# after an error of the network or of GitHub, such as a passing 502, as curl tries the
+# pages again; it stops at once when the token is refused or the release doesn't exist,
+# as .github/download.sh does. The answer of a failed try is left out of the output.
+api() {
+	local wait
+	for wait in 5 10 0; do
+		if gh api "$@" >"${TMP_DIR}/api.out" 2>"${TMP_DIR}/api.log"; then
+			cat "${TMP_DIR}/api.out"
+			return 0
+		fi
+		cat "${TMP_DIR}/api.log" >&2
+		if ((wait == 0)) || grep --quiet --extended-regexp 'HTTP (40[134]|422)' "${TMP_DIR}/api.log"; then
+			return 1
+		fi
+		echo "GitHub's API failed; it is asked again in ${wait} seconds." >&2
+		sleep "${wait}"
+	done
+}
+
+# The asset $2 of the release ${from} into the file $1.
+download_asset() {
+	if with_api; then
+		bash "${REPOSITORY_ROOT}/.github/download.sh" "${repository}" "${from}" "$2" "$1"
+	else
+		download "$1" "https://github.com/${repository}/releases/download/${from}/$2"
+	fi
+}
+
 cd "${REPOSITORY_ROOT}"
 
 phase "Find the release to upgrade from"
@@ -210,7 +252,18 @@ if [[ ! "${repository}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
 	fail "appinfo/info.xml names no repository on GitHub, as <repository type=\"git\">https://github.com/owner/name.git</repository>."
 fi
 from="${E2E_UPGRADE_FROM:-}"
-if [[ -z "${from}" ]]; then
+if [[ -z "${from}" ]] && with_api; then
+	# The newest release that is neither a draft nor a pre-release; the API answers a
+	# repository without a release with 404.
+	if from="$(api "repos/${repository}/releases/latest" --jq .tag_name 2>"${TMP_DIR}/latest.log")"; then
+		:
+	elif grep --quiet --fixed-strings "(HTTP 404)" "${TMP_DIR}/latest.log"; then
+		notice "The upgrade test is skipped: ${repository} has no release yet to upgrade from."
+		exit 0
+	else
+		fail "GitHub's API answered the request for the last release of ${repository} with: $(head -n 1 "${TMP_DIR}/latest.log"); run the test again later."
+	fi
+elif [[ -z "${from}" ]]; then
 	# GitHub answers /releases/latest with a redirect to the tag of the newest release
 	# that is neither a draft nor a pre-release, without the API and its rate limit. A
 	# repository without a release redirects to /releases instead. Any other answer, such
@@ -247,7 +300,7 @@ phase "Download and verify the release ${from}"
 release="${TMP_DIR}/release"
 mkdir "${release}"
 for asset in "${APP_ID}.tar.gz" "${APP_ID}.tar.gz.sig"; do
-	if ! download "${release}/${asset}" "https://github.com/${repository}/releases/download/${from}/${asset}"; then
+	if ! download_asset "${release}/${asset}" "${asset}"; then
 		fail "The release ${from} of ${repository} has no asset ${asset}, which build-release.yml attaches to each release."
 	fi
 done
@@ -274,8 +327,16 @@ echo "The signature of ${APP_ID}.tar.gz matches the certificate of the app at th
 # initialized" (#290). Each upgrade takes a cache of its own, which it removes at the end.
 if ! command -v gh >/dev/null 2>&1; then
 	notice "gh is not installed, so the provenance of ${from} is not verified here; verify-release.yml checks it for each release."
-elif ! download "${release}/provenance.sigstore.json" \
-	"https://github.com/${repository}/releases/download/${from}/provenance.sigstore.json"; then
+elif with_api && ! assets="$(api "repos/${repository}/releases/tags/${from}" --jq '.assets[].name')"; then
+	fail "GitHub's API didn't name the assets of the release ${from} of ${repository}; run the test again later."
+elif with_api && ! grep --quiet --line-regexp --fixed-strings provenance.sigstore.json <<<"${assets}"; then
+	# The API names the assets, so that only a release without the bundle skips its
+	# check, and an error of GitHub fails the download below.
+	notice "The release ${from} has no provenance.sigstore.json, as releases before the isolated build; only its signature is verified."
+elif ! download_asset "${release}/provenance.sigstore.json" provenance.sigstore.json; then
+	if with_api; then
+		fail "The provenance.sigstore.json of ${from} can't be downloaded."
+	fi
 	notice "The release ${from} has no provenance.sigstore.json, as releases before the isolated build; only its signature is verified."
 elif XDG_CACHE_HOME="${TMP_DIR}/gh-cache" gh attestation verify "${release}/${APP_ID}.tar.gz" --repo "${repository}" \
 	--signer-workflow "${repository}/.github/workflows/build-release.yml" \

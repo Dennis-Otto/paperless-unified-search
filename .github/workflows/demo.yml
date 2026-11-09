@@ -85,6 +85,11 @@ jobs:
           uv pip install --quiet --python "$RUNNER_TEMP/pictures" --require-hashes \
             -r .github/screenshots-requirements.txt
       - name: Run the demo
+        env:
+          # The release of Paperless Sync comes through the API of GitHub with it, which
+          # kept working when the pages of the releases failed requests without a token
+          # (#346).
+          GH_TOKEN: ${{ github.token }}
         run: bash demo/seed.sh
       # The animation of the README, from this demo, as bash scripts/screenshots.sh --demo
       # records it on a machine: the run checks that the recording still works and

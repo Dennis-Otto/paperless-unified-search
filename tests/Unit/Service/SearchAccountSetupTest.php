@@ -70,13 +70,15 @@ final class SearchAccountSetupTest extends TestCase {
 			'POST /api/users/',
 			'POST /api/token/',
 			'POST /api/workflows/',
-			'GET /api/documents/',
-			'POST /api/documents/bulk_edit/',
+			// The names first: Paperless-ngx 2 updates the documents of an edit in a task
+			// of its worker, whose writes to a database of SQLite fail an edit meanwhile.
 			'GET /api/correspondents/',
 			'POST /api/bulk_edit_objects/',
 			'GET /api/document_types/',
 			'GET /api/tags/',
 			'POST /api/bulk_edit_objects/',
+			'GET /api/documents/',
+			'POST /api/documents/bulk_edit/',
 		], $this->asked());
 
 		// Every request goes to the Paperless of the form, follows no redirect and allows
@@ -114,17 +116,20 @@ final class SearchAccountSetupTest extends TestCase {
 			'triggers' => [['type' => 2]],
 			'actions' => [['type' => 1, 'assign_view_users' => [7], 'assign_view_groups' => []]],
 		], $this->requests[5][2]['json']);
-		self::assertSame(['page' => 1, 'page_size' => 1, 'fields' => 'id'], $this->requests[6][2]['query']);
-		self::assertSame(['page' => 1, 'page_size' => 1], $this->requests[8][2]['query']);
+		self::assertSame(['page' => 1, 'page_size' => 1], $this->requests[6][2]['query']);
+		self::assertSame(['page' => 1, 'page_size' => 1, 'fields' => 'id'], $this->requests[11][2]['query']);
 		// The permissions only add the user, to each document and name that Paperless has.
+		self::assertSame(['objects' => [5], 'object_type' => 'correspondents', 'operation' => 'set_permissions', 'permissions' => self::PERMISSIONS, 'merge' => true], $this->requests[7][2]['json']);
+		self::assertSame(['objects' => [8, 9], 'object_type' => 'tags', 'operation' => 'set_permissions', 'permissions' => self::PERMISSIONS, 'merge' => true], $this->requests[10][2]['json']);
 		self::assertSame([
 			'documents' => [1, 2, 3],
 			'method' => 'set_permissions',
 			'parameters' => ['set_permissions' => self::PERMISSIONS, 'merge' => true],
-		], $this->requests[7][2]['json']);
-		self::assertSame(60, $this->requests[7][2]['timeout']);
-		self::assertSame(['objects' => [5], 'object_type' => 'correspondents', 'operation' => 'set_permissions', 'permissions' => self::PERMISSIONS, 'merge' => true], $this->requests[9][2]['json']);
-		self::assertSame(['objects' => [8, 9], 'object_type' => 'tags', 'operation' => 'set_permissions', 'permissions' => self::PERMISSIONS, 'merge' => true], $this->requests[12][2]['json']);
+		], $this->requests[12][2]['json']);
+		self::assertSame(60, $this->requests[12][2]['timeout']);
+		// An edit that Paperless makes at once goes without a pause.
+		self::assertArrayNotHasKey('delay', $this->requests[12][2]);
+		self::assertArrayNotHasKey('delay', $this->requests[7][2]);
 		self::assertStringNotContainsString(self::SUPERUSER_TOKEN, (string)json_encode($account));
 		self::assertStringNotContainsString(self::ACCOUNT_TOKEN, (string)json_encode($account));
 	}
@@ -157,6 +162,103 @@ final class SearchAccountSetupTest extends TestCase {
 			array_values(array_filter($this->requests, static fn (array $request): bool => $request[1] === '/api/documents/bulk_edit/')),
 		);
 		self::assertSame([range(1, 500), range(501, 1000), [1001]], $batches);
+	}
+
+	/**
+	 * Paperless-ngx 2 on SQLite updates the documents of an edit of the bulk editor in a
+	 * task of its worker, whose writes lock the database: an edit meanwhile, such as the
+	 * next batch, fails with "database is locked", and Paperless answers HTTP 400 with the
+	 * text of a failed edit, as the contract with Paperless-ngx 2 met it (#346). Each edit
+	 * only adds the permission, so the set-up makes it again after a pause, which grows
+	 * with each try, and the account works.
+	 *
+	 * @return array<string, array{string, string}>
+	 */
+	public static function editsThatPaperlessFailed(): array {
+		return [
+			'of the documents' => ['/api/documents/bulk_edit/', 'Error performing bulk edit, check logs for more detail.'],
+			'of the names' => ['/api/bulk_edit_objects/', 'Error performing bulk permissions edit, check logs for more detail.'],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('editsThatPaperlessFailed')]
+	public function testAnEditThatPaperlessFailedToMakeIsMadeAgainAfterAPause(string $path, string $failed): void {
+		$tries = 0;
+		$account = $this->accountSetup($this->paperless([
+			'POST ' . $path => static function () use (&$tries, $failed): IResponse {
+				return ++$tries <= 2 ? self::answer(400, $failed) : self::answer(200, self::OK);
+			},
+		]))->create(self::URL, self::SUPERUSER_TOKEN, false, true, true, $this->saves());
+
+		self::assertSame(3, $account->documents);
+		$edits = array_values(array_filter($this->requests, static fn (array $request): bool => $request[1] === $path));
+		self::assertSame([null, 1000, 2000], array_map(static fn (array $request): ?int => $request[2]['delay'] ?? null, array_slice($edits, 0, 3)));
+		// Each try is the same edit, with the time of an edit.
+		self::assertSame([$edits[0][2]['json'], $edits[0][2]['json']], [$edits[1][2]['json'], $edits[2][2]['json']]);
+		self::assertSame([60, 60], [$edits[1][2]['timeout'], $edits[2][2]['timeout']]);
+		self::assertNotContains('DELETE', array_column($this->requests, 0));
+	}
+
+	/**
+	 * An edit that Paperless keeps failing ends the set-up after five tries and about a
+	 * quarter of a minute, with the account removed again, as any other failed step.
+	 */
+	public function testAnEditThatPaperlessKeepsFailingEndsTheSetUp(): void {
+		try {
+			$this->accountSetup($this->paperless(['POST /api/documents/bulk_edit/' => self::answer(400, 'Error performing bulk edit, check logs for more detail.')]))
+				->create(self::URL, self::SUPERUSER_TOKEN, false, true, true, $this->saves());
+			self::fail('The set-up succeeded.');
+		} catch (PaperlessRequestException $exception) {
+			self::assertSame([RequestFailure::Http, 400], [$exception->reason, $exception->status]);
+		}
+
+		$edits = array_values(array_filter($this->requests, static fn (array $request): bool => $request[1] === '/api/documents/bulk_edit/'));
+		self::assertSame([null, 1000, 2000, 4000, 8000], array_map(static fn (array $request): ?int => $request[2]['delay'] ?? null, $edits));
+		self::assertSame(['DELETE /api/workflows/4/', 'DELETE /api/users/7/'], array_slice($this->asked(), -2));
+	}
+
+	/**
+	 * An edit that Paperless refuses, with its reason in JSON, or that fails otherwise,
+	 * would fail again: the set-up ends at once.
+	 *
+	 * @return array<string, array{IResponse}>
+	 */
+	public static function editsThatFailForGood(): array {
+		return [
+			'refused as invalid' => [self::answer(400, '{"objects":["Some IDs of these objects don\'t exist."]}')],
+			'with an error of the server' => [self::answer(500, 'Error performing bulk permissions edit, check logs for more detail.')],
+			'without a body' => [new class() implements IResponse {
+				/** @return resource */
+				public function getBody() {
+					return fopen('php://memory', 'rb');
+				}
+
+				public function getStatusCode(): int {
+					return 400;
+				}
+
+				public function getHeader(string $key): string {
+					return '';
+				}
+
+				public function getHeaders(): array {
+					return [];
+				}
+			}],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('editsThatFailForGood')]
+	public function testAnEditThatWouldFailAgainEndsTheSetUpAtOnce(IResponse $answer): void {
+		try {
+			$this->accountSetup($this->paperless(['POST /api/bulk_edit_objects/' => $answer]))
+				->create(self::URL, self::SUPERUSER_TOKEN, false, true, true, $this->saves());
+			self::fail('The set-up succeeded.');
+		} catch (PaperlessRequestException $exception) {
+			self::assertSame($answer->getStatusCode(), $exception->status);
+		}
+
+		self::assertSame(['POST /api/bulk_edit_objects/'], array_values(array_filter($this->asked(), static fn (string $request): bool => str_starts_with($request, 'POST /api/bulk'))));
 	}
 
 	public function testABlankTokenIsRefusedBeforeAnyRequest(): void {
@@ -313,6 +415,7 @@ final class SearchAccountSetupTest extends TestCase {
 		$removal = $this->requests[array_key_last($this->requests)][2];
 		self::assertSame('Token ' . self::SUPERUSER_TOKEN, $removal['headers']['Authorization']);
 		self::assertFalse($removal['allow_redirects']);
+		self::assertArrayNotHasKey('delay', $removal);
 	}
 
 	/**
@@ -428,7 +531,8 @@ final class SearchAccountSetupTest extends TestCase {
 					throw $answer;
 				}
 
-				return $answer;
+				// An answer of its own for each request, whose body goes once, as answer() says.
+				return clone $answer;
 			});
 		}
 		$clientService = $this->createStub(IClientService::class);
@@ -468,6 +572,11 @@ final class SearchAccountSetupTest extends TestCase {
 		}
 	}
 
+	/**
+	 * An answer of Paperless, which hands out its body once, as the client of Nextcloud
+	 * reads the rest of the stream of the body for each getBody(): a second call gets an
+	 * empty string, which the contract with a real Paperless met.
+	 */
 	private static function answer(int $status, string $body): IResponse {
 		return new class($status, $body) implements IResponse {
 			public function __construct(
@@ -477,7 +586,9 @@ final class SearchAccountSetupTest extends TestCase {
 			}
 
 			public function getBody() {
-				return $this->body;
+				[$body, $this->body] = [$this->body, ''];
+
+				return $body;
 			}
 
 			public function getStatusCode(): int {

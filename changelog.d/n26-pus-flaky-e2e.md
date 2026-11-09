@@ -1,0 +1,3 @@
+### Bug fixes
+
+- **Create the search account and save works with Paperless-ngx 2 on SQLite.** Paperless-ngx 2 with its default database, SQLite, updates the documents of a change of permissions in a task of its own and fails every further change while that task runs, with the error *database is locked* in its log. The one-click set-up of the search account then stopped at random with *Paperless answered with an error (HTTP 400)*. The set-up now changes the correspondents, document types and tags before the documents, and makes a change that Paperless failed again after a pause, up to five times within a quarter of a minute. `occ paperless_unified_search:setup --create-account` does the same.

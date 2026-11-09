@@ -177,10 +177,23 @@ restart=0
 "${COMPOSE[@]}" exec -T nextcloud chown www-data:www-data custom_apps
 if [[ "$(occ config:app:get paperless_sync installed_version 2>/dev/null || true)" != "${PAPERLESS_SYNC_VERSION#v}" ]]; then
 	# The package of the release, as an administrator installs it without the App Store:
-	# downloaded and checked in the container of Nextcloud, then unpacked in place of an
-	# older version. PHP, not the shell, reads the variables of the script.
-	# shellcheck disable=SC2016
-	"${COMPOSE[@]}" exec -T --user www-data 		--env PAPERLESS_SYNC_VERSION --env PAPERLESS_SYNC_SHA256 nextcloud php -r '
+	# downloaded and checked by its SHA-256, then unpacked in place of an older version.
+	# In GitHub Actions, with the token of the job in GH_TOKEN, .github/download.sh
+	# downloads it through the API of GitHub, which kept working on 8 November 2026 while
+	# the pages of the releases failed requests without a token for hours, and the demo
+	# with them (#346). It needs gh, timeout and sha256sum, which a runner has and a Mac
+	# lacks by default. Everywhere else, also with a token, the container of Nextcloud
+	# downloads it from the page of the release, so the demo needs nothing but Docker and
+	# Bash; PHP, not the shell, reads the variables of the script there.
+	if [[ "${GITHUB_ACTIONS:-}" == true && -n "${GH_TOKEN:-}" ]]; then
+		package="$(mktemp)"
+		bash "${DEMO_DIR}/../.github/download.sh" Dennis-Otto/paperless-sync "${PAPERLESS_SYNC_VERSION}" \
+			paperless_sync.tar.gz "${package}" "${PAPERLESS_SYNC_SHA256}"
+		"${COMPOSE[@]}" exec -T --user www-data nextcloud sh -c 'cat >/tmp/paperless_sync.tar.gz' <"${package}"
+		rm -f "${package}"
+	else
+		# shellcheck disable=SC2016
+		"${COMPOSE[@]}" exec -T --user www-data --env PAPERLESS_SYNC_VERSION --env PAPERLESS_SYNC_SHA256 nextcloud php -r '
 			$url = "https://github.com/Dennis-Otto/paperless-sync/releases/download/"
 				. getenv("PAPERLESS_SYNC_VERSION") . "/paperless_sync.tar.gz";
 			$package = file_get_contents($url);
@@ -190,7 +203,8 @@ if [[ "$(occ config:app:get paperless_sync installed_version 2>/dev/null || true
 				exit(1);
 			}
 			file_put_contents("/tmp/paperless_sync.tar.gz", $package);'
-	"${COMPOSE[@]}" exec -T --user www-data nextcloud 		sh -c 'rm -rf custom_apps/paperless_sync && tar -xzf /tmp/paperless_sync.tar.gz -C custom_apps && rm /tmp/paperless_sync.tar.gz'
+	fi
+	"${COMPOSE[@]}" exec -T --user www-data nextcloud sh -c 'rm -rf custom_apps/paperless_sync && tar -xzf /tmp/paperless_sync.tar.gz -C custom_apps && rm /tmp/paperless_sync.tar.gz'
 	upgrade
 	restart=1
 fi
