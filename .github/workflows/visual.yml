@@ -8,9 +8,10 @@ name: Visual check
 # committed one by its pixels, as the screenshot bot does (`.github/blueprint.py
 # screenshots keep`), so that the check and the bot agree on what changed. It only
 # reports: the summary lists every picture that looks different with the share of its
-# pixels that changed, the artifact visual holds each one before and after with the
-# changed pixels in red (tests/e2e/visual-compare.mjs), and visual-comment.yml writes
-# the list into one comment on the pull request. An intended change reaches
+# pixels that changed, the artifact visual holds each one before and after, and keep's
+# picture of its difference, its changed pixels in red, for a WebP or a GIF as well as a
+# PNG (tests/e2e/visual-compare.mjs), and visual-comment.yml writes the list into one
+# comment on the pull request. An intended change reaches
 # screenshots/ through the screenshot bot after the merge. A picture that can't be
 # rendered fails the check, as the app then no longer shows what the picture is meant
 # to show. It is no required check and blocks nothing.
@@ -92,21 +93,21 @@ jobs:
           uv venv --quiet "$RUNNER_TEMP/pictures"
           uv pip install --quiet --python "$RUNNER_TEMP/pictures" --require-hashes \
             -r .github/screenshots-requirements.txt
+      # visual-compare.mjs needs Node.js alone, no package: the browser of the script
+      # installs its own in the image of Playwright.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: tests/e2e/package-lock.json
       - name: Render the pictures
         run: bash scripts/screenshots.sh
       # Each picture whose pixels stayed the same gets its committed file back; the
-      # others go into the folder kept, with their list.
+      # others go into the folder kept, with their list and the picture of the
+      # difference of each that kept its size and frames.
       - name: Compare the pictures with the committed ones
         run: |
           "$RUNNER_TEMP/pictures/bin/python" .github/blueprint.py screenshots keep "$RUNNER_TEMP/kept"
-      - name: Draw the pictures before and after, with their differences
+      - name: Put the pictures before and after, with their differences, into the artifact
         run: |
-          npm ci --prefix tests/e2e --ignore-scripts --no-audit --no-fund --loglevel=error
           node tests/e2e/visual-compare.mjs "$RUNNER_TEMP/kept" "$RUNNER_TEMP/visual"
           cat "$RUNNER_TEMP/visual/summary.md" >> "$GITHUB_STEP_SUMMARY"
       - name: Keep the pictures before and after, with their differences
