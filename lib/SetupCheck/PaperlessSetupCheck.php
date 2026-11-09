@@ -26,14 +26,14 @@ use OCP\SetupCheck\SetupResult;
  * The state of the search in the overview of the administration settings and in
  * occ setupchecks: a warning when the search shows no Paperless documents for a reason
  * that an administrator can correct, or when the archive account shares files with write
- * permission, Paperless Sync gives each user an archive of their own, which the search
- * doesn't show, or the account of the API token may do more or less than the search needs,
- * with a link to the settings of the app, and else the Paperless that it is connected to
- * and how the archive is shared. It reads only what the app stored and the shares in the
- * database of Nextcloud, and sends no request to Paperless, so that the overview opens as
- * fast as without it; the last answer of Paperless named the version, the last test of
- * the connection what the account of the token may do, and the history of the problems
- * of the search tells whether searches work.
+ * permission, Paperless Sync also gives each user copies of the documents that they may
+ * view, which the search doesn't show, or the account of the API token may do more or less
+ * than the search needs, with a link to the settings of the app, and else the Paperless
+ * that it is connected to and how the archive is shared. It reads only what the app
+ * stored and the shares in the database of Nextcloud, and sends no request to Paperless,
+ * so that the overview opens as fast as without it; the last answer of Paperless named
+ * the version, the last test of the connection what the account of the token may do, and
+ * the history of the problems of the search tells whether searches work.
  */
 final class PaperlessSetupCheck implements ISetupCheck {
 	/** @psalm-suppress PossiblyUnusedMethod */

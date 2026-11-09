@@ -14,6 +14,7 @@ use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Command\Setup;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppServices;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\Owners;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\SearchAccountPaperless;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -29,6 +30,7 @@ use Symfony\Component\Console\Tester\CommandTester;
 final class SetupCreateAccountTest extends TestCase {
 	use Accounts;
 	use AppServices;
+	use Owners;
 	use SearchAccountPaperless;
 
 	public function testCreatesTheAccountAndSavesTheSettingsWithItsToken(): void {
@@ -154,10 +156,12 @@ final class SetupCreateAccountTest extends TestCase {
 	}
 
 	private function tester(): CommandTester {
-		$configService = $this->configService($this->accounts('archive'));
+		$accounts = $this->accounts('archive');
+		$configService = $this->configService($accounts);
 		$client = $this->paperlessForTheSetUp();
+		$api = $this->paperlessApi($configService, $client);
 
-		return new CommandTester(new Setup($configService, $this->paperlessApi($configService, $client), $this->messages(), $this->searchAccountSetup($client)));
+		return new CommandTester(new Setup($configService, $api, $this->messages(), $this->searchAccountSetup($client), $this->documentOwners($api, $configService, $accounts)));
 	}
 
 	/**

@@ -871,9 +871,10 @@ assert_occ setupcheck "${TMP_DIR}/setupchecks-read-only.json" success 'with the 
 # the owner of, through the users of Paperless that the account of the token may view.
 # e2e-other's file renamed after 999 stands for nothing: occ and Try a search name the file
 # of e2e-writer, which isn't shared with e2e-other, and once it is gone, the file of another
-# user than the owner. The check passes, counts the files of the archive account alone, and
-# warns of nothing.
-PER_USER='Paperless Sync puts the documents of each user into their own files'
+# user than the owner. The check passes, counts the file of e2e-writer, as the owner's, and
+# not the renamed one, which reads the owners of the documents page by page, and warns of
+# nothing.
+PER_USER='Paperless Sync also puts copies of the documents that each user may view in Paperless into their own files'
 PER_USER_HELP='https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html#paperless-sync-gives-each-user-their-own-archive'
 occ config:app:set paperless_sync target_user --value=e2e-user --lazy >/dev/null
 occ config:app:set paperless_sync ownership --value=per-user --lazy >/dev/null
@@ -886,8 +887,9 @@ printf '%s\n' 'Not document 999.' \
 occ paperless_unified_search:search e2e-other mobiletest --explain --json >"${TMP_DIR}/explain-own.json"
 assert_occ verdicts "${TMP_DIR}/explain-own.json" '123=shown=/Mobile viewer test [P123].pdf' '999=not_shared=/Own [P999].txt'
 occ paperless_unified_search:check >"${TMP_DIR}/check-own.txt"
-expect_text 'which this count leaves out' "${TMP_DIR}/check-own.txt" "occ check didn't say that it counts the files of the archive account alone: $(cat "${TMP_DIR}/check-own.txt")"
-if grep --fixed-strings "! ${PER_USER}, which the search doesn't show" "${TMP_DIR}/check-own.txt" >/dev/null; then
+expect_text 'Coverage: 2 of 7 Paperless document(s) have a file of the archive account or of the user of their owner. Without one: 412, 389, 371, 402, 356.' \
+	"${TMP_DIR}/check-own.txt" "occ check didn't count the own file of the owner's user alone: $(cat "${TMP_DIR}/check-own.txt")"
+if grep --fixed-strings "! ${PER_USER}" "${TMP_DIR}/check-own.txt" >/dev/null; then
 	echo "occ check warned about the archives of each owner, which the search shows: $(cat "${TMP_DIR}/check-own.txt")" >&2
 	exit 1
 fi
@@ -912,12 +914,13 @@ try_search 200 e2e-other
 assert_occ try "${TMP_DIR}/answer.json" e2e-other 123=shown 999=other_owner
 expect_status 204 'Deleting the renamed file of e2e-other' --user "e2e-other:${PASSWORD}" --request DELETE "${RENAMED}"
 
-# With the documents that each user may view as well, the search shows only the files of
-# the archive account, and nothing said so (#338): with ownership on per-user-shared, occ
-# check and the overview of the administration settings say what the search still shows
-# and link what to do, and Try a search tells the page to say so. The check still passes:
-# the search shows the documents of the archive account. Without the setting, as before
-# Paperless Sync 1.1.0, the warning is gone again.
+# With the documents that each user may view as well, the search shows the copies of the
+# owners, but not those of the users who may only view a document, and nothing said so
+# (#338): with ownership on per-user-shared, occ check and the overview of the
+# administration settings say what the search still shows and link what to do, and Try a
+# search tells the page to say so. The check still passes: the search shows the documents
+# of the archive account. Without the setting, as before Paperless Sync 1.1.0, the warning
+# is gone again.
 occ config:app:set paperless_sync ownership --value=per-user-shared --lazy >/dev/null
 occ paperless_unified_search:check >"${TMP_DIR}/check-per-user.txt"
 expect_text "! ${PER_USER}" "${TMP_DIR}/check-per-user.txt" "occ check didn't warn about the archives for each user: $(cat "${TMP_DIR}/check-per-user.txt")"

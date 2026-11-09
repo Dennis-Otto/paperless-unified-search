@@ -16,6 +16,7 @@ use OCA\PaperlessUnifiedSearch\Exception\SettingProblem;
 use OCA\PaperlessUnifiedSearch\Model\PublicConfig;
 use OCA\PaperlessUnifiedSearch\Model\SearchAccount;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
+use OCA\PaperlessUnifiedSearch\Service\DocumentOwners;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\SearchAccountSetup;
 use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
@@ -46,6 +47,7 @@ final class Setup extends Command {
 		private PaperlessApiService $paperlessApi,
 		private SettingsMessages $messages,
 		private SearchAccountSetup $accountSetup,
+		private DocumentOwners $documentOwners,
 	) {
 		parent::__construct();
 	}
@@ -131,8 +133,11 @@ final class Setup extends Command {
 			$owner = $this->configService->resolveArchiveOwner($archiveOwner);
 			$save = function (#[SensitiveParameter] string $tokenToSave) use ($normalizedUrl, $alwaysSearch, $owner, $allowLocal, $personalAlwaysSearch, $newDocumentAlerts): PublicConfig {
 				$status = $this->paperlessApi->probe($normalizedUrl, $tokenToSave, $allowLocal);
+				$config = $this->configService->save($normalizedUrl, $tokenToSave, $alwaysSearch, $owner, $allowLocal, $status->version, $personalAlwaysSearch, $status->tokenWarnings, $newDocumentAlerts);
+				// The search asks Paperless for its users anew, as after a save of the page.
+				$this->documentOwners->forget();
 
-				return $this->configService->save($normalizedUrl, $tokenToSave, $alwaysSearch, $owner, $allowLocal, $status->version, $personalAlwaysSearch, $status->tokenWarnings, $newDocumentAlerts);
+				return $config;
 			};
 			if ($createAccount) {
 				$account = $this->accountSetup->create($normalizedUrl, $token, $allowLocal, self::switchOf($input, 'view-new-documents', true), self::switchOf($input, 'view-existing', true), $save);

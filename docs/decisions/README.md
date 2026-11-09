@@ -22,4 +22,5 @@ Copy [the template](0000-template.md) to the next free number, replace the descr
 | [0010](0010-warn-about-what-the-token-may-do.md) | Warn about what the account of the API token may do, without refusing it | accepted |
 | [0011](0011-notify-about-new-documents-when-their-files-arrive.md) | Notify each user about new documents when their files arrive, from searches that the user saved | accepted |
 | [0012](0012-create-the-search-account-with-a-one-time-superuser-token.md) | Create the search account with a token of a superuser that serves only this | accepted |
-| [0013](0013-trust-the-files-of-each-owner.md) | Trust the files of the user of each owner, for that owner's documents alone | accepted |
+| [0013](0013-trust-the-files-of-each-owner.md) | Trust the files of the user of each owner, for that owner's documents alone | accepted, amended by [0014](0014-count-the-copies-of-the-owners-and-check-them.md) |
+| [0014](0014-count-the-copies-of-the-owners-and-check-them.md) | Count the copies of the owners in every mode of Paperless Sync for each user, and check them | accepted |

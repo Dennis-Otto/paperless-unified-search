@@ -112,11 +112,11 @@ final class SettingsMessages {
 	}
 
 	/**
-	 * The warning that Paperless Sync gives each user the documents that their user of
+	 * The warning that Paperless Sync also gives each user the documents that their user of
 	 * Paperless may view as files of their own, with what the search still shows.
 	 */
 	public function forPerUserArchives(): string {
-		return $this->l10n->t('Paperless Sync puts the documents of each user into their own files, which the search doesn\'t show: it shows only the files of the archive account, such as the documents without an owner in Paperless.');
+		return $this->l10n->t('Paperless Sync also puts copies of the documents that each user may view in Paperless into their own files, which the search doesn\'t show: it shows the files of the archive account and of the owner of each document.');
 	}
 
 	/**

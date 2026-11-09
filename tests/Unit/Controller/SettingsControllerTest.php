@@ -24,6 +24,7 @@ use OCA\PaperlessUnifiedSearch\Service\SearchExplainer;
 use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryAppConfig;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryCache;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Owners;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Http;
@@ -142,6 +143,25 @@ final class SettingsControllerTest extends TestCase {
 		self::assertSame(['superuser'], json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR)['tokenWarnings']);
 		self::assertSame('superuser', $config->stored(AppConstants::APP_ID, 'token_warnings'));
 		self::assertTrue($config->isLazy(AppConstants::APP_ID, 'token_warnings'));
+	}
+
+	/**
+	 * Paperless refused the users of Paperless to the account a moment ago, before the
+	 * administrator gave it View for Users: once the settings are saved, with the same
+	 * token, the search asks for them anew rather than resting for ten minutes.
+	 */
+	public function testSaveEndsTheRestOfTheUsersThatPaperlessRefused(): void {
+		$requests = [];
+		$cache = new MemoryCache(static fn (): int => 1791500000);
+		$cache->set('users-resting-' . hash('sha256', 'https://paperless.example.com TEST_VALUE'), true, 600);
+		$cacheFactory = $this->createStub(ICacheFactory::class);
+		$cacheFactory->method('createDistributed')->willReturn($cache);
+
+		$response = $this->controller(new MemoryAppConfig(), $this->createStub(ICredentialsManager::class), $this->paperless($requests), cacheFactory: $cacheFactory)
+			->save('https://paperless.example.com', 'TEST_VALUE');
+
+		self::assertSame(Http::STATUS_OK, $response->getStatus());
+		self::assertSame([], $cache->values());
 	}
 
 	/**
@@ -723,7 +743,7 @@ final class SettingsControllerTest extends TestCase {
 	 * The controller, in a Nextcloud with the account archive, which translates every
 	 * text into "DE:" and the text with its parameters.
 	 */
-	private function controller(IAppConfig $config, ICredentialsManager $credentials, IClient $client, ?LoggerInterface $logger = null): SettingsController {
+	private function controller(IAppConfig $config, ICredentialsManager $credentials, IClient $client, ?LoggerInterface $logger = null, ?ICacheFactory $cacheFactory = null): SettingsController {
 		$clientService = $this->createStub(IClientService::class);
 		$clientService->method('newClient')->willReturn($client);
 		$accounts = $this->accounts('archive');
@@ -739,6 +759,7 @@ final class SettingsControllerTest extends TestCase {
 		);
 
 		$api = new PaperlessApiService($configService, $clientService, $diagnostics, $clock, $appManager);
+		$owners = $this->documentOwners($api, $configService, $accounts, $cacheFactory);
 
 		return new SettingsController(
 			AppConstants::APP_ID,
@@ -749,12 +770,13 @@ final class SettingsControllerTest extends TestCase {
 			new SettingsMessages($l10n),
 			$l10n,
 			$logger ?? $this->createStub(LoggerInterface::class),
-			new SearchExplainer(new NextcloudFileLocator($this->createStub(IRootFolder::class), $this->createStub(LoggerInterface::class)), $accounts, $this->documentOwners($api, $configService, $accounts)),
+			new SearchExplainer(new NextcloudFileLocator($this->createStub(IRootFolder::class), $this->createStub(LoggerInterface::class)), $accounts, $owners),
 			$accounts,
 			$this->createStub(IUserSession::class),
 			$this->createStub(IEventDispatcher::class),
 			new PaperlessNames($api, $configService, $this->createStub(ICacheFactory::class), $this->createStub(LoggerInterface::class)),
 			new SearchAccountSetup($this->createStub(IClientService::class), $this->createStub(ISecureRandom::class), $this->createStub(IAppManager::class)),
+			$owners,
 		);
 	}
 

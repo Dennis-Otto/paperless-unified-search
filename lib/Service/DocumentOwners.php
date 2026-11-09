@@ -15,6 +15,7 @@ use OCA\PaperlessUnifiedSearch\Exception\RequestFailure;
 use OCP\ICache;
 use OCP\ICacheFactory;
 use OCP\IGroupManager;
+use OCP\IUser;
 use OCP\IUserManager;
 use Psr\Log\LoggerInterface;
 use Throwable;
@@ -22,7 +23,8 @@ use Throwable;
 /**
  * The user of Nextcloud whose own files stand for a document besides those of the archive
  * account, when Paperless Sync gives each user the documents that their user of Paperless
- * owns (decision 0013): the user whom Paperless Sync gives the owner of the document, by its
+ * owns, with or without those that it may view (decision 0013): the user whom Paperless
+ * Sync gives the owner of the document, by its
  * rules. A user of Paperless gets the user of Nextcloud that its table Paperless users with
  * another Nextcloud ID names, or else the one with its ID, whatever the case; with a group
  * in its settings, only a member of it; and two users of Paperless with one user of
@@ -33,7 +35,8 @@ use Throwable;
  * The usernames of Paperless come from /api/users/, which the cache of Nextcloud keeps for
  * ten minutes, for every search of that time. Without them, as for an account that may not
  * view users, the search shows only the files of the archive account, as before, and the
- * list rests for a while, so that every search doesn't wait for it.
+ * list rests for a while, so that every search doesn't wait for it, until the settings are
+ * saved or occ paperless_unified_search:check looks again (forget()).
  */
 final class DocumentOwners {
 	/** The seconds that the cache keeps the users of Paperless, and a list that it refused. */
@@ -65,6 +68,20 @@ final class DocumentOwners {
 	 * @return array<int, string> the ID of the user of Nextcloud, by the ID of the document
 	 */
 	public function of(iterable $documents): array {
+		return array_map(static fn (IUser $user): string => $user->getUID(), $this->accountsOf($documents) ?? []);
+	}
+
+	/**
+	 * The same as of(), with the accounts of the users, or null while the users of Paperless
+	 * are unknown, as when Paperless refuses them to the token: for occ
+	 * paperless_unified_search:check, which says when it can't look through the files of the
+	 * users.
+	 *
+	 * @param iterable<array-key, array<array-key, mixed>> $documents as Paperless sends them,
+	 *                                                                with their fields id and owner
+	 * @return ?array<int, IUser> the user of Nextcloud, by the ID of the document
+	 */
+	public function accountsOf(iterable $documents): ?array {
 		if (!$this->configService->hasArchivesOfEachOwner()) {
 			return [];
 		}
@@ -87,7 +104,7 @@ final class DocumentOwners {
 		try {
 			$paperlessUsers = $this->paperlessUsers();
 			if ($paperlessUsers === null) {
-				return [];
+				return null;
 			}
 			$users = $this->usersOf($paperlessUsers, array_unique($owners));
 		} catch (Throwable $error) {
@@ -98,7 +115,7 @@ final class DocumentOwners {
 				'errorType' => $error::class,
 			]);
 
-			return [];
+			return null;
 		}
 
 		$documentUsers = [];
@@ -112,6 +129,27 @@ final class DocumentOwners {
 	}
 
 	/**
+	 * Forgets the users of Paperless that the cache keeps for the server and the token of the
+	 * settings, and that Paperless refused them, so that the next search asks for them
+	 * again: after a save of the settings, as when an administrator gave the account the
+	 * permission View for Users and saved the same token, and before occ
+	 * paperless_unified_search:check, which tells what the search finds now. A cache that
+	 * fails only leaves them until they expire.
+	 */
+	public function forget(): void {
+		try {
+			$server = $this->server();
+			$this->getCache()->remove(self::usersKey($server));
+			$this->getCache()->remove(self::restingKey($server));
+		} catch (Throwable $error) {
+			$this->logger->warning('The users of Paperless could not be removed from the cache, so a refusal of them may count for up to ten minutes more ({errorType})', [
+				'app' => AppConstants::APP_ID,
+				'errorType' => $error::class,
+			]);
+		}
+	}
+
+	/**
 	 * The usernames of the users of Paperless by their IDs, from the cache or with one request
 	 * of each page of the list, or null while they are unknown: while the list rests, after
 	 * Paperless refused it to the token, which may not view users, for ten minutes, and after a
@@ -120,10 +158,7 @@ final class DocumentOwners {
 	 * @return ?array<int, string>
 	 */
 	private function paperlessUsers(): ?array {
-		// The token is part of the key: after the administrator gives its account the
-		// permission View for Users and saves a new token, or another one, the users count at
-		// once, without waiting until a refused list rests no longer.
-		$server = hash('sha256', $this->configService->getUrl() . ' ' . $this->configService->getToken());
+		$server = $this->server();
 		$cached = self::usersIn($this->getCache()->get(self::usersKey($server)));
 		if ($cached !== null) {
 			return $cached;
@@ -165,7 +200,7 @@ final class DocumentOwners {
 	 *
 	 * @param array<int, string> $paperlessUsers the usernames of every user of Paperless, by ID
 	 * @param array<int, int> $wanted the IDs of the users of Paperless to match
-	 * @return array<int, string> the ID of the user of Nextcloud, by the ID of the user of Paperless
+	 * @return array<int, IUser> the user of Nextcloud, by the ID of the user of Paperless
 	 */
 	private function usersOf(array $paperlessUsers, array $wanted): array {
 		$table = self::tableOf($this->configService->getSyncUserMap());
@@ -194,7 +229,7 @@ final class DocumentOwners {
 			if (($named[mb_strtolower($uid)] ?? 0) > 1 || ($group !== '' && !$this->groupManager->isInGroup($uid, $group))) {
 				continue;
 			}
-			$users[$paperlessId] = $uid;
+			$users[$paperlessId] = $user;
 		}
 
 		return $users;
@@ -239,6 +274,16 @@ final class DocumentOwners {
 		}
 
 		return $users;
+	}
+
+	/**
+	 * The key of the server and the token of the settings in the cache. The token is part of
+	 * it: after the administrator gives the account the permission View for Users and saves
+	 * another token, the users count at once, as they do after a save of the same token,
+	 * which forget() takes care of.
+	 */
+	private function server(): string {
+		return hash('sha256', $this->configService->getUrl() . ' ' . $this->configService->getToken());
 	}
 
 	private function getCache(): ICache {

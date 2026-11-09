@@ -49,6 +49,13 @@ final class PaperlessApiService {
 	 * documents that a term finds.
 	 */
 	private const NEW_FIELDS = 'id,title,owner';
+
+	/**
+	 * The fields of the documents for occ paperless_unified_search:check, which looks for
+	 * the file of each one in the folders of the user of its owner (decision 0013): only
+	 * the ID and the owner.
+	 */
+	private const OWNER_FIELDS = 'id,owner';
 	private const MATCH_FIELDS = 'id';
 
 	/**
@@ -105,10 +112,24 @@ final class PaperlessApiService {
 	private const MOST_USER_PAGES = 10;
 
 	/**
+	 * How many documents with their owners one request of the check asks for, and for how
+	 * many pages of them at most: an ID and an owner are a few bytes of each document.
+	 */
+	private const OWNERS_PAGE_SIZE = 1000;
+	private const MOST_OWNER_PAGES = 100;
+
+	/**
 	 * The seconds that the request for what the account of the token may do may take in
 	 * all: Paperless has just answered the test of the connection, which passes without it.
 	 */
 	private const PRIVILEGES_TIMEOUT = 3;
+
+	/**
+	 * The answers of /api/ui_settings/ with which Paperless refuses to say what the
+	 * account of the token may do: HTTP 403 to an account that may not view its UI
+	 * settings, and HTTP 404 where it hides the page.
+	 */
+	private const PRIVILEGES_REFUSED = [403, 404];
 
 	/**
 	 * The seconds that the request for the newest documents may take in all: the
@@ -173,7 +194,7 @@ final class PaperlessApiService {
 	 * The test of the connection to the Paperless of the settings, as occ and its checks
 	 * run it. The version that Paperless names replaces the stored one, and so do the
 	 * warnings about the account of the token, which the overview of the administration
-	 * settings and the settings page show.
+	 * settings and the settings page show, as ConfigService::rememberTokenWarnings() says.
 	 *
 	 * @throws PaperlessRequestException whatever failed, also when the request got no answer
 	 */
@@ -184,7 +205,7 @@ final class PaperlessApiService {
 			$this->configService->isLocalNetworkAllowed(),
 		);
 		$this->configService->rememberPaperlessVersion($status->version);
-		$this->configService->rememberTokenWarnings($status->tokenWarnings);
+		$this->configService->rememberTokenWarnings($status->tokenWarnings, $status->privilegesRefused);
 
 		return $status;
 	}
@@ -216,51 +237,51 @@ final class PaperlessApiService {
 		}
 
 		$documents = self::documentsOf($data)['count'];
+		[$warnings, $refused] = $this->findTokenWarnings($url, $token, $allowLocal, $documents);
 
-		return new PaperlessStatus(
-			$version,
-			$documents,
-			self::idsOf($data['all'] ?? null),
-			$this->findTokenWarnings($url, $token, $allowLocal, $documents),
-		);
+		return new PaperlessStatus($version, $documents, self::idsOf($data['all'] ?? null), $warnings, $refused);
 	}
 
 	/**
 	 * What the account of the token may do beyond what the search needs, or may not do of
 	 * what the results show, as /api/ui_settings/ of Paperless names it: the user of the
 	 * token and the permissions of its account and its groups. Paperless answers it only to
-	 * an account that may view its UI settings, and refuses it with HTTP 403 otherwise. The
-	 * warnings only add to a test that Paperless has passed, so the request gets one try, a
-	 * short time and no place in the history of the problems of the search, and a request
-	 * without an answer, an answer other than HTTP 200 and one that isn't JSON leave the
-	 * warnings unknown.
+	 * an account that may view its UI settings, and refuses it with HTTP 403 otherwise, or
+	 * with HTTP 404 where it hides the page. The warnings only add to a test that Paperless
+	 * has passed, so the request gets one try, a short time and no place in the history of
+	 * the problems of the search; a refusal, a request without an answer, another answer
+	 * than HTTP 200 and one that isn't JSON leave the warnings unknown, but only a refusal
+	 * says that Paperless won't tell until the account may view its UI settings.
 	 *
 	 * @param int $documents how many documents the account of the token may view
-	 * @return ?list<TokenWarning> null when Paperless doesn't say what the account may do
+	 * @return array{?list<TokenWarning>, bool} the warnings, null when Paperless doesn't
+	 *                                          say what the account may do, and whether
+	 *                                          it refused to
 	 */
-	private function findTokenWarnings(string $url, string $token, bool $allowLocal, int $documents): ?array {
+	private function findTokenWarnings(string $url, string $token, bool $allowLocal, int $documents): array {
 		try {
 			$response = $this->client->get(
 				rtrim($url, '/') . '/api/ui_settings/',
 				$this->options($token, $allowLocal, [], self::PRIVILEGES_TIMEOUT),
 			);
+			$status = $response->getStatusCode();
 			$body = $response->getBody();
-			if ($response->getStatusCode() !== 200 || !is_string($body)) {
-				return null;
+			if ($status !== 200 || !is_string($body)) {
+				return [null, in_array($status, self::PRIVILEGES_REFUSED, true)];
 			}
 
 			$warnings = TokenWarning::of(json_decode($body, true, flags: JSON_THROW_ON_ERROR));
 		} catch (Exception) {
 			// The errors of the client of Nextcloud, such as a timeout, and of JSON.
-			return null;
+			return [null, false];
 		}
 
 		// A superuser sees every name, and an account without documents misses none.
 		if ($warnings === null || $documents === 0 || in_array(TokenWarning::Superuser, $warnings, true)) {
-			return $warnings;
+			return [$warnings, false];
 		}
 
-		return $this->hidesNamesOfOthers($url, $token, $allowLocal) ? [...$warnings, TokenWarning::HidesNamesOfOthers] : $warnings;
+		return [$this->hidesNamesOfOthers($url, $token, $allowLocal) ? [...$warnings, TokenWarning::HidesNamesOfOthers] : $warnings, false];
 	}
 
 	/**
@@ -467,6 +488,44 @@ final class PaperlessApiService {
 		}
 
 		return $found;
+	}
+
+	/**
+	 * Every document that the account of the token may view, with its ID and its owner, for
+	 * occ paperless_unified_search:check, which looks for their files in the folders of the
+	 * users of their owners when Paperless Sync gives each owner an archive. The app asks
+	 * for the pages by their numbers, ordered by ID, never by the link of the next one, as
+	 * for the users. No search waits for them, so each request gets one try, and no place in
+	 * the history of the problems of the search, as findNewestDocuments().
+	 *
+	 * @return list<array<array-key, mixed>> the documents, with their fields id and owner
+	 * @throws PaperlessRequestException when Paperless answers, but not with documents, or
+	 *                                   with more documents than the check reads
+	 * @throws Throwable the error of a request without answer, or without the settings
+	 */
+	public function findDocumentOwners(): array {
+		$documents = [];
+		for ($page = 1; $page <= self::MOST_OWNER_PAGES; $page++) {
+			[$data] = $this->requestDocuments(
+				$this->configService->getUrl(),
+				$this->configService->getToken(),
+				$this->configService->isLocalNetworkAllowed(),
+				[
+					'ordering' => 'id',
+					'page' => $page,
+					'page_size' => self::OWNERS_PAGE_SIZE,
+					'fields' => self::OWNER_FIELDS,
+				],
+				retry: false,
+			);
+			$list = self::documentsOf($data);
+			array_push($documents, ...$list['results']);
+			if ($list['next'] === null) {
+				return $documents;
+			}
+		}
+
+		throw PaperlessRequestException::notPaperless(sprintf('Paperless lists more than %d documents.', self::OWNERS_PAGE_SIZE * self::MOST_OWNER_PAGES));
 	}
 
 	/**
