@@ -1960,8 +1960,9 @@ expect_in "the way to the password of jamie" "demo/.env holds no DEMO_PASSWORD, 
 
 # In a copy of the repository with the script alone and a fake docker, which builds the
 # image of .github/screenshots/ and, as the container, makes NAME.mp4 and NAME-poster.webp of
-# each NAME.gif that it gets on standard input, shrinks each PNG and answers with all of
-# them on standard output.
+# each NAME.gif that it gets on standard input, the poster from NAME-poster.png when it
+# came along, which it removes, shrinks each PNG and answers with all of them on standard
+# output.
 media="${WORK}/media"
 mkdir -p "${media}/scripts" "${media}/bin" "${media}/pictures"
 cp "${SCRIPT_DIR}/../../scripts/screenshot-media.sh" "${media}/scripts/screenshot-media.sh"
@@ -1984,7 +1985,12 @@ case "$1" in
 		for gif in "${out}"/*.gif; do
 			[[ -e "${gif}" ]] || continue
 			echo "video of $(cat "${gif}")" >"${gif%.gif}.mp4"
-			echo "first frame of $(cat "${gif}")" >"${gif%.gif}-poster.webp"
+			first="${gif}"
+			if [[ -e "${gif%.gif}-poster.png" ]]; then
+				first="${gif%.gif}-poster.png"
+			fi
+			echo "first frame of $(cat "${first}")" >"${gif%.gif}-poster.webp"
+			rm -f "${gif%.gif}-poster.png"
 		done
 		for png in "${out}"/*.png; do
 			[[ -e "${png}" ]] || continue
@@ -2025,6 +2031,18 @@ expect "the video beside the animation" "video of the search" "$(cat "${media}/p
 expect "the first frame beside the animation" "first frame of the search" "$(cat "${media}/pictures/search-and-open-poster.webp")"
 expect "the animation itself" "the search" "$(cat "${media}/pictures/search-and-open.gif")"
 expect "the smaller PNG" "smaller the settings" "$(cat "${media}/pictures/03-admin-settings.png")"
+# The poster from the first frame in full colour that screenshots.mjs writes beside the
+# animation, which leaves the folder with the screenshots alone.
+echo "the setup in full colour" >"${media}/pictures/setup-poster.png"
+echo "the setup" >"${media}/pictures/setup.gif"
+expect "screenshot-media.sh with a first frame in full colour" 0 "$(finish media/pictures)"
+expect "the poster from the first frame in full colour" "first frame of the setup in full colour" "$(cat "${media}/pictures/setup-poster.webp")"
+expect "the first frame in full colour after its poster" absent "$([[ -e "${media}/pictures/setup-poster.png" ]] && echo present || echo absent)"
+expect "the poster without a first frame in full colour" "first frame of the search" "$(cat "${media}/pictures/search-and-open-poster.webp")"
+# shellcheck disable=SC2016 # the text of the script of the container, with its variable unexpanded
+expect_in "the poster from the first frame in full colour in the container" 'first="$name-poster.png"' "${WORK}/docker.log"
+# shellcheck disable=SC2016 # the text of the script of the container, with its variable unexpanded
+expect_in "the first frame in full colour removed in the container" 'rm -f "$name-poster.png"' "${WORK}/docker.log"
 # The same bytes in every run: one thread, and no version of the encoder in the file.
 expect_in "the video with one thread" "-threads 1" "${WORK}/docker.log"
 expect_in "the video without the version of its encoder" "-fflags +bitexact -flags:v +bitexact -map_metadata -1" "${WORK}/docker.log"

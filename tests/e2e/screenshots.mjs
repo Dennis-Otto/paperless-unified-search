@@ -34,7 +34,7 @@ import gifenc from 'gifenc'
 import pngjs from 'pngjs'
 import { chromium } from 'playwright-core'
 import { DEMO, OPENED, RESULTS, demoClock, lastChange, templateTimes, unexpectedResults } from './demo.mjs'
-import { changedRectangle, placeFrame } from './gif-frames.mjs'
+import { animationFrames, colorsOf, placeFrame } from './gif-frames.mjs'
 import {
 	BASE_URL,
 	PASSWORD,
@@ -1095,99 +1095,33 @@ async function demoAnimation(browser) {
 	})
 }
 
-// Encodes the frames as GIF, with one palette for all of them. Every frame after the
-// first holds only the rectangle around the pixels whose color in that palette changed
-// (gif-frames.mjs), and in it only those pixels; the rest stays transparent, so that the
-// previous frame shows through. A palette of each frame of its own would let the colors
-// of the unchanged pixels drift from their neighbors.
+// Encodes the frames as GIF, each with a palette of its own colours (animationFrames of
+// gif-frames.mjs). Every frame after the first holds only the rectangle around the pixels
+// whose colour changed, and in it only those pixels; the rest stays transparent, so that
+// the previous frame shows through. So a change in one frame changes the colours of no
+// other frame, and pixels that stayed the same never take other colours. Beside NAME.gif
+// goes NAME-poster.png, the first frame in full colour, from which
+// scripts/screenshot-media.sh makes the poster of the website.
 function writeGif(frames, path) {
-	const decode = (png) => {
-		const { width, height, data } = PNG.sync.read(png)
-		return { width, height, rgba: new Uint8Array(data) }
-	}
-	// Every seventh pixel of every frame is enough to choose the colors.
-	const samples = frames.map(({ png }) => {
-		const pixels = new Uint32Array(decode(png).rgba.buffer)
-		return pixels.filter((_, i) => i % 7 === 0)
-	})
-	const sample = new Uint32Array(samples.reduce((sum, part) => sum + part.length, 0))
-	samples.reduce((offset, part) => {
-		sample.set(part, offset)
-		return offset + part.length
-	}, 0)
-	// Nextcloud is mostly white and gray. The quantizer would merge white with the
-	// light blue of the background and tint the grays of shadows, so the palette has
-	// white and 64 neutral grays of its own.
-	const grays = Array.from({ length: 64 }, (_, i) => [i * 4, i * 4, i * 4])
-	const palette = [...quantize(new Uint8Array(sample.buffer), 255 - grays.length - 1), ...grays, [255, 255, 255]]
-	const transparentIndex = palette.length
-	// The nearest color of the palette for every color of a pixel, looked up once.
-	// applyPalette of gifenc decides for 32 shades at once, by the first it meets.
-	const lookup = new Int16Array(1 << 24).fill(-1)
-	const nearest = (color) => {
-		const [r, g, b] = [color & 0xff, (color >> 8) & 0xff, (color >> 16) & 0xff]
-		let best = 0
-		let distance = Infinity
-		palette.forEach(([pr, pg, pb], i) => {
-			const d = (r - pr) ** 2 + (g - pg) ** 2 + (b - pb) ** 2
-			if (d < distance) {
-				best = i
-				distance = d
-			}
-		})
-		return best
-	}
-	const indexOf = (rgba) => {
-		const pixels = new Uint32Array(rgba.buffer)
-		const index = new Uint8Array(pixels.length)
-		for (let i = 0; i < pixels.length; i++) {
-			const color = pixels[i] & 0xffffff
-			if (lookup[color] < 0) {
-				lookup[color] = nearest(color)
-			}
-			index[i] = lookup[color]
+	const images = function* () {
+		for (const { png, delay } of frames) {
+			const { width, height, data } = PNG.sync.read(png)
+			yield { colors: colorsOf(data), width, height, delay }
 		}
-		return index
 	}
-
 	const gif = GIFEncoder()
-	let previous = null
-	let pending = null
-	const write = () => {
-		const { pixels, width, height, left, top, delay, transparent } = pending
+	for (const frame of animationFrames(images(), quantize)) {
+		const { pixels, width, height, left, top, delay, palette, transparent, transparentIndex } = frame
 		const offset = gif.bytesView().length
-		gif.writeFrame(pixels, width, height, {
-			// Only the first frame names the palette, which all of them share.
-			palette: transparent ? null : [...palette, [0, 0, 0]],
-			delay,
-			dispose: 1,
-			transparent,
-			transparentIndex,
-		})
-		if (transparent) {
+		gif.writeFrame(pixels, width, height, { palette, delay, dispose: 1, transparent, transparentIndex })
+		// The first frame fills the picture and follows the header of the GIF.
+		if (offset > 0) {
 			placeFrame(gif.bytesView(), offset, left, top)
 		}
 	}
-	for (const { png, delay } of frames) {
-		const { width, height, rgba } = decode(png)
-		const index = indexOf(rgba)
-		if (previous === null) {
-			pending = { pixels: index, width, height, left: 0, top: 0, delay, transparent: false }
-			previous = index
-			continue
-		}
-		const changed = changedRectangle(index, previous, width, transparentIndex)
-		if (changed === null) {
-			pending.delay += delay
-			continue
-		}
-		write()
-		pending = { ...changed, delay, transparent: true }
-		previous = index
-	}
-	write()
 	gif.finish()
 	writeFileSync(path, gif.bytes())
+	writeFileSync(path.replace(/\.gif$/, '-poster.png'), frames[0].png)
 }
 
 // The real Paperless-ngx of compose.paperless.yaml, which shows how docs/configure.md

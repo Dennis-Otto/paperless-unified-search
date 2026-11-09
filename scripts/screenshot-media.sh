@@ -8,8 +8,11 @@
 # which the website shows until the video plays and, for a reader who asks for less
 # motion, in its place. Named NAME.webp, the hooks of the blueprint would make it the
 # poster of the video, which a browser loads also for the video of the other theme;
-# docs/javascripts/hero.js gives it to the video that shows. It shrinks each PNG
-# without changing a pixel. ffmpeg and oxipng run in the
+# docs/javascripts/hero.js gives it to the video that shows. The poster comes from
+# NAME-poster.png, the first frame in full colour that tests/e2e/screenshots.mjs writes
+# beside the animation, which it removes then, so that the poster keeps every colour of
+# the screenshot and depends on that frame alone; without one, from the first frame of
+# the GIF. It shrinks each PNG without changing a pixel. ffmpeg and oxipng run in the
 # image of .github/screenshots/Dockerfile, and the same pictures make the same bytes in
 # every run, so the screenshot bot renews a video only when its animation changed.
 #   bash scripts/screenshot-media.sh FOLDER
@@ -42,7 +45,12 @@ tar -C "${folder}" -cf - . |
 			ffmpeg -loglevel error -i "$gif" -c:v libx264 -preset veryslow -crf 28 \
 				-pix_fmt yuv420p -threads 1 -an -movflags +faststart \
 				-fflags +bitexact -flags:v +bitexact -map_metadata -1 "$name.mp4" >&2
-			ffmpeg -loglevel error -i "$gif" -frames:v 1 -c:v libwebp -quality 80 "$name-poster.webp" >&2
+			first="$gif"
+			if [ -e "$name-poster.png" ]; then
+				first="$name-poster.png"
+			fi
+			ffmpeg -loglevel error -i "$first" -frames:v 1 -c:v libwebp -quality 80 "$name-poster.webp" >&2
+			rm -f "$name-poster.png"
 		done
 		set -- *.png
 		if [ -e "$1" ]; then
@@ -50,3 +58,8 @@ tar -C "${folder}" -cf - . |
 		fi
 		tar -cf - .' |
 	tar -C "${folder}" -xf -
+# The first frames in full colour are in the posters now, so the PNGs of the folder are
+# the screenshots alone.
+for gif in "${folder}"/*.gif; do
+	rm -f -- "${gif%.gif}-poster.png"
+done
