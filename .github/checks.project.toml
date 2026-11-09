@@ -213,7 +213,12 @@ check that the image of Playwright and `playwright-core` have the same version;
 version from `min-version` to `max-version` of `appinfo/info.xml` and no other; the
 scripts of the end-to-end tests, without Docker, among them that the mock of Paperless
 writes each request into its journal before it answers and that no script pipes a
-command into `grep --quiet`; *Pictures of the READMEs and the website*, that each
+command into `grep --quiet`, and that the jobs that write issues (`nextcloud-issue`,
+`paperless-issue` and `coming-issue` of `e2e.yml`, `demo-issue` of `demo.yml`) block
+every host but `api.github.com:443`, without sudo and Docker, on the version of
+Harden-Runner of `after-checks.yml`, and first wait with its step *Wait until
+Harden-Runner lets the hosts through* and last with its step *Wait until Harden-Runner
+has removed Docker*, word for word; *Pictures of the READMEs and the website*, that each
 picture that a README or a page of `docs/` shows from main, under `raw/main/`, is in
 the checkout, and names the file that shows a missing one; *Social preview and the
 screenshot bot*, that `scripts/screenshots.sh` renders the social preview, that the
@@ -276,7 +281,11 @@ and a `<description lang>` in that language to `appinfo/info.xml`, as
 for a check without an explanation, add it to `.github/checks.project.toml`; for a
 pipe into `grep --quiet`, read the output into a variable first and search that,
 `grep --quiet … <<<"${output}"`, since the command before the pipe dies of SIGPIPE
-once grep stops reading at its first match. A
+once grep stops reading at its first match; for a job that writes issues, copy the two
+steps that wait, and the version of Harden-Runner, anew from
+`.github/workflows/after-checks.yml`, which an update of the blueprint may have changed,
+with `HOSTS` equal to `allowed-endpoints`, and when the blueprint drops a step, drop it
+in the four jobs and in `tests/e2e/selftest.sh` too. A
 JavaScript catalog that lags its JSON catalog is written anew by the third command.
 The fix bot runs the second, the third and the fourth command on a pull request of this
 repository, such as the one of the upstream bot for a new Nextcloud, which then fixes

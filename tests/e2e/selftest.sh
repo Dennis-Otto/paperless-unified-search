@@ -903,18 +903,19 @@ workflow_job() {
 
 # The script of the step of a job by its name, in job.yml or in the file that the second
 # argument names, as GitHub runs it: the lines of the block of its run:, without the
-# indentation of the block.
+# indentation of the block and without the empty lines after it, before the next job.
 step_script() {
 	awk -v step="      - name: $1" '
 		$0 == step { inside = 1; next }
 		inside && !block && /^      - / { exit }
 		inside && !block && /^ +run: \|$/ { block = 1; next }
 		block {
-			if ($0 ~ /^ *$/) { print ""; next }
+			if ($0 ~ /^ *$/) { blank = blank "\n"; next }
 			match($0, /^ */)
 			if (!indent) { indent = RLENGTH }
 			if (RLENGTH < indent) { exit }
-			print substr($0, indent + 1)
+			printf "%s%s\n", blank, substr($0, indent + 1)
+			blank = ""
 		}
 	' "${2:-${WORK}/job.yml}"
 }
@@ -1017,14 +1018,28 @@ expect_issue_job() {
 	# away. It first waits until Harden-Runner lets its hosts through, with the same
 	# script as the jobs of the blueprint that block, so that a fix of it reaches this
 	# job as well.
-	expect "${job}: its steps" 		"Block every host that the job doesn't need; Wait until Harden-Runner lets the hosts through; Open, update or close the issue" 		"$(sed -n 's/^      - name: //p' "${WORK}/job.yml" | awk '{ printf "%s%s", separator, $0; separator = "; " } END { print "" }')"
+	expect "${job}: its steps" \
+		"Block every host that the job doesn't need; Wait until Harden-Runner lets the hosts through; Open, update or close the issue; Wait until Harden-Runner has removed Docker" \
+		"$(sed -n 's/^      - name: //p' "${WORK}/job.yml" | awk '{ printf "%s%s", separator, $0; separator = "; " } END { print "" }')"
 	expect "${job}: the policy of Harden-Runner" block "$(sed -n 's/^          egress-policy: //p' "${WORK}/job.yml")"
 	expect "${job}: without sudo and Docker" true "$(sed -n 's/^          disable-sudo-and-containers: //p' "${WORK}/job.yml")"
 	expect "${job}: the hosts that Harden-Runner lets through" api.github.com:443 "$(folded_value allowed-endpoints)"
 	expect "${job}: the hosts that it waits for" "$(folded_value allowed-endpoints)" "$(folded_value HOSTS)"
 	expect "${job}: the time limit of the wait" 4 "$(sed -n 's/^        timeout-minutes: //p' "${WORK}/job.yml")"
 	step_script "Wait until Harden-Runner lets the hosts through" >"${WORK}/wait.sh"
-	expect "${job}: the script of its step \"Wait until Harden-Runner lets the hosts through\", the same as in after-checks.yml (copy it from there)" 		true "$(cmp -s "${WORK}/wait.sh" "${WORK}/blueprint-wait.sh" && echo true || echo false)"
+	expect "${job}: the script of its step \"Wait until Harden-Runner lets the hosts through\", the same as in after-checks.yml (copy it from there)" \
+		true "$(cmp -s "${WORK}/wait.sh" "${WORK}/blueprint-wait.sh" && echo true || echo false)"
+	# The job ends within seconds, before Harden-Runner has removed Docker with apt-get in
+	# the background, and would then hang until its time limit: it waits for that as the
+	# jobs of the blueprint do.
+	step_script "Wait until Harden-Runner has removed Docker" >"${WORK}/docker.sh"
+	expect "${job}: the script of its step \"Wait until Harden-Runner has removed Docker\", the same as in after-checks.yml (copy it from there)" \
+		true "$(cmp -s "${WORK}/docker.sh" "${WORK}/blueprint-docker.sh" && echo true || echo false)"
+	expect "${job}: its step \"Wait until Harden-Runner has removed Docker\" runs always" "always()" \
+		"$(awk '$0 == "      - name: Wait until Harden-Runner has removed Docker" { inside = 1; next } inside && /^        if: / { print $2; exit }' "${WORK}/job.yml")"
+	expect "${job}: the version of Harden-Runner, the same as in after-checks.yml" \
+		"$(sed -n 's/^ *uses: step-security\/harden-runner@//p' "${SCRIPT_DIR}/../../.github/workflows/after-checks.yml" | head -n 1)" \
+		"$(sed -n 's/^ *uses: step-security\/harden-runner@//p' "${WORK}/job.yml")"
 	expect "${workflow}: the telemetry of gh" '"false"' "$(sed -n 's/^  *GH_TELEMETRY: //p' "${SCRIPT_DIR}/../../.github/workflows/${workflow}")"
 
 	expect "${job}: a failed run without an open issue" 0 "$(report env RESULT=failure)"
@@ -1079,8 +1094,14 @@ CASES
 }
 
 # The wait of the jobs of the blueprint that block, which the jobs here repeat.
-step_script "Wait until Harden-Runner lets the hosts through" 	"${SCRIPT_DIR}/../../.github/workflows/after-checks.yml" >"${WORK}/blueprint-wait.sh"
-expect "the step \"Wait until Harden-Runner lets the hosts through\" in after-checks.yml" true 	"$(grep --quiet --fixed-strings 'curl' "${WORK}/blueprint-wait.sh" && echo true || echo false)"
+step_script "Wait until Harden-Runner lets the hosts through" \
+	"${SCRIPT_DIR}/../../.github/workflows/after-checks.yml" >"${WORK}/blueprint-wait.sh"
+expect "the step \"Wait until Harden-Runner lets the hosts through\" in after-checks.yml" true \
+	"$(grep --quiet --fixed-strings 'curl' "${WORK}/blueprint-wait.sh" && echo true || echo false)"
+step_script "Wait until Harden-Runner has removed Docker" \
+	"${SCRIPT_DIR}/../../.github/workflows/after-checks.yml" >"${WORK}/blueprint-docker.sh"
+expect "the step \"Wait until Harden-Runner has removed Docker\" in after-checks.yml" true \
+	"$(grep --quiet --fixed-strings 'pgrep' "${WORK}/blueprint-docker.sh" && echo true || echo false)"
 # Every job that may write issues is one of those that expect_issue_job checks.
 expect "the jobs of e2e.yml that may write issues" "nextcloud-issue paperless-issue coming-issue" "$(issue_jobs e2e.yml)"
 expect "the jobs of demo.yml that may write issues" demo-issue "$(issue_jobs demo.yml)"

@@ -66,7 +66,7 @@ jobs:
       stale: ${{ steps.record.outputs.stale }}
     steps:
       - name: Record the network traffic of the job
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -168,7 +168,7 @@ jobs:
       contents: read
     steps:
       - name: Record the network traffic of the job
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -262,10 +262,11 @@ jobs:
   # The only job that may write issues, and it runs no code of the repository and
   # reaches no host but the API of GitHub, the only one that gh asks: Harden-Runner
   # blocks every other. A run started by hand on another branch than main reports
-  # nothing. A cancelled job reports
-  # in the weekly run alone, where it reached its time limit; whoever starts a run by
-  # hand may cancel it. tests/e2e/selftest.sh runs its script with a fake gh and
-  # evaluates its condition.
+  # nothing. A cancelled job reports in the weekly run alone, where it reached its time
+  # limit; whoever starts a run by hand may cancel it. tests/e2e/selftest.sh runs its
+  # script with a fake gh and evaluates its condition. The job ends within seconds, so
+  # it waits at the end until Harden-Runner has removed Docker, or it would hang until
+  # its time limit.
   demo-issue:
     name: issue about the demo
     needs: demo
@@ -281,7 +282,7 @@ jobs:
       issues: write
     steps:
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: block
           disable-sudo-and-containers: true
@@ -363,3 +364,13 @@ jobs:
           TEXT
           } > "$RUNNER_TEMP/issue.md"
           gh issue create --title "$TITLE" --body-file "$RUNNER_TEMP/issue.md"
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
