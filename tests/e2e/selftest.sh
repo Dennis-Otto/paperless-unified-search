@@ -31,7 +31,8 @@
 #   release that openssl signs: the last release, its signature and provenance, a
 #   certificate of another app, a release that its signature doesn't match, one without
 #   its signature or provenance, and the notice without any release, before Docker; the
-#   cache of gh of its own, and its containers removed also on a runner of GitHub.
+#   same through the API of GitHub with a token, and an error of the API; the cache of
+#   gh of its own, and its containers removed also on a runner of GitHub.
 # - assert_upgrade.py, with answers of its own, when Python is installed: the results
 #   of a search, the settings of the page of the administration settings and the keys
 #   of the configuration of the app, which upgrade.sh compares before and after.
@@ -67,7 +68,8 @@
 # - demo/seed.sh, with a fake docker that plays the containers of the demo: Paperless
 #   Sync runs with occ, which waits until the archive is written, and only then the
 #   archive is shared; it waits for a run of the background jobs that is working, gives
-#   up after five minutes, and stops at a run with errors.
+#   up after five minutes, and stops at a run with errors; it installs the release of
+#   Paperless Sync through the API of GitHub with a token, else in the container.
 #
 #   bash tests/e2e/selftest.sh
 
@@ -644,11 +646,14 @@ expect_in "the message about a version that isn't one" "next is no version of th
 
 # upgrade.sh up to Docker, with fakes of curl and gh in front of PATH: a release whose
 # signature openssl makes with a certificate of its own, served for every URL by the end
-# of the URL, and a fake Docker that stops it at the start of Nextcloud.
+# of the URL, and through the API of GitHub with a token by .github/download.sh, and a
+# fake Docker that stops it at the start of Nextcloud.
 if command -v openssl >/dev/null 2>&1; then
 	release="${WORK}/release"
 	fakes="${WORK}/upgrade-bin"
-	mkdir -p "${release}" "${fakes}"
+	mkdir -p "${release}" "${fakes}" "${app}/.github"
+	# Untracked, so that the package of the checkout leaves it out.
+	cp "${SCRIPT_DIR}/../../.github/download.sh" "${app}/.github/download.sh"
 	cat >"${fakes}/curl" <<'SCRIPT'
 #!/usr/bin/env bash
 url="${*: -1}"
@@ -672,9 +677,53 @@ if [[ ! -f "${FAKE_RELEASE}/${url##*/}" ]]; then
 fi
 cp "${FAKE_RELEASE}/${url##*/}" "${output}"
 SCRIPT
+	# The API of GitHub answers the last release as FAKE_LATEST names it, or with the
+	# status FAKE_LATEST_STATUS; the assets and their digests are the files of the
+	# release, and FAKE_API_STATUS fails every other call of the API.
 	cat >"${fakes}/gh" <<'SCRIPT'
 #!/usr/bin/env bash
 echo "gh $*" >>"${FAKE_DOCKER_LOG}"
+case "$1 $2" in
+	"api repos/o/r/releases/latest")
+		if [[ "${FAKE_LATEST_STATUS:-302}" != 302 ]]; then
+			echo "gh: Server Error (HTTP ${FAKE_LATEST_STATUS})" >&2
+			exit 1
+		elif [[ "${FAKE_LATEST:-}" != */releases/tag/* ]]; then
+			echo "gh: Not Found (HTTP 404)" >&2
+			exit 1
+		fi
+		echo "${FAKE_LATEST##*/releases/tag/}"
+		exit 0
+		;;
+	"api "*)
+		if [[ -n "${FAKE_API_STATUS:-}" ]]; then
+			echo "gh: Server Error (HTTP ${FAKE_API_STATUS})" >&2
+			exit 1
+		fi
+		filter="${*: -1}"
+		if [[ "${filter}" == *'select(.name == "'* ]]; then
+			name="${filter#*select(.name == \"}"
+			name="${name%%\"*}"
+			if [[ -f "${FAKE_RELEASE}/${name}" ]]; then
+				echo "sha256:$(sha256sum "${FAKE_RELEASE}/${name}" | cut -d ' ' -f 1)"
+			fi
+		else
+			ls "${FAKE_RELEASE}"
+		fi
+		exit 0
+		;;
+	"release download")
+		while (($# > 0)); do
+			case "$1" in
+				--pattern) name="$2" && shift ;;
+				--output) output="$2" && shift ;;
+			esac
+			shift
+		done
+		cp "${FAKE_RELEASE}/${name}" "${output}"
+		exit 0
+		;;
+esac
 echo "gh cache ${XDG_CACHE_HOME:-}" >>"${FAKE_DOCKER_LOG}"
 exit "${FAKE_GH_STATUS:-0}"
 SCRIPT
@@ -708,7 +757,7 @@ SCRIPT
 		local status=0
 		: >"${WORK}/docker.log"
 		(cd "${app}" && PATH="${fakes}:${PATH}" DOCKER_BIN="${fakes}/docker" FAKE_DOCKER_LOG="${WORK}/docker.log" \
-			FAKE_RELEASE="${release}" FAKE_LATEST="https://github.com/o/r/releases/tag/v1.0.0" \
+			FAKE_RELEASE="${release}" FAKE_LATEST="https://github.com/o/r/releases/tag/v1.0.0" GH_TOKEN='' \
 			NEXTCLOUD_IMAGE=nextcloud:35-apache "$@" bash tests/e2e/upgrade.sh >"${WORK}/log" 2>&1) || status=$?
 		echo "${status}"
 	}
@@ -731,6 +780,24 @@ SCRIPT
 	expect "the containers of the upgrade removed on a runner of GitHub" \
 		"docker compose --project-name paperless_unified_search_upgrade --file ${app}/tests/e2e/compose.yaml down --volumes --remove-orphans --timeout 0" \
 		"$(tail -n 1 "${WORK}/docker.log")"
+	# With a token, as in the CI, the lookup and the downloads go through the API of
+	# GitHub, which kept working when its pages of the releases failed requests without a
+	# token (#346).
+	expect "upgrade.sh with a token" 1 "$(upgrade env GH_TOKEN=e2e-only-token)"
+	expect_in "the release that the API names" "The release to upgrade from: v1.0.0" "${WORK}/log"
+	expect_in "the download through the API" "gh release download v1.0.0 --repo o/r --pattern paperless_unified_search.tar.gz --output " "${WORK}/docker.log"
+	expect_in "the digest of the download" "paperless_unified_search.tar.gz of o/r v1.0.0 is downloaded and has its sha256." "${WORK}/log"
+	expect_in "the provenance through the API" "gh release download v1.0.0 --repo o/r --pattern provenance.sigstore.json --output " "${WORK}/docker.log"
+	expect_in "the signature of the release through the API" "The signature of paperless_unified_search.tar.gz matches the certificate of the app at the App Store." "${WORK}/log"
+	expect "the pages of the release with a token" 0 "$(grep --count --fixed-strings 'curl https://github.com/o/r/releases' "${WORK}/docker.log" || true)"
+	expect_in "the start of Nextcloud with a token" "docker compose --project-name paperless_unified_search_upgrade --file ${app}/tests/e2e/compose.yaml up " "${WORK}/docker.log"
+	expect "upgrade.sh with a token and without a release" 0 "$(upgrade env GH_TOKEN=e2e-only-token FAKE_LATEST=https://github.com/o/r/releases)"
+	expect_in "the notice of the API without a release" "The upgrade test is skipped: o/r has no release yet to upgrade from." "${WORK}/log"
+	expect "upgrade.sh when the API fails the lookup" 1 "$(upgrade env GH_TOKEN=e2e-only-token FAKE_LATEST_STATUS=502)"
+	expect_in "the message about the failed lookup" "GitHub's API answered the request for the last release of o/r with: gh: Server Error (HTTP 502); run the test again later." "${WORK}/log"
+	expect "upgrade.sh with a token, when the API fails the release" 1 "$(upgrade env GH_TOKEN=e2e-only-token E2E_UPGRADE_FROM=v1.0.0 FAKE_API_STATUS=404)"
+	expect_in "the message about the release that the API fails" "The release v1.0.0 of o/r has no asset paperless_unified_search.tar.gz" "${WORK}/log"
+	expect "Docker when the API fails the release" 0 "$(grep --count '^docker ' "${WORK}/docker.log" || true)"
 	expect "upgrade.sh with KEEP_E2E=1" 1 "$(upgrade env KEEP_E2E=1)"
 	expect_in "the containers of the upgrade kept with KEEP_E2E=1" "Upgrade environment kept at http://127.0.0.1:18182" "${WORK}/log"
 	expect "the removal of the containers with KEEP_E2E=1" 1 "$(grep --count --fixed-strings ' down --volumes ' "${WORK}/docker.log" || true)"
@@ -770,6 +837,9 @@ SCRIPT
 	mv "${release}/provenance.sigstore.json" "${WORK}/provenance.sigstore.json"
 	expect "upgrade.sh with a release without provenance" 1 "$(upgrade env)"
 	expect_in "the notice about a release without provenance" "The release v1.0.0 has no provenance.sigstore.json" "${WORK}/log"
+	expect "upgrade.sh with a token and a release without provenance" 1 "$(upgrade env GH_TOKEN=e2e-only-token)"
+	expect_in "the notice of the API about a release without provenance" "The release v1.0.0 has no provenance.sigstore.json" "${WORK}/log"
+	expect "the download of a provenance that the release lacks" 0 "$(grep --count --fixed-strings -- '--pattern provenance.sigstore.json' "${WORK}/docker.log" || true)"
 	mv "${WORK}/provenance.sigstore.json" "${release}/provenance.sigstore.json"
 	cp "${WORK}/another_app.crt" "${release}/paperless_unified_search.crt"
 	expect "upgrade.sh with the certificate of another app" 1 "$(upgrade env)"
@@ -1688,7 +1758,7 @@ case " $* " in
 		echo "Usage: python3 seed.py documents|token|connect|share" >&2
 		exit 2
 		;;
-	*" config:app:get paperless_sync installed_version "*) echo "${PAPERLESS_SYNC_VERSION#v}" ;;
+	*" config:app:get paperless_sync installed_version "*) echo "${FAKE_INSTALLED:-${PAPERLESS_SYNC_VERSION#v}}" ;;
 	*" config:app:get "*" enabled "*) echo "yes" ;;
 	*" --token-stdin "*) cat >/dev/null ;;
 	*" paperless_unified_search:search "*" --json "*) printf '"verdict": "shown"\n"verdict": "shown"\n"verdict": "shown"\n' ;;
@@ -1698,6 +1768,14 @@ chmod +x "${seeding}/bin/docker"
 # The waits of the script take no time here.
 printf '#!/usr/bin/env bash\n' >"${seeding}/bin/sleep"
 chmod +x "${seeding}/bin/sleep"
+# A fake of the download through the API of GitHub, which notes its call and writes the
+# file; the blueprint tests the real one.
+mkdir -p "${seeding}/.github"
+cat >"${seeding}/.github/download.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+echo "download.sh $*" >>"${FAKE_DOCKER_LOG}"
+printf 'The package.\n' >"$4"
+SCRIPT
 
 # Runs the script in the copy, with a new demo and the given statuses of the runs of Paperless
 # Sync, and prints its exit status.
@@ -1711,6 +1789,17 @@ seeded() {
 	echo "${status}"
 }
 
+# A demo with an older Paperless Sync installs its release: with a token, as in the CI,
+# downloaded through the API of GitHub, which kept working when the pages of the releases
+# failed requests without a token for hours (#346); without one, in the container of
+# Nextcloud from the page of the release.
+expect "seed.sh with an older Paperless Sync and a token" 0 "$(FAKE_INSTALLED=1.0.0 GH_TOKEN=e2e-only-token seeded 0)"
+expect_in "the download of Paperless Sync through the API" "download.sh Dennis-Otto/paperless-sync v" "${WORK}/docker.log"
+expect_in "the package of Paperless Sync in the container" "exec -T --user www-data nextcloud sh -c cat >/tmp/paperless_sync.tar.gz" "${WORK}/docker.log"
+expect "the download in the container with a token" 0 "$(grep --count --fixed-strings ' php -r ' "${WORK}/docker.log" || true)"
+expect "seed.sh with an older Paperless Sync" 0 "$(FAKE_INSTALLED=1.0.0 GH_TOKEN='' seeded 0)"
+expect_in "the download of Paperless Sync in the container" "nextcloud php -r " "${WORK}/docker.log"
+expect "the download through the API without a token" 0 "$(grep --count --fixed-strings 'download.sh' "${WORK}/docker.log" || true)"
 expect "seed.sh" 0 "$(seeded 0)"
 expect_in "the end of the demo" "The demo is ready after" "${WORK}/log"
 expect "the steps of Paperless Sync, one after the other" "connect run share token" \

@@ -32,7 +32,7 @@ The first run downloads the images, a few minutes on most connections; after tha
 
 1. It generates the secret key of Paperless and the passwords of the demo into `demo/.env`, which git ignores, and keeps them for later runs.
 2. It starts Paperless-ngx 3 with Redis, and Nextcloud 33 with PostgreSQL and its background jobs, from [`compose.yaml`](compose.yaml). Both listen on 127.0.0.1 alone, so nobody else on your network reaches them.
-3. It creates the archive account `paperless` and the user `jamie` in Nextcloud, installs a pinned release of Paperless Sync, whose SHA-256 it checks, and enables this app from your checkout.
+3. It creates the archive account `paperless` and the user `jamie` in Nextcloud, installs a pinned release of Paperless Sync, whose SHA-256 it checks, and enables this app from your checkout. With a token in `GH_TOKEN`, as the workflow *Demo* gives it, the release comes through the API of GitHub, which works when the pages of the releases fail requests without a token.
 4. It gives Paperless the five synthetic letters of [`documents/`](documents) as PDF files, each with its correspondent, type and tags, and waits until Paperless has read and indexed them.
 5. It sets up Paperless Sync, runs it with `occ paperless_sync:run`, which writes every document into `Documents/Paperless/Archive` of `paperless`, and shares that folder read-only with `jamie`.
 6. It connects this app to Paperless with `occ paperless_unified_search:setup`, as a script on a server would: the API token goes through a pipe, never on a command line.
