@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [1.6.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.6.0...v1.6.1) (2026-11-09)
+
+
+### Bug fixes
+
+* **ci:** the jobs that open issues block every host they don't need ([#367](https://github.com/Dennis-Otto/paperless-unified-search/issues/367)) ([f457583](https://github.com/Dennis-Otto/paperless-unified-search/commit/f4575832bfa10675e4473bd6da14a85f41dcb8cd))
+* **l10n:** the Traditional Chinese texts use the words of Taiwan's Nextcloud, checked like Paperless Sync's ([#351](https://github.com/Dennis-Otto/paperless-unified-search/issues/351)) ([fa20912](https://github.com/Dennis-Otto/paperless-unified-search/commit/fa20912557149fe811dba64fdba4e509d41c4fb5))
+* **settings:** the one-click search account waits out a busy Paperless-ngx 2, and the end-to-end tests pass on their first attempt ([#365](https://github.com/Dennis-Otto/paperless-unified-search/issues/365)) ([c04d923](https://github.com/Dennis-Otto/paperless-unified-search/commit/c04d9234445cc3ee16f647597a58a5fac94bcf96))
+* the per-user archives count the owners' own copies and occ check looks through the users' folders ([#370](https://github.com/Dennis-Otto/paperless-unified-search/issues/370)) ([94fa7fe](https://github.com/Dennis-Otto/paperless-unified-search/commit/94fa7fe956dc643b50bc41668de9563d951f902a))
+
 ## [1.6.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.5.0...v1.6.0) (2026-11-08)
 
 ### Features
