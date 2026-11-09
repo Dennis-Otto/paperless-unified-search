@@ -45,6 +45,7 @@ import {
 	chooseAlwaysSearch,
 	saveSearches,
 	connectedServices,
+	openInViewer,
 	openSearch,
 	paperlessResult,
 	resultGroup,
@@ -52,7 +53,6 @@ import {
 	searchConnectedServices,
 	searchField,
 	signIn,
-	waitForViewer,
 } from './ui.mjs'
 
 const { GIFEncoder, quantize } = gifenc
@@ -393,6 +393,16 @@ async function steady(page) {
 	throw new Error('The page still changed after 16 seconds.')
 }
 
+// Opens the file of a Paperless result, by its title and the name of its file, in the
+// viewer of PDF files, with the clock of the page standing still (openInViewer() of
+// ui.mjs), and waits until the viewer has drawn its page for the last time. click
+// presses the result, such as the pointer of an animation.
+async function view(page, { title, file }, click = (result) => result.click()) {
+	await openInViewer(page, () => click(paperlessResult(page, title)), file)
+	await settle(page, 1500)
+	await steady(page)
+}
+
 async function save(page, name, milliseconds) {
 	await settle(page, milliseconds)
 	await page.screenshot({ path: join(OUT, name), animations: 'disabled' })
@@ -406,6 +416,8 @@ async function openArchive(page) {
 
 const electricity = { ...DOCUMENTS[0], title: 'Electricity invoice - August 2026' }
 const insurance = { ...DOCUMENTS[1], title: 'Home insurance renewal' }
+// The electricity invoice as view() opens it.
+const ELECTRICITY = { title: electricity.title, file: fileName(electricity) }
 // The last of the results of Paperless for TERM, which shows that they are all there.
 const LAST_RESULT = 'Internet invoice - July 2026'
 
@@ -418,9 +430,8 @@ async function searchAndOpen(browser, session, theme) {
 	await search(page, (input) => input.fill(TERM), 'Files')
 	await searchConnectedServices(page, LAST_RESULT)
 	await save(page, `01-unified-search${suffix}.png`)
-	await paperlessResult(page, electricity.title).click()
-	await waitForViewer(page, fileName(electricity))
-	await save(page, `02-nextcloud-pdf-viewer${suffix}.png`, 1500)
+	await view(page, ELECTRICITY)
+	await save(page, `02-nextcloud-pdf-viewer${suffix}.png`)
 	await page.context().close()
 }
 
@@ -786,9 +797,8 @@ async function phone(browser, session) {
 	await search(page, (input) => input.fill(TERM), 'Files')
 	await searchConnectedServices(page, LAST_RESULT)
 	await save(page, '04-mobile-search.png')
-	await paperlessResult(page, electricity.title).click()
-	await waitForViewer(page, fileName(electricity))
-	await save(page, '05-mobile-viewer.png', 1500)
+	await view(page, ELECTRICITY)
+	await save(page, '05-mobile-viewer.png')
 	await page.context().close()
 }
 
@@ -802,7 +812,10 @@ const SEARCH_AND_OPEN = {
 	name: 'search-and-open.gif',
 	clock: NOW,
 	start: openArchive,
-	holdSearch: false,
+	// Without it, a runner that takes the picture of a letter slower than Nextcloud
+	// waits for the next key would show the results under the last letter in one run
+	// and a frame later in another.
+	holdSearch: true,
 	connected: true,
 	results: [LAST_RESULT],
 	check: async () => {},
@@ -923,10 +936,7 @@ async function animation(browser, session, film = SEARCH_AND_OPEN, theme = 'ligh
 		frames.unshift({ png: await framedResults(page), delay: film.opening })
 	}
 	await frame(2600)
-	await click(paperlessResult(page, film.opened.title))
-	await waitForViewer(page, film.opened.file)
-	await settle(page, 1500)
-	await steady(page)
+	await view(page, film.opened, click)
 	await frame(3800)
 	await page.context().close()
 	writeGif(frames, join(OUT, name))

@@ -13,8 +13,8 @@
 //
 // Only scripts/screenshots.sh runs screenshots.mjs, for the visual check, the screenshot
 // bot and, with --demo, the weekly run of the demo, and some steps here serve only it:
-// search() with a group, searchConnectedServices(), paperlessResult() and the drawn PDF of
-// waitForViewer(). After a change here, run `bash scripts/screenshots.sh` once and see
+// search() with a group, searchConnectedServices(), paperlessResult(), the drawn PDF of
+// waitForViewer() and openInViewer(). After a change here, run `bash scripts/screenshots.sh` once and see
 // that it still takes every picture; `git checkout screenshots/` drops the pictures
 // again if they shouldn't change.
 
@@ -132,6 +132,21 @@ export async function waitForViewer(page, name, { drawn = true } = {}) {
 		await page.frameLocator('iframe').locator('.page[data-loaded="true"]').first().waitFor({ timeout: 30000 })
 	}
 	await page.locator('.modal-header').getByText(name).waitFor()
+}
+
+// Opens a file in the Viewer with open, such as a click on its result, for a picture,
+// and waits until the first page of the PDF is drawn, with the clock of the page
+// standing still from before the click on; its timers keep running. The viewer of PDF
+// files (PDF.js) draws a page in slices of 15 milliseconds by Date.now(), and Chromium
+// draws the letters after the end of a slice a shade lighter or darker at some of
+// their edges than in one go. How far the first slice gets depends on the speed of the
+// machine, so on a runner the picture of the same page changed from run to run, from
+// a different line on. With the clock standing still, the viewer draws each page in
+// one slice, the same pixels in every run.
+export async function openInViewer(page, open, name) {
+	await page.clock.setFixedTime(await page.evaluate(() => Date.now()))
+	await open()
+	await waitForViewer(page, name)
 }
 
 // The administration settings of the app, and the element that holds its markup.
