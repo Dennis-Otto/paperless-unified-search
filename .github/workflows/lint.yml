@@ -92,7 +92,7 @@ jobs:
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
         timeout-minutes: 5
         env:
-          REUSE: fsfe/reuse:6.2.0@sha256:85462a75c0f8efda09ddd190b92816b70e7662577c8427429e11e1b9f25a992e
+          REUSE: fsfe/reuse:6.3.0@sha256:2748d04c2adeb747c9a44831bc99a9cbfd7bf7ff6fc371a4b63204944e3e47b6
         run: |
           docker run --rm --volume "$PWD:/data" --workdir /data \
             --env GIT_CONFIG_COUNT=1 --env GIT_CONFIG_KEY_0=safe.directory --env GIT_CONFIG_VALUE_0=/data \
@@ -215,7 +215,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 5
         env:
-          VALE: jdkato/vale:v3.24.0@sha256:f5a09410093936d4919d868120786da9789e2652ac321c66a895403eca020ae4
+          VALE: jdkato/vale:v3.26.0@sha256:d4ebc402b255dacc759c468ed8c91bd5be82918bbb59583558539f3be80f1f01
         run: |
           mapfile -d '' -t files < "$RUNNER_TEMP/documents"
           npm ci --prefix .github/prose --ignore-scripts --no-audit --no-fund
