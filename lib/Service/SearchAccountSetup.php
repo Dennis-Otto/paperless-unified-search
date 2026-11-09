@@ -328,12 +328,16 @@ final class SearchAccountSetup {
 	/**
 	 * Whether Paperless failed while it made an edit of its bulk editor, rather than
 	 * refused it: it answers HTTP 400 with the text of EDIT_FAILED, where it gives the
-	 * reason of a refusal in JSON.
+	 * reason of a refusal in JSON. The client of Nextcloud hands out the body of an answer
+	 * once, so only an answer with HTTP 400 is read here; dataOf() reads any other.
 	 */
 	private static function failedToEdit(IResponse $response): bool {
+		if ($response->getStatusCode() !== 400) {
+			return false;
+		}
 		$body = $response->getBody();
 
-		return $response->getStatusCode() === 400 && is_string($body) && str_starts_with($body, self::EDIT_FAILED);
+		return is_string($body) && str_starts_with($body, self::EDIT_FAILED);
 	}
 
 	/**

@@ -531,7 +531,8 @@ final class SearchAccountSetupTest extends TestCase {
 					throw $answer;
 				}
 
-				return $answer;
+				// An answer of its own for each request, whose body goes once, as answer() says.
+				return clone $answer;
 			});
 		}
 		$clientService = $this->createStub(IClientService::class);
@@ -571,6 +572,11 @@ final class SearchAccountSetupTest extends TestCase {
 		}
 	}
 
+	/**
+	 * An answer of Paperless, which hands out its body once, as the client of Nextcloud
+	 * reads the rest of the stream of the body for each getBody(): a second call gets an
+	 * empty string, which the contract with a real Paperless met.
+	 */
 	private static function answer(int $status, string $body): IResponse {
 		return new class($status, $body) implements IResponse {
 			public function __construct(
@@ -580,7 +586,9 @@ final class SearchAccountSetupTest extends TestCase {
 			}
 
 			public function getBody() {
-				return $this->body;
+				[$body, $this->body] = [$this->body, ''];
+
+				return $body;
 			}
 
 			public function getStatusCode(): int {
