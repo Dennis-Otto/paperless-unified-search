@@ -1,0 +1,3 @@
+### Bug fixes
+
+- **The weekly jobs that open issues reach GitHub's API alone.** The four jobs that open, update or close the issues *A supported Nextcloud release breaks the app*, *Paperless-ngx breaks the app*, *The coming Nextcloud breaks the app* and *The demo breaks* hold a token that may write issues, yet Harden-Runner only recorded where they connected. Now it blocks every host but `api.github.com`, the one that their runs reached, and they run without `sudo` and Docker, which could lift the block. The GitHub CLI of the end-to-end tests and of the demo no longer sends telemetry to GitHub either.
