@@ -220,9 +220,25 @@ final class PaperlessNamesTest extends TestCase {
 	}
 
 	/**
+	 * Another token, such as the one of the search account that the settings create, has
+	 * names of its own: it may view other objects than the token before, and what Paperless
+	 * refused to that one doesn't rest for it.
+	 */
+	public function testTheCacheKeepsTheNamesOfEachTokenApart(): void {
+		$documents = [['id' => 7, 'correspondent' => 3, 'tags' => [4]]];
+
+		$first = $this->names($this->paperless(['correspondents' => [3 => 'ACME Energy'], 'tags' => 403]))->of($documents);
+		$second = $this->names($this->paperless(['correspondents' => [3 => 'Example Bank'], 'tags' => [4 => 'unpaid']]), token: 'OTHER_TEST_VALUE')->of($documents);
+
+		self::assertSame(['correspondent' => [3 => 'ACME Energy'], 'document_type' => [], 'tags' => []], $first);
+		self::assertSame(['correspondent' => [3 => 'Example Bank'], 'document_type' => [], 'tags' => [4 => 'unpaid']], $second);
+		self::assertCount(4, $this->requests);
+	}
+
+	/**
 	 * A correspondent and a type of document may have the same ID, and each keeps its own
 	 * name: the cache keeps each name under a key of its own, of its kind, of the server
-	 * and of its ID, as it keeps the newest documents of the dashboard.
+	 * and the token, and of its ID, as it keeps the newest documents of the dashboard.
 	 */
 	public function testTheCacheKeepsTheNamesOfEachKindApart(): void {
 		$paperless = $this->paperless([
@@ -237,7 +253,7 @@ final class PaperlessNamesTest extends TestCase {
 		self::assertSame(['correspondent' => [3 => 'ACME Energy'], 'document_type' => [3 => 'Invoice'], 'tags' => []], $first);
 		self::assertSame($first, $second);
 		self::assertCount(2, $this->requests);
-		$server = hash('sha256', 'https://paperless.example.com');
+		$server = hash('sha256', 'https://paperless.example.com TEST_VALUE');
 		self::assertSame([
 			'name-correspondent-' . $server . '-3' => 'ACME Energy',
 			'name-document_type-' . $server . '-3' => 'Invoice',
@@ -294,8 +310,8 @@ final class PaperlessNamesTest extends TestCase {
 			'https://paperless.example.com/api/correspondents/?id__in=3&page_size=1',
 			'https://paperless.example.com/api/document_types/?id__in=1&page_size=1',
 		], $this->requests);
-		// Only the list of that kind on that server rests, under a key of its own.
-		$server = hash('sha256', 'https://paperless.example.com');
+		// Only the list of that kind on that server, for that token, rests, under a key of its own.
+		$server = hash('sha256', 'https://paperless.example.com TEST_VALUE');
 		self::assertSame([
 			'names-resting-correspondent-' . $server => true,
 			'name-document_type-' . $server . '-1' => 'Invoice',
@@ -374,6 +390,56 @@ final class PaperlessNamesTest extends TestCase {
 			'https://paperless.example.com/api/document_types/?id__in=1&page_size=1',
 			'https://paperless.example.com/api/correspondents/?id__in=3&page_size=1',
 		], $this->requests);
+	}
+
+	/**
+	 * After the administrator gave the account View for Tags, a save of the settings with
+	 * the same token ends the rest of the refused list at once (forget()), rather than ten
+	 * minutes later, and so it does after a request without answer. The names that the
+	 * cache keeps stay, and so does the rest of a list of another server or token.
+	 */
+	public function testForgettingEndsTheRestOfTheListsAtOnce(): void {
+		$documents = [['id' => 7, 'correspondent' => 3, 'document_type' => 1, 'tags' => [4]]];
+		$this->cache->set('names-resting-tags-other', true, 600);
+
+		$first = $this->names($this->paperless(['correspondents' => [3 => 'ACME Energy'], 'document_types' => [1 => 'Invoice'], 'tags' => 403]))->of($documents);
+		$second = $this->names($this->paperless(['document_types' => new RuntimeException('cURL error 28: Operation timed out')]))->of([['id' => 8, 'document_type' => 2]]);
+		$names = $this->names($this->paperless(['document_types' => [2 => 'Contract'], 'tags' => [4 => 'unpaid']]));
+		$names->forget();
+		$third = $names->of([...$documents, ['id' => 8, 'document_type' => 2]]);
+
+		self::assertSame(['correspondent' => [3 => 'ACME Energy'], 'document_type' => [1 => 'Invoice'], 'tags' => []], $first);
+		self::assertSame(['correspondent' => [], 'document_type' => [], 'tags' => []], $second);
+		self::assertSame(['correspondent' => [3 => 'ACME Energy'], 'document_type' => [1 => 'Invoice', 2 => 'Contract'], 'tags' => [4 => 'unpaid']], $third);
+		self::assertSame([
+			'https://paperless.example.com/api/correspondents/?id__in=3&page_size=1',
+			'https://paperless.example.com/api/document_types/?id__in=1&page_size=1',
+			'https://paperless.example.com/api/tags/?id__in=4&page_size=1',
+			'https://paperless.example.com/api/document_types/?id__in=2&page_size=1',
+			'https://paperless.example.com/api/document_types/?id__in=2&page_size=1',
+			'https://paperless.example.com/api/tags/?id__in=4&page_size=1',
+		], $this->requests);
+		self::assertTrue($this->cache->get('names-resting-tags-other'));
+	}
+
+	/**
+	 * A cache that fails while it forgets only leaves the rest of the lists until it ends:
+	 * the save of the settings goes on.
+	 */
+	public function testACacheThatFailsToForgetLeavesTheRest(): void {
+		$cache = $this->createStub(ICache::class);
+		$cache->method('remove')->willThrowException(new RuntimeException('Redis server went away'));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())
+			->method('warning')
+			->with('The lists of the names of correspondents, types and tags that Paperless refused could not be removed from the cache, so a refusal may count for up to ten minutes more ({errorType})', [
+				'app' => AppConstants::APP_ID,
+				'errorType' => RuntimeException::class,
+			]);
+
+		$this->names($this->paperless([]), cache: $cache, logger: $logger)->forget();
+
+		self::assertSame([], $this->requests);
 	}
 
 	/**
@@ -500,6 +566,7 @@ final class PaperlessNamesTest extends TestCase {
 		string $url = 'https://paperless.example.com',
 		?ICache $cache = null,
 		?LoggerInterface $logger = null,
+		string $token = 'TEST_VALUE',
 	): PaperlessNames {
 		$config = $this->createStub(IAppConfig::class);
 		$config->method('getValueString')->willReturnCallback(
@@ -507,7 +574,7 @@ final class PaperlessNamesTest extends TestCase {
 		);
 
 		$credentials = $this->createStub(ICredentialsManager::class);
-		$credentials->method('retrieve')->willReturn('TEST_VALUE');
+		$credentials->method('retrieve')->willReturn($token);
 
 		$clientService = $this->createStub(IClientService::class);
 		$clientService->method('newClient')->willReturn($client);

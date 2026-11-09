@@ -146,14 +146,17 @@ final class SettingsControllerTest extends TestCase {
 	}
 
 	/**
-	 * Paperless refused the users of Paperless to the account a moment ago, before the
-	 * administrator gave it View for Users: once the settings are saved, with the same
-	 * token, the search asks for them anew rather than resting for ten minutes.
+	 * Paperless refused the users and the tags of Paperless to the account a moment ago,
+	 * before the administrator gave it View for Users and View for Tag: once the settings
+	 * are saved, with the same token, the search asks for them anew rather than resting for
+	 * ten minutes.
 	 */
-	public function testSaveEndsTheRestOfTheUsersThatPaperlessRefused(): void {
+	public function testSaveEndsTheRestOfWhatPaperlessRefused(): void {
 		$requests = [];
 		$cache = new MemoryCache(static fn (): int => 1791500000);
-		$cache->set('users-resting-' . hash('sha256', 'https://paperless.example.com TEST_VALUE'), true, 600);
+		$server = hash('sha256', 'https://paperless.example.com TEST_VALUE');
+		$cache->set('users-resting-' . $server, true, 600);
+		$cache->set('names-resting-tags-' . $server, true, 600);
 		$cacheFactory = $this->createStub(ICacheFactory::class);
 		$cacheFactory->method('createDistributed')->willReturn($cache);
 
@@ -774,7 +777,7 @@ final class SettingsControllerTest extends TestCase {
 			$accounts,
 			$this->createStub(IUserSession::class),
 			$this->createStub(IEventDispatcher::class),
-			new PaperlessNames($api, $configService, $this->createStub(ICacheFactory::class), $this->createStub(LoggerInterface::class)),
+			new PaperlessNames($api, $configService, $cacheFactory ?? $this->createStub(ICacheFactory::class), $this->createStub(LoggerInterface::class)),
 			new SearchAccountSetup($this->createStub(IClientService::class), $this->createStub(ISecureRandom::class), $this->createStub(IAppManager::class)),
 			$owners,
 		);

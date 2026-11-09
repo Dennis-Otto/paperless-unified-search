@@ -13,6 +13,7 @@ use DateTimeImmutable;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
+use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
 use OCP\App\IAppManager;
@@ -72,6 +73,20 @@ trait AppServices {
 		$appManager->method('getAppVersion')->willReturn('0.5.1');
 
 		return new PaperlessApiService($configService, $clientService, $this->diagnostics(), $this->clock(), $appManager);
+	}
+
+	/**
+	 * The names of correspondents, types and tags, with a cache in memory of their own
+	 * unless a test passes one.
+	 */
+	private function paperlessNames(PaperlessApiService $paperlessApi, ConfigService $configService, ?ICacheFactory $cacheFactory = null): PaperlessNames {
+		if ($cacheFactory === null) {
+			$cache = new MemoryCache(static fn (): int => 0);
+			$cacheFactory = $this->createStub(ICacheFactory::class);
+			$cacheFactory->method('createDistributed')->willReturn($cache);
+		}
+
+		return new PaperlessNames($paperlessApi, $configService, $cacheFactory, $this->createStub(LoggerInterface::class));
 	}
 
 	/**

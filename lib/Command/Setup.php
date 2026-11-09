@@ -18,6 +18,7 @@ use OCA\PaperlessUnifiedSearch\Model\SearchAccount;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\DocumentOwners;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
+use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
 use OCA\PaperlessUnifiedSearch\Service\SearchAccountSetup;
 use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
 use SensitiveParameter;
@@ -48,6 +49,7 @@ final class Setup extends Command {
 		private SettingsMessages $messages,
 		private SearchAccountSetup $accountSetup,
 		private DocumentOwners $documentOwners,
+		private PaperlessNames $names,
 	) {
 		parent::__construct();
 	}
@@ -134,8 +136,10 @@ final class Setup extends Command {
 			$save = function (#[SensitiveParameter] string $tokenToSave) use ($normalizedUrl, $alwaysSearch, $owner, $allowLocal, $personalAlwaysSearch, $newDocumentAlerts): PublicConfig {
 				$status = $this->paperlessApi->probe($normalizedUrl, $tokenToSave, $allowLocal);
 				$config = $this->configService->save($normalizedUrl, $tokenToSave, $alwaysSearch, $owner, $allowLocal, $status->version, $personalAlwaysSearch, $status->tokenWarnings, $newDocumentAlerts);
-				// The search asks Paperless for its users anew, as after a save of the page.
+				// The search asks Paperless anew for its users and for the lists of names that it
+				// refused, as after a save of the page.
 				$this->documentOwners->forget();
+				$this->names->forget();
 
 				return $config;
 			};

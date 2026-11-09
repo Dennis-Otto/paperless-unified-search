@@ -104,13 +104,15 @@ final class SetupTest extends TestCase {
 	}
 
 	/**
-	 * As the settings page, the set-up ends the rest of the users of Paperless that it
-	 * refused a moment ago, before the account got View for Users: the search asks for them
-	 * anew, also with the same token.
+	 * As the settings page, the set-up ends the rest of the users and the tags of Paperless
+	 * that it refused a moment ago, before the account got View for Users and View for Tag:
+	 * the search asks for them anew, also with the same token.
 	 */
-	public function testSavingEndsTheRestOfTheUsersThatPaperlessRefused(): void {
+	public function testSavingEndsTheRestOfWhatPaperlessRefused(): void {
 		$this->cache = new MemoryCache(static fn (): int => 1791500000);
-		$this->cache->set('users-resting-' . hash('sha256', 'https://paperless.example.com TEST_VALUE'), true, 600);
+		$server = hash('sha256', 'https://paperless.example.com TEST_VALUE');
+		$this->cache->set('users-resting-' . $server, true, 600);
+		$this->cache->set('names-resting-tags-' . $server, true, 600);
 		$tester = $this->tester($this->documents([]));
 		$tester->setInputs(['TEST_VALUE']);
 
@@ -427,7 +429,7 @@ final class SetupTest extends TestCase {
 			$cacheFactory->method('createDistributed')->willReturn($this->cache);
 		}
 
-		return new Setup($configService, $api, $this->messages(), $this->searchAccountSetup($client), $this->documentOwners($api, $configService, $accounts, $cacheFactory));
+		return new Setup($configService, $api, $this->messages(), $this->searchAccountSetup($client), $this->documentOwners($api, $configService, $accounts, $cacheFactory), $this->paperlessNames($api, $configService, $cacheFactory));
 	}
 
 	/**
