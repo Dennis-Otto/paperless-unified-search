@@ -940,6 +940,46 @@ folded_value() {
 	' "${WORK}/job.yml"
 }
 
+# The value of a key of the step of a job by its name, in job.yml or in the file that the
+# third argument names, such as its id: or its timeout-minutes:.
+step_value() {
+	awk -v step="      - name: $1" -v key="        $2: " '
+		$0 == step { inside = 1; next }
+		inside && /^      - / { exit }
+		inside && index($0, key) == 1 { print substr($0, length(key) + 1); exit }
+	' "${3:-${WORK}/job.yml}"
+}
+
+# The steps of the job in job.yml, on one line: the name of each, or the action of one
+# without a name, without its version.
+job_steps() {
+	sed -n -e 's/^      - name: //p' -e 's/^      - uses: \([^@]*\)@.*/\1/p' "${WORK}/job.yml" |
+		awk '{ printf "%s%s", separator, $0; separator = "; " } END { print "" }'
+}
+
+# The steps of the job in job.yml that run on always(), failure() or cancelled() without
+# asking that the step "Make sure that Harden-Runner blocks" didn't stop the job, on one
+# line, besides the wait for Docker, which reaches no host. An if: that folds over lines
+# counts with all of them.
+unguarded_steps() {
+	awk '
+		function check() {
+			if (name != "Wait until Harden-Runner has removed Docker" &&
+				condition ~ /always\(\)|failure\(\)|cancelled\(\)/ &&
+				index(condition, "steps.blocks.outcome != \047failure\047") == 0) {
+				printf "%s%s", separator, name
+				separator = "; "
+			}
+			condition = ""
+		}
+		/^      - / { check(); name = $0; sub(/^      - (name|uses): /, "", name); folded = 0; next }
+		/^        if: / { condition = substr($0, 13); folded = 1; next }
+		folded && /^          / { condition = condition " " $0; next }
+		{ folded = 0 }
+		END { check(); print "" }
+	' "${WORK}/job.yml"
+}
+
 # The jobs of a workflow that may write issues, on one line.
 issue_jobs() {
 	awk '
@@ -947,6 +987,61 @@ issue_jobs() {
 		/^      issues: write$/ { printf "%s%s", separator, job; separator = " " }
 		END { print "" }
 	' "${SCRIPT_DIR}/../../.github/workflows/$1"
+}
+
+# The jobs of a workflow that use a secret, such as the private key of the release app,
+# on one line.
+secret_jobs() {
+	awk '
+		/^  [a-z][a-z-]*:$/ { job = substr($1, 1, length($1) - 1) }
+		/\$\{\{ *secrets\./ && job != last { printf "%s%s", separator, job; separator = " "; last = job }
+		END { print "" }
+	' "${SCRIPT_DIR}/../../.github/workflows/$1"
+}
+
+# A job that holds a token that may write, of the workflow and by the name of the first
+# two arguments: Harden-Runner blocks every host but those of the third, and the job has
+# no sudo and no Docker that could take the block away. It stops when Harden-Runner
+# doesn't block, as in an outage of GitHub, and then waits until Harden-Runner lets its
+# hosts through, with the same scripts as the jobs of the blueprint that block, so that
+# a fix of them reaches this job as well; the fourth argument names its steps. The job
+# ends within seconds, before Harden-Runner has removed Docker with apt-get in the
+# background, and would then hang until its time limit: it waits for that last, as the
+# jobs of the blueprint do.
+expect_blocks() {
+	local workflow="$1" job="$2" hosts="$3" steps="$4"
+	workflow_job "${workflow}" "${job}"
+	expect "${job}: its steps" "${steps}" "$(job_steps)"
+	expect "${job}: the policy of Harden-Runner" block "$(sed -n 's/^          egress-policy: //p' "${WORK}/job.yml")"
+	expect "${job}: without sudo and Docker" true "$(sed -n 's/^          disable-sudo-and-containers: //p' "${WORK}/job.yml")"
+	expect "${job}: the hosts that Harden-Runner lets through" "${hosts}" "$(folded_value allowed-endpoints)"
+	expect "${job}: the hosts that it waits for" "$(folded_value allowed-endpoints)" "$(folded_value HOSTS)"
+	expect "${job}: the id of its step \"Make sure that Harden-Runner blocks\"" blocks \
+		"$(step_value "Make sure that Harden-Runner blocks" id)"
+	expect "${job}: the time limit of its step \"Make sure that Harden-Runner blocks\", the same as in after-checks.yml" \
+		"$(step_value "Make sure that Harden-Runner blocks" timeout-minutes "${SCRIPT_DIR}/../../.github/workflows/after-checks.yml")" \
+		"$(step_value "Make sure that Harden-Runner blocks" timeout-minutes)"
+	step_script "Make sure that Harden-Runner blocks" >"${WORK}/blocks.sh"
+	expect "${job}: the script of its step \"Make sure that Harden-Runner blocks\", the same as in after-checks.yml (copy it from there)" \
+		true "$(cmp -s "${WORK}/blocks.sh" "${WORK}/blueprint-blocks.sh" && echo true || echo false)"
+	expect "${job}: the time limit of the wait" 4 "$(step_value "Wait until Harden-Runner lets the hosts through" timeout-minutes)"
+	step_script "Wait until Harden-Runner lets the hosts through" >"${WORK}/wait.sh"
+	expect "${job}: the script of its step \"Wait until Harden-Runner lets the hosts through\", the same as in after-checks.yml (copy it from there)" \
+		true "$(cmp -s "${WORK}/wait.sh" "${WORK}/blueprint-wait.sh" && echo true || echo false)"
+	step_script "Wait until Harden-Runner has removed Docker" >"${WORK}/docker.sh"
+	expect "${job}: the script of its step \"Wait until Harden-Runner has removed Docker\", the same as in after-checks.yml (copy it from there)" \
+		true "$(cmp -s "${WORK}/docker.sh" "${WORK}/blueprint-docker.sh" && echo true || echo false)"
+	expect "${job}: its step \"Wait until Harden-Runner has removed Docker\" runs always" "always()" \
+		"$(step_value "Wait until Harden-Runner has removed Docker" if)"
+	# A step that runs after a failure would run with every host open once the step
+	# "Make sure that Harden-Runner blocks" stopped the job, so it asks
+	# steps.blocks.outcome != 'failure' as well, as the jobs of the blueprint do.
+	expect "${job}: its steps that run after a failure without asking whether Harden-Runner blocks" "" \
+		"$(unguarded_steps)"
+	expect "${job}: the version of Harden-Runner, the same as in after-checks.yml" \
+		"$(sed -n 's/^ *uses: step-security\/harden-runner@//p' "${SCRIPT_DIR}/../../.github/workflows/after-checks.yml" | head -n 1)" \
+		"$(sed -n 's/^ *uses: step-security\/harden-runner@//p' "${WORK}/job.yml")"
+	expect "${workflow}: the telemetry of gh" '"false"' "$(sed -n 's/^  *GH_TELEMETRY: //p' "${SCRIPT_DIR}/../../.github/workflows/${workflow}")"
 }
 
 # Whether GitHub runs the job in job.yml, by the if: of the job, for an event, the
@@ -1013,34 +1108,9 @@ expect_issue_job() {
 	expect "the title of the issue of ${job}" "${title}" "$(sed -n 's/^ *TITLE: //p' "${WORK}/job.yml")"
 
 	# The job holds a token that may write issues and reaches the API of GitHub alone,
-	# with gh, as Harden-Runner recorded it in the weekly runs: Harden-Runner blocks
-	# every other host, and the job has no sudo and no Docker that could take the block
-	# away. It first waits until Harden-Runner lets its hosts through, with the same
-	# script as the jobs of the blueprint that block, so that a fix of it reaches this
-	# job as well.
-	expect "${job}: its steps" \
-		"Block every host that the job doesn't need; Wait until Harden-Runner lets the hosts through; Open, update or close the issue; Wait until Harden-Runner has removed Docker" \
-		"$(sed -n 's/^      - name: //p' "${WORK}/job.yml" | awk '{ printf "%s%s", separator, $0; separator = "; " } END { print "" }')"
-	expect "${job}: the policy of Harden-Runner" block "$(sed -n 's/^          egress-policy: //p' "${WORK}/job.yml")"
-	expect "${job}: without sudo and Docker" true "$(sed -n 's/^          disable-sudo-and-containers: //p' "${WORK}/job.yml")"
-	expect "${job}: the hosts that Harden-Runner lets through" api.github.com:443 "$(folded_value allowed-endpoints)"
-	expect "${job}: the hosts that it waits for" "$(folded_value allowed-endpoints)" "$(folded_value HOSTS)"
-	expect "${job}: the time limit of the wait" 4 "$(sed -n 's/^        timeout-minutes: //p' "${WORK}/job.yml")"
-	step_script "Wait until Harden-Runner lets the hosts through" >"${WORK}/wait.sh"
-	expect "${job}: the script of its step \"Wait until Harden-Runner lets the hosts through\", the same as in after-checks.yml (copy it from there)" \
-		true "$(cmp -s "${WORK}/wait.sh" "${WORK}/blueprint-wait.sh" && echo true || echo false)"
-	# The job ends within seconds, before Harden-Runner has removed Docker with apt-get in
-	# the background, and would then hang until its time limit: it waits for that as the
-	# jobs of the blueprint do.
-	step_script "Wait until Harden-Runner has removed Docker" >"${WORK}/docker.sh"
-	expect "${job}: the script of its step \"Wait until Harden-Runner has removed Docker\", the same as in after-checks.yml (copy it from there)" \
-		true "$(cmp -s "${WORK}/docker.sh" "${WORK}/blueprint-docker.sh" && echo true || echo false)"
-	expect "${job}: its step \"Wait until Harden-Runner has removed Docker\" runs always" "always()" \
-		"$(awk '$0 == "      - name: Wait until Harden-Runner has removed Docker" { inside = 1; next } inside && /^        if: / { print $2; exit }' "${WORK}/job.yml")"
-	expect "${job}: the version of Harden-Runner, the same as in after-checks.yml" \
-		"$(sed -n 's/^ *uses: step-security\/harden-runner@//p' "${SCRIPT_DIR}/../../.github/workflows/after-checks.yml" | head -n 1)" \
-		"$(sed -n 's/^ *uses: step-security\/harden-runner@//p' "${WORK}/job.yml")"
-	expect "${workflow}: the telemetry of gh" '"false"' "$(sed -n 's/^  *GH_TELEMETRY: //p' "${SCRIPT_DIR}/../../.github/workflows/${workflow}")"
+	# with gh, as Harden-Runner recorded it in the weekly runs.
+	expect_blocks "${workflow}" "${job}" api.github.com:443 \
+		"Block every host that the job doesn't need; Make sure that Harden-Runner blocks; Wait until Harden-Runner lets the hosts through; Open, update or close the issue; Wait until Harden-Runner has removed Docker"
 
 	expect "${job}: a failed run without an open issue" 0 "$(report env RESULT=failure)"
 	expect_in "${job}: the search for the open issue" \
@@ -1093,7 +1163,11 @@ push cancelled main false
 CASES
 }
 
-# The wait of the jobs of the blueprint that block, which the jobs here repeat.
+# The steps of the jobs of the blueprint that block, which the jobs here repeat.
+step_script "Make sure that Harden-Runner blocks" \
+	"${SCRIPT_DIR}/../../.github/workflows/after-checks.yml" >"${WORK}/blueprint-blocks.sh"
+expect "the step \"Make sure that Harden-Runner blocks\" in after-checks.yml" true \
+	"$(grep --quiet --fixed-strings '/home/agent/agent.status' "${WORK}/blueprint-blocks.sh" && echo true || echo false)"
 step_script "Wait until Harden-Runner lets the hosts through" \
 	"${SCRIPT_DIR}/../../.github/workflows/after-checks.yml" >"${WORK}/blueprint-wait.sh"
 expect "the step \"Wait until Harden-Runner lets the hosts through\" in after-checks.yml" true \
@@ -1105,6 +1179,36 @@ expect "the step \"Wait until Harden-Runner has removed Docker\" in after-checks
 # Every job that may write issues is one of those that expect_issue_job checks.
 expect "the jobs of e2e.yml that may write issues" "nextcloud-issue paperless-issue coming-issue" "$(issue_jobs e2e.yml)"
 expect "the jobs of demo.yml that may write issues" demo-issue "$(issue_jobs demo.yml)"
+# Every job that uses a secret is one of those that expect_blocks checks.
+expect "the jobs of e2e.yml that use a secret" "" "$(secret_jobs e2e.yml)"
+expect "the jobs of demo.yml that use a secret" animation-pull-request "$(secret_jobs demo.yml)"
+# unguarded_steps finds a step that runs after a failure without asking whether
+# Harden-Runner blocks, with its if: on one line or folded, and by its action when it has
+# no name.
+cat >"${WORK}/job.yml" <<'YAML'
+    steps:
+      - name: Make sure that Harden-Runner blocks
+        id: blocks
+      - name: Explain the failure
+        if: failure()
+      - name: Report the result
+        if: >-
+          always() &&
+          steps.blocks.outcome != 'failure'
+      - name: Tell the maintainers
+        if: >-
+          !cancelled() &&
+          github.event_name == 'schedule'
+      - uses: actions/upload-artifact@0000000000000000000000000000000000000000 # v7.0.2
+        if: ${{ always() }}
+      - name: Upload the logs
+        if: always() && steps.blocks.outcome != 'failure'
+      - name: Wait until Harden-Runner has removed Docker
+        if: always()
+YAML
+expect "the steps that run after a failure without asking whether Harden-Runner blocks" \
+	"Explain the failure; Tell the maintainers; actions/upload-artifact@0000000000000000000000000000000000000000 # v7.0.2" \
+	"$(unguarded_steps)"
 
 expect_issue_job e2e.yml nextcloud-issue "A supported Nextcloud release breaks the app" \
 	"The end-to-end tests pass again against every supported Nextcloud version" \
@@ -1156,6 +1260,16 @@ expect_issue_job demo.yml demo-issue "The demo breaks" \
 	"The demo still" "The weekly run of the demo" \
 	"fails" \
 	"runs out of time or is cancelled before it ends"
+
+# The job that keeps the pull request of the animation of the demo holds the private key
+# of the release app, whose token may write the contents of the repository. It reaches
+# GitHub alone, as Harden-Runner recorded it in the runs of 2 and 9 November 2026: the
+# API, with gh and the token, github.com, with the checkout, and the receiver of the
+# results, with the artifact, whose file comes from GitHub's blob storage, which
+# Harden-Runner lets through from GitHub's meta whatever a job names.
+expect_blocks demo.yml animation-pull-request \
+	"api.github.com:443 github.com:443 results-receiver.actions.githubusercontent.com:443" \
+	"Block every host that the job doesn't need; Make sure that Harden-Runner blocks; Wait until Harden-Runner lets the hosts through; actions/checkout; Fetch the animation that the job demo kept; Create a token of the release app; Open, update or close the pull request of the animation; Wait until Harden-Runner has removed Docker"
 
 ## The room on the disk of a runner
 
