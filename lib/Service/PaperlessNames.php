@@ -24,7 +24,7 @@ use Throwable;
  * with one request per kind, for all documents of a page. They only add to a result: a
  * lookup that fails leaves them out, without a problem in the history of the search, and
  * a list that Paperless refuses or doesn't answer rests for a while, so that every search
- * doesn't wait for it.
+ * doesn't wait for it, until the settings are saved (forget()).
  */
 final class PaperlessNames {
 	/** The field of a document that names its tags, with the path of their list in the API. */
@@ -99,7 +99,7 @@ final class PaperlessNames {
 	 */
 	private function find(array $documents, array $fields): array {
 		$names = [];
-		$server = hash('sha256', $this->configService->getUrl());
+		$server = $this->server();
 		$answers = true;
 		foreach ($fields as $field => $list) {
 			$names[$field] = [];
@@ -257,6 +257,39 @@ final class PaperlessNames {
 		}
 
 		return $ids;
+	}
+
+	/**
+	 * Forgets that Paperless refused or didn't answer the lists of correspondents, types
+	 * and tags for the server and the token of the settings, so that the next search asks
+	 * for them again: after a save of the settings, as when an administrator gave the
+	 * account the permission View for Tags and saved the same token. The names that the
+	 * cache keeps stay, also the empty one of an object that the account may not view,
+	 * for their ten minutes. A cache that fails only leaves the lists resting until they
+	 * would ask again anyway.
+	 */
+	public function forget(): void {
+		try {
+			$server = $this->server();
+			foreach (array_keys(self::FIELDS) as $field) {
+				$this->getCache()->remove(self::restingKey($server, $field));
+			}
+		} catch (Throwable $error) {
+			$this->logger->warning('The lists of the names of correspondents, types and tags that Paperless refused could not be removed from the cache, so a refusal may count for up to ten minutes more ({errorType})', [
+				'app' => AppConstants::APP_ID,
+				'errorType' => $error::class,
+			]);
+		}
+	}
+
+	/**
+	 * The key of the server and the token of the settings in the cache. The token is part of
+	 * it: another token, such as the one of the search account that the settings create, may
+	 * view other objects, so it neither shows the names that the token before it was given
+	 * nor waits for the lists that Paperless refused to that one.
+	 */
+	private function server(): string {
+		return hash('sha256', $this->configService->getUrl() . ' ' . $this->configService->getToken());
 	}
 
 	private function getCache(): ICache {

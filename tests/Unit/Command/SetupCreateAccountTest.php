@@ -161,7 +161,7 @@ final class SetupCreateAccountTest extends TestCase {
 		$client = $this->paperlessForTheSetUp();
 		$api = $this->paperlessApi($configService, $client);
 
-		return new CommandTester(new Setup($configService, $api, $this->messages(), $this->searchAccountSetup($client), $this->documentOwners($api, $configService, $accounts)));
+		return new CommandTester(new Setup($configService, $api, $this->messages(), $this->searchAccountSetup($client), $this->documentOwners($api, $configService, $accounts), $this->paperlessNames($api, $configService)));
 	}
 
 	/**
