@@ -804,7 +804,7 @@ bash demo/seed.sh
 bash scripts/screenshots.sh --demo
 ```
 
-Selbst ausführen musst du es selten. Für einen Pull Request, der eine Datei von `.github/screenshots-paths.txt` ändert, etwa das CSS oder ein Template, nimmt die visuelle Prüfung die Bilder auf und kommentiert die, die anders aussehen: vorher, nachher und die geänderten Pixel in Rot. Nach dem Merge, nach jedem Release und jede Woche nimmt der Screenshot-Bot sie auf `main` auf und hält einen Pull Request, *docs: update the screenshots*, der sich selbst mergt, sobald jede Prüfung besteht.
+Selbst ausführen musst du es selten. Für einen Pull Request, der eine Datei von `.github/screenshots-paths.txt` ändert, etwa das CSS oder ein Template, nimmt die visuelle Prüfung die Bilder auf und kommentiert die, die anders aussehen: vorher, nachher und die geänderten Pixel in Rot. Der Job, der den Kommentar schreibt, führt nie den Code des Pull Requests aus und erreicht nur die API von GitHub: Harden-Runner sperrt jeden anderen Host. Nach dem Merge, nach jedem Release und jede Woche nimmt der Screenshot-Bot sie auf `main` auf und hält einen Pull Request, *docs: update the screenshots*, der sich selbst mergt, sobald jede Prüfung besteht.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/renewing-the-pictures.de.dark.svg">
