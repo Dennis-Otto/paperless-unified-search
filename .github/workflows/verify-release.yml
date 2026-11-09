@@ -172,11 +172,19 @@ jobs:
           # .github/sign-tag.sh); releases made before have a tag without a signature,
           # which the weekly run only notes. It checks the tag on its own, as a user
           # would, not with the verify of sign-tag.sh, one of the scripts it checks.
+          # gitsign through the API with the token of the job, which survives an outage
+          # of GitHub's downloads without a token, five times, 10, 20, 40 and 80 seconds
+          # apart, as .github/download.sh does (decision 0133), and a call that stalls
+          # for five minutes ends, since gh waits without a limit.
           gitsign="$RUNNER_TEMP/gitsign"
-          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
-            --connect-timeout 15 --max-time 300 --output "$gitsign" \
-            "https://github.com/sigstore/gitsign/releases/download/v$GITSIGN_VERSION/gitsign_${GITSIGN_VERSION}_linux_amd64" ||
-            stop "gitsign $GITSIGN_VERSION can't be downloaded, so the tag $TAG can't be checked."
+          for wait in 10 20 40 80 0; do
+            if timeout --kill-after=10 300 gh release download "v$GITSIGN_VERSION" --repo sigstore/gitsign \
+              --pattern "gitsign_${GITSIGN_VERSION}_linux_amd64" --output "$gitsign" --clobber; then
+              break
+            fi
+            ((wait)) || stop "gitsign $GITSIGN_VERSION can't be downloaded: GitHub failed five times in two and a half minutes (https://www.githubstatus.com), so the tag $TAG can't be checked. Run the check again once GitHub works."
+            sleep "$wait"
+          done
           echo "$GITSIGN_SHA256  $gitsign" | sha256sum --check --strict >/dev/null ||
             stop "The download of gitsign $GITSIGN_VERSION doesn't have its sha256, so the tag $TAG can't be checked."
           chmod +x "$gitsign"

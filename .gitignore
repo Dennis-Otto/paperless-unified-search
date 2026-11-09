@@ -34,6 +34,11 @@ credentials*.json
 /.venv-docs/
 /.cache/
 
+# The bytecode of Python, also of the tools that every repository runs, such as
+# .github/blueprint.py, which the step Binary files of scripts/check.sh would name
+__pycache__/
+*.py[cod]
+
 # PHP
 /vendor/
 /build/

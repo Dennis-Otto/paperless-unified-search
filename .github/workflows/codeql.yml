@@ -46,10 +46,60 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - name: Record the network traffic of the job
+      # For Python, JavaScript or TypeScript, Ruby and the workflows, CodeQL reaches only
+      # GitHub. A repository with Go, Java or Kotlin, or Rust only records the traffic of
+      # the job instead, as its SECURITY.md says: CodeQL may fetch the dependencies of
+      # that code from hosts that no run has shown yet (decision 0130).
+      - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
+            uploads.github.com:443
+            release-assets.githubusercontent.com:443
+            results-receiver.actions.githubusercontent.com:443
+      - name: Wait until Harden-Runner lets the hosts through
+        # The runner may have asked for an address past Harden-Runner, which then blocks
+        # that address for as long as systemd-resolved keeps it, up to a minute.
+        timeout-minutes: 4
+        env:
+          HOSTS: >-
+            api.github.com:443
+            github.com:443
+            uploads.github.com:443
+            release-assets.githubusercontent.com:443
+            results-receiver.actions.githubusercontent.com:443
+        run: |
+          deadline=$(($(date +%s) + 120))
+          for endpoint in $HOSTS; do
+            host="${endpoint%:*}"
+            port="${endpoint##*:}"
+            # A wildcard names no host to ask, and a job may leave out a host that keeps it
+            # waiting although none of its steps needs it at once.
+            [[ "$host" == '*.'* || " $SKIP_WAIT " == *" $endpoint "* ]] && continue
+            # Each host on its own port, by HTTP on 80 and by HTTPS on any other. Only a host
+            # that curl can't resolve, or can't reach in time, is blocked: one that answers at
+            # all, in whatever protocol, is through.
+            scheme=https
+            [[ "$port" == 80 ]] && scheme=http
+            while true; do
+              status=0
+              curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "$scheme://$host:$port/" || status=$?
+              case "$status" in
+                6 | 7 | 28) ;;
+                *) break ;;
+              esac
+              if (($(date +%s) >= deadline)); then
+                echo "::warning::Harden-Runner still blocks $endpoint after two minutes; a step that needs it will fail, and the job can run again."
+                break
+              fi
+              echo "Harden-Runner still blocks $endpoint, waiting 3 s."
+              sleep 3
+            done
+          done
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -61,10 +111,42 @@ jobs:
           message="CodeQL doesn't analyze this repository: its terms allow it on private code only with GitHub Code Security or Advanced Security, and CODE_SCANNING is off. zizmor, OSV-Scanner and the linters of check.sh still run."
           echo "::notice::$message"
           echo "$message" >> "$GITHUB_STEP_SUMMARY"
+      # The analysis takes the CodeQL that the action brings, `linked`, so that it
+      # changes only with the action, which Renovate moves, and the runner usually has
+      # it in its tool cache. Without it there, the action would download it from the
+      # page of its release without a token, which timed out for hours on 8 November
+      # 2026 (decision 0133): .github/download.sh downloads it through the API with the
+      # token of the job, tries again after an error and checks it by the digest that
+      # GitHub keeps, and the action takes it from that file.
+      - name: Download the CodeQL of the action unless the runner has it
+        id: bundle
+        if: vars.CODE_SCANNING != 'off'
+        timeout-minutes: 10
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          # The runner keeps the actions of the job beside the folder of the workspace.
+          defaults=("${RUNNER_WORKSPACE%/*}"/_actions/github/codeql-action/*/src/defaults.json)
+          if ((${#defaults[@]} != 1)); then
+            echo "::notice::The CodeQL of the action is not where the runner keeps it; the action looks for it itself."
+            exit 0
+          fi
+          bundle="$(jq -r .bundleVersion "${defaults[0]}")"
+          cli="$(jq -r .cliVersion "${defaults[0]}")"
+          if [[ -f "$RUNNER_TOOL_CACHE/CodeQL/$cli/x64.complete" ]]; then
+            echo "CodeQL $cli of the action comes from the tool cache of the runner." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          tools="$RUNNER_TEMP/codeql-bundle/codeql-bundle-linux64.tar.zst"
+          bash .github/download.sh github/codeql-action "$bundle" codeql-bundle-linux64.tar.zst "$tools"
+          echo "tools=$tools" >> "$GITHUB_OUTPUT"
+          echo "CodeQL $cli of the action, which the runner doesn't have, is downloaded through the API." >> "$GITHUB_STEP_SUMMARY"
       - name: Initialize the analysis
         if: vars.CODE_SCANNING != 'off'
         uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
+          tools: ${{ steps.bundle.outputs.tools || 'linked' }}
           languages: javascript-typescript, actions
           build-mode: none
           queries: security-extended
@@ -107,6 +189,16 @@ jobs:
         uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: ${{ runner.temp }}/codeql
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
       # The PR coach: what failed, why it matters and how to fix it, in the summary
       # of the check and as its annotation, from .github/checks.toml.
       - name: Explain the failure

@@ -313,16 +313,22 @@ jobs:
           extensions: dom, libxml, mbstring, xml
           coverage: pcov
           tools: composer:v2
-      - name: Install the locked tools and Infection
+      # Through the API with the token of the job, checked by its sha256 (decision 0133),
+      # in a step of its own: the step that installs the project runs its Composer
+      # scripts and plugins, which don't get the token.
+      - name: Download Infection
         if: needs.plan.outputs.kind == 'php'
         # Room for one more try of a download of Infection that hung.
         timeout-minutes: 10
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          composer install --no-interaction --prefer-dist --no-progress
-          curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
-            --connect-timeout 15 --max-time 300 --output "$RUNNER_TEMP/infection.phar" \
-            "https://github.com/infection/infection/releases/download/$INFECTION_VERSION/infection.phar"
-          echo "$INFECTION_SHA256  $RUNNER_TEMP/infection.phar" | sha256sum --check --strict
+          bash .github/download.sh infection/infection "$INFECTION_VERSION" infection.phar \
+            "$RUNNER_TEMP/infection.phar" "$INFECTION_SHA256"
+      - name: Install the locked tools
+        if: needs.plan.outputs.kind == 'php'
+        timeout-minutes: 10
+        run: composer install --no-interaction --prefer-dist --no-progress
       - name: Run the mutants against the tests
         if: needs.plan.outputs.kind == 'php'
         run: |

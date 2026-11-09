@@ -117,14 +117,16 @@ jobs:
         with:
           path: ${{ runner.temp }}/krankerl
           key: krankerl-${{ env.KRANKERL_VERSION }}-${{ env.KRANKERL_SHA256 }}
+      # Through the API with the token of the job, which survives an outage of GitHub's
+      # downloads without a token (decision 0133).
       - name: Install krankerl, which builds the package of the app
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           deb="$RUNNER_TEMP/krankerl/krankerl_${KRANKERL_VERSION}_amd64.deb"
           if [[ ! -f "$deb" ]]; then
-            mkdir -p "$RUNNER_TEMP/krankerl"
-            curl --fail --location --silent --show-error --retry 5 --retry-all-errors \
-              --connect-timeout 15 --max-time 300 --output "$deb" \
-              "https://github.com/ChristophWurst/krankerl/releases/download/v$KRANKERL_VERSION/krankerl_${KRANKERL_VERSION}_amd64.deb"
+            bash .github/download.sh ChristophWurst/krankerl "v$KRANKERL_VERSION" \
+              "krankerl_${KRANKERL_VERSION}_amd64.deb" "$deb" "$KRANKERL_SHA256"
           fi
           # The package of the cache too.
           echo "$KRANKERL_SHA256  $deb" | sha256sum --check --strict
@@ -243,10 +245,52 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - name: Record the network traffic of the job
+      - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
-          egress-policy: audit
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
+            results-receiver.actions.githubusercontent.com:443
+      - name: Wait until Harden-Runner lets the hosts through
+        # The runner may have asked for an address past Harden-Runner, which then blocks
+        # that address for as long as systemd-resolved keeps it, up to a minute.
+        timeout-minutes: 4
+        env:
+          HOSTS: >-
+            api.github.com:443
+            github.com:443
+            results-receiver.actions.githubusercontent.com:443
+        run: |
+          deadline=$(($(date +%s) + 120))
+          for endpoint in $HOSTS; do
+            host="${endpoint%:*}"
+            port="${endpoint##*:}"
+            # A wildcard names no host to ask, and a job may leave out a host that keeps it
+            # waiting although none of its steps needs it at once.
+            [[ "$host" == '*.'* || " $SKIP_WAIT " == *" $endpoint "* ]] && continue
+            # Each host on its own port, by HTTP on 80 and by HTTPS on any other. Only a host
+            # that curl can't resolve, or can't reach in time, is blocked: one that answers at
+            # all, in whatever protocol, is through.
+            scheme=https
+            [[ "$port" == 80 ]] && scheme=http
+            while true; do
+              status=0
+              curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "$scheme://$host:$port/" || status=$?
+              case "$status" in
+                6 | 7 | 28) ;;
+                *) break ;;
+              esac
+              if (($(date +%s) >= deadline)); then
+                echo "::warning::Harden-Runner still blocks $endpoint after two minutes; a step that needs it will fail, and the job can run again."
+                break
+              fi
+              echo "Harden-Runner still blocks $endpoint, waiting 3 s."
+              sleep 3
+            done
+          done
       # Code scanning tells a finding from a new one by the lines of the code at it.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -264,6 +308,16 @@ jobs:
         with:
           sarif_file: ${{ runner.temp }}/psalm-taint/psalm-taint.sarif
           category: psalm-taint
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
       # The PR coach: what failed, why it matters and how to fix it, in the summary
       # of the check and as its annotation, from .github/checks.toml.
       - name: Explain the failure
