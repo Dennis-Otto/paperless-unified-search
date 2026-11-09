@@ -19,14 +19,16 @@ table of docs/configure.md says, directly and in the results of Nextcloud, where
 show, and every row of the table of the search syntax of README.md. Last, it sends the
 requests of the app to this Paperless and to the mock, which runs beside it, and compares
 the form of their answers (parity.py), since the required check "nextcloud" believes the
-mock. It prints a report in Markdown, which paperless-contract.sh adds to the summary of the
-job, and fails with the first broken promise or with every difference of the mock.
+mock, and checks the owners of the documents and the users of Paperless, which the archives
+that Paperless Sync gives each owner need, in the search and in occ check. It prints a
+report in Markdown, which paperless-contract.sh adds to the summary of the job, and fails
+with the first broken promise or with every difference of the mock.
 
-    ACCEPT='application/json; version=9' FIELDS=id,title,… RECENT_FIELDS=id,title,added,… UNKNOWN_DOCUMENT=… HIDDEN_DOCUMENT=… LINE=3 python assert_contract.py
+    ACCEPT='application/json; version=9' FIELDS=id,title,… RECENT_FIELDS=id,title,added,… OWNER_FIELDS=id,owner UNKNOWN_DOCUMENT=… HIDDEN_DOCUMENT=… LINE=3 python assert_contract.py
 
-ACCEPT, FIELDS, RECENT_FIELDS, UNKNOWN_DOCUMENT and HIDDEN_DOCUMENT come from
-lib/Service/PaperlessApiService.php, so that the contract checks what the app sends and
-reads; LINE is the line of Paperless-ngx, 2 or 3.
+ACCEPT, FIELDS, RECENT_FIELDS, OWNER_FIELDS, UNKNOWN_DOCUMENT and HIDDEN_DOCUMENT come
+from lib/Service/PaperlessApiService.php, so that the contract checks what the app sends
+and reads; LINE is the line of Paperless-ngx, 2 or 3.
 """
 
 import base64
@@ -124,6 +126,13 @@ DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 # The fields of a document that the dashboard shows, and the moment that Paperless added
 # it as RecentDocumentsWidget reads it, such as 2026-08-27T14:00:00.123456+02:00.
 RECENT = {"id", "title", "added"}
+# The fields of a document that occ check reads to look for its file in the folders of the
+# user of its owner (lib/Command/Check.php), and as many documents on a page as it asks for
+# (OWNERS_PAGE_SIZE of lib/Service/PaperlessApiService.php).
+OWNED = {"id", "owner"}
+OWNERS_PAGE_SIZE = 1000
+# More pages than a list of the documents of the contract has, even one document a page.
+MOST_PAGES = 10
 MOMENT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?")
 # What the app makes of an excerpt of Paperless: its text without the markup, entities
 # decoded, on one line (PaperlessSearchProvider).
@@ -194,10 +203,11 @@ def excerpt(highlights):
 
 
 class Paperless:
-    def __init__(self, accept, fields, recent_fields):
+    def __init__(self, accept, fields, recent_fields, owner_fields):
         self.accept = accept
         self.fields = fields
         self.recent_fields = recent_fields
+        self.owner_fields = owner_fields
         self.token = ""
 
     def get(self, path, *, accept=None, **query):
@@ -218,6 +228,31 @@ class Paperless:
     def newest(self, what):
         """The newest documents, as the dashboard of the app asks for them."""
         return self.documents(what, ordering="-added", page=1, page_size=25, fields=",".join(self.recent_fields))
+
+    def owners(self, token, page_size=OWNERS_PAGE_SIZE):
+        """Every document that the account of a token may view, with its owner, as
+        PaperlessApiService::findDocumentOwners asks for them for occ check: page by page by
+        their numbers, ordered by ID, with the fields of OWNER_FIELDS, until a page has no
+        link to the next one. Checks each page as the app reads it: a count, the results
+        with only those fields, the ID a number and the owner the ID of a user or null."""
+        found = []
+        for page in range(1, MOST_PAGES + 1):
+            what = f"Page {page} of the owners of the documents, {page_size} a page"
+            answer = self.as_account(token, "/api/documents/", ordering="id", page=page, page_size=page_size, fields=",".join(self.owner_fields))
+            expect(answer.status == 200, f"{what}: Paperless answered HTTP {answer.status} instead of 200: {answer.body[:300]!r}")
+            data = answer.json(what)
+            results, following = data.get("results"), data.get("next")
+            expect(isinstance(data.get("count"), int) and isinstance(results, list), f"{what} is no list of documents: {data!r}")
+            expect(all(isinstance(result, dict) and set(result) == set(self.owner_fields) for result in results), f"Paperless ignored the fields {','.join(self.owner_fields)}: {results!r}")
+            expect(
+                all(isinstance(result["id"], int) and (result["owner"] is None or isinstance(result["owner"], int)) for result in results),
+                f"{what} names an ID or an owner that isn't a number: {results!r}",
+            )
+            expect(following is None or isinstance(following, str), f"next is neither a link nor null: {following!r}")
+            found += results
+            if following is None:
+                return found
+        raise Broken(f"The owners of the documents, {page_size} a page, link a next page after {MOST_PAGES} pages.")
 
     def log_in(self):
         self.token = self.token_of(*PAPERLESS_USER)
@@ -931,12 +966,17 @@ def check_search_account(paperless, report):
 
 
 def check_owners(paperless, ids, viewer_id, viewer, report):
-    """What the search reads when Paperless Sync gives each user the documents that they own
-    (decision 0013), with two owners: the field owner of each document of a search, the ID
-    of its owner, and the usernames of /api/users/ by those IDs, page by page, which Paperless
-    lists only to an account that may view users. The check gives the letter to the viewer
-    and back to the superuser afterwards, so that the other checks find it as before."""
-    letter = ids["Contract letter"]
+    """What the search and occ check read when Paperless Sync gives each user the documents
+    that they own (decision 0013), with two owners: the field owner of each document of a
+    search, the ID of its owner, and the usernames of /api/users/ by those IDs, page by page,
+    which Paperless lists only to an account that may view users. And the owners of every
+    document, as occ check asks for them, with a document that has none, as Paperless leaves
+    one that it consumes from its folder. The check gives the letter to the viewer and takes
+    the insurance from its owner, and gives both back to the superuser afterwards, so that
+    the other checks find them as before."""
+    missing = sorted(OWNED - set(paperless.owner_fields))
+    expect(not missing, f"The app doesn't ask Paperless for the fields {missing}, which occ check reads of the owners of the documents.")
+    letter, insurance = ids["Contract letter"], ids["Contract insurance"]
     superuser_id = paperless.ui_settings(paperless.token).json("/api/ui_settings/")["user"]["id"]
     # The document itself, as its dialog in Paperless changes its owner: the bulk editor
     # gives an owner only to documents without one, when it merges the permissions.
@@ -961,10 +1001,29 @@ def check_owners(paperless, ids, viewer_id, viewer, report):
         expect(allowed.status == 200, f"/api/users/ answered an account that may view users with HTTP {allowed.status}: {allowed.body[:300]!r}")
         seen = {user.get("id"): user.get("username") for user in allowed.json("/api/users/").get("results", [])}
         expect(seen == listed, f"/api/users/ lists {seen!r} to an account that may view users, not {listed!r} as to the superuser.")
+
+        # The owners of every document, as occ check asks for them, with one without an owner.
+        cleared = paperless.send(f"/api/documents/{insurance}/", {"owner": None}, method="PATCH")
+        expect(cleared.status == 200, f"Paperless didn't take the owner from the insurance (HTTP {cleared.status}): {cleared.body[:300]!r}")
+        owned = paperless.owners(paperless.token)
+        found = [document["id"] for document in owned]
+        expect(found == sorted(ids.values()), f"ordering=id lists the documents {found}, not {sorted(ids.values())}, each once and the lowest ID first.")
+        owners = {document["id"]: document["owner"] for document in owned}
+        expected = {document: viewer_id if document == letter else None if document == insurance else superuser_id for document in ids.values()}
+        expect(owners == expected, f"The owners of the documents are {owners!r}, not {expected!r}: the ID of the owner, and null without one.")
+        paged = paperless.owners(paperless.token, page_size=1)
+        expect(paged == owned, f"The pages of one document by their numbers list {paged!r}, not {owned!r} as one page does.")
+        seen = paperless.owners(viewer)
+        expect(seen == owned, f"The owners of the documents are {seen!r} to the account that may only view them, not {owned!r} as to the superuser.")
     finally:
         paperless.send(f"/api/users/{viewer_id}/", {"user_permissions": VIEWER_PERMISSIONS}, method="PATCH")
         paperless.send(f"/api/documents/{letter}/", {"owner": superuser_id}, method="PATCH")
+        paperless.send(f"/api/documents/{insurance}/", {"owner": superuser_id}, method="PATCH")
     report.passed("View for users, and the owners of documents", f"{code('owner')} of each result is the ID of its owner; {code('/api/users/')} names the usernames by ID, and answers HTTP 403 without the permission")
+    report.passed(
+        "The owners of every document, for occ check",
+        f"{code(f'ordering=id&page_size={OWNERS_PAGE_SIZE}&fields=' + ','.join(paperless.owner_fields))}: only these fields, every document once by its ID, the ID of its owner or null without one; the same on pages of one by their numbers, and to the account that may only view",
+    )
 
 
 def check_parity(paperless, ids, line, viewer, stranger, report):
@@ -988,7 +1047,7 @@ def check_parity(paperless, ids, line, viewer, stranger, report):
         document_type=paperless.named("document_types", DOCUMENT_TYPE),
         tag=paperless.named("tags", TAG_NAME),
     )
-    comparison = parity.compare(line, archive, parity.MOCK, paperless.accept, ",".join(paperless.fields), ",".join(paperless.recent_fields))
+    comparison = parity.compare(line, archive, parity.MOCK, paperless.accept, ",".join(paperless.fields), ",".join(paperless.recent_fields), ",".join(paperless.owner_fields))
     report.details = comparison.table()
     expect(not comparison.differences, f"{len(comparison.points())} point(s) of {comparison.asked} requests of the app differ between this Paperless and the mock, which the required check nextcloud believes. The table below names them.")
     known = "; ".join(comparison.known.values())
@@ -999,15 +1058,16 @@ def main():
     accept = os.environ.get("ACCEPT", "")
     fields = [field for field in os.environ.get("FIELDS", "").split(",") if field]
     recent_fields = [field for field in os.environ.get("RECENT_FIELDS", "").split(",") if field]
+    owner_fields = [field for field in os.environ.get("OWNER_FIELDS", "").split(",") if field]
     unknown = os.environ.get("UNKNOWN_DOCUMENT", "")
     hidden = os.environ.get("HIDDEN_DOCUMENT", "")
     line = os.environ.get("LINE", "")
-    if not accept or not fields or not recent_fields or not unknown or not hidden or line not in ("2", "3"):
-        print("ACCEPT, FIELDS, RECENT_FIELDS, UNKNOWN_DOCUMENT, HIDDEN_DOCUMENT and LINE (2 or 3) are missing; paperless-contract.sh sets them.", file=sys.stderr)
+    if not accept or not fields or not recent_fields or not owner_fields or not unknown or not hidden or line not in ("2", "3"):
+        print("ACCEPT, FIELDS, RECENT_FIELDS, OWNER_FIELDS, UNKNOWN_DOCUMENT, HIDDEN_DOCUMENT and LINE (2 or 3) are missing; paperless-contract.sh sets them.", file=sys.stderr)
         return 2
 
     report = Report()
-    paperless = Paperless(accept, fields, recent_fields)
+    paperless = Paperless(accept, fields, recent_fields, owner_fields)
     status = 0
     heading = f"### The contract with Paperless-ngx {line}"
     try:

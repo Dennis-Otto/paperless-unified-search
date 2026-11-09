@@ -115,8 +115,9 @@ title = "The contract with a real Paperless-ngx"
 problem = """`tests/e2e/paperless-contract.sh` found that a real Paperless-ngx, of the
 line that the name of the check names, no longer answers as the app reads it: a field
 of another type, a date, the markup of an excerpt, a page, an error, the newest
-documents of the dashboard or the names of correspondents, document types and tags, directly
-or through Nextcloud. Or the mock, `tests/e2e/mock_server.py`, answers the requests of the
+documents of the dashboard, the names of correspondents, document types and tags, or the
+owners of the documents and the users that `occ paperless_unified_search:check` and the
+search read, directly or through Nextcloud. Or the mock, `tests/e2e/mock_server.py`, answers the requests of the
 app in another form than that Paperless. The summary of the check names the version of
 Paperless and the promise that it broke, or each point where the mock differs, what each
 says and the requests that show it."""
