@@ -26,6 +26,15 @@ from blueprint.settings import (
     gated,
     read_plan,
 )
+from blueprint.social_preview import (
+    DEFAULT_PANEL,
+    PICTURE,
+    SOURCE,
+    Unreadable,
+    preview,
+    settings_page,
+    shows_the_project,
+)
 
 # The permissions of the release app, as its settings page names them and as its
 # manifest does, with the access that the bots need: the settings bot, Renovate, the
@@ -57,13 +66,6 @@ BEST_PRACTICES = "https://www.bestpractices.dev"
 BADGE = re.compile(r"bestpractices\.dev/projects/(\d+)/(badge|baseline)")
 # The button of each form of bestpractices.dev that reads .bestpractices.json anew.
 SAVE = "Save (and continue) 🤖"
-# The page of the social preview, and the attribute of the panel that a new repository
-# starts with: a drawing of its kind of project, made from the answers of copier copy.
-# A repository made before it keeps the card of the blueprint's checks that came first,
-# the same in every repository, since the page belongs to the project.
-SOCIAL_PREVIEW = ".github/social-preview.html"
-DEFAULT_PANEL = "data-default-panel"
-DEFAULT_PANELS = (DEFAULT_PANEL, '<div class="card checks">')
 
 
 @dataclass(frozen=True)
@@ -91,20 +93,55 @@ def reuse_compliant(
 def social_preview(root: Path) -> Step:
     """The social preview of a new repository shows a drawing of its kind of project,
     since the template knows no more of it: the project replaces it with itself."""
-    page = root / SOCIAL_PREVIEW
-    text = page.read_text(encoding="utf-8") if page.exists() else ""
-    # The template's comment names the mark that the project takes out: only the
-    # markup counts, not what a comment says of it.
-    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
     return Step(
         "Social preview shows the project",
-        not any(mark in text for mark in DEFAULT_PANELS),
-        f"{SOCIAL_PREVIEW} still shows the blueprint's default panel, the same in"
+        shows_the_project(root),
+        f"{SOURCE} still shows the blueprint's default panel, the same in"
         " every project of its kind. Replace it with the project itself: a screenshot"
         " of what it shows, such as one that scripts/screenshots.sh takes, or a"
         f" faithful drawing of what it produces, without {DEFAULT_PANEL}. Then render"
         " the picture with bash scripts/social-preview.sh and upload it.",
     )
+
+
+def social_preview_uploaded(
+    api: Api,
+    repo: str,
+    root: Path,
+    opener: Callable[..., Any] | None = None,
+) -> Step:
+    """GitHub shows the uploaded picture, which only a person can upload: once the
+    repository holds one, the step compares the upload with it, so that a picture that
+    changed after its upload shows as well. Without one, an upload is enough."""
+    page = settings_page(repo)
+    upload = f"upload {PICTURE} under Settings → General → Social preview: {page}"
+    try:
+        found = preview(api, repo, root, opener)
+    except Unreadable as error:
+        return Step(
+            "Social preview uploaded and current",
+            None,
+            f"Couldn't read the uploaded picture ({error}). Compare it with {PICTURE},"
+            f" or {upload}",
+        )
+    if not found.picture:
+        return Step(
+            "Social preview uploaded (bash scripts/social-preview.sh renders it)",
+            found.uploaded,
+            page,
+        )
+    how = ""
+    if not found.fits:
+        how = (
+            f"{PICTURE} is larger than the 1 MB that GitHub takes for an upload:"
+            " render a smaller one, with fewer colors or a simpler screenshot, with"
+            f" bash scripts/social-preview.sh, then {upload}"
+        )
+    elif not found.uploaded:
+        how = f"GitHub shows a card of its own: {upload}"
+    elif not found.current:
+        how = f"The uploaded picture is not {PICTURE} of this checkout: {upload}"
+    return Step("Social preview uploaded and current", found.current, how)
 
 
 def best_practices(readme: str) -> list[Step]:
@@ -440,11 +477,9 @@ def checklist(
     settings: Settings,
     root: Path,
     reuse: Callable[[str], bool] | None = None,
+    opener: Callable[..., Any] | None = None,
 ) -> list[Step]:
-    owner, name = repo.split("/", 1)
-    data = api.graphql(
-        f'{{ repository(owner: "{owner}", name: "{name}") {{ usesCustomOpenGraphImage }} }}'
-    )
+    name = repo.split("/", 1)[1]
     readme = (
         (root / "README.md").read_text(encoding="utf-8")
         if (root / "README.md").exists()
@@ -497,11 +532,7 @@ def checklist(
         )
     steps += [
         social_preview(root),
-        Step(
-            "Social preview uploaded (bash scripts/social-preview.sh renders it)",
-            bool(data["repository"]["usesCustomOpenGraphImage"]),
-            f"https://github.com/{repo}/settings",
-        ),
+        social_preview_uploaded(api, repo, root, opener),
         *best_practices(readme),
         Step(
             "Registered with the REUSE API, for its badge",

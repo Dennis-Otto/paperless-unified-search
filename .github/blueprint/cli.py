@@ -28,6 +28,7 @@ from blueprint import (
     versions,
 )
 from blueprint.app import TIMEOUT, connect, register
+from blueprint.binaries import binaries
 from blueprint.bootstrap import CreateError, create, doctor
 from blueprint.bot_health import renovate_report, sweep, watch_run
 from blueprint.branches import job_from, next_branch
@@ -858,6 +859,35 @@ def fix_bot_command(
         )
     sys.stdout.write(said)
     return 0
+
+
+def binaries_command(root: Path) -> int:
+    """The binary files of Git that nobody can review, one on each line, and in the CI
+    also as annotations of those files."""
+    found = binaries(root)
+    for binary in found:
+        print(f"{binary.path}: {binary.problem}")
+    if not found:
+        print(
+            "Every binary file is a picture, a video, a sound, a font, a document or an "
+            "input of the fuzz tests."
+        )
+        return 0
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        for binary in found:
+            print(
+                annotate.Annotation(
+                    "Binary files", f"{binary.path} {binary.problem}", binary.path
+                ).command()
+            )
+    print(
+        f"Remove the {len(found)} file(s) from Git: a release builds what it ships from "
+        "the sources, and a tool that a check needs comes from its package manager or a "
+        "download pinned by its checksum, as the OSPS Baseline of OpenSSF asks "
+        "(OSPS-QA-05.01 and 05.02). Delete a file that isn't in Git yet, or ignore it "
+        "in .gitignore when a tool writes it."
+    )
+    return 1
 
 
 def migrate_command(arguments: argparse.Namespace, root: Path) -> int:
@@ -2217,6 +2247,12 @@ def add_pages_parsers(
         help="put the cells of a layout table one below the other, the text before "
         "its picture, and leave out the widths of cells, first",
     )
+    commands.add_parser(
+        "binaries",
+        help="the binary files of Git that nobody can review: programs, libraries, "
+        "compiled code, archives and every other one but pictures, videos, sounds, "
+        "fonts, documents and the inputs of the fuzz tests",
+    )
     migrate_parser = commands.add_parser(
         "migrate",
         help="what the releases of the blueprint move in the files of the project, "
@@ -2406,6 +2442,12 @@ def standalone_command(
         try:
             return locks_command(arguments, root)
         except (OSError, UnicodeDecodeError, subprocess.CalledProcessError) as error:
+            print(f"blueprint.py: {error}", file=sys.stderr)
+            return 2
+    if arguments.command == "binaries":
+        try:
+            return binaries_command(root)
+        except (OSError, subprocess.CalledProcessError) as error:
             print(f"blueprint.py: {error}", file=sys.stderr)
             return 2
     if arguments.command == "migrate":

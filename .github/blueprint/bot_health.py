@@ -12,8 +12,10 @@ job, as one that only plans, leaves it open.
 Once a day it looks at the latest run of every workflow, those of the project too,
 in case GitHub lost an event, and starts a workflow whose schedule GitHub missed or
 switched off. A failure of Lint, which main runs only each week, counts only at the
-head of main: a pull request reaches main only when it passes Lint. In the blueprint,
-it also keeps one issue with the warnings and errors in the log of Renovate.
+head of main: a pull request reaches main only when it passes Lint. The same look
+keeps one issue open while the social preview that GitHub shows is not the committed
+.github/social-preview.png, which only a person can upload. In the blueprint, it also
+keeps one issue with the warnings and errors in the log of Renovate.
 """
 
 from __future__ import annotations
@@ -22,13 +24,21 @@ import hashlib
 import json
 import re
 import urllib.parse
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
 from blueprint.github import Api, GitHubError, Json
+from blueprint.social_preview import (
+    PICTURE,
+    SOURCE,
+    Unreadable,
+    preview,
+    settings_page,
+    shows_the_project,
+)
 
 LABEL = "bot-failure"
 LABEL_COLOR = "d93f0b"
@@ -85,6 +95,9 @@ RENOVATE = "renovate"
 RENOVATE_TITLE = "Renovate logs problems"
 RENOVATE_LABEL = "dependencies"
 MOST_PROBLEMS = 50
+# The issue that asks for an upload of the social preview, which no API offers.
+PREVIEW = "social-preview"
+PREVIEW_TITLE = "Upload the new social preview"
 
 # The state of an issue, in its body, where only the raw text shows it.
 MARKER = re.compile(r"<!-- bot-health (\{.*?\}) -->")
@@ -1003,9 +1016,15 @@ def look_after(
     return "; ".join(notes), started
 
 
-def sweep(api: Api, repo: str, root: Path, now: datetime) -> tuple[str, bool]:
-    """The daily look at every workflow of the repository; a summary in Markdown, and
-    whether every look succeeded."""
+def sweep(
+    api: Api,
+    repo: str,
+    root: Path,
+    now: datetime,
+    opener: Callable[..., Any] | None = None,
+) -> tuple[str, bool]:
+    """The daily look at every workflow of the repository and at its social preview; a
+    summary in Markdown, and whether every look succeeded."""
     branch = default_branch(api, repo)
     issues = open_issues(api, repo)
     listed = api.get(f"repos/{repo}/actions/workflows?per_page=100")
@@ -1058,7 +1077,100 @@ def sweep(api: Api, repo: str, root: Path, now: datetime) -> tuple[str, bool]:
             state, started, healthy = f"couldn't look: {code(str(error))}", False, False
         starts += started
         lines.append(f"| {code(name)} | {state} |")
+    try:
+        uploaded = preview_report(api, repo, root, branch, issues.get(PREVIEW), opener)
+    except (GitHubError, Unreadable) as error:
+        uploaded, healthy = f"Couldn't compare it: {code(str(error))}", False
+    if uploaded:
+        lines += ["", "#### Social preview", "", uploaded]
     return "\n".join(lines) + "\n", healthy
+
+
+# ---------------------------------------------------------------- social preview
+
+
+def preview_body(
+    repo: str, branch: str, commit: str, uploaded: bool, fits: bool = True
+) -> str:
+    """What the issue asks for: the picture, where to upload it, and when it closes."""
+    picture = f"https://github.com/{repo}/blob/{commit}/{PICTURE}?raw=true"
+    shown = "an older social preview" if uploaded else "a card of its own"
+    # GitHub refuses an upload of more than 1 MB: such a picture is rendered anew first.
+    smaller = (
+        ""
+        if fits
+        else (
+            f"`{PICTURE}` is larger than the 1 MB that GitHub takes for an upload: "
+            "first render a smaller one, with fewer colors or a simpler screenshot, "
+            "with `bash scripts/social-preview.sh`, and commit it.\n\n"
+        )
+    )
+    return (
+        f"GitHub shows {shown} for links to this repository, not `{PICTURE}` of "
+        f"`{branch}`. GitHub takes the social preview only from an upload, which no "
+        "API offers:\n\n"
+        f"{smaller}"
+        f"1. Save [the picture]({picture}).\n"
+        "2. Upload it under [Settings → General → Social preview]"
+        f"({settings_page(repo)}): **Edit** → **Upload an image…**\n\n"
+        "The nightly look of the bot-health bot closes this issue once GitHub shows "
+        "this picture, byte for byte.\n\n"
+        f"![The new social preview, {PICTURE} of {branch}]({picture})\n"
+    )
+
+
+def preview_report(
+    api: Api,
+    repo: str,
+    root: Path,
+    branch: str,
+    issue: Issue | None,
+    opener: Callable[..., Any] | None = None,
+) -> str:
+    """Keeps the one issue that asks for an upload of the committed social preview
+    current: open while GitHub shows another picture, closed once it shows this one.
+    A page that still shows the default panel of its kind has no picture to upload
+    yet, since the checklist asks first to replace the panel, and a repository
+    without the picture has none. The line of the summary; empty when there is
+    nothing to say."""
+    if not (root / PICTURE).is_file() or not shows_the_project(root):
+        if issue is None:
+            return ""
+        close_issue(
+            api,
+            repo,
+            issue.number,
+            f"`{PICTURE}` is gone, or `{SOURCE}` shows the default panel "
+            "again: there is no picture to upload.",
+            reason="not_planned",
+        )
+        return f"No picture to upload: closed #{issue.number}."
+    found = preview(api, repo, root, opener)
+    if found.current:
+        if issue is None:
+            return f"GitHub shows `{PICTURE}`."
+        close_issue(
+            api, repo, issue.number, f"GitHub shows `{PICTURE}` of `{branch}` now."
+        )
+        return f"GitHub shows `{PICTURE}` now: closed #{issue.number}."
+    if issue is not None and issue.state.get("sha256") == found.picture:
+        return f"GitHub shows another picture than `{PICTURE}`: #{issue.number}."
+    # The commit that last changed the picture, so that the issue shows that one,
+    # not one that a cache keeps under the name of the branch.
+    commits = api.get(
+        f"repos/{repo}/commits?sha={urllib.parse.quote(branch)}"
+        f"&path={PICTURE}&per_page=1"
+    )
+    commit = str(commits[0]["sha"]) if commits else branch
+    body = (
+        f"{marker({'key': PREVIEW, 'sha256': found.picture})}\n"
+        f"{preview_body(repo, branch, commit, found.uploaded, found.fits)}"
+    )
+    if issue is None:
+        number = open_issue(api, repo, PREVIEW_TITLE, body, [TYPE])
+        return f"GitHub shows another picture than `{PICTURE}`: opened #{number}."
+    api.patch(f"repos/{repo}/issues/{issue.number}", {"body": body})
+    return f"`{PICTURE}` changed again: updated #{issue.number}."
 
 
 # ---------------------------------------------------------------- Renovate

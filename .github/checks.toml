@@ -167,7 +167,9 @@ doesn't accept, at the Markdown of its page, or at
 `mkdocs.yml` for a page without one. When the log names a font or a script that Material
 couldn't download, its server had a hiccup: that usually passes when the job runs again,
 and a build that finds them in the cache of the week, which a push to `main` saves,
-downloads nothing."""
+downloads nothing. When the annotation *GitHub fails* says that lychee can't be
+downloaded, GitHub's API failed for minutes, not your change: run the check again once
+[githubstatus.com](https://www.githubstatus.com) shows GitHub working."""
 why = """A strict build keeps every link of the documentation working; a warning
 today is a broken page for a reader tomorrow. The checks of the built website see what
 the build doesn't: the links that a page writes in HTML, what a new version of
@@ -360,7 +362,12 @@ Security or Advanced Security: there this check passes with a notice."""
 why = """The rules of `main` require that every language is analyzed, so that no security
 problem goes unseen."""
 fix = """Read the log of the check. A failure of the analysis is rarely caused by the
-change: run the check again, and if it fails again, open an issue with the log."""
+change: run the check again, and if it fails again, open an issue with the log. When
+the annotation *GitHub fails* says that CodeQL can't be downloaded, GitHub's API failed
+for minutes: run the check again once GitHub works. The job blocks every host but those
+it names: a call that it blocked shows in the summary of Harden-Runner. Run the check
+once more, and if the call stays blocked, add the host to `allowed-endpoints` and
+`HOSTS` of the job in the blueprint."""
 docs = "https://docs.github.com/en/code-security/code-scanning"
 autofix = """An analysis that breaks needs a look at its log; the change rarely causes
 it."""
@@ -386,7 +393,10 @@ code scanning; the log of the check says why. The analysis itself ran in
 `check (php)`, which shows its findings in its log."""
 why = """Code scanning shows each path at the lines of the pull request and keeps the
 alerts of `main` in the Security tab."""
-fix = """Run the check again; if it fails again, open an issue with the log."""
+fix = """Run the check again; if it fails again, open an issue with the log. The job blocks every host but those
+it names: a call that it blocked shows in the summary of Harden-Runner. Run the check
+once more, and if the call stays blocked, add the host to `allowed-endpoints` and
+`HOSTS` of the job in the blueprint."""
 docs = "https://docs.github.com/en/code-security/code-scanning/integrating-with-code-scanning/uploading-a-sarif-file-to-github"
 autofix = """An upload that fails needs a look at its log; the change rarely causes
 it."""
@@ -507,7 +517,9 @@ error fails the check *zizmor*: a warning or a note stops the merge while the ch
 green, and shows in the merge box and as an annotation at its line. If the job *zizmor*
 of *Workflow security* failed, rather than the check of code scanning, the analysis
 broke and the merge waits for it: run the job again, and open an issue with its log if
-it fails again. In a pull request that changes no workflow, no
+it fails again. The job blocks every host but those it names: a call that it blocked
+shows in the summary of Harden-Runner, and one that stays blocked needs its host in
+`allowed-endpoints` and `HOSTS` of the job in the blueprint. In a pull request that changes no workflow, no
 action and not `.github/zizmor.yml`, an alert comes from an advisory of an action
 published since the last analysis of `main`: a maintainer starts the workflow
 *Workflow security* on `main`, which gives `main` the alert, and runs the checks
@@ -529,7 +541,9 @@ why = """A broken link leaves a reader stranded exactly where the document promi
 help."""
 fix = """Correct or remove each link that the summary lists. A link that only fails for
 the check, such as one behind a sign-in, goes into `.lycheeignore` with the reason.
-lychee runs on your machine with Docker:"""
+When the annotation *GitHub fails* says that lychee can't be downloaded, GitHub's API
+failed for minutes, not your change: run the check again once GitHub works. lychee
+runs on your machine with Docker:"""
 commands = [
   'docker run --rm -v "$PWD:/input" -w /input lycheeverse/lychee --config lychee.toml "./**/*.md"',
 ]
@@ -915,6 +929,27 @@ writes a comment behind its line `group = "decision"`:"""
 commands = ["python3 .github/blueprint.py migrate --fix"]
 docs = "https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/troubleshooting.md#a-release-moves-a-file-of-the-project"
 autofix = ["{blueprint} migrate --fix"]
+
+[step."Binary files"]
+problem = """Git holds a binary file that nobody can review: a program, a library,
+compiled code or an archive, by its first bytes whatever its name, or another binary
+file that is no picture, video, sound, font or document and no input of the fuzz tests
+in `fuzz/`; the log names each file."""
+why = """A binary in the repository hides what it does from every review, and one that
+was built elsewhere can't be traced to its sources: the OSPS Baseline of OpenSSF allows
+neither (OSPS-QA-05.01 and OSPS-QA-05.02), and the answers of `.bestpractices.json`
+promise it."""
+fix = """Remove the file from Git and build it from its sources where it is needed: a
+release builds what it ships, and a tool that a check or a test needs comes from its
+package manager, or as a download that its workflow checks by its checksum. Data of a
+test that must be binary goes into the inputs of the fuzz tests or is written by the
+test itself, unless it starts like a program or an archive. `git rm` takes a file out of
+Git, and `git rm --cached` keeps it on your machine. A file that isn't in Git yet, such as
+one that a tool wrote, is deleted, or ignored in `.gitignore` when the tool writes it
+again."""
+docs = "https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/decisions/0129-the-blueprint-answers-what-it-guarantees-of-the-baseline-and-of-gold.md"
+autofix = """No command knows whether a binary file goes, becomes a source or is built
+elsewhere; a person decides."""
 
 [step."Changelog fragments"]
 problem = """A fragment in `changelog.d/` is one that the release can't take in: a name
