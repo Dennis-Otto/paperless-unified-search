@@ -19,6 +19,10 @@ on:
 
 permissions: {}
 
+env:
+  # The GitHub CLI of the job sends no telemetry to GitHub.
+  GH_TELEMETRY: "false"
+
 concurrency:
   group: visual-comment-${{ github.event.workflow_run.head_sha }}
   cancel-in-progress: false
@@ -35,14 +39,84 @@ jobs:
     steps:
       # The job may comment, so it reaches GitHub's API alone; Harden-Runner itself
       # allows the storage of the artifacts. Without sudo and Docker no step can lift
-      # the block.
+      # the block. It stops when Harden-Runner doesn't block, waits until Harden-Runner
+      # lets its host through, and last until Harden-Runner has removed Docker, with the
+      # steps of the jobs of the blueprint that block, as tests/e2e/selftest.sh checks.
       - name: Block every host that the job doesn't need
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: block
-          allowed-endpoints: >
-            api.github.com:443
           disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+      - name: Make sure that Harden-Runner blocks
+        id: blocks
+        # Harden-Runner goes on without its agent when the agent can't be downloaded, as
+        # in GitHub's outage of 8 November 2026, or doesn't start: the job would reach
+        # every host. It stops here instead, so that it can run again (decision 0134 of the
+        # blueprint).
+        timeout-minutes: 1
+        run: |
+          # The agent writes Initialized into its status once its firewall stands, and
+          # runs as the service agent until the end of the job; one that is there may
+          # still be starting.
+          for _ in {1..30}; do
+            [[ -e /home/agent/agent.status || ! -e /home/agent/agent ]] && break
+            sleep 1
+          done
+          status="$(cat /home/agent/agent.status 2>/dev/null || true)"
+          if [[ ! -d /home/agent/ ]]; then
+            # Harden-Runner returns before it makes the folder of the agent when
+            # StepSecurity says that it is unavailable, or the repository skips it.
+            why="didn't install its agent, as StepSecurity said that it is unavailable or the repository skips it (the log of its step says which),"
+          elif [[ ! -e /home/agent/agent ]]; then
+            why="couldn't download its agent, mostly in an outage of GitHub (https://www.githubstatus.com),"
+          elif [[ "$status" != Initialized ]]; then
+            why="has an agent that didn't start,"
+          elif ! systemctl is-active --quiet agent; then
+            why="has an agent that stopped,"
+          else
+            echo "Harden-Runner blocks every host that the job doesn't name."
+            exit 0
+          fi
+          echo "The status of the agent: ${status:-none}"
+          echo "::error title=Harden-Runner doesn't block::Harden-Runner $why so this job would reach every host, and it stops here instead. That is no problem of the change: run the job again."
+          exit 1
+      - name: Wait until Harden-Runner lets the hosts through
+        # The runner may have asked for an address past Harden-Runner, which then blocks
+        # that address for as long as systemd-resolved keeps it, up to a minute.
+        timeout-minutes: 4
+        env:
+          HOSTS: >-
+            api.github.com:443
+        run: |
+          deadline=$(($(date +%s) + 120))
+          for endpoint in $HOSTS; do
+            host="${endpoint%:*}"
+            port="${endpoint##*:}"
+            # A wildcard names no host to ask, and a job may leave out a host that keeps it
+            # waiting although none of its steps needs it at once.
+            [[ "$host" == '*.'* || " $SKIP_WAIT " == *" $endpoint "* ]] && continue
+            # Each host on its own port, by HTTP on 80 and by HTTPS on any other. Only a host
+            # that curl can't resolve, or can't reach in time, is blocked: one that answers at
+            # all, in whatever protocol, is through.
+            scheme=https
+            [[ "$port" == 80 ]] && scheme=http
+            while true; do
+              status=0
+              curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "$scheme://$host:$port/" || status=$?
+              case "$status" in
+                6 | 7 | 28) ;;
+                *) break ;;
+              esac
+              if (($(date +%s) >= deadline)); then
+                echo "::warning::Harden-Runner still blocks $endpoint after two minutes; a step that needs it will fail, and the job can run again."
+                break
+              fi
+              echo "Harden-Runner still blocks $endpoint, waiting 3 s."
+              sleep 3
+            done
+          done
       - name: Write the comment from the report of the check
         env:
           GH_TOKEN: ${{ github.token }}
@@ -181,3 +255,13 @@ jobs:
           else
             echo "Every picture looks as committed; #$number needs no comment."
           fi
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."

@@ -214,7 +214,8 @@ version from `min-version` to `max-version` of `appinfo/info.xml` and no other; 
 scripts of the end-to-end tests, without Docker, among them that the mock of Paperless
 writes each request into its journal before it answers and that no script pipes a
 command into `grep --quiet`, and that the jobs that write issues (`nextcloud-issue`,
-`paperless-issue` and `coming-issue` of `e2e.yml`, `demo-issue` of `demo.yml`) block
+`paperless-issue` and `coming-issue` of `e2e.yml`, `demo-issue` of `demo.yml`) and the
+job that comments the visual check (`comment` of `visual-comment.yml`) block
 every host but `api.github.com:443`, and the job with the key of the release app
 (`animation-pull-request` of `demo.yml`) every host but `api.github.com:443`,
 `github.com:443` and `results-receiver.actions.githubusercontent.com:443`, without sudo
@@ -223,7 +224,10 @@ its step *Make sure that Harden-Runner blocks* (`id: blocks`, which every other 
 that runs after a failure asks: `steps.blocks.outcome != 'failure'`), then wait with its
 step *Wait until Harden-Runner lets the hosts through* and last with its step *Wait
 until Harden-Runner has removed Docker*, word for word, and that no other job of
-`e2e.yml` or `demo.yml` writes issues or uses a secret; *Pictures of the READMEs and the website*, that each
+`e2e.yml` or `demo.yml` writes issues or uses a secret, no other job of `visual.yml` or
+`visual-comment.yml` may write or uses a secret, no other job of these four workflows of
+the project blocks, and each of their Harden-Runners is the version of
+`after-checks.yml`; *Pictures of the READMEs and the website*, that each
 picture that a README or a page of `docs/` shows from main, under `raw/main/`, is in
 the checkout, and names the file that shows a missing one; *Social preview and the
 screenshot bot*, that `scripts/screenshots.sh` renders the social preview, that the
@@ -286,14 +290,17 @@ and a `<description lang>` in that language to `appinfo/info.xml`, as
 for a check without an explanation, add it to `.github/checks.project.toml`; for a
 pipe into `grep --quiet`, read the output into a variable first and search that,
 `grep --quiet … <<<"${output}"`, since the command before the pipe dies of SIGPIPE
-once grep stops reading at its first match; for a job that writes issues or holds the
-key of the release app, copy the step that makes sure that Harden-Runner blocks, the two
-steps that wait, and the version of Harden-Runner, anew from
+once grep stops reading at its first match; for a job that writes issues, comments or
+holds the key of the release app, copy the step that makes sure that Harden-Runner
+blocks, the two steps that wait, and the version of Harden-Runner, anew from
 `.github/workflows/after-checks.yml`, which an update of the blueprint may have changed,
 with `HOSTS` equal to `allowed-endpoints`, and when the blueprint drops a step, drop it
-in the five jobs and in `tests/e2e/selftest.sh` too; a new job that writes issues or
-uses a secret blocks like them, and `tests/e2e/selftest.sh` checks it with
-`expect_blocks`. A
+in the six jobs and in `tests/e2e/selftest.sh` too; for a Harden-Runner of another
+version in `demo.yml`, `e2e.yml`, `visual.yml` or `visual-comment.yml`, which the
+blueprint doesn't keep current, write the line `uses: step-security/harden-runner@…` of
+`after-checks.yml` in its place (the fix bot never changes a workflow); a new job that
+may write or uses a secret blocks like them, and `tests/e2e/selftest.sh` checks it with
+`expect_blocks` and lists it, as it lists a new workflow of the project. A
 JavaScript catalog that lags its JSON catalog is written anew by the third command.
 The fix bot runs the second, the third and the fourth command on a pull request of this
 repository, such as the one of the upstream bot for a new Nextcloud, which then fixes
