@@ -66,6 +66,38 @@ jobs:
           allowed-endpoints: >-
             api.github.com:443
             github.com:443
+      - name: Make sure that Harden-Runner blocks
+        id: blocks
+        # Harden-Runner goes on without its agent when the agent can't be downloaded, as
+        # in GitHub's outage of 8 November 2026, or doesn't start: the job would reach
+        # every host. It stops here instead, so that it can run again (decision 0134).
+        timeout-minutes: 1
+        run: |
+          # The agent writes Initialized into its status once its firewall stands, and
+          # runs as the service agent until the end of the job; one that is there may
+          # still be starting.
+          for _ in {1..30}; do
+            [[ -e /home/agent/agent.status || ! -e /home/agent/agent ]] && break
+            sleep 1
+          done
+          status="$(cat /home/agent/agent.status 2>/dev/null || true)"
+          if [[ ! -d /home/agent/ ]]; then
+            # Harden-Runner returns before it makes the folder of the agent when
+            # StepSecurity says that it is unavailable, or the repository skips it.
+            why="didn't install its agent, as StepSecurity said that it is unavailable or the repository skips it (the log of its step says which),"
+          elif [[ ! -e /home/agent/agent ]]; then
+            why="couldn't download its agent, mostly in an outage of GitHub (https://www.githubstatus.com),"
+          elif [[ "$status" != Initialized ]]; then
+            why="has an agent that didn't start,"
+          elif ! systemctl is-active --quiet agent; then
+            why="has an agent that stopped,"
+          else
+            echo "Harden-Runner blocks every host that the job doesn't name."
+            exit 0
+          fi
+          echo "The status of the agent: ${status:-none}"
+          echo "::error title=Harden-Runner doesn't block::Harden-Runner $why so this job would reach every host, and it stops here instead. That is no problem of the change: run the job again."
+          exit 1
       - name: Wait until Harden-Runner lets the hosts through
         # The runner may have asked for an address past Harden-Runner, which then blocks
         # that address for as long as systemd-resolved keeps it, up to a minute.
@@ -150,7 +182,7 @@ jobs:
       # The files of the pull request come from the API.
       - name: Require an entry in the changelog for a change for users
         id: entry
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.blocks.outcome != 'failure' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -265,7 +297,7 @@ jobs:
       # they read as text, and the PR coach explains a failure with its
       # .github/checks.toml; nothing of the pull request is checked out or run.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: ${{ !cancelled() && (steps.entry.outputs.fragments == 'true' || failure()) }}
+        if: ${{ !cancelled() && (steps.entry.outputs.fragments == 'true' || failure()) && steps.blocks.outcome != 'failure' }}
         with:
           persist-credentials: false
           sparse-checkout: |
@@ -273,7 +305,7 @@ jobs:
             blueprint
       - name: Check the fragments as the release takes them in
         id: fragments
-        if: ${{ !cancelled() && steps.entry.outputs.fragments == 'true' }}
+        if: ${{ !cancelled() && steps.entry.outputs.fragments == 'true' && steps.blocks.outcome != 'failure' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -317,7 +349,7 @@ jobs:
       # of the check and as its annotation, from .github/checks.toml: each check
       # of the job that failed, or the job itself when none of them did.
       - name: Explain the failure
-        if: failure()
+        if: failure() && steps.blocks.outcome != 'failure'
         env:
           CHECK: "conventional title"
           FAILED: |
@@ -350,6 +382,38 @@ jobs:
           allowed-endpoints: >-
             api.github.com:443
             github.com:443
+      - name: Make sure that Harden-Runner blocks
+        id: blocks
+        # Harden-Runner goes on without its agent when the agent can't be downloaded, as
+        # in GitHub's outage of 8 November 2026, or doesn't start: the job would reach
+        # every host. It stops here instead, so that it can run again (decision 0134).
+        timeout-minutes: 1
+        run: |
+          # The agent writes Initialized into its status once its firewall stands, and
+          # runs as the service agent until the end of the job; one that is there may
+          # still be starting.
+          for _ in {1..30}; do
+            [[ -e /home/agent/agent.status || ! -e /home/agent/agent ]] && break
+            sleep 1
+          done
+          status="$(cat /home/agent/agent.status 2>/dev/null || true)"
+          if [[ ! -d /home/agent/ ]]; then
+            # Harden-Runner returns before it makes the folder of the agent when
+            # StepSecurity says that it is unavailable, or the repository skips it.
+            why="didn't install its agent, as StepSecurity said that it is unavailable or the repository skips it (the log of its step says which),"
+          elif [[ ! -e /home/agent/agent ]]; then
+            why="couldn't download its agent, mostly in an outage of GitHub (https://www.githubstatus.com),"
+          elif [[ "$status" != Initialized ]]; then
+            why="has an agent that didn't start,"
+          elif ! systemctl is-active --quiet agent; then
+            why="has an agent that stopped,"
+          else
+            echo "Harden-Runner blocks every host that the job doesn't name."
+            exit 0
+          fi
+          echo "The status of the agent: ${status:-none}"
+          echo "::error title=Harden-Runner doesn't block::Harden-Runner $why so this job would reach every host, and it stops here instead. That is no problem of the change: run the job again."
+          exit 1
       - name: Wait until Harden-Runner lets the hosts through
         # The runner may have asked for an address past Harden-Runner, which then blocks
         # that address for as long as systemd-resolved keeps it, up to a minute.
@@ -407,7 +471,7 @@ jobs:
       - name: Cancel the runs of the commits that a newer push replaced
         # Only a new commit replaces one. It fails nothing, whatever GitHub answers: a run
         # that stays costs a runner, a warning says so, and the next push looks again.
-        if: ${{ !cancelled() && github.event.action == 'synchronize' }}
+        if: ${{ !cancelled() && github.event.action == 'synchronize' && steps.blocks.outcome != 'failure' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -429,7 +493,7 @@ jobs:
       # The PR coach: what failed, why it matters and how to fix it, in the summary
       # of the check and as its annotation, from .github/checks.toml.
       - name: Explain the failure
-        if: failure()
+        if: failure() && steps.blocks.outcome != 'failure'
         env:
           CHECK: "signed commits"
         run: |
