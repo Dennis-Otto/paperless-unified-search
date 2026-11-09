@@ -171,7 +171,7 @@ def code(text):
     return "`" + cell(text).replace("`", "'") + "`"
 
 
-def requests_of_the_app(fields, recent_fields):
+def requests_of_the_app(fields, recent_fields, owner_fields):
     """What the app sends to Paperless, from lib/Service/PaperlessApiService.php, and what
     makes Paperless refuse it. Not the points where the mock is stricter on purpose, to
     notice a mistake of the app: a request without fields and an unknown field to order by."""
@@ -196,6 +196,8 @@ def requests_of_the_app(fields, recent_fields):
         Ask("A search of many pages", DOCUMENTS, {"query": "{paged}", "page_size": 1, "page": 1, "fields": fields}),
         Ask("The test of the connection", DOCUMENTS, {"page": 1, "page_size": 1, "fields": "id"}),
         Ask("The newest documents", DOCUMENTS, {"ordering": "-added", "page": 1, "page_size": 25, "fields": recent_fields}),
+        # As findDocumentOwners() asks for the owners of every document for occ check.
+        Ask("The owners of the documents", DOCUMENTS, {"ordering": "id", "page": 1, "page_size": 1000, "fields": owner_fields}),
         Ask("The names of correspondents", "/api/correspondents/", {"id__in": f"{{correspondent}},{UNKNOWN_ID}", "page_size": 2}),
         Ask("The names of types", "/api/document_types/", {"id__in": f"{{document_type}},{UNKNOWN_ID}", "page_size": 2}),
         Ask("The names of tags", "/api/tags/", {"id__in": f"{{tag}},{UNKNOWN_ID}", "page_size": 2}),
@@ -345,11 +347,11 @@ def differences(ask, paperless, mock):
     return found
 
 
-def compare(line, paperless, mock, accept, fields, recent_fields):
+def compare(line, paperless, mock, accept, fields, recent_fields, owner_fields):
     """Sends each request of the app to both servers and compares the answers."""
     comparison = Comparison()
     known = KNOWN.get(line, {})
-    for ask in requests_of_the_app(fields, recent_fields):
+    for ask in requests_of_the_app(fields, recent_fields, owner_fields):
         if line not in ask.lines:
             continue
         comparison.asked += 1
