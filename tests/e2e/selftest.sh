@@ -749,7 +749,7 @@ if [[ " $* " == *" up "* ]]; then
 	exit 1
 fi
 SCRIPT
-	chmod +x "${fakes}/curl" "${fakes}/gh" "${fakes}/docker"
+	chmod +x "${fakes}/curl" "${fakes}/gh" "${fakes}/docker" "${fakes}/sleep"
 	# The certificate of the app, and one of another app; Git Bash would take /CN= for a path.
 	certificate() {
 		MSYS2_ARG_CONV_EXCL='/CN=' openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=$1" \
