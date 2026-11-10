@@ -6,7 +6,9 @@
 // tests them. A whole page around a few pixels, such as a letter that was typed, costs far
 // more than those pixels. A palette that all frames share would come from the pixels of
 // every frame, so a change of a few pixels in one frame could move it, and with it the
-// colours of every frame and of the poster, the first frame.
+// colours of every frame and of the poster, the first frame. With a palette per frame, a
+// change in one image reaches only its frame and, when the next image undoes it, the next
+// frame, which draws those pixels back.
 
 // The value of a pixel that stayed the same among the colours of a frame, which no colour
 // of 24 bits takes.

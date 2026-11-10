@@ -145,20 +145,21 @@ test('no images make no frames', function() {
 	assert.deepEqual([...animationFrames([], noQuantizer)], [])
 })
 
-test('a change in one frame changes the colours of no other frame', function() {
-	// A quantizer of one colour, the mean of the pixels that it gets, so that a palette
-	// shows from which pixels it came.
-	const mean = (rgba) => {
-		const sum = [0, 0, 0]
-		for (let i = 0; i < rgba.length; i += 4) {
-			sum[0] += rgba[i]
-			sum[1] += rgba[i + 1]
-			sum[2] += rgba[i + 2]
-		}
-		return [sum.map((part) => Math.round(part / (rgba.length / 4)))]
+// A quantizer of one colour, the mean of the pixels that it gets, so that a palette shows
+// from which pixels it came.
+const mean = (rgba) => {
+	const sum = [0, 0, 0]
+	for (let i = 0; i < rgba.length; i += 4) {
+		sum[0] += rgba[i]
+		sum[1] += rgba[i + 1]
+		sum[2] += rgba[i + 2]
 	}
-	// Images of more colours than a palette holds, so that each frame goes to the quantizer.
-	const row = (shift) => Array.from({ length: 300 }, (_, i) => (i * 0x010203 + shift) & 0xffffff)
+	return [sum.map((part) => Math.round(part / (rgba.length / 4)))]
+}
+// A row of more colours than a palette holds, so that each frame goes to the quantizer.
+const row = (shift) => Array.from({ length: 300 }, (_, i) => (i * 0x010203 + shift) & 0xffffff)
+
+test('a change in the last image changes the colours of its frame alone', function() {
 	const first = picture(100, row(0), row(0))
 	const second = picture(100, row(0), row(7))
 	const third = (shift) => picture(100, row(5), row(shift))
@@ -166,6 +167,24 @@ test('a change in one frame changes the colours of no other frame', function() {
 	const after = [...animationFrames([first, second, third(90)], mean)]
 	assert.notDeepEqual(after[2], before[2])
 	assert.deepEqual(after.slice(0, 2), before.slice(0, 2))
+})
+
+test('a change in a middle image that the next one undoes changes its frame and the next, which draws it back', function() {
+	const images = (pixel) => [0, 1, 2, 3, 4].map((step) => {
+		const rows = [row(step), row(step + 40)]
+		if (step === 2) {
+			rows[1].fill(pixel, 100, 200)
+		}
+		return picture(100, ...rows)
+	})
+	const before = [...animationFrames(images(0x000000), mean)]
+	const after = [...animationFrames(images(0xffffff), mean)]
+	assert.equal(after.length, 5)
+	assert.notDeepEqual(after[2], before[2])
+	// The frames before it, and every frame from two after it on, stay as they were; the
+	// frame right after it may differ, as it draws those pixels back.
+	assert.deepEqual(after.slice(0, 2), before.slice(0, 2))
+	assert.deepEqual(after.slice(4), before.slice(4))
 })
 
 // The bytes that the encoder writes for a frame at offset: its control, then its image at

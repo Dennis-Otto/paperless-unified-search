@@ -1098,8 +1098,10 @@ async function demoAnimation(browser) {
 // Encodes the frames as GIF, each with a palette of its own colours (animationFrames of
 // gif-frames.mjs). Every frame after the first holds only the rectangle around the pixels
 // whose colour changed, and in it only those pixels; the rest stays transparent, so that
-// the previous frame shows through. So a change in one frame changes the colours of no
-// other frame, and pixels that stayed the same never take other colours. Beside NAME.gif
+// the previous frame shows through. So a change in one image changes the colours of its
+// frame and, unless the next image keeps it, of the next frame, which draws those pixels
+// back; no other frame and never the poster, and pixels that stayed the same never take
+// other colours. Beside NAME.gif
 // goes NAME-poster.png, the first frame in full colour, from which
 // scripts/screenshot-media.sh makes the poster of the website.
 function writeGif(frames, path) {
