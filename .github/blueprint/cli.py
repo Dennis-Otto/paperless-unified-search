@@ -32,7 +32,7 @@ from blueprint import (
 from blueprint.app import TIMEOUT, connect, register
 from blueprint.binaries import binaries
 from blueprint.bootstrap import CreateError, create, doctor
-from blueprint.bot_health import renovate_report, sweep, watch_run
+from blueprint.bot_health import renovate_report, sweep, watch_run, watch_stop
 from blueprint.branches import job_from, next_branch
 from blueprint.changelog import (
     FRAGMENTS,
@@ -358,6 +358,10 @@ def bot_health_command(
         for notice in notices:
             print(notice, file=sys.stderr)
         return 0
+    if arguments.action == "stopped":
+        text, done = watch_stop(api, repo, arguments.run_id)
+        print(text)
+        return 0 if done else 1
     if arguments.action == "sweep":
         summary, healthy = sweep(api, repo, root, now, notices=notices)
         print(summary, end="")
@@ -1969,6 +1973,14 @@ def add_bot_health_parsers(
         "or keep its issue current",
     )
     run_parser.add_argument("run_id", type=int, metavar="RUN", help="the id of the run")
+    stopped_parser = health.add_parser(
+        "stopped",
+        help="the end of a run of a bot of events or of a workflow that keeps an issue "
+        "of its own: run its failed jobs once more when Harden-Runner stopped one",
+    )
+    stopped_parser.add_argument(
+        "run_id", type=int, metavar="RUN", help="the id of the run"
+    )
     health.add_parser(
         "sweep",
         help="the latest run of every workflow, and the workflows whose schedule "

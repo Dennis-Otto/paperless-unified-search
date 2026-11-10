@@ -95,7 +95,6 @@ patterns_allowed = [
   "docker/metadata-action@*",
   "docker/setup-buildx-action@*",
   "docker/setup-qemu-action@*",
-  "gitleaks/gitleaks-action@*",
   "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@*",
   "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@*",
   # Run by the reusable workflows of OSV-Scanner.

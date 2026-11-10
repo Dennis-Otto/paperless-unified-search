@@ -482,14 +482,19 @@ one may merge."""
 [check.gitleaks]
 title = "The secret scan"
 problem = """Gitleaks found what looks like a secret, such as a token, a key or a
-password, in a commit of the pull request; the log names the file, the line and the
-commit."""
+password, in a commit of the pull request; the summary and an annotation name the file,
+the line, the commit and the fingerprint. When the summary says that it scanned the whole
+history of the pull request, since it changes gitleaks or its rules, the secret can also
+be in an older commit of `main`, which a new version or a new rule finds now. An annotation *gitleaks failed* means instead
+that gitleaks stopped before the end of its scan, for the reason in the log."""
 why = """Git keeps every commit, also after a later commit removes the secret, and a
 secret that is public can be abused within minutes."""
 fix = """Revoke the secret where it was issued first: it is public now. If it is no
 secret, add the fingerprint from the log to `.gitleaksignore` instead. Then remove it
 from every commit of the branch, for example with an interactive rebase onto the `main`
-of this repository, and push the branch with `--force-with-lease`:"""
+of this repository, and push the branch with `--force-with-lease`. A secret in an older
+commit of `main` stays there, as no rebase of the branch removes it: once it is revoked,
+add its fingerprint from the summary to `.gitleaksignore` in this pull request:"""
 commands = [
   "git fetch https://github.com/{repo}.git main",
   "git rebase --interactive FETCH_HEAD",
@@ -1168,7 +1173,8 @@ fix = """Fix each line that ShellCheck names; its wiki explains every rule. A li
 needs the construct on purpose gets `# shellcheck disable=SC…` above it, with the
 reason. A runner without ShellCheck installs it before the checks, such as with
 `sudo apt-get install shellcheck` or the hash-pinned `shellcheck-py` of the Python
-tools; the runners of Linux of GitHub have it. ShellCheck checks every script of the
+tools; the runners of Linux of GitHub have it, and the dev container installs it as
+it is created. ShellCheck checks every script of the
 repository with:"""
 commands = ["shellcheck $(git ls-files '*.sh')"]
 docs = "https://www.shellcheck.net/wiki/"
