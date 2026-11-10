@@ -676,6 +676,8 @@ Not owned (344): jamie sees a file with the marker of the document, but only the
 No file (356): no file of the archive account paperless has the marker of the document, such as [P356], in its name. The synchronization hasn't written it yet, or names files without it.
 ```
 
+Before these four questions, the search asks one more for a user whom Paperless Sync lets see only the documents with some tags ([Tags that a user may see](#tags-that-a-user-may-see)): a document without one of them is `not tagged`, whatever files the user can open.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/why-a-document-does-not-show.dark.svg">
   <img src="docs/images/diagrams/why-a-document-does-not-show.svg" alt="Why a document does not show: Paperless finds document 389 when jamie searches, and occ paperless_unified_search:search jamie invoice --explain asks four questions in turn. Does jamie see a file of the archive account with [P389] in its name? Then the document shows, unless jamie may change that file or add files to its folder: then it is writable, since jamie could have named it so, and sharing it read-only with jamie shows it. Otherwise, does the archive account have such a file in its own folders? Then it is not shared with jamie, and sharing the file or its folder read-only with jamie shows it. Otherwise, does jamie see a file with the marker of another account? Then it is not owned, since only files of the archive account stand for documents. Otherwise there is no file, and the synchronization has yet to write one with the marker in its name.">
