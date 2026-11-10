@@ -40,6 +40,9 @@ on:
     branches: [main]
   # Turning auto-merge on gives a pull request its place in the line at once, and
   # turning it off moves the line on.
+  # GitHub blocks the event in a public repository unless the event policy of the
+  # settings allows it, which it does for each workflow that pull_request_target of
+  # [actions] in .github/repository.toml lists (decision 0138).
   pull_request_target:
     types: [auto_merge_enabled, auto_merge_disabled]
   # A required check that fails moves the line on to the next pull request.
@@ -253,6 +256,9 @@ jobs:
           ACTIONS_TOKEN: ${{ github.token }}
           # The account whose merges are the updates of the bot.
           BOT_ACCOUNT: ${{ steps.app.outputs.app-slug }}[bot]
+          # The run of a check whose end started the bot, if one did.
+          AFTER: ${{ github.event.workflow_run.id }}
+          ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         run: |
           set -o pipefail
           # Repositories have the copy that the blueprint keeps current; the blueprint
@@ -268,7 +274,13 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == pull_request_target ]]; then
             only=(--warnings-only)
           fi
-          python3 "$script" --repo "$GITHUB_REPOSITORY" next-branch "${only[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+          # A check that GitHub couldn't start, as in its outage of 9 November 2026,
+          # failed for no pull request: the line stays as it is (decision 0136).
+          after=()
+          if [[ "$GITHUB_EVENT_NAME" == workflow_run ]]; then
+            after=(--after "$AFTER" --attempt "$ATTEMPT")
+          fi
+          python3 "$script" --repo "$GITHUB_REPOSITORY" next-branch "${only[@]}" "${after[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Wait until Harden-Runner has removed Docker
         # Harden-Runner removes Docker with apt-get in the background; a job that ends
         # before it finishes hangs in "Cleaning up orphan processes" until its timeout.

@@ -33,7 +33,10 @@ lint or the types of the code, its tests and their coverage, the package or the
 website. The summary of the check names the step that stopped it. When that step
 comes before the checks, such as the one that installs the tools or pulls an image,
 a download failed or hung until the step ran out of its time: that usually passes
-when the job runs again, which the flaky-test bot does once by itself."""
+when the job runs again, which the flaky-test bot does once by itself. A job that failed
+without a single step never ran: GitHub couldn't start it, as in an outage of GitHub,
+and no bot runs it again while GitHub fails; run it again once
+[githubstatus.com](https://www.githubstatus.com) shows GitHub working."""
 why = """These are the checks that run on your machine as well, so a change that passes
 them here passes them everywhere, and every commit of `main` stays ready for a
 release."""
@@ -78,22 +81,33 @@ problem = """A workflow runs an action or a reusable workflow that the list of t
 actions, `[actions.selected]` of `.github/repository.toml`, lacks: one that the workflow
 names, or one that such an action runs in turn at the commit of its pin, often since an
 update of the action. Or a step runs an image of Docker with `docker://`, or GitHub
-refused the file of an action, so what it runs in turn is unknown."""
+refused the file of an action, so what it runs in turn is unknown. Or a workflow starts
+on `pull_request_target`, and `pull_request_target` of `[actions]`, the list of the
+workflows that the event policy of the settings lets start on it, lacks it."""
 why = """GitHub starts a workflow only when the list allows every action that it runs, also
 in turn. One that the list lacks stops the whole workflow with a startup failure, on
 `main` after the merge or in every repository after a release of the blueprint, and no
-check of the workflow reports it."""
+check of the workflow reports it. From 2 December 2026, GitHub also blocks every
+workflow that starts on `pull_request_target` in a public repository, unless an Actions
+event policy allows it: such a workflow runs with a token that may write, also for a
+pull request of a fork, so the policy of the settings allows it only for the workflows
+that the list names."""
 fix = """Add the pattern that each annotation names, such as `owner/repo@*`, to
 `patterns_allowed` of `[actions.selected]` in `.github/repository.project.toml` (in the
 blueprint itself, in `template/.github/repository.toml.jinja` and
 `.github/repository.toml`). Run an image in a `run:` step with `docker run` instead of
-`docker://`. When GitHub refused a file, run the check again. The check runs on your
+`docker://`. When GitHub refused a file, run the check again. Start a workflow that
+needs neither a token that writes nor a secret for a pull request of a fork on
+`pull_request` instead of `pull_request_target`; add one that does, and that checks out
+and runs nothing of the pull request, to `pull_request_target` of `[actions]` in the
+same file. The check runs on your
 machine with the GitHub CLI (in the blueprint itself, the tool is `blueprint.py` without
 `.github/`):"""
 commands = ["python3 .github/blueprint.py settings actions"]
 docs = "CONTRIBUTING.md#coding-standards"
-autofix = """Whether an action may run is a decision of trust that a person makes for the
-project, and the bot never widens the list of the allowed actions."""
+autofix = """Whether an action may run, and whether a workflow may start on
+`pull_request_target`, is a decision of trust that a person makes for the project, and
+the bot never widens the list of the allowed actions or that of the event policy."""
 
 [check.reuse]
 title = "The license of every file"
@@ -440,6 +454,31 @@ docs = "https://docs.github.com/en/code-security/supply-chain-security/understan
 autofix = """Which version or which other dependency fits the project is the decision
 of a person."""
 
+[check."age of the refresh"]
+title = "The age of what the refresh of the lock files brings"
+problem = """Renovate's weekly refresh of the lock files adds a version released less than
+a week ago, or one whose release PyPI or the registry of npm doesn't name, or it changes
+a file whose versions the check can't date; or it replaces a version that `main` got
+less than a week ago; the log names each one."""
+why = """The refresh merges by itself only from versions at least a week old, as every
+other update waits a week after its release: in that week a version published from a
+hijacked account is usually found and withdrawn before it reaches the repository.
+Renovate and `blueprint.py locks --refresh` keep the refresh to that age; a younger
+version comes when the project asks for one, such as the fix of a vulnerability in
+`package.json`, or when the compile of the refresh failed. npm's refresh resolves
+each range anew and can't keep a young version of `main` within the range, such as the
+fix of a vulnerability; it would take that fix back, so the check holds it too."""
+fix = """Nothing to do for a young version: run the check again once each version is a
+week old, or let Renovate build the refresh anew in its next weekly window, the next
+Monday. The fix of a vulnerability comes at once anyway, in a pull request of its own. A
+lock file whose versions the check can't date, such as a `yarn.lock`, gets a rule in
+`.github/renovate.json5` with `matchFileNames` for its name, `matchUpdateTypes:
+["lockFileMaintenance"]`, `additionalBranchPrefix: "review-"` and `automerge: false`, so
+that its refresh waits for you on a branch of its own."""
+docs = "https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/troubleshooting.md#the-refresh-of-the-lock-files-waits"
+autofix = """Time makes a version old enough, and only a person decides that a younger
+one may merge."""
+
 [check.gitleaks]
 title = "The secret scan"
 problem = """Gitleaks found what looks like a secret, such as a token, a key or a
@@ -560,7 +599,7 @@ When the annotation *GitHub fails* says that lychee can't be downloaded, GitHub'
 failed for minutes, not your change: run the check again once GitHub works. lychee
 runs on your machine with Docker:"""
 commands = [
-  'docker run --rm -v "$PWD:/input" -w /input lycheeverse/lychee --config lychee.toml "./**/*.md"',
+  'docker run --rm -v "$PWD:/input" -w /input lycheeverse/lychee --config lychee.toml "./**/*.md" "./.github/**/*.md" "./docs/**/*.html"',
 ]
 autofix = """Where a link should lead, only a person knows."""
 
@@ -991,6 +1030,27 @@ commands = ["python3 .github/blueprint.py fragments --fix"]
 docs = "CONTRIBUTING.md#the-changelog"
 autofix = ["{blueprint} fragments --fix"]
 
+[step."Records of decisions"]
+problem = """Two records of `docs/decisions/` share a number, the numbers skip one, a file
+of the folder is no record, named `NNNN-its-title.md`, or the index
+`docs/decisions/README.md` lists a record twice, misses one, names a file that the
+folder doesn't have, names a record by another number or lists the records out of
+order; the log names each number and file, and the next free number."""
+why = """Two pull requests that each take the next free number for a record merge
+without a conflict of Git, since their files have different names. Without this step,
+both reach `main`, a link to the number leads to either record, and the index lists one
+of them twice or misses one."""
+fix = """When another pull request took your number first, give your record the next
+free number that the log names, in the name of its file, in its row of the index and in
+each link to it; which record moves is yours to choose, so no command renames one. The
+command fixes what only the index gets wrong: the number of a row, the row of a renamed
+record, a row twice, a missing row from the title and status of its record, and the
+order of the rows; then commit what changed (in the blueprint itself, the tool is
+`blueprint.py` without `.github/`):"""
+commands = ["python3 .github/blueprint.py decisions --fix"]
+docs = "CONTRIBUTING.md#records-of-decisions"
+autofix = ["{blueprint} decisions --fix"]
+
 [step."Accepted advisories"]
 problem = """`.github/renovate-accepted.json5` has other rules of Renovate than the versions
 that an `osv-scanner.toml` accepts with every advisory, or an `osv-scanner.toml` is one
@@ -1171,13 +1231,15 @@ hold."""
 [step.Composer]
 problem = """`composer.json` isn't valid in the strict mode of Composer, `composer.lock`
 no longer locks what `composer.json` asks for, as after a change of it by hand, or a
-locked package has a known vulnerability."""
+locked package has a known vulnerability. Or `composer audit` couldn't reach the
+advisories of Packagist, three times in a row, as the log says then."""
 why = """A broken `composer.json` breaks every install, `composer install` stops at a lock
 file that lacks a package, and a vulnerable package ships its vulnerability with the
-app."""
-fix = """Fix what `composer validate` names, lock the packages of `composer.json` again
-with the least change, which keeps every other package at its version, and update a
-vulnerable package:"""
+app. Without the advisories, the audit can't tell whether a package is vulnerable."""
+fix = """When Packagist stayed out of reach, run the checks again once packagist.org
+answers. Otherwise fix what `composer validate` names, lock the packages of
+`composer.json` again with the least change, which keeps every other package at its
+version, and update a vulnerable package:"""
 commands = [
   "composer validate --strict",
   "composer update --minimal-changes",

@@ -110,7 +110,11 @@ jobs:
               exit 0
             fi
           fi
-          echo "files='./**/*.md' './docs/**/*.html'" >> "$GITHUB_OUTPUT"
+          # Every document. The ** of lychee passes over a hidden folder, so .github/,
+          # with the template of a pull request, has a pattern of its own; --hidden
+          # would read every hidden folder of a checkout on a machine too, such as the
+          # caches of the tools, where the coach runs these patterns as well.
+          echo "files='./**/*.md' './.github/**/*.md' './docs/**/*.html'" >> "$GITHUB_OUTPUT"
           echo "every=true" >> "$GITHUB_OUTPUT"
       # The answers of the sites from the runs of the last day; lychee asks again for a
       # link that failed.

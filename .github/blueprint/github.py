@@ -13,12 +13,32 @@ from typing import Any
 
 Json = Any
 
-# Answers that may be others a moment later: a gateway of GitHub that timed out, and a
-# rate limit. A request tries once more after a wait: the time that GitHub names, or a
-# few seconds after a gateway and a minute after a rate limit, as GitHub asks.
-GATEWAY_ERRORS = frozenset({502, 503, 504})
-GATEWAY_WAIT = 5
+# Answers that may be others a moment later: an error of GitHub itself, a 5xx such as
+# the "Internal server error" of its outage of 9 November 2026 or a gateway that timed
+# out, a call that got no answer, and a rate limit. A request tries again after a wait:
+# the time that GitHub names, or else after an error of GitHub three more times, 10, 20
+# and 40 seconds apart, as the flaky-test bot does (decision 0133), and after a rate
+# limit once, a minute later, as GitHub asks.
+OUTAGE_WAITS = (10, 20, 40)
 RATE_LIMIT_WAIT = 60
+# What gh prints when GitHub gave no answer at all: its connection timed out, broke
+# off (a bare EOF too) or was refused, or the call outlasted CALL_TIME_LIMIT; and the
+# error of GraphQL that GitHub answers with 200 when it fails itself.
+NO_ANSWER = re.compile(
+    r"timed? ?out|deadline exceeded|connection (?:reset|refused)|unexpected EOF"
+    r"|: EOF$|no answer from GitHub"
+    r"|something went wrong while executing your query",
+    re.IGNORECASE | re.MULTILINE,
+)
+# What run_command prints for a call that outlasted CALL_TIME_LIMIT.
+STALLED = "no answer from GitHub within"
+# The status that gh names in the error of a command, such as "HTTP 502: Bad Gateway"
+# or "Not Found (HTTP 404)".
+HTTP_STATUS = re.compile(r"\bHTTP (\d{3})\b")
+# gh waits for an answer without a limit; a call that stalls this long in an outage
+# ends as one without an answer, so that it tries again before its job times out. The
+# time that it stalled counts against WAIT_BUDGET, as a wait does.
+CALL_TIME_LIMIT = 90
 # A longer wait, such as for a rate limit that resets in half an hour, would only hold
 # up the run: the request fails at once instead, and the next run tries again.
 LONGEST_WAIT = 90
@@ -52,6 +72,14 @@ class GitHubError(Exception):
     def rate_limited(self) -> bool:
         return rate_limited(self.status, self.message)
 
+    @property
+    def unavailable(self) -> bool:
+        """Whether GitHub failed, not the request: a 5xx, or no answer at all, which
+        stays so after every try in an outage of GitHub (decision 0136)."""
+        return self.status >= 500 or (
+            self.status == 0 and NO_ANSWER.search(self.message) is not None
+        )
+
 
 def rate_limited(status: int, message: str) -> bool:
     """Whether GitHub refused a request for its rate limit, not for a permission."""
@@ -76,6 +104,31 @@ def gh_command(arguments: Sequence[str]) -> list[str]:
     return command
 
 
+def run_command(
+    command: list[str], body: str | None, environment: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Run a command of gh, in UTF-8, for CALL_TIME_LIMIT at most: a call that stalls
+    ends as one that got no answer."""
+    try:
+        return subprocess.run(
+            command,
+            input=body,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+            env=environment,
+            timeout=CALL_TIME_LIMIT,
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(
+            command,
+            1,
+            "",
+            f"gh: {STALLED} {CALL_TIME_LIMIT} seconds",
+        )
+
+
 def run_gh(
     arguments: Sequence[str], body: str | None
 ) -> subprocess.CompletedProcess[str]:
@@ -84,14 +137,7 @@ def run_gh(
     take the code page of the locale, such as cp1252 on Windows, which can't read an
     emoji of a pull request and can't write one of a body, so gh would wait for the
     end of its input for ever."""
-    return subprocess.run(
-        gh_command(arguments),
-        input=body,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
+    return run_command(gh_command(arguments), body)
 
 
 def run_gh_as(token: str) -> Runner:
@@ -102,14 +148,8 @@ def run_gh_as(token: str) -> Runner:
     def run(
         arguments: Sequence[str], body: str | None
     ) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            gh_command(arguments),
-            input=body,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            check=False,
-            env={**os.environ, "GH_TOKEN": token},
+        return run_command(
+            gh_command(arguments), body, {**os.environ, "GH_TOKEN": token}
         )
 
     return run
@@ -149,7 +189,11 @@ class Answer:
         try:
             status = int(status_line.split()[1])
         except (IndexError, ValueError):
-            raise GitHubError(0, (result.stderr or result.stdout).strip()) from None
+            error = (result.stderr or result.stdout).strip()
+            if NO_ANSWER.search(error):
+                # No answer at all, which another try may change.
+                return cls(0, None, error)
+            raise GitHubError(0, error) from None
         headers = {}
         for line in lines:
             name, colon, value = line.partition(":")
@@ -176,6 +220,8 @@ class Answer:
                 raise GitHubError(
                     0, f"{error}; this needs GitHub CLI {MINIMUM_GH} or later"
                 )
+            if found is None and NO_ANSWER.search(error):
+                return cls(0, None, error)
             if found is None or status < 400:
                 raise GitHubError(status, error or result.stdout.strip())
             message = error.removeprefix("gh: ").replace(found[0], "").strip()
@@ -199,20 +245,41 @@ class Answer:
                 ]
         return cls(200, items, "")
 
-    def failed(self, missing_ok: bool) -> bool:
-        return self.status >= 400 and not (missing_ok and self.status == 404)
+    @classmethod
+    def of_command(cls, result: subprocess.CompletedProcess[str]) -> Answer:
+        """The answer of a command of gh other than gh api --include, such as gh pr
+        list or a query of GraphQL: what it printed, or the status that its error
+        names, or none when GitHub gave no answer at all."""
+        if result.returncode == 0:
+            return cls(200, result.stdout, "")
+        error = (result.stderr or result.stdout).strip()
+        found = HTTP_STATUS.search(error)
+        if found and int(found[1]) >= 400:
+            return cls(int(found[1]), None, error)
+        if NO_ANSWER.search(error):
+            return cls(0, None, error)
+        raise GitHubError(0, error)
 
-    def wait(self, gateway: bool = True) -> float | None:
-        """How long to wait before the request tries again; None when another try
-        can't change the answer, or only after too long a wait. Without gateway, a
-        gateway error isn't tried again: GitHub may have done the request anyway."""
+    def failed(self, missing_ok: bool) -> bool:
+        return (self.status >= 400 or self.status == 0) and not (
+            missing_ok and self.status == 404
+        )
+
+    def wait(self, gateway: bool = True, tries: int = 1) -> float | None:
+        """How long to wait before the request tries again, after it was sent tries
+        times; None when another try can't change the answer, or only after too long
+        a wait. Without gateway, an error of GitHub isn't tried again: GitHub may have
+        done the request anyway."""
         after = self.headers.get("retry-after", "")
-        if gateway and self.status in GATEWAY_ERRORS:
-            seconds: float = GATEWAY_WAIT
-        elif rate_limited(self.status, self.message) or (
+        if gateway and (self.status >= 500 or self.status == 0):
+            if tries > len(OUTAGE_WAITS):
+                return None
+            seconds: float = OUTAGE_WAITS[tries - 1]
+        elif tries == 1 and (
+            rate_limited(self.status, self.message)
             # Too many requests, with the time to wait: what the code search answers
             # after a few searches in a minute, without a word of a rate limit.
-            self.status == 429 and after.isdecimal()
+            or (self.status == 429 and after.isdecimal())
         ):
             seconds = RATE_LIMIT_WAIT
         else:
@@ -233,6 +300,20 @@ class Api:
         # The seconds that this Api may still wait before it tries a request again.
         self.budget: float = WAIT_BUDGET
 
+    def sent(
+        self,
+        arguments: Sequence[str],
+        payload: str | None,
+        read: Callable[[subprocess.CompletedProcess[str]], Answer],
+    ) -> Answer:
+        """The answer to one try of a request. A try that stalled took CALL_TIME_LIMIT
+        of the budget, so that a bot in an outage still ends long before its job's
+        time limit."""
+        answer = read(self.runner(arguments, payload))
+        if answer.status == 0 and STALLED in answer.message:
+            self.budget -= CALL_TIME_LIMIT
+        return answer
+
     def answer(
         self,
         arguments: Sequence[str],
@@ -241,16 +322,20 @@ class Api:
         missing_ok: bool,
         gateway: bool = True,
     ) -> Answer:
-        """The answer to a request, which tries once more after a wait where that can
-        change the answer and the budget allows it; GitHubError when GitHub refused it.
-        Without gateway, a gateway error is the answer: for a request that isn't safe
-        to send twice."""
-        answer = read(self.runner(arguments, payload))
-        wait = answer.wait(gateway) if answer.failed(missing_ok) else None
-        if wait is not None and wait <= self.budget:
+        """The answer to a request, which tries again after a wait where that can
+        change the answer and the budget allows it; GitHubError when GitHub refused it
+        or kept failing. Without gateway, an error of GitHub is the answer: for a
+        request that isn't safe to send twice."""
+        answer = self.sent(arguments, payload, read)
+        tries = 1
+        while answer.failed(missing_ok):
+            wait = answer.wait(gateway, tries)
+            if wait is None or wait > self.budget:
+                break
             self.budget -= wait
             sleep(wait)
-            answer = read(self.runner(arguments, payload))
+            answer = self.sent(arguments, payload, read)
+            tries += 1
         if answer.failed(missing_ok):
             raise GitHubError(answer.status, answer.message, error_codes(answer.data))
         return answer
@@ -267,15 +352,16 @@ class Api:
         """A request that GitHub answered without an error. A 404 is one, unless
         missing_ok makes it the answer that nothing is there: GitHub also answers 404
         to a token that lacks the permission for a change, which then didn't happen.
-        With retry, a gateway error is asked once more also for a POST that only
+        With retry, an error of GitHub is asked again also for a POST that only
         reads, such as a query of GraphQL."""
         arguments = ["api", "--include", "--method", method, path]
         payload = None
         if body is not None:
             arguments += ["--input", "-"]
             payload = json.dumps(body)
-        # A POST that a gateway timed out has often been done all the same: sent
-        # twice, it would open a second issue, comment or workflow run.
+        # A POST that GitHub failed, such as one that a gateway timed out, has often
+        # been done all the same: sent twice, it would open a second issue, comment
+        # or workflow run.
         gateway = method != "POST" if retry is None else retry
         answer = self.answer(arguments, payload, Answer.of_request, missing_ok, gateway)
         return Response(answer.status, answer.data)
@@ -311,11 +397,17 @@ class Api:
         such as a label that someone took off a pull request a moment ago."""
         self.request("DELETE", path, missing_ok=missing_ok)
 
+    def command(self, arguments: Sequence[str]) -> str:
+        """What a command of gh that only reads printed, such as gh pr list, which is
+        asked again after an error of GitHub, as a request is."""
+        answer = self.answer(arguments, None, Answer.of_command, missing_ok=False)
+        return str(answer.data)
+
     def graphql(self, query: str) -> Json:
-        result = self.runner(["api", "graphql", "-f", f"query={query}"], None)
-        if result.returncode != 0:
-            raise GitHubError(0, (result.stderr or result.stdout).strip())
-        return json.loads(result.stdout)["data"]
+        """The data of a query of GraphQL, which only reads."""
+        return json.loads(self.command(["api", "graphql", "-f", f"query={query}"]))[
+            "data"
+        ]
 
 
 def current_repo(api: Api) -> str:

@@ -73,7 +73,9 @@ jobs:
       # a pull request that makes a workflow run one that the list lacks, such as an
       # update of an action by Renovate, fails here and not every workflow after the
       # merge. It reads the files of the public actions with the token of the job, a
-      # few queries of GraphQL, and none of the settings on GitHub.
+      # few queries of GraphQL, and none of the settings on GitHub. It also fails for a
+      # workflow on pull_request_target that pull_request_target of [actions] lacks,
+      # which GitHub blocks in a public repository from 2 December 2026 (decision 0138).
       - name: Check that the allowed actions let every action start
         id: allowed-actions
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}

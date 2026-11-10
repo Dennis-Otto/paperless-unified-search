@@ -45,6 +45,7 @@ from pathlib import Path
 from blueprint.bot_health import code, default_branch
 from blueprint.coach import escape_data
 from blueprint.github import PAGE, Api, GitHubError, Json, run_gh_as
+from blueprint.outage import notice
 from blueprint.stale_runs import cancel_stale_runs
 from blueprint.update import LABEL, pages
 
@@ -245,7 +246,7 @@ class Pull:
 def waiting(api: Api, repo: str, base: str) -> list[Pull]:
     """The pull requests of the repository into base that wait for auto-merge, in the
     order in which their auto-merge was turned on: the line."""
-    result = api.runner(
+    listed = api.command(
         [
             "pr",
             "list",
@@ -259,14 +260,11 @@ def waiting(api: Api, repo: str, base: str) -> list[Pull]:
             str(LIMIT),
             "--json",
             FIELDS,
-        ],
-        None,
+        ]
     )
-    if result.returncode != 0:
-        raise GitHubError(0, (result.stderr or result.stdout).strip())
     pulls = [
         Pull.of(data)
-        for data in json.loads(result.stdout)
+        for data in json.loads(listed)
         if data.get("autoMergeRequest")
         # The name of a fork's branch says nothing about who made it.
         and (
@@ -410,6 +408,19 @@ class Line:
         self.notes.setdefault(pull.number, []).append(text)
 
     def refused(self, pull: Pull, error: GitHubError) -> None:
+        if error.unavailable:
+            # GitHub failed, not the request, as in an outage: the next run of the bot
+            # tries again, and a person has nothing to do (decision 0136).
+            self.note(
+                pull, f"GitHub failed: {code(str(error))}; the next run tries again."
+            )
+            self.notices.append(
+                notice(
+                    f"The branch bot couldn't handle #{pull.number}, as GitHub failed: "
+                    + escape_data(str(error))
+                )
+            )
+            return
         self.note(pull, f"GitHub refused a request: {code(str(error))}.")
         (self.notices if pull.fork else self.warnings).append(
             f"::warning::The branch bot couldn't handle #{pull.number}: "

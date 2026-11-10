@@ -30,14 +30,17 @@
 .github/blueprint/cli.py
 .github/blueprint/coach.py
 .github/blueprint/coverage_comment.py
+.github/blueprint/decisions.py
 .github/blueprint/dependabot.py
 .github/blueprint/diagrams.py
 .github/blueprint/fixes.py
 .github/blueprint/github.py
+.github/blueprint/lock_age.py
 .github/blueprint/locks.py
 .github/blueprint/migrate.py
 .github/blueprint/mutation.py
 .github/blueprint/notices.py
+.github/blueprint/outage.py
 .github/blueprint/overrides.py
 .github/blueprint/owned.txt
 .github/blueprint/ownership.py

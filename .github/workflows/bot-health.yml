@@ -20,7 +20,9 @@ name: Bot health
 # GitHub shows with .github/social-preview.png, which only a person can upload, and
 # keeps one issue open, Upload the new social preview, until they are the same, in
 # a public repository only, since GitHub shows no social preview of a private one. Runs
-# of pull requests start nothing here.
+# of pull requests start nothing here, and neither does a run that GitHub couldn't
+# start, as in its outage of 9 November 2026: the nightly look runs it again once. A
+# look that GitHub keeps failing ends with a notice, not a failure (decision 0136).
 # It checks out the default branch only, for blueprint.py, never the code of a pull
 # request; blueprint.py bot-health holds the logic.
 # https://github.com/Dennis-Otto/repo-blueprint

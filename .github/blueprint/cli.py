@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tomllib
 import webbrowser
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,7 +21,9 @@ import blueprint
 from blueprint import (
     advisories,
     annotate,
+    decisions,
     dependabot,
+    lock_age,
     locks,
     mutation,
     screenshots,
@@ -99,6 +101,7 @@ from blueprint.fixes import keep as keep_fixes
 from blueprint.github import Api, GitHubError, Json, current_repo
 from blueprint.migrate import migrate
 from blueprint.notices import third_party_notices
+from blueprint.outage import couldnt_start, failed_unstarted, unreachable
 from blueprint.overrides import write_overrides
 from blueprint.ownership import check as ownership_check
 from blueprint.pages import (
@@ -114,6 +117,7 @@ from blueprint.pages import (
 from blueprint.pr_report import about as pr_parts
 from blueprint.settings import (
     CONFIG,
+    TARGET,
     ConfigError,
     Settings,
     apply,
@@ -125,6 +129,7 @@ from blueprint.settings import (
     offered_only,
     read_plan,
     unlisted_actions,
+    unlisted_targets,
     widen_selected_actions,
 )
 from blueprint.site_check import annotation as site_annotation
@@ -347,12 +352,17 @@ def bot_health_command(
     api: Api, repo: str, arguments: argparse.Namespace, root: Path
 ) -> int:
     now = datetime.now(UTC)
+    notices: list[str] = []
     if arguments.action == "run":
-        print(watch_run(api, repo, arguments.run_id, now))
+        print(watch_run(api, repo, arguments.run_id, now, notices))
+        for notice in notices:
+            print(notice, file=sys.stderr)
         return 0
     if arguments.action == "sweep":
-        summary, healthy = sweep(api, repo, root, now)
+        summary, healthy = sweep(api, repo, root, now, notices=notices)
         print(summary, end="")
+        for notice in notices:
+            print(notice, file=sys.stderr)
         return 0 if healthy else 1
     complete = arguments.result == "success"
     logs = map(Path, arguments.log)
@@ -890,6 +900,70 @@ def binaries_command(root: Path) -> int:
     return 1
 
 
+def decisions_command(arguments: argparse.Namespace, root: Path) -> int:
+    """What is wrong with the numbers of the records of the decisions and with their
+    index, one on each line, and in the CI also as annotations of the index; with
+    --fix, the index first, where only it is wrong."""
+    folder = decisions.FOLDER
+    names = decisions.names_of(root, folder)
+    if not names:
+        print(f"{folder}/ holds no records of decisions, so nothing to check.")
+        return 0
+    path = root / folder / decisions.INDEX
+    index = path.read_text(encoding="utf-8") if decisions.INDEX in names else None
+    if arguments.fix and index is not None and decisions.index_findings(names, index):
+        new = decisions.fixed(
+            index,
+            names,
+            lambda name: (root / folder / name).read_text(encoding="utf-8"),
+        )
+        # A fix that changes nothing, such as of a row whose file is gone, says nothing.
+        if new != index:
+            path.write_text(new, encoding="utf-8", newline="\n")
+            print(f"{folder}/{decisions.INDEX}: the rows of the index are fixed")
+            index = new
+    records, strays = decisions.numbered(names)
+    numbers = strays + decisions.number_findings(records)
+    rows = [] if index is None else decisions.index_findings(names, index)
+    if not numbers and not rows:
+        count = sum(len(files) for files in records.values())
+        print(
+            f"Each of the {count} record(s) of {folder}/ has a number of its own"
+            + (
+                ", and its index lists each once, in order."
+                if index is not None
+                else f"; the folder has no index, {decisions.INDEX}."
+            )
+        )
+        return 0
+    for finding in numbers + rows:
+        print(f"{folder}: {finding}")
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        place = f"{folder}/{decisions.INDEX}" if index is not None else ""
+        for finding in numbers + rows:
+            print(annotate.Annotation("Records of decisions", finding, place).command())
+    if numbers:
+        print(
+            "Another pull request took the number first, or a file is no record: give "
+            "the record of your pull request the next free number, "
+            f"{decisions.next_free(records):04d}, in the name of its file, in its row "
+            f"of {folder}/{decisions.INDEX} and in each link to it. Only you can "
+            "choose which record moves, so no command renames one."
+        )
+    if rows and arguments.fix:
+        print(
+            "The rows that these lines name need you: a row of a file that the folder "
+            "doesn't have, or two rows of one record that say different things."
+        )
+    elif rows:
+        print(
+            f"{command(root)} decisions --fix fixes what only the index gets wrong: "
+            "the number of a row, the row of a renamed record, a row twice, a missing "
+            "row and the order of the rows."
+        )
+    return 1
+
+
 def migrate_command(arguments: argparse.Namespace, root: Path) -> int:
     """What the releases of the blueprint move in the files of the project, one on each
     line, and in the CI also as annotations of those files; with --fix, it moves them."""
@@ -1051,7 +1125,12 @@ def dependabot_command(
 def locks_command(arguments: argparse.Namespace, root: Path) -> int:
     """Whether Renovate can compile each lock file of pip-compile again with the
     command in its header; with --fix, it puts the = between each option and its
-    value first. With --compile, whether each one still pins what its sources ask for."""
+    value first. With --compile, whether each one still pins what its sources ask for;
+    --refresh and --age keep the weekly refresh to versions at least a week old."""
+    if arguments.refresh:
+        return locks_refresh_command(root)
+    if arguments.age:
+        return locks_age_command(arguments.age, root)
     if arguments.compile:
         return locks_compile_command(arguments, root)
     names, skipped = locks.check(root)
@@ -1079,6 +1158,74 @@ def locks_command(arguments: argparse.Namespace, root: Path) -> int:
         )
     else:
         print("No file here is a lock file of pip-compile, which Renovate compiles.")
+    return 0
+
+
+def locks_refresh_command(root: Path) -> int:
+    """The lock files of pip-compile that Renovate's weekly refresh moved to the newest
+    versions, compiled again from versions at least a week old: Renovate runs it in
+    the branch of the refresh, after it compiled them (decision 0137)."""
+    names = locks.refreshed(root)
+    if not names:
+        print("No lock file of pip-compile differs from HEAD: the refresh moved none.")
+        return 0
+    uv = shutil.which("uv")
+    if uv is None:
+        print(
+            "uv is not installed here, so the refresh keeps the newest versions; "
+            "Renovate installs it for this command by the rule of the refresh."
+        )
+        return 1
+    now = datetime.now(UTC)
+    failed = False
+    for name in names:
+        found = locks.refresh(root, name, uv, now)
+        if found.note:
+            print(f"{name}: left as Renovate refreshed it, for {found.note}.")
+        elif found.failure:
+            failed = True
+            print(f"{name}: uv can't compile it from versions a week old:")
+            print(found.failure)
+        elif found.differences:
+            locks.write_refresh(root, found)
+            print(
+                f"{name}: compiled again from versions at least a week old, without "
+                f"{', '.join(found.differences)}."
+            )
+        else:
+            print(f"{name}: every version of the refresh is at least a week old.")
+    if failed:
+        print(
+            "The refresh keeps the newest versions of these files, and the check "
+            "dependency-review holds its pull request for the maintainer while one of "
+            "them is younger than a week."
+        )
+        return 1
+    return 0
+
+
+def locks_age_command(base: str, root: Path) -> int:
+    """Whether each version that the refresh in HEAD adds to the lock files of base
+    is at least a week old, as the refresh merges by itself only then."""
+    added, problems = lock_age.check(root, base, datetime.now(UTC))
+    for problem in problems:
+        print(problem)
+    if problems:
+        print(
+            "The weekly refresh of the lock files merges by itself only from versions "
+            "at least a week old, as every other update waits a week, so this one "
+            "waits: run the check again once each version is a week old, or let "
+            "Renovate build the refresh anew in its next weekly window. A lock file "
+            "that the check can't date, such as a yarn.lock, needs a rule in "
+            ".github/renovate.json5 with matchFileNames for its name and "
+            'matchUpdateTypes ["lockFileMaintenance"] that gives its refresh '
+            'additionalBranchPrefix "review-" and automerge false, so that it waits '
+            "for the maintainer on a branch of its own."
+        )
+        return 1
+    print(
+        f"Each of the {added} version(s) that the refresh adds is at least a week old."
+    )
     return 0
 
 
@@ -1225,11 +1372,13 @@ def settings_command(
 def actions_command(api: Api, root: Path, path: Path) -> int:
     """settings actions: 0 when the list of the allowed actions in the settings as code
     lets every action and reusable workflow that the workflows run start, also those
-    that these run in turn; 1 when it lacks one, or GitHub refused the file of one.
-    The check of the Lint workflow: it reads the public files of the actions and none
-    of the settings on GitHub, which the token of a pull request may not read."""
+    that these run in turn, and the event policy every workflow that starts on
+    pull_request_target; 1 when a list lacks one, or GitHub refused the file of an
+    action. The check of the Lint workflow: it reads the public files of the actions
+    and none of the settings on GitHub, which the token of a pull request may not
+    read."""
     settings = Settings.load(root / path, root)
-    # The blueprint renders the list of every repository from its template.
+    # The blueprint renders the lists of every repository from its template.
     listed_in = (
         "template/.github/repository.toml.jinja and .github/repository.toml"
         if (root / "copier.yml").is_file() and (root / "template").is_dir()
@@ -1238,13 +1387,18 @@ def actions_command(api: Api, root: Path, path: Path) -> int:
     found = unlisted_actions(api, settings.actions, settings.workflows, listed_in)
     # The path as the documentation writes it, with slashes on Windows too.
     config = path.as_posix()
-    if not found:
+    blocked = target_annotations(root, settings, listed_in)
+    if not found and not blocked:
         print(
             "GitHub starts every action that the workflows run, also those that"
-            f" these run in turn, by [actions] of {config}."
+            f" these run in turn, by [actions] of {config}, and every workflow that"
+            f" starts on {TARGET}."
         )
         return 0
-    print(f"GitHub won't start a workflow that runs these, by [actions] of {config}:")
+    if found:
+        print(
+            f"GitHub won't start a workflow that runs these, by [actions] of {config}:"
+        )
     annotations = []
     for item in found:
         file = settings.workflows[item.via]
@@ -1261,9 +1415,46 @@ def actions_command(api: Api, root: Path, path: Path) -> int:
                 "Allowed actions", message, file, line_of(text, item.via)
             )
         )
+    if blocked:
+        print(
+            "GitHub blocks these workflows in a public repository from 2 December"
+            f" 2026, as {TARGET} of [actions] of {config} lacks them:"
+        )
+        for annotation in blocked:
+            print(f"- {annotation.message}")
     if os.environ.get("GITHUB_ACTIONS") == "true":
-        print("\n".join(annotate.commands(annotations)))
+        print("\n".join(annotate.commands(annotations + blocked)))
     return 1
+
+
+def target_annotations(
+    root: Path, settings: Settings, listed_in: str
+) -> list[annotate.Annotation]:
+    """An annotation at its event for each workflow that starts on
+    pull_request_target but that the list of the event policy lacks: GitHub blocks it
+    in a public repository, and a person decides whether it may start on the event or
+    moves it to pull_request."""
+    annotations = []
+    for file in unlisted_targets(settings.actions.get(TARGET, []), settings.triggers):
+        lines = (root / file).read_text(encoding="utf-8").splitlines()
+        # The event below on, the first line outside a comment that names it.
+        line = next(
+            (
+                number
+                for number, content in enumerate(lines, 1)
+                if TARGET in content.split("#", 1)[0]
+            ),
+            0,
+        )
+        message = (
+            f"{file} starts on {TARGET}, which GitHub blocks in a public repository"
+            " from 2 December 2026 unless a policy allows it: start it on pull_request"
+            " where it needs neither a token that writes nor a secret for a pull"
+            f" request of a fork, or add {json.dumps(file)} to {TARGET} of [actions]"
+            f" in {listed_in}"
+        )
+        annotations.append(annotate.Annotation("Allowed events", message, file, line))
+    return annotations
 
 
 def widen_command(api: Api, repo: str, settings: Settings, path: Path) -> int:
@@ -1632,6 +1823,19 @@ def add_update_parsers(
         action="store_true",
         help="pass even when GitHub refused a request, with the warnings alone, as "
         "in a run that shows as a check of a pull request",
+    )
+    next_branch_parser.add_argument(
+        "--after",
+        type=int,
+        metavar="RUN",
+        help="the run of a check whose end started the bot: when GitHub couldn't "
+        "start it, the line stays as it is",
+    )
+    next_branch_parser.add_argument(
+        "--attempt",
+        type=int,
+        default=1,
+        help="the attempt of that run (default: 1)",
     )
     stale_runs_parser = commands.add_parser(
         "stale-runs",
@@ -2229,6 +2433,18 @@ def add_locks_parsers(
         "Python and on the versions that it pins, and say which no longer matches "
         "its sources",
     )
+    locks_parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="compile the lock files that differ from HEAD again from versions at "
+        "least a week old, as Renovate runs it after its weekly refresh",
+    )
+    locks_parser.add_argument(
+        "--age",
+        metavar="BASE",
+        help="whether each version that HEAD adds to the lock files of BASE is at "
+        "least a week old, as the weekly refresh merges by itself only then",
+    )
 
 
 def add_pages_parsers(
@@ -2252,6 +2468,17 @@ def add_pages_parsers(
         help="the binary files of Git that nobody can review: programs, libraries, "
         "compiled code, archives and every other one but pictures, videos, sounds, "
         "fonts, documents and the inputs of the fuzz tests",
+    )
+    decisions_parser = commands.add_parser(
+        "decisions",
+        help="the records of docs/decisions/: a number of its own for each, the next "
+        "one after the last, and one row for each in the index, in order",
+    )
+    decisions_parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="fix what only the index gets wrong first: the number of a row, the row "
+        "of a renamed record, a row twice, a missing row and the order of the rows",
     )
     migrate_parser = commands.add_parser(
         "migrate",
@@ -2321,6 +2548,26 @@ def parser() -> argparse.ArgumentParser:
     ):
         add(commands)
     return parser
+
+
+def files_command(arguments: argparse.Namespace, root: Path) -> int | None:
+    """A command that checks the files of the repository, as steps of scripts/check.sh
+    run them, and fixes them with --fix where it has one: its exit code, or None for
+    another command. A file that can't be read, or git that fails, is its error."""
+    commands: dict[str, Callable[[], int]] = {
+        "binaries": lambda: binaries_command(root),
+        "decisions": lambda: decisions_command(arguments, root),
+        "migrate": lambda: migrate_command(arguments, root),
+        "pages": lambda: pages_command(arguments, root),
+    }
+    run = commands.get(arguments.command)
+    if run is None:
+        return None
+    try:
+        return run()
+    except (OSError, UnicodeDecodeError, subprocess.CalledProcessError) as error:
+        print(f"blueprint.py: {error}", file=sys.stderr)
+        return 2
 
 
 def standalone_command(
@@ -2444,24 +2691,9 @@ def standalone_command(
         except (OSError, UnicodeDecodeError, subprocess.CalledProcessError) as error:
             print(f"blueprint.py: {error}", file=sys.stderr)
             return 2
-    if arguments.command == "binaries":
-        try:
-            return binaries_command(root)
-        except (OSError, subprocess.CalledProcessError) as error:
-            print(f"blueprint.py: {error}", file=sys.stderr)
-            return 2
-    if arguments.command == "migrate":
-        try:
-            return migrate_command(arguments, root)
-        except (OSError, UnicodeDecodeError) as error:
-            print(f"blueprint.py: {error}", file=sys.stderr)
-            return 2
-    if arguments.command == "pages":
-        try:
-            return pages_command(arguments, root)
-        except (OSError, UnicodeDecodeError, subprocess.CalledProcessError) as error:
-            print(f"blueprint.py: {error}", file=sys.stderr)
-            return 2
+    code = files_command(arguments, root)
+    if code is not None:
+        return code
     if arguments.command in (
         "changelog",
         "beta",
@@ -2479,6 +2711,15 @@ def standalone_command(
             print(f"blueprint.py: {error}", file=sys.stderr)
             return 2
     return None
+
+
+def waits_out_an_outage(arguments: argparse.Namespace) -> bool:
+    """Whether the command is a bot that ends with a notice, not a failure, when GitHub
+    keeps failing: its next event or run does what it couldn't (decision 0136). A
+    check, such as that of the signatures, still fails, as it must not pass unseen."""
+    return arguments.command in ("bot-health", "next-branch") or (
+        arguments.command == "coach" and arguments.action == "report"
+    )
 
 
 def main(
@@ -2532,7 +2773,23 @@ def main(
         if arguments.command == "bot-health":
             return bot_health_command(api, repo, arguments, root)
         if arguments.command == "next-branch":
-            outcome = next_branch(api, repo, job_from(os.environ), root)
+            job = job_from(os.environ)
+            # The token of the release app may not read runs, which a private
+            # repository refuses: the token of the job reads the run and its jobs,
+            # and the app's the annotations, which the job's may not read.
+            reader = job.api if job else api
+            if arguments.after and failed_unstarted(
+                reader, repo, arguments.after, arguments.attempt, checks=api
+            ):
+                # The failure of a check that GitHub never started says nothing about
+                # the pull request: the line stays as it is until the next event.
+                print(couldnt_start(f"the run {arguments.after}"), file=sys.stderr)
+                print(
+                    f"GitHub couldn't start the run {arguments.after}, so the line "
+                    "stays as it is.\n"
+                )
+                return 0
+            outcome = next_branch(api, repo, job, root)
             for warning in (*outcome.warnings, *outcome.notices):
                 print(warning, file=sys.stderr)
             print(outcome.summary, end="")
@@ -2574,5 +2831,12 @@ def main(
         CatalogError,
         CreateError,
     ) as error:
+        if (
+            isinstance(error, GitHubError)
+            and error.unavailable
+            and waits_out_an_outage(arguments)
+        ):
+            print(unreachable(error), file=sys.stderr)
+            return 0
         print(f"blueprint.py: {error}", file=sys.stderr)
         return 2

@@ -541,7 +541,7 @@ def check_actions(
     drift = [
         Drift(f"actions.{key}", value, have.get(key))
         for key, value in want.items()
-        if key != "selected" and have.get(key) != value
+        if key not in ("selected", TARGET) and have.get(key) != value
     ]
     selected = want.get("selected")
     if want.get("allowed_actions") == "selected" and isinstance(selected, dict):
@@ -713,6 +713,266 @@ def check_actions_config(actions: dict[str, Json]) -> None:
             " github_owned_allowed, verified_allowed and patterns_allowed, the"
             " actions that may run"
         )
+    listed = actions.get(TARGET, [])
+    if not isinstance(listed, list) or not all(
+        isinstance(path, str) and WORKFLOW_PATH.fullmatch(path) for path in listed
+    ):
+        raise ConfigError(
+            f"{TARGET} of [actions] lists the workflows that may start on it, each by"
+            f' its path, such as ".github/workflows/welcome.yml", not {listed!r}'
+        )
+
+
+# --------------------------------------------------------------------------- policies
+
+# The event that GitHub blocks in a public repository from 2 December 2026, unless an
+# Actions event policy allows it (decision 0138). A workflow that starts on it runs as
+# the default branch has it, with a token that may write and the secrets, also for a
+# pull request of a fork. TARGET of [actions] lists the workflows that may.
+TARGET = "pull_request_target"
+# The path of a workflow, as the condition of a policy names it.
+WORKFLOW_PATH = re.compile(r"\.github/workflows/[^/]+\.ya?ml")
+# The policy of the settings as code, by its name; the others stay as they are.
+EVENT_POLICY = "Allow pull_request_target"
+# Its line in the differences, and the start of those that name a workflow.
+POLICY = f"policy {TARGET}"
+# The key on at the top level of a workflow, also quoted, and what follows it.
+ON = re.compile(r"""(?:on|"on"|'on')[ \t]*:(.*)""")
+# A key of the table below on, or an item of a list of events.
+EVENT = re.compile(r"""(?:-[ \t]+)?["']?([A-Za-z_]+)""")
+# A comment at the end of a line, or a whole line of one.
+COMMENT = re.compile(r"(?:^|[ \t])#.*")
+
+
+def flow_events(value: str) -> list[str]:
+    """The events of on in the flow style of YAML: the names of a list in brackets,
+    or the keys of a table in braces, at its first level."""
+    table = value.startswith("{")
+    entries: list[str] = []
+    entry, depth = "", 0
+    for char in value[1:]:
+        if char in "]}" and depth == 0:
+            break
+        if char == "," and depth == 0:
+            entries.append(entry)
+            entry = ""
+            continue
+        depth += (char in "[{") - (char in "]}")
+        entry += char
+    entries.append(entry)
+    names = [entry.split(":", 1)[0] if table else entry for entry in entries]
+    return [name.strip().strip("\"'") for name in names if name.strip()]
+
+
+def flow_depth(value: str) -> int:
+    """How many brackets and braces of value are still open."""
+    return sum(value.count(char) for char in "[{") - sum(
+        value.count(char) for char in "]}"
+    )
+
+
+def workflow_events(text: str) -> list[str]:
+    """The events that start a workflow, from the key on at its top level: one name,
+    a list or a table of them in the flow style of YAML, or a table or a list below
+    the key. The tests compare it with PyYAML for every workflow of every kind."""
+    lines = [COMMENT.sub("", line).rstrip() for line in text.splitlines()]
+    for index, line in enumerate(lines):
+        match = ON.fullmatch(line)
+        if match is None:
+            continue
+        value = match[1].strip()
+        if value[:1] in ("[", "{"):
+            # A list or a table in the flow style may go on over the next lines.
+            for below in lines[index + 1 :]:
+                if flow_depth(value) <= 0:
+                    break
+                value += " " + below.strip()
+            return flow_events(value)
+        if value:
+            return [value.strip("\"'")]
+        events: list[str] = []
+        indent: int | None = None
+        listed = False
+        for below in lines[index + 1 :]:
+            if not below:
+                continue
+            depth = len(below) - len(below.lstrip())
+            item = below.lstrip().startswith("-")
+            # A list may stand as far in as on itself; any other key ends the table.
+            if depth == 0 and not item:
+                break
+            if indent is None:
+                # The first entry decides: a list of names, or a table of them.
+                indent, listed = depth, item
+            found = EVENT.match(below.strip())
+            # In a table, a list as far in as its keys is the value of the key above.
+            if depth == indent and item == listed and found:
+                events.append(found[1])
+        return events
+    return []
+
+
+def workflow_triggers(root: Path) -> dict[str, list[str]]:
+    """The events that start each workflow of the repository at root, by its path."""
+    return {
+        path.relative_to(root).as_posix(): workflow_events(
+            path.read_text(encoding="utf-8")
+        )
+        for path in sorted((root / ".github/workflows").glob("*.y*ml"))
+    }
+
+
+def target_workflows(triggers: dict[str, list[str]]) -> list[str]:
+    """The workflows that start on pull_request_target."""
+    return sorted(path for path, events in triggers.items() if TARGET in events)
+
+
+def unlisted_targets(
+    listed: Sequence[str], triggers: dict[str, list[str]]
+) -> list[str]:
+    """The workflows that start on pull_request_target but that TARGET of [actions]
+    lacks: GitHub blocks them in a public repository."""
+    return [path for path in target_workflows(triggers) if path not in listed]
+
+
+def event_policy(
+    listed: Sequence[str], triggers: dict[str, list[str]]
+) -> dict[str, Json] | None:
+    """The Actions event policy that lets the listed workflows start on
+    pull_request_target, and no other. An event rule allows only the events that it
+    names, so it names every event that starts one of them as well; None when no
+    listed workflow starts on pull_request_target, as then nothing needs it."""
+    files = [path for path in target_workflows(triggers) if path in listed]
+    if not files:
+        return None
+    events = sorted({event for path in files for event in triggers[path]})
+    return {
+        "name": EVENT_POLICY,
+        "enforcement": "active",
+        "conditions": {"workflow_path": {"include": files, "exclude": []}},
+        "rules": [
+            {
+                "type": "restrict_action_events",
+                "parameters": {"allowed_events": events},
+            }
+        ],
+    }
+
+
+def own_policies(api: Api, repo: str) -> dict[str, int]:
+    """The Actions policies of the repository itself, by name, with their ids: not
+    those of an organization or an enterprise above it."""
+    path = f"repos/{repo}/actions/policies?has_parents=false&per_page=100"
+    data = api.get(path) or {}
+    return {item["name"]: item["id"] for item in data.get("policies") or []}
+
+
+def policy_differences(want: dict[str, Json], have: dict[str, Json]) -> list[str]:
+    """The parts in which the policy on GitHub differs from the wanted one."""
+    differences = []
+    if have.get("enforcement") != want["enforcement"]:
+        differences.append(f"enforcement {have.get('enforcement')}")
+    path = (have.get("conditions") or {}).get("workflow_path") or {}
+    wanted = want["conditions"]["workflow_path"]
+    for key, name in (("include", "workflows"), ("exclude", "excluded workflows")):
+        found = sorted(path.get(key) or [])
+        if found != wanted[key]:
+            differences.append(f"{name} {found}")
+    rules = have.get("rules") or []
+    events = (rules[0].get("parameters") or {}).get("allowed_events") if rules else []
+    if [rule.get("type") for rule in rules] != ["restrict_action_events"]:
+        differences.append(f"rules {[rule.get('type') for rule in rules]}")
+    elif sorted(events or []) != want["rules"][0]["parameters"]["allowed_events"]:
+        differences.append(f"events {sorted(events or [])}")
+    return differences
+
+
+def check_policies(
+    api: Api,
+    repo: str,
+    listed: Sequence[str],
+    triggers: dict[str, list[str]],
+    private: bool = False,
+) -> list[Drift]:
+    """The Actions event policy that allows pull_request_target for the listed
+    workflows, and every workflow that starts on it but that the list lacks: the
+    policy leaves it out, so GitHub blocks it in a public repository."""
+    drift = [
+        Drift(
+            f"{POLICY} lacks {path}",
+            "listed",
+            "missing",
+            manual=(
+                f"{path} starts on {TARGET}, which GitHub blocks in a public"
+                " repository from 2 December 2026 unless a policy allows it: start it"
+                " on pull_request where it needs neither a token that writes nor a"
+                f" secret for a pull request of a fork, or add {json.dumps(path)} to"
+                f" {TARGET} of [actions] in .github/repository.project.toml"
+            ),
+        )
+        for path in unlisted_targets(listed, triggers)
+    ]
+    want = event_policy(listed, triggers)
+    try:
+        existing = own_policies(api, repo)
+        number = existing.get(EVENT_POLICY)
+        have = (
+            api.get(f"repos/{repo}/actions/policies/{number}") or {}
+            if want is not None and number is not None
+            else {}
+        )
+    except GitHubError as error:
+        if private and refused_by_plan(error):
+            # A private repository on GitHub Free has no policies, and GitHub
+            # blocks pull_request_target only in a public one.
+            if want is None:
+                return drift
+            return [*drift, lacking(repo, Drift(POLICY, "present", UNOFFERED), error)]
+        # Any other refusal, such as one of a token without the permission, names
+        # the part and fails the run, but keeps the other parts from being skipped:
+        # apply reads the policies again before it writes one.
+        return [
+            *drift,
+            Drift(
+                POLICY,
+                "present" if want is not None else "absent",
+                "unreadable",
+                manual=f"GitHub refused the policies: {error}{hint('policies', error)}",
+            ),
+        ]
+    if want is None:
+        return drift + (
+            [Drift(POLICY, "absent", "present")] if EVENT_POLICY in existing else []
+        )
+    if number is None:
+        return [*drift, Drift(POLICY, "present", "missing")]
+    differences = policy_differences(want, have)
+    if differences:
+        drift.append(Drift(POLICY, "as configured", "; ".join(differences)))
+    return drift
+
+
+def apply_policies(
+    api: Api,
+    repo: str,
+    listed: Sequence[str],
+    triggers: dict[str, list[str]],
+    drift: list[Drift],
+) -> None:
+    """The policy as the settings want it: created, changed, or deleted once no
+    listed workflow starts on pull_request_target. A workflow that the list lacks
+    needs a person, who decides whether it may start on the event."""
+    if not any(item.setting == POLICY and not item.notice for item in drift):
+        return
+    want = event_policy(listed, triggers)
+    number = own_policies(api, repo).get(EVENT_POLICY)
+    if want is None:
+        if number is not None:
+            api.delete(f"repos/{repo}/actions/policies/{number}")
+    elif number is not None:
+        api.put(f"repos/{repo}/actions/policies/{number}", want)
+    else:
+        api.post(f"repos/{repo}/actions/policies", want)
 
 
 # --------------------------------------------------------------------------- rulesets
@@ -1250,6 +1510,8 @@ class Settings:
     labels: dict[str, dict[str, str]]
     # The actions and reusable workflows that the workflows name, with the file of each.
     workflows: dict[str, str]
+    # The events that start each workflow, by its path.
+    triggers: dict[str, list[str]]
 
     @classmethod
     def load(cls, path: Path, root: Path | None = None) -> Settings:
@@ -1269,6 +1531,7 @@ class Settings:
         actions = config.get("actions", {})
         check_actions_config(actions)
         variables = config.get("variables", {})
+        root = path.parent.parent if root is None else root
         rulesets = [main_ruleset(checks, tools), tag_ruleset()]
         app_id = release_app_id(variables)
         if app_id is not None:
@@ -1283,7 +1546,8 @@ class Settings:
             pages=config.get("pages", {}),
             # The labels of the issue assistant, next to the settings.
             labels=load_labels(path.parent / "labels.toml"),
-            workflows=workflow_references(path.parent.parent if root is None else root),
+            workflows=workflow_references(root),
+            triggers=workflow_triggers(root),
         )
 
 
@@ -1296,6 +1560,9 @@ def check(
         check_repository(api, repo, settings.repository)
         + check_security(api, repo, settings.security)
         + check_actions(api, repo, settings.actions, settings.workflows)
+        + check_policies(
+            api, repo, settings.actions.get(TARGET, []), settings.triggers, private
+        )
         + check_rulesets(api, repo, settings.rulesets, private)
         + check_variables(api, repo, settings.variables)
         + check_environments(api, repo, settings.environments)
@@ -1334,6 +1601,7 @@ PARTS = {
     "repository": "repository.",
     "security": "security.",
     "actions": "actions.",
+    "policies": "policy ",
     "rulesets": "ruleset",
     "variables": "variable ",
     "environments": "environment ",
@@ -1447,6 +1715,7 @@ PERMISSIONS = {
     "repository": ("Administration",),
     "security": ("Administration",),
     "actions": ("Administration",),
+    "policies": ("Administration",),
     "rulesets": ("Administration",),
     "variables": ("Variables",),
     "environments": ("Administration",),
@@ -1476,6 +1745,16 @@ def apply(
         (
             "actions",
             lambda: apply_actions(api, repo, settings.actions, part("actions.")),
+        ),
+        (
+            "policies",
+            lambda: apply_policies(
+                api,
+                repo,
+                settings.actions.get(TARGET, []),
+                settings.triggers,
+                part("policy "),
+            ),
         ),
         (
             "rulesets",
