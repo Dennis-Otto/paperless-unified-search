@@ -120,6 +120,21 @@ final class AdminSettingsTest extends TestCase {
 	}
 
 	/**
+	 * The page names the users whom Paperless Sync lets see only the documents with some
+	 * tags, as its table Tags that a user may see holds them (decision 0015), and nobody
+	 * without Paperless Sync.
+	 */
+	public function testTheFormNamesTheUsersWithTags(): void {
+		$config = new MemoryAppConfig();
+		$config->seed('paperless_sync', 'user_tags', "katja = Katja, Household\nalex =", lazy: true);
+
+		$params = $this->settings($config, $this->createStub(ICredentialsManager::class), $this->createStub(IURLGenerator::class))->getForm()->getParams();
+
+		self::assertSame(['katja' => ['Katja', 'Household']], $params['userTags']);
+		self::assertSame([], $this->settings(new MemoryAppConfig(), $this->createStub(ICredentialsManager::class), $this->createStub(IURLGenerator::class))->getForm()->getParams()['userTags']);
+	}
+
+	/**
 	 * Below the archive account, the page says with whom it shares its files, and what is
 	 * wrong with each share that allows changes.
 	 */

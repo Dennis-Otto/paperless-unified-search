@@ -84,6 +84,37 @@ final class SearchExplainerTest extends TestCase {
 	}
 
 	/**
+	 * For a user whom Paperless Sync lets see only the documents with some tags (decision
+	 * 0015), a document without one of them is explained as such, whatever file the user
+	 * sees of it; their own copy of one with a tag shows, and a file of another user stands
+	 * for nothing, whoever owns the document in Paperless.
+	 */
+	public function testNamesTheDocumentsWithoutTheTagsOfAUserWithTags(): void {
+		$this->connected('');
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.ownership'] = 'per-user';
+		$this->settings['paperless_sync.user_tags'] = 'jamie = Katja';
+		$this->file('/jamie/files/Paperless/Payslip [P412].pdf', 'jamie');
+		$this->file('/jamie/files/Archive/Household [P389].pdf');
+		$this->file('/jamie/files/From sam [P371].pdf', 'sam');
+		$documents = [['id' => 412, 'owner' => 5, 'tags' => [8]], ['id' => 389, 'owner' => 6, 'tags' => [1]], ['id' => 371, 'owner' => 6, 'tags' => [8]], ['id' => 360, 'tags' => [8]]];
+		$explainer = $this->explainer($this->answer(200, (string)json_encode(['count' => 2, 'next' => null, 'results' => [['id' => 1, 'name' => 'Inbox'], ['id' => 8, 'name' => 'Katja']]])));
+
+		[$explanations, $error] = $explainer->explain($this->user('jamie'), [412, 389, 371, 360], 'archive', $documents);
+		[$verdicts] = $explainer->verdicts($this->user('jamie'), [412, 389, 371, 360], 'archive', $documents);
+
+		self::assertSame([
+			['id' => 412, 'verdict' => 'shown', 'path' => '/Paperless/Payslip [P412].pdf', 'owner' => 'jamie'],
+			['id' => 389, 'verdict' => 'not_tagged', 'path' => '', 'owner' => ''],
+			['id' => 371, 'verdict' => 'not_owned', 'path' => '/From sam [P371].pdf', 'owner' => 'sam'],
+			['id' => 360, 'verdict' => 'no_file', 'path' => '', 'owner' => ''],
+		], self::serialized($explanations));
+		self::assertNull($error);
+		self::assertSame(['shown', 'hidden', 'hidden', 'hidden'], array_map(static fn (Explanation $explanation): string => $explanation->verdict->value, $verdicts));
+		self::assertCount(1, $this->requests);
+	}
+
+	/**
 	 * The verdicts of the search count the files of the owners too, and so does the user of
 	 * an owner who looks for the documents of another.
 	 */
@@ -250,17 +281,20 @@ final class SearchExplainerTest extends TestCase {
 	}
 
 	/**
-	 * The explainer, with a Paperless that answers the request for its users with $users.
+	 * The explainer, with a Paperless that answers its requests, such as the one for its
+	 * users, with $answers, and one cache for the users and the tags of Paperless.
 	 */
-	private function explainer(?IResponse $users = null): SearchExplainer {
+	private function explainer(IResponse ...$answers): SearchExplainer {
 		$accounts = $this->accounts('archive', 'jamie', 'sam', 'alex');
 		$configService = $this->configService($accounts);
-		$paperlessApi = $this->paperlessApi($configService, $this->paperless(...($users === null ? [] : [$users])));
+		$paperlessApi = $this->paperlessApi($configService, $this->paperless(...$answers));
+		$cacheFactory = $this->memoryCacheFactory();
 
 		return new SearchExplainer(
 			new NextcloudFileLocator($this->rootFolder(), $this->createStub(LoggerInterface::class)),
 			$accounts,
-			$this->documentOwners($paperlessApi, $configService, $accounts),
+			$this->documentOwners($paperlessApi, $configService, $accounts, $cacheFactory),
+			$this->userTags($paperlessApi, $configService, $cacheFactory),
 		);
 	}
 

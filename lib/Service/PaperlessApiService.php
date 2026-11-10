@@ -53,9 +53,11 @@ final class PaperlessApiService {
 	/**
 	 * The fields of the documents for occ paperless_unified_search:check, which looks for
 	 * the file of each one in the folders of the user of its owner (decision 0013): only
-	 * the ID and the owner.
+	 * the ID, the owner and the tags as IDs, without which the files of an owner with tags
+	 * count for none of their documents (decision 0015). The job of the notifications reads
+	 * the same of the new documents whose files have arrived.
 	 */
-	private const OWNER_FIELDS = 'id,owner';
+	private const OWNER_FIELDS = 'id,owner,tags';
 	private const MATCH_FIELDS = 'id';
 
 	/**
@@ -80,6 +82,13 @@ final class PaperlessApiService {
 	 * day that it added them, as Y-m-d.
 	 */
 	public const ADDED_FROM = 'added__date__gte';
+
+	/**
+	 * The filter of Paperless for the documents with at least one of some tags, by their IDs
+	 * separated by commas, such as 4,9: for a user who may see only the documents with
+	 * those tags (decision 0015), which Paperless-ngx 2 and 3 take beside a search.
+	 */
+	public const TAGS_ANY = 'tags__id__in';
 
 	/**
 	 * The version of the API of Paperless that every request asks for. Without one,
@@ -110,6 +119,13 @@ final class PaperlessApiService {
 	 */
 	private const USERS_PAGE_SIZE = 1000;
 	private const MOST_USER_PAGES = 10;
+
+	/**
+	 * How many tags of Paperless one request for their names asks for, and for how many pages
+	 * of them at most, as for the users.
+	 */
+	private const TAGS_PAGE_SIZE = 1000;
+	private const MOST_TAG_PAGES = 10;
 
 	/**
 	 * How many documents with their owners one request of the check asks for, and for how
@@ -394,11 +410,13 @@ final class PaperlessApiService {
 	 * request gets one try and a short time, and no place in the history of the problems
 	 * of the search, which is about searches.
 	 *
+	 * @param array<string, string> $filters filters of Paperless on the documents, such as
+	 *                                       TAGS_ANY => '4,9'
 	 * @return list<array<array-key, mixed>>
 	 * @throws PaperlessRequestException when Paperless answers, but not with documents
 	 * @throws Throwable the error of a request without answer, or without the settings
 	 */
-	public function findRecentDocuments(int $count): array {
+	public function findRecentDocuments(int $count, array $filters = []): array {
 		[$data, $version] = $this->requestDocuments(
 			$this->configService->getUrl(),
 			$this->configService->getToken(),
@@ -408,7 +426,7 @@ final class PaperlessApiService {
 				'page' => 1,
 				'page_size' => max(1, min(100, $count)),
 				'fields' => self::RECENT_FIELDS,
-			],
+			] + $filters,
 			timeout: self::RECENT_TIMEOUT,
 			retry: false,
 		);
@@ -488,6 +506,35 @@ final class PaperlessApiService {
 		}
 
 		return $found;
+	}
+
+	/**
+	 * These documents with their IDs, owners and tags, as they are now, for the job of the
+	 * notifications, which shows a user with tags only the documents with one of them
+	 * (decision 0015): a tag may have come or gone since the job first saw a document. One
+	 * try, and no place in the history of the problems of the search, as
+	 * findNewestDocuments().
+	 *
+	 * @param non-empty-list<int> $documentIds
+	 * @return list<array<array-key, mixed>> the documents, with their fields id, owner and tags
+	 * @throws PaperlessRequestException when Paperless answers, but not with documents
+	 * @throws Throwable the error of a request without answer, or without the settings
+	 */
+	public function findDocumentTags(array $documentIds): array {
+		[$data] = $this->requestDocuments(
+			$this->configService->getUrl(),
+			$this->configService->getToken(),
+			$this->configService->isLocalNetworkAllowed(),
+			[
+				'id__in' => implode(',', $documentIds),
+				'page' => 1,
+				'page_size' => count($documentIds),
+				'fields' => self::OWNER_FIELDS,
+			],
+			retry: false,
+		);
+
+		return self::documentsOf($data)['results'];
 	}
 
 	/**
@@ -699,6 +746,48 @@ final class PaperlessApiService {
 		}
 
 		throw PaperlessRequestException::notPaperless(sprintf('Paperless lists more than %d users.', self::USERS_PAGE_SIZE * self::MOST_USER_PAGES));
+	}
+
+	/**
+	 * The names of every tag of Paperless, by ID, as /api/tags/ lists them to the account of
+	 * the token, the tag of the inbox included: for the users who may see only the documents
+	 * with some tags (decision 0015), whose names Paperless Sync compares, whatever their
+	 * case. The pages go by their numbers, as for the users; each request gets one try, the
+	 * shorter time and no place in the history of the problems of the search.
+	 *
+	 * @return array<int, string> the names, by ID
+	 * @throws PaperlessRequestException when Paperless answers, but not with a list, such as
+	 *                                   HTTP 403 for an account that may not view tags, or
+	 *                                   with more tags than the app reads
+	 * @throws Throwable the error of a request without answer
+	 */
+	public function findTags(): array {
+		$url = $this->configService->getUrl();
+		$token = $this->configService->getToken();
+		if ($url === '' || $token === '') {
+			return [];
+		}
+
+		$tags = [];
+		for ($page = 1; $page <= self::MOST_TAG_PAGES; $page++) {
+			$data = $this->listFrom($url, $token, $this->configService->isLocalNetworkAllowed(), 'tags', [
+				'page' => $page,
+				'page_size' => self::TAGS_PAGE_SIZE,
+			]);
+			/** @psalm-suppress MixedAssignment JSON values are validated before use. */
+			foreach ($data['results'] as $tag) {
+				$id = is_array($tag) ? ($tag['id'] ?? null) : null;
+				$name = is_array($tag) ? ($tag['name'] ?? null) : null;
+				if (is_int($id) && is_string($name)) {
+					$tags[$id] = $name;
+				}
+			}
+			if (($data['next'] ?? null) === null) {
+				return $tags;
+			}
+		}
+
+		throw PaperlessRequestException::notPaperless(sprintf('Paperless lists more than %d tags.', self::TAGS_PAGE_SIZE * self::MOST_TAG_PAGES));
 	}
 
 	/**

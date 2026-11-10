@@ -385,6 +385,8 @@
 				return translate('Owned in Paperless by another user')
 			case 'no_file':
 				return translate('No file with {marker}', { marker: '[P' + found.id + ']' })
+			case 'not_tagged':
+				return translate('Not among the tags that {user} may see', { user })
 			default:
 				return translate('Hidden')
 			}

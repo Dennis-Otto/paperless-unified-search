@@ -1,0 +1,3 @@
+### Features
+
+- A user whom Paperless Sync lets see only the documents with some tags of Paperless, in its setting *Tags that a user may see*, now finds only those documents, in the search, the smart picker, on the dashboard and in the notifications, also through a share of the archive that shows more, and through the copies that Paperless Sync writes into their own files. *Try a search* and `occ paperless_unified_search:search --explain` name a document without one of their tags *not tagged*, and the settings list the users with tags. Every other user, and every installation without such a line, sees what it saw before.

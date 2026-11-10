@@ -973,6 +973,63 @@ cursor="$(assert_response page "${TMP_DIR}/page-1.json" more 620 624 626 627 630
 search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/page-2.json" pagetest "${cursor}"
 assert_response page "${TMP_DIR}/page-2.json" last 635 640 >/dev/null
 
+# Paperless Sync can let a user see only the documents with some tags (#391, decision
+# 0015). e2e-other sees every document of the folder Pages through the share above, made by
+# hand, until the line of Paperless Sync gives e2e-other the tag Katja, which the mock gives
+# 610, 624 and 635, in another case than Paperless writes it. Then the search asks Paperless
+# for the documents with that tag alone and shows 624 and 635, whose files the share holds,
+# and 610 through the copy of e2e-other's own, as Paperless Sync writes it while the archive
+# account e2e-user is its target user; a file of e2e-other renamed after 620, which has no
+# such tag, stays hidden. occ and Try a search name the documents without the tag. Without
+# the line, e2e-other sees the folder again, and the own files stand for nothing.
+occ config:app:set paperless_sync target_user --value=e2e-user --lazy >/dev/null
+occ config:app:set paperless_sync user_tags --value='e2e-other = katja' --lazy >/dev/null
+OWN_COPY="${BASE_URL}/remote.php/dav/files/e2e-other/Page%20test%20%5BP610%5D.txt"
+RENAMED_PAGE="${BASE_URL}/remote.php/dav/files/e2e-other/Renamed%20%5BP620%5D.txt"
+printf '%s\n' 'The copy of document 610 that Paperless Sync writes for e2e-other.' \
+	| curl --fail-with-body --silent --show-error --user "e2e-other:${PASSWORD}" --upload-file - "${OWN_COPY}" >/dev/null
+printf '%s\n' 'Not document 620.' \
+	| curl --fail-with-body --silent --show-error --user "e2e-other:${PASSWORD}" --upload-file - "${RENAMED_PAGE}" >/dev/null
+# Apache caches the configuration of the apps for up to 3 seconds: the search may still
+# answer without the line, so it asks again for up to 10.
+for _ in {1..10}; do
+	search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/tagged.json" pagetest
+	if assert_response page "${TMP_DIR}/tagged.json" last 610 624 635 >/dev/null 2>&1; then
+		break
+	fi
+	sleep 1
+done
+assert_response page "${TMP_DIR}/tagged.json" last 610 624 635 >/dev/null
+journal="$(mock_journal)"
+if ! grep --quiet --fixed-strings 'tags__id__in=8' <<<"${journal}"; then
+	echo 'The search of a user with a tag reached Paperless without tags__id__in=8.' >&2
+	exit 1
+fi
+verdicts=()
+for document in {601..621}; do
+	case "${document}" in
+	610) verdicts+=('610=shown=/Page test [P610].txt') ;;
+	620) verdicts+=('620=not_tagged') ;;
+	*) verdicts+=("${document}=not_tagged") ;;
+	esac
+done
+occ paperless_unified_search:search e2e-other pagetest --limit=21 --explain --json >"${TMP_DIR}/explain-tagged.json"
+assert_occ verdicts "${TMP_DIR}/explain-tagged.json" "${verdicts[@]}"
+try_search 200 e2e-other
+assert_occ try "${TMP_DIR}/answer.json" e2e-other 123=not_tagged 999=not_tagged
+occ config:app:delete paperless_sync user_tags >/dev/null
+occ config:app:delete paperless_sync target_user >/dev/null
+for _ in {1..10}; do
+	search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/untagged.json" pagetest
+	if assert_response page "${TMP_DIR}/untagged.json" more 620 624 626 627 630 >/dev/null 2>&1; then
+		break
+	fi
+	sleep 1
+done
+assert_response page "${TMP_DIR}/untagged.json" more 620 624 626 627 630 >/dev/null
+expect_status 204 'Deleting the copy of e2e-other' --user "e2e-other:${PASSWORD}" --request DELETE "${OWN_COPY}"
+expect_status 204 'Deleting the renamed file of e2e-other' --user "e2e-other:${PASSWORD}" --request DELETE "${RENAMED_PAGE}"
+
 # Paperless 3 refuses a query of its advanced syntax that is still being typed with
 # HTTP 400, and the app finds the documents of its words in the simple mode of the
 # search instead; it refuses a page past the last one with HTTP 404, which finds nothing.
@@ -1205,4 +1262,4 @@ phase "Check the log of Nextcloud"
 "${COMPOSE[@]}" exec -T nextcloud sh -c 'test ! -f /var/www/html/data/nextcloud.log || cat /var/www/html/data/nextcloud.log' \
 	| "${COMPOSE[@]}" exec -T paperless-mock python /mock/assert_log.py
 
-echo "Docker E2E passed in ${SECONDS} s: the set-up, the repair step that removes the last failure of version 0.3.0, the test, the explained search and the check of occ, the warnings of occ and of the overview about a token of a superuser and about the archives of Paperless Sync for each user, the own files of the user of the owner of a document, which no renamed file of another user replaces, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, the dashboard widget with the newest documents that a user can open at one request to Paperless a minute, also in French, trusted mode, the choice of a user to include Paperless in every search of their own, which the administrators can disallow, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date and the name of its provider in English, German and French, its correspondent, its type and its tags, pages of results filled across pages of Paperless, documents similar to one with like:, the date filter in the timezone of the user, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, Try a search for administrators only with the IDs, titles, tags and verdicts alone, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."
+echo "Docker E2E passed in ${SECONDS} s: the set-up, the repair step that removes the last failure of version 0.3.0, the test, the explained search and the check of occ, the warnings of occ and of the overview about a token of a superuser and about the archives of Paperless Sync for each user, the own files of the user of the owner of a document, which no renamed file of another user replaces, the warning of the overview, settings for administrators only, the token only for its server, the local network only with the switch of the app, the causes of a failed connection in German and formal German, access filtering by the archive account and its shares, the smart picker and the links it inserts, the dashboard widget with the newest documents that a user can open at one request to Paperless a minute, also in French, trusted mode, the choice of a user to include Paperless in every search of their own, which the administrators can disallow, browser, iOS, and Android contracts, a result with the preview of its file only for who can open it, its date and the name of its provider in English, German and French, its correspondent, its type and its tags, pages of results filled across pages of Paperless, a user whom Paperless Sync lets see only the documents with a tag, also through a share of the folder and their own copy, documents similar to one with like:, the date filter in the timezone of the user, an unfinished query in the simple mode of Paperless 3 and a page past the last one outside the history, a failed and a retried request to Paperless in the history of the problems of the search and its clearing, Try a search for administrators only with the IDs, titles, tags and verdicts alone, the settings page in the browser with its accessibility on a laptop and a phone, its messages and Disconnect, and the search dialog with a result that opens the Viewer on a laptop and a phone."

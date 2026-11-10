@@ -25,6 +25,7 @@ use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
 use OCA\PaperlessUnifiedSearch\Service\PlainText;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
+use OCA\PaperlessUnifiedSearch\Service\UserTags;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Files\File;
 use OCP\IDateTimeFormatter;
@@ -90,6 +91,7 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 		private AlwaysSearch $alwaysSearch,
 		private IUserSession $userSession,
 		private DocumentOwners $documentOwners,
+		private UserTags $userTags,
 	) {
 	}
 
@@ -159,7 +161,14 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 			return SearchResult::complete($this->getName(), []);
 		}
 
-		$filters = $this->getDateFilters($user, $query);
+		// A user who may see only the documents with some tags asks Paperless for those
+		// alone, and meets none while Paperless has none of their tags (decision 0015).
+		$tagIds = $this->userTags->tagIdsOf($user->getUID());
+		if ($tagIds === []) {
+			return SearchResult::complete($this->getName(), []);
+		}
+
+		$filters = $this->getDateFilters($user, $query) + ($tagIds === null ? [] : [PaperlessApiService::TAGS_ANY => implode(',', $tagIds)]);
 		$started = $this->timeFactory->now();
 		$entries = [];
 		$pages = 0;
@@ -175,9 +184,12 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 				$response = $this->paperlessApi->searchDocuments($term, $pager->getPage(), PaperlessPager::PAGE_SIZE, $filters);
 				$hits = $pager->getHitsFromOffset($response['results']);
 				$step = SearchEvent::STEP_FILES;
-				// The files of all documents of the page, in one search of the file cache,
-				// of the archive account or of the user whom Paperless Sync gives the owner.
-				$found = $this->fileLocator->findAllForUser($user, $this->getDocumentIds($hits), $archiveOwner, $this->documentOwners->of($hits));
+				// The files of all documents of the page that the user may see, in one search
+				// of the file cache, of the archive account or of the user whom Paperless Sync
+				// gives the owner, or the user's own for a user with tags. The tags of each
+				// document decide again, whatever Paperless made of the filter.
+				[$documentIds, $documentUsers] = $this->documentOwners->forUser($user, $this->getDocumentIds($hits), $hits);
+				$found = $this->fileLocator->findAllForUser($user, $documentIds, $archiveOwner, $documentUsers);
 
 				// The names of the correspondents, the types and the tags of the documents with
 				// a file, with one request per kind at most, which never fails the search.

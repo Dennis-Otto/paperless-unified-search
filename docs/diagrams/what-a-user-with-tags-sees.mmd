@@ -1,0 +1,21 @@
+---
+config:
+  flowchart:
+    wrappingWidth: 400
+    nodeSpacing: 30
+---
+flowchart TB
+    accTitle: What a user with tags sees
+    accDescr: Paperless Sync lets katja see only the documents with the tag Katja. katja searches for invoice, and the search asks Paperless only for the documents with that tag. It checks the tags of each document that comes back: a document without the tag Katja stays hidden, not among her tags, even when a share of the archive shows katja its file. A document with the tag shows when katja can open its file, her own copy that Paperless Sync writes or a file of the archive account shared with her read-only, and otherwise stays hidden without a file. A user without a line, such as the administrator, sees every document as before.
+
+    search["katja searches for invoice"] --> ask["The search asks Paperless only for<br>the documents with the tag Katja"]
+    ask --> tags{"Does the document carry<br>the tag Katja in Paperless?"}
+    tags -- "no" --> hidden["Hidden: not among her tags,<br>whatever file katja sees"]
+    tags -- "yes" --> file{"Can katja open its file?"}
+    file -- "her own copy from Paperless Sync,<br>or a file of the archive<br>shared read-only" --> shown["katja sees the document"]
+    file -- "no" --> nofile["Hidden: no file"]
+
+    classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
+    classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px
+    class shown yes
+    class hidden,nofile no

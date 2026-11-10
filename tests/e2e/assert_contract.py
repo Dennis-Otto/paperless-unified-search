@@ -91,6 +91,8 @@ CHANGING_DOCUMENTS = {"add_document", "change_document", "delete_document"}
 CORRESPONDENT = "Contract Energy"
 DOCUMENT_TYPE = "Contract bill"
 TAG_NAME = "Contract unpaid"
+# A tag that no document has, as one that Paperless Sync lets a user see (decision 0015).
+OTHER_TAG = "Contract Katja"
 INBOX_TAG = "Contract inbox"
 # A second correspondent, type and tag, which no document names: a list filtered by
 # id__in leaves them out unless the app asks for them. And an ID that no object of
@@ -808,6 +810,39 @@ def check_permissions(paperless, ids, viewer_id, viewer, report):
     check_workflow(paperless, viewer_id, viewer, report)
 
 
+def check_tags(paperless, ids, viewer, report):
+    """The tags that Paperless Sync lets a user see (decision 0015): the app lists every tag
+    that the account of its token may view, page by page with page and page_size as
+    PaperlessApiService::findTags asks, reads the id and the name of each, and narrows a
+    search to the documents with at least one of some tags with tags__id__in, which
+    Paperless has to apply to its full-text search as to a list."""
+    invoice = ids["Contract invoice"]
+    tag = paperless.named("tags", TAG_NAME)
+    other = paperless.named("tags", OTHER_TAG)
+    answer = paperless.as_account(viewer, "/api/tags/", page=1, page_size=1000)
+    expect(answer.status == 200, f"/api/tags/?page=1&page_size=1000 answered the account with HTTP {answer.status}: {answer.body[:300]!r}")
+    data = answer.json("/api/tags/?page=1&page_size=1000")
+    results = data.get("results") if isinstance(data, dict) else None
+    expect(isinstance(results, list), f"/api/tags/ answered without a list results, from which the app reads the tags: {answer.body[:300]!r}")
+    listed = {result.get("id"): result.get("name") for result in results if isinstance(result, dict)}
+    expect(listed.get(tag) == TAG_NAME, f"/api/tags/ doesn't name the tag {tag} {TAG_NAME!r}, which the account may view, by its id and name: {listed!r}")
+    expect(data.get("next") is None, f"/api/tags/ doesn't fit the few tags of the test on one page of 1000: next is {data.get('next')!r}")
+
+    def tagged(tag_ids):
+        query = {"page": 1, "page_size": 25, "fields": ",".join(paperless.fields), "query": RARE_TERM, "tags__id__in": tag_ids}
+        found = paperless.as_account(viewer, "/api/documents/", **query)
+        expect(found.status == 200, f"A search for {RARE_TERM!r} with tags__id__in={tag_ids} answered HTTP {found.status}: {found.body[:300]!r}")
+        return [result["id"] for result in found.json("A search with tags__id__in").get("results", [])]
+
+    both = f"{other},{tag}"
+    expect(tagged(both) == [invoice], f"A search for {RARE_TERM!r} with tags__id__in={both} finds {tagged(both)!r}, not the invoice {invoice} with the tag {tag}.")
+    expect(tagged(str(other)) == [], f"A search for {RARE_TERM!r} with tags__id__in={other}, a tag of no document, finds {tagged(str(other))!r}, not nothing.")
+    report.passed(
+        "Tags that a user may see",
+        f"{code('/api/tags/')} names every tag by its pages, and {code('tags__id__in')} narrows the search to the invoice with its tag, and to nothing with a tag of no document",
+    )
+
+
 def check_workflow(paperless, viewer_id, viewer, report):
     """A workflow with the trigger Document Added and an action Assignment that lets the
     account view each new document, as step 2 of docs/configure.md sets it up. It
@@ -1080,6 +1115,7 @@ def main():
         check_similar(paperless, ids, viewer, unknown, hidden, report)
         check_nextcloud(paperless, line, ids, version, api_version, shown, viewer, report)
         check_permissions(paperless, ids, viewer_id, viewer, report)
+        check_tags(paperless, ids, viewer, report)
         check_syntax(paperless, ids, line, report)
         check_parity(paperless, ids, line, viewer, stranger, report)
         check_search_account(paperless, report)

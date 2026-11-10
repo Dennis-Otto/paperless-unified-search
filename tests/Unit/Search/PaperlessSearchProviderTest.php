@@ -189,6 +189,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			alwaysSearch: new AlwaysSearch($configService, $this->userConfig()),
 			userSession: $this->session('dennis'),
 			documentOwners: $this->documentOwners($paperlessApi, $configService, $this->accounts('archive')),
+			userTags: $this->userTags($paperlessApi, $configService),
 		);
 
 		self::assertTrue($provider->isExternalProvider());
@@ -255,6 +256,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			// Also where no user signed in, such as in occ.
 			userSession: $this->session(null),
 			documentOwners: $this->documentOwners($paperlessApi, $configService, $this->accounts()),
+			userTags: $this->userTags($paperlessApi, $configService),
 		);
 
 		self::assertFalse($provider->isExternalProvider());
@@ -1707,6 +1709,66 @@ final class PaperlessSearchProviderTest extends TestCase {
 	}
 
 	/**
+	 * A user whom Paperless Sync lets see only the documents with some tags (decision 0015)
+	 * asks Paperless for those alone, by the IDs of the tags with their names, and finds
+	 * them through their own copies, which Paperless Sync writes, or the files of the archive
+	 * account shared with them. A document without one of their tags stays hidden, even when
+	 * Paperless leaves the filter out and the archive account shares its file with them, and
+	 * so does a document whose tags Paperless didn't send.
+	 */
+	public function testAUserWithTagsFindsOnlyTheDocumentsWithOneOfThem(): void {
+		$this->config->seed('paperless_sync', 'user_tags', "dennis = katja\nsam = Taxes", true);
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options): IResponse {
+			$this->requests[] = [$url, $options['query']];
+
+			return str_ends_with($url, '/api/tags/')
+				? $this->response(['count' => 3, 'next' => null, 'results' => [['id' => 1, 'name' => 'Inbox'], ['id' => 8, 'name' => 'Katja'], ['id' => 11, 'name' => 'Taxes']]])
+				: $this->response(['count' => 4, 'next' => null, 'results' => [
+					['id' => 7, 'title' => 'Payslip of Katja', 'tags' => [1, 8], 'owner' => 5],
+					['id' => 8, 'title' => 'Letter of sam', 'tags' => [11]],
+					['id' => 9, 'title' => 'Dentist', 'tags' => [8]],
+					['id' => 10, 'title' => 'Without tags'],
+				]]);
+		});
+
+		$result = $this->provider($client, [
+			7 => $this->file(7, 'Payslip [P7].pdf', 'dennis'),
+			8 => $this->file(8, 'Letter [P8].pdf', 'sync'),
+			9 => $this->file(9, 'Dentist [P9].pdf', 'sync'),
+			10 => $this->file(10, 'Mine [P10].pdf', 'dennis'),
+		], archiveOwner: '', syncAccount: 'sync')
+			->search($this->user(), $this->query('letter'))
+			->jsonSerialize();
+
+		self::assertSame(['Payslip of Katja', 'Dentist'], self::titles($result['entries']));
+		self::assertSame('https://paperless.example.com/api/tags/', $this->requests[0][0]);
+		self::assertSame('8', $this->requests[1][1]['tags__id__in']);
+	}
+
+	/**
+	 * While Paperless has none of the tags of a user with tags, after a typo or a rename, or
+	 * doesn't send its tags, the user finds no document, and Paperless isn't searched.
+	 */
+	public function testAUserWithTagsThatPaperlessDoesNotHaveFindsNothing(): void {
+		$this->config->seed('paperless_sync', 'user_tags', 'dennis = Kattja', true);
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url): IResponse {
+			$this->requests[] = $url;
+
+			return $this->response(['count' => 1, 'next' => null, 'results' => [['id' => 8, 'name' => 'Katja']]]);
+		});
+
+		$result = $this->provider($client, [7 => $this->file(7, 'Invoice [P7].pdf', 'sync')], archiveOwner: '', syncAccount: 'sync')
+			->search($this->user(), $this->query('invoice'))
+			->jsonSerialize();
+
+		self::assertSame([], $result['entries']);
+		self::assertSame(['https://paperless.example.com/api/tags/'], $this->requests);
+		self::assertSame(self::NO_PROBLEM, $this->problems());
+	}
+
+	/**
 	 * @return array<string, array{string, string, string}>
 	 */
 	public static function archiveAccountsInAnotherCase(): array {
@@ -1845,6 +1907,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			alwaysSearch: new AlwaysSearch($configService, $this->userConfig()),
 			userSession: $this->session('dennis'),
 			documentOwners: $this->documentOwners($paperlessApi, $configService, $this->accounts('dennis', 'sam')),
+			userTags: $this->userTags($paperlessApi, $configService),
 		);
 	}
 

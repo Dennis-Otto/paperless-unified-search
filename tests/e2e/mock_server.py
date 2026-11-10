@@ -195,6 +195,7 @@ DEMO_ARCHIVE_ONLY = [
 # The ranking of the term "pagetest": 40 documents, more than one page of the requests of
 # the app, which ask for 25 at a time. run.sh shares the files of a few of them, on both
 # pages, with e2e-other, so that a page of its results takes hits from two pages.
+KATJA_PAGES = (610, 624, 635)
 PAGE_TEST_DOCUMENTS = [
     {
         "id": document_id,
@@ -202,6 +203,8 @@ PAGE_TEST_DOCUMENTS = [
         "created": "2026-09-01",
         "added": "2026-09-02T10:00:00.000000+02:00",
         "__search_hit__": {"highlights": f"Synthetic <b>pagetest</b> document {document_id}"},
+        # The tag Katja, which Paperless Sync lets e2e-other see in run.sh, on three of them.
+        **({"tags": [8]} if document_id in KATJA_PAGES else {}),
     }
     for document_id in range(601, 641)
 ]
@@ -273,7 +276,7 @@ LISTS = {
         9: "Hidden correspondent",
     },
     "/api/document_types/": {1: "Bill", 2: "Insurance", 3: "Letter", 4: "Receipt", 5: "Tax"},
-    "/api/tags/": {1: "Inbox", 2: "unpaid", 3: "tax 2026", 4: "paid", 5: "house", 6: "renewal", 7: "warranty"},
+    "/api/tags/": {1: "Inbox", 2: "unpaid", 3: "tax 2026", 4: "paid", 5: "house", 6: "renewal", 7: "warranty", 8: "Katja"},
 }
 INBOX_TAG = 1
 TAGS_PATH = "/api/tags/"
@@ -477,6 +480,12 @@ class Handler(BaseHTTPRequestHandler):
         if "id__in" in parameters:
             wanted = {int(value) for value in parameters["id__in"][0].split(",") if value.isdigit()}
             results = [document for document in results if document["id"] in wanted]
+
+        # And to the documents with at least one of these tags, by their IDs, as for a user
+        # whom Paperless Sync lets see only those.
+        if "tags__id__in" in parameters:
+            wanted = {int(value) for value in parameters["tags__id__in"][0].split(",") if value.isdigit()}
+            results = [document for document in results if wanted & set(document.get("tags", []))]
 
         ordering = parameters.get("ordering", [""])[0]
         if ordering:

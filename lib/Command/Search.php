@@ -17,6 +17,7 @@ use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\SearchExplainer;
 use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
+use OCA\PaperlessUnifiedSearch\Service\UserTags;
 use OCP\IUser;
 use OCP\IUserManager;
 use Symfony\Component\Console\Command\Command;
@@ -52,6 +53,7 @@ final class Search extends Command {
 		'not_owned' => 'not owned',
 		'other_owner' => 'other owner',
 		'no_file' => 'no file',
+		'not_tagged' => 'not tagged',
 	];
 
 	/** @psalm-suppress PossiblyUnusedMethod */
@@ -61,6 +63,7 @@ final class Search extends Command {
 		private SearchExplainer $explainer,
 		private IUserManager $userManager,
 		private SettingsMessages $messages,
+		private UserTags $userTags,
 	) {
 		parent::__construct();
 	}
@@ -79,6 +82,8 @@ final class Search extends Command {
 				  other owner  the user sees a file with its marker of another user than the one
 				               whom Paperless Sync gives the owner of the document
 				  no file      no file of the archive account carries its marker, such as [P412]
+				  not tagged   Paperless Sync lets the user see only the documents with some tags,
+				               and the document has none of them in Paperless
 				HELP)
 			->addArgument('user', InputArgument::REQUIRED, 'The ID of the Nextcloud account that searches')
 			->addArgument('term', InputArgument::REQUIRED, 'What to search for, as in the search of Nextcloud')
@@ -242,8 +247,10 @@ final class Search extends Command {
 	 */
 	private function explainTheOthers(OutputInterface $output, array $explanations, IUser $user, string $archiveOwner): void {
 		// What each reason means and what corrects it, with the documents that it hides:
-		// %1$s is the user, %2$s the archive account, %3$s the IDs and %4$s the first marker.
+		// %1$s is the user, %2$s the archive account, %3$s the IDs, %4$s the first marker and
+		// %5$s the tags that the user may see.
 		$reasons = [
+			[Verdict::NotTagged, 'Not tagged (%3$s): Paperless Sync lets %1$s see only the documents with one of the tags %5$s, and these have none of them in Paperless. Add one to a document in Paperless, or change the tags of %1$s in the setting "Tags that a user may see" of Paperless Sync.'],
 			[Verdict::Writable, 'Writable (%3$s): %1$s may change the file of the archive account %2$s, or add files to its folder, so anyone with that share could have given it the marker of the document. Share it read-only with %1$s.'],
 			[Verdict::NotShared, $this->configService->hasArchivesOfEachOwner()
 				? 'Not shared (%3$s): the archive account %2$s, or the user whom Paperless Sync gives the owner of the document, has the file, but hasn\'t shared it with %1$s. Share the file, or a folder that holds it, read-only with %1$s.'
@@ -258,7 +265,7 @@ final class Search extends Command {
 				array_values(array_filter($explanations, static fn (Explanation $explanation): bool => $explanation->verdict === $verdict)),
 			);
 			if ($documentIds !== []) {
-				$output->writeln(OutputFormatter::escape(sprintf($reason, $user->getUID(), $archiveOwner, implode(', ', $documentIds), '[P' . $documentIds[0] . ']')));
+				$output->writeln(OutputFormatter::escape(sprintf($reason, $user->getUID(), $archiveOwner, implode(', ', $documentIds), '[P' . $documentIds[0] . ']', implode(', ', $this->userTags->namesOf($user->getUID())))));
 			}
 		}
 	}

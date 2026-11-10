@@ -301,6 +301,22 @@ The search needs one thing from a synchronization: each document of Paperless-ng
 
 With **Who gets the documents** set to **Each user, those they own in Paperless**, Paperless Sync writes the documents of each user into their own files instead, and the search shows those too: a file of the user whom Paperless Sync gives the owner of a document in Paperless stands for that document, besides the files of the archive account, and a file renamed after a document of another owner stands for none. The account of the API token then needs **View** for **User**, to learn the usernames of the owners. With **Each user, those they own or may view in Paperless**, the files of the owners count the same way, but not the copies that Paperless Sync gives the users who may only view a document: such a user finds it through a file of its owner or of the archive account that is shared with them, and the settings, `occ paperless_unified_search:check` and the overview say so, with [what you can do](https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html#paperless-sync-gives-each-user-their-own-archive).
 
+### Tags that a user may see
+
+Since its version 1.9.0, Paperless Sync can let a user see only the documents with some tags of Paperless: its setting **Tags that a user may see** takes a line for each such user, such as `katja = Katja, Household`. The search reads the same lines, so the administrator sets them in one place, and shows such a user only the documents that carry at least one of their tags in Paperless, whatever the case of the names, in the search, the smart picker, on the dashboard and in the notifications:
+
+- The tags that Paperless sends with each document decide, never a file: a share of the archive that shows the user more, made by hand before, changes nothing, and neither does a file of theirs renamed after another document. Paperless Sync lists such shares in its settings so that you can remove them.
+- Their own copies, which Paperless Sync writes while the archive account is its target user, stand for the documents with their tags, as do the files of the archive account that are shared with them read-only.
+- A user without a line, such as you as the administrator, and every installation without Paperless Sync, sees what they saw before.
+- A tag removed in Paperless hides its document from the user with the next search. While Paperless has none of their tags, after a typo or a rename, or the account of the API token may not view tags, such a user finds no document at all, never every document.
+
+The administration settings list the users with tags below the archive account, and **Try a search** and `occ paperless_unified_search:search --explain` name a document without one of their tags *Not among the tags that katja may see* (`not tagged`).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/what-a-user-with-tags-sees.dark.svg">
+  <img src="docs/images/diagrams/what-a-user-with-tags-sees.svg" alt="What a user with tags sees: Paperless Sync lets katja see only the documents with the tag Katja. katja searches for invoice, and the search asks Paperless only for the documents with that tag. It checks the tags of each document that comes back: a document without the tag Katja stays hidden, not among her tags, even when a share of the archive shows katja its file. A document with the tag shows when katja can open its file, her own copy that Paperless Sync writes or a file of the archive account shared with her read-only, and otherwise stays hidden without a file. A user without a line, such as the administrator, sees every document as before.">
+</picture>
+
 <!-- --8<-- [end:any-sync] -->
 <!-- --8<-- [start:requirements] -->
 
@@ -660,6 +676,8 @@ Not owned (344): jamie sees a file with the marker of the document, but only the
 No file (356): no file of the archive account paperless has the marker of the document, such as [P356], in its name. The synchronization hasn't written it yet, or names files without it.
 ```
 
+Before these four questions, the search asks one more for a user whom Paperless Sync lets see only the documents with some tags (see *Tags that a user may see*): a document without one of them is `not tagged`, whatever files the user can open.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/why-a-document-does-not-show.dark.svg">
   <img src="docs/images/diagrams/why-a-document-does-not-show.svg" alt="Why a document does not show: Paperless finds document 389 when jamie searches, and occ paperless_unified_search:search jamie invoice --explain asks four questions in turn. Does jamie see a file of the archive account with [P389] in its name? Then the document shows, unless jamie may change that file or add files to its folder: then it is writable, since jamie could have named it so, and sharing it read-only with jamie shows it. Otherwise, does the archive account have such a file in its own folders? Then it is not shared with jamie, and sharing the file or its folder read-only with jamie shows it. Otherwise, does jamie see a file with the marker of another account? Then it is not owned, since only files of the archive account stand for documents. Otherwise there is no file, and the synchronization has yet to write one with the marker in its name.">
@@ -701,6 +719,7 @@ Last, `check` lists with whom the archive account shares its files: the users, g
 - `occ` takes the token from its standard input or an environment variable, never from the command line, where the history of the shell and the list of processes would show it.
 - Nextcloud's protection against addresses of the local network stays on for every app. **Paperless runs in my local network** lifts it only for the requests of this app to the Paperless URL of the settings, which follow no redirect.
 - Search results are filtered through the current user's Nextcloud filesystem view.
+- A user whom Paperless Sync lets see only the documents with some tags meets only the documents whose tags in Paperless, as Paperless sends them with each document, hold one of theirs, everywhere the app shows a document; while Paperless doesn't list their tags, they meet none.
 - A file of the archive account stands for a document only for a user who may only read it: one that the user may change, or one in a folder of the archive account where the user may add files, could carry the marker of any document. The settings, `occ paperless_unified_search:check` and the overview warn about every share of the archive that allows changes.
 - The settings show administrators the history of the problems of the search without the API token, the search term or the query of any URL.
 - **Try a search** shows administrators which documents a user finds for a term, by their IDs, titles and tags alone, without their content, an excerpt or their files; the audit log of the app *Auditing / Logging* (`admin_audit`) records which administrator tried a search as which user, whatever the log level, and so does the log of Nextcloud at level info, without the term.

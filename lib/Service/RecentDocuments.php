@@ -46,12 +46,15 @@ final class RecentDocuments {
 
 	/**
 	 * The newest documents of Paperless, newest first, with the fields that the dashboard
-	 * shows, or null when Paperless didn't send them, now or within the last minute.
+	 * shows, or null when Paperless didn't send them, now or within the last minute: of all
+	 * documents, or with the IDs of some tags only of those with at least one of them, for
+	 * the users who may see only those (decision 0015), which the cache keeps apart.
 	 *
+	 * @param ?list<int> $tagIds
 	 * @return ?list<array<array-key, mixed>>
 	 */
-	public function find(): ?array {
-		$server = hash('sha256', $this->configService->getUrl());
+	public function find(?array $tagIds = null): ?array {
+		$server = hash('sha256', $this->configService->getUrl()) . ($tagIds === null ? '' : '-tags-' . implode('-', $tagIds));
 		$cached = self::documentsOf($this->getCache()->get(self::documentsKey($server)));
 		if ($cached !== null) {
 			return $cached;
@@ -61,7 +64,7 @@ final class RecentDocuments {
 		}
 
 		try {
-			$documents = $this->paperlessApi->findRecentDocuments(self::COUNT);
+			$documents = $this->paperlessApi->findRecentDocuments(self::COUNT, $tagIds === null ? [] : [PaperlessApiService::TAGS_ANY => implode(',', $tagIds)]);
 		} catch (Throwable $error) {
 			$this->getCache()->set(self::restingKey($server), true, self::TTL);
 			$this->logger->warning('Paperless sent the dashboard no newest documents ({error})', [

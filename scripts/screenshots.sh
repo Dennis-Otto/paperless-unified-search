@@ -149,7 +149,7 @@ for app in firstrunwizard nextcloud_announcements survey_client user_status; do
 	occ app:disable "${app}" >/dev/null 2>&1 || true
 done
 occ user:setting e2e-admin settings display_name 'Alex Admin' >/dev/null
-for account in 'paperless:Paperless archive' 'jamie:Jamie Example'; do
+for account in 'paperless:Paperless archive' 'jamie:Jamie Example' 'katja:Katja Example'; do
 	"${COMPOSE[@]}" exec -T --user www-data --env "OC_PASS=${PASSWORD}" nextcloud \
 		php occ user:add --password-from-env --display-name="${account#*:}" "${account%%:*}" >/dev/null
 done
@@ -167,6 +167,10 @@ curl --fail-with-body --silent --show-error \
 	--data-urlencode 'alwaysSearch=0' \
 	--data-urlencode 'archiveOwner=paperless' \
 	"${BASE_URL}/apps/paperless_unified_search/settings" >/dev/null
+
+# Katja may see only the documents with her tags, as the table Tags that a user may see of
+# Paperless Sync says, which the administration settings list below the archive account.
+occ config:app:set paperless_sync user_tags --lazy --value='katja = Katja, Household' >/dev/null
 
 # A history of the problems of the search, of a connection that failed for a while,
 # for the picture of Search problems.

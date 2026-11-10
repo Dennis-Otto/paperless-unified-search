@@ -19,6 +19,7 @@ use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
 use OCA\PaperlessUnifiedSearch\Service\PlainText;
 use OCA\PaperlessUnifiedSearch\Service\RecentDocuments;
+use OCA\PaperlessUnifiedSearch\Service\UserTags;
 use OCP\Dashboard\IAPIWidgetV2;
 use OCP\Dashboard\IButtonWidget;
 use OCP\Dashboard\IConditionalWidget;
@@ -64,6 +65,7 @@ final class RecentDocumentsWidget implements IAPIWidgetV2, IIconWidget, IButtonW
 		private IDateTimeFormatter $dateTimeFormatter,
 		private LoggerInterface $logger,
 		private DocumentOwners $documentOwners,
+		private UserTags $userTags,
 	) {
 	}
 
@@ -152,7 +154,10 @@ final class RecentDocumentsWidget implements IAPIWidgetV2, IIconWidget, IButtonW
 		}
 
 		try {
-			$documents = $this->recentDocuments->find();
+			// A user who may see only the documents with some tags gets the newest of those,
+			// and none while Paperless has none of their tags (decision 0015).
+			$tagIds = $this->userTags->tagIdsOf($user->getUID());
+			$documents = $tagIds === [] ? [] : $this->recentDocuments->find($tagIds);
 			$items = $documents === null ? null : $this->createItems($user, $archiveOwner, self::addedAfter($documents, $since), max(1, $limit));
 		} catch (Throwable $error) {
 			$this->logger->warning('The dashboard could not show the newest Paperless documents ({errorType})', [
@@ -187,7 +192,8 @@ final class RecentDocumentsWidget implements IAPIWidgetV2, IIconWidget, IButtonW
 				$ids[] = $id;
 			}
 		}
-		$files = $this->fileLocator->findAllForUser($user, $ids, $archiveOwner, $this->documentOwners->of($documents))->files;
+		[$visibleIds, $documentUsers] = $this->documentOwners->forUser($user, $ids, $documents);
+		$files = $this->fileLocator->findAllForUser($user, $visibleIds, $archiveOwner, $documentUsers)->files;
 
 		/** @var list<array{array<array-key, mixed>, File}> $shown the documents with a file, and the file */
 		$shown = [];

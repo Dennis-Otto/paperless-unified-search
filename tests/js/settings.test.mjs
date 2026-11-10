@@ -632,6 +632,7 @@ const TRIED = {
 		{ id: 371, title: '<b>Internet</b> invoice', verdict: 'not_owned' },
 		{ id: 365, title: 'Payslip', verdict: 'other_owner' },
 		{ id: 360, title: 'Letter', verdict: 'no_file' },
+		{ id: 355, title: 'Tax return', verdict: 'not_tagged' },
 		{ id: 7, title: 'Old', verdict: 'hidden' },
 	],
 	fileError: false,
@@ -667,7 +668,7 @@ test('Try a search sends the term and the user, and shows why each document show
 	}])
 	// While the server works, the form is busy and the earlier result gone.
 	assert.deepEqual(tries, [{ text: 'Searching Paperless as jamie…', kind: PENDING, busy: 'true', button: 'disabled', result: 0 }])
-	assert.equal(get('try-status').textContent, 'Shown to jamie: 1 of the first 7. Found by Paperless: 12.')
+	assert.equal(get('try-status').textContent, 'Shown to jamie: 1 of the first 8. Found by Paperless: 12.')
 	assert.equal(get('try-status').classList.toString(), SUCCESS)
 	assert.equal(get('try-form').getAttribute('aria-busy'), 'false')
 	assert.equal(get('try').disabled, false)
@@ -691,6 +692,8 @@ test('Try a search sends the term and the user, and shows why each document show
 			// Paperless Sync gives each owner an archive, and the file is of another user.
 			['ID: 365', 'Title: Payslip', 'Shown or why not: Owned in Paperless by another user'],
 			['ID: 360', 'Title: Letter', 'Shown or why not: No file with [P360]'],
+			// Paperless Sync lets jamie see only the documents with some tags (decision 0015).
+			['ID: 355', 'Title: Tax return', 'Shown or why not: Not among the tags that jamie may see'],
 			['ID: 7', 'Title: Old', 'Shown or why not: Hidden'],
 		],
 	})
@@ -799,7 +802,7 @@ test('the verdicts of a try go through the translation of Nextcloud', async func
 
 	await get('try-form').dispatch('submit')
 
-	assert.equal(get('try-status').textContent, 'DE:Shown to jamie: 1 of the first 7. Found by Paperless: 12.')
+	assert.equal(get('try-status').textContent, 'DE:Shown to jamie: 1 of the first 8. Found by Paperless: 12.')
 	assert.deepEqual(rowsOf(get('try-result').children[0]).rows[2], ['DE:ID: 389', 'DE:Title: Home insurance', 'DE:Shown or why not: DE:Not shared with jamie'])
 })
 

@@ -40,4 +40,9 @@ enum Verdict: string {
 	case OtherOwner = 'other_owner';
 	/** No file of the archive account carries the marker of the document. */
 	case NoFile = 'no_file';
+	/**
+	 * Paperless Sync lets the user see only the documents with some tags, and the document
+	 * has none of them in Paperless (decision 0015): no file stands for it, whoever has one.
+	 */
+	case NotTagged = 'not_tagged';
 }

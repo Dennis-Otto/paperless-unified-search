@@ -300,7 +300,29 @@ final class SettingsTemplateTest extends TestCase {
 		foreach ((new DOMXPath($page))->query('//ul[@class="paperless-unified-search-reasons"]/li') ?: [] as $reason) {
 			$reasons[] = explode(':', $this->text($reason))[0];
 		}
-		self::assertSame(['Shared with write permission', 'Not shared', 'Not a file of the archive account', 'Owned in Paperless by another user', 'No file'], $reasons);
+		self::assertSame(['Shared with write permission', 'Not shared', 'Not a file of the archive account', 'Owned in Paperless by another user', 'No file', 'Not among the tags that the user may see'], $reasons);
+	}
+
+	/**
+	 * Below the shares of the archive account, the page names the users whom Paperless Sync
+	 * lets see only the documents with some tags, with their tags, as text, and where to
+	 * change them (decision 0015); without such users, it says nothing about them.
+	 */
+	public function testNamesTheUsersWithTags(): void {
+		[, $page] = $this->render(new PublicConfig(self::STORED, true, false, 'archive'), shares: ['summary' => 'Shared read-only: 1 user.', 'warnings' => []], userTags: ['katja' => ['Katja', 'Household'], '<b>12345</b>' => ['<i>Tax</i>']]);
+
+		$block = $this->element($page, 'paperless-unified-search-user-tags');
+		self::assertSame('paperless-unified-search-shares', $block->previousElementSibling?->getAttribute('id'));
+		self::assertStringContainsString('Tags that a user may see', $this->text($block));
+		$users = [];
+		foreach ((new DOMXPath($page))->query('//ul[@class="paperless-unified-search-user-tags"]/li') ?: [] as $user) {
+			$users[] = $this->text($user);
+		}
+		self::assertSame(['katja: Katja, Household', '<b>12345</b>: <i>Tax</i>'], $users);
+
+		[, $page] = $this->render(new PublicConfig(self::STORED, true, false));
+
+		self::assertNull($page->getElementById('paperless-unified-search-user-tags'));
 	}
 
 	public function testEveryIdIsUnique(): void {
@@ -468,9 +490,10 @@ final class SettingsTemplateTest extends TestCase {
 	 * @param ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, durationMs: int}>} $history
 	 * @param ?array{summary: string, warnings: list<string>} $shares
 	 * @param list<string> $tokenWarnings the warnings about the account of the API token, as AdminSettings words them
+	 * @param array<string, list<string>> $userTags the tags that some users may see, by their IDs
 	 * @return array{string, DOMDocument}
 	 */
-	private function render(PublicConfig $config, ?array $history = null, string $saveUrl = '/settings/save', ?array $shares = null, array $tokenWarnings = [], string $syncUrl = '', bool $syncAllowLocal = false): array {
+	private function render(PublicConfig $config, ?array $history = null, string $saveUrl = '/settings/save', ?array $shares = null, array $tokenWarnings = [], string $syncUrl = '', bool $syncAllowLocal = false, array $userTags = []): array {
 		$l10n = $this->createStub(IL10N::class);
 		$l10n->method('t')->willReturnCallback(
 			static fn (string $text, array $parameters = []): string => vsprintf($text, $parameters),
@@ -490,6 +513,7 @@ final class SettingsTemplateTest extends TestCase {
 			'syncAllowLocal' => $syncAllowLocal,
 			'history' => $history,
 			'shares' => $shares,
+			'userTags' => $userTags,
 		];
 
 		ob_start();

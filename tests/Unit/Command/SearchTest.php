@@ -416,6 +416,26 @@ final class SearchTest extends TestCase {
 		self::assertStringContainsString('Other owner (502): jamie sees a file with the marker of the document, but Paperless names another owner of it, and only the files of the archive account archive and of the user whom Paperless Sync gives that owner stand for it.', $display);
 	}
 
+	/**
+	 * For a user whom Paperless Sync lets see only the documents with some tags (decision
+	 * 0015), the table names a document without one of them, and the reasons below it name
+	 * the tags of the user and where to change them.
+	 */
+	public function testExplainsTheDocumentsWithoutTheTagsOfTheUser(): void {
+		$this->settings['paperless_sync.user_tags'] = 'jamie = Katja, Household';
+		$this->file('/jamie/files/Paperless/Electricity [P412].pdf');
+		$this->file('/jamie/files/Paperless/Insurance [P389].pdf');
+		$tags = $this->answer(200, (string)json_encode(['count' => 2, 'next' => null, 'results' => [['id' => 1, 'name' => 'Inbox'], ['id' => 8, 'name' => 'Katja']]]));
+		$tester = $this->tester($this->documents([['id' => 412, 'title' => 'Electricity', 'tags' => [8]], ['id' => 389, 'title' => 'Insurance', 'tags' => [1]]], 2), $tags);
+
+		self::assertSame(Command::SUCCESS, $tester->execute(['user' => 'jamie', 'term' => 'invoice', '--explain' => true]));
+
+		$display = $tester->getDisplay();
+		self::assertStringContainsString('| 389 | Insurance   | not tagged |', $display);
+		self::assertStringContainsString('Not tagged (389): Paperless Sync lets jamie see only the documents with one of the tags Katja, Household, and these have none of them in Paperless. Add one to a document in Paperless, or change the tags of jamie in the setting "Tags that a user may see" of Paperless Sync.', $display);
+		self::assertStringContainsString('not tagged   Paperless Sync lets the user see only the documents with some tags,', $this->command()->getHelp());
+	}
+
 	private function tester(IResponse|Throwable ...$answers): CommandTester {
 		return new CommandTester($this->command(...$answers));
 	}
@@ -426,13 +446,17 @@ final class SearchTest extends TestCase {
 		$locator = new NextcloudFileLocator($this->rootFolder(), $this->createStub(LoggerInterface::class));
 
 		$paperlessApi = $this->paperlessApi($configService, $this->paperless(...$answers));
+		// One cache for the users and the tags of Paperless, as in Nextcloud.
+		$cacheFactory = $this->memoryCacheFactory();
+		$userTags = $this->userTags($paperlessApi, $configService, $cacheFactory);
 
 		return new Search(
 			$configService,
 			$paperlessApi,
-			new SearchExplainer($locator, $accounts, $this->documentOwners($paperlessApi, $configService, $accounts)),
+			new SearchExplainer($locator, $accounts, $this->documentOwners($paperlessApi, $configService, $accounts, $cacheFactory), $userTags),
 			$accounts,
 			$this->messages(),
+			$userTags,
 		);
 	}
 

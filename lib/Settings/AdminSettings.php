@@ -15,6 +15,7 @@ use OCA\PaperlessUnifiedSearch\Service\ArchiveShares;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
+use OCA\PaperlessUnifiedSearch\Service\UserTags;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\IDateTimeFormatter;
 use OCP\IURLGenerator;
@@ -53,6 +54,9 @@ final class AdminSettings implements ISettings {
 			'syncAllowLocal' => $config->url === '' && $this->configService->isSyncLocalNetworkAllowed(),
 			'history' => $this->getHistory(),
 			'shares' => $this->getShares(),
+			// The users whom Paperless Sync lets see only the documents with some tags, which
+			// its own settings change (decision 0015).
+			'userTags' => UserTags::parse($this->configService->getSyncUserTags()),
 		]);
 	}
 

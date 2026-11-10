@@ -80,6 +80,7 @@ final class NewDocumentAlerts {
 		private ITimeFactory $timeFactory,
 		private LoggerInterface $logger,
 		private DocumentOwners $documentOwners,
+		private UserTags $userTags,
 	) {
 	}
 
@@ -111,9 +112,11 @@ final class NewDocumentAlerts {
 			}
 
 			$progress = $this->withNewDocuments($progress, $progress->lastSeen, $now);
-			$documentUsers = $this->documentOwners->of(self::ownersOf($progress));
+			$waiting = $this->documentsOf($progress);
+			$documentUsers = $this->documentOwners->of($waiting);
 			$files = $this->filesOfTheArchive($progress, $archiveOwner, $documentUsers);
 			$found = $files === [] ? [] : $this->findTerms($choices, array_keys($files));
+			$documents = self::arrived($waiting, $files);
 		} catch (Throwable $error) {
 			$this->rest($progress, $now, $error);
 
@@ -134,7 +137,7 @@ final class NewDocumentAlerts {
 
 		foreach ($choices as $userId => $choice) {
 			// PHP keeps the ID of a user like 12345 as a number in the keys of the array.
-			$this->notifyUser((string)$userId, self::wantedOf($choice, array_keys($files), $found), $progress, $archiveOwner, $documentUsers);
+			$this->notifyUser((string)$userId, self::wantedOf($choice, array_keys($files), $found), $progress, $archiveOwner, $documents);
 		}
 	}
 
@@ -205,6 +208,47 @@ final class NewDocumentAlerts {
 		}
 
 		return $documents;
+	}
+
+	/**
+	 * The waiting documents with the IDs of their owners: as the job first saw them, or,
+	 * while some users may see only the documents with some tags (decision 0015), as
+	 * Paperless has them now, with their tags, which may have come or gone since, in one
+	 * request. Their tags decide both where the file of each one arrives, since Paperless
+	 * Sync writes a document of an owner with tags into that owner's own folder only when
+	 * it carries one of them, and which user each run below may tell about it.
+	 *
+	 * @return list<array<array-key, mixed>>
+	 * @throws Throwable when Paperless doesn't send them
+	 */
+	private function documentsOf(AlertProgress $progress): array {
+		$documentIds = array_keys($progress->waiting);
+		if ($documentIds === [] || $this->userTags->lines() === []) {
+			return self::ownersOf($progress);
+		}
+
+		return $this->paperlessApi->findDocumentTags($documentIds);
+	}
+
+	/**
+	 * Those of the documents whose files have arrived, which each user's run below goes
+	 * through.
+	 *
+	 * @param list<array<array-key, mixed>> $documents
+	 * @param array<int, File> $files the files that have arrived, by document
+	 * @return list<array<array-key, mixed>>
+	 */
+	private static function arrived(array $documents, array $files): array {
+		$arrived = [];
+		foreach ($documents as $document) {
+			/** @psalm-suppress MixedAssignment Checked before use. */
+			$id = $document['id'] ?? null;
+			if (is_int($id) && isset($files[$id])) {
+				$arrived[] = $document;
+			}
+		}
+
+		return $arrived;
 	}
 
 	/**
@@ -312,19 +356,22 @@ final class NewDocumentAlerts {
 
 	/**
 	 * One notification about the documents whose files the user can open, and none without
-	 * any. A user whose files fail to answer costs only their own notification.
+	 * any; for a user with tags only about those with one of them. A user whose files fail
+	 * to answer costs only their own notification.
 	 *
 	 * @param list<int> $documentIds
-	 * @param array<int, string> $documentUsers the user of the owner, by the ID of the document
+	 * @param list<array<array-key, mixed>> $documents the documents with files, with their
+	 *                                                 owners and tags
 	 */
-	private function notifyUser(string $userId, array $documentIds, AlertProgress $progress, string $archiveOwner, array $documentUsers): void {
+	private function notifyUser(string $userId, array $documentIds, AlertProgress $progress, string $archiveOwner, array $documents): void {
 		try {
 			$user = $this->userManager->get($userId);
 			if ($user === null || !$user->isEnabled()) {
 				return;
 			}
 
-			$files = $this->fileLocator->findAllForUser($user, $documentIds, $archiveOwner, $documentUsers)->files;
+			[$visibleIds, $documentUsers] = $this->documentOwners->forUser($user, $documentIds, $documents);
+			$files = $this->fileLocator->findAllForUser($user, $visibleIds, $archiveOwner, $documentUsers)->files;
 			if ($files !== []) {
 				$this->notify($user, $files, $progress);
 			}
