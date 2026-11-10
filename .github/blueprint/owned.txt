@@ -8,6 +8,7 @@
 .devcontainer/devcontainer-lock.json
 .devcontainer/devcontainer.json
 .devcontainer/setup.sh
+.devcontainer/shellcheck-requirements.txt
 .editorconfig
 .gitattributes
 .githooks/pre-push
@@ -62,6 +63,7 @@
 .github/docs-requirements.txt
 .github/download.sh
 .github/egress-firewall.yaml
+.github/gitleaks.sh
 .github/issue-assistant/config.toml
 .github/lychee.sh
 .github/markdownlint.jsonc

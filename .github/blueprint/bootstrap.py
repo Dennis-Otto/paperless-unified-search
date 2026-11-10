@@ -55,6 +55,7 @@ EXECUTABLES = (
     ".githooks/pre-push",
     ".github/blueprint.py",
     ".github/download.sh",
+    ".github/gitleaks.sh",
     ".github/lychee.sh",
     ".github/sign-tag.sh",
     "app/entrypoint.sh",

@@ -208,8 +208,8 @@
       // their sha256, each on its line "# renovate:": the blueprint writes the
       // checksum of each new version beside it.
       matchManagers: ["custom.regex"],
-      matchDepNames: ["sigstore/gitsign", "infection/infection", "ChristophWurst/krankerl", "nextcloud/server", "anchore/syft", "lycheeverse/lychee"],
-      matchFileNames: [".github/workflows/**", ".github/sign-tag.sh", ".github/lychee.sh"],
+      matchDepNames: ["sigstore/gitsign", "infection/infection", "ChristophWurst/krankerl", "nextcloud/server", "anchore/syft", "lycheeverse/lychee", "gitleaks/gitleaks"],
+      matchFileNames: [".github/workflows/**", ".github/sign-tag.sh", ".github/lychee.sh", ".github/gitleaks.sh"],
       enabled: false,
     },
     {

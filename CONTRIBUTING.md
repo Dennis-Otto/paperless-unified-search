@@ -82,7 +82,7 @@ git config core.hooksPath .githooks
 
 Git runs the hook only when its file is executable. Windows has no such mode and adds the file as a plain one, which `scripts/check.sh` reports; `git update-index --chmod=+x .githooks/pre-push` and a commit make it executable.
 
-The dev container in `.devcontainer/` has all of this set up, for VS Code and for GitHub Codespaces: open the repository in it, and `bash scripts/check.sh` runs.
+The dev container in `.devcontainer/` has all of this set up, ShellCheck for the step *Shell scripts* as well, for VS Code and for GitHub Codespaces: open the repository in it, and `bash scripts/check.sh` runs.
 
 ## When a check fails
 
