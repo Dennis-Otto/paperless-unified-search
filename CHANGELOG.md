@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [1.6.2](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.6.1...v1.6.2) (2026-11-10)
+
+
+### Bug fixes
+
+* a save of the settings forgets a refused name lookup at once ([#380](https://github.com/Dennis-Otto/paperless-unified-search/issues/380)) ([8160924](https://github.com/Dennis-Otto/paperless-unified-search/commit/81609242aa6d5eaa6af7e06c52efc43c06c43ca9))
+* **ci:** the job that opens the pull request of the demo animation blocks every other host ([#375](https://github.com/Dennis-Otto/paperless-unified-search/issues/375)) ([64f66f7](https://github.com/Dennis-Otto/paperless-unified-search/commit/64f66f73e49fe9e92d85fc65cf2ef006c4946fa7))
+
 ## [1.6.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.6.0...v1.6.1) (2026-11-09)
 
 ### Bug fixes
