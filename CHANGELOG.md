@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [1.7.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.6.2...v1.7.0) (2026-11-10)
+
+
+### Features
+
+* the search shows a user only the documents with the tags the admin allows them ([#392](https://github.com/Dennis-Otto/paperless-unified-search/issues/392)) ([d1a92a1](https://github.com/Dennis-Otto/paperless-unified-search/commit/d1a92a1538c3f5f86440447068f87abe81a2779c))
+
 ## [1.6.2](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.6.1...v1.6.2) (2026-11-10)
 
 ### Bug fixes
