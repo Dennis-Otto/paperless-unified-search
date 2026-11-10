@@ -676,7 +676,7 @@ Not owned (344): jamie sees a file with the marker of the document, but only the
 No file (356): no file of the archive account paperless has the marker of the document, such as [P356], in its name. The synchronization hasn't written it yet, or names files without it.
 ```
 
-Before these four questions, the search asks one more for a user whom Paperless Sync lets see only the documents with some tags ([Tags that a user may see](#tags-that-a-user-may-see)): a document without one of them is `not tagged`, whatever files the user can open.
+Before these four questions, the search asks one more for a user whom Paperless Sync lets see only the documents with some tags (see *Tags that a user may see*): a document without one of them is `not tagged`, whatever files the user can open.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/why-a-document-does-not-show.dark.svg">
