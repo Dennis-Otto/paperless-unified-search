@@ -6,11 +6,10 @@ All notable changes to this project are documented in this file.
 
 ## [1.6.2](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.6.1...v1.6.2) (2026-11-10)
 
-
 ### Bug fixes
 
-* a save of the settings forgets a refused name lookup at once ([#380](https://github.com/Dennis-Otto/paperless-unified-search/issues/380)) ([8160924](https://github.com/Dennis-Otto/paperless-unified-search/commit/81609242aa6d5eaa6af7e06c52efc43c06c43ca9))
-* **ci:** the job that opens the pull request of the demo animation blocks every other host ([#375](https://github.com/Dennis-Otto/paperless-unified-search/issues/375)) ([64f66f7](https://github.com/Dennis-Otto/paperless-unified-search/commit/64f66f73e49fe9e92d85fc65cf2ef006c4946fa7))
+- **The job that opens the pull request of the demo animation reaches GitHub alone.** It holds the private key of the release app, whose token may write the contents of the repository, yet Harden-Runner only recorded where it connected. Now it blocks every host but GitHub's API, `github.com` and the receiver of the artifacts, the hosts that its runs reached, and it runs without `sudo` and Docker, which could lift the block. It and the four weekly jobs that open issues now also stop when Harden-Runner doesn't block, as in GitHub's outage of 8 November 2026, instead of reaching every host.
+- **A save of the settings shows the names of correspondents, types and tags at once.** When Paperless refused the list of correspondents, types or tags to the account of the API token, the search didn't ask for it again for ten minutes, also after the account got **View** for **Tag** and the settings were saved, in the browser or with `occ paperless_unified_search:setup`. Now a save asks anew, as it does for the users of Paperless, and another token, such as the one of a search account that the settings create, no longer shows the names that the token before it was given.
 
 ## [1.6.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.6.0...v1.6.1) (2026-11-09)
 
