@@ -130,6 +130,15 @@
 	padding: 0;
 }
 
+/* The users whom Paperless Sync lets see only the documents with some tags, below them. */
+.paperless-unified-search-settings .paperless-unified-search-user-tags {
+	display: grid;
+	gap: 4px;
+	list-style: disc;
+	margin: 4px 0 0;
+	padding-inline-start: 20px;
+}
+
 .paperless-unified-search-actions {
 	display: flex;
 	flex-wrap: wrap;

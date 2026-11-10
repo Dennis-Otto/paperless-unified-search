@@ -210,24 +210,18 @@ final class NewDocumentAlerts {
 	}
 
 	/**
-	 * The documents whose files have arrived, with the IDs of their owners: as the job first
-	 * saw them, or while some users may see only the documents with some tags (decision
-	 * 0015), as Paperless has them now, with their tags, which may have come or gone since,
-	 * in one request.
+	 * The documents with the IDs of their owners, which each user's run below goes through
+	 * for those whose files have arrived: the waiting ones as the job first saw them, or,
+	 * while some users may see only the documents with some tags (decision 0015), those
+	 * whose files have arrived as Paperless has them now, with their tags, which may have
+	 * come or gone since, in one request.
 	 *
-	 * @param non-empty-list<int> $documentIds
+	 * @param non-empty-list<int> $documentIds the documents whose files have arrived
 	 * @return list<array<array-key, mixed>>
 	 * @throws Throwable when Paperless doesn't send them
 	 */
 	private function documentsOf(AlertProgress $progress, array $documentIds): array {
-		if ($this->userTags->lines() !== []) {
-			return $this->paperlessApi->findDocumentTags($documentIds);
-		}
-
-		return array_values(array_filter(
-			self::ownersOf($progress),
-			static fn (array $document): bool => in_array($document['id'], $documentIds, true),
-		));
+		return $this->userTags->lines() === [] ? self::ownersOf($progress) : $this->paperlessApi->findDocumentTags($documentIds);
 	}
 
 	/**
