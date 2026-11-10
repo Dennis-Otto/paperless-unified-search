@@ -4,7 +4,7 @@ description: "Why the copies of the owners count with Paperless Sync's per-user-
 
 # Count the copies of the owners in every mode of Paperless Sync for each user, and check them
 
-- Status: accepted, amends [0013](0013-trust-the-files-of-each-owner.md)
+- Status: accepted, amends [0013](0013-trust-the-files-of-each-owner.md), amended by [0015](0015-show-a-user-with-tags-only-the-documents-with-one-of-them.md)
 - Date: 2026-11-09
 
 ## Context

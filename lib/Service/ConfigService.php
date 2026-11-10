@@ -74,6 +74,12 @@ final class ConfigService {
 	 */
 	private const SYNC_USER_MAP_KEY = 'user_map';
 	private const SYNC_USER_GROUP_KEY = 'user_group';
+	/**
+	 * And in every choice, since its version 1.9.0, its table Tags that a user may see: one
+	 * line for each user of Nextcloud who may see only the documents with some tags of
+	 * Paperless, such as katja = Katja, Household (decision 0015).
+	 */
+	private const SYNC_USER_TAGS_KEY = 'user_tags';
 	private const DEFAULT_PORTS = ['http' => 80, 'https' => 443];
 	/**
 	 * A name of a host as DNS, a hosts file or the network of Docker know it: letters and
@@ -216,6 +222,27 @@ final class ConfigService {
 	 */
 	public function getSyncUserGroup(): string {
 		return trim($this->config->getValueString(self::SYNC_APP_ID, self::SYNC_USER_GROUP_KEY, '', lazy: true));
+	}
+
+	/**
+	 * The table Tags that a user may see of Paperless Sync, as it stores it: one line such as
+	 * katja = Katja, Household for each user of Nextcloud who may see only the documents with
+	 * at least one of those tags of Paperless.
+	 */
+	public function getSyncUserTags(): string {
+		return $this->config->getValueString(self::SYNC_APP_ID, self::SYNC_USER_TAGS_KEY, '', lazy: true);
+	}
+
+	/**
+	 * Whether the archive account is the target user of Paperless Sync, which then writes the
+	 * files of the archive and, for each user with tags, the copies of the documents with
+	 * their tags into that user's own files (decision 0015). With another archive account,
+	 * the files of Paperless Sync stand for no document.
+	 */
+	public function isSyncArchive(): bool {
+		$archive = $this->getArchiveOwner();
+
+		return $archive !== '' && $archive === $this->accountId($this->getSyncAccount());
 	}
 
 	/**

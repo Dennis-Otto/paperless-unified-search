@@ -295,7 +295,7 @@ final class CreateAccountTest extends TestCase {
 			$this->messages(),
 			$l10n,
 			$logger,
-			new SearchExplainer(new NextcloudFileLocator($this->createStub(IRootFolder::class), $logger), $accounts, $owners),
+			new SearchExplainer(new NextcloudFileLocator($this->createStub(IRootFolder::class), $logger), $accounts, $owners, $this->userTags($api, $configService)),
 			$accounts,
 			$session,
 			$events,

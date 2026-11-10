@@ -205,6 +205,38 @@ final class ConfigServiceTest extends TestCase {
 	}
 
 	/**
+	 * Since its version 1.9.0, Paperless Sync keeps its table Tags that a user may see as a
+	 * lazy value, which the search reads as it is (decision 0015). The copies that it writes
+	 * for the users with tags count only while the archive account is its target user, as
+	 * Nextcloud spells the ID.
+	 *
+	 * @return array<string, array{string, string, bool}>
+	 */
+	public static function archivesOfPaperlessSync(): array {
+		return [
+			'its target user' => ['', 'sync', true],
+			'its target user, named in the settings in another case' => ['Sync', 'sync', true],
+			'its target user, stored in another case' => ['', 'SYNC', true],
+			'another archive account' => ['archive', 'sync', false],
+			'no target user' => ['archive', '', false],
+			'neither' => ['', '', false],
+			'a target user that does not exist' => ['', 'deleted', false],
+		];
+	}
+
+	#[DataProvider('archivesOfPaperlessSync')]
+	public function testTellsWhetherTheArchiveAccountIsTheTargetUserOfPaperlessSync(string $setting, string $syncAccount, bool $syncArchive): void {
+		$config = $this->settings([AppConstants::APP_ID . '.archive_owner' => $setting])
+			->seed('paperless_sync', 'target_user', $syncAccount, true)
+			->seed('paperless_sync', 'user_tags', "katja = Katja\nsam = Taxes", true);
+
+		$service = $this->service($config, $this->createStub(ICredentialsManager::class));
+
+		self::assertSame($syncArchive, $service->isSyncArchive());
+		self::assertSame("katja = Katja\nsam = Taxes", $service->getSyncUserTags());
+	}
+
+	/**
 	 * Disconnecting forgets the archive account of the settings, so the target user of
 	 * Paperless Sync is the archive account again, and the warning stays for the next
 	 * connection.

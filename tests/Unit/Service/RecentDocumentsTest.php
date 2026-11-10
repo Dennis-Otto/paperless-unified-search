@@ -69,6 +69,26 @@ final class RecentDocumentsTest extends TestCase {
 	}
 
 	/**
+	 * For the users who may see only the documents with some tags (decision 0015), the
+	 * dashboard asks for the newest documents with one of them, which the cache keeps apart
+	 * from those of everyone, for every user with the same tags.
+	 */
+	public function testTheDocumentsWithSomeTagsAreKeptApart(): void {
+		$recent = $this->recent($this->paperless($this->documents([self::DOCUMENTS[1]]), $this->documents(self::DOCUMENTS)));
+
+		self::assertSame([self::DOCUMENTS[1]], $recent->find([8, 9]));
+		self::assertSame(self::DOCUMENTS, $recent->find());
+		self::assertSame([self::DOCUMENTS[1]], $recent->find([8, 9]));
+		self::assertCount(2, $this->requests);
+		self::assertSame('8,9', $this->requests[0][1]['query']['tags__id__in']);
+		self::assertArrayNotHasKey('tags__id__in', $this->requests[1][1]['query']);
+		self::assertSame([
+			'recent-documents-' . hash('sha256', 'https://paperless.example.com') . '-tags-8-9',
+			'recent-documents-' . hash('sha256', 'https://paperless.example.com'),
+		], array_keys($this->cache->values()));
+	}
+
+	/**
 	 * Every request to Paperless carries the token of the settings, so the newest documents
 	 * are the same for every user: within a minute, the dashboards of all users cost one
 	 * request.

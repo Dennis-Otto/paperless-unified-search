@@ -301,6 +301,22 @@ Die Suche braucht eines von einer Synchronisierung: jedes Dokument von Paperless
 
 Mit **Wer die Dokumente erhält** auf **Jeder Benutzer, die ihm in Paperless gehören** schreibt Paperless Sync die Dokumente jedes Benutzers stattdessen in dessen eigene Dateien, und die Suche zeigt auch diese: Eine Datei des Benutzers, dem Paperless Sync den Eigentümer eines Dokuments in Paperless gibt, steht für dieses Dokument, neben den Dateien des Archiv-Kontos, und eine Datei, die nach einem Dokument eines anderen Eigentümers umbenannt ist, steht für keines. Das Konto des API-Tokens braucht dann **Anzeigen** für **Benutzer** (*User*), um die Benutzernamen der Eigentümer zu erfahren. Mit **Jeder Benutzer, die ihm in Paperless gehören oder die er ansehen darf** zählen die Dateien der Eigentümer ebenso, aber nicht die Kopien, die Paperless Sync den Benutzern gibt, die ein Dokument nur ansehen dürfen: Ein solcher Benutzer findet es über eine Datei seines Eigentümers oder des Archiv-Kontos, die mit ihm geteilt ist, und die Einstellungen, `occ paperless_unified_search:check` und die Übersicht sagen es, mit dem, [was du tun kannst](https://dennis-otto.github.io/paperless-unified-search/de/troubleshooting.html#paperless-sync-gibt-jedem-benutzer-ein-eigenes-archiv).
 
+### Tags, die ein Benutzer sehen darf
+
+Seit seiner Version 1.9.0 kann Paperless Sync einen Benutzer nur die Dokumente mit bestimmten Tags von Paperless sehen lassen: Seine Einstellung **Tags, die ein Benutzer sehen darf** nimmt für jeden solchen Benutzer eine Zeile, etwa `katja = Katja, Household`. Die Suche liest dieselben Zeilen, so stellt der Administrator sie an einer Stelle ein, und zeigt einem solchen Benutzer nur die Dokumente, die in Paperless mindestens einen seiner Tags tragen, gleich in welcher Schreibweise, in der Suche, im Smart Picker, auf dem Dashboard und in den Benachrichtigungen:
+
+- Es entscheiden die Tags, die Paperless mit jedem Dokument schickt, nie eine Datei: Eine Freigabe des Archivs, die dem Benutzer mehr zeigt und früher von Hand angelegt wurde, ändert nichts, und eine eigene Datei, die nach einem anderen Dokument umbenannt ist, ebenso wenig. Paperless Sync listet solche Freigaben in seinen Einstellungen, damit du sie entfernen kannst.
+- Seine eigenen Kopien, die Paperless Sync schreibt, solange das Archiv-Konto dessen Zielbenutzer ist, stehen für die Dokumente mit seinen Tags, ebenso wie die Dateien des Archiv-Kontos, die nur lesend mit ihm geteilt sind.
+- Ein Benutzer ohne Zeile, etwa du als Administrator, und jede Installation ohne Paperless Sync sieht, was er bisher sah.
+- Ein in Paperless entfernter Tag verbirgt sein Dokument mit der nächsten Suche vor dem Benutzer. Solange Paperless keinen seiner Tags hat, nach einem Tippfehler oder einer Umbenennung, oder das Konto des API-Tokens keine Tags ansehen darf, findet ein solcher Benutzer gar kein Dokument, nie jedes.
+
+Die Administrationseinstellungen listen die Benutzer mit Tags unter dem Archiv-Konto, und **Suche ausprobieren** und `occ paperless_unified_search:search --explain` nennen ein Dokument ohne einen seiner Tags *Nicht unter den Tags, die katja sehen darf* (`not tagged`).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/what-a-user-with-tags-sees.de.dark.svg">
+  <img src="docs/images/diagrams/what-a-user-with-tags-sees.de.svg" alt="Was ein Benutzer mit Tags sieht: Paperless Sync lässt katja nur die Dokumente mit dem Tag Katja sehen. katja sucht nach Rechnung, und die Suche fragt Paperless nur nach den Dokumenten mit diesem Tag. Sie prüft die Tags jedes Dokuments, das zurückkommt: Ein Dokument ohne den Tag Katja bleibt verborgen, nicht unter ihren Tags, auch wenn eine Freigabe des Archivs katja seine Datei zeigt. Ein Dokument mit dem Tag erscheint, wenn katja seine Datei öffnen kann, ihre eigene Kopie, die Paperless Sync schreibt, oder eine Datei des Archiv-Kontos, die nur lesend mit ihr geteilt ist, und bleibt sonst ohne Datei verborgen. Ein Benutzer ohne Zeile, etwa der Administrator, sieht wie bisher jedes Dokument.">
+</picture>
+
 <!-- --8<-- [end:any-sync] -->
 <!-- --8<-- [start:requirements] -->
 
@@ -701,6 +717,7 @@ Zuletzt listet `check`, mit wem das Archiv-Konto seine Dateien teilt: die Benutz
 - `occ` nimmt das Token von seiner Standardeingabe oder aus einer Umgebungsvariablen, nie von der Befehlszeile, wo der Verlauf der Shell und die Liste der Prozesse es zeigen würden.
 - Der Schutz von Nextcloud vor Adressen des lokalen Netzwerks bleibt für jede App eingeschaltet. **Paperless läuft in meinem lokalen Netzwerk** hebt ihn nur für die Anfragen dieser App an die Paperless-URL der Einstellungen auf, die keiner Weiterleitung folgen.
 - Suchtreffer werden über die Sicht des aktuellen Benutzers auf das Dateisystem von Nextcloud gefiltert.
+- Ein Benutzer, den Paperless Sync nur die Dokumente mit bestimmten Tags sehen lässt, trifft nur auf die Dokumente, deren Tags in Paperless, wie Paperless sie mit jedem Dokument schickt, einen seiner Tags enthalten, überall, wo die App ein Dokument zeigt; solange Paperless seine Tags nicht auflistet, auf keines.
 - Eine Datei des Archiv-Kontos steht nur für einen Benutzer, der sie nur lesen darf, für ein Dokument: Eine, die der Benutzer ändern darf, oder eine in einem Ordner des Archiv-Kontos, in den er Dateien legen darf, könnte die Kennung eines beliebigen Dokuments tragen. Die Einstellungen, `occ paperless_unified_search:check` und die Übersicht warnen vor jeder Freigabe des Archivs, die Änderungen erlaubt.
 - Die Einstellungen zeigen Administratoren den Verlauf der Probleme der Suche ohne das API-Token, den Suchbegriff und die Abfrage einer URL.
 - **Suche ausprobieren** zeigt Administratoren, welche Dokumente ein Benutzer zu einem Begriff findet, nur mit ihren IDs, Titeln und Tags, ohne ihren Inhalt, einen Ausschnitt oder ihre Dateien; das Audit-Protokoll der App *Auditing / Logging* (`admin_audit`) hält fest, welcher Administrator als welcher Benutzer gesucht hat, gleich bei welcher Protokollstufe, ebenso das Protokoll von Nextcloud auf der Stufe info, ohne den Begriff.

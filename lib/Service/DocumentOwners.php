@@ -37,6 +37,11 @@ use Throwable;
  * view users, the search shows only the files of the archive account, as before, and the
  * list rests for a while, so that every search doesn't wait for it, until the settings are
  * saved or occ paperless_unified_search:check looks again (forget()).
+ *
+ * A user with tags in Paperless Sync's table Tags that a user may see gets only the documents
+ * with one of them (decision 0015), in their own files: so their own files stand for those
+ * documents in their own search, and for nobody a document without one of their tags, which
+ * Paperless Sync gives the target user instead, even when that user owns it in Paperless.
  */
 final class DocumentOwners {
 	/** The seconds that the cache keeps the users of Paperless, and a list that it refused. */
@@ -55,7 +60,33 @@ final class DocumentOwners {
 		private IGroupManager $groupManager,
 		private ICacheFactory $cacheFactory,
 		private LoggerInterface $logger,
+		private UserTags $userTags,
 	) {
+	}
+
+	/**
+	 * Which of these documents the user may see, and whose own files stand for each of them
+	 * in the user's search besides those of the archive account: for a user with tags the
+	 * documents with one of them and the user themselves, whose copies Paperless Sync writes
+	 * into their own files while the archive account is its target user (decision 0015); for
+	 * anyone else every document and, as of() says, the user of each owner.
+	 *
+	 * @param list<int> $documentIds the IDs as the caller reads them from the documents
+	 * @param array<array-key, array<array-key, mixed>> $documents as Paperless sends them,
+	 *                                                             with their fields id, owner
+	 *                                                             and tags
+	 * @return array{list<int>, array<int, string>} the IDs of the documents that the user may
+	 *                                              see, in their order, and the user of
+	 *                                              Nextcloud whose own files stand for each
+	 */
+	public function forUser(IUser $user, array $documentIds, array $documents): array {
+		$userId = $user->getUID();
+		$visibleIds = $this->userTags->visibleIds($userId, $documentIds, $documents);
+		if ($this->userTags->restricts($userId) && $this->configService->isSyncArchive()) {
+			return [$visibleIds, array_fill_keys($visibleIds, $userId)];
+		}
+
+		return [$visibleIds, $this->of($documents)];
 	}
 
 	/**
@@ -88,6 +119,8 @@ final class DocumentOwners {
 
 		/** @var array<int, int> $owners the ID of the owner in Paperless, by the ID of the document */
 		$owners = [];
+		/** @var array<int, array<array-key, mixed>> $owned the documents with an owner, by their IDs */
+		$owned = [];
 		foreach ($documents as $document) {
 			/** @psalm-suppress MixedAssignment Both are checked before use. */
 			$id = $document['id'] ?? null;
@@ -95,6 +128,7 @@ final class DocumentOwners {
 			$owner = $document['owner'] ?? null;
 			if (is_int($id) && $id > 0 && is_int($owner) && $owner > 0) {
 				$owners[$id] = $owner;
+				$owned[$id] = $document;
 			}
 		}
 		if ($owners === []) {
@@ -119,8 +153,19 @@ final class DocumentOwners {
 		}
 
 		$documentUsers = [];
+		/** @var array<string, ?list<int>> $tagIds the IDs of the tags of each user so far, null for one without tags */
+		$tagIds = [];
 		foreach ($owners as $id => $owner) {
-			if (isset($users[$owner])) {
+			if (!isset($users[$owner])) {
+				continue;
+			}
+			$userId = $users[$owner]->getUID();
+			if (!array_key_exists($userId, $tagIds)) {
+				$tagIds[$userId] = $this->userTags->tagIdsOf($userId);
+			}
+			// Paperless Sync gives a document of an owner with tags without one of them to the
+			// target user instead: a file of that owner stands for nothing of it.
+			if (UserTags::carries($owned[$id], $tagIds[$userId])) {
 				$documentUsers[$id] = $users[$owner];
 			}
 		}
@@ -134,9 +179,11 @@ final class DocumentOwners {
 	 * again: after a save of the settings, as when an administrator gave the account the
 	 * permission View for Users and saved the same token, and before occ
 	 * paperless_unified_search:check, which tells what the search finds now. A cache that
-	 * fails only leaves them until they expire.
+	 * fails only leaves them until they expire. The tags of Paperless, which decide what a
+	 * user with tags may see, go with them.
 	 */
 	public function forget(): void {
+		$this->userTags->forget();
 		try {
 			$server = $this->server();
 			$this->getCache()->remove(self::usersKey($server));

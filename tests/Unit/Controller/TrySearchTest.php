@@ -416,7 +416,7 @@ final class TrySearchTest extends TestCase {
 			$this->messages(),
 			$l10n,
 			$logger ?? $this->createStub(LoggerInterface::class),
-			new SearchExplainer($locator, $accounts, $owners),
+			new SearchExplainer($locator, $accounts, $owners, $this->userTags($api, $configService, $cacheFactory)),
 			$accounts,
 			$session,
 			$this->events ?? $this->createStub(IEventDispatcher::class),

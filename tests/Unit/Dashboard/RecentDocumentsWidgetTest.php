@@ -239,6 +239,43 @@ final class RecentDocumentsWidgetTest extends TestCase {
 	}
 
 	/**
+	 * A user whom Paperless Sync lets see only the documents with some tags (decision 0015)
+	 * gets the newest of those, through the files of the archive account or their own
+	 * copies, which Paperless Sync writes while the archive account is its target user. A
+	 * document without one of their tags stays out, also when Paperless sends it anyway.
+	 */
+	public function testAUserWithTagsGetsTheNewestDocumentsWithOneOfThem(): void {
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.user_tags'] = 'jamie = Katja';
+		$tags = $this->answer(200, (string)json_encode(['count' => 2, 'next' => null, 'results' => [['id' => 1, 'name' => 'Inbox'], ['id' => 8, 'name' => 'Katja']]]));
+		$documents = [
+			['tags' => [8]] + self::DOCUMENTS[0],
+			['tags' => [1]] + self::DOCUMENTS[2],
+			['tags' => [1, 8]] + self::DOCUMENTS[3],
+		];
+
+		$items = $this->widget($this->paperless($tags, ...$this->answers($documents)))->getItemsV2('jamie')->jsonSerialize();
+
+		self::assertSame(['Electricity invoice - August 2026', 'Internet invoice - July 2026'], array_column($items['items'], 'title'));
+		self::assertSame('8', $this->requests[1][1]['query']['tags__id__in']);
+	}
+
+	/**
+	 * While Paperless has none of their tags, such a user gets no document, and Paperless
+	 * isn't asked for its newest documents.
+	 */
+	public function testAUserWithTagsThatPaperlessDoesNotHaveGetsNothing(): void {
+		$this->settings['paperless_sync.user_tags'] = 'jamie = Kattja';
+		$tags = $this->answer(200, (string)json_encode(['count' => 1, 'next' => null, 'results' => [['id' => 8, 'name' => 'Katja']]]));
+
+		$items = $this->widget($this->paperless($tags))->getItemsV2('jamie')->jsonSerialize();
+
+		self::assertSame([], $items['items']);
+		self::assertSame('None of the newest Paperless documents has a file that you can open.', $items['emptyContentMessage']);
+		self::assertCount(1, $this->requests);
+	}
+
+	/**
 	 * A document that Paperless sends without an ID as a number stands for no file.
 	 */
 	public function testADocumentWithoutANumberAsItsIdHasNoItem(): void {
@@ -587,6 +624,7 @@ final class RecentDocumentsWidgetTest extends TestCase {
 			$dateTimeFormatter,
 			$logger,
 			$this->documentOwners($paperlessApi, $configService, $accounts, $cacheFactory),
+			$this->userTags($paperlessApi, $configService, $cacheFactory),
 		);
 	}
 }

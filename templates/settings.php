@@ -6,7 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2026 Dennis Otto
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * @var array{config: \OCA\PaperlessUnifiedSearch\Model\PublicConfig, tokenWarnings: list<string>, perUserArchives: string, perUserArchivesHelp: string, saveUrl: string, resetUrl: string, clearDiagnosticsUrl: string, tryUrl: string, accountUrl: string, syncUrl: string, syncAllowLocal: bool, history: ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, durationMs: int}>}, shares: ?array{summary: string, warnings: list<string>}} $_
+ * @var array{config: \OCA\PaperlessUnifiedSearch\Model\PublicConfig, tokenWarnings: list<string>, perUserArchives: string, perUserArchivesHelp: string, saveUrl: string, resetUrl: string, clearDiagnosticsUrl: string, tryUrl: string, accountUrl: string, syncUrl: string, syncAllowLocal: bool, history: ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, durationMs: int}>}, shares: ?array{summary: string, warnings: list<string>}, userTags: array<string, list<string>>} $_
  */
 
 script('paperless_unified_search', 'settings');
@@ -176,6 +176,17 @@ $perUserArchives = static function () use ($_, $l): void {
 						<?php } ?>
 					</ul>
 				<?php } ?>
+			</div>
+		<?php } ?>
+
+		<?php if ($_['userTags'] !== []) { ?>
+			<div id="paperless-unified-search-user-tags" class="paperless-unified-search-shares">
+				<p><?php p($l->t('Paperless Sync lets these users see only the documents with at least one of their tags of Paperless, and the search shows them no other. Change them in the setting "Tags that a user may see" of Paperless Sync.')); ?></p>
+				<ul class="paperless-unified-search-user-tags">
+					<?php foreach ($_['userTags'] as $user => $tags) { ?>
+						<li><strong><?php p((string)$user); ?></strong>: <?php p(implode(', ', $tags)); ?></li>
+					<?php } ?>
+				</ul>
 			</div>
 		<?php } ?>
 
@@ -366,6 +377,7 @@ $perUserArchives = static function () use ($_, $l): void {
 				<li><?php p($l->t('Not a file of the archive account: the user sees a file with the marker of the document, but only the files of the archive account stand for documents.')); ?></li>
 				<li><?php p($l->t('Owned in Paperless by another user: Paperless Sync puts the documents of each user into their own files, and the user sees a file with the marker of the document that belongs to someone else than its owner in Paperless. Only the files of its owner and of the archive account stand for it.')); ?></li>
 				<li><?php p($l->t('No file: no file of the archive account has the marker of the document, such as [P123], in its name. The synchronization hasn\'t written it yet, or names files without it.')); ?></li>
+				<li><?php p($l->t('Not among the tags that the user may see: Paperless Sync lets the user see only the documents with some tags of Paperless, and the document has none of them. Add one of them to the document in Paperless, or change the tags of the user in the setting "Tags that a user may see" of Paperless Sync.')); ?></li>
 			</ul>
 		</div>
 	</div>

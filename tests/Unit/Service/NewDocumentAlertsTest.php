@@ -258,6 +258,40 @@ final class NewDocumentAlertsTest extends TestCase {
 	}
 
 	/**
+	 * A user whom Paperless Sync lets see only the documents with some tags (decision 0015)
+	 * hears only about the new documents with one of them, as Paperless tags them when their
+	 * files arrive, through their own copies; a share of the archive that shows them more
+	 * changes nothing. Everyone else hears about every document they can open, as before.
+	 */
+	public function testAUserWithTagsHearsOnlyAboutTheDocumentsWithOneOfThem(): void {
+		$this->connected('');
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.user_tags'] = 'jamie = Katja';
+		$this->wants('jamie', true);
+		$this->wants('sam', true);
+		$this->seen(100);
+		$this->file('/archive/files/Payslip [P101].pdf');
+		$this->file('/archive/files/Household [P102].pdf');
+		$this->file('/jamie/files/Paperless/Payslip [P101].pdf', 'jamie');
+		$this->file('/jamie/files/Archive/Household [P102].pdf');
+		$this->file('/sam/files/Archive/Payslip [P101].pdf');
+		$this->file('/sam/files/Archive/Household [P102].pdf');
+
+		$this->runJob($this->paperless(
+			$this->documents([['id' => 102, 'title' => 'Household'], ['id' => 101, 'title' => 'Payslip']]),
+			$this->documents([['id' => 102, 'owner' => null, 'tags' => [1]], ['id' => 101, 'owner' => null, 'tags' => [1, 8]]]),
+			$this->answer(200, (string)json_encode(['count' => 2, 'next' => null, 'results' => [['id' => 1, 'name' => 'Inbox'], ['id' => 8, 'name' => 'Katja']]])),
+		));
+
+		self::assertSame(['jamie', 'sam'], array_column($this->sent, 'user'));
+		self::assertSame(1, $this->sent[0]['subject']['count']);
+		self::assertSame('/Paperless/Payslip [P101].pdf', $this->sent[0]['subject']['documents'][0]['path']);
+		self::assertSame(2, $this->sent[1]['subject']['count']);
+		self::assertSame(['id__in' => '102,101', 'page' => 1, 'page_size' => 2, 'fields' => 'id,owner,tags'], $this->requests[1][1]['query']);
+		self::assertSame('https://paperless.example.com/api/tags/', $this->requests[2][0]);
+	}
+
+	/**
 	 * One notification for all documents of a run, the newest first, which names the first
 	 * three and links their files, as the user sees them.
 	 */
@@ -876,6 +910,7 @@ final class NewDocumentAlertsTest extends TestCase {
 			$clock,
 			$logger,
 			$this->documentOwners($paperlessApi, $configService, $accounts),
+			$this->userTags($paperlessApi, $configService),
 		))->run();
 	}
 

@@ -222,7 +222,7 @@ final class CheckTest extends TestCase {
 			. self::NO_SHARES,
 			$tester->getDisplay(),
 		);
-		self::assertSame(['ordering' => 'id', 'page' => 1, 'page_size' => 1000, 'fields' => 'id,owner'], $this->requests[3][1]['query']);
+		self::assertSame(['ordering' => 'id', 'page' => 1, 'page_size' => 1000, 'fields' => 'id,owner,tags'], $this->requests[3][1]['query']);
 		self::assertSame('https://paperless.example.com/api/users/', $this->requests[4][0]);
 	}
 

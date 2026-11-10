@@ -773,7 +773,7 @@ final class SettingsControllerTest extends TestCase {
 			new SettingsMessages($l10n),
 			$l10n,
 			$logger ?? $this->createStub(LoggerInterface::class),
-			new SearchExplainer(new NextcloudFileLocator($this->createStub(IRootFolder::class), $this->createStub(LoggerInterface::class)), $accounts, $owners),
+			new SearchExplainer(new NextcloudFileLocator($this->createStub(IRootFolder::class), $this->createStub(LoggerInterface::class)), $accounts, $owners, $this->userTags($api, $configService, $cacheFactory)),
 			$accounts,
 			$this->createStub(IUserSession::class),
 			$this->createStub(IEventDispatcher::class),

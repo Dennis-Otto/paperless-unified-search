@@ -1749,8 +1749,8 @@ final class PaperlessApiServiceTest extends TestCase {
 
 		self::assertSame([['id' => 1, 'owner' => 5], ['id' => 2, 'owner' => null], ['id' => 1001, 'owner' => 6]], $this->service($client)->findDocumentOwners());
 		self::assertSame([
-			['ordering' => 'id', 'page' => 1, 'page_size' => 1000, 'fields' => 'id,owner'],
-			['ordering' => 'id', 'page' => 2, 'page_size' => 1000, 'fields' => 'id,owner'],
+			['ordering' => 'id', 'page' => 1, 'page_size' => 1000, 'fields' => 'id,owner,tags'],
+			['ordering' => 'id', 'page' => 2, 'page_size' => 1000, 'fields' => 'id,owner,tags'],
 		], $queries);
 	}
 
@@ -1779,6 +1779,90 @@ final class PaperlessApiServiceTest extends TestCase {
 		$this->expectException(RuntimeException::class);
 
 		$this->service($client)->findDocumentOwners();
+	}
+
+	/**
+	 * The tags of Paperless, for the users who may see only the documents with some of them
+	 * (decision 0015), come page by page by their numbers, with every tag that the account
+	 * may view, the tag of the inbox among them, and a short time, never by the link of the
+	 * next page.
+	 */
+	public function testTheTagsComePageByPageByTheirNumbers(): void {
+		$queries = [];
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options) use (&$queries): IResponse {
+			self::assertSame('https://paperless.example.com/api/tags/', $url);
+			self::assertSame(3, $options['timeout']);
+			$queries[] = $options['query'];
+
+			return $this->response(200, (string)json_encode($options['query']['page'] === 1
+				? ['count' => 1002, 'next' => 'https://elsewhere.example.com/api/tags/?page=2', 'results' => [
+					['id' => 1, 'name' => 'Inbox', 'is_inbox_tag' => true],
+					['id' => '6', 'name' => 'ID as text'],
+					['id' => 7],
+					'no tag',
+				]]
+				: ['count' => 1002, 'next' => null, 'results' => [['id' => 8, 'name' => 'Katja']]]));
+		});
+
+		self::assertSame([1 => 'Inbox', 8 => 'Katja'], $this->service($client)->findTags());
+		self::assertSame([['page' => 1, 'page_size' => 1000], ['page' => 2, 'page_size' => 1000]], $queries);
+	}
+
+	/**
+	 * More tags than ten pages hold are more than the app reads, and without all of them no
+	 * user with tags can tell which documents they may see.
+	 */
+	public function testMoreTagsThanTheAppReadsAreNone(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::exactly(10))->method('get')->willReturnCallback(
+			fn (): IResponse => $this->response(200, '{"count":20000,"next":"https://paperless.example.com/api/tags/?page=11","results":[]}'),
+		);
+
+		$this->expectException(PaperlessRequestException::class);
+		$this->expectExceptionMessage('Paperless lists more than 10000 tags.');
+
+		$this->service($client)->findTags();
+	}
+
+	#[DataProvider('usersWithoutSettings')]
+	public function testTheTagsNeedTheSettings(string $url, ?string $token): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::never())->method('get');
+
+		self::assertSame([], $this->service($client, $url, $token)->findTags());
+	}
+
+	/**
+	 * The job of the notifications reads the owners and the tags of the documents whose
+	 * files have arrived, as they are now, in one request with one try.
+	 */
+	public function testTheTagsOfDocumentsComeInOneRequest(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with('https://paperless.example.com/api/documents/', self::callback(
+				static fn (array $options): bool => $options['query'] === [
+					'id__in' => '412,389',
+					'page' => 1,
+					'page_size' => 2,
+					'fields' => 'id,owner,tags',
+				],
+			))
+			->willReturn($this->response(200, (string)json_encode(['count' => 1, 'next' => null, 'results' => [
+				['id' => 412, 'owner' => 5, 'tags' => [8]],
+			]])));
+
+		self::assertSame([['id' => 412, 'owner' => 5, 'tags' => [8]]], $this->service($client)->findDocumentTags([412, 389]));
+	}
+
+	public function testTheTagsOfDocumentsGetOneTry(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())->method('get')->willThrowException(new RuntimeException('cURL error 7: Failed to connect'));
+
+		$this->expectException(RuntimeException::class);
+
+		$this->service($client)->findDocumentTags([412]);
 	}
 
 	/**
@@ -1939,6 +2023,27 @@ final class PaperlessApiServiceTest extends TestCase {
 		], $this->service($client)->findRecentDocuments(25));
 		// The answer names the version of Paperless, which the overview shows.
 		self::assertSame('3.3.0', $this->config->stored(AppConstants::APP_ID, 'paperless_version'));
+	}
+
+	/**
+	 * For a user with tags, the dashboard asks for the newest documents with one of them.
+	 */
+	public function testTheNewestDocumentsTakeFilters(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with('https://paperless.example.com/api/documents/', self::callback(
+				static fn (array $options): bool => $options['query'] === [
+					'ordering' => '-added',
+					'page' => 1,
+					'page_size' => 25,
+					'fields' => 'id,title,added,correspondent,document_type,tags,owner',
+					'tags__id__in' => '4,9',
+				],
+			))
+			->willReturn($this->response(200, '{"count":0,"next":null,"results":[]}'));
+
+		self::assertSame([], $this->service($client)->findRecentDocuments(25, [PaperlessApiService::TAGS_ANY => '4,9']));
 	}
 
 	/**

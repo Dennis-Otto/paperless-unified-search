@@ -80,6 +80,7 @@ final class NewDocumentAlerts {
 		private ITimeFactory $timeFactory,
 		private LoggerInterface $logger,
 		private DocumentOwners $documentOwners,
+		private UserTags $userTags,
 	) {
 	}
 
@@ -114,6 +115,7 @@ final class NewDocumentAlerts {
 			$documentUsers = $this->documentOwners->of(self::ownersOf($progress));
 			$files = $this->filesOfTheArchive($progress, $archiveOwner, $documentUsers);
 			$found = $files === [] ? [] : $this->findTerms($choices, array_keys($files));
+			$documents = $files === [] ? [] : $this->documentsOf($progress, array_keys($files));
 		} catch (Throwable $error) {
 			$this->rest($progress, $now, $error);
 
@@ -134,7 +136,7 @@ final class NewDocumentAlerts {
 
 		foreach ($choices as $userId => $choice) {
 			// PHP keeps the ID of a user like 12345 as a number in the keys of the array.
-			$this->notifyUser((string)$userId, self::wantedOf($choice, array_keys($files), $found), $progress, $archiveOwner, $documentUsers);
+			$this->notifyUser((string)$userId, self::wantedOf($choice, array_keys($files), $found), $progress, $archiveOwner, $documents);
 		}
 	}
 
@@ -205,6 +207,27 @@ final class NewDocumentAlerts {
 		}
 
 		return $documents;
+	}
+
+	/**
+	 * The documents whose files have arrived, with the IDs of their owners: as the job first
+	 * saw them, or while some users may see only the documents with some tags (decision
+	 * 0015), as Paperless has them now, with their tags, which may have come or gone since,
+	 * in one request.
+	 *
+	 * @param non-empty-list<int> $documentIds
+	 * @return list<array<array-key, mixed>>
+	 * @throws Throwable when Paperless doesn't send them
+	 */
+	private function documentsOf(AlertProgress $progress, array $documentIds): array {
+		if ($this->userTags->lines() !== []) {
+			return $this->paperlessApi->findDocumentTags($documentIds);
+		}
+
+		return array_values(array_filter(
+			self::ownersOf($progress),
+			static fn (array $document): bool => in_array($document['id'], $documentIds, true),
+		));
 	}
 
 	/**
@@ -312,19 +335,22 @@ final class NewDocumentAlerts {
 
 	/**
 	 * One notification about the documents whose files the user can open, and none without
-	 * any. A user whose files fail to answer costs only their own notification.
+	 * any; for a user with tags only about those with one of them. A user whose files fail
+	 * to answer costs only their own notification.
 	 *
 	 * @param list<int> $documentIds
-	 * @param array<int, string> $documentUsers the user of the owner, by the ID of the document
+	 * @param list<array<array-key, mixed>> $documents the documents with files, with their
+	 *                                                 owners and tags
 	 */
-	private function notifyUser(string $userId, array $documentIds, AlertProgress $progress, string $archiveOwner, array $documentUsers): void {
+	private function notifyUser(string $userId, array $documentIds, AlertProgress $progress, string $archiveOwner, array $documents): void {
 		try {
 			$user = $this->userManager->get($userId);
 			if ($user === null || !$user->isEnabled()) {
 				return;
 			}
 
-			$files = $this->fileLocator->findAllForUser($user, $documentIds, $archiveOwner, $documentUsers)->files;
+			[$visibleIds, $documentUsers] = $this->documentOwners->forUser($user, $documentIds, $documents);
+			$files = $this->fileLocator->findAllForUser($user, $visibleIds, $archiveOwner, $documentUsers)->files;
 			if ($files !== []) {
 				$this->notify($user, $files, $progress);
 			}

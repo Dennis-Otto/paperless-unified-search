@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Service;
 
 use OCA\PaperlessUnifiedSearch\Service\DocumentOwners;
+use OCA\PaperlessUnifiedSearch\Service\UserTags;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppServices;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryCache;
@@ -64,6 +65,79 @@ final class DocumentOwnersTest extends TestCase {
 		[$url, $options] = $this->requests[0];
 		self::assertSame('https://paperless.example.com/api/users/', $url);
 		self::assertSame(['page' => 1, 'page_size' => 1000], $options['query']);
+	}
+
+	/**
+	 * Paperless Sync gives an owner whom it lets see only the documents with some tags only
+	 * their documents with one of them, and the others to the target user (decision 0015):
+	 * a file of such an owner stands for nothing else, and nor for a document whose tags
+	 * Paperless didn't send. The files of other owners count as before.
+	 */
+	public function testTheFilesOfAnOwnerWithTagsStandOnlyForTheirDocumentsWithOneOfThem(): void {
+		$this->settings['paperless_sync.user_tags'] = 'jamie = Katja';
+		$owners = $this->owners($this->users(self::USERS), $this->tags([['id' => 1, 'name' => 'Inbox'], ['id' => 8, 'name' => 'katja']]));
+
+		self::assertSame(
+			[1 => 'jamie', 3 => 'sam'],
+			$owners->of([['id' => 1, 'owner' => 5, 'tags' => [1, 8]], ['id' => 2, 'owner' => 5, 'tags' => [1]], ['id' => 4, 'owner' => 5], ['id' => 3, 'owner' => 6, 'tags' => []]]),
+		);
+		self::assertSame('https://paperless.example.com/api/tags/', $this->requests[1][0]);
+	}
+
+	/**
+	 * For a user without tags, the search goes on with every document and the user of each
+	 * owner, as before.
+	 */
+	public function testAUserWithoutTagsSeesEveryDocumentWithTheFilesOfTheOwners(): void {
+		$this->settings['paperless_sync.user_tags'] = 'jamie = Katja';
+		$owners = $this->owners($this->users(self::USERS));
+
+		self::assertSame(
+			[[2, 1], [2 => 'sam']],
+			$owners->forUser($this->account('sam'), [2, 1], [['id' => 1, 'owner' => 8], ['id' => 2, 'owner' => 6]]),
+		);
+	}
+
+	/**
+	 * A user with tags meets only the documents with one of them, and while the archive
+	 * account is the target user of Paperless Sync, which writes their copies into their own
+	 * files, their own files stand for each of them, whoever owns it in Paperless.
+	 */
+	public function testAUserWithTagsSeesTheDocumentsWithOneOfThemThroughTheirOwnFiles(): void {
+		$this->settings['paperless_sync.user_tags'] = 'jamie = Katja';
+		$owners = $this->owners($this->tags([['id' => 8, 'name' => 'Katja']]));
+
+		self::assertSame(
+			[[3, 1], [3 => 'jamie', 1 => 'jamie']],
+			$owners->forUser($this->account('jamie'), [3, 2, 1], [['id' => 1, 'owner' => 6, 'tags' => [8]], ['id' => 2, 'owner' => 5, 'tags' => []], ['id' => 3, 'tags' => [8]]]),
+		);
+		self::assertCount(1, $this->requests);
+	}
+
+	/**
+	 * With another archive account, whose files Paperless Sync doesn't write, the own files of
+	 * a user with tags stand for nothing either: only the files of the archive account count,
+	 * for the documents with their tags.
+	 */
+	public function testAUserWithTagsAndAnotherArchiveAccountSeesOnlyItsFiles(): void {
+		$this->settings['paperless_unified_search.archive_owner'] = 'sam';
+		$this->settings['paperless_sync.user_tags'] = 'jamie = Katja';
+		$owners = $this->ownersWith([$this->tags([['id' => 8, 'name' => 'Katja']])], configAccounts: ['archive', 'sam']);
+
+		self::assertSame([[1], []], $owners->forUser($this->account('jamie'), [1, 2], [['id' => 1, 'owner' => 6, 'tags' => [8]], ['id' => 2, 'owner' => 5]]));
+	}
+
+	/**
+	 * A save of the settings and occ paperless_unified_search:check forget the tags of
+	 * Paperless along with its users.
+	 */
+	public function testForgettingForgetsTheTagsToo(): void {
+		$this->settings['paperless_sync.user_tags'] = 'jamie = Katja';
+		$owners = $this->owners($this->tags([]), $this->tags([['id' => 8, 'name' => 'Katja']]));
+
+		self::assertSame([[], []], $owners->forUser($this->account('jamie'), [1], [['id' => 1, 'tags' => [8]]]));
+		$owners->forget();
+		self::assertSame([[1], [1 => 'jamie']], $owners->forUser($this->account('jamie'), [1], [['id' => 1, 'tags' => [8]]]));
 	}
 
 	/**
@@ -360,6 +434,22 @@ final class DocumentOwnersTest extends TestCase {
 		return $this->answer(200, (string)json_encode(['count' => count($users), 'next' => null, 'previous' => null, 'results' => $users]));
 	}
 
+	/**
+	 * The answer of Paperless with these tags, as /api/tags/ lists them.
+	 *
+	 * @param list<array{id: int, name: string}> $tags
+	 */
+	private function tags(array $tags): IResponse {
+		return $this->answer(200, (string)json_encode(['count' => count($tags), 'next' => null, 'previous' => null, 'results' => $tags]));
+	}
+
+	private function account(string $id): IUser {
+		$account = $this->createStub(IUser::class);
+		$account->method('getUID')->willReturn($id);
+
+		return $account;
+	}
+
 	private function cache(): MemoryCache {
 		return $this->cache ??= new MemoryCache(fn (): int => $this->now);
 	}
@@ -370,10 +460,11 @@ final class DocumentOwnersTest extends TestCase {
 
 	/**
 	 * @param list<IResponse|Throwable> $answers
+	 * @param list<string> $configAccounts the accounts that the settings find
 	 */
-	private function ownersWith(array $answers, ?IUserManager $accounts = null, ?IGroupManager $groups = null, ?ICacheFactory $cacheFactory = null): DocumentOwners {
+	private function ownersWith(array $answers, ?IUserManager $accounts = null, ?IGroupManager $groups = null, ?ICacheFactory $cacheFactory = null, array $configAccounts = ['archive']): DocumentOwners {
 		// The settings find the archive account among the users of the test, whatever $accounts finds.
-		$configService = $this->configService($this->accounts('archive'));
+		$configService = $this->configService($this->accounts(...$configAccounts));
 		$accounts ??= $this->accounts('archive', 'jamie', 'sam', 'alex');
 		if ($cacheFactory === null) {
 			$cacheFactory = $this->createStub(ICacheFactory::class);
@@ -386,13 +477,16 @@ final class DocumentOwnersTest extends TestCase {
 			});
 		}
 
+		$paperlessApi = $this->paperlessApi($configService, $this->paperless(...$answers));
+
 		return new DocumentOwners(
-			$this->paperlessApi($configService, $this->paperless(...$answers)),
+			$paperlessApi,
 			$configService,
 			$accounts,
 			$groups ?? $this->createStub(IGroupManager::class),
 			$cacheFactory,
 			$logger,
+			new UserTags($configService, $paperlessApi, $cacheFactory, $logger),
 		);
 	}
 }

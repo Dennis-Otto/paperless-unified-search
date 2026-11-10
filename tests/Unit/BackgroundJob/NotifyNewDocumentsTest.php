@@ -84,6 +84,7 @@ final class NotifyNewDocumentsTest extends TestCase {
 				$this->createStub(ITimeFactory::class),
 				$this->createStub(LoggerInterface::class),
 				$this->documentOwners($paperlessApi, $configService, $accounts),
+				$this->userTags($paperlessApi, $configService),
 			),
 		);
 	}
