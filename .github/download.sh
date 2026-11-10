@@ -36,19 +36,24 @@ what="$asset of $repository $tag"
 # no second try changes.
 lasting='release not found|no assets match|HTTP 40[14]|HTTP 422|GH_TOKEN'
 errors="$(mktemp)"
-trap 'rm -f "$errors"' EXIT
+output="$(mktemp)"
+trap 'rm -f "$errors" "$output"' EXIT
 
 # gh waits for an answer without a limit, and GitHub's outage of 8 November 2026
 # began as timeouts: a call that stalls ends, and is tried again like an error.
 limit="${DOWNLOAD_TIMEOUT:-300}"
 
-# Runs the command of gh, and again after an error, with its errors in the log.
+# Runs the command of gh, and again after an error, with its errors in the log, and
+# prints only the output of the try that worked: gh writes the body of an error of the
+# API to its output, even with --jq, and that body in front of the digest of a later
+# try would fail a download that the second try saved.
 tried() {
   local wait status
   for wait in 10 20 40 80 0; do
     status=0
-    timeout --kill-after=10 "$limit" "$@" 2>"$errors" || status=$?
+    timeout --kill-after=10 "$limit" "$@" >"$output" 2>"$errors" || status=$?
     if ((status == 0)); then
+      cat "$output"
       return 0
     fi
     if ((status == 124 || status == 137)); then

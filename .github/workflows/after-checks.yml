@@ -14,9 +14,12 @@ name: After the checks
 # the failure, after the answer test_marker of the blueprint, such as "Browser step:"
 # before each step of the tests of a browser. A job that fails again is a real
 # failure and stays red, and so does one that failed the same way for the commit
-# before: running it again would only keep a runner busy. A pull request names its
-# jobs and steps and writes its logs, so the issue shows them only as code, and the
-# branch of a fork not at all.
+# before: running it again would only keep a runner busy. A run whose failed jobs ran
+# no step, which GitHub couldn't start, as in its outage of 9 November 2026, it leaves
+# alone with a notice: another try while GitHub fails would only fail and mail again,
+# and a bot that GitHub keeps failing ends with a notice as well (decision 0136). A
+# pull request names its jobs and steps and writes its logs, so the issue shows them
+# only as code, and the branch of a fork not at all.
 #
 # The bot for cancelled checks: a newer run of a workflow cancels the one still running
 # for the same pull request, and that of a check or a scanner for the push to main
@@ -43,7 +46,8 @@ name: After the checks
 # more, where they stopped, instead of leaving the release and its rollout to a
 # person. The release workflow takes up a tag that it pushed already. A release that
 # a person or another bot already runs again, or ran again, is theirs: the bot leaves
-# it alone.
+# it alone, and so it does a release that GitHub couldn't start, which the scheduled
+# run of the release takes up.
 #
 # The PR coach: after every run of the checks of a pull request, one comment on it
 # explains each check that failed: what it found, why that matters and how to fix
@@ -245,18 +249,36 @@ jobs:
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           # GitHub answers a call now and then with an error of its own, a 5xx, or not in
-          # time, and for minutes in an outage, as on 8 November 2026: each call of gh
-          # tries again then, four times in all, 10, 20 and 40 seconds apart, with what
-          # it printed only once it worked. Any other error, such as a refusal, stops it
-          # at once; the last one stays in $RUNNER_TEMP/gh-errors.
+          # time, and for minutes in an outage, as on 8 and 9 November 2026: each call of
+          # gh tries again then, four times in all, 10, 20 and 40 seconds apart, with
+          # what it printed only once it worked. Any other error, such as a refusal,
+          # stops it at once; the last one stays in $RUNNER_TEMP/gh-errors. When GitHub
+          # keeps failing, the step ends with a notice instead of a failure: the next
+          # event or the bot-health bot catches up, and a person has nothing to do
+          # (decision 0136).
+          outage="$RUNNER_TEMP/github-unavailable"
+          unavailable() {
+            local status=$?
+            if ((status)) && [[ -e "$outage" ]]; then
+              echo "::notice title=GitHub is unavailable::GitHub kept failing ($(head -n 1 "$RUNNER_TEMP/gh-errors")), as in an outage of GitHub (https://www.githubstatus.com), so the bot did nothing this time; its next run catches up. Nothing to do for a person."
+              exit 0
+            fi
+          }
+          trap unavailable EXIT
           tried() {
             local wait output
+            rm -f "$outage"
             for wait in 10 20 40 0; do
               if output="$("$@" 2>"$RUNNER_TEMP/gh-errors")"; then
                 printf '%s\n' "$output"
                 return 0
               fi
-              if ((wait == 0)) || ! grep -qiE 'HTTP 5[0-9]{2}|timeout|timed out|connection reset|unexpected EOF' "$RUNNER_TEMP/gh-errors"; then
+              if ! grep -qiE 'HTTP 5[0-9]{2}|timeout|timed out|connection reset|unexpected EOF' "$RUNNER_TEMP/gh-errors"; then
+                cat "$RUNNER_TEMP/gh-errors" >&2
+                return 1
+              fi
+              if ((wait == 0)); then
+                touch "$outage"
                 cat "$RUNNER_TEMP/gh-errors" >&2
                 return 1
               fi
@@ -269,16 +291,26 @@ jobs:
           # so in an annotation. An attempt that a newer run cancelled broke nothing; it
           # is the business of the bot for cancelled checks. In one that a person or a
           # time limit cancelled, only the jobs that ran out of time broke: a job that
-          # waits for the others fails when they are cancelled. With a third argument,
-          # only the jobs it names.
+          # waits for the others fails when they are cancelled. A job that failed without
+          # a step and without an annotation never ran: GitHub couldn't start it, as in
+          # its outage of 9 November 2026. One without a step that has an annotation,
+          # such as a condition that GitHub couldn't evaluate or a job that no runner
+          # took, broke. With a third argument, only the jobs it names.
           broken() {
-            local jobs id conclusion name messages found=""
+            local jobs id conclusion name steps messages found=""
             jobs="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$1/jobs" --paginate \
-              --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | [.id, .conclusion, .name] | @tsv')" ||
+              --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | [.id, .conclusion, .name, (.steps | length)] | @tsv')" ||
               return 1
-            while IFS=$'\t' read -r -u 4 id conclusion name; do
+            while IFS=$'\t' read -r -u 4 id conclusion name steps; do
               if [[ -z "$id" ]] || [[ "$conclusion" == failure && "$2" == cancelled ]]; then
                 continue
+              fi
+              if [[ "$conclusion" == failure && "$steps" == 0 ]]; then
+                messages="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$id/annotations" --paginate --jq '.[].message')" ||
+                  return 1
+                if [[ -z "$messages" ]]; then
+                  continue
+                fi
               fi
               if [[ "$conclusion" == cancelled ]]; then
                 messages="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$id/annotations" --paginate --jq '.[].message')" ||
@@ -297,6 +329,12 @@ jobs:
             printf '%s' "$found"
           }
           now="$(broken "$RUN/attempts/1" "$CONCLUSION")"
+          if [[ -z "$now" && "$CONCLUSION" == failure ]]; then
+            # Another try while GitHub fails would fail too, and mail again.
+            echo "::notice title=GitHub is unavailable::GitHub couldn't start the failed jobs of $NAME, as in an outage of GitHub (https://www.githubstatus.com), so the bot leaves the run alone instead of trying again while GitHub fails. Nothing of the code failed."
+            echo "No job of $NAME failed in a step: GitHub couldn't start them, so the bot leaves the run alone." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           if [[ -z "$now" ]]; then
             echo "No job of $NAME failed or ran out of time; a newer run or a person cancelled it." >> "$GITHUB_STEP_SUMMARY"
             exit 0
@@ -834,9 +872,73 @@ jobs:
           RUN: ${{ github.event.workflow_run.id }}
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
+          # GitHub answers a call now and then with an error of its own, a 5xx, or not in
+          # time, and for minutes in an outage, as on 8 and 9 November 2026: each call of
+          # gh tries again then, four times in all, 10, 20 and 40 seconds apart, with
+          # what it printed only once it worked. Any other error, such as a refusal,
+          # stops it at once; the last one stays in $RUNNER_TEMP/gh-errors. When GitHub
+          # keeps failing, the step ends with a notice instead of a failure: the next
+          # event or the bot-health bot catches up, and a person has nothing to do
+          # (decision 0136).
+          outage="$RUNNER_TEMP/github-unavailable"
+          unavailable() {
+            local status=$?
+            if ((status)) && [[ -e "$outage" ]]; then
+              echo "::notice title=GitHub is unavailable::GitHub kept failing ($(head -n 1 "$RUNNER_TEMP/gh-errors")), as in an outage of GitHub (https://www.githubstatus.com), so the bot did nothing this time; its next run catches up. Nothing to do for a person."
+              exit 0
+            fi
+          }
+          trap unavailable EXIT
+          tried() {
+            local wait output
+            rm -f "$outage"
+            for wait in 10 20 40 0; do
+              if output="$("$@" 2>"$RUNNER_TEMP/gh-errors")"; then
+                printf '%s\n' "$output"
+                return 0
+              fi
+              if ! grep -qiE 'HTTP 5[0-9]{2}|timeout|timed out|connection reset|unexpected EOF' "$RUNNER_TEMP/gh-errors"; then
+                cat "$RUNNER_TEMP/gh-errors" >&2
+                return 1
+              fi
+              if ((wait == 0)); then
+                touch "$outage"
+                cat "$RUNNER_TEMP/gh-errors" >&2
+                return 1
+              fi
+              echo "GitHub failed, so gh tries again in $wait seconds: $(head -n 1 "$RUNNER_TEMP/gh-errors")" >&2
+              sleep "$wait"
+            done
+          }
+          # A release that GitHub couldn't start, as in its outage of 9 November 2026,
+          # failed in no step and with no annotation: another try while GitHub fails
+          # would fail too, and the scheduled run of the release takes it up. A job
+          # without a step that has an annotation, such as one that no runner took,
+          # broke.
+          jobs="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN/attempts/1/jobs" --paginate \
+            --jq '.jobs[] | select(.conclusion == "failure") | [.id, (.steps | length)] | @tsv')"
+          started=""
+          while IFS=$'\t' read -r -u 4 id steps; do
+            if [[ -z "$id" ]]; then
+              continue
+            fi
+            if [[ "$steps" == 0 ]]; then
+              messages="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$id/annotations" --paginate --jq '.[].message')"
+              if [[ -z "$messages" ]]; then
+                continue
+              fi
+            fi
+            started="$id"
+            break
+          done 4<<<"$jobs"
+          if [[ -z "$started" ]]; then
+            echo "::notice title=GitHub is unavailable::GitHub couldn't start the release of ${SHA:0:7}, as in an outage of GitHub (https://www.githubstatus.com), so the bot leaves it alone instead of trying again while GitHub fails; the scheduled run of the release takes it up."
+            echo "GitHub couldn't start the release of ${SHA:0:7}, so the bot leaves it alone; the scheduled run of the release takes it up." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           # A person or another bot may have run the release again before this job
           # started: then the run is theirs, and GitHub refuses a rerun while it runs.
-          state="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN" --jq '"\(.status) \(.run_attempt)"')"
+          state="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN" --jq '"\(.status) \(.run_attempt)"')"
           if [[ "$state" != "completed 1" ]]; then
             case "${state%% *}" in
               completed) now="done" ;;
@@ -847,12 +949,11 @@ jobs:
             exit 0
           fi
           # It may also start again between the look and the rerun.
-          if ! output="$(gh run rerun "$RUN" --failed 2>&1)"; then
-            if grep -q "already running" <<<"$output"; then
+          if ! output="$(tried gh run rerun "$RUN" --failed)"; then
+            if grep -q "already running" "$RUNNER_TEMP/gh-errors"; then
               echo "The release of ${SHA:0:7} runs again already; the bot leaves it alone." >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
-            printf '%s\n' "$output" >&2
             exit 1
           fi
           printf '%s\n' "$output"
@@ -1165,13 +1266,51 @@ jobs:
           RUN: ${{ github.event.workflow_run.id }}
           NAME: ${{ github.event.workflow_run.name }}
         run: |
+          # GitHub answers a call now and then with an error of its own, a 5xx, or not in
+          # time, and for minutes in an outage, as on 8 and 9 November 2026: each call of
+          # gh tries again then, four times in all, 10, 20 and 40 seconds apart, with
+          # what it printed only once it worked. Any other error, such as a refusal,
+          # stops it at once; the last one stays in $RUNNER_TEMP/gh-errors. When GitHub
+          # keeps failing, the step ends with a notice instead of a failure: the next
+          # event or the bot-health bot catches up, and a person has nothing to do
+          # (decision 0136).
+          outage="$RUNNER_TEMP/github-unavailable"
+          unavailable() {
+            local status=$?
+            if ((status)) && [[ -e "$outage" ]]; then
+              echo "::notice title=GitHub is unavailable::GitHub kept failing ($(head -n 1 "$RUNNER_TEMP/gh-errors")), as in an outage of GitHub (https://www.githubstatus.com), so the bot did nothing this time; its next run catches up. Nothing to do for a person."
+              exit 0
+            fi
+          }
+          trap unavailable EXIT
+          tried() {
+            local wait output
+            rm -f "$outage"
+            for wait in 10 20 40 0; do
+              if output="$("$@" 2>"$RUNNER_TEMP/gh-errors")"; then
+                printf '%s\n' "$output"
+                return 0
+              fi
+              if ! grep -qiE 'HTTP 5[0-9]{2}|timeout|timed out|connection reset|unexpected EOF' "$RUNNER_TEMP/gh-errors"; then
+                cat "$RUNNER_TEMP/gh-errors" >&2
+                return 1
+              fi
+              if ((wait == 0)); then
+                touch "$outage"
+                cat "$RUNNER_TEMP/gh-errors" >&2
+                return 1
+              fi
+              echo "GitHub failed, so gh tries again in $wait seconds: $(head -n 1 "$RUNNER_TEMP/gh-errors")" >&2
+              sleep "$wait"
+            done
+          }
           # A job that the step "Make sure that Harden-Runner blocks" stopped says so in
           # an annotation; any other failure is one of the change.
-          jobs="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN/attempts/1/jobs" --paginate \
+          jobs="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN/attempts/1/jobs" --paginate \
             --jq '.jobs[] | select(.conclusion == "failure") | .id')"
           stopped=false
           for job in $jobs; do
-            messages="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$job/annotations" --paginate --jq '.[].message')"
+            messages="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$job/annotations" --paginate --jq '.[].message')"
             if grep -qF "would reach every host, and it stops here instead" <<<"$messages"; then
               stopped=true
               break
@@ -1183,18 +1322,17 @@ jobs:
           fi
           # The bot-health bot watches some of these workflows too and may have run it
           # again first: then the run is its own, and GitHub refuses a rerun while it runs.
-          state="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN" --jq '"\(.status) \(.run_attempt)"')"
+          state="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN" --jq '"\(.status) \(.run_attempt)"')"
           if [[ "$state" != "completed 1" ]]; then
             echo "$NAME ran again already; the bot leaves it alone." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           # It may also start again between the look and the rerun.
-          if ! output="$(gh run rerun "$RUN" --failed 2>&1)"; then
-            if grep -q "already running" <<<"$output"; then
+          if ! output="$(tried gh run rerun "$RUN" --failed)"; then
+            if grep -q "already running" "$RUNNER_TEMP/gh-errors"; then
               echo "$NAME runs again already; the bot leaves it alone." >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
-            printf '%s\n' "$output" >&2
             exit 1
           fi
           printf '%s\n' "$output"
@@ -1329,15 +1467,50 @@ jobs:
           GH_REPO: ${{ github.repository }}
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
+          # The coach runs after every check of every pull request: one error of GitHub
+          # must not fail it, as in its outage of 9 November 2026. Each call of gh
+          # tries again after a 5xx or no answer, 10, 20 and 40 seconds apart, and when
+          # GitHub keeps failing, the coach reports without the coverage this time,
+          # with a notice instead of a failure (decision 0136).
+          outage="$RUNNER_TEMP/github-unavailable"
+          unavailable() {
+            local status=$?
+            if ((status)) && [[ -e "$outage" ]]; then
+              echo "::notice title=GitHub is unavailable::GitHub kept failing ($(head -n 1 "$RUNNER_TEMP/gh-errors")), as in an outage of GitHub (https://www.githubstatus.com), so the coach reports without the coverage this time; its next run catches up. Nothing to do for a person."
+              exit 0
+            fi
+          }
+          trap unavailable EXIT
+          tried() {
+            local wait output
+            rm -f "$outage"
+            for wait in 10 20 40 0; do
+              if output="$("$@" 2>"$RUNNER_TEMP/gh-errors")"; then
+                printf '%s\n' "$output"
+                return 0
+              fi
+              if ! grep -qiE 'HTTP 5[0-9]{2}|timeout|timed out|connection reset|unexpected EOF' "$RUNNER_TEMP/gh-errors"; then
+                cat "$RUNNER_TEMP/gh-errors" >&2
+                return 1
+              fi
+              if ((wait == 0)); then
+                touch "$outage"
+                cat "$RUNNER_TEMP/gh-errors" >&2
+                return 1
+              fi
+              echo "GitHub failed, so gh tries again in $wait seconds: $(head -n 1 "$RUNNER_TEMP/gh-errors")" >&2
+              sleep "$wait"
+            done
+          }
           # The newest run of the tests of the head that ended, and its workflow.
-          run="$(gh run list --commit "$SHA" --status completed --limit 100 \
+          run="$(tried gh run list --commit "$SHA" --status completed --limit 100 \
             --json databaseId,workflowDatabaseId,workflowName,conclusion \
             --jq 'first(.[] | select((.workflowName | startswith("CI (")) and (.conclusion == "success" or .conclusion == "failure"))) | "\(.databaseId) \(.workflowDatabaseId)"')"
           if [[ -z "$run" ]] || ! gh run download "${run% *}" --name coverage --dir "$RUNNER_TEMP/head"; then
             echo "No run of the tests of ${SHA:0:7} kept a coverage report so far." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          base="$(gh run list --workflow "${run#* }" --branch main --event push --status success \
+          base="$(tried gh run list --workflow "${run#* }" --branch main --event push --status success \
             --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
           if [[ -n "$base" ]]; then
             gh run download "$base" --name coverage --dir "$RUNNER_TEMP/base" || true

@@ -5,6 +5,9 @@ name: Welcome
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
+  # GitHub blocks the event in a public repository unless the event policy of the
+  # settings allows it, which it does for each workflow that pull_request_target of
+  # [actions] in .github/repository.toml lists (decision 0138).
   pull_request_target:
     types: [opened]
 

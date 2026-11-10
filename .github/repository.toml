@@ -46,6 +46,31 @@ fork_pr_approval = "all_external_contributors"
 # image with docker run instead.
 allowed_actions = "selected"
 
+# GitHub blocks pull_request_target in a public repository from 2 December 2026, unless
+# an Actions event policy allows it. The settings bot keeps the policy "Allow
+# pull_request_target", which allows it for these workflows alone, with every other
+# event that starts them (decision 0138). Each runs only the workflow of main, nothing
+# of the pull request, and needs a token that writes, or the release app, also for a
+# pull request of a fork, or before a maintainer has approved its runs. The check lint
+# of every pull request and `blueprint.py settings check` name each workflow that starts
+# on pull_request_target and that this list lacks; add one of this project alone in
+# .github/repository.project.toml.
+pull_request_target = [
+  # The labels of the areas that a pull request changes.
+  ".github/workflows/area-labels.yml",
+  # Auto-merge for Dependabot's updates, as the release app of the environment release.
+  ".github/workflows/dependabot-automerge.yml",
+  # Each merge starts the lifecycle, which labels the issues that it fixes.
+  ".github/workflows/issue-lifecycle.yml",
+  # The required check of the title with its label, and the signed commits, on every
+  # push, also of a fork whose other runs wait for an approval.
+  ".github/workflows/pull-request-title.yml",
+  # The branch bot, as the release app, once auto-merge is turned on or off.
+  ".github/workflows/update-branches.yml",
+  # The welcome of a first pull request, before the maintainer approves its runs.
+  ".github/workflows/welcome.yml",
+]
+
 # The actions and reusable workflows that the workflows name, and those that these run
 # in turn. The check lint of every pull request (`blueprint.py settings actions`) and
 # `blueprint.py settings check` name each one that a workflow runs and this list lacks,

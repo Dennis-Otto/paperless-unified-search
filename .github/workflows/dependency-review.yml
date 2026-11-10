@@ -6,7 +6,9 @@ name: Dependency review
 # accepts goes into allow-ghsas there, with its reason. Started by hand, it compares
 # two commits. A private repository without GitHub Code Security has no dependency
 # review: there the settings bot sets the variable DEPENDENCY_REVIEW to off, and the
-# check leaves the vulnerabilities of the lock files to OSV-Scanner.
+# check leaves the vulnerabilities of the lock files to OSV-Scanner. In a pull request
+# of Renovate's weekly refresh of the lock files, which merges by itself only from
+# versions at least a week old, it fails on a younger one as well (decision 0137).
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -47,10 +49,14 @@ jobs:
         with:
           egress-policy: audit
       # The rules of the pull request itself: accepting an advisory shows in its diff.
+      # The merge of a pull request with its parents, the first of which is its base,
+      # for the age of what the refresh of the lock files brings.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 2
       - name: Check dependency changes for known vulnerabilities
+        id: review
         if: vars.DEPENDENCY_REVIEW != 'off'
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
@@ -67,13 +73,34 @@ jobs:
           message="GitHub doesn't offer its dependency review to this private repository on its plan, and DEPENDENCY_REVIEW is off: the check osv-scanner (pull request) of the workflow OSV-Scanner fails on a vulnerability that a pull request adds to a lock file."
           echo "::notice title=Dependency review::$message"
           printf '### The dependency review\n\n%s\n' "$message" >> "$GITHUB_STEP_SUMMARY"
+      # Renovate's weekly refresh of the lock files merges by itself only from
+      # versions at least a week old, as every other update waits a week: the step
+      # asks PyPI and the registry of npm when each version that it adds came out, and
+      # fails on a younger one, or one that it can't date. Its branches that wait for
+      # the maintainer begin with renovate/review- instead.
+      - name: Check the age of what the refresh of the lock files brings
+        id: age
+        if: >-
+          ${{ !cancelled() && github.event_name == 'pull_request'
+          && github.event.pull_request.head.repo.full_name == github.repository
+          && (startsWith(github.head_ref, 'renovate/lock-file-maintenance')
+          || startsWith(github.head_ref, 'renovate/pip-compile-refresh')) }}
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" locks --age HEAD^1
       # The PR coach: what failed, why it matters and how to fix it, in the summary
-      # of the check and as its annotation, from .github/checks.toml.
+      # of the check and as its annotation, from .github/checks.toml: each check
+      # of the job that failed, or the job itself when none of them did.
       - name: Explain the failure
         if: failure()
         env:
           CHECK: dependency-review
+          FAILED: |
+            ${{ steps.review.outcome == 'failure' && 'dependency-review' || '' }}
+            ${{ steps.age.outcome == 'failure' && 'age of the refresh' || '' }}
         run: |
           script=.github/blueprint.py
           [[ -f "$script" ]] || script=blueprint.py
-          python3 "$script" coach explain "$CHECK"
+          mapfile -t parts < <(grep . <<<"$FAILED" || true)
+          python3 "$script" coach explain "$CHECK" --parts "${parts[@]}"

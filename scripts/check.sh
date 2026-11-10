@@ -236,6 +236,21 @@ else
   echo "Python 3.12 or newer is not installed here; the CI checks the fragments."
 fi
 
+step "Records of decisions"
+# Each record of docs/decisions/ with a number of its own, the next one after the last,
+# and one row for each in its index, in order: two pull requests that took the same
+# number merge without a conflict of git, and the second one fails here once main is
+# merged into it. decisions --fix fixes the index; the fix bot commits that. The Python
+# and blueprint.py of the step Pages in one column.
+if [[ -n "$python" ]]; then
+  "$python" "$tool" decisions
+elif [[ -n "${CI:-}" ]]; then
+  echo "Checking the records of decisions needs Python 3.12 or newer, which this runner lacks."
+  exit 1
+else
+  echo "Python 3.12 or newer is not installed here; the CI checks the records of decisions."
+fi
+
 step "Accepted advisories"
 # The versions that an osv-scanner.toml accepts with every advisory, such as one that
 # another package pins exactly, need a rule of Renovate in
@@ -349,7 +364,41 @@ fi
 
 step "Composer"
 composer validate --strict
-composer audit
+# Again after a passing error of the network, such as a timeout of the advisories of
+# Packagist, 5 and then 10 seconds later. Composer ends with 100 only when it can't
+# reach a repository: a vulnerable or abandoned package fails at once, as does any
+# other error. In the CI, Composer writes an error of the network as an annotation of
+# the check, which would stay even after the next try passes and then read as the cause
+# of a later failure: the runner takes no command of a try that goes again.
+audit_log="$(mktemp)"
+for pause in 5 10 ""; do
+  audit=0
+  if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
+    composer audit >"$audit_log" 2>&1 || audit=$?
+    if ((audit == 100)) && [[ -n "$pause" ]]; then
+      token="composer-audit-$RANDOM$RANDOM$RANDOM"
+      echo "::stop-commands::$token"
+      cat "$audit_log"
+      echo "::$token::"
+    else
+      cat "$audit_log"
+    fi
+  else
+    composer audit || audit=$?
+  fi
+  if ((audit != 100)) || [[ -z "$pause" ]]; then
+    break
+  fi
+  echo "Packagist didn't answer; composer audit tries again in $pause seconds."
+  sleep "$pause"
+done
+rm -f "$audit_log"
+if ((audit == 100)); then
+  echo "Packagist stayed out of reach, and composer audit can't check the packages without its advisories; run the checks again once packagist.org answers." >&2
+fi
+if ((audit != 0)); then
+  exit "$audit"
+fi
 
 step "App metadata"
 xsd="$(mktemp)"
