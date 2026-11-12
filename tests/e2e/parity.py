@@ -196,6 +196,9 @@ def requests_of_the_app(fields, recent_fields, owner_fields):
         Ask("A search of many pages", DOCUMENTS, {"query": "{paged}", "page_size": 1, "page": 1, "fields": fields}),
         Ask("The test of the connection", DOCUMENTS, {"page": 1, "page_size": 1, "fields": "id"}),
         Ask("The newest documents", DOCUMENTS, {"ordering": "-added", "page": 1, "page_size": 25, "fields": recent_fields}),
+        # As the dashboard asks for a page further, and for the newest documents of an owner.
+        Ask("The newest documents, a page further", DOCUMENTS, {"ordering": "-added", "page": 2, "page_size": 1, "fields": recent_fields}),
+        Ask("The newest documents of an owner", DOCUMENTS, {"ordering": "-added", "page": 1, "page_size": 25, "fields": recent_fields, "owner__id__in": UNKNOWN_ID}),
         # As findDocumentOwners() asks for the owners of every document for occ check.
         Ask("The owners of the documents", DOCUMENTS, {"ordering": "id", "page": 1, "page_size": 1000, "fields": owner_fields}),
         Ask("The names of correspondents", "/api/correspondents/", {"id__in": f"{{correspondent}},{UNKNOWN_ID}", "page_size": 2}),
