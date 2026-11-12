@@ -8,7 +8,7 @@ Everything the app knows of, to look up: the settings, the keys in which Nextclo
 
 ## Settings
 
-The settings are under **Administration settings → Paperless Unified Search**, for administrators only, and hold for every user of the Nextcloud. **Test connection and save** stores them only once Paperless answers; it and **Disconnect** ask for the password when it wasn't confirmed in the last 30 minutes.
+The settings are under **Administration settings → Paperless Unified Search**, for administrators only, and hold for every user of the Nextcloud. **Test connection and save** stores the connection only once Paperless answers, and while one is stored, a failed test still stores the archive account and the three switches; it and **Disconnect** ask for the password when it wasn't confirmed in the last 30 minutes.
 
 | Setting | What it does | Default | App config key |
 | --- | --- | --- | --- |
@@ -70,7 +70,7 @@ The settings page saves through five routes of the app, which only administrator
 
 | Route | Does |
 | --- | --- |
-| `POST /apps/paperless_unified_search/settings` | Tests the connection and saves, with the parameters `url`, `token`, `archiveOwner`, `allowLocal`, `alwaysSearch` and `personalAlwaysSearch`; asks for the password like **Test connection and save** |
+| `POST /apps/paperless_unified_search/settings` | Tests the connection and saves, with the parameters `url`, `token`, `archiveOwner`, `allowLocal`, `alwaysSearch`, `personalAlwaysSearch` and `newDocumentAlerts`; asks for the password like **Test connection and save**. When the test fails while a connection is stored, it answers the settings as stored, with `connectionFailure`: the `message` and the `code` of the failure |
 | `POST /apps/paperless_unified_search/settings/account` | **Create the search account and save**: creates the search account `nextcloud-search` in Paperless with the parameter `superuserToken`, the API token of a superuser, which it neither stores nor logs, and with `viewNew` and `viewExisting`, both on unless `false`; then tests the connection with the token of the account and saves with it, with the other parameters of the route above; asks for the password, and the log and the audit log record which administrator created the account. It answers the settings with `searchAccount`: its `username`, whether a `workflow` lets it view new documents, and how many `documents` and `names` it may view since the set-up |
 | `DELETE /apps/paperless_unified_search/settings` | **Disconnect**: deletes the settings, the token and the history; asks for the password |
 | `DELETE /apps/paperless_unified_search/settings/diagnostics` | **Clear history** |

@@ -1,0 +1,3 @@
+### Features
+
+- The administration settings can be changed while Paperless doesn't answer: when the test of the connection fails and a connection is stored, **Test connection and save** still saves the archive account, **Always include Paperless in global search**, **Let users include Paperless in all their searches** and **Let users ask for notifications about new documents**, and keeps the stored URL, API token and **Paperless runs in my local network**. So you can turn off a search that every user sends to Paperless exactly while it is down, slow or being moved; the message says what failed and what was saved, in the colour of a warning. `occ paperless_unified_search:setup` does the same and still exits with 1.

@@ -98,7 +98,7 @@ Um zu sehen, was die Suche höchstens finden kann, melde dich als das Konto bei 
 
 ### Wenn der Test der Verbindung fehlschlägt
 
-**Verbindung testen und speichern** speichert nichts, bis Paperless antwortet, und die Meldung sagt, was fehlgeschlagen ist. Die [Fehlerbehebung](troubleshooting.de.md#wenn-der-test-der-verbindung-fehlschlägt) listet jede Meldung mit dem, was dagegen zu tun ist.
+**Verbindung testen und speichern** speichert die Verbindung erst, wenn Paperless antwortet, und die Meldung sagt, was fehlgeschlagen ist. Solange eine Verbindung gespeichert ist, speichert es das Archivkonto und die drei Schalter trotzdem, damit du sie ausschalten kannst, während Paperless ausgefallen ist; URL, API-Token und **Paperless läuft in meinem lokalen Netzwerk** bleiben, wie sie waren. Die [Fehlerbehebung](troubleshooting.de.md#wenn-der-test-der-verbindung-fehlschlägt) listet jede Meldung mit dem, was dagegen zu tun ist.
 
 --8<-- "README.de.md:languages"
 

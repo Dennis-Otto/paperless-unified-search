@@ -18,7 +18,7 @@ use OCP\IL10N;
 
 /**
  * What the settings page and occ say when the settings can't be saved or Paperless can't
- * be reached, when the account of the API token may do more or less than the search
+ * be reached, what they saved without Paperless, when the account of the API token may do more or less than the search
  * needs, or when Paperless Sync gives each user an archive of their own: what failed and
  * what to correct, in the language of the administrator, or of Nextcloud for occ. Each
  * text stands in a call of t() of its own, where scripts/check-l10n.mjs finds it.
@@ -92,6 +92,14 @@ final class SettingsMessages {
 			RequestFailure::Timeout => $this->l10n->t('Paperless did not answer in time. Check that it runs and is not overloaded, then try again.'),
 			RequestFailure::Unreachable => $this->l10n->t('Nextcloud could not reach Paperless at this URL. Check the address and the port, and that Paperless runs.'),
 		};
+	}
+
+	/**
+	 * What a save did although its test of the connection failed, after the message of the
+	 * failure: it saved the options that don't depend on Paperless and kept the connection.
+	 */
+	public function forOptionsWithoutConnection(): string {
+		return $this->l10n->t('The other settings are saved; the URL, the API token and “Paperless runs in my local network” stay as they were until a test of the connection succeeds.');
 	}
 
 	/**

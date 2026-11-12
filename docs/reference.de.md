@@ -8,7 +8,7 @@ Alles, was die App kennt, zum Nachschlagen: die Einstellungen, die Schlüssel, u
 
 ## Einstellungen
 
-Die Einstellungen liegen unter **Verwaltungseinstellungen → Paperless Unified Search**, nur für Administratoren, und gelten für jeden Benutzer der Nextcloud. **Verbindung testen und speichern** speichert sie erst, wenn Paperless antwortet; es und **Verbindung trennen** fragen nach dem Passwort, wenn es in den letzten 30 Minuten nicht bestätigt wurde.
+Die Einstellungen liegen unter **Verwaltungseinstellungen → Paperless Unified Search**, nur für Administratoren, und gelten für jeden Benutzer der Nextcloud. **Verbindung testen und speichern** speichert die Verbindung erst, wenn Paperless antwortet, und solange eine gespeichert ist, speichert ein fehlgeschlagener Test trotzdem das Archivkonto und die drei Schalter; es und **Verbindung trennen** fragen nach dem Passwort, wenn es in den letzten 30 Minuten nicht bestätigt wurde.
 
 | Einstellung | Was sie tut | Standard | Schlüssel der App-Konfiguration |
 | --- | --- | --- | --- |
@@ -70,7 +70,7 @@ Die Seite der Einstellungen speichert über fünf Routen der App, die nur Admini
 
 | Route | Tut |
 | --- | --- |
-| `POST /apps/paperless_unified_search/settings` | Testet die Verbindung und speichert, mit den Parametern `url`, `token`, `archiveOwner`, `allowLocal`, `alwaysSearch` und `personalAlwaysSearch`; fragt nach dem Passwort wie **Verbindung testen und speichern** |
+| `POST /apps/paperless_unified_search/settings` | Testet die Verbindung und speichert, mit den Parametern `url`, `token`, `archiveOwner`, `allowLocal`, `alwaysSearch`, `personalAlwaysSearch` und `newDocumentAlerts`; fragt nach dem Passwort wie **Verbindung testen und speichern**. Schlägt der Test fehl, während eine Verbindung gespeichert ist, antwortet es mit den gespeicherten Einstellungen und `connectionFailure`: `message` und `code` des Fehlers |
 | `POST /apps/paperless_unified_search/settings/account` | **Suchkonto anlegen und speichern**: legt das Suchkonto `nextcloud-search` in Paperless an, mit dem Parameter `superuserToken`, dem API-Token eines Superusers, das es weder speichert noch protokolliert, und mit `viewNew` und `viewExisting`, beide an, solange nicht `false`; testet dann die Verbindung mit dem Token des Kontos und speichert damit, mit den übrigen Parametern der Route oben; fragt nach dem Passwort, und das Protokoll und das Audit-Protokoll halten fest, welcher Administrator das Konto angelegt hat. Es antwortet mit den Einstellungen und `searchAccount`: seinem `username`, ob ein `workflow` es neue Dokumente ansehen lässt, und wie viele `documents` und `names` es seit der Einrichtung ansehen darf |
 | `DELETE /apps/paperless_unified_search/settings` | **Verbindung trennen**: löscht die Einstellungen, das Token und den Verlauf; fragt nach dem Passwort |
 | `DELETE /apps/paperless_unified_search/settings/diagnostics` | **Verlauf leeren** |

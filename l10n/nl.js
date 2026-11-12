@@ -117,6 +117,7 @@ OC.L10N.register(
 		'Nextcloud could not be reached. Check your connection and try again.': 'Nextcloud kon niet worden bereikt. Controleer je verbinding en probeer het opnieuw.',
 		'Testing the Paperless connection…': 'Verbinding met Paperless testen…',
 		'Connection successful. Settings saved.': 'Verbinding geslaagd. Instellingen opgeslagen.',
+		'The other settings are saved; the URL, the API token and “Paperless runs in my local network” stay as they were until a test of the connection succeeds.': 'De overige instellingen zijn opgeslagen; de URL, het API-token en “Paperless draait in mijn lokale netwerk” blijven zoals ze waren tot een test van de verbinding slaagt.',
 		'Enter a valid Paperless URL.': 'Voer een geldige Paperless-URL in.',
 		'The Paperless URL must use HTTP or HTTPS.': 'De Paperless-URL moet HTTP of HTTPS gebruiken.',
 		'The Paperless URL must not contain credentials, a query, or a fragment.': 'De Paperless-URL mag geen inloggegevens, query of fragment bevatten.',

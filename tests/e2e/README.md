@@ -181,9 +181,10 @@ The browser runs in the image of Playwright that `run.sh` names, inside the netw
 Last, `settings.mjs` checks what the settings page says and does when an answer isn't the one that it asked for, and *Disconnect*, which the other checks leave alone. It runs last, as it disconnects Paperless, and saves the settings again as `run.sh` expects them afterwards. First it tries a search for `mobiletest` as `e2e-user` with *Try a search* and expects document 123 shown, with its tag, and 999 without a file, with their titles as text. Then:
 
 1. A save answered with the HTML page of maintenance mode, the page of a proxy whose Nextcloud doesn't answer (HTTP 504), an expired session (401), a request token that Nextcloud no longer accepts (412) and a network failure each shows one short sentence in the colour of an error, and the settings stay as they are. Playwright gives these answers, which Nextcloud itself would give only during an upgrade or after the session ended.
-2. *Disconnect*, declined in the dialog of the browser, sends nothing and changes nothing; confirmed, it empties the form and the history, turns itself off, and Nextcloud renders the page of a fresh install.
-3. A first save that Paperless refuses keeps *Disconnect* off, as nothing is stored to disconnect, and keeps the URL that was typed for its correction.
-4. A save with the right token shows the URL as Nextcloud stored it, without the slash at its end, and turns *Disconnect* on.
+2. A save to a port of the mock where nothing listens, so that Paperless doesn't answer, still stores *Let users include Paperless in all their searches*, which it turns over, and keeps the stored connection: the message says so in the colour of a warning, the fields of the connection keep what was typed, and after a reload the page shows the stored URL with the switch as saved. Then it saves the switch back.
+3. *Disconnect*, declined in the dialog of the browser, sends nothing and changes nothing; confirmed, it empties the form and the history, turns itself off, and Nextcloud renders the page of a fresh install.
+4. A first save that Paperless refuses keeps *Disconnect* off, as nothing is stored to disconnect, and keeps the URL that was typed for its correction.
+5. A save with the right token shows the URL as Nextcloud stored it, without the slash at its end, and turns *Disconnect* on.
 
 `tests/js/settings.test.mjs` checks the same script without a browser, for every answer and every branch of it, in `scripts/check.sh`.
 

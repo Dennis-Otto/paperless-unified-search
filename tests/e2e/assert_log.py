@@ -62,6 +62,10 @@ EXPECTED_WARNINGS = tuple(
             "the save of https://paperless.invalid, a name without a record in the DNS, in run.sh",
         ),
         (
+            r"The test of the connection to Paperless failed: unreachable ",
+            "the save to a port of the mock where nothing listens, which keeps the connection, in settings.mjs",
+        ),
+        (
             r"The test of the connection to Paperless failed: unauthorized ",
             "the saves of e2e-wrong-token, which the mock refuses, in run.sh, accessibility.mjs and settings.mjs",
         ),
