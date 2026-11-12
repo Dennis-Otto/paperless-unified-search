@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Dashboard;
 
 use DateTime;
+use DateTimeImmutable;
 use DateTimeZone;
 use LogicException;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
@@ -23,6 +24,7 @@ use OCA\PaperlessUnifiedSearch\Tests\Unit\AppServices;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Files;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryCache;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Owners;
+use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Dashboard\Model\WidgetButton;
 use OCP\Files\File;
 use OCP\Files\Folder;
@@ -279,6 +281,36 @@ final class RecentDocumentsWidgetTest extends TestCase {
 		self::assertSame('None of the newest Paperless documents has a file that you can open.', $items['emptyContentMessage']);
 		self::assertSame(4, RecentDocuments::MOST_PAGES);
 		self::assertSame([1, 2, 3, 4], array_map(static fn (array $request): mixed => $request[1]['query']['page'], $this->requests));
+	}
+
+	/**
+	 * A slow Paperless keeps nobody waiting for four pages in turn: the dashboard asks for no
+	 * further page once five seconds went, and shows what it found until then.
+	 */
+	public function testAsksForNoFurtherPageAfterFiveSeconds(): void {
+		$client = $this->paperless(...array_map(fn (int $page): IResponse => $this->page(self::others(1001 + 25 * $page), true), range(0, 1)));
+
+		$items = $this->widget($client, clock: $this->slowClock())->getItemsV2('jamie')->jsonSerialize();
+
+		self::assertSame([], $items['items']);
+		self::assertSame('None of the newest Paperless documents has a file that you can open.', $items['emptyContentMessage']);
+		self::assertSame([1, 2], array_map(static fn (array $request): mixed => $request[1]['query']['page'], $this->requests));
+	}
+
+	/**
+	 * Once five seconds went, the dashboard doesn't ask for the newest documents of the
+	 * user's owner either.
+	 */
+	public function testAsksNoOwnerAfterFiveSeconds(): void {
+		$this->eachOwnerHasAnArchive();
+		$users = $this->answer(200, (string)json_encode(['count' => 2, 'next' => null, 'results' => [['id' => 5, 'username' => 'jamie'], ['id' => 6, 'username' => 'sam']]]));
+		$pages = array_map(fn (int $page): IResponse => $this->page(self::others(1001 + 25 * $page, ['owner' => 6]), true), range(0, 1));
+
+		$items = $this->widget($this->paperless($pages[0], $users, $pages[1]), clock: $this->slowClock())->getItemsV2('jamie')->jsonSerialize();
+
+		self::assertSame([], $items['items']);
+		self::assertCount(3, $this->requests);
+		self::assertArrayNotHasKey('owner__id__in', $this->requests[2][1]['query']);
 	}
 
 	/**
@@ -771,7 +803,24 @@ final class RecentDocumentsWidgetTest extends TestCase {
 		);
 	}
 
-	private function widget(IClient $client, ?LoggerInterface $logger = null, ?IRootFolder $root = null): RecentDocumentsWidget {
+	/**
+	 * A clock whose every look comes three seconds after the one before, as with a Paperless
+	 * that takes three seconds for each answer.
+	 */
+	private function slowClock(): ITimeFactory {
+		$seconds = self::NOW;
+		$clock = $this->createStub(ITimeFactory::class);
+		$clock->method('now')->willReturnCallback(static function () use (&$seconds): DateTimeImmutable {
+			$now = new DateTimeImmutable('@' . $seconds);
+			$seconds += 3;
+
+			return $now;
+		});
+
+		return $clock;
+	}
+
+	private function widget(IClient $client, ?LoggerInterface $logger = null, ?IRootFolder $root = null, ?ITimeFactory $clock = null): RecentDocumentsWidget {
 		$accounts = $this->accounts('archive', 'jamie', 'dennis');
 		$configService = $this->configService($accounts);
 		$paperlessApi = $this->paperlessApi($configService, $client);
@@ -820,6 +869,7 @@ final class RecentDocumentsWidgetTest extends TestCase {
 			$logger,
 			$this->documentOwners($paperlessApi, $configService, $accounts, $cacheFactory),
 			$this->userTags($paperlessApi, $configService, $cacheFactory),
+			$clock ?? $this->clock(),
 		);
 	}
 }

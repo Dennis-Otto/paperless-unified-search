@@ -101,6 +101,15 @@ final class RecentDocuments {
 		try {
 			$found = $this->paperlessApi->findRecentDocuments(self::COUNT, $filters, $page);
 		} catch (Throwable $error) {
+			// Paperless refuses a page past the last one with 404. A page before it, cached a
+			// little earlier, can still name a further page when documents went meanwhile:
+			// that is the end of the list, not a Paperless that can't be reached.
+			if ($page > 1 && $error instanceof PaperlessRequestException && $error->status === 404) {
+				$documents = ['documents' => [], 'more' => false];
+				$this->getCache()->set(self::documentsKey($server), $documents, self::TTL);
+
+				return $documents;
+			}
 			$this->getCache()->set(self::restingKey($server), true, self::TTL);
 			$this->logger->warning('Paperless sent the dashboard no newest documents ({error})', [
 				'app' => AppConstants::APP_ID,

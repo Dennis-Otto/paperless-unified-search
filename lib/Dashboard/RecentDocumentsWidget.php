@@ -20,6 +20,7 @@ use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
 use OCA\PaperlessUnifiedSearch\Service\PlainText;
 use OCA\PaperlessUnifiedSearch\Service\RecentDocuments;
 use OCA\PaperlessUnifiedSearch\Service\UserTags;
+use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Dashboard\IAPIWidgetV2;
 use OCP\Dashboard\IButtonWidget;
 use OCP\Dashboard\IConditionalWidget;
@@ -52,6 +53,13 @@ final class RecentDocumentsWidget implements IAPIWidgetV2, IIconWidget, IButtonW
 	 */
 	private const MOMENT_PATTERN = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?$/';
 
+	/**
+	 * The seconds after which the dashboard asks Paperless for no further page, and keeps
+	 * what it found: as long as one request may take, so that a slow Paperless doesn't keep
+	 * a user waiting for each of the pages in turn.
+	 */
+	private const PAGING_SECONDS = 5;
+
 	/** @psalm-suppress PossiblyUnusedMethod */
 	public function __construct(
 		private IL10N $l10n,
@@ -66,6 +74,7 @@ final class RecentDocumentsWidget implements IAPIWidgetV2, IIconWidget, IButtonW
 		private LoggerInterface $logger,
 		private DocumentOwners $documentOwners,
 		private UserTags $userTags,
+		private ITimeFactory $timeFactory,
 	) {
 	}
 
@@ -185,19 +194,21 @@ final class RecentDocumentsWidget implements IAPIWidgetV2, IIconWidget, IButtonW
 	 * up to RecentDocuments::MOST_PAGES, so that one import of others doesn't empty the widget
 	 * of everyone else. Where Paperless Sync gives each owner an archive, it then asks once
 	 * for the newest documents of the user's own owner, which are older than all those of the
-	 * pages, as these hold every newer one. A page that Paperless doesn't send ends the list.
+	 * pages, as these hold every newer one. A page that Paperless doesn't send ends the list,
+	 * and so do the PAGING_SECONDS: the dashboard asks for no further page after them.
 	 *
 	 * @param ?list<int> $tagIds
 	 * @return ?list<array{array<array-key, mixed>, File}>
 	 */
 	private function findShown(IUser $user, string $archiveOwner, ?array $tagIds, ?string $since, int $wanted): ?array {
+		$started = $this->seconds();
 		/** @var array<int, array{array<array-key, mixed>, File}> $openable the documents with a file, and the file, by their IDs */
 		$openable = [];
 		// Whether Paperless has older documents that may count: none after a page with a
 		// document that it didn't add after the moment $since, and none after a page that it
 		// didn't send.
 		$older = true;
-		for ($page = 1; $older && $page <= RecentDocuments::MOST_PAGES && count($openable) < $wanted; $page++) {
+		for ($page = 1; $older && $page <= RecentDocuments::MOST_PAGES && count($openable) < $wanted && ($page === 1 || $this->inTime($started)); $page++) {
 			$found = $this->recentDocuments->find($tagIds, $page);
 			if ($found === null) {
 				if ($page === 1) {
@@ -212,7 +223,7 @@ final class RecentDocumentsWidget implements IAPIWidgetV2, IIconWidget, IButtonW
 		}
 
 		// A user with tags gets the documents with one of them whoever owns them (decision 0015).
-		if ($older && count($openable) < $wanted && $tagIds === null) {
+		if ($older && count($openable) < $wanted && $tagIds === null && $this->inTime($started)) {
 			$ownerIds = $this->documentOwners->paperlessIdsOf($user);
 			$owned = $ownerIds === [] ? null : $this->recentDocuments->findOwnedBy($ownerIds);
 			if ($owned !== null) {
@@ -221,6 +232,18 @@ final class RecentDocumentsWidget implements IAPIWidgetV2, IIconWidget, IButtonW
 		}
 
 		return array_slice($openable, 0, $wanted);
+	}
+
+	/**
+	 * Whether the dashboard, which began to ask Paperless at the moment $started, may still
+	 * ask it for more documents, within PAGING_SECONDS.
+	 */
+	private function inTime(float $started): bool {
+		return $this->seconds() - $started < self::PAGING_SECONDS;
+	}
+
+	private function seconds(): float {
+		return (float)$this->timeFactory->now()->format('U.u');
 	}
 
 	/**

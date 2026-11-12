@@ -133,7 +133,7 @@ final class RecentDocumentsTest extends TestCase {
 	 * same documents still counts.
 	 */
 	public function testAPageThatFailsRestsAlone(): void {
-		$client = $this->paperless($this->documents(self::DOCUMENTS), $this->answer(404, '{"detail":"Invalid page."}'));
+		$client = $this->paperless($this->documents(self::DOCUMENTS), $this->answer(500, '<h1>Server Error (500)</h1>'));
 
 		self::assertSame(self::PAGE, $this->recent($client)->find());
 		self::assertNull($this->recent($client)->find(page: 2));
@@ -144,6 +144,32 @@ final class RecentDocumentsTest extends TestCase {
 			'recent-documents-' . hash('sha256', 'https://paperless.example.com'),
 			'recent-documents-resting-' . hash('sha256', 'https://paperless.example.com') . '-page-2',
 		], array_keys($this->cache->values()));
+	}
+
+	/**
+	 * A page past the last one, which Paperless refuses with 404 once documents went after
+	 * the page before it was cached, ends the list: no warning, and no rest of the page.
+	 */
+	public function testAPagePastTheLastEndsTheList(): void {
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::never())->method('warning');
+		$client = $this->paperless($this->answer(404, '{"detail":"Invalid page."}'));
+
+		self::assertSame(['documents' => [], 'more' => false], $this->recent($client, $logger)->find(page: 2));
+		self::assertSame(['documents' => [], 'more' => false], $this->recent($client, $logger)->find(page: 2));
+		self::assertCount(1, $this->requests);
+		self::assertSame(['recent-documents-' . hash('sha256', 'https://paperless.example.com') . '-page-2'], array_keys($this->cache->values()));
+	}
+
+	/**
+	 * The first page that Paperless refuses with 404 is no end of a list: Paperless isn't
+	 * where the settings say.
+	 */
+	public function testAFirstPageNotFoundRests(): void {
+		$client = $this->paperless($this->answer(404, '<h1>Not Found</h1>'));
+
+		self::assertNull($this->recent($client)->find());
+		self::assertSame(['recent-documents-resting-' . hash('sha256', 'https://paperless.example.com')], array_keys($this->cache->values()));
 	}
 
 	/**
