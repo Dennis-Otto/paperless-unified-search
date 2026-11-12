@@ -16,6 +16,7 @@ use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\SavedSearches;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
+use OCA\PaperlessUnifiedSearch\Service\SearchRest;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppSettings;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\UserPreferences;
@@ -389,7 +390,7 @@ final class PersonalSettingsControllerTest extends TestCase {
 			$configService,
 			new AlwaysSearch($configService, $this->userConfig()),
 			new SavedSearches($this->userConfig()),
-			new PaperlessApiService($configService, $clientService, new SearchDiagnostics($this->appConfig(), $clock, $this->createStub(ICacheFactory::class)), $clock, $appManager),
+			new PaperlessApiService($configService, $clientService, new SearchDiagnostics($this->appConfig(), $clock, $this->createStub(ICacheFactory::class)), $clock, $appManager, new SearchRest($this->createStub(ICacheFactory::class), $this->createStub(LoggerInterface::class))),
 			$this->session($userId),
 			$l10n,
 		);

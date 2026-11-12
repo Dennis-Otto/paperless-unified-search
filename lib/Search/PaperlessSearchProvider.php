@@ -25,6 +25,7 @@ use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
 use OCA\PaperlessUnifiedSearch\Service\PlainText;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
+use OCA\PaperlessUnifiedSearch\Service\SearchRest;
 use OCA\PaperlessUnifiedSearch\Service\UserTags;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Files\File;
@@ -100,6 +101,7 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 		private DocumentOwners $documentOwners,
 		private UserTags $userTags,
 		private SearchCursors $cursors,
+		private SearchRest $rest,
 	) {
 	}
 
@@ -165,6 +167,10 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 	 * user may open alone (decision 0016): the search looks for one result more than the
 	 * page holds, and only a result that it found that way makes a next page, whose
 	 * cursor, sealed, starts with it.
+	 *
+	 * After a request to Paperless that got no answer, the searches rest for a while and
+	 * find nothing without asking Paperless, so that they don't hold the PHP workers of
+	 * Nextcloud while it is down (decision 0018).
 	 */
 	public function search(IUser $user, ISearchQuery $query): SearchResult {
 		$term = trim($query->getTerm());
@@ -181,6 +187,17 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 		$offset = $this->cursors->open($query->getCursor(), $user->getUID(), $term, $dateFilters);
 		$pager = PaperlessPager::at($offset ?? PaperlessPager::MAX_OFFSET, $query->getLimit());
 		if ($pager->isPastTheEnd()) {
+			return SearchResult::complete($this->getName(), []);
+		}
+
+		// Nor while the search rests after a request without answer: the failure is in the
+		// history of the diagnostics already.
+		$url = $this->configService->getUrl();
+		if ($this->rest->isResting($url)) {
+			$this->logger->debug('The search rests after Paperless gave no answer, so it finds nothing for a while', [
+				'app' => AppConstants::APP_ID,
+			]);
+
 			return SearchResult::complete($this->getName(), []);
 		}
 
@@ -249,6 +266,11 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 				'app' => AppConstants::APP_ID,
 				'errorType' => $exception::class,
 			]);
+			// A Paperless that gave no answer gets no search for a while; one that answered,
+			// with any status, does, and so does one whose files failed.
+			if ($step === SearchEvent::STEP_PAPERLESS) {
+				$this->rest->restAfter($url, $exception);
+			}
 			if ($entries === []) {
 				$this->recordFailure($step, $exception, $started, $term);
 
