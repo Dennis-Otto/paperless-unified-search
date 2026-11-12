@@ -9,16 +9,20 @@ declare(strict_types=1);
 
 namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Service;
 
+use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Model\Explanation;
 use OCA\PaperlessUnifiedSearch\Model\Verdict;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\SearchExplainer;
+use OCA\PaperlessUnifiedSearch\Service\TrustedMounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppServices;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Files;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Owners;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\TeamFolderMount;
 use OCP\Files\File;
 use OCP\Files\Folder;
+use OCP\Files\Mount\IMountPoint;
 use OCP\Http\Client\IResponse;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -199,6 +203,42 @@ final class SearchExplainerTest extends TestCase {
 	}
 
 	/**
+	 * A file in a Team folder that the administrator trusts (decision 0019) shows to jamie
+	 * where jamie may only read it; where jamie may write it, the folder is what to
+	 * correct, not a share of the archive account, which the same search tells apart.
+	 */
+	public function testAFileInATrustedMountThatTheUserMayWriteIsWritableThere(): void {
+		$this->settings[AppConstants::APP_ID . '.' . TrustedMounts::KEY] = 'team:3';
+		$this->file('/jamie/files/Archive/Electricity [P412].pdf', 'jamie', mount: $this->teamFolder(3));
+		$this->file('/jamie/files/Archive/Insurance [P389].pdf', 'jamie', writable: true, mount: $this->teamFolder(3));
+		$this->file('/jamie/files/Upload/Letter [P371].pdf', writable: true);
+
+		[$explanations, $error] = $this->explainer()->explain($this->user('jamie'), [412, 389, 371], 'archive');
+
+		self::assertSame([
+			['id' => 412, 'verdict' => 'shown', 'path' => '/Archive/Electricity [P412].pdf', 'owner' => 'jamie'],
+			['id' => 389, 'verdict' => 'writable_mount', 'path' => '/Archive/Insurance [P389].pdf', 'owner' => 'jamie'],
+			['id' => 371, 'verdict' => 'writable', 'path' => '/Upload/Letter [P371].pdf', 'owner' => 'archive'],
+		], self::serialized($explanations));
+		self::assertNull($error);
+		self::assertCount(1, $this->searches);
+	}
+
+	/**
+	 * A file that the user may write and whose mount fails to answer lies in no trusted
+	 * mount: the share of the archive account is what to correct.
+	 */
+	public function testAWritableFileWhoseMountFailsIsSharedWithWritePermission(): void {
+		$this->settings[AppConstants::APP_ID . '.' . TrustedMounts::KEY] = 'team:3';
+		$file = $this->file('/jamie/files/Upload/Letter [P371].pdf', writable: true);
+		$file->method('getMountPoint')->willThrowException(new RuntimeException('Storage unavailable'));
+
+		[$explanations] = $this->explainer()->explain($this->user('jamie'), [371], 'archive');
+
+		self::assertSame(['writable'], array_map(static fn (Explanation $explanation): string => $explanation->verdict->value, $explanations));
+	}
+
+	/**
 	 * The archive account sees all of its files itself: what it doesn't see has no file.
 	 */
 	public function testTheArchiveAccountItselfSeesEveryFileOfItsOwn(): void {
@@ -317,11 +357,22 @@ final class SearchExplainerTest extends TestCase {
 		$cacheFactory = $this->memoryCacheFactory();
 
 		return new SearchExplainer(
-			new NextcloudFileLocator($this->rootFolder(), $this->createStub(LoggerInterface::class)),
+			new NextcloudFileLocator($this->rootFolder(), $this->createStub(LoggerInterface::class), trustedMounts: new TrustedMounts($this->appConfig())),
 			$accounts,
 			$this->documentOwners($paperlessApi, $configService, $accounts, $cacheFactory),
 			$this->userTags($paperlessApi, $configService, $cacheFactory),
 		);
+	}
+
+	/**
+	 * The mount of the Team folder with this ID.
+	 */
+	private function teamFolder(int $folderId): IMountPoint {
+		$mount = $this->createStub(TeamFolderMount::class);
+		$mount->method('getMountType')->willReturn('group');
+		$mount->method('getFolderId')->willReturn($folderId);
+
+		return $mount;
 	}
 
 	/**

@@ -47,6 +47,7 @@ occ config:app:get paperless_unified_search paperless_url
 | `paperless_url` | The URL of Paperless, as the settings stored it: without a slash at its end, with the host in its ASCII form |
 | `allow_local` | Whether Paperless runs in the local network |
 | `archive_owner` | The ID of the archive account, as Nextcloud spells it; missing when the settings take the account of Paperless Sync |
+| `trusted_mounts` | The Team folders and external storages whose files stand for documents besides those of the archive account, separated by spaces, such as `team:3 external:7`; missing when there are none. `occ paperless_unified_search:trusted-mounts` changes it |
 | `always_search` | Whether every search asks Paperless |
 | `personal_always_search` | Whether users may choose to include Paperless in every search of their own; missing means yes |
 | `new_document_alerts` | Whether users may ask for notifications about new documents; missing means yes where Nextcloud has a memory cache |

@@ -129,6 +129,16 @@ final class SettingsMessages {
 	}
 
 	/**
+	 * Which Team folders and external storages the administrator trusts with the archive
+	 * (decision 0019), by their names, such as team:3, or null for none.
+	 *
+	 * @param list<string> $names
+	 */
+	public function forTrustedMounts(array $names): ?string {
+		return $names === [] ? null : $this->l10n->t('The files in these Team folders and external storages stand for documents too, for each user who may only read them there: %s. occ paperless_unified_search:trusted-mounts changes them.', [implode(', ', $names)]);
+	}
+
+	/**
 	 * The page that explains the archives of Paperless Sync for each user and what to do,
 	 * in German for an administrator who reads German, and else in English, the languages
 	 * of the website.

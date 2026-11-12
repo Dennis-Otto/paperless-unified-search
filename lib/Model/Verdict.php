@@ -26,6 +26,12 @@ enum Verdict: string {
 	 */
 	case Writable = 'writable';
 	/**
+	 * The user sees a file with the marker of the document in a Team folder or an external
+	 * storage that the administrator trusts with the archive (decision 0019), but may change
+	 * it there or add files to its folder, and so could have given it the marker.
+	 */
+	case WritableMount = 'writable_mount';
+	/**
 	 * The archive account, or the user of the owner of the document, has a file of the
 	 * document, but hasn't shared it with the user.
 	 */

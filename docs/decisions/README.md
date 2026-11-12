@@ -11,7 +11,7 @@ Copy [the template](0000-template.md) to the next free number, replace the descr
 | Record | Decision | Status |
 | --- | --- | --- |
 | [0001](0001-record-decisions.md) | Record the decisions that shape the project | accepted |
-| [0002](0002-trust-the-archive-account.md) | Trust the owner of a file, not its name | accepted, amended by [0013](0013-trust-the-files-of-each-owner.md) |
+| [0002](0002-trust-the-archive-account.md) | Trust the owner of a file, not its name | accepted, amended by [0013](0013-trust-the-files-of-each-owner.md) and [0019](0019-trust-team-folders-and-external-storages-that-the-administrator-names.md) |
 | [0003](0003-bind-the-token-to-its-server.md) | Send the stored token only to the server it was saved for | accepted |
 | [0004](0004-local-network-opt-in.md) | Allow the local network for this Paperless alone, by a switch of the settings | accepted |
 | [0005](0005-name-the-cause-of-a-failed-connection-test.md) | Name the cause of a failed test of the connection, in the language of the administrator | accepted |
@@ -28,3 +28,4 @@ Copy [the template](0000-template.md) to the next free number, replace the descr
 | [0016](0016-page-on-only-to-a-result-that-the-user-may-open.md) | Page on only to a result that the user may open, with a sealed cursor | accepted, amended by [0017](0017-search-further-while-a-page-has-no-result.md) |
 | [0017](0017-search-further-while-a-page-has-no-result.md) | Search further while a page has no result | accepted |
 | [0018](0018-rest-the-search-after-a-request-without-answer.md) | Rest the search for 30 seconds after a request without answer | accepted |
+| [0019](0019-trust-team-folders-and-external-storages-that-the-administrator-names.md) | Trust the Team folders and external storages that the administrator names | accepted |

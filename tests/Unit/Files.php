@@ -12,6 +12,7 @@ namespace OCA\PaperlessUnifiedSearch\Tests\Unit;
 use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
+use OCP\Files\Mount\IMountPoint;
 use OCP\Files\Node;
 use OCP\IUser;
 
@@ -29,10 +30,14 @@ trait Files {
 	/**
 	 * A file at a path in the folders of a user, such as /jamie/files/Invoice [P412].pdf,
 	 * which that user sees and the account $owner owns: the user's own file, or a share,
-	 * which the user may only read, or also change when $writable.
+	 * which the user may only read, or also change when $writable; in a share or the
+	 * folders of a user, unless $mount is another one.
 	 */
-	private function file(string $path, ?string $owner = 'archive', bool $writable = false): File {
+	private function file(string $path, ?string $owner = 'archive', bool $writable = false, ?IMountPoint $mount = null): File {
 		$file = $this->createStub(File::class);
+		if ($mount !== null) {
+			$file->method('getMountPoint')->willReturn($mount);
+		}
 		$file->method('getName')->willReturn(basename($path));
 		$file->method('getPath')->willReturn($path);
 		$file->method('getId')->willReturn(crc32($path));

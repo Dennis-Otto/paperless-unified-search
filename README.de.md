@@ -295,7 +295,8 @@ Die Suche braucht eines von einer Synchronisierung: jedes Dokument von Paperless
         ```
 
     - **Der Desktop-Client von Nextcloud**, angemeldet als Archiv-Konto, auf einer Kopie des Ordners statt auf dem Ordner selbst: Er synchronisiert in beide Richtungen, und Paperless verliert eine Datei aus den Augen, die in seinem Medienordner verschoben oder gelöscht wird.
-    - **Ein externer Speicher** mit den Dateien, nur für das Archiv-Konto eingebunden und von dort geteilt. Eine Einbindung lässt sich erst teilen, wenn in ihren Optionen **Teilen aktivieren** eingeschaltet ist, hinter dem Zahnrad des Speichers unter *Externer Speicher* in den Verwaltungseinstellungen. Die Suche von Nextcloud findet nur die Dateien, die es gescannt hat, also lass einen Timer `occ files:scan` für den Speicher ausführen. Auf einem Speicher, der für alle Benutzer eingebunden ist, gehören jedem Benutzer die Dateien, die er dort sieht, und eine solche Datei steht für kein Dokument.
+    - **Ein externer Speicher** mit den Dateien, nur für das Archiv-Konto eingebunden und von dort geteilt. Eine Einbindung lässt sich erst teilen, wenn in ihren Optionen **Teilen aktivieren** eingeschaltet ist, hinter dem Zahnrad des Speichers unter *Externer Speicher* in den Verwaltungseinstellungen. Die Suche von Nextcloud findet nur die Dateien, die es gescannt hat, also lass einen Timer `occ files:scan` für den Speicher ausführen. Auf einem Speicher, der für alle Benutzer eingebunden ist, gehören jedem Benutzer die Dateien, die er dort sieht, und eine solche Datei steht für kein Dokument, außer du vertraust dem Speicher, wie der nächste Punkt sagt.
+    - **Ein Teamordner, oder ein externer Speicher, der für mehrere Benutzer oder Gruppen eingebunden ist.** Eine solche Einbindung hat kein eigenes Konto: Nextcloud nennt jeden Benutzer, der dort eine Datei sieht, als ihren Besitzer, daher kann das Archiv-Konto sie nicht benennen. Vertraue ihr mit `occ paperless_unified_search:trusted-mounts`, einem Teamordner mit seiner ID, wie `occ groupfolders:list` sie zeigt, und einem externen Speicher mit seiner Mount-ID, wie `occ files_external:list` sie zeigt, etwa `occ paperless_unified_search:trusted-mounts team:3 external:7`. Eine Datei dort steht dann für ihr Dokument, für jeden Benutzer, der sie dort nur lesen darf, und die Einstellungen nennen die vertrauenswürdigen Einbindungen unter den Freigaben. Ein Benutzer, der dort eine Datei ändern oder Dateien in ihren Ordner legen darf, sieht keines ihrer Dokumente, denn er hätte einer Datei jede Kennung geben können: Vertraue nur einer Einbindung, die niemand außer der Synchronisation beschreibt, auch außerhalb von Nextcloud. Ein externer Speicher, den ein Benutzer in seinen persönlichen Einstellungen hinzufügt, zählt nie, und auch keine Datei, die ein Benutzer aus der Einbindung heraus teilt. Das Archiv-Konto bleibt: Nenne das Konto, das das Archiv schreibt, etwa das von Paperless Sync, und lass es die Einbindung ebenfalls sehen, denn die Benachrichtigungen über neue Dokumente warten, bis es die Datei eines Dokuments sieht.
 
 3. **Teile das Archiv nur lesend** mit den Benutzern, die seine Dokumente finden dürfen, und gib das Archiv-Konto in den Einstellungen ein, wie in der [Konfiguration](#konfiguration).
 
@@ -592,7 +593,7 @@ Gib einem Assistenten das App-Passwort eines Benutzers, der nur sieht, was er le
 
 ## Mit occ einrichten und prüfen
 
-Vier Befehle von `occ` erledigen ohne Browser, was die Einstellungen tun, und mehr: Sie richten die App für Ansible, Docker und andere Skripte ein, testen sie für die Überwachung und sagen, warum ein Benutzer ein Dokument nicht findet.
+Fünf Befehle von `occ` erledigen ohne Browser, was die Einstellungen tun, und mehr: Sie richten die App für Ansible, Docker und andere Skripte ein, testen sie für die Überwachung und sagen, warum ein Benutzer ein Dokument nicht findet.
 
 | Befehl | Was er tut | Exit-Code |
 | --- | --- | --- |
@@ -600,6 +601,7 @@ Vier Befehle von `occ` erledigen ohne Browser, was die Einstellungen tun, und me
 | `paperless_unified_search:test` | Testet die Verbindung mit den gespeicherten Einstellungen, nennt die Version von Paperless und warnt vor einem Token, das mehr darf, als die Suche braucht, oder weniger, als die Treffer zeigen | 0, wenn Paperless antwortet, sonst 1 |
 | `paperless_unified_search:search <user> <term>` | Sucht als der Benutzer und sagt für jedes Dokument, ob es ihm angezeigt wird, mit `--explain` auch, warum nicht | 0, sobald Paperless geantwortet hat |
 | `paperless_unified_search:check` | Testet die Verbindung, was das Konto des API-Tokens darf, und das Archiv-Konto, zählt die Dokumente von Paperless, die eine Datei haben, und listet, wie das Archiv geteilt ist | 0, wenn die Suche Dokumente zeigen kann, sonst 1 |
+| `paperless_unified_search:trusted-mounts [<mount>...]` | Listet oder setzt die Teamordner und externen Speicher, deren Dateien neben denen des Archiv-Kontos für Dokumente stehen, etwa `team:3 external:7` | 0, oder 2 für einen Namen, der weder `team:<ID>` noch `external:<ID>` ist |
 
 ### Die App einrichten
 
@@ -684,7 +686,7 @@ Vor diesen vier Fragen stellt die Suche bei einem Benutzer, den Paperless Sync n
   <img src="docs/images/diagrams/why-a-document-does-not-show.de.svg" alt="Warum ein Dokument nicht angezeigt wird: Paperless findet Dokument 389, wenn jamie sucht, und occ paperless_unified_search:search jamie invoice --explain stellt nacheinander vier Fragen. Sieht jamie eine Datei des Archiv-Kontos mit [P389] im Namen? Dann wird das Dokument angezeigt, außer jamie darf diese Datei ändern oder Dateien in ihren Ordner legen: Dann ist sie mit Schreibrecht geteilt, denn jamie könnte sie so benannt haben, und sie nur lesend mit jamie zu teilen, zeigt sie an. Sonst: Hat das Archiv-Konto eine solche Datei in seinen eigenen Ordnern? Dann ist sie nicht mit jamie geteilt, und die Datei oder ihren Ordner nur lesend mit jamie zu teilen, zeigt sie an. Sonst: Sieht jamie eine Datei mit der Kennung eines anderen Kontos? Dann gehört sie nicht dem Archiv-Konto, denn nur Dateien des Archiv-Kontos stehen für Dokumente. Sonst gibt es keine Datei, und die Synchronisierung muss erst eine mit der Kennung im Namen schreiben.">
 </picture>
 
-Ohne `--explain` entscheidet `search` so wie die Suche selbst, mit einer Suche im Datei-Cache, und nennt jedes Dokument, das nicht angezeigt wird, `hidden`; mit der Option folgt für jede weitere Frage eine Suche im Datei-Cache, für die Dokumente, die noch nicht erklärt sind. `--json` schreibt die Dokumente für Skripte, jedes mit seinen Feldern `id`, `title`, `verdict`, `path` und `owner`.
+Ohne `--explain` entscheidet `search` so wie die Suche selbst, mit einer Suche im Datei-Cache, und nennt jedes Dokument, das nicht angezeigt wird, `hidden`; mit der Option folgt für jede weitere Frage eine Suche im Datei-Cache, für die Dokumente, die noch nicht erklärt sind. `--json` schreibt die Dokumente für Skripte, jedes mit seinen Feldern `id`, `title`, `verdict`, `path` und `owner`. In einem Teamordner oder externen Speicher, dem du vertraust, wie unten, ist eine Datei, die der Benutzer schreiben darf, `writable mount`: Gib dem Benutzer dort auf den Ordner nur Leserechte.
 
 ### Die ganze Einrichtung prüfen
 
@@ -703,6 +705,17 @@ $ occ paperless_unified_search:check
 Dokumente ohne Datei sind kein Fehler, solange die Suche andere zeigen kann: Die Synchronisierung hat sie vielleicht noch nicht geschrieben oder lässt manche absichtlich weg. Hat kein einziges Dokument eine Datei, etwa bei einem Archiv-Konto, dem keine der synchronisierten Dateien gehört, endet `check` mit 1 und sagt, was zu korrigieren ist. `search --explain` mit einem Begriff eines solchen Dokuments sagt, warum es nicht angezeigt wird. Ein Konto des Tokens, das Dokumente ändern oder keine Korrespondenten, Dokumenttypen oder Tags ansehen darf, bekommt eine Zeile mit `!` und was zu ändern ist, ebenso eines, von dem Paperless nicht sagt, was es darf, ohne das Recht, seine UI-Einstellungen anzusehen; eine Frage danach, die nicht rechtzeitig beantwortet wird, sagt nur, die Prüfung erneut auszuführen. Keines davon lässt die Prüfung fehlschlagen.
 
 Zuletzt listet `check`, mit wem das Archiv-Konto seine Dateien teilt: die Benutzer, Gruppen und Teams, jeden einmal, andere Empfänger wie Unterhaltungen von Talk, und die öffentlichen Links. Jede Freigabe, die Änderungen erlaubt, bekommt eine Warnung mit ihrem Pfad und ihrem Empfänger, denn wer in das Archiv schreiben darf, könnte einer Datei die Kennung eines beliebigen Dokuments geben, und die Suche zeigt ihm keines der Dokumente darin. `check` endet trotzdem mit 0, denn die Suche zeigt den anderen weiter Dokumente.
+
+### Einem Teamordner oder externen Speicher vertrauen
+
+Ein Teamordner, oder ein externer Speicher, der für mehrere Benutzer oder Gruppen eingebunden ist, hat kein eigenes Konto, dem seine Dateien gehören: Nextcloud nennt jeden Benutzer, der dort eine Datei sieht, als ihren Besitzer, daher kann das Archiv-Konto eine solche Einbindung nicht benennen. `trusted-mounts` vertraut ihr neben dem Archiv-Konto, einem Teamordner mit seiner ID, wie `occ groupfolders:list` sie zeigt, und einem externen Speicher mit seiner Mount-ID, wie `occ files_external:list` sie zeigt. Die Namen ersetzen die gespeicherten:
+
+```console
+$ occ paperless_unified_search:trusted-mounts team:3 external:7
+Trusted mounts: team:3, external:7. Their files stand for documents for each user who may only read them there.
+```
+
+Eine Datei mit der Kennung eines Dokuments in einer solchen Einbindung steht dann für dieses Dokument, für jeden Benutzer, der sie dort nur lesen darf, und die Einstellungen nennen die vertrauenswürdigen Einbindungen unter den Freigaben. Ein Benutzer, der dort eine Datei ändern oder Dateien in ihren Ordner legen darf, sieht keines ihrer Dokumente, denn er hätte einer Datei jede Kennung geben können. Vertraue also nur einer Einbindung, die niemand außer der Synchronisation beschreibt, auch außerhalb von Nextcloud, etwa dem Medienordner von Paperless, für eine Gruppe nur lesend eingebunden. Ein externer Speicher, den ein Benutzer in seinen persönlichen Einstellungen hinzufügt, zählt nie, und auch keine Datei, die ein Benutzer aus der Einbindung heraus teilt. `--none` vertraut wieder keiner. `check` kann die Dateien einer vertrauenswürdigen Einbindung nicht zählen, die keinem Konto gehören, und sagt das; ohne eine Datei des Archiv-Kontos schlägt es dann nicht fehl.
 
 ### In der Übersicht der Verwaltung
 

@@ -300,7 +300,24 @@ final class SettingsTemplateTest extends TestCase {
 		foreach ((new DOMXPath($page))->query('//ul[@class="paperless-unified-search-reasons"]/li') ?: [] as $reason) {
 			$reasons[] = explode(':', $this->text($reason))[0];
 		}
-		self::assertSame(['Shared with write permission', 'Not shared', 'Not a file of the archive account', 'Owned in Paperless by another user', 'No file', 'Not among the tags that the user may see'], $reasons);
+		self::assertSame(['Shared with write permission', 'Writable in a trusted folder', 'Not shared', 'Not a file of the archive account', 'Owned in Paperless by another user', 'No file', 'Not among the tags that the user may see'], $reasons);
+	}
+
+	/**
+	 * Below the shares of the archive account, the page names the Team folders and external
+	 * storages whose files stand for documents too (decision 0019), as text; without them,
+	 * it says nothing about them.
+	 */
+	public function testNamesTheTrustedMountsBelowTheShares(): void {
+		[, $page] = $this->render(new PublicConfig(self::STORED, true, false, 'archive'), shares: ['summary' => 'Shared read-only: 1 user.', 'warnings' => []], trustedMounts: 'Trusted: <b>team:3</b>.');
+
+		$block = $this->element($page, 'paperless-unified-search-trusted-mounts');
+		self::assertSame('Trusted: <b>team:3</b>.', $this->text($block));
+		self::assertSame('paperless-unified-search-shares', $block->previousElementSibling?->getAttribute('id'));
+
+		[, $page] = $this->render(new PublicConfig(self::STORED, true, false, 'archive'));
+
+		self::assertNull($page->getElementById('paperless-unified-search-trusted-mounts'));
 	}
 
 	/**
@@ -493,7 +510,7 @@ final class SettingsTemplateTest extends TestCase {
 	 * @param array<string, list<string>> $userTags the tags that some users may see, by their IDs
 	 * @return array{string, DOMDocument}
 	 */
-	private function render(PublicConfig $config, ?array $history = null, string $saveUrl = '/settings/save', ?array $shares = null, array $tokenWarnings = [], string $syncUrl = '', bool $syncAllowLocal = false, array $userTags = []): array {
+	private function render(PublicConfig $config, ?array $history = null, string $saveUrl = '/settings/save', ?array $shares = null, array $tokenWarnings = [], string $syncUrl = '', bool $syncAllowLocal = false, array $userTags = [], ?string $trustedMounts = null): array {
 		$l10n = $this->createStub(IL10N::class);
 		$l10n->method('t')->willReturnCallback(
 			static fn (string $text, array $parameters = []): string => vsprintf($text, $parameters),
@@ -513,6 +530,7 @@ final class SettingsTemplateTest extends TestCase {
 			'syncAllowLocal' => $syncAllowLocal,
 			'history' => $history,
 			'shares' => $shares,
+			'trustedMounts' => $trustedMounts,
 			'userTags' => $userTags,
 		];
 

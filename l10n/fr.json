@@ -201,7 +201,10 @@
 		"Adds the account to the permission to view of every document, correspondent, document type and tag that Paperless has. Everyone who may view or change them keeps it.": "Ajoute le compte à la permission d’afficher de chaque document, correspondant, type de document et étiquette de Paperless. Quiconque peut déjà les afficher ou les modifier le garde.",
 		"Create the search account and save": "Créer le compte de recherche et enregistrer",
 		"Creating the search account in Paperless…": "Création du compte de recherche dans Paperless…",
-		"Created the account {account} in Paperless and saved the settings with its token.": "Le compte {account} a été créé dans Paperless, et les paramètres ont été enregistrés avec son jeton."
+		"Created the account {account} in Paperless and saved the settings with its token.": "Le compte {account} a été créé dans Paperless, et les paramètres ont été enregistrés avec son jeton.",
+		"Writable in a trusted folder": "Modifiable dans un dossier de confiance",
+		"Writable in a trusted folder: the file lies in a Team folder or an external storage that the administrator trusts with the archive, but the user may change it there, or add files to its folder, so its name proves nothing. Let the user only read the folder.": "Modifiable dans un dossier de confiance : le fichier se trouve dans un dossier d’équipe ou un stockage externe auquel l’administrateur confie l’archive, mais l’utilisateur peut l’y modifier ou ajouter des fichiers dans son dossier, son nom ne prouve donc rien. Ne donnez à l’utilisateur que la lecture du dossier.",
+		"The files in these Team folders and external storages stand for documents too, for each user who may only read them there: %s. occ paperless_unified_search:trusted-mounts changes them.": "Les fichiers de ces dossiers d’équipe et stockages externes représentent aussi des documents, pour chaque utilisateur qui peut seulement les y lire : %s. occ paperless_unified_search:trusted-mounts les modifie."
 	},
 	"pluralForm": "nplurals=3; plural=(n == 0 || n == 1) ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;"
 }

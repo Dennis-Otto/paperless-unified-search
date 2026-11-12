@@ -4,7 +4,7 @@ description: "Why a Paperless document appears only through a file that the arch
 
 # Trust the owner of a file, not its name
 
-- Status: accepted, amended by [0013](0013-trust-the-files-of-each-owner.md)
+- Status: accepted, amended by [0013](0013-trust-the-files-of-each-owner.md) and [0019](0019-trust-team-folders-and-external-storages-that-the-administrator-names.md)
 - Date: 2026-10-08
 
 ## Context

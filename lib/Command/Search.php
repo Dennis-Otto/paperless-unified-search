@@ -49,6 +49,7 @@ final class Search extends Command {
 		'shown' => 'shown',
 		'hidden' => 'hidden',
 		'writable' => 'writable',
+		'writable_mount' => 'writable mount',
 		'not_shared' => 'not shared',
 		'not_owned' => 'not owned',
 		'other_owner' => 'other owner',
@@ -210,6 +211,7 @@ final class Search extends Command {
 	private function fileOf(Explanation $explanation, IUser $user): string {
 		return match ($explanation->verdict) {
 			Verdict::Writable => sprintf('%s of %s, %s may write it', $explanation->path, $explanation->owner, $user->getUID()),
+			Verdict::WritableMount => sprintf('%s, %s may write it', $explanation->path, $user->getUID()),
 			Verdict::NotShared => sprintf('%s of %s, not shared with %s', $explanation->path, $explanation->owner, $user->getUID()),
 			Verdict::NotOwned, Verdict::OtherOwner => sprintf('%s of %s', $explanation->path, $explanation->owner !== '' ? $explanation->owner : 'no account'),
 			default => $explanation->path,
@@ -252,6 +254,7 @@ final class Search extends Command {
 		$reasons = [
 			[Verdict::NotTagged, 'Not tagged (%3$s): Paperless Sync lets %1$s see only the documents with one of the tags %5$s, and these have none of them in Paperless. Add one to a document in Paperless, or change the tags of %1$s in the setting "Tags that a user may see" of Paperless Sync.'],
 			[Verdict::Writable, 'Writable (%3$s): %1$s may change the file of the archive account %2$s, or add files to its folder, so anyone with that share could have given it the marker of the document. Share it read-only with %1$s.'],
+			[Verdict::WritableMount, 'Writable mount (%3$s): the file lies in a Team folder or an external storage that the administrator trusts with the archive, but %1$s may change it there, or add files to its folder, so %1$s could have given it the marker of the document. Let %1$s only read the folder.'],
 			[Verdict::NotShared, $this->configService->hasArchivesOfEachOwner()
 				? 'Not shared (%3$s): the archive account %2$s, or the user whom Paperless Sync gives the owner of the document, has the file, but hasn\'t shared it with %1$s. Share the file, or a folder that holds it, read-only with %1$s.'
 				: 'Not shared (%3$s): the archive account %2$s has the file, but hasn\'t shared it with %1$s. Share the file, or a folder that holds it, read-only with %1$s.'],

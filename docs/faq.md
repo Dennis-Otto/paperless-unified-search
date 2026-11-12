@@ -12,6 +12,10 @@ Yes. The search needs each document of Paperless as a file of the archive accoun
 
 Yes, with **Who gets the documents** set to **Each user, those they own in Paperless** in [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync#per-user-ownership): a file of the user whom Paperless Sync gives the owner of a document stands for that document, besides the files of the archive account, once the account of the API token may view the users of Paperless. With **Each user, those they own or may view in Paperless**, in part: the files of the owners count the same way, but not the copies for the users who may only view a document, who find it through a file of its owner or of the archive account that is shared with them; the settings, `occ paperless_unified_search:check` and the overview of the administration settings say so. [Troubleshooting](troubleshooting.md#paperless-sync-gives-each-user-their-own-archive) has the details.
 
+## Can the archive live in a Team folder or an external storage for several users?
+
+Yes, once you trust it: such a mount has no account of its own that owns its files, so name it with `occ paperless_unified_search:trusted-mounts`, a Team folder by its ID and an external storage by its mount ID, such as `team:3 external:7`. A file there then stands for its document for each user who may only read it there; a user who may write there sees none of its documents. The [reference](reference.md#trust-a-team-folder-or-an-external-storage) has the details, and [decision 0019](decisions/0019-trust-team-folders-and-external-storages-that-the-administrator-names.md) the reasons.
+
 ## Does it need Elasticsearch, or the app Full text search?
 
 No. Paperless has already recognized the text of every document and keeps an index of its words; the app asks that index in every search. Nothing needs to be installed beside the app, no second index to build or keep current, and no second OCR. [Compare](compare.md) sets it beside the apps that do keep an index.

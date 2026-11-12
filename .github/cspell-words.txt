@@ -40,3 +40,6 @@ partagés
 avec
 août
 oxipng
+groupfolders
+Teamordner
+Teamordnern

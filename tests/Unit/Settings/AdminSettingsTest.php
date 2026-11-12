@@ -16,6 +16,7 @@ use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
+use OCA\PaperlessUnifiedSearch\Service\TrustedMounts;
 use OCA\PaperlessUnifiedSearch\Settings\AdminSection;
 use OCA\PaperlessUnifiedSearch\Settings\AdminSettings;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
@@ -117,6 +118,19 @@ final class AdminSettingsTest extends TestCase {
 
 		self::assertSame('http://paperless:8000', $params['syncUrl']);
 		self::assertTrue($params['syncAllowLocal']);
+	}
+
+	/**
+	 * Next to the shares, the page names the Team folders and external storages whose
+	 * files stand for documents too (decision 0019), and none without them.
+	 */
+	public function testTheFormNamesTheTrustedMounts(): void {
+		$config = new MemoryAppConfig([AppConstants::APP_ID . '.' . TrustedMounts::KEY => 'team:3 external:7 share:4']);
+
+		$params = $this->settings($config, $this->createStub(ICredentialsManager::class), $this->createStub(IURLGenerator::class))->getForm()->getParams();
+
+		self::assertSame('The files in these Team folders and external storages stand for documents too, for each user who may only read them there: team:3, external:7. occ paperless_unified_search:trusted-mounts changes them.', $params['trustedMounts']);
+		self::assertNull($this->settings(new MemoryAppConfig(), $this->createStub(ICredentialsManager::class), $this->createStub(IURLGenerator::class))->getForm()->getParams()['trustedMounts']);
 	}
 
 	/**
@@ -330,6 +344,7 @@ final class AdminSettingsTest extends TestCase {
 			$formatter,
 			$this->archiveShares(),
 			new SettingsMessages($l10n),
+			new TrustedMounts($config),
 		);
 	}
 }
