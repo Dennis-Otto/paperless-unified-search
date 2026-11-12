@@ -18,15 +18,37 @@ http://nextcloud. It needs the standard library alone, and every step may run ag
                                 account, as seed.sh then runs it in the container of Nextcloud
     python3 seed.py share       shares the archive, once it is written, with the demo user
 
+And the steps of the check of who finds what, bash demo/seed.sh --check-access:
+
+    python3 seed.py users            adds the users of Paperless of the check, robin and
+                                     sam.paperless, who sign in nowhere
+    python3 seed.py owners PLAN      gives each document the owner of the plan: uploader,
+                                     the administrator of Paperless, as the demo uploads
+                                     them, or per-user, the owners of OWNERS
+    python3 seed.py settings CASE    saves the form of the case of the fixture on standard
+                                     input with the settings route of Paperless Sync, as its
+                                     settings page does
+    python3 seed.py stored CASE      compares what Paperless Sync stored, the answers of occ
+                                     config:app:get --details after the fixture on standard
+                                     input, with the fixture
+    python3 seed.py expect CASE USER compares the documents that the search shows the user,
+                                     the answer of occ paperless_unified_search:search
+                                     --json on standard input, with those of ACCESS
+    python3 seed.py share USER       shares the archive with another user of Nextcloud
+    python3 seed.py unshare USER     and takes that share away again
+
 The administrator of Paperless comes from the environment of the container,
 PAPERLESS_ADMIN_USER and PAPERLESS_ADMIN_PASSWORD; seed.sh hands the accounts of Nextcloud
 to the steps that need them alone: NEXTCLOUD_ADMIN_USER, NEXTCLOUD_ADMIN_PASSWORD and
-ARCHIVE_USER to connect, ARCHIVE_USER, ARCHIVE_PASSWORD and DEMO_USER to share.
+ARCHIVE_USER to connect, ARCHIVE_USER, ARCHIVE_PASSWORD and DEMO_USER to share, and of the
+check NEXTCLOUD_ADMIN_USER and NEXTCLOUD_ADMIN_PASSWORD to settings, ARCHIVE_USER and
+ARCHIVE_PASSWORD to share USER and unshare.
 """
 
 import base64
 import json
 import os
+import secrets
 import sys
 import time
 import uuid
@@ -45,6 +67,37 @@ ARCHIVE_FOLDER = "Archive"
 TERM = "invoice"
 # The longest that Paperless may take to read the documents and to index them.
 DEADLINE = 300
+
+# The check of who finds what with the settings of Paperless Sync that decide it (#405):
+# the users of Paperless that own documents with per-user archives, robin by the same ID
+# as in Nextcloud and sam.paperless through the table of Paperless Sync, which names sam.
+ACCESS_USERS = ("robin", "sam.paperless")
+OWNERS = {
+    "Electricity invoice - August 2026": "robin",
+    "Dentist appointment reminder": "robin",
+    "Internet invoice - July 2026": "sam.paperless",
+    "Laptop receipt and warranty": "sam.paperless",
+    # Without an owner, Paperless Sync gives it to its target user, the archive account.
+    "Home insurance renewal": None,
+}
+ALL = sorted(OWNERS)
+HOUSEHOLD = ["Electricity invoice - August 2026", "Home insurance renewal", "Internet invoice - July 2026"]
+# The documents that the search shows each user in each case of the fixture: robin, whose
+# line of tags names Household, sees only the three letters with that tag, although the
+# archive shared with robin holds all five; jamie, with the same share and no line, sees
+# all five, and sam, without a share, none. With per-user archives, robin and sam see the
+# documents of their own users of Paperless, and jamie, with whom the archive account
+# shares its archive, the one without an owner. With the single archive again, jamie sees
+# all five, as in the demo.
+ACCESS = {
+    "tags-per-user": {"robin": HOUSEHOLD, "jamie": ALL, "sam": []},
+    "per-user-archives": {
+        "robin": ["Dentist appointment reminder", "Electricity invoice - August 2026"],
+        "sam": ["Internet invoice - July 2026", "Laptop receipt and warranty"],
+        "jamie": ["Home insurance renewal"],
+    },
+    "single-archive": {"jamie": ALL},
+}
 
 
 class Failed(Exception):
@@ -302,29 +355,175 @@ def connect():
     print("Paperless Sync knows Paperless and the archive account.")
 
 
-def share():
+SHARES = "/ocs/v2.php/apps/files_sharing/api/v1/shares"
+ARCHIVE = f"/{BASE_PATH}/{ARCHIVE_FOLDER}"
+
+
+def shares_of_the_archive():
+    """The archive account, and its shares of the archive with users."""
+    owner = Nextcloud(os.environ["ARCHIVE_USER"], os.environ["ARCHIVE_PASSWORD"])
+    return owner, owner.call(f"{SHARES}?{urlencode({'path': ARCHIVE, 'format': 'json'})}")["ocs"]["data"]
+
+
+def share(user=None):
     archive_user = os.environ["ARCHIVE_USER"]
-    demo_user = os.environ["DEMO_USER"]
+    user = user or os.environ["DEMO_USER"]
     # The archive, shared read-only with the demo user, as an administrator shares it
     # with the people who may find its documents.
-    owner = Nextcloud(archive_user, os.environ["ARCHIVE_PASSWORD"])
-    shares = "/ocs/v2.php/apps/files_sharing/api/v1/shares"
-    folder = f"/{BASE_PATH}/{ARCHIVE_FOLDER}"
-    existing = owner.call(f"{shares}?{urlencode({'path': folder, 'format': 'json'})}")["ocs"]["data"]
-    if any(entry.get("share_with") == demo_user for entry in existing):
-        print(f"{archive_user} shares {folder} with {demo_user} already.")
+    owner, existing = shares_of_the_archive()
+    if any(entry.get("share_with") == user for entry in existing):
+        print(f"{archive_user} shares {ARCHIVE} with {user} already.")
         return
-    owner.call(f"{shares}?format=json", method="POST", form={"path": folder, "shareType": 0, "shareWith": demo_user, "permissions": 1})
-    print(f"{archive_user} shares {folder} read-only with {demo_user}.")
+    owner.call(f"{SHARES}?format=json", method="POST", form={"path": ARCHIVE, "shareType": 0, "shareWith": user, "permissions": 1})
+    print(f"{archive_user} shares {ARCHIVE} read-only with {user}.")
+
+
+def unshare(user):
+    owner, existing = shares_of_the_archive()
+    for entry in existing:
+        if entry.get("share_with") == user:
+            owner.call(f"{SHARES}/{entry['id']}?format=json", method="DELETE")
+    print(f"{os.environ['ARCHIVE_USER']} shares {ARCHIVE} no longer with {user}.")
+
+
+def users():
+    """The users of Paperless who own documents with per-user archives. Nobody signs in as
+    them, so each gets a random password that nobody learns."""
+    paperless = Paperless()
+    existing = {user["username"] for user in paperless.call("/api/users/", query={"page_size": 1000})["results"]}
+    for name in ACCESS_USERS:
+        if name in existing:
+            print(f"Paperless has the user {name} already.")
+            continue
+        paperless.call(
+            "/api/users/",
+            method="POST",
+            data=json.dumps({"username": name, "password": secrets.token_urlsafe(24)}).encode(),
+            content_type="application/json",
+        )
+        print(f"Paperless has the user {name}.")
+
+
+def owners(plan):
+    """Gives each document of the demo the owner of the plan: uploader, the administrator
+    of Paperless, who uploaded them, or per-user, the owner of OWNERS."""
+    if plan not in ("uploader", "per-user"):
+        raise Failed(f"No plan of owners {plan!r}: uploader or per-user.")
+    paperless = Paperless()
+    ids = {user["username"]: user["id"] for user in paperless.call("/api/users/", query={"page_size": 1000})["results"]}
+    found = paperless.call("/api/documents/", query={"page_size": 100, "fields": "id,title,owner"})["results"]
+    for document in found:
+        if document["title"] not in OWNERS:
+            continue
+        name = paperless.user if plan == "uploader" else OWNERS[document["title"]]
+        owner = ids[name] if name else None
+        if document.get("owner") != owner:
+            paperless.call(
+                f"/api/documents/{document['id']}/",
+                method="PATCH",
+                data=json.dumps({"owner": owner}).encode(),
+                content_type="application/json",
+            )
+        print(f"{document['title']}: owned by {name or 'nobody'}.")
+
+
+def case_of(fixture, case):
+    cases = fixture["cases"]
+    if case not in cases or case not in ACCESS:
+        raise Failed(f"No case {case!r} in the fixture and in ACCESS: {', '.join(sorted(cases))}.")
+    return cases[case]
+
+
+def settings(case):
+    """Saves the form of the case of the fixture as the settings page of Paperless Sync
+    does, with its route, which validates and normalizes the values with the code of
+    Paperless Sync, keeps every other setting and the stored token, and tests the
+    connection, as the synchronization is on."""
+    form = case_of(json.load(sys.stdin), case)["form"]
+    admin = Nextcloud(os.environ["NEXTCLOUD_ADMIN_USER"], os.environ["NEXTCLOUD_ADMIN_PASSWORD"])
+    admin.call("/apps/paperless_sync/settings", method="POST", form={f"settings[{key}]": value for key, value in form.items()})
+    print(f"Paperless Sync saved the settings of {case}: " + ", ".join(f"{key} {value!r}" for key, value in form.items()) + ".")
+
+
+def json_values(text):
+    """Every JSON value of a text, one after the other, as the answers of several commands."""
+    decoder = json.JSONDecoder()
+    values = []
+    index = 0
+    while True:
+        while index < len(text) and text[index].isspace():
+            index += 1
+        if index == len(text):
+            return values
+        try:
+            value, index = decoder.raw_decode(text, index)
+        except ValueError as error:
+            raise Failed(f"No JSON at {text[index:index + 300]!r}") from error
+        values.append(value)
+
+
+def stored(case):
+    """Compares what Paperless Sync stored with the fixture: each key that the search reads,
+    with its type, its lazy flag and its value, as occ config:app:get --details names them."""
+    fixture, *details = json_values(sys.stdin.read())
+    expected = case_of(fixture, case)["stored"]
+    found = {detail["key"]: detail for detail in details}
+    if sorted(found) != sorted(expected):
+        raise Failed(f"The settings of Paperless Sync that seed.sh read, {sorted(found)}, aren't those of the fixture, {sorted(expected)}.")
+    differences = []
+    for key, want in expected.items():
+        detail = found[key]
+        value = detail["value"]
+        if want["type"] == "boolean":
+            value = str(value).lower() in ("1", "true", "yes", "on")
+        got = {"type": detail.get("type"), "lazy": detail.get("lazy"), "value": value}
+        if got != want:
+            differences.append(f"{key}: Paperless Sync stored {got}, the fixture says {want}")
+    if differences:
+        raise Failed(
+            f"Paperless Sync {fixture['paperless_sync']} stores the settings of {case} otherwise than "
+            "tests/Unit/fixtures/paperless-sync-settings.json, which the unit tests of the search read:\n  "
+            + "\n  ".join(differences)
+        )
+    print(f"Paperless Sync stored the {len(expected)} settings of {case} as the fixture says.")
+
+
+def expect(case, user):
+    """Compares the documents that the search shows the user with those of ACCESS."""
+    if user not in ACCESS.get(case, {}):
+        raise Failed(f"ACCESS names no documents of {user} for {case}.")
+    answers = json_values(sys.stdin.read())
+    if len(answers) != 1 or not isinstance(answers[0], dict):
+        raise Failed(f"occ paperless_unified_search:search gave no answer in JSON for {user}.")
+    found = answers[0].get("documents", [])
+    shown = sorted(document["title"] for document in found if document["verdict"] == "shown")
+    wanted = sorted(ACCESS[case][user])
+    if shown != wanted:
+        verdicts = "\n  ".join(f"{document['title']}: {document['verdict']}" for document in found)
+        raise Failed(f"With the settings of {case}, the search shows {user} {shown}, not {wanted}. Its verdicts:\n  {verdicts}")
+    print(f"With the settings of {case}, the search shows {user} the {len(shown)} document(s) of ACCESS.")
 
 
 def main():
-    steps = {"documents": documents, "token": token, "connect": connect, "share": share}
-    if len(sys.argv) != 2 or sys.argv[1] not in steps:
-        print(f"Usage: python3 seed.py {'|'.join(steps)}", file=sys.stderr)
+    steps = {
+        "documents": documents,
+        "token": token,
+        "connect": connect,
+        "share": share,
+        "users": users,
+        "owners": owners,
+        "settings": settings,
+        "stored": stored,
+        "expect": expect,
+        "unshare": unshare,
+    }
+    # The number of arguments of each step: share takes a user or none.
+    arguments = {"owners": (1,), "settings": (1,), "stored": (1,), "expect": (2,), "share": (0, 1), "unshare": (1,)}
+    if len(sys.argv) < 2 or sys.argv[1] not in steps or len(sys.argv) - 2 not in arguments.get(sys.argv[1], (0,)):
+        print(f"Usage: python3 seed.py {'|'.join(steps)} [ARGUMENTS]", file=sys.stderr)
         return 2
     try:
-        steps[sys.argv[1]]()
+        steps[sys.argv[1]](*sys.argv[2:])
     except Failed as failure:
         print(failure, file=sys.stderr)
         return 1

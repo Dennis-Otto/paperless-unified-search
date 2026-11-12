@@ -164,13 +164,20 @@ title = "The demo"
 problem = """`bash demo/seed.sh`, the demo with a real Paperless-ngx and a real Nextcloud,
 stopped at a step, and the log of the job shows the step and the end of the logs of its
 containers; or `bash scripts/screenshots.sh --demo` couldn't record the animation of the
-README from the demo, and the log shows the step of the browser that failed."""
+README from the demo, and the log shows the step of the browser that failed; or `bash
+demo/seed.sh --check-access` found that the pinned release of Paperless Sync stores its
+settings otherwise than `tests/Unit/fixtures/paperless-sync-settings.json` says, or that
+the search shows a user other documents than `ACCESS` of `demo/seed.py` names."""
 why = """The README and the install guide offer the demo as the first thing to try, so it
 must keep working with every change of the app, of its images and of Paperless Sync.
+Who sees which document follows settings that Paperless Sync stores: a key, a format or a
+flag that changes there could show a user limited to one tag the documents of the others.
 It is no required check and blocks no merge."""
-fix = """Run the demo on your machine with Docker, record its animation, fix what the step
-that stopped shows, and push. Remove the demo afterwards with its data:"""
-commands = ["bash demo/seed.sh", "bash scripts/screenshots.sh --demo", "docker compose -f demo/compose.yaml down --volumes"]
+fix = """Run the demo on your machine with Docker, record its animation, check who finds
+what, fix what the step that stopped shows, and push: when Paperless Sync now stores a
+setting otherwise, the search reads it anew and the fixture says how, in the same pull
+request. Remove the demo afterwards with its data:"""
+commands = ["bash demo/seed.sh", "bash scripts/screenshots.sh --demo", "bash demo/seed.sh --check-access", "docker compose -f demo/compose.yaml down --volumes"]
 docs = "demo/README.md#when-it-doesnt-start"
 autofix = """A demo that stops at a step needs a person, who finds out what changed: the
 app, an image, Paperless Sync or the pages of Nextcloud that the browser goes through."""

@@ -74,7 +74,10 @@
 #   Sync runs with occ, which waits until the archive is written, and only then the
 #   archive is shared; it waits for a run of the background jobs that is working, gives
 #   up after five minutes, and stops at a run with errors; it installs the release of
-#   Paperless Sync through the API of GitHub with a token, else in the container.
+#   Paperless Sync through the API of GitHub with a token, else in the container. With
+#   --check-access, it saves each case of the fixture of the settings of Paperless Sync,
+#   compares what was stored with the fixture and what each user finds with seed.py, each
+#   step with the accounts that it needs alone, and puts the single archive back.
 #
 #   bash tests/e2e/selftest.sh
 
@@ -2083,11 +2086,16 @@ case " $* " in
 		;;
 	*"/seed.py documents "*) ;;
 	*"/seed.py token "*) echo "fake-token" ;;
+	*"/seed.py users "* | *"/seed.py owners "* | *"/seed.py unshare "*) ;;
+	*"/seed.py settings "*) cat >"${FAKE_STATE}/settings-input" ;;
+	*"/seed.py stored "*) cat >"${FAKE_STATE}/stored-input" ;;
+	*"/seed.py expect "*) cat >/dev/null ;;
 	*"/seed.py "*)
 		echo "Usage: python3 seed.py documents|token|connect|share" >&2
 		exit 2
 		;;
 	*" config:app:get paperless_sync installed_version "*) echo "${FAKE_INSTALLED:-${PAPERLESS_SYNC_VERSION#v}}" ;;
+	*" config:app:get paperless_sync "*" --details "*) echo "details of ${*: -3:1}" ;;
 	*" config:app:get "*" enabled "*) echo "yes" ;;
 	*" --token-stdin "*) cat >/dev/null ;;
 	*" paperless_unified_search:search "*" --json "*) printf '"verdict": "shown"\n"verdict": "shown"\n"verdict": "shown"\n' ;;
@@ -2107,14 +2115,14 @@ printf 'The package.\n' >"$4"
 SCRIPT
 
 # Runs the script in the copy, with a new demo and the given statuses of the runs of Paperless
-# Sync, and prints its exit status.
+# Sync, and the arguments after them, and prints its exit status.
 seeded() {
 	local status=0
 	: >"${WORK}/docker.log"
 	rm -f "${seeding}/state/"*
 	echo "$1" >"${seeding}/state/sync-status"
 	(PATH="${seeding}/bin:${PATH}" FAKE_DOCKER_LOG="${WORK}/docker.log" FAKE_STATE="${seeding}/state" \
-		bash "${seeding}/demo/seed.sh" >"${WORK}/log" 2>&1) || status=$?
+		bash "${seeding}/demo/seed.sh" "${@:2}" >"${WORK}/log" 2>&1) || status=$?
 	echo "${status}"
 }
 
@@ -2162,6 +2170,37 @@ expect "the share after a run with errors" 0 "$(grep --count 'seed.py share' "${
 
 expect "seed.sh when the run fails" 2 "$(seeded 2)"
 expect "the share after a failed run" 0 "$(grep --count 'seed.py share' "${WORK}/docker.log" || true)"
+
+# With --check-access, the demo then checks who finds what with the settings of Paperless
+# Sync that decide it (#405): its settings route saves each case of the fixture, which
+# reaches seed.py on its standard input, a run follows, seed.py compares what occ says
+# that Paperless Sync stored with the fixture, and what the search shows each user with
+# ACCESS. The tags of robin come with a share of the archive, the archives of each owner
+# without it, and the single archive comes back at the end.
+mkdir -p "${seeding}/tests/Unit/fixtures"
+fixture="${SCRIPT_DIR}/../Unit/fixtures/paperless-sync-settings.json"
+cp "${fixture}" "${seeding}/tests/Unit/fixtures/"
+expect "seed.sh with an unknown argument" 2 "$(seeded 0 --check)"
+expect_in "the usage of seed.sh" "Usage: bash demo/seed.sh [--check-access]" "${WORK}/log"
+expect "the demo after an unknown argument" 0 "$(grep --count . "${WORK}/docker.log" || true)"
+expect "seed.sh --check-access" 0 "$(seeded 0 --check-access)"
+expect_in "the end of the demo after the check" "The demo is ready after" "${WORK}/log"
+expect "the steps of the demo and of the check, one after the other" \
+	"run,share,users,owners uploader,share robin,settings tags-per-user,run,stored tags-per-user,expect tags-per-user robin,expect tags-per-user jamie,expect tags-per-user sam,unshare robin,owners per-user,settings per-user-archives,run,stored per-user-archives,expect per-user-archives robin,expect per-user-archives sam,expect per-user-archives jamie,owners uploader,settings single-archive,run,stored single-archive,expect single-archive jamie" \
+	"$(sed -n -E -e 's/.*\/seed\.py ((users|owners|settings|stored|expect|unshare|share).*)$/\1/p' -e 's/.* occ paperless_sync:run$/run/p' "${WORK}/docker.log" | paste -s -d ,)"
+expect "the fixture on the standard input of the step settings" "$(cat "${fixture}")" "$(cat "${seeding}/state/settings-input")"
+expect "the fixture and the settings that occ read, on the standard input of the step stored" \
+	"$({
+		cat "${fixture}"
+		printf 'details of %s\n' target_user paperless_url paperless_local_network ownership user_map user_group user_tags
+	} | paste -s -d ' ')" \
+	"$(paste -s -d ' ' "${seeding}/state/stored-input")"
+expect "the accounts in the environment of the step settings, and not more" 3 \
+	"$(grep --count -- 'exec -T --env NEXTCLOUD_ADMIN_USER --env NEXTCLOUD_ADMIN_PASSWORD paperless python3 /demo/seed.py settings ' "${WORK}/docker.log" || true)"
+expect "the accounts in the environment of the steps share and unshare of the check, and not more" 2 \
+	"$(grep --count --extended-regexp -- 'exec -T --env ARCHIVE_USER --env ARCHIVE_PASSWORD paperless python3 /demo/seed.py (share|unshare) robin$' "${WORK}/docker.log" || true)"
+expect "the steps of the check without an account of Nextcloud" 14 \
+	"$(grep --count --extended-regexp -- 'exec -T paperless python3 /demo/seed.py (users|owners|stored|expect)( |$)' "${WORK}/docker.log" || true)"
 
 if ((failures > 0)); then
 	echo "${failures} of ${checks} checks of the scripts of the end-to-end tests failed." >&2

@@ -1,0 +1,71 @@
+{
+  "paperless_sync": "v1.9.0",
+  "cases": {
+    "tags-per-user": {
+      "form": {
+        "ownership": "single",
+        "user_map": "",
+        "user_group": "",
+        "user_tags": "Robin = household, HOUSEHOLD"
+      },
+      "stored": {
+        "target_user": { "type": "string", "lazy": true, "value": "paperless" },
+        "paperless_url": { "type": "string", "lazy": true, "value": "http://paperless:8000" },
+        "paperless_local_network": { "type": "boolean", "lazy": true, "value": true },
+        "ownership": { "type": "string", "lazy": true, "value": "single" },
+        "user_map": { "type": "string", "lazy": true, "value": "" },
+        "user_group": { "type": "string", "lazy": true, "value": "" },
+        "user_tags": { "type": "string", "lazy": true, "value": "robin = household" }
+      },
+      "search": {
+        "archives_of_each_owner": false,
+        "user_tags": { "robin": ["household"] },
+        "owners": {}
+      }
+    },
+    "per-user-archives": {
+      "form": {
+        "ownership": "per-user",
+        "user_map": "Sam.Paperless=SAM",
+        "user_group": "",
+        "user_tags": ""
+      },
+      "stored": {
+        "target_user": { "type": "string", "lazy": true, "value": "paperless" },
+        "paperless_url": { "type": "string", "lazy": true, "value": "http://paperless:8000" },
+        "paperless_local_network": { "type": "boolean", "lazy": true, "value": true },
+        "ownership": { "type": "string", "lazy": true, "value": "per-user" },
+        "user_map": { "type": "string", "lazy": true, "value": "Sam.Paperless = sam" },
+        "user_group": { "type": "string", "lazy": true, "value": "" },
+        "user_tags": { "type": "string", "lazy": true, "value": "" }
+      },
+      "search": {
+        "archives_of_each_owner": true,
+        "user_tags": {},
+        "owners": { "robin": "robin", "sam.paperless": "sam" }
+      }
+    },
+    "single-archive": {
+      "form": {
+        "ownership": "single",
+        "user_map": "",
+        "user_group": "",
+        "user_tags": ""
+      },
+      "stored": {
+        "target_user": { "type": "string", "lazy": true, "value": "paperless" },
+        "paperless_url": { "type": "string", "lazy": true, "value": "http://paperless:8000" },
+        "paperless_local_network": { "type": "boolean", "lazy": true, "value": true },
+        "ownership": { "type": "string", "lazy": true, "value": "single" },
+        "user_map": { "type": "string", "lazy": true, "value": "" },
+        "user_group": { "type": "string", "lazy": true, "value": "" },
+        "user_tags": { "type": "string", "lazy": true, "value": "" }
+      },
+      "search": {
+        "archives_of_each_owner": false,
+        "user_tags": {},
+        "owners": {}
+      }
+    }
+  }
+}

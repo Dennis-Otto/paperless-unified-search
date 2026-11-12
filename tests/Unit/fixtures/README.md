@@ -30,3 +30,15 @@ What they show:
 - The lists of correspondents and types filter by `id__in`, in both versions, and leave out an ID that they don't have. Version 3.3.0 sends every field of an object, also when the request names fewer with `fields`.
 
 The comparison of the mock with Paperless-ngx 2.20.15 and 3.3.1 showed what these requests don't: `__search_hit__` holds `score`, `highlights`, `note_highlights` and `rank`, and comes with every result of a search, named in `fields` or not, but never in a list without a search; a search adds `corrected_query` to the page, and version 3 `display_count` to the list of tags; each list holds `all`, the IDs of all its objects on every page; and a version in `Accept` that Paperless doesn't know gets HTTP 406, without `X-Version` and `X-Api-Version`, which also a wrong token gets none of.
+
+## The settings of a real Paperless Sync
+
+The search decides who sees which document from seven settings that Paperless Sync stores: `target_user`, `paperless_url`, `paperless_local_network`, `ownership`, `user_map`, `user_group` and `user_tags` of the app `paperless_sync`. `paperless-sync-settings.json` holds, for the release of Paperless Sync that the demo installs, three forms of its settings page and what it stores from each: the key, the type, the lazy flag and the value, which its code normalizes, such as `Robin = household, HOUSEHOLD` into `robin = household` and `Sam.Paperless=SAM` into `Sam.Paperless = sam`. Under `search`, each case says what the search makes of them: whether the files of each owner stand for their documents, the tags of each user, and the user of Nextcloud of each user of Paperless.
+
+| Case | Who gets the documents | Paperless users with another Nextcloud ID | Tags that a user may see |
+| --- | --- | --- | --- |
+| `tags-per-user` | The target user, all of them | | `Robin = household, HOUSEHOLD` |
+| `per-user-archives` | Each user, those they own in Paperless | `Sam.Paperless=SAM` | |
+| `single-archive` | The target user, all of them | | |
+
+Unlike the answers of Paperless-ngx above, this record follows the release: `tests/Unit/Service/PaperlessSyncSettingsTest.php` reads it as the search does, from a configuration that keeps the type and the lazy flag of each value, and `bash demo/seed.sh --check-access` saves each form with that release, through its settings route, and fails when `occ config:app:get --details` shows anything else than the record ([Check who finds what with Paperless Sync](../../../demo/README.md#check-who-finds-what-with-paperless-sync)). When a new release of Paperless Sync stores a setting otherwise, the demo of its pull request from Renovate fails; the search then reads it anew, and this file says how, in the same pull request.

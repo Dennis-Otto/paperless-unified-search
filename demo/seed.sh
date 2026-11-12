@@ -18,8 +18,27 @@
 # Bash, nothing else: the steps that talk to the APIs run in the container of Paperless
 # (seed.py), and those of occ in the one of Nextcloud. README.md in this folder says
 # what to try.
+#
+#   bash demo/seed.sh --check-access                      # and check who finds what
+#
+# With --check-access, the demo then checks who finds what with the settings of Paperless
+# Sync that decide it, as its release saves them: the tags that a user may see, and the
+# archives of each owner (#405). Its settings page saves each form of
+# tests/Unit/fixtures/paperless-sync-settings.json, and what Paperless Sync stores must be
+# what the fixture says, which the unit tests of the search read; then a run, and the
+# search must show robin, sam and jamie the documents that ACCESS of seed.py names. At
+# its end, the demo is as before, with the single archive and without owners and tags;
+# robin and sam stay, in Nextcloud and in Paperless, so that the check may run again.
 
 set -euo pipefail
+
+CHECK_ACCESS=0
+if [[ "$#" -gt 1 || ("$#" -eq 1 && "$1" != --check-access) ]]; then
+	echo "Usage: bash demo/seed.sh [--check-access]" >&2
+	exit 2
+elif [[ "$#" -eq 1 ]]; then
+	CHECK_ACCESS=1
+fi
 
 DEMO_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${DEMO_DIR}/.env"
@@ -38,8 +57,13 @@ EXPECTED_RESULTS=3
 # release as a pull request, which runs the demo (.github/workflows/demo.yml), so that
 # a release that breaks the demo never reaches it unseen.
 # renovate: datasource=github-release-attachments depName=Dennis-Otto/paperless-sync
-PAPERLESS_SYNC_VERSION="v1.4.0"
-PAPERLESS_SYNC_SHA256="6acf2fe0e0449822a886911c900be979d0509990c6e7a9c58bd169c782f2a639"
+PAPERLESS_SYNC_VERSION="v1.9.0"
+PAPERLESS_SYNC_SHA256="5159c12150bd338f7e29f9d9c61ad7b3f3052e58265e0145747eeaa59d270181"
+# The check of --check-access: the settings of Paperless Sync that the search reads, in
+# the order of the fixture, and a term that every letter of the demo holds.
+FIXTURE="${DEMO_DIR}/../tests/Unit/fixtures/paperless-sync-settings.json"
+SYNC_KEYS=(target_user paperless_url paperless_local_network ownership user_map user_group user_tags)
+ACCESS_TERM="Exampletown"
 # Git Bash on Windows: keep the paths in the containers as they are.
 export MSYS2_ARG_CONV_EXCL="/demo/${MSYS2_ARG_CONV_EXCL:+;${MSYS2_ARG_CONV_EXCL}}"
 
@@ -90,6 +114,43 @@ synchronize() {
 	done
 	echo "A run of Paperless Sync is still active after five minutes; occ paperless_sync:status says what it does." >&2
 	return 3
+}
+
+# A step of seed.py of the check of --check-access, with its arguments, the accounts of
+# Nextcloud that the step needs and no other, and the fixture or the answers of occ on
+# its standard input. The odd expansion of the empty list keeps Bash 3 of macOS happy.
+access() {
+	local accounts=()
+	case "$1" in
+		settings) accounts=(--env NEXTCLOUD_ADMIN_USER --env NEXTCLOUD_ADMIN_PASSWORD) ;;
+		share | unshare) accounts=(--env ARCHIVE_USER --env ARCHIVE_PASSWORD) ;;
+	esac
+	"${COMPOSE[@]}" exec -T ${accounts[@]+"${accounts[@]}"} paperless python3 /demo/seed.py "$@"
+}
+
+# Saves the form of a case of the fixture with the settings page of Paperless Sync, runs
+# it, and compares what it stored with the fixture: each key, with its type, its lazy
+# flag and its value. The check of the set-up then forgets the users and the tags of
+# Paperless, which the search keeps for ten minutes.
+configure() {
+	local key
+	access settings "$1" <"${FIXTURE}"
+	synchronize
+	{
+		cat "${FIXTURE}"
+		for key in "${SYNC_KEYS[@]}"; do
+			occ config:app:get paperless_sync "${key}" --details --output=json
+		done
+	} | access stored "$1"
+	occ paperless_unified_search:check
+}
+
+# Compares the documents that the search shows each of the users with ACCESS of seed.py.
+expect_access() {
+	local user
+	for user in "${@:2}"; do
+		occ paperless_unified_search:search "${user}" "${ACCESS_TERM}" --json | access expect "$1" "${user}"
+	done
 }
 
 failed() {
@@ -242,6 +303,33 @@ shown="$(occ paperless_unified_search:search "${DEMO_USER}" "${TERM_OF_SEARCH}" 
 if [[ "${shown}" -lt "${EXPECTED_RESULTS}" ]]; then
 	echo "The search for ${TERM_OF_SEARCH} shows ${shown} document(s) to ${DEMO_USER}, not ${EXPECTED_RESULTS}." >&2
 	exit 1
+fi
+
+if [[ "${CHECK_ACCESS}" == 1 ]]; then
+	phase "Check who finds what with the tags that a user may see in Paperless Sync"
+	# robin and sam never sign in: each gets a password that nobody learns.
+	for account in "robin:Robin Example" "sam:Sam Example"; do
+		if ! occ user:info "${account%%:*}" >/dev/null 2>&1; then
+			OC_PASS="$(secret 16)" "${COMPOSE[@]}" exec -T --user www-data --env OC_PASS nextcloud \
+				php occ user:add --password-from-env --display-name="${account#*:}" "${account%%:*}"
+		fi
+	done
+	access users
+	access owners uploader
+	access share robin
+	configure tags-per-user
+	expect_access tags-per-user robin jamie sam
+
+	phase "Check who finds what with the archives of each owner in Paperless Sync"
+	access unshare robin
+	access owners per-user
+	configure per-user-archives
+	expect_access per-user-archives robin sam jamie
+
+	phase "Put the demo back: the single archive, without owners and tags"
+	access owners uploader
+	configure single-archive
+	expect_access single-archive jamie
 fi
 
 if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
