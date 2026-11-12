@@ -52,6 +52,13 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 	/** The pages of Paperless that a search asks for at most to fill its results. */
 	private const PAGE_BUDGET = 4;
 
+	/**
+	 * The pages of Paperless that a search asks for at most while it has found no result
+	 * yet, 500 hits: a user who can open only a small part of a large archive still finds
+	 * their documents behind the first 100 hits of others (decision 0017).
+	 */
+	private const EMPTY_PAGE_BUDGET = 20;
+
 	/** After this many milliseconds, a search asks Paperless for no further page. */
 	private const TIME_BUDGET_MS = 3000;
 
@@ -151,6 +158,8 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 	 * budget: Paperless ranks all documents that match, also those that the user can't
 	 * open, and Nextcloud's web search drops a provider whose first answer is empty and
 	 * offers "Load more results" only for a page with as many results as it asked for.
+	 * While it has found no result, the search goes on for more pages of Paperless than
+	 * once it has one, within the same time (decision 0017).
 	 *
 	 * Whether a next page follows, and where it starts, depends on the documents that the
 	 * user may open alone (decision 0016): the search looks for one result more than the
@@ -225,7 +234,8 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 					$pager = $pager->nextPage();
 				}
 			} while ($nextPage === null && $response['next'] !== null && !$pager->isPastTheEnd()
-				&& $pages < self::PAGE_BUDGET && $this->getElapsedMs($started) < self::TIME_BUDGET_MS);
+				&& $pages < ($entries === [] ? self::EMPTY_PAGE_BUDGET : self::PAGE_BUDGET)
+				&& $this->getElapsedMs($started) < self::TIME_BUDGET_MS);
 		} catch (PaperlessQueryRejected $rejection) {
 			// A query that the user is still typing, or a page past the last one: Paperless
 			// works, and there is nothing more to find.
