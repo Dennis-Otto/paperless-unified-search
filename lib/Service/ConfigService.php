@@ -473,17 +473,7 @@ final class ConfigService {
 
 		$normalizedOwner = trim($archiveOwner);
 		$this->config->setValueString(AppConstants::APP_ID, self::URL_KEY, $normalizedUrl);
-		$this->config->setValueBool(AppConstants::APP_ID, self::ALWAYS_SEARCH_KEY, $alwaysSearch);
-		$this->config->setValueBool(AppConstants::APP_ID, self::ALLOW_LOCAL_KEY, $allowLocal);
-		$this->config->setValueBool(AppConstants::APP_ID, self::PERSONAL_ALWAYS_SEARCH_KEY, $personalAlwaysSearch);
-		if ($newDocumentAlerts !== null) {
-			$this->config->setValueBool(AppConstants::APP_ID, self::NEW_DOCUMENT_ALERTS_KEY, $newDocumentAlerts);
-		}
-		if ($normalizedOwner === '') {
-			$this->config->deleteKey(AppConstants::APP_ID, self::ARCHIVE_OWNER_KEY);
-		} else {
-			$this->config->setValueString(AppConstants::APP_ID, self::ARCHIVE_OWNER_KEY, $normalizedOwner);
-		}
+		$this->storeOptions($alwaysSearch, $allowLocal, $normalizedOwner, $personalAlwaysSearch, $newDocumentAlerts);
 		$this->credentialsManager->store('', self::TOKEN_IDENTIFIER, $normalizedToken);
 		$this->token = $normalizedToken;
 		$this->tokenUnreadable = false;
@@ -509,6 +499,45 @@ final class ConfigService {
 			$this->isNewDocumentAlertsAllowed(),
 			$this->perUserArchives($normalizedOwner, $syncAccount),
 		);
+	}
+
+	/**
+	 * Saves the options that don't depend on Paperless, the archive account and the three
+	 * switches, and keeps the connection as it is stored: its URL, its token, whether it
+	 * runs in the local network, and the version and the warnings that its last test found.
+	 * The settings save them so while Paperless doesn't answer the test of the connection,
+	 * so that an administrator can still turn off a search that every user sends to it.
+	 *
+	 * @param string $archiveOwner the archive account as resolveArchiveOwner() returns it
+	 * @param ?bool $newDocumentAlerts whether users may ask for a notification about new
+	 *                                 documents, null to leave it as it is
+	 */
+	public function saveOptions(bool $alwaysSearch, string $archiveOwner, bool $personalAlwaysSearch, ?bool $newDocumentAlerts = null): PublicConfig {
+		$this->storeOptions($alwaysSearch, null, $archiveOwner, $personalAlwaysSearch, $newDocumentAlerts);
+
+		return $this->getPublicConfig();
+	}
+
+	/**
+	 * Stores the options that don't depend on Paperless, and with $allowLocal the choice of
+	 * the local network, which belongs to the connection, null to keep it. An empty archive
+	 * account stands for the account of Paperless Sync, and a null $newDocumentAlerts keeps
+	 * its choice.
+	 */
+	private function storeOptions(bool $alwaysSearch, ?bool $allowLocal, string $archiveOwner, bool $personalAlwaysSearch, ?bool $newDocumentAlerts): void {
+		$this->config->setValueBool(AppConstants::APP_ID, self::ALWAYS_SEARCH_KEY, $alwaysSearch);
+		if ($allowLocal !== null) {
+			$this->config->setValueBool(AppConstants::APP_ID, self::ALLOW_LOCAL_KEY, $allowLocal);
+		}
+		$this->config->setValueBool(AppConstants::APP_ID, self::PERSONAL_ALWAYS_SEARCH_KEY, $personalAlwaysSearch);
+		if ($newDocumentAlerts !== null) {
+			$this->config->setValueBool(AppConstants::APP_ID, self::NEW_DOCUMENT_ALERTS_KEY, $newDocumentAlerts);
+		}
+		if ($archiveOwner === '') {
+			$this->config->deleteKey(AppConstants::APP_ID, self::ARCHIVE_OWNER_KEY);
+		} else {
+			$this->config->setValueString(AppConstants::APP_ID, self::ARCHIVE_OWNER_KEY, $archiveOwner);
+		}
 	}
 
 	public function reset(): PublicConfig {

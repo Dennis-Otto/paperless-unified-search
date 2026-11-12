@@ -166,11 +166,17 @@
 	color: var(--color-success-text, #1b5e20);
 }
 
+/* A save that stored the options but not the connection, whose test failed. */
+.paperless-unified-search-settings .paperless-unified-search-status--warning {
+	color: var(--color-warning-text, #7a4d00);
+}
+
 .paperless-unified-search-settings .paperless-unified-search-status--error {
 	color: var(--color-error-text, #b00020);
 }
 
 .paperless-unified-search-settings .paperless-unified-search-status--success::before,
+.paperless-unified-search-settings .paperless-unified-search-status--warning::before,
 .paperless-unified-search-settings .paperless-unified-search-status--error::before,
 .paperless-unified-search-settings .paperless-unified-search-warning::before {
 	background-color: currentColor;

@@ -117,6 +117,7 @@ OC.L10N.register(
 		'Nextcloud could not be reached. Check your connection and try again.': '无法连接到 Nextcloud。请检查网络连接后重试。',
 		'Testing the Paperless connection…': '正在测试 Paperless 连接…',
 		'Connection successful. Settings saved.': '连接成功。设置已保存。',
+		'The other settings are saved; the URL, the API token and “Paperless runs in my local network” stay as they were until a test of the connection succeeds.': '其他设置已保存；在连接测试成功之前，URL、API 令牌和“Paperless 运行在我的本地网络中”保持不变。',
 		'Enter a valid Paperless URL.': '请输入有效的 Paperless URL。',
 		'The Paperless URL must use HTTP or HTTPS.': 'Paperless URL 必须使用 HTTP 或 HTTPS。',
 		'The Paperless URL must not contain credentials, a query, or a fragment.': 'Paperless URL 不得包含凭据、查询参数或片段。',

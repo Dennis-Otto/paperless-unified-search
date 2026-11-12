@@ -4,7 +4,8 @@
 // What the settings page says and does in a real Nextcloud when an answer isn't the
 // one it asked for, and when the administrator disconnects: one short sentence for the
 // HTML page of maintenance mode, for the page of a proxy, for an expired session and for
-// a network failure, in the colour of an error; Disconnect declined and confirmed; a
+// a network failure, in the colour of an error; a save while Paperless doesn't answer,
+// which stores the options and keeps the connection; Disconnect declined and confirmed; a
 // failed first save that keeps Disconnect off, as nothing is stored to disconnect; the
 // search account, created in Paperless with the token of a superuser, which saves the
 // settings with its token, and refused the second time, and once more while only its
@@ -42,6 +43,11 @@ const ACCOUNT_EXISTS = 'The user nextcloud-search exists in Paperless already, a
 const WORKFLOW = 'Nextcloud search: view new documents'
 const WORKFLOW_EXISTS = `The workflow “${WORKFLOW}” exists in Paperless already, and stays as it is. Delete it in Paperless and try again, or turn off “Let it view each new document”.`
 const REJECTED = 'Paperless rejected the API token (HTTP 401). Check the token, and that its account may view documents.'
+const USERS_ALWAYS_SEARCH = '#paperless-unified-search-users-always-search'
+// The mock at a port where nothing listens, which Nextcloud can't reach, and what a save
+// to it says.
+const UNANSWERED_URL = 'http://paperless-mock:9'
+const OPTIONS_WITHOUT_CONNECTION = 'Nextcloud could not reach Paperless at this URL. Check the address and the port, and that Paperless runs. The other settings are saved; the URL, the API token and “Paperless runs in my local network” stay as they were until a test of the connection succeeds.'
 // The route of the settings, which saves with POST and disconnects with DELETE.
 const isSettingsRoute = (url) => url.pathname.endsWith('/apps/paperless_unified_search/settings')
 // A step waits this long, in milliseconds: on a runner of the CI, three versions of
@@ -191,6 +197,33 @@ try {
 		expectForm(await form(page), CONFIGURED, `The settings after ${failure.name}`)
 		console.log(`Settings page, ${failure.name}: “${failure.message}”`)
 	}
+
+	// While Paperless doesn't answer, here at a port where nothing listens, a save still
+	// stores the options that don't depend on it, such as the switch of the users, and
+	// keeps the stored connection (#410): the message says so in the colour of a warning,
+	// the fields of the connection keep what was typed, and a reload shows the connection
+	// as stored with the switch as saved. Then the switch goes back as it was.
+	const usersAlwaysSearch = page.locator(USERS_ALWAYS_SEARCH)
+	const allowed = await usersAlwaysSearch.isChecked()
+	await page.locator(URL_FIELD).fill(UNANSWERED_URL)
+	await page.locator(TOKEN_FIELD).fill(TOKEN)
+	await usersAlwaysSearch.setChecked(!allowed)
+	await act(page, SAVE_BUTTON)
+	await expectStatus(page, OPTIONS_WITHOUT_CONNECTION, 'warning')
+	expectForm(await form(page), {
+		...CONFIGURED,
+		url: UNANSWERED_URL,
+		tokenRequired: true,
+		tokenPlaceholder: 'Required for a new server',
+	}, 'The settings after a save that Paperless did not answer')
+	await page.reload()
+	await page.locator(SETTINGS_SCOPE).waitFor()
+	expectForm(await form(page), CONFIGURED, 'The stored settings after a save that Paperless did not answer')
+	expectEqual(await usersAlwaysSearch.isChecked(), !allowed, 'The stored switch of the users after a save that Paperless did not answer')
+	await usersAlwaysSearch.setChecked(allowed)
+	await act(page, SAVE_BUTTON)
+	await expectStatus(page, 'Connection successful. Settings saved.', 'success')
+	console.log('Settings page, Paperless does not answer: the options saved, the connection kept.')
 
 	// Disconnect, declined, sends nothing and changes nothing.
 	const disconnects = []

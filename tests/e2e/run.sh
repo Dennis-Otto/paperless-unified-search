@@ -535,20 +535,23 @@ if ! grep --fixed-strings '"paperlessVersion":"3.3.0","paperlessApiVersion":"10"
 fi
 
 # A failed test of the connection names its cause in the language of the administrator,
-# with a code that says what failed, and keeps the settings as they are (#120). An
-# account set to Deutsch (Förmlich: Sie) has the language de_DE, which the app brings as
-# well: without it, Nextcloud would show the app in English there. The refused save asks
-# for another archive account and the global search as well, so that a save despite the
-# failure would show in the stored settings.
+# with a code that says what failed (#120). An account set to Deutsch (Förmlich: Sie) has
+# the language de_DE, which the app brings as well: without it, Nextcloud would show the
+# app in English there. While a connection is stored, the save still stores the options
+# that don't depend on Paperless, here another archive account and the global search,
+# and keeps the URL, the token and the switch for the local network (#410); the answer
+# holds the settings as stored and connectionFailure. A save with a blank token then puts
+# the options back, which only works while the token that the mock accepts is stored.
 stored_settings() {
 	local key
-	for key in paperless_url archive_owner always_search; do
+	for key in "$@"; do
 		printf '%s=%s\n' "${key}" "$(occ config:app:get paperless_unified_search "${key}")"
 	done
 }
-settings_before="$(stored_settings)"
+connection_before="$(stored_settings paperless_url allow_local)"
+options_before="$(stored_settings archive_owner always_search)"
 language de
-expect_status 400 'Saving a token that Paperless refuses, in German' \
+expect_status 200 'Saving a token that Paperless refuses, in German' \
 	--user "e2e-admin:${PASSWORD}" \
 	--request POST \
 	--data-urlencode 'url=http://paperless-mock:8080' \
@@ -559,8 +562,12 @@ expect_status 400 'Saving a token that Paperless refuses, in German' \
 	"${SETTINGS_URL}"
 expect_text 'Paperless hat das API-Token abgelehnt (HTTP 401)' "${TMP_DIR}/answer.json" \
 	"The refused token isn't named in German: $(cat "${TMP_DIR}/answer.json")"
+expect_text 'bis ein Test der Verbindung gelingt' "${TMP_DIR}/answer.json" \
+	"The refused save doesn't say in German that it saved the other settings: $(cat "${TMP_DIR}/answer.json")"
 expect_text '"code":"unauthorized"' "${TMP_DIR}/answer.json" \
 	"The refused token has no code: $(cat "${TMP_DIR}/answer.json")"
+expect_text '"archiveOwner":"e2e-admin"' "${TMP_DIR}/answer.json" \
+	"The refused save doesn't answer the options as stored: $(cat "${TMP_DIR}/answer.json")"
 admin_settings "${TMP_DIR}/admin-settings-de.html"
 expect_text 'Verbindung testen und speichern' "${TMP_DIR}/admin-settings-de.html" \
 	'The settings page of an administrator who speaks German is not in German.'
@@ -571,9 +578,32 @@ admin_settings "${TMP_DIR}/admin-settings-de-formal.html"
 expect_text 'Verwenden Sie ein eigenes Paperless-Konto' "${TMP_DIR}/admin-settings-de-formal.html" \
 	'The settings page of an administrator set to Deutsch (Förmlich: Sie) is not in formal German.'
 language en
-settings_after="$(stored_settings)"
-if [[ "${settings_after}" != "${settings_before}" ]]; then
-	printf 'The refused save changed the settings from\n%s\nto\n%s\n' "${settings_before}" "${settings_after}" >&2
+connection_after="$(stored_settings paperless_url allow_local)"
+if [[ "${connection_after}" != "${connection_before}" ]]; then
+	printf 'The refused save changed the connection from\n%s\nto\n%s\n' "${connection_before}" "${connection_after}" >&2
+	exit 1
+fi
+options_after="$(stored_settings archive_owner always_search)"
+if [[ "${options_after}" == "${options_before}" || "$(occ config:app:get paperless_unified_search archive_owner)" != e2e-admin ]]; then
+	printf 'The refused save did not store the options: before\n%s\nafter\n%s\n' "${options_before}" "${options_after}" >&2
+	exit 1
+fi
+expect_status 200 'Saving the options back with the stored token' \
+	--user "e2e-admin:${PASSWORD}" \
+	--request POST \
+	--data-urlencode 'url=http://paperless-mock:8080' \
+	--data-urlencode 'allowLocal=1' \
+	--data-urlencode 'token=' \
+	--data-urlencode 'alwaysSearch=0' \
+	--data-urlencode 'archiveOwner=e2e-user' \
+	"${SETTINGS_URL}"
+if grep --quiet --fixed-strings 'connectionFailure' "${TMP_DIR}/answer.json"; then
+	echo "The stored token no longer reaches the mock after the refused save: $(cat "${TMP_DIR}/answer.json")" >&2
+	exit 1
+fi
+options_restored="$(stored_settings archive_owner always_search)"
+if [[ "${options_restored}" != "${options_before}" ]]; then
+	printf 'The options did not go back from\n%s\nto\n%s\n' "${options_restored}" "${options_before}" >&2
 	exit 1
 fi
 

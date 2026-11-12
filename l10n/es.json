@@ -116,6 +116,7 @@
 		"Nextcloud could not be reached. Check your connection and try again.": "No se pudo acceder a Nextcloud. Comprueba tu conexión y vuelve a intentarlo.",
 		"Testing the Paperless connection…": "Probando la conexión con Paperless…",
 		"Connection successful. Settings saved.": "Conexión correcta. Configuración guardada.",
+		"The other settings are saved; the URL, the API token and “Paperless runs in my local network” stay as they were until a test of the connection succeeds.": "El resto de la configuración se ha guardado; la URL, el token de API y “Paperless se ejecuta en mi red local” se quedan como estaban hasta que una prueba de la conexión tenga éxito.",
 		"Enter a valid Paperless URL.": "Introduce una URL de Paperless válida.",
 		"The Paperless URL must use HTTP or HTTPS.": "La URL de Paperless debe usar HTTP o HTTPS.",
 		"The Paperless URL must not contain credentials, a query, or a fragment.": "La URL de Paperless no debe contener credenciales, una consulta ni un fragmento.",
