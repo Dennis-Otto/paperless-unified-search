@@ -1,0 +1,3 @@
+### Bug fixes
+
+- The dashboard widget **New in Paperless** no longer stays empty for a user whose documents are not among the 25 that Paperless added last, such as after someone else imported many documents at once: while it has found fewer documents that you can open than it shows, it looks at the next 25, up to the 100 newest of everyone, and where Paperless Sync gives each owner an archive, also at the 25 newest documents that your own user of Paperless owns. The common case still costs one request to Paperless a minute for all users; each further page is kept for a minute as well. The FAQ and the reference say what remains: documents of yours that are older than all of these show in the search, not in the widget.

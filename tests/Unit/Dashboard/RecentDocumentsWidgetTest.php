@@ -239,6 +239,163 @@ final class RecentDocumentsWidgetTest extends TestCase {
 	}
 
 	/**
+	 * A user whose documents are older than a page of documents of others, such as after one
+	 * import of 25 documents by another user, still sees them: while too few of the newest
+	 * documents have a file that the user can open, the dashboard asks for the next page.
+	 */
+	public function testAPageOfDocumentsOfOthersDoesNotEmptyTheWidget(): void {
+		[, $correspondents, $types] = $this->answers(self::DOCUMENTS);
+		$client = $this->paperless($this->page(self::others(1001), true), $this->documents(self::DOCUMENTS), $correspondents, $types);
+
+		$items = $this->widget($client)->getItemsV2('jamie')->jsonSerialize();
+
+		self::assertSame([self::ELECTRICITY, self::INSURANCE], $items['items']);
+		self::assertSame([1, 2], array_map(static fn (array $request): mixed => $request[1]['query']['page'], array_slice($this->requests, 0, 2)));
+	}
+
+	/**
+	 * A page that holds as many documents as the dashboard shows, which the user can open,
+	 * costs no further page.
+	 */
+	public function testAsksForNoFurtherPageOnceAPageHoldsEnough(): void {
+		$client = $this->paperless($this->page(self::DOCUMENTS, true), ...array_slice($this->answers(self::DOCUMENTS), 1));
+
+		$items = $this->widget($client)->getItemsV2('jamie', null, 2)->jsonSerialize();
+
+		self::assertSame([self::ELECTRICITY, self::INSURANCE], $items['items']);
+		self::assertCount(3, $this->requests);
+	}
+
+	/**
+	 * The dashboard asks for the 100 newest documents at most, four pages, and then says
+	 * that none of them has a file that the user can open.
+	 */
+	public function testAsksForFourPagesAtMost(): void {
+		$client = $this->paperless(...array_map(fn (int $page): IResponse => $this->page(self::others(1001 + 25 * $page), true), range(0, 3)));
+
+		$items = $this->widget($client)->getItemsV2('jamie')->jsonSerialize();
+
+		self::assertSame([], $items['items']);
+		self::assertSame('None of the newest Paperless documents has a file that you can open.', $items['emptyContentMessage']);
+		self::assertSame(4, RecentDocuments::MOST_PAGES);
+		self::assertSame([1, 2, 3, 4], array_map(static fn (array $request): mixed => $request[1]['query']['page'], $this->requests));
+	}
+
+	/**
+	 * A page further that Paperless doesn't send ends the list with the documents found so
+	 * far, without a message that Paperless can't be reached.
+	 */
+	public function testAPageFurtherThatFailsEndsTheList(): void {
+		$client = $this->paperless(
+			$this->page([self::DOCUMENTS[0]], true),
+			$this->answer(500, '<h1>Server Error (500)</h1>'),
+			...array_slice($this->answers([self::DOCUMENTS[0]]), 1),
+		);
+
+		self::assertSame(
+			['items' => [self::ELECTRICITY], 'emptyContentMessage' => '', 'halfEmptyContentMessage' => ''],
+			$this->widget($client)->getItemsV2('jamie')->jsonSerialize(),
+		);
+		self::assertCount(4, $this->requests);
+	}
+
+	/**
+	 * With the sinceId of an item, a page that holds a document that Paperless didn't add
+	 * after it is the last that the dashboard asks for: every further one is older.
+	 */
+	public function testNoPageFurtherThanADocumentAddedBeforeTheSinceId(): void {
+		$client = $this->paperless($this->page(self::DOCUMENTS, true), ...array_slice($this->answers(self::DOCUMENTS), 1));
+
+		$items = $this->widget($client)->getItemsV2('jamie', '2026-08-01T00:00:00+02:00')->jsonSerialize();
+
+		self::assertSame([self::ELECTRICITY], $items['items']);
+		self::assertCount(3, $this->requests);
+	}
+
+	/**
+	 * When Paperless Sync gives each owner an archive (decision 0013), a user who can open
+	 * too few of the 100 newest documents gets the newest of their own owner as well, which
+	 * Paperless finds with a filter by the owner: here jamie, who is 5 in Paperless.
+	 */
+	public function testAfterFourPagesTheNewestDocumentsOfTheOwnerOfTheUserFollow(): void {
+		$this->eachOwnerHasAnArchive();
+		$users = $this->answer(200, (string)json_encode(['count' => 2, 'next' => null, 'results' => [['id' => 5, 'username' => 'jamie'], ['id' => 6, 'username' => 'sam']]]));
+		$pages = array_map(fn (int $page): IResponse => $this->page(self::others(1001 + 25 * $page, ['owner' => 6]), true), range(0, 3));
+		[$own, $correspondents, $types] = $this->answers([['owner' => 5] + self::DOCUMENTS[0], ['owner' => 5] + self::DOCUMENTS[3]]);
+
+		$client = $this->paperless($pages[0], $users, $pages[1], $pages[2], $pages[3], $own, $correspondents, $types);
+		$items = $this->widget($client)->getItemsV2('jamie')->jsonSerialize();
+
+		self::assertSame(['Electricity invoice - August 2026', 'Internet invoice - July 2026'], array_column($items['items'], 'title'));
+		self::assertSame('https://paperless.example.com/api/users/', $this->requests[1][0]);
+		self::assertArrayNotHasKey('owner__id__in', $this->requests[4][1]['query']);
+		self::assertSame('5', $this->requests[5][1]['query']['owner__id__in']);
+		self::assertSame(1, $this->requests[5][1]['query']['page']);
+		self::assertCount(8, $this->requests);
+	}
+
+	/**
+	 * A page further that Paperless doesn't send ends the list there: no further page, and no
+	 * documents of the user's own owner, which would come after the documents of that page.
+	 */
+	public function testAPageFurtherThatFailsAsksForNoDocumentsOfAnOwner(): void {
+		$this->eachOwnerHasAnArchive();
+		$users = $this->answer(200, (string)json_encode(['count' => 1, 'next' => null, 'results' => [['id' => 5, 'username' => 'jamie']]]));
+
+		$client = $this->paperless($this->page(self::others(1001, ['owner' => 5]), true), $users, $this->answer(500, '<h1>Server Error (500)</h1>'));
+		$items = $this->widget($client)->getItemsV2('jamie')->jsonSerialize();
+
+		self::assertSame([], $items['items']);
+		self::assertSame('None of the newest Paperless documents has a file that you can open.', $items['emptyContentMessage']);
+		self::assertCount(3, $this->requests);
+	}
+
+	/**
+	 * A user who can open as many of the newest documents as the dashboard shows gets no
+	 * documents of their own owner, even when Paperless has older ones.
+	 */
+	public function testEnoughOfTheNewestDocumentsAskForNoDocumentsOfAnOwner(): void {
+		$this->eachOwnerHasAnArchive();
+
+		$client = $this->paperless($this->page([self::DOCUMENTS[0]], true), ...array_slice($this->answers([self::DOCUMENTS[0]]), 1));
+		$items = $this->widget($client)->getItemsV2('jamie', null, 1)->jsonSerialize();
+
+		self::assertSame([self::ELECTRICITY], $items['items']);
+		self::assertCount(3, $this->requests);
+	}
+
+	/**
+	 * A user without a user of Paperless gets no request by an owner.
+	 */
+	public function testAUserWithoutAUserOfPaperlessGetsNoDocumentsOfAnOwner(): void {
+		$this->eachOwnerHasAnArchive();
+		$users = $this->answer(200, (string)json_encode(['count' => 1, 'next' => null, 'results' => [['id' => 6, 'username' => 'sam']]]));
+		$pages = array_map(fn (int $page): IResponse => $this->page(self::others(1001 + 25 * $page, ['owner' => 6]), true), range(0, 3));
+
+		$items = $this->widget($this->paperless($pages[0], $users, $pages[1], $pages[2], $pages[3]))->getItemsV2('jamie')->jsonSerialize();
+
+		self::assertSame([], $items['items']);
+		self::assertCount(5, $this->requests);
+	}
+
+	/**
+	 * A user with tags gets the documents with one of them whoever owns them (decision 0015):
+	 * the pages of those documents, and no request by an owner.
+	 */
+	public function testAUserWithTagsGetsNoDocumentsOfAnOwner(): void {
+		$this->eachOwnerHasAnArchive();
+		$this->settings['paperless_sync.user_tags'] = 'jamie = Katja';
+		$tags = $this->answer(200, (string)json_encode(['count' => 1, 'next' => null, 'results' => [['id' => 8, 'name' => 'Katja']]]));
+		$pages = array_map(fn (int $page): IResponse => $this->page(self::others(1001 + 25 * $page, ['owner' => 5, 'tags' => [8]]), true), range(0, 3));
+
+		$items = $this->widget($this->paperless($tags, ...$pages))->getItemsV2('jamie')->jsonSerialize();
+
+		self::assertSame([], $items['items']);
+		self::assertCount(5, $this->requests);
+		self::assertSame(['8', '8', '8', '8'], array_map(static fn (array $request): mixed => $request[1]['query']['tags__id__in'], array_slice($this->requests, 1)));
+	}
+
+	/**
 	 * A user whom Paperless Sync lets see only the documents with some tags (decision 0015)
 	 * gets the newest of those, through the files of the archive account or their own
 	 * copies, which Paperless Sync writes while the archive account is its target user. A
@@ -574,6 +731,44 @@ final class RecentDocumentsWidgetTest extends TestCase {
 		}
 
 		return $answers;
+	}
+
+	/**
+	 * Paperless Sync gives each owner an archive, with the archive account as its target user
+	 * (decision 0013).
+	 */
+	private function eachOwnerHasAnArchive(): void {
+		$this->connected('');
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.ownership'] = 'per-user';
+	}
+
+	/**
+	 * A page of the newest documents, after which Paperless has another one when $more says so.
+	 *
+	 * @param list<array<string, mixed>> $documents
+	 */
+	private function page(array $documents, bool $more): IResponse {
+		return $this->answer(200, (string)json_encode([
+			'count' => 200,
+			'next' => $more ? 'https://paperless.example.com/api/documents/?page=2' : null,
+			'previous' => null,
+			'results' => $documents,
+		]));
+	}
+
+	/**
+	 * A page of 25 documents of others, from the ID $from on, newer than DOCUMENTS, of which
+	 * jamie can open none.
+	 *
+	 * @param array<string, mixed> $fields further fields of each document
+	 * @return list<array<string, mixed>>
+	 */
+	private static function others(int $from, array $fields = []): array {
+		return array_map(
+			static fn (int $id): array => ['id' => $id, 'title' => 'Scan ' . $id, 'added' => '2026-09-01T10:00:00+02:00', 'correspondent' => null, 'document_type' => null] + $fields,
+			range($from, $from + 24),
+		);
 	}
 
 	private function widget(IClient $client, ?LoggerInterface $logger = null, ?IRootFolder $root = null): RecentDocumentsWidget {

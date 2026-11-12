@@ -157,8 +157,8 @@ final class RecentDocumentsWidget implements IAPIWidgetV2, IIconWidget, IButtonW
 			// A user who may see only the documents with some tags gets the newest of those,
 			// and none while Paperless has none of their tags (decision 0015).
 			$tagIds = $this->userTags->tagIdsOf($user->getUID());
-			$documents = $tagIds === [] ? [] : $this->recentDocuments->find($tagIds);
-			$items = $documents === null ? null : $this->createItems($user, $archiveOwner, self::addedAfter($documents, $since), max(1, $limit));
+			$shown = $tagIds === [] ? [] : $this->findShown($user, $archiveOwner, $tagIds, $since, max(1, $limit));
+			$items = $shown === null ? null : $this->createItems($shown);
 		} catch (Throwable $error) {
 			$this->logger->warning('The dashboard could not show the newest Paperless documents ({errorType})', [
 				'app' => AppConstants::APP_ID,
@@ -178,13 +178,58 @@ final class RecentDocumentsWidget implements IAPIWidgetV2, IIconWidget, IButtonW
 	}
 
 	/**
-	 * The items of the documents that the user can open, in their order, at most as many
-	 * as wanted, with the names of their correspondents, types and tags.
+	 * The newest documents that the user can open, newest first, at most as many as wanted,
+	 * each with its file, or null when Paperless didn't send the first page of its newest
+	 * documents. While fewer of them than wanted have a file that the user can open, and
+	 * Paperless has older ones, the dashboard asks for the next page of the newest documents,
+	 * up to RecentDocuments::MOST_PAGES, so that one import of others doesn't empty the widget
+	 * of everyone else. Where Paperless Sync gives each owner an archive, it then asks once
+	 * for the newest documents of the user's own owner, which are older than all those of the
+	 * pages, as these hold every newer one. A page that Paperless doesn't send ends the list.
+	 *
+	 * @param ?list<int> $tagIds
+	 * @return ?list<array{array<array-key, mixed>, File}>
+	 */
+	private function findShown(IUser $user, string $archiveOwner, ?array $tagIds, ?string $since, int $wanted): ?array {
+		/** @var array<int, array{array<array-key, mixed>, File}> $openable the documents with a file, and the file, by their IDs */
+		$openable = [];
+		// Whether Paperless has older documents that may count: none after a page with a
+		// document that it didn't add after the moment $since, and none after a page that it
+		// didn't send.
+		$older = true;
+		for ($page = 1; $older && $page <= RecentDocuments::MOST_PAGES && count($openable) < $wanted; $page++) {
+			$found = $this->recentDocuments->find($tagIds, $page);
+			if ($found === null) {
+				if ($page === 1) {
+					return null;
+				}
+				$older = false;
+			} else {
+				$documents = self::addedAfter($found['documents'], $since);
+				$older = $found['more'] && count($documents) === count($found['documents']);
+				$openable += $this->openable($user, $archiveOwner, $documents);
+			}
+		}
+
+		// A user with tags gets the documents with one of them whoever owns them (decision 0015).
+		if ($older && count($openable) < $wanted && $tagIds === null) {
+			$ownerIds = $this->documentOwners->paperlessIdsOf($user);
+			$owned = $ownerIds === [] ? null : $this->recentDocuments->findOwnedBy($ownerIds);
+			if ($owned !== null) {
+				$openable += $this->openable($user, $archiveOwner, self::addedAfter($owned['documents'], $since));
+			}
+		}
+
+		return array_slice($openable, 0, $wanted);
+	}
+
+	/**
+	 * The documents whose file the user can open, each with that file, by their IDs.
 	 *
 	 * @param list<array<array-key, mixed>> $documents
-	 * @return list<WidgetItem>
+	 * @return array<int, array{array<array-key, mixed>, File}>
 	 */
-	private function createItems(IUser $user, string $archiveOwner, array $documents, int $wanted): array {
+	private function openable(IUser $user, string $archiveOwner, array $documents): array {
 		$ids = [];
 		foreach ($documents as $document) {
 			$id = self::idOf($document);
@@ -195,14 +240,25 @@ final class RecentDocumentsWidget implements IAPIWidgetV2, IIconWidget, IButtonW
 		[$visibleIds, $documentUsers] = $this->documentOwners->forUser($user, $ids, $documents);
 		$files = $this->fileLocator->findAllForUser($user, $visibleIds, $archiveOwner, $documentUsers)->files;
 
-		/** @var list<array{array<array-key, mixed>, File}> $shown the documents with a file, and the file */
-		$shown = [];
+		$openable = [];
 		foreach ($documents as $document) {
 			$id = self::idOf($document);
-			if ($id !== null && isset($files[$id]) && count($shown) < $wanted) {
-				$shown[] = [$document, $files[$id]];
+			if ($id !== null && isset($files[$id])) {
+				$openable[$id] = [$document, $files[$id]];
 			}
 		}
+
+		return $openable;
+	}
+
+	/**
+	 * The items of these documents, in their order, with the names of their correspondents,
+	 * types and tags.
+	 *
+	 * @param list<array{array<array-key, mixed>, File}> $shown the documents, each with its file
+	 * @return list<WidgetItem>
+	 */
+	private function createItems(array $shown): array {
 		$names = $this->names->of(array_column($shown, 0));
 
 		$items = [];

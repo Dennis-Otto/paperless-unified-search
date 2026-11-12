@@ -91,6 +91,13 @@ final class PaperlessApiService {
 	public const TAGS_ANY = 'tags__id__in';
 
 	/**
+	 * The filter of Paperless for the documents of some owners, by the IDs of the users of
+	 * Paperless separated by commas, such as 5,7: for the dashboard of a user whose own files
+	 * stand for the documents of these owners (decision 0013).
+	 */
+	public const OWNERS_ANY = 'owner__id__in';
+
+	/**
 	 * The version of the API of Paperless that every request asks for. Without one,
 	 * Paperless answers in its default version, which a new release raises, as 3.0 did from
 	 * 9 to 10, and a new version may change the type of a field, as 9 did with created.
@@ -408,24 +415,25 @@ final class PaperlessApiService {
 	/**
 	 * The documents that Paperless added last, newest first, as many as asked for, with
 	 * the fields that the dashboard shows: as far as the account of the token may view
-	 * them, also those that a user can't open. The dashboard waits for the answer, so the
-	 * request gets one try and a short time, and no place in the history of the problems
-	 * of the search, which is about searches.
+	 * them, also those that a user can't open, and with a page after the first the next
+	 * older ones, as many again; next links the page after this one, and is null on the
+	 * last. The dashboard waits for the answer, so the request gets one try and a short time,
+	 * and no place in the history of the problems of the search, which is about searches.
 	 *
 	 * @param array<string, string> $filters filters of Paperless on the documents, such as
 	 *                                       TAGS_ANY => '4,9'
-	 * @return list<array<array-key, mixed>>
+	 * @return array{count: int, next: ?string, results: list<array<array-key, mixed>>}
 	 * @throws PaperlessRequestException when Paperless answers, but not with documents
 	 * @throws Throwable the error of a request without answer, or without the settings
 	 */
-	public function findRecentDocuments(int $count, array $filters = []): array {
+	public function findRecentDocuments(int $count, array $filters = [], int $page = 1): array {
 		[$data, $version] = $this->requestDocuments(
 			$this->configService->getUrl(),
 			$this->configService->getToken(),
 			$this->configService->isLocalNetworkAllowed(),
 			[
 				'ordering' => '-added',
-				'page' => 1,
+				'page' => $page,
 				'page_size' => max(1, min(100, $count)),
 				'fields' => self::RECENT_FIELDS,
 			] + $filters,
@@ -434,7 +442,7 @@ final class PaperlessApiService {
 		);
 		$this->configService->rememberPaperlessVersion($version);
 
-		return self::documentsOf($data)['results'];
+		return self::documentsOf($data);
 	}
 
 	/**

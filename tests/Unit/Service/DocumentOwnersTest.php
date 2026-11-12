@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Service;
 
+use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Service\DocumentOwners;
 use OCA\PaperlessUnifiedSearch\Service\UserTags;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
@@ -423,6 +424,88 @@ final class DocumentOwnersTest extends TestCase {
 		self::assertSame([], $owners->of([['id' => 1, 'owner' => 5]]));
 		self::assertSame(['warning', 'The owners of Paperless documents could not be matched with users of Nextcloud ({errorType})'], array_slice($this->logged[0], 0, 2));
 		self::assertSame(RuntimeException::class, $this->logged[0][2]['errorType']);
+	}
+
+	/**
+	 * The dashboard asks Paperless for the newest documents of the user of Paperless whose
+	 * documents a user's own files stand for: by the name, whatever its case, with the users
+	 * of Paperless from the one request of the cache, and without looking up the users of
+	 * Nextcloud of the others.
+	 */
+	public function testFindsTheUserOfPaperlessOfAUser(): void {
+		$accounts = $this->createMock(IUserManager::class);
+		$accounts->expects(self::exactly(3))
+			->method('get')
+			->willReturnCallback(fn (string $uid): ?IUser => ['jamie' => $this->account('jamie'), 'Sam' => $this->account('sam'), 'alex' => $this->account('Alex')][$uid] ?? null);
+		$owners = $this->ownersWith([$this->users(self::USERS)], accounts: $accounts);
+
+		self::assertSame([5], $owners->paperlessIdsOf($this->account('jamie')));
+		self::assertSame([6], $owners->paperlessIdsOf($this->account('sam')));
+		self::assertSame([7], $owners->paperlessIdsOf($this->account('Alex')));
+		self::assertSame([], $owners->paperlessIdsOf($this->account('nobody')));
+		self::assertCount(1, $this->requests);
+	}
+
+	/**
+	 * Names compare whatever the case of their letters, also of letters beyond ASCII, as
+	 * Paperless Sync compares them: by the table, the name of the user of Paperless and the ID
+	 * of the user of Nextcloud.
+	 */
+	public function testFindsTheUserOfPaperlessWhateverTheCaseOfItsLetters(): void {
+		$this->settings['paperless_sync.user_map'] = 'scanner-ä = JÖRG';
+		$owners = $this->ownersWith([$this->users([['id' => 9, 'username' => 'Scanner-Ä']])], accounts: $this->accounts('archive', 'JÖRG'));
+
+		self::assertSame([9], $owners->paperlessIdsOf($this->account('JÖRG')));
+	}
+
+	/**
+	 * The table of Paperless Sync names the user of Paperless of a user of Nextcloud as for
+	 * of(), and two users of Paperless with one user of Nextcloud give it neither.
+	 */
+	public function testTheTableNamesTheUserOfPaperlessOfAUser(): void {
+		$this->settings['paperless_sync.user_map'] = 'Scanner = JAMIE';
+		$owners = $this->owners($this->users([['id' => 9, 'username' => 'scanner'], ['id' => 7, 'username' => 'alex']]));
+
+		self::assertSame([9], $owners->paperlessIdsOf($this->account('jamie')));
+		self::assertSame([7], $owners->paperlessIdsOf($this->account('alex')));
+	}
+
+	/**
+	 * @param list<array{id: int, username: string}> $users
+	 */
+	#[DataProvider('twoUsersForOne')]
+	public function testTwoUsersOfPaperlessForOneUserOfNextcloudGiveItNone(string $table, array $users): void {
+		$this->settings['paperless_sync.user_map'] = $table;
+
+		self::assertSame([], $this->owners($this->users($users))->paperlessIdsOf($this->account('jamie')));
+	}
+
+	#[DataProvider('otherArchives')]
+	public function testOnlyTheArchivesOfEachOwnerHaveUsersOfPaperless(string $ownership, string $archiveOwner): void {
+		$this->connected($archiveOwner);
+		$this->settings['paperless_sync.ownership'] = $ownership;
+
+		self::assertSame([], $this->owners()->paperlessIdsOf($this->account('jamie')));
+		self::assertSame([], $this->requests);
+	}
+
+	/**
+	 * Without the users of Paperless, as for an account that may not view them, a user has
+	 * none, and a backend of users that fails costs only them, with a warning.
+	 */
+	public function testAUserHasNoUserOfPaperlessWhileTheyAreUnknown(): void {
+		self::assertSame([], $this->owners($this->answer(403, '{"detail":"You do not have permission to perform this action."}'))->paperlessIdsOf($this->account('jamie')));
+		self::assertSame(['info'], array_column($this->logged, 0));
+
+		$accounts = $this->createStub(IUserManager::class);
+		$accounts->method('get')->willThrowException(new RuntimeException('LDAP is gone'));
+		$this->cache = null;
+		$owners = $this->ownersWith([$this->users(self::USERS)], accounts: $accounts);
+
+		self::assertSame([], $owners->paperlessIdsOf($this->account('jamie')));
+		$warnings = array_values(array_filter($this->logged, static fn (array $entry): bool => $entry[0] === 'warning'));
+		self::assertSame('The users of Paperless whose documents a user of Nextcloud gets could not be found ({errorType})', $warnings[0][1]);
+		self::assertSame(['app' => AppConstants::APP_ID, 'errorType' => RuntimeException::class], $warnings[0][2]);
 	}
 
 	/**
