@@ -17,8 +17,9 @@ namespace OCA\PaperlessUnifiedSearch\Search;
  * of results and a page of Paperless rarely match: a page of results may take a part of a
  * page of Paperless or several of them. The cursor of a page is therefore the offset of
  * its first hit in the ranking of Paperless, the number of hits that the pages before it
- * went through, and Paperless is asked for pages of one fixed size. Nextcloud and its
- * apps send the cursor back as they got it.
+ * went through, and Paperless is asked for pages of one fixed size. That offset counts
+ * the documents that the user can't open, so Nextcloud and its apps get it only sealed
+ * in a cursor (SearchCursors), which they send back as they got it.
  */
 final class PaperlessPager {
 	/** The hits of a page of Paperless. */
@@ -41,11 +42,11 @@ final class PaperlessPager {
 	}
 
 	/**
-	 * The pager of a page of the search, from the cursor that the page before returned,
-	 * none for the first page, and the number of results that Nextcloud asks for.
+	 * The pager of a page of the search, from the offset that the cursor of the page
+	 * before names, 0 for the first page, and the number of results that Nextcloud asks for.
 	 */
-	public static function fromQuery(int|string|null $cursor, int $limit): self {
-		return new self(self::toOffset($cursor), max(1, min(self::MAX_LIMIT, $limit)));
+	public static function at(int $offset, int $limit): self {
+		return new self(max(0, $offset), max(1, min(self::MAX_LIMIT, $limit)));
 	}
 
 	/**
@@ -88,14 +89,5 @@ final class PaperlessPager {
 	 */
 	public function nextPage(): self {
 		return new self($this->getPage() * self::PAGE_SIZE, $this->limit);
-	}
-
-	private static function toOffset(int|string|null $cursor): int {
-		if (is_int($cursor)) {
-			return max(0, $cursor);
-		}
-
-		// A number too large for an integer becomes the largest one, past the end.
-		return is_string($cursor) && ctype_digit($cursor) ? (int)$cursor : 0;
 	}
 }

@@ -16,6 +16,7 @@ use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Model\DiagnosticsHistory;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCA\PaperlessUnifiedSearch\Search\PaperlessSearchProvider;
+use OCA\PaperlessUnifiedSearch\Search\SearchCursors;
 use OCA\PaperlessUnifiedSearch\Service\AlwaysSearch;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\FilePictures;
@@ -25,6 +26,7 @@ use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\FileCache;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\KeyedCrypto;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryAppConfig;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryCache;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Owners;
@@ -190,6 +192,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			userSession: $this->session('dennis'),
 			documentOwners: $this->documentOwners($paperlessApi, $configService, $this->accounts('archive')),
 			userTags: $this->userTags($paperlessApi, $configService),
+			cursors: $this->searchCursors(),
 		);
 
 		self::assertTrue($provider->isExternalProvider());
@@ -257,6 +260,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			userSession: $this->session(null),
 			documentOwners: $this->documentOwners($paperlessApi, $configService, $this->accounts()),
 			userTags: $this->userTags($paperlessApi, $configService),
+			cursors: $this->searchCursors(),
 		);
 
 		self::assertFalse($provider->isExternalProvider());
@@ -423,29 +427,24 @@ final class PaperlessSearchProviderTest extends TestCase {
 	}
 
 	/**
-	 * @return array<string, array{int|string|null, int}>
+	 * @return array<string, array{?int, int}>
 	 */
 	public static function cursors(): array {
 		return [
 			'first search' => [null, 1],
-			'cursor zero' => [0, 1],
 			'cursor in the first page' => [24, 1],
 			'cursor at the start of the second page' => [25, 2],
-			'cursor in the second page, as text' => ['30', 2],
-			'cursor zero as text' => ['0', 1],
-			'negative cursor' => [-2, 1],
-			'negative cursor as text' => ['-3', 1],
-			'cursor that is no number' => ['next', 1],
+			'cursor in the second page' => [30, 2],
 			'last cursor that a search pages to' => [9999, 400],
 		];
 	}
 
 	/**
-	 * The cursor is the number of hits of Paperless that the earlier pages went through,
-	 * and Paperless is asked for pages of 25 hits, whatever the limit.
+	 * The cursor names the number of hits of Paperless that the earlier pages went
+	 * through, and Paperless is asked for pages of 25 hits, whatever the limit.
 	 */
 	#[DataProvider('cursors')]
-	public function testTheCursorChoosesThePageOfPaperless(int|string|null $cursor, int $page): void {
+	public function testTheCursorChoosesThePageOfPaperless(?int $offset, int $page): void {
 		$client = $this->createMock(IClient::class);
 		$client->expects(self::once())
 			->method('get')
@@ -460,26 +459,72 @@ final class PaperlessSearchProviderTest extends TestCase {
 			)
 			->willReturn($this->response(['count' => 0, 'next' => null, 'results' => []]));
 
-		$this->provider($client)->search($this->user(), $this->query(' invoice ', $cursor, 5));
+		$this->provider($client)->search($this->user(), $this->query(' invoice ', $offset === null ? null : $this->cursor($offset), 5));
 	}
 
 	/**
 	 * @return array<string, array{int|string}>
 	 */
-	public static function cursorsPastTheEnd(): array {
+	public static function cursorsThatNameNoPage(): array {
 		return [
-			'number' => [10000],
-			'text' => ['10000'],
+			'an offset' => [30],
+			'an offset as text' => ['30'],
+			'an offset past the end' => [10000],
+			'an offset past the end as text' => ['10000'],
 			'text beyond the largest integer' => ['99999999999999999999'],
+			'text that is no cursor' => ['next'],
 		];
 	}
 
-	#[DataProvider('cursorsPastTheEnd')]
-	public function testACursorPastTheEndAsksPaperlessNothing(int|string $cursor): void {
+	/**
+	 * A cursor that the app didn't hand out names no page, so that a user can't step through
+	 * the ranking of Paperless and count the documents that they may not open.
+	 */
+	#[DataProvider('cursorsThatNameNoPage')]
+	public function testACursorThatTheAppDidNotHandOutAsksPaperlessNothing(int|string $cursor): void {
 		$client = $this->createMock(IClient::class);
 		$client->expects(self::never())->method('get');
 
 		$result = $this->provider($client)->search($this->user(), $this->query('invoice', $cursor, 5))->jsonSerialize();
+
+		self::assertFalse($result['isPaginated']);
+		self::assertSame([], $result['entries']);
+	}
+
+	/**
+	 * @return array<string, array{string, string, array<string, string>}>
+	 */
+	public static function cursorsOfOtherSearches(): array {
+		return [
+			'of another user' => ['sam', 'invoice', []],
+			'of another term' => ['dennis', 'invoices', []],
+			'of another span of time' => ['dennis', 'invoice', ['created__date__gte' => '2026-08-01']],
+		];
+	}
+
+	/**
+	 * A cursor belongs to the user and the question of the search that handed it out.
+	 *
+	 * @param array<string, string> $filters the filters of Paperless for the dates of the search
+	 */
+	#[DataProvider('cursorsOfOtherSearches')]
+	public function testACursorOfAnotherSearchAsksPaperlessNothing(string $userId, string $term, array $filters): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::never())->method('get');
+
+		$result = $this->provider($client)
+			->search($this->user(), $this->query('invoice', $this->cursor(30, $term, $filters, $userId), 5))
+			->jsonSerialize();
+
+		self::assertFalse($result['isPaginated']);
+		self::assertSame([], $result['entries']);
+	}
+
+	public function testACursorPastTheEndAsksPaperlessNothing(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::never())->method('get');
+
+		$result = $this->provider($client)->search($this->user(), $this->query('invoice', $this->cursor(10000), 5))->jsonSerialize();
 
 		self::assertFalse($result['isPaginated']);
 		self::assertSame([], $result['entries']);
@@ -491,7 +536,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 	 */
 	public function testASearchEndsAfterTheFirstTenThousandHits(): void {
 		$result = $this->provider($this->ranking(self::documentsWithIds(range(1, 10030))), $this->files([10001]))
-			->search($this->user(), $this->query('invoice', 9990, 5))
+			->search($this->user(), $this->query('invoice', $this->cursor(9990), 5))
 			->jsonSerialize();
 
 		self::assertSame([], $result['entries']);
@@ -559,7 +604,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		self::assertSame([1, 2], array_column($this->requests, 'page'));
 		self::assertTrue($result['isPaginated']);
 		// Hits 26 to 28 are gone through on the second page of Paperless.
-		self::assertSame(28, $result['cursor']);
+		self::assertSame(28, $this->offsetOf($result['cursor']));
 	}
 
 	/**
@@ -575,13 +620,13 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$first = $provider->search($this->user(), $this->query('invoice', null, 5))->jsonSerialize();
 		self::assertSame(self::titlesOf([1, 2, 3, 4, 6]), self::titles($first['entries']));
 		self::assertTrue($first['isPaginated']);
-		// Hits 1 to 6 are gone through, document 5 without a file among them.
-		self::assertSame(6, $first['cursor']);
+		// The next page starts with document 7, after document 5 without a file.
+		self::assertSame(6, $this->offsetOf($first['cursor']));
 
 		$shown = self::titles($first['entries']);
 		$result = $first;
 		for ($pages = 1; $result['isPaginated'] && $pages < 20; $pages++) {
-			$result = $provider->search($this->user(), $this->query('invoice', (string)$result['cursor'], 5))->jsonSerialize();
+			$result = $provider->search($this->user(), $this->query('invoice', $result['cursor'], 5))->jsonSerialize();
 			$shown = [...$shown, ...self::titles($result['entries'])];
 		}
 
@@ -613,14 +658,15 @@ final class PaperlessSearchProviderTest extends TestCase {
 
 		self::assertSame(self::titlesOf([1, 2]), self::titles($result['entries']));
 		self::assertTrue($result['isPaginated']);
-		self::assertSame(2, $result['cursor']);
+		self::assertSame(2, $this->offsetOf($result['cursor']));
 		// A full page asks Paperless nothing more.
 		self::assertCount(1, $this->requests);
 	}
 
 	/**
 	 * However few of the hits the user can open, a search asks Paperless for at most four
-	 * pages, and the next one goes on after them.
+	 * pages. Without a result among them, the search is complete: a next page would tell
+	 * that Paperless has more than 100 hits, of documents that the user can't open.
 	 */
 	public function testASearchAsksPaperlessForAtMostFourPages(): void {
 		$result = $this->provider($this->ranking(self::documentsWithIds(range(1, 200))), $this->files([150]))
@@ -629,11 +675,91 @@ final class PaperlessSearchProviderTest extends TestCase {
 
 		self::assertSame([], $result['entries']);
 		self::assertSame([1, 2, 3, 4], array_column($this->requests, 'page'));
-		self::assertTrue($result['isPaginated']);
-		self::assertSame(100, $result['cursor']);
+		self::assertFalse($result['isPaginated']);
 		// Four requests to Paperless, one search of the file cache each, and one search.
 		self::assertCount(4, $this->searches);
 		self::assertSame(self::NO_PROBLEM, $this->problems());
+	}
+
+	/**
+	 * @return array<string, array{list<int>}>
+	 */
+	public static function hiddenRankings(): array {
+		return [
+			'no hit' => [[]],
+			'a few hits' => [range(1, 3)],
+			'more hits than four pages of Paperless' => [range(1, 200)],
+		];
+	}
+
+	/**
+	 * A user who can open none of the hits gets the same answer however many documents of
+	 * others match: no number of them can be read from it.
+	 *
+	 * @param list<int> $ids the documents that Paperless ranks, none with a file for the user
+	 */
+	#[DataProvider('hiddenRankings')]
+	public function testAnAnswerWithoutResultsTellsNothingOfTheHitsThatTheUserCannotOpen(array $ids): void {
+		$result = $this->provider($this->ranking(self::documentsWithIds($ids)))
+			->search($this->user(), $this->query('invoice', null, 5))
+			->jsonSerialize();
+
+		self::assertSame(['name' => 'Paperless documents', 'isPaginated' => false, 'entries' => [], 'cursor' => null], $result);
+	}
+
+	/**
+	 * A page is followed by another only for a result that the user may open: hits of
+	 * documents that the user can't open after the last result make no next page.
+	 *
+	 * @param list<int> $ids the documents that Paperless ranks, of which the user can open 1 and 2
+	 */
+	#[DataProvider('hiddenRankings')]
+	public function testHitsThatTheUserCannotOpenMakeNoNextPage(array $ids): void {
+		$ranking = [1, 2, ...array_map(static fn (int $id): int => $id + 2, $ids)];
+
+		$result = $this->provider($this->ranking(self::documentsWithIds($ranking)), $this->files([1, 2]))
+			->search($this->user(), $this->query('invoice', null, 2))
+			->jsonSerialize();
+
+		self::assertSame(self::titlesOf([1, 2]), self::titles($result['entries']));
+		self::assertFalse($result['isPaginated']);
+		self::assertNull($result['cursor']);
+	}
+
+	/**
+	 * A search that spends its budget with results, but without one for a next page, is
+	 * complete as well.
+	 */
+	public function testASearchThatSpendsItsBudgetWithoutAResultForANextPageIsComplete(): void {
+		$result = $this->provider($this->ranking(self::documentsWithIds(range(1, 200))), $this->files([3, 150]))
+			->search($this->user(), $this->query('invoice', null, 5))
+			->jsonSerialize();
+
+		self::assertSame(self::titlesOf([3]), self::titles($result['entries']));
+		self::assertSame([1, 2, 3, 4], array_column($this->requests, 'page'));
+		self::assertFalse($result['isPaginated']);
+	}
+
+	/**
+	 * The result for the next page may lie on a later page of Paperless than the last
+	 * result of this one, and the next page starts with it.
+	 */
+	public function testTheNextPageStartsWithTheResultThatTheSearchFoundForIt(): void {
+		$provider = $this->provider($this->ranking(self::documentsWithIds(range(1, 60))), $this->files([3, 7, 40]));
+
+		$first = $provider->search($this->user(), $this->query('invoice', null, 2))->jsonSerialize();
+
+		self::assertSame(self::titlesOf([3, 7]), self::titles($first['entries']));
+		self::assertSame([1, 2], array_column($this->requests, 'page'));
+		self::assertTrue($first['isPaginated']);
+		self::assertSame(39, $this->offsetOf($first['cursor']));
+
+		$this->requests = [];
+		$second = $provider->search($this->user(), $this->query('invoice', $first['cursor'], 2))->jsonSerialize();
+
+		self::assertSame(self::titlesOf([40]), self::titles($second['entries']));
+		self::assertSame([2, 3], array_column($this->requests, 'page'));
+		self::assertFalse($second['isPaginated']);
 	}
 
 	/**
@@ -660,8 +786,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			->jsonSerialize();
 
 		self::assertSame([1, 2], array_column($this->requests, 'page'));
-		self::assertTrue($result['isPaginated']);
-		self::assertSame(50, $result['cursor']);
+		self::assertFalse($result['isPaginated']);
 	}
 
 	/**
@@ -684,7 +809,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 
 		self::assertSame(self::titlesOf([3, 7]), self::titles($result['entries']));
 		self::assertTrue($result['isPaginated']);
-		self::assertSame(25, $result['cursor']);
+		self::assertSame(25, $this->offsetOf($result['cursor']));
 		// The user sees documents, so the search worked.
 		self::assertSame(self::NO_PROBLEM, $this->problems());
 	}
@@ -1060,14 +1185,14 @@ final class PaperlessSearchProviderTest extends TestCase {
 	}
 
 	/**
-	 * @return array<string, array{int, string, array<string, string>, int|string|null}>
+	 * @return array<string, array{int, string, array<string, string>, ?int}>
 	 */
 	public static function rejectedSearches(): array {
 		return [
 			// Paperless 2 never gets the term in the simple mode, which it doesn't have.
 			'a query that Paperless can\'t parse' => [400, '{"query":["Invalid date value \'[2026\' for field \'created\'."]}', ['X-Version' => '2.20.13', 'X-Api-Version' => '9'], null],
 			'a query too long for Paperless' => [400, '{"query":["The search query is too long (4097 characters). The maximum allowed length is 4096 characters."]}', ['X-Version' => '3.3.0', 'X-Api-Version' => '10'], null],
-			'a page past the last one' => [404, '{"detail":"Invalid page."}', [], '25'],
+			'a page past the last one' => [404, '{"detail":"Invalid page."}', [], 25],
 		];
 	}
 
@@ -1080,7 +1205,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 	 * @param array<string, string> $headers
 	 */
 	#[DataProvider('rejectedSearches')]
-	public function testASearchThatPaperlessRejectsLeavesTheHistoryUntouched(int $status, string $body, array $headers, int|string|null $cursor): void {
+	public function testASearchThatPaperlessRejectsLeavesTheHistoryUntouched(int $status, string $body, array $headers, ?int $offset): void {
 		$this->awaitRecovery();
 		$before = $this->problems();
 		$client = $this->createStub(IClient::class);
@@ -1095,7 +1220,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			]);
 
 		$result = $this->provider($client, logger: $logger)
-			->search($this->user(), $this->query('created:[2026 to', $cursor))
+			->search($this->user(), $this->query('created:[2026 to', $offset === null ? null : $this->cursor($offset, 'created:[2026 to')))
 			->jsonSerialize();
 
 		self::assertSame([], $result['entries']);
@@ -1908,6 +2033,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			userSession: $this->session('dennis'),
 			documentOwners: $this->documentOwners($paperlessApi, $configService, $this->accounts('dennis', 'sam')),
 			userTags: $this->userTags($paperlessApi, $configService),
+			cursors: $this->searchCursors(),
 		);
 	}
 
@@ -2273,6 +2399,39 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$user->method('getUID')->willReturn('dennis');
 
 		return $user;
+	}
+
+	/**
+	 * The cursors of the tests, sealed with the secret of a test instance.
+	 */
+	private function searchCursors(): SearchCursors {
+		$config = $this->createStub(IConfig::class);
+		$config->method('getSystemValueString')->willReturnCallback(
+			static fn (string $key, string $default = ''): string => $key === 'secret' ? 'secret of the test instance' : $default,
+		);
+
+		return new SearchCursors(new KeyedCrypto(), $config);
+	}
+
+	/**
+	 * The cursor that the app hands out for the page at the offset of a search of dennis.
+	 *
+	 * @param array<string, string> $filters the filters of Paperless for the dates of the search
+	 */
+	private function cursor(int $offset, string $term = 'invoice', array $filters = [], string $userId = 'dennis'): string {
+		$cursor = $this->searchCursors()->seal($offset, $userId, $term, $filters);
+		self::assertIsString($cursor);
+
+		return $cursor;
+	}
+
+	/**
+	 * The offset of the page that the cursor of a search of dennis for invoice names.
+	 */
+	private function offsetOf(mixed $cursor): ?int {
+		self::assertIsString($cursor);
+
+		return $this->searchCursors()->open($cursor, 'dennis', 'invoice', []);
 	}
 
 	/**
