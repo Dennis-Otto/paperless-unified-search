@@ -11,6 +11,7 @@ use OCA\PaperlessUnifiedSearch\Command\Check;
 use OCA\PaperlessUnifiedSearch\Command\Search;
 use OCA\PaperlessUnifiedSearch\Command\Setup;
 use OCA\PaperlessUnifiedSearch\Command\Test;
+use OCA\PaperlessUnifiedSearch\Command\TrustedMountsCommand;
 use OCA\PaperlessUnifiedSearch\Dashboard\RecentDocumentsWidget;
 use OCA\PaperlessUnifiedSearch\Notification\Notifier;
 use OCA\PaperlessUnifiedSearch\Reference\PaperlessReferenceProvider;
@@ -120,7 +121,7 @@ final class ApplicationTest extends TestCase {
 			}
 		}
 
-		self::assertSame([Setup::class, Test::class, Search::class, Check::class], $declared);
+		self::assertSame([Setup::class, Test::class, Search::class, Check::class, TrustedMountsCommand::class], $declared);
 		self::assertEqualsCanonicalizing($commands, $declared);
 	}
 
