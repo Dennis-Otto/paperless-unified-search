@@ -4,7 +4,7 @@ description: "Why a request to Paperless gets a second try only when it failed b
 
 # Try a request again only before it has a connection, and count no refused query as a problem
 
-- Status: accepted
+- Status: accepted, amended by [0018](0018-rest-the-search-after-a-request-without-answer.md)
 - Date: 2026-10-13
 
 ## Context

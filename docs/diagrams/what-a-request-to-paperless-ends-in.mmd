@@ -6,7 +6,7 @@ config:
 ---
 flowchart TB
     accTitle: What a request to Paperless ends in
-    accDescr: The Paperless client asks Paperless for a page of documents. A request without an answer gets one second try only when it failed within 3.5 seconds, before it had a connection, and Nextcloud didn't refuse its address; a request that waited for a Paperless that hangs fails the search at once. An answer of 2xx brings the documents. HTTP 400 for the query, as for an advanced query that the user is still typing, or HTTP 404 for a page after the first, is no problem of the search, and the history stays untouched; on Paperless 3, the client asks once more with the same term in the simple mode of the search, which brings the documents of its words, finds nothing when refused again, and fails the search with any other answer. For like:, an answer that refuses the document, HTTP 403 with the words of Paperless or, before Paperless-ngx 2.20.13, HTTP 400 with the words of its error, finds nothing as well, and the history stays untouched. Every other answer fails the search, which the history notes.
+    accDescr: The Paperless client asks Paperless for a page of documents. A request without an answer gets one second try only when it failed within 3.5 seconds, before it had a connection, and Nextcloud didn't refuse its address; a request that waited for a Paperless that hangs fails the search at once. An answer of 2xx brings the documents. HTTP 400 for the query, as for an advanced query that the user is still typing, or HTTP 404 for a page after the first, is no problem of the search, and the history stays untouched; on Paperless 3, the client asks once more with the same term in the simple mode of the search, which brings the documents of its words, finds nothing when refused again, and fails the search with any other answer. For like:, an answer that refuses the document, HTTP 403 with the words of Paperless or, before Paperless-ngx 2.20.13, HTTP 400 with the words of its error, finds nothing as well, and the history stays untouched. Every other answer fails the search, which the history notes. After a timeout, a refused connection or a host that doesn't resolve, no search asks Paperless for 30 seconds.
 
     request(["`**Ask Paperless**`"])
     answered{"Did Paperless<br>answer?"}
@@ -18,6 +18,7 @@ flowchart TB
     simple["The same term in the<br>simple mode, text"]
     nothing["Nothing found,<br>the history untouched"]
     failed["The search failed,<br>noted in the history"]
+    rest["No search asks Paperless<br>for 30 seconds"]
 
     request --> answered
     answered -- "no" --> early
@@ -35,6 +36,7 @@ flowchart TB
     simple -- "2xx" --> documents
     simple -- "refused again" --> nothing
     simple -- "any other" --> failed
+    failed -. "after a timeout, a refused<br>connection or an unknown host" .-> rest
 
     classDef yes fill:#16a34a2e,stroke:#16a34a,stroke-width:2px
     classDef no fill:#dc26262e,stroke:#dc2626,stroke-width:2px

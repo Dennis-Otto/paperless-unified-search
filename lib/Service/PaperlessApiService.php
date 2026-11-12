@@ -210,6 +210,7 @@ final class PaperlessApiService {
 		private SearchDiagnostics $diagnostics,
 		private ITimeFactory $timeFactory,
 		private IAppManager $appManager,
+		private SearchRest $rest,
 	) {
 		$this->client = $clientService->newClient();
 	}
@@ -239,7 +240,10 @@ final class PaperlessApiService {
 	 * and how many documents the account of the token may view, with their IDs in the field
 	 * all, which Paperless-ngx adds to every list for the selection of all documents. Once
 	 * Paperless has answered, it asks what the account of the token may do, for the
-	 * warnings about it, and whether it can see the names of what it may view.
+	 * warnings about it, and whether it can see the names of what it may view. A Paperless
+	 * that answers gets searches at once again, also while they rest after a request
+	 * without answer (decision 0018): after a save of the settings, and after occ
+	 * paperless_unified_search:test and :check.
 	 *
 	 * @param bool $allowLocal whether Nextcloud may reach this Paperless at an address of
 	 *                         the local network
@@ -261,6 +265,7 @@ final class PaperlessApiService {
 		}
 
 		$documents = self::documentsOf($data)['count'];
+		$this->rest->end($url);
 		[$warnings, $refused] = $this->findTokenWarnings($url, $token, $allowLocal, $documents);
 
 		return new PaperlessStatus($version, $documents, self::idsOf($data['all'] ?? null), $warnings, $refused);

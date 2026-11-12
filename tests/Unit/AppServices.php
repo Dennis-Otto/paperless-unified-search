@@ -15,6 +15,7 @@ use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
+use OCA\PaperlessUnifiedSearch\Service\SearchRest;
 use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -72,7 +73,7 @@ trait AppServices {
 		$appManager = $this->createStub(IAppManager::class);
 		$appManager->method('getAppVersion')->willReturn('0.5.1');
 
-		return new PaperlessApiService($configService, $clientService, $this->diagnostics(), $this->clock(), $appManager);
+		return new PaperlessApiService($configService, $clientService, $this->diagnostics(), $this->clock(), $appManager, new SearchRest($this->createStub(ICacheFactory::class), $this->createStub(LoggerInterface::class)));
 	}
 
 	/**

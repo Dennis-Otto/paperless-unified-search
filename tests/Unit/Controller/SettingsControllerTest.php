@@ -21,6 +21,7 @@ use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
 use OCA\PaperlessUnifiedSearch\Service\SearchAccountSetup;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCA\PaperlessUnifiedSearch\Service\SearchExplainer;
+use OCA\PaperlessUnifiedSearch\Service\SearchRest;
 use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryAppConfig;
@@ -761,7 +762,7 @@ final class SettingsControllerTest extends TestCase {
 			static fn (string $text, array $parameters = []): string => 'DE:' . vsprintf($text, $parameters),
 		);
 
-		$api = new PaperlessApiService($configService, $clientService, $diagnostics, $clock, $appManager);
+		$api = new PaperlessApiService($configService, $clientService, $diagnostics, $clock, $appManager, new SearchRest($this->createStub(ICacheFactory::class), $this->createStub(LoggerInterface::class)));
 		$owners = $this->documentOwners($api, $configService, $accounts, $cacheFactory);
 
 		return new SettingsController(

@@ -24,6 +24,7 @@ use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
+use OCA\PaperlessUnifiedSearch\Service\SearchRest;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\FileCache;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\KeyedCrypto;
@@ -88,6 +89,9 @@ final class PaperlessSearchProviderTest extends TestCase {
 
 	/** The distributed cache of Nextcloud, once the app uses it. */
 	private ?MemoryCache $cache = null;
+
+	/** The time of the distributed cache, in seconds. */
+	private int $cacheTime = self::NOW;
 
 	protected function setUp(): void {
 		$this->config = new MemoryAppConfig([AppConstants::APP_ID . '.diagnostics_pending' => false]);
@@ -176,7 +180,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$query->method('getCursor')->willReturn(null);
 
 		$configService = new ConfigService($config, $credentials, $this->accounts('archive'), $this->createStub(LoggerInterface::class), $this->createStub(IConfig::class));
-		$paperlessApi = new PaperlessApiService($configService, $clientService, $this->diagnostics($config), $this->clock(), $this->appManager());
+		$paperlessApi = new PaperlessApiService($configService, $clientService, $this->diagnostics($config), $this->clock(), $this->appManager(), $this->searchRest());
 		$provider = new PaperlessSearchProvider(
 			$paperlessApi,
 			new NextcloudFileLocator($root, $this->createStub(LoggerInterface::class)),
@@ -193,6 +197,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			documentOwners: $this->documentOwners($paperlessApi, $configService, $this->accounts('archive')),
 			userTags: $this->userTags($paperlessApi, $configService),
 			cursors: $this->searchCursors(),
+			rest: $this->searchRest(),
 		);
 
 		self::assertTrue($provider->isExternalProvider());
@@ -243,7 +248,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			->willReturn(true);
 
 		$configService = new ConfigService($config, $this->createStub(ICredentialsManager::class), $this->accounts(), $this->createStub(LoggerInterface::class), $this->createStub(IConfig::class));
-		$paperlessApi = new PaperlessApiService($configService, $this->createStub(IClientService::class), $this->diagnostics($config), $this->clock(), $this->appManager());
+		$paperlessApi = new PaperlessApiService($configService, $this->createStub(IClientService::class), $this->diagnostics($config), $this->clock(), $this->appManager(), $this->searchRest());
 		$provider = new PaperlessSearchProvider(
 			$paperlessApi,
 			new NextcloudFileLocator($this->createStub(IRootFolder::class), $this->createStub(LoggerInterface::class)),
@@ -261,6 +266,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			documentOwners: $this->documentOwners($paperlessApi, $configService, $this->accounts()),
 			userTags: $this->userTags($paperlessApi, $configService),
 			cursors: $this->searchCursors(),
+			rest: $this->searchRest(),
 		);
 
 		self::assertFalse($provider->isExternalProvider());
@@ -1177,9 +1183,146 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$provider->search($this->user(), $this->query('invoice'));
 		self::assertTrue($this->history()->awaitsRecovery());
 
+		// Once the search rested for 30 seconds.
+		$this->cacheTime += 30;
 		$provider->search($this->user(), $this->query('invoice'));
 		self::assertSame(self::NOW, $this->history()->recoveredAt);
 		self::assertSame(SearchEvent::KIND_FAILED, $this->history()->events[0]->kind);
+	}
+
+	/**
+	 * A request without answer holds a PHP worker for seconds: the searches of the next 30
+	 * seconds, of any term, find nothing without asking Paperless or writing the history
+	 * again, and the first one after them asks again (#417).
+	 */
+	#[DataProvider('requestsWithoutAnswer')]
+	public function testASearchWithoutAnswerRestsTheSearchesForThirtySeconds(string $error): void {
+		$calls = 0;
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(static function () use (&$calls, $error): IResponse {
+			$calls++;
+
+			throw new RuntimeException($error);
+		});
+		$provider = $this->provider($client);
+
+		$provider->search($this->user(), $this->query('invoice'));
+		// The request and its second try.
+		self::assertSame(2, $calls);
+
+		$this->cacheTime += 29;
+		$result = $provider->search($this->user(), $this->query('receipt'))->jsonSerialize();
+		self::assertSame([], $result['entries']);
+		self::assertFalse($result['isPaginated']);
+		self::assertSame(2, $calls);
+		self::assertSame(1, $this->history()->failed);
+
+		$this->cacheTime += 1;
+		$provider->search($this->user(), $this->query('receipt'));
+		self::assertSame(4, $calls);
+	}
+
+	/**
+	 * @return array<string, array{string}>
+	 */
+	public static function requestsWithoutAnswer(): array {
+		return [
+			'a Paperless that hangs' => ['cURL error 28: Operation timed out after 10001 milliseconds with 0 bytes received'],
+			'a connection that is refused' => ['cURL error 7: Failed to connect to paperless.example.com port 443'],
+			'a host that does not resolve' => ['cURL error 6: Could not resolve host: paperless.example.com'],
+		];
+	}
+
+	/**
+	 * A failure that costs no wait for Paperless makes no rest: an answer of Paperless,
+	 * whatever its status, and a certificate that Nextcloud doesn't trust.
+	 */
+	#[DataProvider('failuresWithoutRest')]
+	public function testAFailureThatCostsNoWaitMakesNoRest(int|string $failure): void {
+		$calls = 0;
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function () use (&$calls, $failure): IResponse {
+			$calls++;
+			if (is_string($failure)) {
+				throw new RuntimeException($failure);
+			}
+
+			return $this->answer($failure, '');
+		});
+		$provider = $this->provider($client);
+
+		$provider->search($this->user(), $this->query('invoice'));
+		$asked = $calls;
+		$provider->search($this->user(), $this->query('invoice'));
+
+		self::assertGreaterThan(0, $asked);
+		self::assertSame(2 * $asked, $calls);
+	}
+
+	/**
+	 * @return array<string, array{int|string}>
+	 */
+	public static function failuresWithoutRest(): array {
+		return [
+			'HTTP 500' => [500],
+			'HTTP 401' => [401],
+			'a certificate that Nextcloud does not trust' => ['cURL error 60: SSL certificate problem: unable to get local issuer certificate'],
+		];
+	}
+
+	/**
+	 * Paperless answered: a search whose files fail makes no rest for Paperless.
+	 */
+	public function testAFailureOfTheFilesMakesNoRest(): void {
+		$calls = 0;
+		$answer = $this->response(['count' => 1, 'next' => null, 'results' => [['id' => 7, 'title' => 'Invoice']]]);
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(static function () use (&$calls, $answer): IResponse {
+			$calls++;
+
+			return $answer;
+		});
+		$userFolder = $this->createStub(Folder::class);
+		$userFolder->method('search')->willThrowException(new RuntimeException('Storage unavailable'));
+		$provider = $this->provider($client, userFolder: $userFolder);
+
+		$provider->search($this->user(), $this->query('invoice'));
+		$provider->search($this->user(), $this->query('invoice'));
+
+		self::assertSame(2, $calls);
+	}
+
+	/**
+	 * While the search rests, it asks Paperless nothing, writes nothing into the history,
+	 * whose failure is there already, and says why at the level debug.
+	 */
+	public function testARestingSearchAsksNothingAndSaysSoInTheDebugLog(): void {
+		$this->searchRest()->restAfter('https://paperless.example.com', new RuntimeException('cURL error 28: Operation timed out'));
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::never())->method('get');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::never())->method('warning');
+		$logger->expects(self::once())
+			->method('debug')
+			->with('The search rests after Paperless gave no answer, so it finds nothing for a while', ['app' => AppConstants::APP_ID]);
+
+		$result = $this->provider($client, logger: $logger)->search($this->user(), $this->query('invoice'))->jsonSerialize();
+
+		self::assertSame([], $result['entries']);
+		self::assertFalse($result['isPaginated']);
+		self::assertSame(self::NO_PROBLEM, $this->problems());
+	}
+
+	/**
+	 * The rest belongs to the Paperless that gave no answer: one at another URL is asked.
+	 */
+	public function testTheRestOfAnotherPaperlessDoesNotCount(): void {
+		$this->searchRest()->restAfter('https://old-paperless.example.com', new RuntimeException('cURL error 28: Operation timed out'));
+		$client = $this->paperless(['count' => 1, 'next' => null, 'results' => [['id' => 7, 'title' => 'Invoice']]]);
+
+		$result = $this->provider($client, [7 => $this->file(7, 'Invoice [P7].pdf')])->search($this->user(), $this->query('invoice'))->jsonSerialize();
+
+		self::assertCount(1, $result['entries']);
 	}
 
 	public function testASearchThatWorksStoresNothing(): void {
@@ -2035,7 +2178,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$request->method('getHeader')->willReturn('Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0');
 
 		$configService = new ConfigService($config, $credentials, $this->accounts('archive', 'sync'), $this->createStub(LoggerInterface::class), $this->createStub(IConfig::class));
-		$paperlessApi = new PaperlessApiService($configService, $clientService, $this->diagnostics($config), $this->clock(), $this->appManager());
+		$paperlessApi = new PaperlessApiService($configService, $clientService, $this->diagnostics($config), $this->clock(), $this->appManager(), $this->searchRest());
 
 		return new PaperlessSearchProvider(
 			$paperlessApi,
@@ -2053,6 +2196,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			documentOwners: $this->documentOwners($paperlessApi, $configService, $this->accounts('dennis', 'sam')),
 			userTags: $this->userTags($paperlessApi, $configService),
 			cursors: $this->searchCursors(),
+			rest: $this->searchRest(),
 		);
 	}
 
@@ -2070,7 +2214,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 	private function presentation(PaperlessApiService $paperlessApi, ConfigService $configService, ?IURLGenerator $urlGenerator = null, bool $previews = false, string $locale = 'en', string $timeZone = 'America/New_York'): array {
 		$cacheFactory = $this->createStub(ICacheFactory::class);
 		$cacheFactory->method('createDistributed')->willReturnCallback(
-			fn (): MemoryCache => $this->cache ??= new MemoryCache(static fn (): int => self::NOW),
+			fn (): MemoryCache => $this->cache ??= new MemoryCache(fn (): int => $this->cacheTime),
 		);
 
 		$previewManager = $this->createStub(IPreview::class);
@@ -2108,6 +2252,19 @@ final class PaperlessSearchProviderTest extends TestCase {
 			$dateTimeFormatter,
 			$dateTimeZone,
 		];
+	}
+
+	/**
+	 * The rest of the search after a request without answer, in the distributed cache of
+	 * the test.
+	 */
+	private function searchRest(): SearchRest {
+		$cacheFactory = $this->createStub(ICacheFactory::class);
+		$cacheFactory->method('createDistributed')->willReturnCallback(
+			fn (): MemoryCache => $this->cache ??= new MemoryCache(fn (): int => $this->cacheTime),
+		);
+
+		return new SearchRest($cacheFactory, $this->createStub(LoggerInterface::class));
 	}
 
 	/**
