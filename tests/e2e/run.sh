@@ -918,7 +918,15 @@ occ paperless_unified_search:search e2e-other mobiletest --explain --json >"${TM
 assert_occ verdicts "${TMP_DIR}/explain-trusted.json" '123=shown' '999=shown=/Archive/Shared storage [P999].txt'
 occ paperless_unified_search:search e2e-writer mobiletest --explain --json >"${TMP_DIR}/explain-trusted-writable.json"
 assert_occ verdicts "${TMP_DIR}/explain-trusted-writable.json" '123=not_shared' '999=writable_mount=/Archive/Shared storage [P999].txt'
-try_search 200 e2e-writer
+# Apache caches the configuration of the apps for up to 3 seconds, so right after occ
+# trusted the mounts, Try a search may still answer as before: it asks again for up to 10.
+for _ in {1..10}; do
+	try_search 200 e2e-writer
+	if assert_occ try "${TMP_DIR}/answer.json" e2e-writer 123=not_shared 999=writable_mount >/dev/null 2>&1; then
+		break
+	fi
+	sleep 1
+done
 assert_occ try "${TMP_DIR}/answer.json" e2e-writer 123=not_shared 999=writable_mount
 occ paperless_unified_search:trusted-mounts --none >/dev/null
 for storage in "${READ_ONLY_STORAGE}" "${WRITABLE_STORAGE}"; do
