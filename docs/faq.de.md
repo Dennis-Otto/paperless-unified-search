@@ -24,6 +24,8 @@ Nein. Die App speichert ihre Einstellungen, das API-Token verschlüsselt im Zuga
 
 Ein Benutzer sieht ein Paperless-Dokument, wenn er seine Datei in Nextcloud öffnen kann: Das Archiv-Konto sieht jedes, jeder andere Benutzer die, deren Dateien, oder einen Ordner darum, das Archiv-Konto mit ihm geteilt hat: Die Freigaben, die du schon kennst, sind die Berechtigungen. Das Paperless-Konto des API-Tokens setzt die Grenze: Ein Dokument, das es nicht ansehen darf, erscheint nie für irgendwen. Niemand braucht ein Konto in Paperless.
 
+Ein Benutzer, den Paperless Sync nur die Dokumente mit bestimmten Tags sehen lässt, sieht nur die, die in Paperless einen davon tragen, gleich, was mit ihm geteilt ist; [Tags, die ein Benutzer sehen darf](configure.de.md#tags-die-ein-benutzer-sehen-darf) erklärt die Einstellung.
+
 ## Sehen Administratoren von Nextcloud jedes Dokument?
 
 Nein, nur die, deren Dateien sie öffnen können, wie jeder Benutzer. Administrator zu sein öffnet keine Datei eines anderen Kontos.
