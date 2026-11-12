@@ -92,6 +92,7 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 		private IUserSession $userSession,
 		private DocumentOwners $documentOwners,
 		private UserTags $userTags,
+		private SearchCursors $cursors,
 	) {
 	}
 
@@ -150,14 +151,27 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 	 * budget: Paperless ranks all documents that match, also those that the user can't
 	 * open, and Nextcloud's web search drops a provider whose first answer is empty and
 	 * offers "Load more results" only for a page with as many results as it asked for.
+	 *
+	 * Whether a next page follows, and where it starts, depends on the documents that the
+	 * user may open alone (decision 0016): the search looks for one result more than the
+	 * page holds, and only a result that it found that way makes a next page, whose
+	 * cursor, sealed, starts with it.
 	 */
 	public function search(IUser $user, ISearchQuery $query): SearchResult {
 		$term = trim($query->getTerm());
-		$pager = PaperlessPager::fromQuery($query->getCursor(), $query->getLimit());
 		// Without an archive account no file can stand for a document, so Paperless
-		// isn't even asked, and neither is it for a cursor past the end.
+		// isn't even asked.
 		$archiveOwner = $this->configService->getArchiveOwner();
-		if ($term === '' || $archiveOwner === '' || $pager->isPastTheEnd() || !$this->configService->isConfigured()) {
+		if ($term === '' || $archiveOwner === '' || !$this->configService->isConfigured()) {
+			return SearchResult::complete($this->getName(), []);
+		}
+
+		// Nor is it for a cursor that the app didn't hand out for this search of this
+		// user, or one past the end.
+		$dateFilters = $this->getDateFilters($user, $query);
+		$offset = $this->cursors->open($query->getCursor(), $user->getUID(), $term, $dateFilters);
+		$pager = PaperlessPager::at($offset ?? PaperlessPager::MAX_OFFSET, $query->getLimit());
+		if ($pager->isPastTheEnd()) {
 			return SearchResult::complete($this->getName(), []);
 		}
 
@@ -168,14 +182,16 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 			return SearchResult::complete($this->getName(), []);
 		}
 
-		$filters = $this->getDateFilters($user, $query) + ($tagIds === null ? [] : [PaperlessApiService::TAGS_ANY => implode(',', $tagIds)]);
+		$filters = $dateFilters + ($tagIds === null ? [] : [PaperlessApiService::TAGS_ANY => implode(',', $tagIds)]);
 		$started = $this->timeFactory->now();
 		$entries = [];
 		$pages = 0;
 		$leftOut = 0;
 		$entryError = null;
 		$fileError = null;
-		$more = false;
+		// Where the next page of results starts, once the search found a result for it.
+		$nextPage = null;
+		$failedLater = false;
 		$rejected = false;
 		$step = SearchEvent::STEP_PAPERLESS;
 		try {
@@ -196,22 +212,20 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 				$names = $this->names->of(self::withFiles($hits, $found->files));
 
 				$pages++;
-				[$pageEntries, $used, $pageLeftOut, $pageError] = $this->createEntries($user, $hits, $found->files, $names, $pager->limit - count($entries));
+				[$pageEntries, $used, $pageLeftOut, $pageError] = $this->createEntries($user, $hits, $found->files, $names, $pager->limit + 1 - count($entries));
 				$entries = [...$entries, ...$pageEntries];
 				$leftOut += $pageLeftOut;
 				$entryError ??= $pageError;
 				$fileError ??= $found->error ?? $pageError;
-				if ($used < count($hits)) {
-					// The results are complete before the page is: the next page of the
-					// search goes on with the first hit that this one didn't go through.
-					$pager = $pager->advance($used);
-					$more = true;
+				if (count($entries) > $pager->limit) {
+					// One result more than the page holds: the next page of the search
+					// starts with its hit, the last one that this page went through.
+					$nextPage = $pager->advance($used - 1);
 				} else {
 					$pager = $pager->nextPage();
-					$more = $response['next'] !== null && !$pager->isPastTheEnd();
 				}
-			} while ($more && count($entries) < $pager->limit && $pages < self::PAGE_BUDGET
-				&& $this->getElapsedMs($started) < self::TIME_BUDGET_MS);
+			} while ($nextPage === null && $response['next'] !== null && !$pager->isPastTheEnd()
+				&& $pages < self::PAGE_BUDGET && $this->getElapsedMs($started) < self::TIME_BUDGET_MS);
 		} catch (PaperlessQueryRejected $rejection) {
 			// A query that the user is still typing, or a page past the last one: Paperless
 			// works, and there is nothing more to find.
@@ -231,10 +245,11 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 				return SearchResult::complete($this->getName(), []);
 			}
 
-			// The results of the pages before stay, and the next page of the search asks
-			// for this page of Paperless again.
-			$more = true;
+			// The results of the pages before stay.
+			$failedLater = true;
 		}
+
+		$entries = array_slice($entries, 0, $pager->limit);
 
 		if ($entryError !== null) {
 			$this->logger->warning('Paperless unified search left out {count} result(s) it could not show ({errorType})', [
@@ -259,8 +274,14 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 			$this->diagnostics->recordSuccess();
 		}
 
-		if ($more) {
-			return SearchResult::paginated($this->getName(), $entries, $pager->offset);
+		// A search that spent its budget before it found a result for a next page is
+		// complete, with or without results, so that its answer tells nothing about the
+		// documents that the user can't open. After a failed later page of Paperless, the
+		// next page of results asks for it again.
+		$nextOffset = $nextPage?->offset ?? ($failedLater ? $pager->offset : null);
+		$cursor = $nextOffset === null ? null : $this->cursors->seal($nextOffset, $user->getUID(), $term, $dateFilters);
+		if ($cursor !== null) {
+			return SearchResult::paginated($this->getName(), $entries, $cursor);
 		}
 
 		return SearchResult::complete($this->getName(), $entries);

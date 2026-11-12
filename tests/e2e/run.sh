@@ -945,7 +945,9 @@ assert_occ setupcheck "${TMP_DIR}/setupchecks-single.json" success 'with the arc
 # of the app. The archive account shares the files of seven of them with e2e-other, in
 # one folder, none of the first 19 among them, and keeps the file of document 610 to
 # itself. A page of 5 results takes them from both pages of Paperless, and the next page
-# goes on with the cursor of the first, without repeating or leaving out a document.
+# goes on with the cursor of the first, without repeating or leaving out a document. The
+# cursor is sealed for e2e-other and the term: the archive account, who may open every
+# document, finds nothing with it, and neither does e2e-other with it for another term.
 PAGES="${BASE_URL}/remote.php/dav/files/e2e-user/Pages"
 expect_status 201 'Creating the folder Pages' --user "e2e-user:${PASSWORD}" --request MKCOL "${PAGES}"
 for document in 620 624 626 627 630 635 640; do
@@ -972,6 +974,10 @@ search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/
 cursor="$(assert_response page "${TMP_DIR}/page-1.json" more 620 624 626 627 630)"
 search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/page-2.json" pagetest "${cursor}"
 assert_response page "${TMP_DIR}/page-2.json" last 635 640 >/dev/null
+search e2e-user 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/page-2-of-another-user.json" pagetest "${cursor}"
+assert_response no-results "${TMP_DIR}/page-2-of-another-user.json"
+search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/page-2-of-another-term.json" mobiletest "${cursor}"
+assert_response no-results "${TMP_DIR}/page-2-of-another-term.json"
 
 # Paperless Sync can let a user see only the documents with some tags (#391, decision
 # 0015). e2e-other sees every document of the folder Pages through the share above, made by
@@ -1032,9 +1038,10 @@ expect_status 204 'Deleting the renamed file of e2e-other' --user "e2e-other:${P
 
 # Paperless 3 refuses a query of its advanced syntax that is still being typed with
 # HTTP 400, and the app finds the documents of its words in the simple mode of the
-# search instead; it refuses a page past the last one with HTTP 404, which finds nothing.
-# Neither is a problem of the search: the history below counts only the failure and the
-# retry that follow them (#128).
+# search instead. A cursor that the app didn't hand out, such as an offset past the last
+# page, finds nothing and asks Paperless nothing (decision 0016). Neither is a problem of
+# the search: the history below counts only the failure and the retry that follow them
+# (#128).
 search e2e-user 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15' "${TMP_DIR}/typing.json" 'mobiletest created:[2026 to'
 assert_response browser "${TMP_DIR}/typing.json"
 search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/past-the-end.json" pagetest 100
