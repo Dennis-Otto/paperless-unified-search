@@ -75,10 +75,30 @@
 
 		const payload = await readJson(response)
 		if (!response.ok || !isAnswer(payload)) {
-			throw new Error(failureMessage(response, payload))
+			const error = new Error(failureMessage(response, payload))
+			// A refusal of one of several lines, such as a search that Paperless can't
+			// read, names the line, from 1, so that the page can select it.
+			if (!response.ok && Number.isInteger(payload?.line) && payload.line > 0) {
+				error.message = translate('Line {line}: {message}', { line: payload.line, message: error.message })
+				error.line = payload.line
+			}
+			throw error
 		}
 
 		return payload
+	}
+
+	// Selects a line of a field, from 1, and moves the focus there, so that the line that
+	// a refusal names is the one that the user types in next; unless the user has removed
+	// it meanwhile, while the server checked the searches.
+	function selectLine(field, line) {
+		const lines = field.value.split('\n')
+		if (line > lines.length) {
+			return
+		}
+		const start = lines.slice(0, line - 1).reduce((length, each) => length + each.length + 1, 0)
+		field.focus()
+		field.setSelectionRange(start, start + lines[line - 1].length)
 	}
 
 	// The message below a control, in the style of its kind, which adds an icon to each, so
@@ -144,11 +164,18 @@
 				terms.disabled = payload.everyDocument
 				// The searches as the server keeps them, without blank lines and repeats.
 				terms.value = payload.terms.join('\n')
-				showStatus(status, payload.everyDocument || payload.terms.length > 0
-					? translate('Saved. You get a notification about the next new documents.')
-					: translate('Saved. You get no notifications about new documents.'), 'success')
+				let message = translate('Saved. You get no notifications about new documents.')
+				if (payload.checked === false) {
+					message = translate('Saved, but Paperless could not be reached to check your new searches. A search that Paperless can\'t read finds no documents.')
+				} else if (payload.everyDocument || payload.terms.length > 0) {
+					message = translate('Saved. You get a notification about the next new documents.')
+				}
+				showStatus(status, message, 'success')
 			} catch (error) {
 				showStatus(status, error.message, 'error')
+				if (Number.isInteger(error.line)) {
+					selectLine(terms, error.line)
+				}
 			} finally {
 				button.disabled = false
 			}

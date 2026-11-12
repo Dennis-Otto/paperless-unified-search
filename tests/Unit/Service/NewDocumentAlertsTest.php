@@ -506,10 +506,14 @@ final class NewDocumentAlertsTest extends TestCase {
 
 	/**
 	 * A search that Paperless refuses finds nothing and costs no rest: it isn't a failure of
-	 * Paperless. The log says so, without the words of the user.
+	 * Paperless. The log says so, with the users whose searches in use it refused, so that
+	 * an administrator can tell them, and without the words of the users: sam asks for
+	 * every document, which leaves the same search unused.
 	 */
 	public function testARefusedSearchFindsNothingAndTheOthersGoOn(): void {
 		$this->wants('jamie', false, 'created:[2026 to', 'tag:unpaid');
+		$this->wants('alex', false, 'created:[2026 to');
+		$this->wants('sam', true, 'created:[2026 to');
 		$this->seen(100);
 		$this->file('/archive/files/A [P101].pdf');
 		$this->file('/jamie/files/A [P101].pdf');
@@ -520,10 +524,14 @@ final class NewDocumentAlertsTest extends TestCase {
 			$this->documents([['id' => 101]]),
 		));
 
-		self::assertCount(1, $this->sent);
+		self::assertSame(['jamie'], array_column($this->sent, 'user'));
 		self::assertSame(0, $this->stored()['failures']);
 		self::assertSame(0, $this->stored()['restingUntil']);
-		self::assertSame([['info', 'Paperless refused {count} saved search(es) of the notifications about new documents', ['app' => AppConstants::APP_ID, 'count' => 1]]], $this->logged);
+		self::assertSame([[
+			'info',
+			'Paperless refused {count} saved search(es) of the notifications about new documents, of the users {users}: they find nothing until the users correct them in their personal settings',
+			['app' => AppConstants::APP_ID, 'count' => 1, 'users' => 'jamie, alex'],
+		]], $this->logged);
 	}
 
 	/**

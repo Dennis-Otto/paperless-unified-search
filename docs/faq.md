@@ -54,7 +54,7 @@ Yes: add **New in Paperless** to your dashboard. It lists the documents that Pap
 
 ## Why did I get no notification about a new document?
 
-A notification goes out only once the file of the document has reached the archive account and you can open it, so it comes with your synchronization. Each saved search looks at a document once, as its file arrives: a tag that it gets later brings none. Background jobs must run, as *Administration settings → Basic settings* shows, and the app Notifications of Nextcloud must be enabled. The first run after someone first asks only learns how far the IDs go, so a document of before then brings none either.
+A notification goes out only once the file of the document has reached the archive account and you can open it, so it comes with your synchronization. Each saved search looks at a document once, as its file arrives: a tag that it gets later brings none. Background jobs must run, as *Administration settings → Basic settings* shows, and the app Notifications of Nextcloud must be enabled. The first run after someone first asks only learns how far the IDs go, so a document of before then brings none either. A saved search that Paperless can't read finds nothing: the personal settings refuse a new one with the number of its line, and the log of Nextcloud names the users of one that Paperless refuses later.
 
 ## Can I find the documents similar to one?
 

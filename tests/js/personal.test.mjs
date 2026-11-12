@@ -59,6 +59,15 @@ class Element {
 		this.listeners.push(listener)
 	}
 
+	// What a field selects and whether it has the focus, as the user would see it.
+	focus() {
+		this.focused = true
+	}
+
+	setSelectionRange(start, end) {
+		this.selection = [start, end]
+	}
+
 	// The browser ticks a checkbox before it tells the page.
 	async click() {
 		this.checked = !this.checked
@@ -361,6 +370,102 @@ test('a refused save shows its reason and keeps what the user typed', async func
 		text: 'Save at most 10 searches.',
 		kind: ERROR,
 	})
+})
+
+test('a search that Paperless can\'t read names its line and selects it', async function() {
+	const elements = alertsSection()
+	const { terms } = alertsOf(elements)
+	terms.value = 'tag:unpaid\n\ncreated:[2026 to\ntax'
+	load(elements, { answers: [json({ message: 'Paperless can\'t read this term.', code: 'query_rejected', term: 'created:[2026 to', line: 3 }, 400)] })
+
+	await save(elements)
+
+	assert.deepEqual(shownAlerts(elements), {
+		every: false,
+		terms: 'tag:unpaid\n\ncreated:[2026 to\ntax',
+		termsDisabled: false,
+		button: false,
+		text: 'Line 3: Paperless can\'t read this term.',
+		kind: ERROR,
+	})
+	assert.equal(terms.focused, true)
+	assert.deepEqual(terms.selection, [12, 28])
+})
+
+test('the first line of a refusal is selected from its start', async function() {
+	const elements = alertsSection()
+	const { terms } = alertsOf(elements)
+	terms.value = 'created:[2026 to'
+	load(elements, { answers: [json({ message: 'Paperless can\'t read this term.', code: 'query_rejected', line: 1 }, 400)] })
+
+	await save(elements)
+
+	assert.equal(shownAlerts(elements).text, 'Line 1: Paperless can\'t read this term.')
+	assert.deepEqual(terms.selection, [0, 16])
+})
+
+test('a line that the user removed while the server checked is not selected', async function() {
+	const elements = alertsSection()
+	const { terms } = alertsOf(elements)
+	terms.value = 'tax\ncreated:[2026 to'
+	const page = load(elements, { answers: [json({ message: 'Paperless can\'t read this term.', code: 'query_rejected', line: 2 }, 400)] })
+	const clicked = save(elements)
+	terms.value = 'tax'
+	await clicked
+
+	assert.equal(page.requests.length, 1)
+	assert.equal(shownAlerts(elements).text, 'Line 2: Paperless can\'t read this term.')
+	assert.equal(terms.focused, undefined)
+	assert.equal(terms.selection, undefined)
+})
+
+for (const [name, line] of [['no number', '3'], ['line 0', 0], ['a fraction', 1.5]]) {
+	test(`a refusal with ${name} as its line names none`, async function() {
+		const elements = alertsSection()
+		load(elements, { answers: [json({ message: 'Paperless can\'t read this term.', code: 'query_rejected', line }, 400)] })
+
+		await save(elements)
+
+		assert.equal(shownAlerts(elements).text, 'Paperless can\'t read this term.')
+		assert.equal(alertsOf(elements).terms.selection, undefined)
+	})
+}
+
+test('a line in a successful answer that is not one is no refusal of a line', async function() {
+	const elements = alertsSection()
+	load(elements, { answers: [json({ everyDocument: true, line: 2 })] })
+
+	await save(elements)
+
+	assert.equal(shownAlerts(elements).text, 'Nextcloud gave an unexpected answer. Reload the page and try again.')
+	assert.equal(alertsOf(elements).terms.selection, undefined)
+})
+
+test('searches that Paperless could not check are saved, and the page says so', async function() {
+	const elements = alertsSection()
+	alertsOf(elements).terms.value = 'tag:unpaid'
+	load(elements, { answers: [json({ everyDocument: false, terms: ['tag:unpaid'], checked: false })] })
+
+	await save(elements)
+
+	assert.deepEqual(shownAlerts(elements), {
+		every: false,
+		terms: 'tag:unpaid',
+		termsDisabled: false,
+		button: false,
+		text: 'Saved, but Paperless could not be reached to check your new searches. A search that Paperless can\'t read finds no documents.',
+		kind: SUCCESS,
+	})
+})
+
+test('checked searches are saved with the usual message', async function() {
+	const elements = alertsSection()
+	alertsOf(elements).terms.value = 'tag:unpaid'
+	load(elements, { answers: [json({ everyDocument: false, terms: ['tag:unpaid'], checked: true })] })
+
+	await save(elements)
+
+	assert.equal(shownAlerts(elements).text, 'Saved. You get a notification about the next new documents.')
 })
 
 for (const [name, answer] of [

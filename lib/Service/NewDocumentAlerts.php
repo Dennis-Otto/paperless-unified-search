@@ -280,8 +280,10 @@ final class NewDocumentAlerts {
 
 	/**
 	 * Which of the documents each distinct saved search finds, with one request per search.
-	 * A search that Paperless refuses, which the user can't see here, finds nothing, and
-	 * the log says so without naming it: the words of a user stay out of the log. So does
+	 * A search that Paperless refuses finds nothing, and the log names the users whose
+	 * searches it refused, without the searches: the words of a user stay out of the log.
+	 * The personal settings check a new search as it is saved; one saved before that check,
+	 * or before Paperless read it differently, finds its users this way. So does
 	 * one that fails, such as a wildcard too expensive for Paperless to answer in time: one
 	 * user's search stops nobody's notifications. Only when every search of this run fails
 	 * and none answers is it Paperless that is down, and the run fails with it.
@@ -293,7 +295,7 @@ final class NewDocumentAlerts {
 	 */
 	private function findTerms(array $choices, array $documentIds): array {
 		$found = [];
-		$refused = 0;
+		$refused = [];
 		$failed = 0;
 		$failure = null;
 		foreach ($choices as $choice) {
@@ -306,7 +308,7 @@ final class NewDocumentAlerts {
 					$found[$term] = $this->paperlessApi->findMatchingDocuments($term, $documentIds);
 				} catch (PaperlessQueryRejected) {
 					$found[$term] = [];
-					$refused++;
+					$refused[$term] = true;
 				} catch (Throwable $error) {
 					$found[$term] = [];
 					$failed++;
@@ -324,14 +326,33 @@ final class NewDocumentAlerts {
 				'errorType' => $failure::class,
 			]);
 		}
-		if ($refused > 0) {
-			$this->logger->info('Paperless refused {count} saved search(es) of the notifications about new documents', [
+		if ($refused !== []) {
+			$this->logger->info('Paperless refused {count} saved search(es) of the notifications about new documents, of the users {users}: they find nothing until the users correct them in their personal settings', [
 				'app' => AppConstants::APP_ID,
-				'count' => $refused,
+				'count' => count($refused),
+				'users' => implode(', ', self::usersOf($choices, $refused)),
 			]);
 		}
 
 		return $found;
+	}
+
+	/**
+	 * The users whose searches in use hold one of these terms, as the log names them.
+	 *
+	 * @param array<array-key, AlertChoice> $choices by the ID of the user
+	 * @param array<string, true> $terms
+	 * @return list<string>
+	 */
+	private static function usersOf(array $choices, array $terms): array {
+		$users = [];
+		foreach ($choices as $userId => $choice) {
+			if (!$choice->everyDocument && array_intersect_key(array_flip($choice->terms), $terms) !== []) {
+				$users[] = (string)$userId;
+			}
+		}
+
+		return $users;
 	}
 
 	/**

@@ -9,9 +9,12 @@ declare(strict_types=1);
 
 namespace OCA\PaperlessUnifiedSearch\Controller;
 
+use OCA\PaperlessUnifiedSearch\Exception\PaperlessQueryRejected;
 use OCA\PaperlessUnifiedSearch\Model\AlertChoice;
 use OCA\PaperlessUnifiedSearch\Service\AlwaysSearch;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
+use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
+use OCA\PaperlessUnifiedSearch\Service\PlainText;
 use OCA\PaperlessUnifiedSearch\Service\SavedSearches;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http;
@@ -21,6 +24,7 @@ use OCP\AppFramework\Http\JSONResponse;
 use OCP\IL10N;
 use OCP\IRequest;
 use OCP\IUserSession;
+use Throwable;
 
 /**
  * The routes of the personal settings, which every signed-in user reaches: they opt out of
@@ -35,6 +39,7 @@ final class PersonalSettingsController extends Controller {
 		private ConfigService $configService,
 		private AlwaysSearch $alwaysSearch,
 		private SavedSearches $savedSearches,
+		private PaperlessApiService $paperlessApi,
 		private IUserSession $userSession,
 		private IL10N $l10n,
 	) {
@@ -67,9 +72,13 @@ final class PersonalSettingsController extends Controller {
 	/**
 	 * Stores what the signed-in user wants to be notified about, every new document that
 	 * they can open or those that their saved searches find, and answers it as stored. It is
-	 * refused while the administrators don't let users choose it, and for more searches, or
-	 * a longer one, than SavedSearches keeps. The job of the notifications sends the searches
-	 * to Paperless, which the section says above the field.
+	 * refused while the administrators don't let users choose it, for more searches, or a
+	 * longer one, than SavedSearches keeps, and for a search that Paperless can't read: each
+	 * one that is new among those in use goes to Paperless once, so that a mistyped one
+	 * doesn't wait for documents that it never finds, with the number of its line in the
+	 * refusal. When Paperless doesn't answer, the searches are stored all the same, and the
+	 * answer says with checked that they could not be checked. The job of the notifications
+	 * sends the searches to Paperless, which the section says above the field.
 	 *
 	 * @param array<array-key, mixed> $terms the searches, each as one line
 	 */
@@ -95,16 +104,63 @@ final class PersonalSettingsController extends Controller {
 			}
 		}
 
+		$stored = $this->savedSearches->of($user->getUID());
+		$checked = true;
+		// Every document leaves the searches unused, and the field disabled, so they are
+		// checked once they count, when the user takes it back.
+		foreach ($everyDocument ? [] : array_diff($saved, $stored->everyDocument ? [] : $stored->terms) as $term) {
+			try {
+				$this->paperlessApi->checkSavedSearch($term);
+			} catch (PaperlessQueryRejected $rejection) {
+				// Whether Paperless has the document of like:412 that its account may view
+				// is no matter of the syntax, and the user may not be allowed to know.
+				if ($rejection->refusesTheDocument()) {
+					continue;
+				}
+
+				return $this->refusal(
+					$this->l10n->t('Paperless can\'t read this term in its advanced syntax, such as a range of dates that isn\'t complete like created:[2026 to. Correct the term and try again.'),
+					'query_rejected',
+					Http::STATUS_BAD_REQUEST,
+					['term' => $term, 'line' => self::lineOf($terms, $term)],
+				);
+			} catch (Throwable) {
+				// Paperless doesn't answer, or isn't connected: the searches are kept, and
+				// each further one would only wait as long again.
+				$checked = false;
+				break;
+			}
+		}
+
 		$choice = new AlertChoice($everyDocument, $saved);
 		$this->savedSearches->choose($user->getUID(), $choice);
 
-		return new JSONResponse($choice);
+		return new JSONResponse($choice->jsonSerialize() + ['checked' => $checked]);
+	}
+
+	/**
+	 * The number of the line, from 1, that holds a search, as the field sent its lines.
+	 *
+	 * @param array<array-key, mixed> $lines
+	 */
+	private static function lineOf(array $lines, string $term): int {
+		$line = 0;
+		/** @psalm-suppress MixedAssignment Every line is checked before use. */
+		foreach ($lines as $entered) {
+			$line++;
+			if (is_string($entered) && PlainText::oneLine($entered) === $term) {
+				break;
+			}
+		}
+
+		return $line;
 	}
 
 	/**
 	 * @param Http::STATUS_UNAUTHORIZED|Http::STATUS_FORBIDDEN|Http::STATUS_BAD_REQUEST $status
+	 * @param array<string, int|string> $details what else the page needs to show the refusal
 	 */
-	private function refusal(string $message, string $code, int $status): JSONResponse {
-		return new JSONResponse(['message' => $message, 'code' => $code], $status);
+	private function refusal(string $message, string $code, int $status, array $details = []): JSONResponse {
+		return new JSONResponse(['message' => $message, 'code' => $code] + $details, $status);
 	}
 }

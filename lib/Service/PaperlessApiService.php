@@ -383,19 +383,21 @@ final class PaperlessApiService {
 
 	/**
 	 * The search for a term in the advanced syntax, or in the simple mode for a term that
-	 * Paperless refuses in it, where it has one.
+	 * Paperless refuses in it, where it has one and $simply allows it.
 	 *
 	 * @param array<string, int|string> $parameters the page, its size, the fields and the filters
 	 * @param bool $retry whether a request without answer gets a second try, as send() decides
+	 * @param bool $simply whether a term that Paperless refuses in its advanced syntax goes to
+	 *                     its simple mode; without, the refusal is thrown
 	 * @return array{array{count: int, next: ?string, results: list<array<array-key, mixed>>}, ?PaperlessVersion}
 	 */
-	private function searchOrSimply(string $term, array $parameters, bool $retry): array {
+	private function searchOrSimply(string $term, array $parameters, bool $retry, bool $simply = true): array {
 		$similarTo = self::similarTo($term);
 		try {
 			return $this->search(($similarTo === null ? ['query' => $term] : ['more_like_id' => $similarTo]) + $parameters, $term, $retry);
 		} catch (PaperlessQueryRejected $rejection) {
 			$words = self::wordsOf($term);
-			if (!$rejection->allowsSimpleSearch() || $words === '' || mb_strlen($words) > self::LONGEST_TERM) {
+			if (!$simply || !$rejection->allowsSimpleSearch() || $words === '' || mb_strlen($words) > self::LONGEST_TERM) {
 				throw $rejection;
 			}
 
@@ -506,6 +508,27 @@ final class PaperlessApiService {
 		}
 
 		return $found;
+	}
+
+	/**
+	 * Checks that Paperless reads a saved search as it is written, for the personal settings
+	 * that save it: one request for a page of one document with its ID alone, with one try
+	 * and no place in the history of the problems of the search, as findMatchingDocuments().
+	 * The check stays in the advanced syntax: a term that Paperless 3 reads only in its
+	 * simple mode would look for its plain words there, which is another search than the
+	 * one the user wrote, so the request of the simple mode would only be lost.
+	 *
+	 * @throws PaperlessQueryRejected when Paperless refuses the term in its advanced syntax,
+	 *                                or the document that it asks for similar ones of
+	 * @throws PaperlessRequestException when Paperless answers, but not with documents
+	 * @throws Throwable the error of a request without answer, or without the settings
+	 */
+	public function checkSavedSearch(string $term): void {
+		$this->searchOrSimply($term, [
+			'page' => 1,
+			'page_size' => 1,
+			'fields' => self::MATCH_FIELDS,
+		], false, false);
 	}
 
 	/**

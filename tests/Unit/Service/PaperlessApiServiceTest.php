@@ -2289,6 +2289,59 @@ final class PaperlessApiServiceTest extends TestCase {
 	}
 
 	/**
+	 * The personal settings check a saved search with a page of one document and its ID
+	 * alone, in one try and with no place in the history.
+	 */
+	public function testTheCheckOfASavedSearchAsksForOneDocument(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with(
+				'https://paperless.example.com/api/documents/',
+				self::callback(static fn (array $options): bool => $options['query'] === ['query' => 'tag:unpaid', 'page' => 1, 'page_size' => 1, 'fields' => 'id']),
+			)
+			->willReturn($this->response(200, self::NO_DOCUMENTS, self::PAPERLESS_3));
+
+		$this->service($client)->checkSavedSearch('tag:unpaid');
+
+		self::assertNull($this->history());
+	}
+
+	/**
+	 * A search that Paperless 3 refuses in its advanced syntax fails its check, without the
+	 * request of the simple mode, which would look for other documents than those meant.
+	 */
+	public function testTheCheckOfASavedSearchStaysInTheAdvancedSyntax(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())->method('get')->willReturn($this->response(400, self::INVALID_DATE, self::PAPERLESS_3));
+
+		$this->expectException(PaperlessQueryRejected::class);
+		try {
+			$this->service($client)->checkSavedSearch('tax created:[2026 to');
+		} finally {
+			self::assertNull($this->history());
+		}
+	}
+
+	public function testTheCheckOfASearchForSimilarDocumentsAsksForThem(): void {
+		$queries = [];
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options) use (&$queries): IResponse {
+			$queries[] = $options['query'];
+
+			return $this->response(403, 'Invalid more_like_id', self::PAPERLESS_3);
+		});
+
+		try {
+			$this->service($client)->checkSavedSearch('like:412');
+			self::fail('The check did not fail.');
+		} catch (PaperlessQueryRejected $rejection) {
+			self::assertTrue($rejection->refusesTheDocument());
+		}
+		self::assertSame([['more_like_id' => '412', 'page' => 1, 'page_size' => 1, 'fields' => 'id']], $queries);
+	}
+
+	/**
 	 * The exception of a test of the connection that failed.
 	 */
 	private function failedConnectionTest(IClient $client): PaperlessRequestException {
