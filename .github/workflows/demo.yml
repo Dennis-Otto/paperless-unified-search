@@ -6,11 +6,14 @@ name: Demo
 # The demo of the README (demo/seed.sh), run as a reader runs it: a real Paperless-ngx
 # and a real Nextcloud in Docker, Paperless Sync from its pinned release and this app
 # from the checkout, up to the search as jamie that must show the documents, and then
-# records the animation of the README from it (bash scripts/screenshots.sh --demo). It
-# runs in a pull request that changes the demo, the code of the app or the code and the
-# browser that record the animation, such as one of Renovate with a new image of the
-# demo, a new release of Paperless Sync or a new Playwright, every Monday and when
-# started by hand. It is no required check and blocks nothing.
+# records the animation of the README from it (bash scripts/screenshots.sh --demo).
+# Then it checks who finds what with the settings of Paperless Sync that decide it, as
+# that release saves and stores them, against the fixture that the unit tests of the
+# search read (bash demo/seed.sh --check-access, #405). It runs in a pull request that
+# changes the demo, that fixture, the code of the app or the code and the browser that
+# record the animation, such as one of Renovate with a new image of the demo, a new
+# release of Paperless Sync or a new Playwright, every Monday and when started by hand.
+# It is no required check and blocks nothing.
 #
 # The animation is compared with the committed one by its pixels, as the screenshot bot
 # compares its pictures, so that a new encoder or runner changes nothing. When its
@@ -36,6 +39,7 @@ on:
       - tests/e2e/package.json
       - tests/e2e/package-lock.json
       - tests/e2e/run.sh
+      - tests/Unit/fixtures/paperless-sync-settings.json
       - .github/workflows/demo.yml
   schedule:
     - cron: "41 5 * * 1"
@@ -87,6 +91,7 @@ jobs:
           uv pip install --quiet --python "$RUNNER_TEMP/pictures" --require-hashes \
             -r .github/screenshots-requirements.txt
       - name: Run the demo
+        id: demo
         env:
           # The release of Paperless Sync comes through the API of GitHub with it, which
           # kept working when the pages of the releases failed requests without a token
@@ -131,6 +136,13 @@ jobs:
           path: ${{ runner.temp }}/kept/
           if-no-files-found: error
           retention-days: 3
+      # Who finds what with the tags that a user may see and the archives of each owner,
+      # as the pinned release of Paperless Sync saves and stores its settings: after the
+      # animation, which shows the demo as a reader sets it up, and also when its
+      # recording failed. The demo runs again first, which finds every step done.
+      - name: Check who finds what with the settings of Paperless Sync
+        if: ${{ !cancelled() && steps.demo.outcome == 'success' }}
+        run: bash demo/seed.sh --check-access
       - name: Remove the demo with its data
         if: always()
         run: |
