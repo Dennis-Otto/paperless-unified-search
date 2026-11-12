@@ -4,7 +4,7 @@ description: "Search Paperless documents in Nextcloud: in the browser, on a phon
 
 # Search
 
-Paperless documents show in the global search of Nextcloud for every user who can open their files: under **Paperless documents**, after the files, each with its title, its date and the words around the term. Selecting one opens its file in Nextcloud.
+Paperless documents show in the global search of Nextcloud for every user who can open their files: under **Paperless documents**, after the files, each with its title, its date and the words around the term. Selecting one opens its file in Nextcloud. When Paperless Sync lets you see only the documents with some tags, as [Tags that a user may see](configure.md#tags-that-a-user-may-see) explains, you find only those that carry one of them, in the search, the smart picker, on the dashboard and in the notifications.
 
 <figure markdown="span">
   ![Paperless results in Nextcloud's global search](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/01-unified-search.png#only-light)
