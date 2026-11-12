@@ -35,11 +35,10 @@ use UnexpectedValueException;
  * Docker and other set-ups by script. It saves the connection only once Paperless answers
  * at the URL with the token, as the settings page does, and while a connection is stored,
  * a failed test still saves the options that don't depend on Paperless and exits with 1.
- * It takes the token from the standard input
- * or from an environment variable, never from an argument, which the history of the shell
- * and the list of processes would show to others. With --create-account, that token is
- * the one of a superuser of Paperless, which creates the search account and is not stored
- * (decision 0012).
+ * It takes the token from the standard input or from an environment variable, never from
+ * an argument, which the history of the shell and the list of processes would show to
+ * others. With --create-account, that token is the one of a superuser of Paperless, which
+ * creates the search account and is not stored (decision 0012).
  */
 final class Setup extends Command {
 	use ReportsProblems;

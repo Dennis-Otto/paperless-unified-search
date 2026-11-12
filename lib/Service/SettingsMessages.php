@@ -18,10 +18,11 @@ use OCP\IL10N;
 
 /**
  * What the settings page and occ say when the settings can't be saved or Paperless can't
- * be reached, what they saved without Paperless, when the account of the API token may do more or less than the search
- * needs, or when Paperless Sync gives each user an archive of their own: what failed and
- * what to correct, in the language of the administrator, or of Nextcloud for occ. Each
- * text stands in a call of t() of its own, where scripts/check-l10n.mjs finds it.
+ * be reached, what they saved without Paperless, when the account of the API token may
+ * do more or less than the search needs, or when Paperless Sync gives each user an
+ * archive of their own: what failed and what to correct, in the language of the
+ * administrator, or of Nextcloud for occ. Each text stands in a call of t() of its own,
+ * where scripts/check-l10n.mjs finds it.
  */
 final class SettingsMessages {
 	/**
