@@ -1,0 +1,3 @@
+### Bug fixes
+
+- One saved search that Paperless can't answer in time, such as a wildcard that takes too long, no longer stops the notifications about new documents of every user while it is the only saved search, or while every saved search fails. Whether Paperless is down, the job now decides from its request for the new documents, which holds no saved search: the searches that fail find nothing in that run, and everybody else, those who asked for every new document as well, gets their notifications. The warning about failed searches in the log now names the users whose searches they are, without the searches, so that an administrator can tell them.
