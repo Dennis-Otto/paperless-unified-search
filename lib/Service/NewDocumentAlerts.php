@@ -283,20 +283,22 @@ final class NewDocumentAlerts {
 	 * A search that Paperless refuses finds nothing, and the log names the users whose
 	 * searches it refused, without the searches: the words of a user stay out of the log.
 	 * The personal settings check a new search as it is saved; one saved before that check,
-	 * or before Paperless read it differently, finds its users this way. So does
-	 * one that fails, such as a wildcard too expensive for Paperless to answer in time: one
-	 * user's search stops nobody's notifications. Only when every search of this run fails
-	 * and none answers is it Paperless that is down, and the run fails with it.
+	 * or before Paperless read it differently, finds its users this way. A search that
+	 * fails, such as a wildcard too expensive for Paperless to answer in time, finds nothing
+	 * as well, and the log names its users in the same way: one user's search stops nobody
+	 * else's notifications, also when it is the only search of the instance or every search
+	 * of this run fails (#414). Whether Paperless is down, the requests before decide, which
+	 * hold no words of a user and have already answered in this run, for the new documents
+	 * and their tags: a failure of those rests the job.
 	 *
 	 * @param array<array-key, AlertChoice> $choices
 	 * @param non-empty-list<int> $documentIds
 	 * @return array<string, list<int>> the IDs of the documents that each term finds
-	 * @throws Throwable the last error, when every search failed
 	 */
 	private function findTerms(array $choices, array $documentIds): array {
 		$found = [];
 		$refused = [];
-		$failed = 0;
+		$failed = [];
 		$failure = null;
 		foreach ($choices as $choice) {
 			foreach ($choice->everyDocument ? [] : $choice->terms as $term) {
@@ -311,19 +313,17 @@ final class NewDocumentAlerts {
 					$refused[$term] = true;
 				} catch (Throwable $error) {
 					$found[$term] = [];
-					$failed++;
+					$failed[$term] = true;
 					$failure = $error;
 				}
 			}
 		}
 		if ($failure !== null) {
-			if ($failed === count($found)) {
-				throw $failure;
-			}
-			$this->logger->warning('{count} saved search(es) of the notifications about new Paperless documents failed ({errorType})', [
+			$this->logger->warning('{count} saved search(es) of the notifications about new Paperless documents failed ({errorType}), of the users {users}: they find nothing in this run', [
 				'app' => AppConstants::APP_ID,
-				'count' => $failed,
+				'count' => count($failed),
 				'errorType' => $failure::class,
+				'users' => implode(', ', self::usersOf($choices, $failed)),
 			]);
 		}
 		if ($refused !== []) {

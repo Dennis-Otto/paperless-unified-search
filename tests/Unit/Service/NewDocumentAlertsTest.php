@@ -536,8 +536,8 @@ final class NewDocumentAlertsTest extends TestCase {
 
 	/**
 	 * One user's search that Paperless fails to answer, such as a wildcard that takes too
-	 * long, stops nobody else: it finds nothing, the log counts it without its words, and
-	 * the job doesn't rest, since the other search shows that Paperless answers.
+	 * long, stops nobody else: it finds nothing, the log counts it and names its user without
+	 * its words, and the job doesn't rest, since Paperless answered the run.
 	 */
 	public function testAFailedSearchStopsNobodyElse(): void {
 		$this->wants('jamie', false, 'title:*secret*');
@@ -558,7 +558,11 @@ final class NewDocumentAlertsTest extends TestCase {
 		self::assertSame([], $this->stored()['waiting']);
 		self::assertSame(0, $this->stored()['failures']);
 		self::assertSame(0, $this->stored()['restingUntil']);
-		self::assertSame([['warning', '{count} saved search(es) of the notifications about new Paperless documents failed ({errorType})', ['app' => AppConstants::APP_ID, 'count' => 1, 'errorType' => RuntimeException::class]]], $this->logged);
+		self::assertSame([[
+			'warning',
+			'{count} saved search(es) of the notifications about new Paperless documents failed ({errorType}), of the users {users}: they find nothing in this run',
+			['app' => AppConstants::APP_ID, 'count' => 1, 'errorType' => RuntimeException::class, 'users' => 'jamie'],
+		]], $this->logged);
 	}
 
 	/**
@@ -584,26 +588,60 @@ final class NewDocumentAlertsTest extends TestCase {
 	}
 
 	/**
-	 * When every search fails, it is Paperless that is down: the documents keep waiting
-	 * and the job rests, also for whoever asked for every document.
+	 * When every saved search fails, Paperless has still answered this run, with the new
+	 * documents, which hold no words of a user: so it is the searches that fail, not
+	 * Paperless. They find nothing, the log names their users without their words, and
+	 * whoever asked for every document gets their notification, without a rest of the job
+	 * (#414). One search that Paperless never answered in time, on an instance with no
+	 * other, stopped the notifications of every user before, until the documents gave up
+	 * waiting after two days.
 	 */
-	public function testEverySearchFailingRestsTheJob(): void {
+	public function testEverySearchFailingStopsNobodyElse(): void {
 		$this->wants('jamie', true);
 		$this->wants('sam', false, 'tag:unpaid', 'tag:bills');
-		$this->seen(100);
+		$this->seen(100, failures: 2);
 		$this->file('/archive/files/A [P101].pdf');
 		$this->file('/jamie/files/A [P101].pdf');
+		$this->file('/sam/files/A [P101].pdf');
 
 		$this->runJob($this->paperless(
 			$this->documents([['id' => 101, 'title' => 'A']]),
-			new RuntimeException('Connection refused'),
-			new RuntimeException('Connection refused'),
+			new RuntimeException('Timeout'),
+			new RuntimeException('Timeout'),
 		));
 
+		self::assertSame(['jamie'], array_column($this->sent, 'user'));
+		self::assertSame([], $this->stored()['waiting']);
+		self::assertSame(0, $this->stored()['failures']);
+		self::assertSame(0, $this->stored()['restingUntil']);
+		self::assertSame([[
+			'warning',
+			'{count} saved search(es) of the notifications about new Paperless documents failed ({errorType}), of the users {users}: they find nothing in this run',
+			['app' => AppConstants::APP_ID, 'count' => 2, 'errorType' => RuntimeException::class, 'users' => 'sam'],
+		]], $this->logged);
+	}
+
+	/**
+	 * The only saved search of an instance, which Paperless answers with an error, finds
+	 * nothing, and the next run asks for the documents that are new by then instead of
+	 * resting: the request for the new documents has answered, so Paperless is up.
+	 */
+	public function testTheOnlySearchFailingFindsNothingAndTheJobGoesOn(): void {
+		$this->wants('jamie', false, 'tag:unpaid');
+		$this->seen(100, failures: 1);
+		$this->file('/archive/files/A [P101].pdf');
+		$this->file('/jamie/files/A [P101].pdf');
+
+		$this->runJob($this->paperless($this->documents([['id' => 101, 'title' => 'A']]), $this->answer(500, 'Server Error', [])));
+
 		self::assertSame([], $this->sent);
-		self::assertSame([['id' => 101, 'title' => 'A', 'since' => self::NOW]], $this->stored()['waiting']);
-		self::assertSame(1, $this->stored()['failures']);
-		self::assertSame(self::NOW + 600, $this->stored()['restingUntil']);
+		self::assertSame(101, $this->stored()['lastSeen']);
+		self::assertSame(self::NOW, $this->stored()['checkedAt']);
+		self::assertSame([], $this->stored()['waiting']);
+		self::assertSame(0, $this->stored()['failures']);
+		self::assertSame(0, $this->stored()['restingUntil']);
+		self::assertCount(1, $this->logged);
+		self::assertSame(['warning', 1, 'jamie'], [$this->logged[0][0], $this->logged[0][2]['count'], $this->logged[0][2]['users']]);
 	}
 
 	/**
@@ -711,26 +749,6 @@ final class NewDocumentAlertsTest extends TestCase {
 		self::assertSame([], $this->sent);
 		self::assertSame(412, $this->stored()['lastSeen']);
 		self::assertSame(0, $this->stored()['failures']);
-	}
-
-	/**
-	 * A search that fails stops the run before any notification goes out, with the documents
-	 * still waiting and the count of the failures going on, so that the next run asks again.
-	 */
-	public function testAFailedSearchKeepsTheDocumentsWaiting(): void {
-		$this->wants('jamie', false, 'tag:unpaid');
-		$this->seen(100, failures: 1);
-		$this->file('/archive/files/A [P101].pdf');
-		$this->file('/jamie/files/A [P101].pdf');
-
-		$this->runJob($this->paperless($this->documents([['id' => 101, 'title' => 'A']]), $this->answer(500, 'Server Error', [])));
-
-		self::assertSame([], $this->sent);
-		self::assertSame(101, $this->stored()['lastSeen']);
-		self::assertSame(self::NOW, $this->stored()['checkedAt']);
-		self::assertSame([['id' => 101, 'title' => 'A', 'since' => self::NOW]], $this->stored()['waiting']);
-		self::assertSame(2, $this->stored()['failures']);
-		self::assertSame(self::NOW + 1200, $this->stored()['restingUntil']);
 	}
 
 	/**
