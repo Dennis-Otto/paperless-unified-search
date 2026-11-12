@@ -2199,8 +2199,10 @@ expect "the accounts in the environment of the step settings, and not more" 3 \
 	"$(grep --count -- 'exec -T --env NEXTCLOUD_ADMIN_USER --env NEXTCLOUD_ADMIN_PASSWORD paperless python3 /demo/seed.py settings ' "${WORK}/docker.log" || true)"
 expect "the accounts in the environment of the steps share and unshare of the check, and not more" 2 \
 	"$(grep --count --extended-regexp -- 'exec -T --env ARCHIVE_USER --env ARCHIVE_PASSWORD paperless python3 /demo/seed.py (share|unshare) robin$' "${WORK}/docker.log" || true)"
-expect "the steps of the check without an account of Nextcloud" 14 \
-	"$(grep --count --extended-regexp -- 'exec -T paperless python3 /demo/seed.py (users|owners|stored|expect)( |$)' "${WORK}/docker.log" || true)"
+expect "the steps of the check without an account of Nextcloud" 11 \
+	"$(grep --count --extended-regexp -- 'exec -T paperless python3 /demo/seed.py (users|owners|expect)( |$)' "${WORK}/docker.log" || true)"
+expect "the release of Paperless Sync, and no account, in the environment of the step stored" 3 \
+	"$(grep --count -- 'exec -T --env PAPERLESS_SYNC_VERSION paperless python3 /demo/seed.py stored ' "${WORK}/docker.log" || true)"
 
 if ((failures > 0)); then
 	echo "${failures} of ${checks} checks of the scripts of the end-to-end tests failed." >&2

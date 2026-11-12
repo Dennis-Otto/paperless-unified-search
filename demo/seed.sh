@@ -124,6 +124,7 @@ access() {
 	case "$1" in
 		settings) accounts=(--env NEXTCLOUD_ADMIN_USER --env NEXTCLOUD_ADMIN_PASSWORD) ;;
 		share | unshare) accounts=(--env ARCHIVE_USER --env ARCHIVE_PASSWORD) ;;
+		stored) accounts=(--env PAPERLESS_SYNC_VERSION) ;;
 	esac
 	"${COMPOSE[@]}" exec -T ${accounts[@]+"${accounts[@]}"} paperless python3 /demo/seed.py "$@"
 }

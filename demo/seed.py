@@ -481,7 +481,7 @@ def stored(case):
             differences.append(f"{key}: Paperless Sync stored {got}, the fixture says {want}")
     if differences:
         raise Failed(
-            f"Paperless Sync {fixture['paperless_sync']} stores the settings of {case} otherwise than "
+            f"Paperless Sync {os.environ.get('PAPERLESS_SYNC_VERSION', 'of the demo')} stores the settings of {case} otherwise than "
             "tests/Unit/fixtures/paperless-sync-settings.json, which the unit tests of the search read:\n  "
             + "\n  ".join(differences)
         )

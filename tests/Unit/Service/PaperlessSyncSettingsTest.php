@@ -75,6 +75,10 @@ final class PaperlessSyncSettingsTest extends TestCase {
 			['target_user', 'paperless_url', 'paperless_local_network', 'ownership', 'user_map', 'user_group', 'user_tags'],
 			array_keys($stored),
 		);
+		foreach ($stored as $key => $setting) {
+			// The type of the value, as occ config:app:get --details names it, is the type that the fixture says.
+			self::assertSame($setting['type'], is_bool($setting['value']) ? 'boolean' : 'string', $key);
+		}
 		self::assertSame($stored['target_user']['value'], $settings->getSyncAccount());
 		self::assertSame($stored['paperless_url']['value'], $settings->getSyncUrl());
 		self::assertSame($stored['paperless_local_network']['value'], $settings->isSyncLocalNetworkAllowed());
@@ -173,7 +177,7 @@ final class PaperlessSyncSettingsTest extends TestCase {
 	}
 
 	/**
-	 * @return array{paperless_sync: string, cases: array<string, array{form: array<string, string>, stored: array<string, array{type: string, lazy: bool, value: string|bool}>, search: array{archives_of_each_owner: bool, user_tags: array<string, list<string>>, owners: array<string, string>}}>}
+	 * @return array{cases: array<string, array{form: array<string, string>, stored: array<string, array{type: string, lazy: bool, value: string|bool}>, search: array{archives_of_each_owner: bool, user_tags: array<string, list<string>>, owners: array<string, string>}}>}
 	 */
 	private static function fixture(): array {
 		return json_decode((string)file_get_contents(self::FIXTURE), true, flags: JSON_THROW_ON_ERROR);
