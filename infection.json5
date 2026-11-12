@@ -55,7 +55,16 @@
         "\\$uid = \\(string\\)\\$input->getArgument\\('user'\\);",
         // array_map() calls escape() in the loose mode of PHP's own functions, which turns
         // the number into the same text.
-        "\\(string\\)\\$explanation->documentId,"
+        "\\(string\\)\\$explanation->documentId,",
+        // The users go into the log through implode(), which writes a number as the same text.
+        "\\$users\\[\\] = \\(string\\)\\$userId;"
+      ]
+    },
+    "Coalesce": {
+      "ignoreSourceCodeByRegex": [
+        // A search that found the start of a next page stops there, before a later page can
+        // fail: at most one of the two gives an offset, whichever comes first.
+        "\\$nextOffset = \\$nextPage\\?->offset \\?\\? \\(\\$failedLater \\? \\$pager->offset : null\\);"
       ]
     },
     "DecrementInteger": {
@@ -76,8 +85,6 @@
     },
     "FalseValue": {
       "ignoreSourceCodeByRegex": [
-        // Every way out of the loop sets $more before it is read.
-        "\\$more = false;",
         // true is no array either, and fails the URL as false does.
         "\\$parts = .* \\? parse_url\\(\\$normalizedUrl\\) : false;",
         // Only a PHP without the functions of intl, which Nextcloud brings, comes here, and
@@ -141,7 +148,8 @@
     "NullSafePropertyCall": {
       "ignoreSourceCodeByRegex": [
         // ?? reads a property of null as null, without a warning.
-        "'paperless(Api)?Version' => \\$this->paperlessVersion\\?->(version|apiVersion) \\?\\? '',"
+        "'paperless(Api)?Version' => \\$this->paperlessVersion\\?->(version|apiVersion) \\?\\? '',",
+        "\\$nextOffset = \\$nextPage\\?->offset \\?\\? \\(\\$failedLater \\? \\$pager->offset : null\\);"
       ]
     },
     "TrueValue": {
@@ -151,6 +159,8 @@
         "\\$documentIds\\[\\$documentId\\] = true;",
         "\\$terms\\[\\$line\\] = true;",
         "\\$granted\\[\\$permission\\] = true;",
+        "\\$refused\\[\\$term\\] = true;",
+        "\\$failed\\[\\$term\\] = true;",
         "\\$recipients\\[\\$share->kind\\]\\[\\$share->kind === ArchiveShare::KIND_LINK \\? \\$index : \\$share->recipient\\] = true;",
         "\\$owners = \\$archiveOwner === null \\? \\[\\] : \\[\\$archiveOwner => true\\] \\+ array_fill_keys\\(\\$documentUsers, true\\);"
       ]
