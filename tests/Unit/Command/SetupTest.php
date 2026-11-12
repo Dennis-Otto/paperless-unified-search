@@ -385,6 +385,50 @@ final class SetupTest extends TestCase {
 	}
 
 	/**
+	 * While a connection is stored, a test of the connection that fails still saves the
+	 * options that don't depend on Paperless, as the settings page does, so that a script
+	 * can turn off Always include Paperless in global search while Paperless is down
+	 * (#410). The URL, the token and --allow-local stay as they were, and occ exits with 1.
+	 */
+	public function testSavesTheOptionsButNotTheConnectionWhilePaperlessDoesNotAnswer(): void {
+		$this->connected();
+		$this->settings[AppConstants::APP_ID . '.always_search'] = true;
+		$this->settings[AppConstants::APP_ID . '.allow_local'] = true;
+		$error = new RuntimeException('cURL error 7: Failed to connect with Authorization: Token NEW_VALUE');
+		$tester = $this->tester($error, $error);
+		$tester->setInputs(['NEW_VALUE']);
+
+		$status = $tester->execute([
+			'--url' => 'https://paperless.example.net',
+			'--token-stdin' => true,
+			'--always-search' => false,
+			'--new-document-alerts' => true,
+			'--allow-local' => false,
+			'--archive-account' => 'Alex',
+		], ['capture_stderr_separately' => true, 'verbosity' => OutputInterface::VERBOSITY_VERBOSE]);
+
+		self::assertSame(Command::FAILURE, $status);
+		self::assertSame([
+			'Nextcloud could not reach Paperless at this URL. Check the address and the port, and that Paperless runs.',
+			'unreachable, RuntimeException: cURL error 7: Failed to connect with Authorization: Token …',
+			'The other settings are saved; the URL, the API token and “Paperless runs in my local network” stay as they were until a test of the connection succeeds.',
+		], self::lines($tester->getErrorOutput()));
+		self::assertSame([
+			'Archive account: alex',
+			'Always include Paperless in global search: no',
+			'Users may include Paperless in all their searches: yes',
+			'Users may ask for a notification about new documents: yes',
+			'Paperless runs in the local network: yes',
+		], self::lines($tester->getDisplay()));
+		self::assertSame('https://paperless.example.com', $this->settings[AppConstants::APP_ID . '.paperless_url']);
+		self::assertTrue($this->settings[AppConstants::APP_ID . '.allow_local']);
+		self::assertFalse($this->settings[AppConstants::APP_ID . '.always_search']);
+		self::assertTrue($this->settings[AppConstants::APP_ID . '.new_document_alerts']);
+		self::assertSame('alex', $this->settings[AppConstants::APP_ID . '.archive_owner']);
+		self::assertSame('TEST_VALUE', $this->storedToken);
+	}
+
+	/**
 	 * With -v, occ shows the error itself, without the token, which an error of cURL may
 	 * repeat with the headers of the request.
 	 */

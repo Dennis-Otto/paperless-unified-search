@@ -48,6 +48,9 @@ const RESET_BUTTON = '#paperless-unified-search-reset'
 const DIAGNOSTICS = '#paperless-unified-search-diagnostics'
 const CLEAR_HISTORY_BUTTON = '#paperless-unified-search-clear-diagnostics'
 const MOCK_URL = 'http://paperless-mock:8080'
+// What a save adds to the failure of its test while a connection is stored, after which
+// it saved the options that don't depend on Paperless (#410).
+const OPTIONS_SAVED = 'The other settings are saved; the URL, the API token and “Paperless runs in my local network” stay as they were until a test of the connection succeeds.'
 // The mock of Paperless answers by this name too: another server for Nextcloud.
 const OTHER_URL = 'http://other-host:8080'
 const TOKEN = 'e2e-only-token'
@@ -194,8 +197,8 @@ const PAGES = [
 		},
 	},
 	{
-		// A token that Paperless refuses: the message says so in the colour of an error,
-		// and the settings stay as they are, with Disconnect.
+		// A token that Paperless refuses: the message says so in the colour of a warning, as
+		// the options are saved, and the connection stays as it is, with Disconnect.
 		name: 'administration settings after a failed save',
 		path: SETTINGS,
 		scope: SETTINGS_SCOPE,
@@ -203,7 +206,7 @@ const PAGES = [
 		async prepare(page) {
 			await page.locator(ARCHIVE_OWNER_FIELD).fill('e2e-user')
 			await page.locator(TOKEN_FIELD).fill('e2e-wrong-token')
-			await saveSettings(page, 'Paperless rejected the API token (HTTP 401). Check the token, and that its account may view documents.', 'error')
+			await saveSettings(page, `Paperless rejected the API token (HTTP 401). Check the token, and that its account may view documents. ${OPTIONS_SAVED}`, 'warning')
 			expectEqual(await page.locator(RESET_BUTTON).isDisabled(), false, 'Disconnect disabled after a failed save of stored settings')
 			expectEqual(await page.locator(URL_FIELD).evaluate((input) => input.defaultValue), MOCK_URL, 'Stored URL after a failed save')
 		},
@@ -245,7 +248,7 @@ const PAGES = [
 			await page.locator(URL_FIELD).fill(OTHER_URL)
 			await page.locator(TOKEN_FIELD).fill(TOKEN)
 			await page.locator(ARCHIVE_OWNER_FIELD).fill('e2e-user')
-			await saveSettings(page, 'Nextcloud does not connect to addresses of the local network unless you allow it. If Paperless runs in your local network or in Docker, select “Paperless runs in my local network”.', 'error')
+			await saveSettings(page, `Nextcloud does not connect to addresses of the local network unless you allow it. If Paperless runs in your local network or in Docker, select “Paperless runs in my local network”. ${OPTIONS_SAVED}`, 'warning')
 			await page.locator(LOCAL_NETWORK).check()
 			await saveSettings(page)
 			expectEqual(await page.locator(LOCAL_NETWORK).isChecked(), true, 'Switch for the local network after saving')

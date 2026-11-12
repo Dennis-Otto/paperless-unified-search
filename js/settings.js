@@ -217,6 +217,13 @@
 				? translate('The stored API token can\'t be decrypted, for example because the secret in config.php changed. Enter it again.')
 				: ''
 			tokenWarnings.textContent = tokenWarningsOf(config)
+			showOptions(config)
+		}
+
+		// The options that don't depend on Paperless, as the server stored them: a save
+		// whose test of the connection failed stores them alone, and the fields of the
+		// connection keep what the administrator typed, for the correction.
+		function showOptions(config) {
 			alwaysSearchInput.checked = Boolean(config.alwaysSearch)
 			personalAlwaysSearchInput.checked = Boolean(config.personalAlwaysSearch)
 			newDocumentAlertsInput.checked = Boolean(config.newDocumentAlerts)
@@ -235,11 +242,12 @@
 		}
 
 		// A message below the buttons of a form, in the style of its kind: pending while the
-		// server works, then success or error. The style adds an icon to each, so that the
-		// kind doesn't rest on the colour alone.
+		// server works, then success, warning, for a save that stored only some settings, or
+		// error. The style adds an icon to each, so that the kind doesn't rest on the colour
+		// alone.
 		function showStatusIn(target, message, kind) {
 			target.textContent = message
-			for (const each of ['pending', 'success', 'error']) {
+			for (const each of ['pending', 'success', 'warning', 'error']) {
 				target.classList.toggle('paperless-unified-search-status--' + each, each === kind)
 			}
 		}
@@ -278,8 +286,16 @@
 			try {
 				await confirmPassword()
 				showStatus(translate('Testing the Paperless connection…'), 'pending')
-				showConfig(await request(root.dataset.saveUrl, 'POST', { ...settingsOfTheForm(), token: tokenInput.value }))
-				showStatus(translate('Connection successful. Settings saved.'), 'success')
+				const answer = await request(root.dataset.saveUrl, 'POST', { ...settingsOfTheForm(), token: tokenInput.value })
+				// While a connection is stored, a failed test still saves the options that
+				// don't depend on Paperless, and the server says what failed.
+				if (typeof answer.connectionFailure?.message === 'string') {
+					showOptions(answer)
+					showStatus(answer.connectionFailure.message, 'warning')
+				} else {
+					showConfig(answer)
+					showStatus(translate('Connection successful. Settings saved.'), 'success')
+				}
 			} catch (error) {
 				showStatus(messageOf(error), 'error')
 			} finally {

@@ -382,7 +382,7 @@ The URL may name a Docker service with an underscore, such as `http://paperless_
 
 <!-- --8<-- [start:connection-test] -->
 
-**Test connection and save** saves nothing until Paperless answers with a list of documents, and when it doesn't, the message says what failed and what to correct, in the language of your account. The log of Nextcloud gets a warning with the error itself, such as `cURL error 6: Could not resolve host`, without the token and without the query of the URL.
+**Test connection and save** saves the connection only once Paperless answers with a list of documents, and when it doesn't, the message says what failed and what to correct, in the language of your account. While a connection is stored, the archive account and the three switches below it are saved all the same, and the URL, the API token and **Paperless runs in my local network** stay as they were: so you can turn off **Always include Paperless in global search** or the notifications exactly while Paperless is down, slow or being moved, and the message says so in the colour of a warning instead of the one of an error. The log of Nextcloud gets a warning with the error itself, such as `cURL error 6: Could not resolve host`, without the token and without the query of the URL.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/what-the-test-of-the-connection-checks.dark.svg">
@@ -596,7 +596,7 @@ Four commands of `occ` do without a browser what the settings do, and more: they
 
 | Command | What it does | Exit code |
 | --- | --- | --- |
-| `paperless_unified_search:setup` | Tests the connection with the URL and the token, then saves the settings, as **Test connection and save** does | 0 once saved, 1 when Paperless doesn't answer or a setting is wrong, 2 for a wrong call, such as a missing `--url` or an empty token source |
+| `paperless_unified_search:setup` | Tests the connection with the URL and the token, then saves the settings, as **Test connection and save** does | 0 once saved, 1 when Paperless doesn't answer or a setting is wrong (while a connection is stored, a failed test still saves `--archive-account` and the switches other than `--allow-local`), 2 for a wrong call, such as a missing `--url` or an empty token source |
 | `paperless_unified_search:test` | Tests the connection with the stored settings, names the version of Paperless and warns about a token that may do more than the search needs or less than the results show | 0 when Paperless answers, 1 otherwise |
 | `paperless_unified_search:search <user> <term>` | Searches as the user and says for each document whether it shows to them, with `--explain` why not | 0 once Paperless answered |
 | `paperless_unified_search:check` | Tests the connection, what the account of the API token may do and the archive account, counts the documents of Paperless that have a file, and lists how the archive is shared | 0 when the search can show documents, 1 otherwise |

@@ -32,12 +32,13 @@ use UnexpectedValueException;
 
 /**
  * occ paperless_unified_search:setup: the settings page without a browser, for Ansible,
- * Docker and other set-ups by script. It saves nothing until Paperless answers at the URL
- * with the token, as the settings page does, and takes the token from the standard input
- * or from an environment variable, never from an argument, which the history of the shell
- * and the list of processes would show to others. With --create-account, that token is
- * the one of a superuser of Paperless, which creates the search account and is not stored
- * (decision 0012).
+ * Docker and other set-ups by script. It saves the connection only once Paperless answers
+ * at the URL with the token, as the settings page does, and while a connection is stored,
+ * a failed test still saves the options that don't depend on Paperless and exits with 1.
+ * It takes the token from the standard input or from an environment variable, never from
+ * an argument, which the history of the shell and the list of processes would show to
+ * others. With --create-account, that token is the one of a superuser of Paperless, which
+ * creates the search account and is not stored (decision 0012).
  */
 final class Setup extends Command {
 	use ReportsProblems;
@@ -78,6 +79,12 @@ final class Setup extends Command {
 				--no-view-existing:
 
 				  printf '%s' "$SUPERUSER_TOKEN" | occ paperless_unified_search:setup --url=https://paperless.example.com --create-account --token-stdin
+
+				While a connection is stored, a failed test of the connection still saves the
+				options that don't depend on Paperless, --archive-account, --always-search,
+				--personal-always-search and --new-document-alerts, and keeps the stored URL,
+				token and --allow-local, so that they can be changed while Paperless is down.
+				With --create-account, nothing is saved then.
 
 				Exits with 0 once the settings are saved, with 1 when Paperless doesn't answer
 				or a setting is wrong, and with 2 for a wrong call, such as a missing --url or
@@ -147,7 +154,20 @@ final class Setup extends Command {
 				$account = $this->accountSetup->create($normalizedUrl, $token, $allowLocal, self::switchOf($input, 'view-new-documents', true), self::switchOf($input, 'view-existing', true), $save);
 				$config = $account->config;
 			} else {
-				$config = $save($effectiveToken);
+				try {
+					$config = $save($effectiveToken);
+				} catch (PaperlessRequestException $exception) {
+					if (!$this->configService->isConfigured()) {
+						throw $exception;
+					}
+					// As the settings page does: the options that don't depend on Paperless are
+					// saved, and the stored connection stays.
+					self::requestFailed($output, $this->messages, $exception, [$effectiveToken]);
+					self::errors($output)->writeln(OutputFormatter::escape($this->messages->forOptionsWithoutConnection()));
+					$this->describe($output, $this->configService->saveOptions($alwaysSearch, $owner, $personalAlwaysSearch, $newDocumentAlerts));
+
+					return self::FAILURE;
+				}
 			}
 		} catch (SearchAccountUnfinished $exception) {
 			self::error($output, $this->messages->forUnfinishedAccount($exception));

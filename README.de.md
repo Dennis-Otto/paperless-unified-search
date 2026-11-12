@@ -382,7 +382,7 @@ Die URL darf einen Docker-Dienst mit Unterstrich nennen, etwa `http://paperless_
 
 <!-- --8<-- [start:connection-test] -->
 
-**Verbindung testen und speichern** speichert nichts, bis Paperless mit einer Liste von Dokumenten antwortet, und wenn es das nicht tut, sagt die Meldung, was fehlgeschlagen ist und was zu korrigieren ist, in der Sprache deines Kontos. Das Protokoll von Nextcloud bekommt eine Warnung mit dem Fehler selbst, etwa `cURL error 6: Could not resolve host`, ohne das Token und ohne die Abfrage der URL.
+**Verbindung testen und speichern** speichert die Verbindung erst, wenn Paperless mit einer Liste von Dokumenten antwortet, und wenn es das nicht tut, sagt die Meldung, was fehlgeschlagen ist und was zu korrigieren ist, in der Sprache deines Kontos. Solange eine Verbindung gespeichert ist, werden das Archivkonto und die drei Schalter darunter trotzdem gespeichert, und URL, API-Token und **Paperless läuft in meinem lokalen Netzwerk** bleiben, wie sie waren: So kannst du **Paperless immer in die globale Suche einbeziehen** oder die Benachrichtigungen genau dann ausschalten, wenn Paperless ausgefallen, langsam oder im Umzug ist, und die Meldung sagt das in der Farbe einer Warnung statt der eines Fehlers. Das Protokoll von Nextcloud bekommt eine Warnung mit dem Fehler selbst, etwa `cURL error 6: Could not resolve host`, ohne das Token und ohne die Abfrage der URL.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/what-the-test-of-the-connection-checks.de.dark.svg">
@@ -596,7 +596,7 @@ Vier Befehle von `occ` erledigen ohne Browser, was die Einstellungen tun, und me
 
 | Befehl | Was er tut | Exit-Code |
 | --- | --- | --- |
-| `paperless_unified_search:setup` | Testet die Verbindung mit der URL und dem Token und speichert dann die Einstellungen, wie es **Verbindung testen und speichern** tut | 0, sobald gespeichert, 1, wenn Paperless nicht antwortet oder eine Einstellung falsch ist, 2 bei einem falschen Aufruf, etwa einer fehlenden `--url` oder einer leeren Quelle des Tokens |
+| `paperless_unified_search:setup` | Testet die Verbindung mit der URL und dem Token und speichert dann die Einstellungen, wie es **Verbindung testen und speichern** tut | 0, sobald gespeichert, 1, wenn Paperless nicht antwortet oder eine Einstellung falsch ist (solange eine Verbindung gespeichert ist, speichert ein fehlgeschlagener Test trotzdem `--archive-account` und die Schalter außer `--allow-local`), 2 bei einem falschen Aufruf, etwa einer fehlenden `--url` oder einer leeren Quelle des Tokens |
 | `paperless_unified_search:test` | Testet die Verbindung mit den gespeicherten Einstellungen, nennt die Version von Paperless und warnt vor einem Token, das mehr darf, als die Suche braucht, oder weniger, als die Treffer zeigen | 0, wenn Paperless antwortet, sonst 1 |
 | `paperless_unified_search:search <user> <term>` | Sucht als der Benutzer und sagt für jedes Dokument, ob es ihm angezeigt wird, mit `--explain` auch, warum nicht | 0, sobald Paperless geantwortet hat |
 | `paperless_unified_search:check` | Testet die Verbindung, was das Konto des API-Tokens darf, und das Archiv-Konto, zählt die Dokumente von Paperless, die eine Datei haben, und listet, wie das Archiv geteilt ist | 0, wenn die Suche Dokumente zeigen kann, sonst 1 |

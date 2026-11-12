@@ -102,6 +102,13 @@ final class SettingsController extends Controller {
 	 * code that says what failed, such as unauthorized or invalid_url. A failed test of the
 	 * connection also goes into the log, with the error of the request but without the
 	 * token and the query of a URL.
+	 *
+	 * While a connection is stored, a failed test of the connection still saves the options
+	 * that don't depend on Paperless, the archive account and the three switches, and keeps
+	 * the stored URL, token and choice of the local network: so an administrator can turn
+	 * off Always include Paperless in global search exactly while Paperless is down, slow
+	 * or being moved. The answer is then the settings as stored, with connectionFailure,
+	 * the message and the code of the failure, as a refusal has them.
 	 */
 	#[FrontpageRoute(verb: 'POST', url: '/settings')]
 	#[PasswordConfirmationRequired]
@@ -111,24 +118,36 @@ final class SettingsController extends Controller {
 			$normalizedUrl = $this->configService->normalizeUrl($url);
 			$effectiveToken = $this->configService->resolveToken($token, $normalizedUrl);
 			$owner = $this->configService->resolveArchiveOwner($archiveOwner);
-			$status = $this->paperlessApi->probe($normalizedUrl, $effectiveToken, $allowLocal);
-			$config = $this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner, $allowLocal, $status->version, $personalAlwaysSearch ?? $this->configService->isPersonalAlwaysSearchAllowed(), $status->tokenWarnings, $newDocumentAlerts);
+			$personal = $personalAlwaysSearch ?? $this->configService->isPersonalAlwaysSearchAllowed();
+			try {
+				$status = $this->paperlessApi->probe($normalizedUrl, $effectiveToken, $allowLocal);
+			} catch (PaperlessRequestException $exception) {
+				$cause = $exception->getPrevious() ?? $exception;
+				$this->logger->warning('The test of the connection to Paperless failed: {reason} ({errorType}: {detail})', [
+					'app' => AppConstants::APP_ID,
+					'reason' => $exception->reason->value,
+					'errorType' => $cause::class,
+					'detail' => SearchDiagnostics::describe($cause->getMessage(), [$effectiveToken]),
+				]);
+				if (!$this->configService->isConfigured()) {
+					return $this->refusal($this->messages->forFailure($exception), $exception->reason->value);
+				}
+
+				return new JSONResponse([
+					...$this->configService->saveOptions($alwaysSearch, $owner, $personal, $newDocumentAlerts)->jsonSerialize(),
+					'connectionFailure' => [
+						'message' => $this->messages->forFailure($exception) . ' ' . $this->messages->forOptionsWithoutConnection(),
+						'code' => $exception->reason->value,
+					],
+				]);
+			}
+			$config = $this->configService->save($normalizedUrl, $effectiveToken, $alwaysSearch, $owner, $allowLocal, $status->version, $personal, $status->tokenWarnings, $newDocumentAlerts);
 			$this->documentOwners->forget();
 			$this->names->forget();
 
 			return new JSONResponse($config);
 		} catch (InvalidSettingException $exception) {
 			return $this->refusal($this->messages->forSetting($exception->problem, trim($archiveOwner)), $exception->problem->value);
-		} catch (PaperlessRequestException $exception) {
-			$cause = $exception->getPrevious() ?? $exception;
-			$this->logger->warning('The test of the connection to Paperless failed: {reason} ({errorType}: {detail})', [
-				'app' => AppConstants::APP_ID,
-				'reason' => $exception->reason->value,
-				'errorType' => $cause::class,
-				'detail' => SearchDiagnostics::describe($cause->getMessage(), [$effectiveToken]),
-			]);
-
-			return $this->refusal($this->messages->forFailure($exception), $exception->reason->value);
 		} catch (Throwable $exception) {
 			$this->logger->error('The settings of Paperless Unified Search could not be saved ({errorType}: {detail})', [
 				'app' => AppConstants::APP_ID,

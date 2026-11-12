@@ -23,6 +23,7 @@ const TRY_URL = '/apps/paperless_unified_search/settings/try'
 const ACCOUNT_URL = '/apps/paperless_unified_search/settings/account'
 const STORED = 'https://paperless.example.com'
 const SUCCESS = 'paperless-unified-search-status--success'
+const WARNING = 'paperless-unified-search-status--warning'
 const ERROR = 'paperless-unified-search-status--error'
 const PENDING = 'paperless-unified-search-status--pending'
 
@@ -352,6 +353,44 @@ test('a refused save of a configured app keeps Disconnect on', async function() 
 	await get('form').dispatch('submit')
 
 	assert.deepEqual(state(get), { status: 'Paperless rejected the API token (HTTP 401).', kind: ERROR, disconnect: 'enabled', save: 'enabled', busy: 'false' })
+})
+
+test('a save whose test of the connection fails shows the options as stored, and keeps the connection as typed', async function() {
+	const message = 'Paperless did not answer in time. Check that it runs and is not overloaded, then try again. The other settings are saved; the URL, the API token and “Paperless runs in my local network” stay as they were until a test of the connection succeeds.'
+	const { get } = load(page({ url: STORED, tokenConfigured: true }), {
+		answers: [json({
+			...CONFIG,
+			url: STORED,
+			alwaysSearch: false,
+			archiveOwner: 'archive',
+			personalAlwaysSearch: false,
+			newDocumentAlerts: false,
+			tokenWarnings: ['superuser'],
+			connectionFailure: { message, code: 'timeout' },
+		})],
+	})
+	get('url').value = 'https://paperless.example.net'
+	get('allow-local').checked = true
+	get('token').value = 'new-token'
+	get('always-search').checked = false
+	get('users-always-search').checked = false
+	get('new-document-alerts').checked = false
+	get('archive-owner').value = 'Archive'
+
+	await get('form').dispatch('submit')
+
+	assert.deepEqual(state(get), { status: message, kind: WARNING, disconnect: 'enabled', save: 'enabled', busy: 'false' })
+	// The options as the server stored them.
+	assert.equal(get('always-search').checked, false)
+	assert.equal(get('users-always-search').checked, false)
+	assert.equal(get('new-document-alerts').checked, false)
+	assert.equal(get('archive-owner').value, 'archive')
+	// The connection as the administrator typed it, for the correction, beside the one stored.
+	assert.equal(get('url').value, 'https://paperless.example.net')
+	assert.equal(get('url').defaultValue, STORED)
+	assert.equal(get('allow-local').checked, true)
+	assert.equal(get('token').value, 'new-token')
+	assert.equal(get('token-warnings').textContent, '')
 })
 
 // What Nextcloud or a proxy answers instead of the app, and the sentence that the page

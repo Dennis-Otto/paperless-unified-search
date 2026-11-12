@@ -640,6 +640,114 @@ final class SettingsControllerTest extends TestCase {
 	}
 
 	/**
+	 * While Paperless doesn't answer, an administrator could change no option at all, not
+	 * even turn off Always include Paperless in global search, which sends every search of
+	 * every user to it (#410). With a connection stored, a failed test now saves the
+	 * options that don't depend on Paperless and keeps the URL, the token, the choice of
+	 * the local network, the version and the warnings of the last test that worked.
+	 */
+	public function testAFailedTestOfAStoredConnectionStillSavesTheOptions(): void {
+		$config = $this->connectedConfig();
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willThrowException(new RuntimeException('cURL error 28: Operation timed out after 10001 milliseconds'));
+
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())
+			->method('warning')
+			->with('The test of the connection to Paperless failed: {reason} ({errorType}: {detail})', self::callback(static fn (array $context): bool => $context['reason'] === 'timeout'));
+
+		$response = $this->controller($config, $this->storedToken(), $client, $logger)
+			->save('https://paperless.example.com', '', false, ' Archive ', false, false, false);
+
+		self::assertSame(Http::STATUS_OK, $response->getStatus());
+		$answer = json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR);
+		self::assertSame([
+			'message' => 'DE:Paperless did not answer in time. Check that it runs and is not overloaded, then try again. DE:The other settings are saved; the URL, the API token and “Paperless runs in my local network” stay as they were until a test of the connection succeeds.',
+			'code' => 'timeout',
+		], $answer['connectionFailure']);
+		self::assertSame([
+			'url' => self::STORED_URL,
+			'tokenConfigured' => true,
+			'alwaysSearch' => false,
+			'archiveOwner' => 'archive',
+			'syncAccount' => '',
+			'tokenUnreadable' => false,
+			'archiveOwnerMissing' => false,
+			'allowLocal' => true,
+			'paperlessVersion' => '2.20.0',
+			'paperlessApiVersion' => '9',
+			'personalAlwaysSearch' => false,
+			'tokenWarnings' => ['superuser'],
+			'newDocumentAlerts' => false,
+			'perUserArchives' => false,
+		], array_diff_key($answer, ['connectionFailure' => true]));
+		self::assertSame([
+			'paperless_url' => self::STORED_URL,
+			'allow_local' => true,
+			'paperless_version' => '2.20.0',
+			'paperless_api_version' => '9',
+			'always_search' => false,
+			'personal_always_search' => false,
+			'new_document_alerts' => false,
+			'archive_owner' => 'archive',
+			'token_warnings' => 'superuser',
+		], $config->storedValues(AppConstants::APP_ID));
+	}
+
+	/**
+	 * A new URL, token or choice of the local network that Paperless doesn't answer stays
+	 * unsaved, and so does the stored token stay, whatever the failure: the stored
+	 * connection is the one that worked last. A save without one of the two switches of
+	 * the users keeps its stored choice, and an empty archive account is the account of
+	 * Paperless Sync.
+	 */
+	public function testAFailedTestOfANewConnectionKeepsTheStoredOne(): void {
+		$config = $this->connectedConfig();
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response(401, '{"detail":"Invalid token."}'));
+
+		$response = $this->controller($config, $this->storedToken(), $client)
+			->save('https://paperless.example.net', 'NEW_TEST_VALUE', true, '', false);
+
+		self::assertSame(Http::STATUS_OK, $response->getStatus());
+		$answer = json_decode($response->render(), true, 512, JSON_THROW_ON_ERROR);
+		self::assertSame('unauthorized', $answer['connectionFailure']['code']);
+		self::assertStringStartsWith('DE:Paperless rejected the API token (HTTP 401).', $answer['connectionFailure']['message']);
+		self::assertSame(self::STORED_URL, $answer['url']);
+		self::assertTrue($answer['allowLocal']);
+		self::assertTrue($answer['alwaysSearch']);
+		self::assertStringNotContainsString('NEW_TEST_VALUE', $response->render());
+		self::assertStringNotContainsString('STORED_TEST_VALUE', $response->render());
+		self::assertSame([
+			'paperless_url' => self::STORED_URL,
+			'allow_local' => true,
+			'paperless_version' => '2.20.0',
+			'paperless_api_version' => '9',
+			'always_search' => true,
+			'personal_always_search' => true,
+			'new_document_alerts' => true,
+			'token_warnings' => 'superuser',
+		], $config->storedValues(AppConstants::APP_ID));
+	}
+
+	/**
+	 * Without a stored connection, a failed test saves nothing: a first set-up is corrected
+	 * first, as its options do nothing without Paperless.
+	 */
+	public function testAFailedTestWithoutAStoredConnectionSavesNothing(): void {
+		$config = new MemoryAppConfig([AppConstants::APP_ID . '.paperless_url' => self::STORED_URL]);
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willThrowException(new RuntimeException('cURL error 28: Operation timed out'));
+
+		$response = $this->controller($config, $this->unchangedCredentials(), $client)
+			->save('https://paperless.example.com', 'TEST_VALUE', true, 'archive');
+
+		self::assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
+		self::assertSame('timeout', $response->getData()['code']);
+		self::assertSame(['paperless_url' => self::STORED_URL], $config->storedValues(AppConstants::APP_ID));
+	}
+
+	/**
 	 * The log never shows the token, also where an error repeats it.
 	 */
 	public function testTheLogOfAFailedConnectionLeavesOutTheToken(): void {
@@ -794,6 +902,34 @@ final class SettingsControllerTest extends TestCase {
 		);
 
 		return $config;
+	}
+
+	/**
+	 * The settings of a connection whose last test worked: the URL in the local network,
+	 * the version of Paperless and a warning about the token, with every option on.
+	 */
+	private function connectedConfig(): MemoryAppConfig {
+		return (new MemoryAppConfig([
+			AppConstants::APP_ID . '.paperless_url' => self::STORED_URL,
+			AppConstants::APP_ID . '.allow_local' => true,
+			AppConstants::APP_ID . '.paperless_version' => '2.20.0',
+			AppConstants::APP_ID . '.paperless_api_version' => '9',
+			AppConstants::APP_ID . '.always_search' => true,
+			AppConstants::APP_ID . '.personal_always_search' => true,
+			AppConstants::APP_ID . '.new_document_alerts' => true,
+			AppConstants::APP_ID . '.archive_owner' => 'archive',
+		]))->seed(AppConstants::APP_ID, 'token_warnings', 'superuser', true);
+	}
+
+	/**
+	 * The credentials of Nextcloud with the stored token, which a save keeps.
+	 */
+	private function storedToken(): ICredentialsManager {
+		$credentials = $this->createMock(ICredentialsManager::class);
+		$credentials->method('retrieve')->willReturn('STORED_TEST_VALUE');
+		$credentials->expects(self::never())->method('store');
+
+		return $credentials;
 	}
 
 	private function unchangedConfig(): IAppConfig {

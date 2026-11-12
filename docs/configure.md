@@ -98,7 +98,7 @@ To see what the search can find at most, sign in to Paperless as the account and
 
 ### When the test of the connection fails
 
-**Test connection and save** saves nothing until Paperless answers, and the message says what failed. [Troubleshooting](troubleshooting.md#when-the-test-of-the-connection-fails) lists every message, with what to do about it.
+**Test connection and save** saves the connection only once Paperless answers, and the message says what failed. While a connection is stored, it saves the archive account and the three switches all the same, so that you can turn them off while Paperless is down; the URL, the API token and **Paperless runs in my local network** stay as they were. [Troubleshooting](troubleshooting.md#when-the-test-of-the-connection-fails) lists every message, with what to do about it.
 
 --8<-- "README.md:languages"
 
