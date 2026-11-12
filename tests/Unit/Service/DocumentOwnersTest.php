@@ -60,8 +60,9 @@ final class DocumentOwnersTest extends TestCase {
 
 		self::assertSame(
 			[1 => 'jamie', 2 => 'sam', 4 => 'jamie'],
-			// 8 has no user of Nextcloud, and Paperless doesn't list 99, such as a deleted user.
-			$owners->of([['id' => 1, 'owner' => 5], ['id' => 2, 'owner' => 6], ['id' => 3, 'owner' => 8], ['id' => 4, 'owner' => 5], ['id' => 5, 'owner' => 99]]),
+			// Paperless doesn't list 99, such as a deleted user, and 8 has no user of Nextcloud:
+			// the documents after them still get theirs.
+			$owners->of([['id' => 5, 'owner' => 99], ['id' => 1, 'owner' => 5], ['id' => 2, 'owner' => 6], ['id' => 3, 'owner' => 8], ['id' => 4, 'owner' => 5]]),
 		);
 		[$url, $options] = $this->requests[0];
 		self::assertSame('https://paperless.example.com/api/users/', $url);
@@ -217,6 +218,27 @@ final class DocumentOwnersTest extends TestCase {
 		$this->storedToken = 'OTHER_TEST_VALUE';
 		self::assertNull($this->owners($this->answer(403, '{"detail":"You do not have permission to perform this action."}'))->accountsOf([['id' => 1, 'owner' => 5]]));
 		self::assertSame([], $this->owners()->accountsOf([['id' => 1, 'owner' => null]]));
+		// Users that Paperless refused are unknown, which is no failure to match them.
+		self::assertSame(['info'], array_column($this->logged, 0));
+	}
+
+	/**
+	 * Each owner is looked up once in Nextcloud, however many documents they own: a backend
+	 * of users such as LDAP answers each lookup on its own.
+	 */
+	public function testEachOwnerIsLookedUpOnce(): void {
+		$looked = [];
+		$accounts = $this->createStub(IUserManager::class);
+		$accounts->method('get')->willReturnCallback(function (string $id) use (&$looked): IUser {
+			$looked[] = $id;
+
+			return $this->account($id);
+		});
+
+		$owners = $this->ownersWith([$this->users(self::USERS)], accounts: $accounts);
+
+		self::assertSame([1 => 'jamie', 2 => 'jamie', 3 => 'jamie'], $owners->of([['id' => 1, 'owner' => 5], ['id' => 2, 'owner' => 5], ['id' => 3, 'owner' => 5]]));
+		self::assertSame(['jamie'], $looked);
 	}
 
 	/**
@@ -230,6 +252,39 @@ final class DocumentOwnersTest extends TestCase {
 		$owners = $this->owners($this->users([['id' => 5, 'username' => 'jamie'], ['id' => 7, 'username' => 'alex']]));
 
 		self::assertSame([1 => 'sam'], $owners->of([['id' => 1, 'owner' => 5], ['id' => 2, 'owner' => 7]]));
+	}
+
+	/**
+	 * Paperless Sync compares the names of the table, of the users of Paperless and of the
+	 * users of Nextcloud whatever their case, also beyond ASCII, and a line without a user
+	 * of Nextcloud counts for nothing: the user of Paperless keeps their own name.
+	 *
+	 * @return array<string, array{string, string, string}>
+	 */
+	public static function namesWhateverTheCase(): array {
+		return [
+			'a user of Paperless beyond ASCII in another case than the table' => ['jörg = jamie', 'JÖRG', 'jamie'],
+			'a line of the table beyond ASCII in another case' => ['JÖRG = jamie', 'jörg', 'jamie'],
+			'a user of Nextcloud beyond ASCII in another case' => ['', 'änne', 'ÄNNE'],
+			'a line without a user of Nextcloud' => ['jamie =', 'jamie', 'jamie'],
+		];
+	}
+
+	#[DataProvider('namesWhateverTheCase')]
+	public function testTheNamesCountWhateverTheirCase(string $table, string $username, string $user): void {
+		$this->settings['paperless_sync.user_map'] = $table;
+
+		self::assertSame([1 => $user], $this->owners($this->users([['id' => 5, 'username' => $username]]))->of([['id' => 1, 'owner' => 5]]));
+	}
+
+	/**
+	 * A line of the table without a user of Paperless names nobody, also not a user of
+	 * Paperless without a name, should an answer of Paperless list one.
+	 */
+	public function testALineWithoutAUserOfPaperlessNamesNobody(): void {
+		$this->settings['paperless_sync.user_map'] = ' = jamie';
+
+		self::assertSame([], $this->owners($this->users([['id' => 5, 'username' => '']]))->of([['id' => 1, 'owner' => 5]]));
 	}
 
 	/**
@@ -258,6 +313,9 @@ final class DocumentOwnersTest extends TestCase {
 		return [
 			'the same name in another case' => ['', [['id' => 5, 'username' => 'jamie'], ['id' => 9, 'username' => 'Jamie']]],
 			'the table and a name' => ['jdoe = jamie', [['id' => 5, 'username' => 'jamie'], ['id' => 9, 'username' => 'jdoe']]],
+			'the table, for a name beyond ASCII in another case, and a name' => ['jörg = jamie', [['id' => 5, 'username' => 'JÖRG'], ['id' => 9, 'username' => 'jamie']]],
+			'the same name beyond ASCII in another case' => ['', [['id' => 5, 'username' => 'JÖRG'], ['id' => 9, 'username' => 'jörg']]],
+			'two names for a user of Nextcloud beyond ASCII in another case' => ['', [['id' => 5, 'username' => 'änne'], ['id' => 9, 'username' => 'Änne']]],
 		];
 	}
 
@@ -282,7 +340,8 @@ final class DocumentOwnersTest extends TestCase {
 
 		$owners = $this->ownersWith([$this->users(self::USERS)], groups: $groups);
 
-		self::assertSame([1 => 'jamie'], $owners->of([['id' => 1, 'owner' => 5], ['id' => 2, 'owner' => 6]]));
+		// The document of a user outside the group comes first: the next one still counts.
+		self::assertSame([1 => 'jamie'], $owners->of([['id' => 2, 'owner' => 6], ['id' => 1, 'owner' => 5]]));
 	}
 
 	/**
@@ -299,6 +358,39 @@ final class DocumentOwnersTest extends TestCase {
 		$this->now += 2;
 		self::assertSame([1 => 'sam'], $owners->of([['id' => 1, 'owner' => 5]]));
 		self::assertCount(2, $this->requests);
+	}
+
+	/**
+	 * The users that the cache holds for the server and the token of the settings count
+	 * without a request, also when another server of Nextcloud that shares the cache put
+	 * them there.
+	 */
+	public function testTheUsersInTheCacheCountWithoutARequest(): void {
+		$this->cache()->set('users-' . hash('sha256', 'https://paperless.example.com TEST_VALUE'), [5 => 'sam']);
+
+		self::assertSame([1 => 'sam'], $this->owners($this->users(self::USERS))->of([['id' => 1, 'owner' => 5]]));
+		self::assertSame([], $this->requests);
+	}
+
+	/**
+	 * The service opens the distributed cache once, and so do the tags of Paperless, however
+	 * often they read and write it.
+	 */
+	public function testTheCacheOpensOnce(): void {
+		$opened = 0;
+		$cacheFactory = $this->createStub(ICacheFactory::class);
+		$cacheFactory->method('createDistributed')->willReturnCallback(function () use (&$opened): ICache {
+			$opened++;
+
+			return $this->cache();
+		});
+		$owners = $this->ownersWith([$this->users(self::USERS)], cacheFactory: $cacheFactory);
+
+		self::assertSame([1 => 'jamie'], $owners->of([['id' => 1, 'owner' => 5]]));
+		$owners->forget();
+		$owners->forget();
+
+		self::assertSame(2, $opened);
 	}
 
 	/**
@@ -329,17 +421,19 @@ final class DocumentOwnersTest extends TestCase {
 	 * before, and Paperless isn't asked again for ten minutes; a request without answer, or
 	 * an answer that isn't a list, rests for a minute.
 	 *
-	 * @return array<string, array{IResponse|Throwable|null, int}>
+	 * The log names the app and the error, or the class of an error without answer.
+	 *
+	 * @return array<string, array{?Throwable, int, string}>
 	 */
 	public static function failures(): array {
 		return [
-			'refused' => [null, 600],
-			'without answer' => [new RuntimeException('Paperless is gone'), 60],
+			'refused' => [null, 600, 'error'],
+			'without answer' => [new RuntimeException('Paperless is gone'), 60, 'errorType'],
 		];
 	}
 
 	#[DataProvider('failures')]
-	public function testAListThatFailsRests(?Throwable $error, int $seconds): void {
+	public function testAListThatFailsRests(?Throwable $error, int $seconds, string $detail): void {
 		$owners = $this->owners($error ?? $this->answer(403, '{"detail":"You do not have permission to perform this action."}'), $this->users(self::USERS));
 
 		self::assertSame([], $owners->of([['id' => 1, 'owner' => 5]]));
@@ -350,6 +444,9 @@ final class DocumentOwnersTest extends TestCase {
 		self::assertSame([1 => 'jamie'], $owners->of([['id' => 1, 'owner' => 5]]));
 		self::assertSame('info', $this->logged[0][0]);
 		self::assertStringContainsString('only the files of the archive account stand for documents', $this->logged[0][1]);
+		self::assertSame(['app', $detail], array_keys($this->logged[0][2]));
+		self::assertSame(AppConstants::APP_ID, $this->logged[0][2]['app']);
+		self::assertIsString($this->logged[0][2][$detail]);
 	}
 
 	/**
@@ -399,9 +496,11 @@ final class DocumentOwnersTest extends TestCase {
 
 		$this->ownersWith([], cacheFactory: $cacheFactory)->forget();
 
-		self::assertSame('warning', $this->logged[0][0]);
-		self::assertStringContainsString('could not be removed from the cache', $this->logged[0][1]);
-		self::assertSame(RuntimeException::class, $this->logged[0][2]['errorType']);
+		$context = ['app' => AppConstants::APP_ID, 'errorType' => RuntimeException::class];
+		self::assertSame([
+			['warning', 'The tags of Paperless could not be removed from the cache, so they may count as they were for up to ten minutes more ({errorType})', $context],
+			['warning', 'The users of Paperless could not be removed from the cache, so a refusal of them may count for up to ten minutes more ({errorType})', $context],
+		], $this->logged);
 	}
 
 	public function testAnAnswerThatIsNoListRestsForAMinute(): void {
@@ -422,8 +521,9 @@ final class DocumentOwnersTest extends TestCase {
 		$owners = $this->ownersWith([$this->users(self::USERS)], accounts: $accounts);
 
 		self::assertSame([], $owners->of([['id' => 1, 'owner' => 5]]));
-		self::assertSame(['warning', 'The owners of Paperless documents could not be matched with users of Nextcloud ({errorType})'], array_slice($this->logged[0], 0, 2));
-		self::assertSame(RuntimeException::class, $this->logged[0][2]['errorType']);
+		self::assertSame(['warning', 'The owners of Paperless documents could not be matched with users of Nextcloud ({errorType})', ['app' => AppConstants::APP_ID, 'errorType' => RuntimeException::class]], $this->logged[0]);
+		// occ paperless_unified_search:check learns that the users are unknown.
+		self::assertNull($owners->accountsOf([['id' => 1, 'owner' => 5]]));
 	}
 
 	/**
@@ -548,7 +648,7 @@ final class DocumentOwnersTest extends TestCase {
 	private function ownersWith(array $answers, ?IUserManager $accounts = null, ?IGroupManager $groups = null, ?ICacheFactory $cacheFactory = null, array $configAccounts = ['archive']): DocumentOwners {
 		// The settings find the archive account among the users of the test, whatever $accounts finds.
 		$configService = $this->configService($this->accounts(...$configAccounts));
-		$accounts ??= $this->accounts('archive', 'jamie', 'sam', 'alex');
+		$accounts ??= $this->accounts('archive', 'jamie', 'sam', 'alex', 'jörg', 'ÄNNE');
 		if ($cacheFactory === null) {
 			$cacheFactory = $this->createStub(ICacheFactory::class);
 			$cacheFactory->method('createDistributed')->willReturn($this->cache());

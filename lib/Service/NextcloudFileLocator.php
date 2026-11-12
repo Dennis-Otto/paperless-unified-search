@@ -162,13 +162,13 @@ final class NextcloudFileLocator {
 			? $this->searchAll($userFolder, $user, array_values($markers))
 			: $this->searchEach($userFolder, array_values($markers));
 		// The accounts whose files may stand for a document.
-		$owners = $archiveOwner === null ? [] : [$archiveOwner => true] + array_fill_keys(array_values($documentUsers), true);
+		$owners = $archiveOwner === null ? [] : [$archiveOwner => true] + array_fill_keys($documentUsers, true);
 
 		/** @var array<int, list<array{string, File}>> $candidates the path and the file of each file of each document, by document ID */
 		$candidates = [];
 		/** @var array<int, true> $writableIds the IDs of the files that the user may write through any of their paths */
 		$writableIds = [];
-		/** @var array<string, bool> $openFolders whether the user may add files of an owner to each folder so far, by the owner and its path */
+		/** @var array<string, array<string, bool>> $openFolders whether the user may add files of an owner to each folder so far, by the owner and its path */
 		$openFolders = [];
 		$skipped = 0;
 		$firstError = null;
@@ -298,22 +298,23 @@ final class NextcloudFileLocator {
 	 * user, where a file that the user adds is the user's own; the name that the user gives
 	 * the share itself counts for nothing (see nameOfTheOwner()).
 	 *
-	 * @param array<string, bool> $openFolders whether the user may add files of the owner
-	 *                                         to each folder so far, by the owner and the
-	 *                                         path, which this adds to
+	 * @param array<string, array<string, bool>> $openFolders whether the user may add files
+	 *                                                        of the owner to each folder so
+	 *                                                        far, by the owner and the path,
+	 *                                                        which this adds to
 	 */
 	private static function mayWrite(File $file, string $path, string $owner, array &$openFolders): bool {
 		if ($file->isUpdateable()) {
 			return true;
 		}
 
-		$folder = $owner . '/' . dirname($path);
-		if (!isset($openFolders[$folder])) {
+		$folder = dirname($path);
+		if (!isset($openFolders[$owner][$folder])) {
 			$parent = $file->getParent();
-			$openFolders[$folder] = $parent->getOwner()?->getUID() === $owner && $parent->isCreatable();
+			$openFolders[$owner][$folder] = $parent->getOwner()?->getUID() === $owner && $parent->isCreatable();
 		}
 
-		return $openFolders[$folder];
+		return $openFolders[$owner][$folder];
 	}
 
 	private function logSkipped(int $skipped, ?Throwable $firstError): void {

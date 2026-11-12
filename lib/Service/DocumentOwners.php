@@ -318,7 +318,8 @@ final class DocumentOwners {
 				continue;
 			}
 			$uid = $user->getUID();
-			if (($named[mb_strtolower($uid)] ?? 0) > 1 || ($group !== '' && !$this->groupManager->isInGroup($uid, $group))) {
+			$key = mb_strtolower($uid);
+			if ((isset($named[$key]) && $named[$key] > 1) || ($group !== '' && !$this->groupManager->isInGroup($uid, $group))) {
 				continue;
 			}
 			$users[$paperlessId] = $user;
