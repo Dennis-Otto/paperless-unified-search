@@ -166,7 +166,7 @@
 				terms.value = payload.terms.join('\n')
 				let message = translate('Saved. You get no notifications about new documents.')
 				if (payload.checked === false) {
-					message = translate('Saved, but Paperless could not be reached to check your new searches. A search that Paperless can\'t read finds no documents.')
+					message = translate('Saved, but Paperless could not check your new searches. A search that Paperless can\'t read finds no documents.')
 				} else if (payload.everyDocument || payload.terms.length > 0) {
 					message = translate('Saved. You get a notification about the next new documents.')
 				}

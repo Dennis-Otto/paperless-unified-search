@@ -303,6 +303,32 @@ final class PersonalSettingsControllerTest extends TestCase {
 		self::assertSame(['tax'], $this->checkedTerms());
 	}
 
+	/**
+	 * When Paperless answers one term with an error, such as HTTP 500, the searches are
+	 * saved unchecked, and the further ones are still checked: a term that Paperless
+	 * can't read is refused after it.
+	 */
+	public function testAnErrorOfPaperlessForOneTermLeavesItUncheckedAndChecksTheNext(): void {
+		$this->settings[AppConstants::APP_ID . '.new_document_alerts'] = true;
+		$this->answers['tax'] = $this->paperlessAnswer(500, 'Internal Server Error');
+
+		$response = $this->controller('dennis')->saveAlerts(false, ['tax', 'tag:unpaid']);
+
+		self::assertSame(Http::STATUS_OK, $response->getStatus());
+		self::assertSame(['everyDocument' => false, 'terms' => ['tax', 'tag:unpaid'], 'checked' => false], $this->answer($response));
+		self::assertSame(['tax', 'tag:unpaid'], $this->checkedTerms());
+
+		$this->answers['created:[2026 to'] = $this->paperlessAnswer(400, self::INVALID_DATE);
+		$this->preferences = [];
+		$this->queries = [];
+
+		$response = $this->controller('dennis')->saveAlerts(false, ['tax', 'created:[2026 to']);
+
+		self::assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
+		self::assertSame('query_rejected', $this->answer($response)['code']);
+		self::assertSame(['tax', 'created:[2026 to'], $this->checkedTerms());
+	}
+
 	public function testWithoutPaperlessTheSearchesAreSavedUnchecked(): void {
 		$this->settings[AppConstants::APP_ID . '.new_document_alerts'] = true;
 		$this->connected = false;

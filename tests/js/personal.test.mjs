@@ -453,7 +453,7 @@ test('searches that Paperless could not check are saved, and the page says so', 
 		terms: 'tag:unpaid',
 		termsDisabled: false,
 		button: false,
-		text: 'Saved, but Paperless could not be reached to check your new searches. A search that Paperless can\'t read finds no documents.',
+		text: 'Saved, but Paperless could not check your new searches. A search that Paperless can\'t read finds no documents.',
 		kind: SUCCESS,
 	})
 })

@@ -75,7 +75,7 @@ OC.L10N.register(
 		'Each user can then save searches in their personal settings, in the section Paperless, and be notified about the new documents that they find and that the user can open. A background job asks Paperless for new documents every five minutes, and looks through the files of those users while documents wait for their files. Until you choose, this is on only where Nextcloud has a memory cache.': '之後每位使用者都可以在個人設定的 Paperless 區段中儲存搜尋，並在這些搜尋找到其可以開啟的新文件時收到通知。背景作業每五分鐘向 Paperless 查詢一次新文件，並在文件等待其檔案時查看這些使用者的檔案。在您做出選擇之前，只有 Nextcloud 設定了記憶體快取時，此功能才會開啟。',
 		'Saved. You get a notification about the next new documents.': '已儲存。下次有新文件時，您會收到通知。',
 		'Saved. You get no notifications about new documents.': '已儲存。您將不會收到新文件通知。',
-		'Saved, but Paperless could not be reached to check your new searches. A search that Paperless can\'t read finds no documents.': '已儲存，但無法連線至 Paperless 來檢查您的新搜尋。Paperless 無法解析的搜尋不會找到任何文件。',
+		'Saved, but Paperless could not check your new searches. A search that Paperless can\'t read finds no documents.': '已儲存，但 Paperless 無法檢查您的新搜尋。Paperless 無法解析的搜尋不會找到任何文件。',
 		'Line {line}: {message}': '第 {line} 行：{message}',
 		'Nextcloud searches your Paperless documents only while “Search connected services” is on in the search, and it turns the switch off again on every page that loads.': '只有在搜尋中開啟「搜尋已連結的服務」時，Nextcloud 才會搜尋您的 Paperless 文件，且每次載入頁面時都會再次關閉該開關。',
 		'Your administrator includes Paperless in every search of every user, so your searches always include it.': '您的管理員已將 Paperless 包含在每位使用者的每次搜尋中，因此您的搜尋一律包含它。',

@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\Controller;
 
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessQueryRejected;
+use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
 use OCA\PaperlessUnifiedSearch\Model\AlertChoice;
 use OCA\PaperlessUnifiedSearch\Service\AlwaysSearch;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
@@ -124,10 +125,16 @@ final class PersonalSettingsController extends Controller {
 					Http::STATUS_BAD_REQUEST,
 					['term' => $term, 'line' => self::lineOf($terms, $term)],
 				);
-			} catch (Throwable) {
+			} catch (Throwable $failure) {
+				$checked = false;
+				// Paperless answered this term with an error, such as HTTP 500: the next
+				// term may still be checked, and its answer comes as quickly.
+				if ($failure instanceof PaperlessRequestException && $failure->status !== null) {
+					continue;
+				}
+
 				// Paperless doesn't answer, or isn't connected: the searches are kept, and
 				// each further one would only wait as long again.
-				$checked = false;
 				break;
 			}
 		}
