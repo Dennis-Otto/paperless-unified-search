@@ -192,7 +192,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			userSession: $this->session('dennis'),
 			documentOwners: $this->documentOwners($paperlessApi, $configService, $this->accounts('archive')),
 			userTags: $this->userTags($paperlessApi, $configService),
-			cursors: $this->cursors(),
+			cursors: $this->searchCursors(),
 		);
 
 		self::assertTrue($provider->isExternalProvider());
@@ -260,7 +260,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			userSession: $this->session(null),
 			documentOwners: $this->documentOwners($paperlessApi, $configService, $this->accounts()),
 			userTags: $this->userTags($paperlessApi, $configService),
-			cursors: $this->cursors(),
+			cursors: $this->searchCursors(),
 		);
 
 		self::assertFalse($provider->isExternalProvider());
@@ -2033,7 +2033,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			userSession: $this->session('dennis'),
 			documentOwners: $this->documentOwners($paperlessApi, $configService, $this->accounts('dennis', 'sam')),
 			userTags: $this->userTags($paperlessApi, $configService),
-			cursors: $this->cursors(),
+			cursors: $this->searchCursors(),
 		);
 	}
 
@@ -2404,7 +2404,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 	/**
 	 * The cursors of the tests, sealed with the secret of a test instance.
 	 */
-	private function cursors(): SearchCursors {
+	private function searchCursors(): SearchCursors {
 		$config = $this->createStub(IConfig::class);
 		$config->method('getSystemValueString')->willReturnCallback(
 			static fn (string $key, string $default = ''): string => $key === 'secret' ? 'secret of the test instance' : $default,
@@ -2419,7 +2419,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 	 * @param array<string, string> $filters the filters of Paperless for the dates of the search
 	 */
 	private function cursor(int $offset, string $term = 'invoice', array $filters = [], string $userId = 'dennis'): string {
-		$cursor = $this->cursors()->seal($offset, $userId, $term, $filters);
+		$cursor = $this->searchCursors()->seal($offset, $userId, $term, $filters);
 		self::assertIsString($cursor);
 
 		return $cursor;
@@ -2431,7 +2431,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 	private function offsetOf(mixed $cursor): ?int {
 		self::assertIsString($cursor);
 
-		return $this->cursors()->open($cursor, 'dennis', 'invoice', []);
+		return $this->searchCursors()->open($cursor, 'dennis', 'invoice', []);
 	}
 
 	/**
