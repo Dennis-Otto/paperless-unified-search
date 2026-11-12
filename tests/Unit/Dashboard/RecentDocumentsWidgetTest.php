@@ -298,6 +298,49 @@ final class RecentDocumentsWidgetTest extends TestCase {
 	}
 
 	/**
+	 * The first page the dashboard always asks for, and at five seconds exactly it asks for
+	 * no further one.
+	 */
+	public function testAsksForTheFirstPageAlwaysAndNoFurtherOneAtFiveSeconds(): void {
+		$client = $this->paperless($this->page(self::others(1001), true), $this->page(self::others(1026), true));
+
+		$items = $this->widget($client, clock: $this->slowClock(5))->getItemsV2('jamie')->jsonSerialize();
+
+		self::assertSame([], $items['items']);
+		self::assertSame([1], array_map(static fn (array $request): mixed => $request[1]['query']['page'], $this->requests));
+	}
+
+	/**
+	 * The documents that the user can open on each page add up, until the dashboard holds
+	 * as many as it shows.
+	 */
+	public function testTheDocumentsOfEachPageAddUp(): void {
+		[, $correspondents, $types] = $this->answers(self::DOCUMENTS);
+		$client = $this->paperless($this->page([self::DOCUMENTS[0]], true), $this->page([self::DOCUMENTS[2]], false), $correspondents, $types);
+
+		$items = $this->widget($client)->getItemsV2('jamie')->jsonSerialize();
+
+		self::assertSame([self::ELECTRICITY, self::INSURANCE], $items['items']);
+	}
+
+	/**
+	 * The newest documents of the user's owner add to those of the pages before them.
+	 */
+	public function testTheDocumentsOfTheOwnerAddToThoseOfThePages(): void {
+		$this->eachOwnerHasAnArchive();
+		$users = $this->answer(200, (string)json_encode(['count' => 2, 'next' => null, 'results' => [['id' => 5, 'username' => 'jamie'], ['id' => 6, 'username' => 'sam']]]));
+		$first = $this->page([['owner' => 6] + self::DOCUMENTS[0]], true);
+		$pages = array_map(fn (int $page): IResponse => $this->page(self::others(1001 + 25 * $page, ['owner' => 6]), true), range(1, 3));
+		[$own, $correspondents, $types] = $this->answers([['owner' => 5] + self::DOCUMENTS[3]]);
+
+		$client = $this->paperless($first, $users, $pages[0], $pages[1], $pages[2], $own, $correspondents, $types);
+		$items = $this->widget($client)->getItemsV2('jamie')->jsonSerialize();
+
+		self::assertSame(['Electricity invoice - August 2026', 'Internet invoice - July 2026'], array_column($items['items'], 'title'));
+		self::assertSame('5', $this->requests[5][1]['query']['owner__id__in']);
+	}
+
+	/**
 	 * Once five seconds went, the dashboard doesn't ask for the newest documents of the
 	 * user's owner either.
 	 */
@@ -804,15 +847,15 @@ final class RecentDocumentsWidgetTest extends TestCase {
 	}
 
 	/**
-	 * A clock whose every look comes three seconds after the one before, as with a Paperless
-	 * that takes three seconds for each answer.
+	 * A clock whose every look comes three seconds, or $step, after the one before, as with
+	 * a Paperless that takes that long for each answer.
 	 */
-	private function slowClock(): ITimeFactory {
+	private function slowClock(int $step = 3): ITimeFactory {
 		$seconds = self::NOW;
 		$clock = $this->createStub(ITimeFactory::class);
-		$clock->method('now')->willReturnCallback(static function () use (&$seconds): DateTimeImmutable {
+		$clock->method('now')->willReturnCallback(static function () use (&$seconds, $step): DateTimeImmutable {
 			$now = new DateTimeImmutable('@' . $seconds);
-			$seconds += 3;
+			$seconds += $step;
 
 			return $now;
 		});
