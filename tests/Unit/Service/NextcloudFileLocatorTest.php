@@ -92,6 +92,7 @@ final class NextcloudFileLocatorTest extends TestCase {
 			'a zero in front' => [[12, 7], ['Invoice [P012] [P7].pdf'], [7 => 'Invoice [P012] [P7].pdf']],
 			'the markers of two documents' => [[12, 7], ['Invoice [P12] [P7].pdf'], [12 => 'Invoice [P12] [P7].pdf', 7 => 'Invoice [P12] [P7].pdf']],
 			'a marker in small letters' => [[123], ['Invoice [p123].pdf'], []],
+			'a marker in small letters, then the exact one' => [[123], ['Invoice [p123].pdf', 'Invoice [P123].pdf'], [123 => 'Invoice [P123].pdf']],
 			'no marker' => [[123], ['Invoice P123.pdf', 'Invoice [P 123].pdf'], []],
 		];
 	}
@@ -152,6 +153,21 @@ final class NextcloudFileLocatorTest extends TestCase {
 		$found = $this->locator([$forged], $logger)->findAllForUser($this->user(), [123], self::ARCHIVE);
 		self::assertSame([], $found->files);
 		// A file of no account, as on some external storages, is no file that failed.
+		self::assertNull($found->error);
+	}
+
+	/**
+	 * A file of another account counts for nothing before the search asks anything else of
+	 * it, so that one whose folder fails to answer is no file that failed either.
+	 */
+	public function testAFileOfAnotherAccountIsLeftAloneAtOnce(): void {
+		$folder = $this->createStub(Folder::class);
+		$folder->method('getOwner')->willThrowException(new RuntimeException('Storage unavailable'));
+		$forged = $this->file('Copy [P123].txt', '/dennis/files/Mallory/Copy [P123].txt', 'mallory', folder: $folder);
+
+		$found = $this->locator([$forged])->findAllForUser($this->user(), [123], self::ARCHIVE, [123 => 'sam']);
+
+		self::assertSame([], $found->files);
 		self::assertNull($found->error);
 	}
 
@@ -360,6 +376,24 @@ final class NextcloudFileLocatorTest extends TestCase {
 
 		self::assertSame([5 => $shared, 8 => $renamed], $found->files);
 		self::assertSame([6 => $writable], $found->writable);
+	}
+
+	/**
+	 * Whether the user may add files to a folder counts for the owner of each file: in
+	 * folders of the same path, a file of the archive account where the user may add its
+	 * files stands for nothing, and the read-only file of an owner still stands for their
+	 * document, in either order.
+	 */
+	public function testAFolderAnswersForEachOwnerWhetherTheUserMayAddFiles(): void {
+		$archived = $this->file('Invoice [P1].pdf', '/dennis/files/Paperless/Invoice [P1].pdf', folder: $this->parentFolder(self::ARCHIVE, true));
+		$owned = $this->file('Letter [P2].pdf', '/dennis/files/Paperless/Letter [P2].pdf', 'sam', folder: $this->parentFolder('sam', false));
+
+		foreach ([[$archived, $owned], [$owned, $archived]] as $nodes) {
+			$found = $this->locator($nodes)->findAllForUser($this->user(), [1, 2], self::ARCHIVE, [2 => 'sam']);
+
+			self::assertSame([2 => $owned], $found->files);
+			self::assertSame([1 => $archived], $found->writable);
+		}
 	}
 
 	/**

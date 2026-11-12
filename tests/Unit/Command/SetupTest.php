@@ -57,6 +57,11 @@ final class SetupTest extends TestCase {
 		self::assertSame([], $definition->getArguments());
 		self::assertFalse($definition->hasOption('token'));
 		self::assertFalse($definition->getOption('token-stdin')->acceptValue());
+		// The help of occ names the user that the option adds to Paperless.
+		self::assertSame(
+			'Create the search account nextcloud-search in Paperless with the token of a superuser, which is not stored, and save the settings with its token',
+			$definition->getOption('create-account')->getDescription(),
+		);
 	}
 
 	public function testSavesTheSettingsOnceTheConnectionWorks(): void {

@@ -1045,6 +1045,33 @@ final class PaperlessApiServiceTest extends TestCase {
 		}
 	}
 
+	/**
+	 * An older Paperless refuses an unknown document with HTTP 400 and the words of its
+	 * error together: either of them alone still fails the search.
+	 *
+	 * @return array<string, array{int, string}>
+	 */
+	public static function failuresOfAnOlderPaperless(): array {
+		return [
+			'its words with another status' => [500, self::SEARCH_ERROR],
+			'other words with HTTP 400' => [400, '{"detail":"Bad request."}'],
+		];
+	}
+
+	#[DataProvider('failuresOfAnOlderPaperless')]
+	public function testOnlyTheErrorOfAnOlderPaperlessRefusesTheDocument(int $status, string $body): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response($status, $body, ['X-Version' => '2.20.12', 'X-Api-Version' => '9']));
+
+		try {
+			$this->service($client)->searchDocuments('like:412', 1, 25);
+			self::fail('The answer did not fail the search.');
+		} catch (PaperlessRequestException $exception) {
+			self::assertSame(PaperlessRequestException::class, $exception::class);
+			self::assertSame($status, $exception->status);
+		}
+	}
+
 	public function testAPagePastTheLastOfSimilarDocumentsIsRejected(): void {
 		$client = $this->createMock(IClient::class);
 		$client->expects(self::once())
@@ -1424,10 +1451,11 @@ final class PaperlessApiServiceTest extends TestCase {
 			default => $this->response(200, self::NEWEST),
 		});
 
-		self::assertSame(
-			[TokenWarning::HidesCorrespondents, TokenWarning::HidesNamesOfOthers],
-			$this->service($client)->probe('https://paperless.example.com', 'TEST_VALUE', false)->tokenWarnings,
-		);
+		$probed = $this->service($client)->probe('https://paperless.example.com', 'TEST_VALUE', false);
+
+		self::assertSame([TokenWarning::HidesCorrespondents, TokenWarning::HidesNamesOfOthers], $probed->tokenWarnings);
+		// Paperless said what the account may do.
+		self::assertFalse($probed->privilegesRefused);
 	}
 
 	/**

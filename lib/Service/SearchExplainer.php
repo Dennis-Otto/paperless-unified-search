@@ -91,7 +91,7 @@ final class SearchExplainer {
 
 		// The accounts that may have a file of a document in their own folders: the archive
 		// account, and for each document with one, the user of its owner.
-		$holders = array_unique([...($archiveOwner !== '' ? [$archiveOwner] : []), ...array_values($documentUsers)]);
+		$holders = array_unique([...($archiveOwner !== '' ? [$archiveOwner] : []), ...$documentUsers]);
 		foreach ($holders as $holder) {
 			$account = $this->userManager->get($holder);
 			$heldIds = $holder === $archiveOwner ? array_keys($explanations) : array_keys($documentUsers, $holder, true);

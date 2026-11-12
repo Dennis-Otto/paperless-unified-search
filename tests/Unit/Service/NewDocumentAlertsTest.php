@@ -897,6 +897,117 @@ final class NewDocumentAlertsTest extends TestCase {
 		self::assertSame(101, $stored['lastSeen'] ?? null);
 	}
 
+	/**
+	 * When Paperless Sync gives each owner an archive, the files of the archive account and
+	 * those of the users of the owners arrive in the same run: each user hears about every
+	 * new document that they can open, and Paperless gets the IDs of all of them, the
+	 * highest first.
+	 */
+	public function testTheFilesOfTheArchiveAndOfTheOwnersArriveTogether(): void {
+		$this->connected('');
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.ownership'] = 'per-user';
+		$this->wants('jamie', true);
+		$this->wants('sam', false, 'tag:taxes');
+		$this->seen(410, [
+			['id' => 413, 'title' => 'Of sam', 'since' => self::NOW - 300, 'owner' => 6],
+			['id' => 412, 'title' => 'Of jamie', 'since' => self::NOW - 300, 'owner' => 5],
+			['id' => 411, 'title' => 'Of nobody', 'since' => self::NOW - 300],
+		]);
+		$this->file('/archive/files/Paperless/Of nobody [P411].pdf');
+		$this->file('/jamie/files/Paperless/Of nobody [P411].pdf');
+		$this->file('/jamie/files/Paperless/Of jamie [P412].pdf', 'jamie');
+		$this->file('/sam/files/Paperless/Of sam [P413].pdf', 'sam');
+		$users = $this->answer(200, (string)json_encode(['count' => 2, 'next' => null, 'results' => [['id' => 5, 'username' => 'jamie'], ['id' => 6, 'username' => 'sam']]]));
+
+		$this->runJob($this->paperless($this->documents([]), $users, $this->documents([['id' => 413]])));
+
+		self::assertSame('413,412,411', $this->requests[2][1]['query']['id__in']);
+		$titles = [];
+		foreach ($this->sent as $notification) {
+			$titles[$notification['user']] = array_column($notification['subject']['documents'], 'title');
+			sort($titles[$notification['user']]);
+		}
+		ksort($titles);
+		self::assertSame(['jamie' => ['Of jamie', 'Of nobody'], 'sam' => ['Of sam']], $titles);
+		self::assertSame([], $this->stored()['waiting']);
+	}
+
+	/**
+	 * The user of an owner whose account is gone since the owners were matched has no
+	 * files, and the files of the archive still reach whoever can open them.
+	 */
+	public function testAnOwnerWhoseAccountIsGoneMeanwhileHasNoFiles(): void {
+		$this->connected('');
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.ownership'] = 'per-user';
+		$this->wants('sam', true);
+		$this->seen(410, [
+			['id' => 412, 'title' => 'Of jamie', 'since' => self::NOW - 300, 'owner' => 5],
+			['id' => 411, 'title' => 'Of nobody', 'since' => self::NOW - 300],
+		]);
+		$this->file('/archive/files/Paperless/Of nobody [P411].pdf');
+		$this->file('/sam/files/Paperless/Of nobody [P411].pdf');
+		$this->file('/jamie/files/Paperless/Of jamie [P412].pdf', 'jamie');
+		// The owners find jamie, the job no longer does.
+		$enabled = $this->enabledAccounts('archive', 'jamie', 'sam');
+		$lookups = 0;
+		$accounts = $this->createStub(IUserManager::class);
+		$accounts->method('get')->willReturnCallback(static function (string $id) use (&$lookups, $enabled): ?IUser {
+			if ($id !== 'jamie') {
+				return $enabled->get($id);
+			}
+			$lookups++;
+
+			return $lookups === 1 ? $enabled->get($id) : null;
+		});
+		$users = $this->answer(200, (string)json_encode(['count' => 1, 'next' => null, 'results' => [['id' => 5, 'username' => 'jamie']]]));
+
+		$this->runJob($this->paperless($this->documents([]), $users), accounts: $accounts);
+
+		self::assertSame(['sam'], array_column($this->sent, 'user'));
+		self::assertSame([['id' => 412, 'title' => 'Of jamie', 'since' => self::NOW - 300, 'owner' => 5]], $this->stored()['waiting']);
+		self::assertSame(0, $this->stored()['failures']);
+	}
+
+	/**
+	 * The run searches the files of the user of an owner once, and only for the documents
+	 * that have no file of the archive account: not at all when they all have one.
+	 *
+	 * @return array<string, array{list<array{string, string}>, int}>
+	 */
+	public static function filesOfAnOwner(): array {
+		return [
+			// The archive account's files and jamie's for the notification.
+			'every document with a file of the archive account' => [[['/archive/files/Paperless/A [P413].pdf', 'archive'], ['/archive/files/Paperless/B [P412].pdf', 'archive']], 2],
+			// The archive account's files, jamie's own once, and jamie's for the notification.
+			'one in the files of the owner, one without a file' => [[['/jamie/files/Paperless/B [P412].pdf', 'jamie']], 3],
+		];
+	}
+
+	/**
+	 * @param list<array{string, string}> $files the path and the owner of each file
+	 */
+	#[DataProvider('filesOfAnOwner')]
+	public function testTheFilesOfAnOwnerAreSearchedOnceForWhatTheArchiveLacks(array $files, int $searches): void {
+		$this->connected('');
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.ownership'] = 'per-user';
+		$this->wants('jamie', true);
+		$this->seen(411, [
+			['id' => 413, 'title' => 'A', 'since' => self::NOW - 300, 'owner' => 5],
+			['id' => 412, 'title' => 'B', 'since' => self::NOW - 300, 'owner' => 5],
+		]);
+		foreach ($files as [$path, $owner]) {
+			$this->file($path, $owner);
+		}
+		$users = $this->answer(200, (string)json_encode(['count' => 1, 'next' => null, 'results' => [['id' => 5, 'username' => 'jamie']]]));
+
+		$this->runJob($this->paperless($this->documents([]), $users));
+
+		self::assertCount($searches, $this->searches);
+	}
+
 	public function testAnArchiveAccountThatIsGoneMeanwhileHasNoFiles(): void {
 		$this->wants('jamie', true);
 		$this->seen(100);

@@ -84,6 +84,32 @@ final class SearchExplainerTest extends TestCase {
 	}
 
 	/**
+	 * The files of the user of each owner are searched once, only for the documents of
+	 * that owner: alex sees jamie's file of jamie's document and sam's of sam's in the
+	 * folders of their owners, not in another user's with whom sam shared it.
+	 */
+	public function testSearchesTheFilesOfEachOwnerOnceForTheirOwnDocuments(): void {
+		$this->connected('');
+		$this->settings['paperless_sync.target_user'] = 'archive';
+		$this->settings['paperless_sync.ownership'] = 'per-user';
+		$this->file('/jamie/files/Paperless/Letter [P412].pdf', 'jamie');
+		$this->file('/sam/files/Paperless/Insurance [P371].pdf', 'sam');
+		$this->file('/jamie/files/Shared/Insurance [P371].pdf', 'sam');
+		$documents = [['id' => 412, 'owner' => 5], ['id' => 389, 'owner' => 5], ['id' => 371, 'owner' => 6]];
+
+		[$explanations, $error] = $this->explainer($this->users())->explain($this->user('alex'), [412, 389, 371], 'archive', $documents);
+
+		self::assertSame([
+			['id' => 412, 'verdict' => 'not_shared', 'path' => '/Paperless/Letter [P412].pdf', 'owner' => 'jamie'],
+			['id' => 389, 'verdict' => 'no_file', 'path' => '', 'owner' => ''],
+			['id' => 371, 'verdict' => 'not_shared', 'path' => '/Paperless/Insurance [P371].pdf', 'owner' => 'sam'],
+		], self::serialized($explanations));
+		self::assertNull($error);
+		// alex's files, the archive account's, jamie's, sam's, and alex's files of any owner.
+		self::assertCount(5, $this->searches);
+	}
+
+	/**
 	 * For a user whom Paperless Sync lets see only the documents with some tags (decision
 	 * 0015), a document without one of them is explained as such, whatever file the user
 	 * sees of it; their own copy of one with a tag shows, and a file of another user stands

@@ -12,6 +12,7 @@ namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Controller;
 use Exception;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Controller\SettingsController;
+use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
@@ -125,6 +126,7 @@ final class CreateAccountTest extends TestCase {
 			'no URL' => ['', 'archive', 'invalid_url', 'Enter a valid Paperless URL.'],
 			'a URL with a query' => [self::SETUP_URL . '/?next=1', 'archive', 'url_extras', 'The Paperless URL must not contain credentials, a query, or a fragment.'],
 			'an unknown archive account' => [self::SETUP_URL, 'nobody', 'unknown_archive_account', 'The archive account nobody does not exist.'],
+			'an unknown archive account with the spaces of a paste' => [self::SETUP_URL, ' nobody ', 'unknown_archive_account', 'The archive account nobody does not exist.'],
 		];
 	}
 
@@ -177,6 +179,44 @@ final class CreateAccountTest extends TestCase {
 		// A failure in Paperless goes into the log with the code of the refusal.
 		$warnings = array_values(array_filter($this->log, static fn (array $entry): bool => $entry[0] === 'warning'));
 		self::assertSame(in_array($code, ['http', 'unauthorized', 'search_account_left'], true) ? [$code] : [], array_map(static fn (array $entry): string => $entry[2]['reason'], $warnings));
+	}
+
+	/**
+	 * Without the choice of the form, the set-up allows no address of the local network,
+	 * as a save doesn't.
+	 */
+	public function testTheLocalNetworkIsAllowedOnlyWhenChosen(): void {
+		$this->controller()->createAccount(self::SETUP_URL, self::SUPERUSER_TOKEN);
+
+		self::assertSame(['allow_local_address' => false], $this->requests[0][1]['nextcloud']);
+	}
+
+	/**
+	 * A set-up that leaves the user in Paperless logs the failure that ended it, which
+	 * says what went wrong there.
+	 */
+	public function testAnUnfinishedSetUpLogsTheFailureThatEndedIt(): void {
+		$this->instead = ['POST /api/workflows/' => self::reply(500, ''), 'DELETE /api/users/7/' => self::reply(500, '')];
+
+		$this->controller()->createAccount(self::SETUP_URL, self::SUPERUSER_TOKEN, allowLocal: true);
+
+		self::assertCount(1, $this->log);
+		[$level, $message, $context] = $this->log[0];
+		self::assertSame(['warning', 'The search account could not be set up in Paperless: {reason} ({errorType}: {detail})'], [$level, $message]);
+		self::assertSame(['app', 'reason', 'errorType', 'detail'], array_keys($context));
+		self::assertSame([AppConstants::APP_ID, 'search_account_left', PaperlessRequestException::class], [$context['app'], $context['reason'], $context['errorType']]);
+	}
+
+	/**
+	 * A request without a user in the session, which Nextcloud lets no route of the
+	 * administration through, would still create the account, with no administrator in the
+	 * log.
+	 */
+	public function testTheLogNamesNoAdministratorWithoutAUserInTheSession(): void {
+		$response = $this->controller(signedIn: false)->createAccount(self::SETUP_URL, self::SUPERUSER_TOKEN, allowLocal: true);
+
+		self::assertSame(Http::STATUS_OK, $response->getStatus());
+		self::assertSame([['info', '{admin} created the search account {account} in Paperless', ['app' => AppConstants::APP_ID, 'admin' => '', 'account' => 'nextcloud-search']]], $this->log);
 	}
 
 	/**
@@ -256,7 +296,7 @@ final class CreateAccountTest extends TestCase {
 	 * that answers the token of the superuser as a superuser and the token of the new
 	 * account as an account that may view what the search reads.
 	 */
-	private function controller(bool $storeFails = false): SettingsController {
+	private function controller(bool $storeFails = false, bool $signedIn = true): SettingsController {
 		$accounts = $this->accounts('archive', 'alex');
 		$configService = $storeFails
 			? new ConfigService($this->appConfig(), $this->failingCredentials(), $accounts, $this->createStub(LoggerInterface::class), $this->createStub(IConfig::class))
@@ -264,7 +304,7 @@ final class CreateAccountTest extends TestCase {
 		$client = $this->paperlessForTheSetUp();
 		$api = $this->paperlessApi($configService, $client);
 		$session = $this->createStub(IUserSession::class);
-		$session->method('getUser')->willReturn($accounts->get('alex'));
+		$session->method('getUser')->willReturn($signedIn ? $accounts->get('alex') : null);
 		$events = $this->createStub(IEventDispatcher::class);
 		$events->method('dispatchTyped')->willReturnCallback(function (object $event): void {
 			self::assertInstanceOf(CriticalActionPerformedEvent::class, $event);

@@ -46,6 +46,9 @@
     },
     "CastString": {
       "ignoreSourceCodeByRegex": [
+        // A file of no account matches no owner of the set, by null as by '', before anything
+        // else reads its owner.
+        "\\$owner = \\$archiveOwner !== null \\? \\(string\\)\\$node->getOwner\\(\\)\\?->getUID\\(\\) : '';",
         // The status goes into the translated text as %s, which writes a number the same way.
         "\\$status = \\(string\\)\\$exception->status;",
         // occ hands every argument over as text.
@@ -64,7 +67,11 @@
         // The client asks Paperless for page max(1, page), so page 0 is page 1 as well.
         "\\$response = \\$this->paperlessApi->searchDocuments\\(\\$term, 1, .*\\);",
         // The client asks Paperless for at least one document, so 0 asks for one as well.
-        "\\$id = \\$this->paperlessApi->findNewestDocuments\\(1, null\\)\\[0\\]\\['id'\\] \\?\\? null;"
+        "\\$id = \\$this->paperlessApi->findNewestDocuments\\(1, null\\)\\[0\\]\\['id'\\] \\?\\? null;",
+        // A pause of -1 milliseconds waits as long as one of 0: only a pause above 0 becomes
+        // the delay of the request.
+        "\\$pause = 0;",
+        "private function sen[dt]\\(.*, int \\$pause = 0\\): IResponse \\{"
       ]
     },
     "FalseValue": {
@@ -94,6 +101,13 @@
       "ignoreSourceCodeByRegex": [
         // A count of 0 takes 0 from the cache and adds 0 to the history, as no count does.
         "if \\(\\$cache === null \\|\\| !is_numeric\\(\\$count\\) \\|\\| \\(int\\)\\$count <= 0\\) \\{"
+      ]
+    },
+    "LogicalAnd": {
+      "ignoreSourceCodeByRegex": [
+        // The run of each user looks only at the documents whose files it found, so a
+        // document of the list without a file adds nothing to it.
+        "if \\(is_int\\(\\$id\\) && isset\\(\\$files\\[\\$id\\]\\)\\) \\{"
       ]
     },
     "LogicalOr": {
@@ -137,7 +151,8 @@
         "\\$documentIds\\[\\$documentId\\] = true;",
         "\\$terms\\[\\$line\\] = true;",
         "\\$granted\\[\\$permission\\] = true;",
-        "\\$recipients\\[\\$share->kind\\]\\[\\$share->kind === ArchiveShare::KIND_LINK \\? \\$index : \\$share->recipient\\] = true;"
+        "\\$recipients\\[\\$share->kind\\]\\[\\$share->kind === ArchiveShare::KIND_LINK \\? \\$index : \\$share->recipient\\] = true;",
+        "\\$owners = \\$archiveOwner === null \\? \\[\\] : \\[\\$archiveOwner => true\\] \\+ array_fill_keys\\(\\$documentUsers, true\\);"
       ]
     },
     "UnwrapArrayValues": {
@@ -147,7 +162,11 @@
         // The search for the files of a user goes through them in a loop, whatever their keys.
         "return array_values\\(array_intersect\\(\\$documentIds, \\$wanted\\)\\);",
         // Spreading an array with keys of numbers numbers them anew.
-        "\\$nodes = \\[\\.\\.\\.\\$nodes, \\.\\.\\.array_values\\(\\$userFolder->search\\(\\$marker\\)\\)\\];"
+        "\\$nodes = \\[\\.\\.\\.\\$nodes, \\.\\.\\.array_values\\(\\$userFolder->search\\(\\$marker\\)\\)\\];",
+        // The search for the files of a user goes through the documents in a loop, whatever
+        // their keys.
+        "\\$held = array_values\\(array_diff\\(array_keys\\(\\$documentUsers, \\$holder, true\\), array_keys\\(\\$files\\)\\)\\);",
+        "\\$unexplained = array_values\\(array_intersect\\(\\$this->unexplained\\(\\$explanations\\), \\$heldIds\\)\\);"
       ]
     },
     "UnwrapLtrim": {

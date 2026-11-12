@@ -73,6 +73,8 @@ final class CheckTest extends TestCase {
 			$tester->getDisplay(),
 		);
 		self::assertSame('', $tester->getErrorOutput());
+		// Without an archive of each owner, the check asks Paperless for no owners.
+		self::assertSame([], array_filter($this->requests, static fn (array $request): bool => ($request[1]['query']['fields'] ?? null) === 'id,owner,tags'));
 		self::assertSame('3.3.0', $this->settings[AppConstants::APP_ID . '.paperless_version']);
 	}
 

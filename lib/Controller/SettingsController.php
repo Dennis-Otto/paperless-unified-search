@@ -344,7 +344,7 @@ final class SettingsController extends Controller {
 			'app' => AppConstants::APP_ID,
 			'reason' => $reason,
 			'errorType' => $cause::class,
-			'detail' => SearchDiagnostics::describe($cause->getMessage(), [trim($superuserToken)]),
+			'detail' => SearchDiagnostics::describe($cause->getMessage(), [$superuserToken]),
 		]);
 	}
 

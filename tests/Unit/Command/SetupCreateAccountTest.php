@@ -60,6 +60,27 @@ final class SetupCreateAccountTest extends TestCase {
 	}
 
 	/**
+	 * A Paperless with documents, but without correspondents, document types and tags,
+	 * still hears which of them the account may view.
+	 */
+	public function testNamesTheDocumentsThatTheAccountMayViewWithoutNames(): void {
+		$this->instead['GET /api/correspondents/'] = self::reply(200, '{"count":0,"all":[],"results":[]}');
+		$tester = $this->tester();
+		$tester->setInputs([self::SUPERUSER_TOKEN]);
+
+		$status = $tester->execute([
+			'--url' => self::SETUP_URL,
+			'--archive-account' => 'archive',
+			'--allow-local' => true,
+			'--create-account' => true,
+			'--token-stdin' => true,
+		], ['capture_stderr_separately' => true]);
+
+		self::assertSame(Command::SUCCESS, $status, $tester->getErrorOutput());
+		self::assertSame('It may view the 2 documents and the 0 correspondents, document types and tags that Paperless has.', self::lines($tester->getDisplay())[2]);
+	}
+
+	/**
 	 * Without the workflow and the permissions on what Paperless has, the user may only
 	 * view what Paperless lets every user view.
 	 */
