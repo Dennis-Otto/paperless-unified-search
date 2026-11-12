@@ -276,14 +276,27 @@ final class SearchAccountSetupTest extends TestCase {
 	}
 
 	/**
-	 * A user of the name stays as it is, whatever the case of its name.
+	 * A user of the name stays as it is, whatever the case of its name, and the refusal
+	 * names it.
 	 */
 	public function testAUserOfTheNameStaysAsItIs(): void {
 		$users = (string)json_encode(['count' => 2, 'results' => [['id' => 2, 'username' => 'nextcloud'], 'odd', ['id' => 9, 'username' => 'Nextcloud-Search']]]);
 
 		$this->expectRefusal(SettingProblem::SearchAccountExists, fn () => $this->accountSetup($this->paperless(['GET /api/users/' => self::answer(200, $users)]))
-			->create(self::URL, self::SUPERUSER_TOKEN, false, true, true, $this->saves()));
+			->create(self::URL, self::SUPERUSER_TOKEN, false, true, true, $this->saves()), 'Paperless has the user nextcloud-search already.');
 		self::assertSame(['GET /api/ui_settings/', 'GET /api/users/'], $this->asked());
+	}
+
+	/**
+	 * Other users of Paperless, and entries of its list without a name, are no user of the
+	 * name: the set-up goes on.
+	 */
+	public function testOtherUsersAreNoUserOfTheName(): void {
+		$users = (string)json_encode(['count' => 3, 'results' => [['id' => 2, 'username' => 'nextcloud'], 'odd', ['id' => 3]]]);
+
+		$this->accountSetup($this->paperless(['GET /api/users/' => self::answer(200, $users)]))->create(self::URL, self::SUPERUSER_TOKEN, false, true, false, $this->saves());
+
+		self::assertContains('POST /api/users/', $this->asked());
 	}
 
 	/**
@@ -300,9 +313,25 @@ final class SearchAccountSetupTest extends TestCase {
 		$workflows = static fn (array $options): IResponse => self::answer(200, $pages[$options['query']['page']]);
 
 		$this->expectRefusal(SettingProblem::SearchWorkflowExists, fn () => $this->accountSetup($this->paperless(['GET /api/workflows/' => $workflows]))
-			->create(self::URL, self::SUPERUSER_TOKEN, false, true, true, $this->saves()));
+			->create(self::URL, self::SUPERUSER_TOKEN, false, true, true, $this->saves()), 'Paperless has the workflow Nextcloud search: view new documents already.');
 		self::assertSame(['GET /api/ui_settings/', 'GET /api/users/', 'GET /api/workflows/', 'GET /api/workflows/'], $this->asked());
 		self::assertSame([['page' => 1, 'page_size' => 100], ['page' => 2, 'page_size' => 100]], [$this->requests[2][2]['query'], $this->requests[3][2]['query']]);
+	}
+
+	/**
+	 * The workflows end with their last page, once the pages held as many as Paperless
+	 * counted.
+	 */
+	public function testTheWorkflowsEndWithTheirLastPage(): void {
+		$pages = [
+			1 => (string)json_encode(['count' => 102, 'results' => array_map(static fn (int $id): array => ['id' => $id, 'name' => 'Workflow ' . $id], range(1, 100))]),
+			2 => '{"count":102,"results":[{"id":101,"name":"Workflow 101"},{"id":102,"name":"Workflow 102"}]}',
+		];
+		$workflows = static fn (array $options): IResponse => self::answer(200, $pages[$options['query']['page']] ?? self::fail('Paperless was asked for a page after the last.'));
+
+		$this->accountSetup($this->paperless(['GET /api/workflows/' => $workflows]))->create(self::URL, self::SUPERUSER_TOKEN, false, true, false, $this->saves());
+
+		self::assertSame(['GET /api/workflows/', 'GET /api/workflows/', 'POST /api/users/'], array_slice($this->asked(), 2, 3));
 	}
 
 	/**
@@ -368,6 +397,31 @@ final class SearchAccountSetupTest extends TestCase {
 			self::fail('The set-up succeeded.');
 		} catch (PaperlessRequestException $exception) {
 			self::assertInstanceOf(JsonException::class, $exception->getPrevious());
+			self::assertSame('Paperless returned no JSON: Syntax error', $exception->getMessage());
+		}
+	}
+
+	/**
+	 * A list of Paperless without the IDs of everything in it ends the set-up, and the
+	 * failure names the list.
+	 *
+	 * @return array<string, array{string, string, string}>
+	 */
+	public static function listsWithoutTheirIds(): array {
+		return [
+			'the documents' => ['GET /api/documents/', '{"count":1,"results":[]}', 'documents'],
+			'the tags' => ['GET /api/tags/', '{"count":1,"all":["8"],"results":[]}', 'tags'],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('listsWithoutTheirIds')]
+	public function testAListWithoutItsIdsIsNamed(string $request, string $body, string $list): void {
+		try {
+			$this->accountSetup($this->paperless([$request => self::answer(200, $body)]))->create(self::URL, self::SUPERUSER_TOKEN, false, true, true, $this->saves());
+			self::fail('The set-up succeeded.');
+		} catch (PaperlessRequestException $exception) {
+			self::assertSame(RequestFailure::NotPaperless, $exception->reason);
+			self::assertSame('Paperless listed no IDs of its ' . $list . '.', $exception->getMessage());
 		}
 	}
 
@@ -482,7 +536,12 @@ final class SearchAccountSetupTest extends TestCase {
 			self::assertInstanceOf(PaperlessRequestException::class, $cause);
 			self::assertSame(500, $cause->status);
 			self::assertStringNotContainsString(self::SUPERUSER_TOKEN, $exception->getMessage());
-			self::assertStringContainsString($workflow === null ? 'and the user nextcloud-search remains' : ($userRemains ? 'and the user nextcloud-search and the workflow "' . $workflow . '" remain' : 'and the workflow "' . $workflow . '" remains'), $exception->getMessage());
+			self::assertSame(
+				'The set-up of the search account nextcloud-search failed, and '
+				. ($workflow === null ? 'the user nextcloud-search remains' : ($userRemains ? 'the user nextcloud-search and the workflow "' . $workflow . '" remain' : 'the workflow "' . $workflow . '" remains'))
+				. ' in Paperless.',
+				$exception->getMessage(),
+			);
 		}
 
 		self::assertSame(['DELETE /api/workflows/4/', 'DELETE /api/users/7/'], array_slice($this->asked(), -2));
@@ -563,12 +622,15 @@ final class SearchAccountSetupTest extends TestCase {
 		return array_map(static fn (array $request): string => $request[0] . ' ' . $request[1], $this->requests);
 	}
 
-	private function expectRefusal(SettingProblem $problem, \Closure $create): void {
+	private function expectRefusal(SettingProblem $problem, \Closure $create, ?string $message = null): void {
 		try {
 			$create();
 			self::fail('The set-up succeeded.');
 		} catch (InvalidSettingException $exception) {
 			self::assertSame($problem, $exception->problem);
+			if ($message !== null) {
+				self::assertSame($message, $exception->getMessage());
+			}
 		}
 	}
 

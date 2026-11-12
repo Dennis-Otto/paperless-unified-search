@@ -13,6 +13,7 @@ use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Exception\InvalidSettingException;
 use OCA\PaperlessUnifiedSearch\Exception\SettingProblem;
 use OCA\PaperlessUnifiedSearch\Model\PaperlessVersion;
+use OCA\PaperlessUnifiedSearch\Model\TokenWarning;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryAppConfig;
@@ -234,6 +235,67 @@ final class ConfigServiceTest extends TestCase {
 
 		self::assertSame($syncArchive, $service->isSyncArchive());
 		self::assertSame("katja = Katja\nsam = Taxes", $service->getSyncUserTags());
+	}
+
+	/**
+	 * Paperless Sync keeps its table of the users of Paperless with another Nextcloud ID,
+	 * its group and whether it reaches the local network as lazy values, which the search
+	 * reads as they are. Without them, no user of Paperless has another name, every user
+	 * gets documents, and the local network stays closed.
+	 */
+	public function testReadsTheLazySettingsOfPaperlessSync(): void {
+		$config = $this->settings([])
+			->seed('paperless_sync', 'user_map', 'jdoe = john.doe', true)
+			->seed('paperless_sync', 'user_group', ' paperless ', true)
+			->seed('paperless_sync', 'paperless_local_network', true, true);
+		$service = $this->service($config, $this->createStub(ICredentialsManager::class));
+
+		self::assertSame(['jdoe = john.doe', 'paperless', true], [$service->getSyncUserMap(), $service->getSyncUserGroup(), $service->isSyncLocalNetworkAllowed()]);
+
+		$service = $this->service($this->settings([]), $this->createStub(ICredentialsManager::class));
+
+		self::assertSame(['', '', false], [$service->getSyncUserMap(), $service->getSyncUserGroup(), $service->isSyncLocalNetworkAllowed()]);
+	}
+
+	/**
+	 * occ and the settings page show each warning about the account of the token in its
+	 * order; that the account may not view users matters only with the archives of each
+	 * owner, whose users the search reads.
+	 *
+	 * @return array<string, array{?string, list<TokenWarning>}>
+	 */
+	public static function shownTokenWarnings(): array {
+		return [
+			'without the archives of each owner' => [null, [TokenWarning::Superuser, TokenWarning::HidesTags]],
+			'with the archives of each owner' => ['per-user', [TokenWarning::HidesUsers, TokenWarning::Superuser, TokenWarning::HidesTags]],
+		];
+	}
+
+	/**
+	 * @param list<TokenWarning> $shown
+	 */
+	#[DataProvider('shownTokenWarnings')]
+	public function testShowsTheWarningsAboutTheTokenThatMatter(?string $ownership, array $shown): void {
+		$config = $this->settings([])->seed('paperless_sync', 'target_user', 'sync', true);
+		if ($ownership !== null) {
+			$config->seed('paperless_sync', 'ownership', $ownership, true);
+		}
+		$service = $this->service($config, $this->createStub(ICredentialsManager::class));
+
+		self::assertSame($shown, $service->shownTokenWarnings([TokenWarning::HidesUsers, TokenWarning::Superuser, TokenWarning::HidesTags]));
+	}
+
+	/**
+	 * A test of the connection after which Paperless didn't say what the account may do,
+	 * such as one without an answer in time, keeps the warnings of the last test.
+	 */
+	public function testATestWithoutAnAnswerAboutTheAccountKeepsTheWarnings(): void {
+		$service = $this->service($this->settings([]), $this->createStub(ICredentialsManager::class));
+
+		$service->rememberTokenWarnings([TokenWarning::Superuser]);
+		$service->rememberTokenWarnings(null);
+
+		self::assertSame([TokenWarning::Superuser], $service->getTokenWarnings());
 	}
 
 	/**

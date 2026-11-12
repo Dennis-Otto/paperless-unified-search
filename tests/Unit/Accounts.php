@@ -26,12 +26,12 @@ trait Accounts {
 		foreach ($ids as $id) {
 			$account = $this->createStub(IUser::class);
 			$account->method('getUID')->willReturn($id);
-			$accounts[strtolower($id)] = $account;
+			$accounts[mb_strtolower($id)] = $account;
 		}
 
 		$manager = $this->createStub(IUserManager::class);
 		$manager->method('get')->willReturnCallback(
-			static fn (string $id): ?IUser => $accounts[strtolower($id)] ?? null,
+			static fn (string $id): ?IUser => $accounts[mb_strtolower($id)] ?? null,
 		);
 
 		return $manager;
