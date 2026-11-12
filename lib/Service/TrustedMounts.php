@@ -95,7 +95,11 @@ final class TrustedMounts {
 	public static function parse(string $text): array {
 		$names = [];
 		$unknown = [];
-		foreach (preg_split(self::SEPARATORS, $text, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $entry) {
+		foreach (preg_split(self::SEPARATORS, $text) ?: [] as $entry) {
+			// Two separators in a row, or one at an end, leave an empty entry between them.
+			if ($entry === '') {
+				continue;
+			}
 			$name = strtolower($entry);
 			if (preg_match(self::NAME, $name) === 1) {
 				$names[$name] = $name;
