@@ -344,6 +344,7 @@ Paperless 透過伺服器之間的通訊進行查詢。API Token 儲存在 Nextc
 		<command>OCA\PaperlessUnifiedSearch\Command\Test</command>
 		<command>OCA\PaperlessUnifiedSearch\Command\Search</command>
 		<command>OCA\PaperlessUnifiedSearch\Command\Check</command>
+		<command>OCA\PaperlessUnifiedSearch\Command\TrustedMountsCommand</command>
 	</commands>
 	<settings>
 		<admin>OCA\PaperlessUnifiedSearch\Settings\AdminSettings</admin>

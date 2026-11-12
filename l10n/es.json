@@ -201,7 +201,10 @@
 		"Adds the account to the permission to view of every document, correspondent, document type and tag that Paperless has. Everyone who may view or change them keeps it.": "Añade la cuenta al permiso de ver de cada documento, interlocutor, tipo de documento y etiqueta que tiene Paperless. Quien ya pueda verlos o cambiarlos lo conserva.",
 		"Create the search account and save": "Crear la cuenta de búsqueda y guardar",
 		"Creating the search account in Paperless…": "Creando la cuenta de búsqueda en Paperless…",
-		"Created the account {account} in Paperless and saved the settings with its token.": "Se creó la cuenta {account} en Paperless y se guardó la configuración con su token."
+		"Created the account {account} in Paperless and saved the settings with its token.": "Se creó la cuenta {account} en Paperless y se guardó la configuración con su token.",
+		"Writable in a trusted folder": "Con escritura en una carpeta de confianza",
+		"Writable in a trusted folder: the file lies in a Team folder or an external storage that the administrator trusts with the archive, but the user may change it there, or add files to its folder, so its name proves nothing. Let the user only read the folder.": "Con escritura en una carpeta de confianza: el archivo está en una carpeta de equipo o un almacenamiento externo al que el administrador confía el archivo de documentos, pero el usuario puede cambiarlo allí o añadir archivos a su carpeta, así que su nombre no demuestra nada. Deja que el usuario solo lea la carpeta.",
+		"The files in these Team folders and external storages stand for documents too, for each user who may only read them there: %s. occ paperless_unified_search:trusted-mounts changes them.": "Los archivos de estas carpetas de equipo y almacenamientos externos también representan documentos, para cada usuario que solo puede leerlos allí: %s. occ paperless_unified_search:trusted-mounts los cambia."
 	},
 	"pluralForm": "nplurals=3; plural=n == 1 ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;"
 }

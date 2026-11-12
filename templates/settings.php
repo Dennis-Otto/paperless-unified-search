@@ -6,7 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2026 Dennis Otto
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * @var array{config: \OCA\PaperlessUnifiedSearch\Model\PublicConfig, tokenWarnings: list<string>, perUserArchives: string, perUserArchivesHelp: string, saveUrl: string, resetUrl: string, clearDiagnosticsUrl: string, tryUrl: string, accountUrl: string, syncUrl: string, syncAllowLocal: bool, history: ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, durationMs: int}>}, shares: ?array{summary: string, warnings: list<string>}, userTags: array<string, list<string>>} $_
+ * @var array{config: \OCA\PaperlessUnifiedSearch\Model\PublicConfig, tokenWarnings: list<string>, perUserArchives: string, perUserArchivesHelp: string, saveUrl: string, resetUrl: string, clearDiagnosticsUrl: string, tryUrl: string, accountUrl: string, syncUrl: string, syncAllowLocal: bool, history: ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, durationMs: int}>}, shares: ?array{summary: string, warnings: list<string>}, trustedMounts: ?string, userTags: array<string, list<string>>} $_
  */
 
 script('paperless_unified_search', 'settings');
@@ -177,6 +177,10 @@ $perUserArchives = static function () use ($_, $l): void {
 					</ul>
 				<?php } ?>
 			</div>
+		<?php } ?>
+
+		<?php if ($_['trustedMounts'] !== null) { ?>
+			<p id="paperless-unified-search-trusted-mounts" class="paperless-unified-search-shares"><?php p($_['trustedMounts']); ?></p>
 		<?php } ?>
 
 		<?php if ($_['userTags'] !== []) { ?>
@@ -373,6 +377,7 @@ $perUserArchives = static function () use ($_, $l): void {
 			<strong><?php p($l->t('Why a document doesn\'t show')); ?></strong>
 			<ul class="paperless-unified-search-reasons">
 				<li><?php p($l->t('Shared with write permission: the user may change the file of the archive account, or add files to its folder, so its name proves nothing. Share it read-only with the user.')); ?></li>
+				<li><?php p($l->t('Writable in a trusted folder: the file lies in a Team folder or an external storage that the administrator trusts with the archive, but the user may change it there, or add files to its folder, so its name proves nothing. Let the user only read the folder.')); ?></li>
 				<li><?php p($l->t('Not shared: the archive account has the file of the document, but hasn\'t shared it with the user. Share the file, or a folder that holds it, read-only with the user.')); ?></li>
 				<li><?php p($l->t('Not a file of the archive account: the user sees a file with the marker of the document, but only the files of the archive account stand for documents.')); ?></li>
 				<li><?php p($l->t('Owned in Paperless by another user: Paperless Sync puts the documents of each user into their own files, and the user sees a file with the marker of the document that belongs to someone else than its owner in Paperless. Only the files of its owner and of the archive account stand for it.')); ?></li>

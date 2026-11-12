@@ -203,5 +203,8 @@ OC.L10N.register(
 		'Create the search account and save': 'Suchkonto anlegen und speichern',
 		'Creating the search account in Paperless…': 'Suchkonto wird in Paperless angelegt …',
 		'Created the account {account} in Paperless and saved the settings with its token.': 'Das Konto {account} wurde in Paperless angelegt, und die Einstellungen wurden mit seinem Token gespeichert.',
+		'Writable in a trusted folder': 'In einem vertrauenswürdigen Ordner beschreibbar',
+		'Writable in a trusted folder: the file lies in a Team folder or an external storage that the administrator trusts with the archive, but the user may change it there, or add files to its folder, so its name proves nothing. Let the user only read the folder.': 'In einem vertrauenswürdigen Ordner beschreibbar: Die Datei liegt in einem Teamordner oder externen Speicher, dem die Administration das Archiv anvertraut, aber der Benutzer darf sie dort ändern oder Dateien in ihren Ordner legen, daher beweist ihr Name nichts. Gib dem Benutzer auf den Ordner nur Leserechte.',
+		'The files in these Team folders and external storages stand for documents too, for each user who may only read them there: %s. occ paperless_unified_search:trusted-mounts changes them.': 'Die Dateien in diesen Teamordnern und externen Speichern stehen ebenfalls für Dokumente, für jeden Benutzer, der sie dort nur lesen darf: %s. occ paperless_unified_search:trusted-mounts ändert sie.',
 	},
 	'nplurals=2; plural=(n != 1);')

@@ -894,6 +894,46 @@ assert_occ shares "${TMP_DIR}/check-read-only.txt" '✓ Shared read-only: 1 user
 occ setupchecks --output=json >"${TMP_DIR}/setupchecks-read-only.json" || true
 assert_occ setupcheck "${TMP_DIR}/setupchecks-read-only.json" success 'with the archive account e2e-user. Shared read-only: 1 user.'
 
+# A Team folder, or an external storage that is mounted for several users, has no account
+# of its own: Nextcloud names each user who sees a file there as its owner (#408, decision
+# 0019). Two external storages of the administrator on one folder, mounted read-only for
+# e2e-other and with write permission for e2e-writer, hold a file of document 999: it is a
+# file of no trusted account until occ trusts both mounts, then it stands for 999 for
+# e2e-other, who may only read it, and occ and Try a search name it writable_mount for
+# e2e-writer, who could have named it so.
+occ app:enable files_external >/dev/null
+"${COMPOSE[@]}" exec -T --user www-data nextcloud sh -c 'mkdir -p /tmp/e2e-archive && printf "%s\n" "Document 999 in a shared storage." >"/tmp/e2e-archive/Shared storage [P999].txt"'
+storage_id() {
+	occ files_external:create "$@" | grep --only-matching --extended-regexp '[0-9]+$'
+}
+READ_ONLY_STORAGE="$(storage_id --applicable-user=e2e-other /Archive local null::null --config datadir=/tmp/e2e-archive)"
+occ files_external:option "${READ_ONLY_STORAGE}" readonly true >/dev/null
+WRITABLE_STORAGE="$(storage_id --applicable-user=e2e-writer /Archive local null::null --config datadir=/tmp/e2e-archive)"
+occ files:scan --path=/e2e-other/files/Archive >/dev/null
+occ files:scan --path=/e2e-writer/files/Archive >/dev/null
+occ paperless_unified_search:search e2e-other mobiletest --explain --json >"${TMP_DIR}/explain-untrusted.json"
+assert_occ verdicts "${TMP_DIR}/explain-untrusted.json" '123=shown' '999=not_owned=/Archive/Shared storage [P999].txt'
+occ paperless_unified_search:trusted-mounts "external:${READ_ONLY_STORAGE}" "external:${WRITABLE_STORAGE}" >/dev/null
+occ paperless_unified_search:search e2e-other mobiletest --explain --json >"${TMP_DIR}/explain-trusted.json"
+assert_occ verdicts "${TMP_DIR}/explain-trusted.json" '123=shown' '999=shown=/Archive/Shared storage [P999].txt'
+occ paperless_unified_search:search e2e-writer mobiletest --explain --json >"${TMP_DIR}/explain-trusted-writable.json"
+assert_occ verdicts "${TMP_DIR}/explain-trusted-writable.json" '123=not_shared' '999=writable_mount=/Archive/Shared storage [P999].txt'
+# Apache caches the configuration of the apps for up to 3 seconds, so right after occ
+# trusted the mounts, Try a search may still answer as before: it asks again for up to 10.
+for _ in {1..10}; do
+	try_search 200 e2e-writer
+	if assert_occ try "${TMP_DIR}/answer.json" e2e-writer 123=not_shared 999=writable_mount >/dev/null 2>&1; then
+		break
+	fi
+	sleep 1
+done
+assert_occ try "${TMP_DIR}/answer.json" e2e-writer 123=not_shared 999=writable_mount
+occ paperless_unified_search:trusted-mounts --none >/dev/null
+for storage in "${READ_ONLY_STORAGE}" "${WRITABLE_STORAGE}"; do
+	occ files_external:delete --yes "${storage}" >/dev/null
+done
+occ app:disable files_external >/dev/null
+
 # Since its version 1.1.0, Paperless Sync can give each user the documents that their user
 # of Paperless owns as files of their own, and the search shows them (#342, decision 0013):
 # with its setting ownership on per-user and e2e-user, the archive account, as its target

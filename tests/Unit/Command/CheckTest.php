@@ -14,6 +14,7 @@ use OCA\PaperlessUnifiedSearch\Command\Check;
 use OCA\PaperlessUnifiedSearch\Model\DiagnosticsHistory;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
+use OCA\PaperlessUnifiedSearch\Service\TrustedMounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppServices;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Files;
@@ -393,6 +394,34 @@ final class CheckTest extends TestCase {
 		self::assertSame(self::NONE_COVERED, $tester->getErrorOutput());
 	}
 
+	/**
+	 * The files in a Team folder or an external storage that the administrator trusts
+	 * (decision 0019) belong to no account whose folders the check could look through: it
+	 * says that it leaves them out, and passes without a file of the archive account, as
+	 * the search may show documents through them.
+	 */
+	public function testLeavesOutTheFilesInTrustedMountsAndPassesWithoutTheArchive(): void {
+		$this->connected();
+		$this->settings[AppConstants::APP_ID . '.' . TrustedMounts::KEY] = 'team:3 external:7';
+		$tester = $this->tester($this->documents([['id' => 1]], 2, [1, 2]));
+
+		self::assertSame(Command::SUCCESS, $tester->execute([], ['capture_stderr_separately' => true]));
+
+		self::assertStringContainsString("! Coverage: 0 of 2 Paperless document(s) have a file of the archive account. Without one: 1, 2. The files in the trusted mounts team:3, external:7 stand for documents too, and this count leaves them out.\n", $tester->getDisplay());
+		self::assertSame('', $tester->getErrorOutput());
+	}
+
+	public function testLeavesOutTheFilesInTrustedMountsWithoutTheIdsOfPaperless(): void {
+		$this->connected();
+		$this->settings[AppConstants::APP_ID . '.' . TrustedMounts::KEY] = 'team:3';
+		$tester = $this->tester($this->documents([['id' => 1]], 1180, headers: []));
+
+		self::assertSame(Command::SUCCESS, $tester->execute([], ['capture_stderr_separately' => true]));
+
+		self::assertStringEndsWith("! Coverage: 0 document(s) have a file of the archive account; Paperless has 1,180 document(s), without naming them. The files in the trusted mounts team:3 stand for documents too, and this count leaves them out.\n" . self::NO_SHARES, $tester->getDisplay());
+		self::assertSame('', $tester->getErrorOutput());
+	}
+
 	public function testFailsWhenNoFileHasAMarkerWithoutTheIdsOfPaperless(): void {
 		$this->connected();
 		$tester = $this->tester($this->documents([['id' => 1]], 1180, headers: []));
@@ -658,6 +687,7 @@ final class CheckTest extends TestCase {
 			$this->messages(),
 			$this->archiveShares(),
 			$this->documentOwners($paperlessApi, $configService, $accounts, $cacheFactory),
+			new TrustedMounts($this->appConfig()),
 		);
 	}
 }

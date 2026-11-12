@@ -295,7 +295,8 @@ The search needs one thing from a synchronization: each document of Paperless-ng
         ```
 
     - **The Nextcloud desktop client**, signed in as the archive account, on a copy of the folder rather than the folder itself: it syncs both ways, and Paperless loses track of a file that is moved or deleted in its media folder.
-    - **An external storage** with the files, mounted for the archive account alone and shared from there. A mount can't be shared until **Enable sharing** is switched on in its options, behind the gear of the storage under *External storage* in the administration settings. Nextcloud's search finds only the files it has scanned, so let a timer run `occ files:scan` for the storage. On a storage mounted for every user, each user owns the files they see there, and such a file stands for no document.
+    - **An external storage** with the files, mounted for the archive account alone and shared from there. A mount can't be shared until **Enable sharing** is switched on in its options, behind the gear of the storage under *External storage* in the administration settings. Nextcloud's search finds only the files it has scanned, so let a timer run `occ files:scan` for the storage. On a storage mounted for every user, each user owns the files they see there, and such a file stands for no document, unless you trust the storage, as the next point says.
+    - **A Team folder, or an external storage mounted for several users or groups.** Such a mount has no account of its own: Nextcloud names each user who sees a file there as its owner, so the archive account can't name it. Trust it with `occ paperless_unified_search:trusted-mounts`, a Team folder by its ID, as `occ groupfolders:list` shows it, and an external storage by its mount ID, as `occ files_external:list` shows it, such as `occ paperless_unified_search:trusted-mounts team:3 external:7`. A file there then stands for its document for each user who may only read it there, and the settings name the trusted mounts below the shares. A user who may change a file there, or add files to its folder, sees none of its documents, since that user could have given a file any marker: trust only a mount that nobody but the synchronization writes, also outside Nextcloud. An external storage that a user adds in their personal settings never counts, and neither does a file that a user shares out of the mount. The archive account stays: name the account that writes the archive, such as the one of Paperless Sync, and let it see the mount too, since the notifications about new documents wait until it sees the file of a document.
 
 3. **Share the archive read-only** with the users who may find its documents, and enter the archive account in the settings, as in the [configuration](#configuration).
 
@@ -592,7 +593,7 @@ Give an assistant the app password of a user who sees only what it may read, and
 
 ## Set up and check it with occ
 
-Four commands of `occ` do without a browser what the settings do, and more: they set the app up for Ansible, Docker and other scripts, test it for monitoring, and say why a user doesn't find a document.
+Five commands of `occ` do without a browser what the settings do, and more: they set the app up for Ansible, Docker and other scripts, test it for monitoring, and say why a user doesn't find a document.
 
 | Command | What it does | Exit code |
 | --- | --- | --- |
@@ -600,6 +601,7 @@ Four commands of `occ` do without a browser what the settings do, and more: they
 | `paperless_unified_search:test` | Tests the connection with the stored settings, names the version of Paperless and warns about a token that may do more than the search needs or less than the results show | 0 when Paperless answers, 1 otherwise |
 | `paperless_unified_search:search <user> <term>` | Searches as the user and says for each document whether it shows to them, with `--explain` why not | 0 once Paperless answered |
 | `paperless_unified_search:check` | Tests the connection, what the account of the API token may do and the archive account, counts the documents of Paperless that have a file, and lists how the archive is shared | 0 when the search can show documents, 1 otherwise |
+| `paperless_unified_search:trusted-mounts [<mount>...]` | Lists or sets the Team folders and external storages whose files stand for documents besides those of the archive account, such as `team:3 external:7` | 0, or 2 for a name that is neither `team:<ID>` nor `external:<ID>` |
 
 ### Set up the app
 
@@ -684,7 +686,7 @@ Before these four questions, the search asks one more for a user whom Paperless 
   <img src="docs/images/diagrams/why-a-document-does-not-show.svg" alt="Why a document does not show: Paperless finds document 389 when jamie searches, and occ paperless_unified_search:search jamie invoice --explain asks four questions in turn. Does jamie see a file of the archive account with [P389] in its name? Then the document shows, unless jamie may change that file or add files to its folder: then it is writable, since jamie could have named it so, and sharing it read-only with jamie shows it. Otherwise, does the archive account have such a file in its own folders? Then it is not shared with jamie, and sharing the file or its folder read-only with jamie shows it. Otherwise, does jamie see a file with the marker of another account? Then it is not owned, since only files of the archive account stand for documents. Otherwise there is no file, and the synchronization has yet to write one with the marker in its name.">
 </picture>
 
-Without `--explain`, `search` decides as the search itself does, with one search of the file cache, and calls every document that doesn't show `hidden`; with it, a search of the file cache follows for each further question, for the documents that are still unexplained. `--json` writes the documents for scripts, each with its `id`, `title`, `verdict`, `path` and `owner`.
+Without `--explain`, `search` decides as the search itself does, with one search of the file cache, and calls every document that doesn't show `hidden`; with it, a search of the file cache follows for each further question, for the documents that are still unexplained. `--json` writes the documents for scripts, each with its `id`, `title`, `verdict`, `path` and `owner`. In a Team folder or an external storage that you trust, as below, a file that the user may write shows as `writable mount` in the table and as `writable_mount` in `--json`: let the user only read the folder there.
 
 ### Check the whole set-up
 
@@ -703,6 +705,17 @@ $ occ paperless_unified_search:check
 Documents without a file are no failure, as long as the search can show others: the synchronization may not have written them yet, or leaves some out on purpose. When not one document has a file, as with an archive account that owns none of the synchronized files, `check` exits with 1 and says what to correct. `search --explain` with a term of such a document says why it doesn't show. An account of the token that may change documents, or may not view correspondents, document types or tags, gets a line with `!` and what to change, and so does one of which Paperless doesn't say what it may do, without the permission to view its UI settings; a question for it that gets no answer in time only says to run the check again. None of them fails the check.
 
 Last, `check` lists with whom the archive account shares its files: the users, groups and teams, each once, other recipients such as conversations of Talk, and the public links. Each share that allows changes gets a warning with its path and its recipient, since whoever may write into the archive could give a file the marker of any document, and the search shows them none of the documents in it. `check` exits with 0 all the same, as the search still shows documents to the others.
+
+### Trust a Team folder or an external storage
+
+A Team folder, or an external storage mounted for several users or groups, has no account of its own that owns its files: Nextcloud names each user who sees a file there as its owner, so the archive account can't name such a mount. `trusted-mounts` trusts it besides the archive account, a Team folder by its ID, as `occ groupfolders:list` shows it, and an external storage by its mount ID, as `occ files_external:list` shows it. The names replace the stored ones:
+
+```console
+$ occ paperless_unified_search:trusted-mounts team:3 external:7
+Trusted mounts: team:3, external:7. Their files stand for documents for each user who may only read them there.
+```
+
+A file with the marker of a document in such a mount then stands for that document for each user who may only read it there, and the settings name the trusted mounts below the shares. A user who may change a file there, or add files to its folder, sees none of its documents, since that user could have given a file any marker. So trust only a mount that nobody but the synchronization writes, also outside Nextcloud, such as the media folder of Paperless, mounted read-only for a group. An external storage that a user adds in their personal settings never counts, and neither does a file that a user shares out of the mount. `--none` trusts none again. `check` can't count the files of a trusted mount, which belong to no account, and says so; it doesn't fail without a file of the archive account then.
 
 ### In the administration overview
 

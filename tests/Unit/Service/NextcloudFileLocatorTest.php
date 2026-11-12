@@ -15,10 +15,15 @@ use OCA\PaperlessUnifiedSearch\Search\Files\SearchBinaryOperator;
 use OCA\PaperlessUnifiedSearch\Search\Files\SearchComparison;
 use OCA\PaperlessUnifiedSearch\Search\Files\SearchQuery;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
+use OCA\PaperlessUnifiedSearch\Service\TrustedMounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\FileCache;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryAppConfig;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\TeamFolderMount;
 use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
+use OCP\Files\Mount\IMountPoint;
+use OCP\Files\Mount\ISystemMountPoint;
 use OCP\Files\Node;
 use OCP\Files\Search\ISearchBinaryOperator;
 use OCP\Files\Search\ISearchComparison;
@@ -410,6 +415,121 @@ final class NextcloudFileLocatorTest extends TestCase {
 	}
 
 	/**
+	 * In a Team folder or an external storage that the administrator trusts (decision
+	 * 0019), Nextcloud names the user who sees a file as its owner: a file there that the
+	 * user may only read stands for any document, also one that Paperless gives another
+	 * owner, by its marker; a file at the root of such a mount by its own name.
+	 */
+	public function testAFileInATrustedMountThatTheUserMayOnlyReadStandsForAnyDocument(): void {
+		$invoice = $this->file('Invoice [P123].pdf', '/dennis/files/Archive/Invoice [P123].pdf', 'dennis', folder: $this->parentFolder('dennis', false), mount: $this->teamFolder(3));
+		$letter = $this->file('Letter [P5].pdf', '/dennis/files/Storage/Letter [P5].pdf', null, folder: $this->parentFolder('', false), shareRoot: true, mount: $this->externalStorage(7));
+
+		$found = $this->locator([$invoice, $letter], trusted: 'team:3 external:7')->findAllForUser($this->user(), [123, 5], self::ARCHIVE, [5 => 'sam']);
+
+		self::assertSame([123 => $invoice, 5 => $letter], $found->files);
+		self::assertSame([], $found->writable);
+		self::assertNull($found->error);
+	}
+
+	/**
+	 * Whoever may change a file in a trusted mount, or add one to its folder, whoever owns
+	 * the folder, can give it the marker of any document: such a file proves nothing.
+	 *
+	 * @return array<string, array{bool, string, bool}>
+	 */
+	public static function writableFilesInTrustedMounts(): array {
+		return [
+			'a file that the user may change' => [true, 'dennis', false],
+			'a folder of the user where the user may add files' => [false, 'dennis', true],
+			'a folder of no account where the user may add files' => [false, '', true],
+		];
+	}
+
+	#[DataProvider('writableFilesInTrustedMounts')]
+	public function testAFileInATrustedMountThatTheUserMayWriteStandsForNoDocument(bool $updateable, string $folderOwner, bool $creatable): void {
+		$forged = $this->file('Copy [P123].pdf', '/dennis/files/Archive/Copy [P123].pdf', 'dennis', updateable: $updateable, folder: $this->parentFolder($folderOwner, $creatable), mount: $this->teamFolder(3));
+
+		$found = $this->locator([$forged], trusted: 'team:3')->findAllForUser($this->user(), [123], self::ARCHIVE);
+
+		self::assertSame([], $found->files);
+		self::assertSame([123 => $forged], $found->writable);
+	}
+
+	/**
+	 * A file in a Team folder or an external storage that the administrator doesn't trust,
+	 * or in any of them without trusted mounts, stands for nothing, as a file of another
+	 * account: such a mount has no account whose files count.
+	 */
+	public function testAFileInAMountThatIsNotTrustedStandsForNothing(): void {
+		$team = $this->file('Invoice [P123].pdf', '/dennis/files/Other/Invoice [P123].pdf', 'dennis', folder: $this->parentFolder('dennis', false), mount: $this->teamFolder(4));
+		$storage = $this->file('Letter [P5].pdf', '/dennis/files/Storage/Letter [P5].pdf', 'dennis', folder: $this->parentFolder('dennis', false), mount: $this->externalStorage(7));
+
+		foreach (['team:3', null] as $trusted) {
+			$found = $this->locator([$team, $storage], trusted: $trusted)->findAllForUser($this->user(), [123, 5], self::ARCHIVE);
+
+			self::assertSame([], $found->files);
+			self::assertSame([], $found->writable);
+		}
+	}
+
+	/**
+	 * The archive account finds its own files in a trusted mount as anywhere, also those
+	 * that it may write: it writes the archive.
+	 */
+	public function testTheArchiveAccountFindsItsFilesInATrustedMountThatItMayWrite(): void {
+		$invoice = $this->file('Invoice [P123].pdf', '/archive/files/Archive/Invoice [P123].pdf', updateable: true, folder: $this->parentFolder(self::ARCHIVE, true), mount: $this->teamFolder(3));
+
+		$found = $this->locator([$invoice], uid: self::ARCHIVE, trusted: 'team:3')->findAllForUser($this->user(self::ARCHIVE), [123], self::ARCHIVE);
+
+		self::assertSame([123 => $invoice], $found->files);
+		self::assertSame([], $found->writable);
+	}
+
+	/**
+	 * The search asks the folder of the files in a trusted mount once for all of them.
+	 */
+	public function testAsksEachFolderOfATrustedMountOnceWhetherTheUserMayAddFiles(): void {
+		$folder = $this->createMock(Folder::class);
+		$folder->expects(self::once())->method('isCreatable')->willReturn(false);
+		$invoice = $this->file('Invoice [P123].pdf', '/dennis/files/Archive/Invoice [P123].pdf', 'dennis', folder: $folder, mount: $this->teamFolder(3));
+		$letter = $this->file('Letter [P7].pdf', '/dennis/files/Archive/Letter [P7].pdf', 'dennis', folder: $folder, mount: $this->teamFolder(3));
+
+		self::assertSame([123 => $invoice, 7 => $letter], $this->locator([$letter, $invoice], trusted: 'team:3')->findAllForUser($this->user(), [123, 7], self::ARCHIVE)->files);
+	}
+
+	/**
+	 * The search asks a file for its mount only when a trusted mount could hold it: not
+	 * without trusted mounts, not for a file of the archive account, and not for occ, which
+	 * looks for the files of any owner.
+	 */
+	public function testAsksForTheMountOfAFileOnlyWhenATrustedMountCouldHoldIt(): void {
+		$owned = $this->file('Letter [P5].pdf', '/dennis/files/Sam/Letter [P5].pdf', 'sam', folder: $this->parentFolder('sam', false));
+		$owned->method('getMountPoint')->willThrowException(new RuntimeException('Storage unavailable'));
+		$archived = $this->file('Invoice [P123].pdf', '/dennis/files/Paperless/Invoice [P123].pdf');
+		$archived->method('getMountPoint')->willThrowException(new RuntimeException('Storage unavailable'));
+
+		self::assertSame([123 => $archived, 5 => $owned], $this->locator([$owned, $archived])->findAllForUser($this->user(), [123, 5], self::ARCHIVE, [5 => 'sam'])->files);
+		self::assertSame([123 => $archived], $this->locator([$owned, $archived], trusted: 'team:3')->findAllForUser($this->user(), [123], self::ARCHIVE)->files);
+		self::assertSame([123 => $archived, 5 => $owned], $this->locator([$owned, $archived], trusted: 'team:3')->findAnyForUser($this->user(), [123, 5])->files);
+	}
+
+	/**
+	 * occ and the settings name the trusted mount of a file, to explain why a user who may
+	 * write there doesn't see its document.
+	 */
+	public function testNamesTheTrustedMountOfAFile(): void {
+		$inTeamFolder = $this->file('Invoice [P123].pdf', '/dennis/files/Archive/Invoice [P123].pdf', 'dennis', mount: $this->teamFolder(3));
+		$inOtherTeamFolder = $this->file('Letter [P7].pdf', '/dennis/files/Other/Letter [P7].pdf', 'dennis', mount: $this->teamFolder(4));
+		$shared = $this->file('Receipt [P8].pdf', '/dennis/files/Paperless/Receipt [P8].pdf');
+
+		$locator = $this->locator([], trusted: 'team:3');
+		self::assertSame('team:3', $locator->trustedMountOf($inTeamFolder));
+		self::assertNull($locator->trustedMountOf($inOtherTeamFolder));
+		self::assertNull($locator->trustedMountOf($shared));
+		self::assertNull((new NextcloudFileLocator($this->createStub(IRootFolder::class), $this->createStub(LoggerInterface::class)))->trustedMountOf($inTeamFolder));
+	}
+
+	/**
 	 * The search asks the folder of the files once for all of them.
 	 */
 	public function testAsksEachFolderOnceWhetherTheUserMayAddFiles(): void {
@@ -755,7 +875,7 @@ final class NextcloudFileLocatorTest extends TestCase {
 	 *
 	 * @param list<Node> $nodes
 	 */
-	private function locator(array $nodes, ?LoggerInterface $logger = null, string $uid = 'dennis'): NextcloudFileLocator {
+	private function locator(array $nodes, ?LoggerInterface $logger = null, string $uid = 'dennis', ?string $trusted = null): NextcloudFileLocator {
 		$root = $this->createStub(IRootFolder::class);
 		$root->method('getUserFolder')->willReturnCallback(function (string $folderOf) use ($nodes, $uid): Folder {
 			self::assertSame($uid, $folderOf);
@@ -763,7 +883,31 @@ final class NextcloudFileLocatorTest extends TestCase {
 			return $this->userFolder($nodes, $uid);
 		});
 
-		return new NextcloudFileLocator($root, $logger ?? $this->createStub(LoggerInterface::class));
+		$trustedMounts = $trusted === null ? null : new TrustedMounts(new MemoryAppConfig([AppConstants::APP_ID . '.' . TrustedMounts::KEY => $trusted]));
+
+		return new NextcloudFileLocator($root, $logger ?? $this->createStub(LoggerInterface::class), trustedMounts: $trustedMounts);
+	}
+
+	/**
+	 * The mount of the Team folder with this ID.
+	 */
+	private function teamFolder(int $folderId): IMountPoint {
+		$mount = $this->createStub(TeamFolderMount::class);
+		$mount->method('getMountType')->willReturn('group');
+		$mount->method('getFolderId')->willReturn($folderId);
+
+		return $mount;
+	}
+
+	/**
+	 * The mount of the external storage of the administrator with this mount ID.
+	 */
+	private function externalStorage(int $mountId): IMountPoint {
+		$mount = $this->createStub(ISystemMountPoint::class);
+		$mount->method('getMountType')->willReturn('external');
+		$mount->method('getMountId')->willReturn($mountId);
+
+		return $mount;
 	}
 
 	private function user(string $uid = 'dennis'): IUser {
@@ -775,10 +919,14 @@ final class NextcloudFileLocatorTest extends TestCase {
 
 	/**
 	 * A file that the user may only read, unless $updateable, in a folder of the archive
-	 * account where the user may add no file, unless $folder is another one.
+	 * account where the user may add no file, unless $folder is another one, in a share or
+	 * the folders of a user, unless $mount is another one.
 	 */
-	private function file(string $name, string $path, ?string $owner = self::ARCHIVE, bool $updateable = false, ?Folder $folder = null, ?int $id = null, bool $shareRoot = false): File {
+	private function file(string $name, string $path, ?string $owner = self::ARCHIVE, bool $updateable = false, ?Folder $folder = null, ?int $id = null, bool $shareRoot = false, ?IMountPoint $mount = null): File {
 		$file = $this->createStub(File::class);
+		if ($mount !== null) {
+			$file->method('getMountPoint')->willReturn($mount);
+		}
 		$file->method('getName')->willReturn($name);
 		$file->method('getPath')->willReturn($path);
 		// Another path is another file, unless the file is the same through another share.

@@ -13,10 +13,12 @@ use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Command\Search;
 use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\SearchExplainer;
+use OCA\PaperlessUnifiedSearch\Service\TrustedMounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\AppServices;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Files;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Owners;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\TeamFolderMount;
 use OCP\Files\File;
 use OCP\Http\Client\IResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -113,6 +115,28 @@ final class SearchTest extends TestCase {
 		self::assertContains(
 			'Writable (377): jamie may change the file of the archive account archive, or add files to its folder, so anyone with that share could have given it the marker of the document. Share it read-only with jamie.',
 			self::rows($tester->getDisplay()),
+		);
+	}
+
+	/**
+	 * In a Team folder that the administrator trusts (decision 0019), jamie may write the
+	 * file of a document: the folder is what to correct, not a share.
+	 */
+	public function testExplainsThatJamieMayWriteAFileInATrustedMount(): void {
+		$this->settings[AppConstants::APP_ID . '.' . TrustedMounts::KEY] = 'team:3';
+		$mount = $this->createStub(TeamFolderMount::class);
+		$mount->method('getMountType')->willReturn('group');
+		$mount->method('getFolderId')->willReturn(3);
+		$this->file('/jamie/files/Archive/Receipt [P377].pdf', 'jamie', writable: true, mount: $mount);
+		$tester = $this->tester($this->documents([['id' => 377, 'title' => 'Receipt']], 1));
+
+		self::assertSame(Command::SUCCESS, $tester->execute(['user' => 'jamie', 'term' => 'receipt', '--explain' => true]));
+
+		$rows = self::rows($tester->getDisplay());
+		self::assertSame('| 377 | Receipt | writable mount | /Archive/Receipt [P377].pdf, jamie may write it |', $rows[1]);
+		self::assertContains(
+			'Writable mount (377): the file lies in a Team folder or an external storage that the administrator trusts with the archive, but jamie may change it there, or add files to its folder, so jamie could have given it the marker of the document. Let jamie only read the folder.',
+			$rows,
 		);
 	}
 
@@ -443,7 +467,7 @@ final class SearchTest extends TestCase {
 	private function command(IResponse|Throwable ...$answers): Search {
 		$accounts = $this->accounts('archive', 'jamie', 'sam');
 		$configService = $this->configService($accounts);
-		$locator = new NextcloudFileLocator($this->rootFolder(), $this->createStub(LoggerInterface::class));
+		$locator = new NextcloudFileLocator($this->rootFolder(), $this->createStub(LoggerInterface::class), trustedMounts: new TrustedMounts($this->appConfig()));
 
 		$paperlessApi = $this->paperlessApi($configService, $this->paperless(...$answers));
 		// One cache for the users and the tags of Paperless, as in Nextcloud.

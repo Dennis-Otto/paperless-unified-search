@@ -203,5 +203,8 @@ OC.L10N.register(
 		'Create the search account and save': '创建搜索账号并保存',
 		'Creating the search account in Paperless…': '正在 Paperless 中创建搜索账号…',
 		'Created the account {account} in Paperless and saved the settings with its token.': '已在 Paperless 中创建账号 {account}，并已使用其令牌保存设置。',
+		'Writable in a trusted folder': '在受信任的文件夹中可写',
+		'Writable in a trusted folder: the file lies in a Team folder or an external storage that the administrator trusts with the archive, but the user may change it there, or add files to its folder, so its name proves nothing. Let the user only read the folder.': '在受信任的文件夹中可写：该文件位于管理员托付归档的团队文件夹或外部存储中，但该用户可以在那里更改它，或向其文件夹中添加文件，因此文件名不足以证明任何事情。请让该用户对该文件夹只有读取权限。',
+		'The files in these Team folders and external storages stand for documents too, for each user who may only read them there: %s. occ paperless_unified_search:trusted-mounts changes them.': '这些团队文件夹和外部存储中的文件同样代表文档，适用于在那里只能读取它们的每个用户：%s。使用 occ paperless_unified_search:trusted-mounts 更改它们。',
 	},
 	'nplurals=1; plural=0;')

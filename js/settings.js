@@ -393,6 +393,8 @@
 				return translate('Shown')
 			case 'writable':
 				return translate('Shared with write permission')
+			case 'writable_mount':
+				return translate('Writable in a trusted folder')
 			case 'not_shared':
 				return translate('Not shared with {user}', { user })
 			case 'not_owned':

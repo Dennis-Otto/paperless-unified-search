@@ -20,6 +20,7 @@ use OCA\PaperlessUnifiedSearch\Service\NextcloudFileLocator;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
+use OCA\PaperlessUnifiedSearch\Service\TrustedMounts;
 use OCP\IUser;
 use OCP\IUserManager;
 use Symfony\Component\Console\Command\Command;
@@ -57,6 +58,7 @@ final class Check extends Command {
 		private SettingsMessages $messages,
 		private ArchiveShares $archiveShares,
 		private DocumentOwners $documentOwners,
+		private TrustedMounts $trustedMounts,
 	) {
 		parent::__construct();
 	}
@@ -161,7 +163,7 @@ final class Check extends Command {
 		$archived = $this->fileLocator->findArchivedDocumentIds($archive);
 		$eachOwner = $this->configService->hasArchivesOfEachOwner();
 		$owned = $eachOwner && $status->documentIds !== null && $status->documentIds !== [] ? $this->findTheFilesOfTheOwners() : null;
-		$others = $eachOwner && $owned === null ? ' Paperless Sync puts the documents of each user into their own files, which this count leaves out.' : '';
+		$others = ($eachOwner && $owned === null ? ' Paperless Sync puts the documents of each user into their own files, which this count leaves out.' : '') . $this->trustedMountsLeftOut();
 		if ($status->documentIds === null) {
 			self::noted($output, sprintf(
 				'Coverage: %s document(s) have a file of the archive account; Paperless has %s document(s), without naming them.%s',
@@ -170,7 +172,7 @@ final class Check extends Command {
 				$others,
 			));
 
-			return self::showsDocuments($output, $archive, $eachOwner || $archived !== [] || $status->documents === 0);
+			return self::showsDocuments($output, $archive, $others !== '' || $archived !== [] || $status->documents === 0);
 		}
 
 		$missing = array_diff($status->documentIds, $archived, $owned ?? []);
@@ -241,6 +243,17 @@ final class Check extends Command {
 		}
 
 		return $owned;
+	}
+
+	/**
+	 * The sentence that the count leaves out the files in the Team folders and external
+	 * storages that the administrator trusts (decision 0019), which no account owns: who
+	 * finds them there depends on who may only read them. Empty without such a mount.
+	 */
+	private function trustedMountsLeftOut(): string {
+		$names = $this->trustedMounts->names();
+
+		return $names === [] ? '' : sprintf(' The files in the trusted mounts %s stand for documents too, and this count leaves them out.', implode(', ', $names));
 	}
 
 	/**

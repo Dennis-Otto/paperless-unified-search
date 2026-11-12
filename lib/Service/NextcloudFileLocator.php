@@ -45,12 +45,17 @@ final class NextcloudFileLocator {
 	/**
 	 * @param array<class-string, list<string>> $implementedMethods the methods of the app's
 	 *                                                              classes by interface, as IMPLEMENTED_METHODS
+	 * @param ?TrustedMounts $trustedMounts the Team folders and external storages that the
+	 *                                      administrator trusts with the archive, which
+	 *                                      Nextcloud always passes; without them, as in a
+	 *                                      test of another rule, no mount is trusted
 	 * @psalm-suppress PossiblyUnusedMethod
 	 */
 	public function __construct(
 		private IRootFolder $rootFolder,
 		private LoggerInterface $logger,
 		private array $implementedMethods = self::IMPLEMENTED_METHODS,
+		private ?TrustedMounts $trustedMounts = null,
 	) {
 	}
 
@@ -58,16 +63,19 @@ final class NextcloudFileLocator {
 	 * The files of Paperless documents that the user can open, by the ID of their document:
 	 * for each document a file of the archive account whose name carries its marker
 	 * [P<ID>], or one of the user whom Paperless Sync gives the owner of the document in
-	 * Paperless (decision 0013), of several such files the one with the first path. The
-	 * marker alone proves nothing, since anyone can give a file such a name; the files of
-	 * the archive account reach other users only through its shares, and so do those of
-	 * each owner, whose own files count only for the documents of that owner.
+	 * Paperless (decision 0013), or one in a Team folder or an external storage that the
+	 * administrator trusts (decision 0019), of several such files the one with the first
+	 * path. The marker alone proves nothing, since anyone can give a file such a name; the
+	 * files of the archive account reach other users only through its shares, and so do
+	 * those of each owner, whose own files count only for the documents of that owner.
 	 *
 	 * A user counts the files of another account only when the user may only read them:
 	 * whoever may change a file of the archive account, or add one to its folder, through a
 	 * share with write permission, can give it the marker of any document. The archive
 	 * account writes its own files, and counts them all, as each owner counts their own for
-	 * the documents of their own.
+	 * the documents of their own. A file in a trusted mount counts likewise only for a user
+	 * who may neither change it nor add a file to its folder, whomever Nextcloud names as
+	 * its owner: such a mount has no account of its own.
 	 *
 	 * A search of the file cache compares the names of all files that the user can see,
 	 * which no index serves, so one search looks for the markers of all documents at once.
@@ -139,8 +147,8 @@ final class NextcloudFileLocator {
 	/**
 	 * The files with the markers of the documents among those that the user can see, of the
 	 * archive account or of the user of each document, and of another account only those
-	 * that the user may only read, with the others apart; or of any owner, and all of them,
-	 * for null.
+	 * that the user may only read, with the others apart, as for the files in a trusted
+	 * mount; or of any owner, and all of them, for null.
 	 *
 	 * @param list<int> $documentIds
 	 * @param array<int, string> $documentUsers by the ID of the document
@@ -163,6 +171,8 @@ final class NextcloudFileLocator {
 			: $this->searchEach($userFolder, array_values($markers));
 		// The accounts whose files may stand for a document.
 		$owners = $archiveOwner === null ? [] : [$archiveOwner => true] + array_fill_keys($documentUsers, true);
+		// The mounts whose files may stand for any document, by their names.
+		$trustedMounts = $archiveOwner === null || $this->trustedMounts === null ? [] : array_fill_keys($this->trustedMounts->names(), true);
 
 		/** @var array<int, list<array{string, File}>> $candidates the path and the file of each file of each document, by document ID */
 		$candidates = [];
@@ -184,11 +194,15 @@ final class NextcloudFileLocator {
 					continue;
 				}
 				$owner = $archiveOwner !== null ? (string)$node->getOwner()?->getUID() : '';
-				if ($archiveOwner !== null && !isset($owners[$owner])) {
+				// In a Team folder or an external storage, Nextcloud names the user who sees
+				// the file as its owner, so the mount decides there, unless the archive
+				// account owns the file anyway.
+				$inATrustedMount = $trustedMounts !== [] && $owner !== $archiveOwner && isset($trustedMounts[TrustedMounts::nameOf($node->getMountPoint()) ?? '']);
+				if ($archiveOwner !== null && !$inATrustedMount && !isset($owners[$owner])) {
 					continue;
 				}
-				$readOnly = $archiveOwner !== null && $owner !== $user->getUID();
-				if ($readOnly && self::isTheRootOfAShare($node)) {
+				$readOnly = $archiveOwner !== null && ($inATrustedMount || $owner !== $user->getUID());
+				if ($readOnly && !$inATrustedMount && self::isTheRootOfAShare($node)) {
 					$documentIdsOfTheName = self::documentIdsIn($this->nameOfTheOwner($node, $owner));
 				}
 
@@ -196,13 +210,14 @@ final class NextcloudFileLocator {
 
 				// The user may reach one file through several shares: whoever may write it
 				// through one of them gives it its name, which counts through none.
-				if ($readOnly && self::mayWrite($node, $path, $owner, $openFolders)) {
+				if ($readOnly && self::mayWrite($node, $path, $inATrustedMount ? null : $owner, $openFolders)) {
 					$writableIds[$node->getId()] = true;
 				}
 				foreach ($documentIdsOfTheName as $documentId) {
 					// A file of the user of a document counts for that document alone, not for
-					// one of another owner that its name may carry.
-					if (isset($markers[$documentId]) && ($archiveOwner === null || $owner === $archiveOwner || ($documentUsers[$documentId] ?? null) === $owner)) {
+					// one of another owner that its name may carry; a file of the archive
+					// account, or one in a trusted mount, for any document.
+					if (isset($markers[$documentId]) && ($archiveOwner === null || $inATrustedMount || $owner === $archiveOwner || ($documentUsers[$documentId] ?? null) === $owner)) {
 						$candidates[$documentId][] = [$path, $node];
 					}
 				}
@@ -296,25 +311,43 @@ final class NextcloudFileLocator {
 	 * Whether the user may change the file, or add a file to its folder of the owner, and
 	 * so give a file of the owner any name. A file shared on its own lies in a folder of the
 	 * user, where a file that the user adds is the user's own; the name that the user gives
-	 * the share itself counts for nothing (see nameOfTheOwner()).
+	 * the share itself counts for nothing (see nameOfTheOwner()). In a trusted mount, for a
+	 * null owner, every file that the user adds to the folder lies in the mount and counts.
 	 *
 	 * @param array<string, array<string, bool>> $openFolders whether the user may add files
 	 *                                                        of the owner to each folder so
-	 *                                                        far, by the owner and the path,
+	 *                                                        far, by the owner, '' for a
+	 *                                                        trusted mount, and the path,
 	 *                                                        which this adds to
 	 */
-	private static function mayWrite(File $file, string $path, string $owner, array &$openFolders): bool {
+	private static function mayWrite(File $file, string $path, ?string $owner, array &$openFolders): bool {
 		if ($file->isUpdateable()) {
 			return true;
 		}
 
 		$folder = dirname($path);
-		if (!isset($openFolders[$owner][$folder])) {
+		$key = $owner ?? '';
+		if (!isset($openFolders[$key][$folder])) {
 			$parent = $file->getParent();
-			$openFolders[$owner][$folder] = $parent->getOwner()?->getUID() === $owner && $parent->isCreatable();
+			$openFolders[$key][$folder] = ($owner === null || $parent->getOwner()?->getUID() === $owner) && $parent->isCreatable();
 		}
 
-		return $openFolders[$owner][$folder];
+		return $openFolders[$key][$folder];
+	}
+
+	/**
+	 * The trusted mount that holds the file, by its name, such as team:3, or null when it
+	 * lies in none: for occ and the settings, which explain a file there that the user may
+	 * write.
+	 */
+	public function trustedMountOf(File $file): ?string {
+		if ($this->trustedMounts === null) {
+			return null;
+		}
+
+		$name = TrustedMounts::nameOf($file->getMountPoint());
+
+		return $name !== null && in_array($name, $this->trustedMounts->names(), true) ? $name : null;
 	}
 
 	private function logSkipped(int $skipped, ?Throwable $firstError): void {

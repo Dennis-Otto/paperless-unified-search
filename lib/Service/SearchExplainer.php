@@ -26,7 +26,8 @@ use Throwable;
  * 1. a file of the archive account that the user can open: the document shows, as for a
  *    file of the user whom Paperless Sync gives the owner of the document (decision 0013);
  * 2. such a file that the user may also write: it is shared with write permission, which
- *    the same search finds;
+ *    the same search finds, or lies in a Team folder or an external storage that the
+ *    administrator trusts (decision 0019), where the user may write;
  * 3. a file of the archive account in its own folders, or of the owner's user in theirs:
  *    it isn't shared with the user;
  * 4. a file with the marker that the user can see, of another account: it doesn't count,
@@ -87,7 +88,9 @@ final class SearchExplainer {
 		$shown = $this->fileLocator->findAllForUser($user, $this->unexplained($explanations), $archiveOwner, $documentUsers);
 		$error = $shown->error;
 		$this->explainWith($explanations, $shown->files, Verdict::Shown, $user);
-		$this->explainWith($explanations, $shown->writable, Verdict::Writable, $user);
+		$inTrustedMounts = array_filter($shown->writable, $this->isInATrustedMount(...));
+		$this->explainWith($explanations, $inTrustedMounts, Verdict::WritableMount, $user);
+		$this->explainWith($explanations, array_diff_key($shown->writable, $inTrustedMounts), Verdict::Writable, $user);
 
 		// The accounts that may have a file of a document in their own folders: the archive
 		// account, and for each document with one, the user of its owner.
@@ -183,6 +186,19 @@ final class SearchExplainer {
 			return $this->fileLocator->getPathForUser($account, $file);
 		} catch (Throwable) {
 			return '';
+		}
+	}
+
+	/**
+	 * Whether the file lies in a Team folder or an external storage that the administrator
+	 * trusts, rather than in a share of the archive account: a file that fails to answer
+	 * lies in none.
+	 */
+	private function isInATrustedMount(File $file): bool {
+		try {
+			return $this->fileLocator->trustedMountOf($file) !== null;
+		} catch (Throwable) {
+			return false;
 		}
 	}
 
