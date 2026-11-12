@@ -24,7 +24,7 @@ Find invoices, contracts, letters, statements, and any text recognized inside yo
 - Opens the synchronized file in Nextcloud's built-in viewer on web, iOS, and Android
 - Matches documents through stable markers such as `[P123]`
 - Shows a document only to the users who may open its synchronized file
-- Shows a user only the documents with the tags that the administrator allows them in the setting Tags that a user may see of Paperless Sync, whatever is shared with them
+- Shows a user only the documents with the tags that the administrator allows them in the setting “Tags that a user may see” of Paperless Sync, whatever is shared with them
 - Automatically excludes documents that have not yet been synchronized
 - Diagnostics: the settings test the connection and keep a history of failed searches with their errors, also where the hoster keeps Nextcloud's log from administrators
 - For administrators: set the app up and test it with occ, without a browser, ask occ why a user doesn't see a document, and see the state of the search in the overview of the administration settings
