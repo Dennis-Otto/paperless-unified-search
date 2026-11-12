@@ -174,6 +174,51 @@ final class DocumentOwners {
 	}
 
 	/**
+	 * The IDs of the users of Paperless whose documents the user's own files stand for, by the
+	 * rules of of(), which give a user of Nextcloud at most one of them: for the dashboard,
+	 * which asks Paperless for the newest documents of that owner when the newest of all hold
+	 * too few that the user can open. None unless Paperless Sync gives each owner an archive,
+	 * and none while the users of Paperless are unknown. A user with tags gets the documents
+	 * with one of them whoever owns them (decision 0015), so the dashboard asks for theirs by
+	 * their tags instead.
+	 *
+	 * @return list<int>
+	 */
+	public function paperlessIdsOf(IUser $user): array {
+		if (!$this->configService->hasArchivesOfEachOwner()) {
+			return [];
+		}
+
+		$userId = $user->getUID();
+		try {
+			$paperlessUsers = $this->paperlessUsers();
+			if ($paperlessUsers === null) {
+				return [];
+			}
+			// Only those whose name, by the table or else by itself, is the user's, so that the
+			// users of Nextcloud of all others aren't looked up; usersOf() then applies every
+			// rule, such as the group and two users of Paperless with one user of Nextcloud.
+			$table = self::tableOf($this->configService->getSyncUserMap());
+			$named = [];
+			foreach ($paperlessUsers as $paperlessId => $name) {
+				if (mb_strtolower($table[mb_strtolower($name)] ?? $name) === mb_strtolower($userId)) {
+					$named[] = $paperlessId;
+				}
+			}
+			$users = $this->usersOf($paperlessUsers, $named);
+		} catch (Throwable $error) {
+			$this->logger->warning('The users of Paperless whose documents a user of Nextcloud gets could not be found ({errorType})', [
+				'app' => AppConstants::APP_ID,
+				'errorType' => $error::class,
+			]);
+
+			return [];
+		}
+
+		return array_keys($users);
+	}
+
+	/**
 	 * Forgets the users of Paperless that the cache keeps for the server and the token of the
 	 * settings, and that Paperless refused them, so that the next search asks for them
 	 * again: after a save of the settings, as when an administrator gave the account the

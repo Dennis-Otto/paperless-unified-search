@@ -487,6 +487,12 @@ class Handler(BaseHTTPRequestHandler):
             wanted = {int(value) for value in parameters["tags__id__in"][0].split(",") if value.isdigit()}
             results = [document for document in results if wanted & set(document.get("tags", []))]
 
+        # And to the documents of these owners, by the IDs of their users, as for the dashboard
+        # of a user whom Paperless Sync gives the documents of their own user of Paperless.
+        if "owner__id__in" in parameters:
+            wanted = {int(value) for value in parameters["owner__id__in"][0].split(",") if value.isdigit()}
+            results = [document for document in results if document.get("owner") in wanted]
+
         ordering = parameters.get("ordering", [""])[0]
         if ordering:
             field = ordering.removeprefix("-")

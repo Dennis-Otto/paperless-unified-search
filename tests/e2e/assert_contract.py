@@ -227,9 +227,10 @@ class Paperless:
         """The page of a search with the fields of the app."""
         return self.documents(what, page=1, page_size=25, fields=",".join(self.fields), **query)
 
-    def newest(self, what):
-        """The newest documents, as the dashboard of the app asks for them."""
-        return self.documents(what, ordering="-added", page=1, page_size=25, fields=",".join(self.recent_fields))
+    def newest(self, what, page=1, page_size=25, **filters):
+        """The newest documents, as the dashboard of the app asks for them: a page of them,
+        with filters such as owner__id__in for the documents of a user's own owner."""
+        return self.documents(what, ordering="-added", page=page, page_size=page_size, fields=",".join(self.recent_fields), **filters)
 
     def owners(self, token, page_size=OWNERS_PAGE_SIZE):
         """Every document that the account of a token may view, with its owner, as
@@ -449,6 +450,19 @@ def check_paperless(paperless, line, report):
     moments = [datetime.fromisoformat(result["added"]) for result in newest]
     expect(moments == sorted(moments, reverse=True), f"ordering=-added doesn't list the newest first: {[result['added'] for result in newest]}")
     report.passed(f"The newest documents of the dashboard ({code('ordering=-added')}, {code(','.join(paperless.recent_fields))})", f"newest first, added as {code(newest[0]['added'])}")
+
+    # While a user can open too few of them, the dashboard asks for a page further, and for
+    # the newest documents of the user's own owner, which the superuser is here.
+    first = paperless.newest("The first page of one newest document", page_size=1).json("The first page of one newest document")
+    second = paperless.newest("The second page of one newest document", page=2, page_size=1).json("The second page of one newest document")
+    expect(isinstance(first.get("next"), str) and [result["id"] for result in second.get("results", [])] == [newest[1]["id"]], f"The second page of one newest document is {second!r}, not {newest[1]['id']}.")
+    owner = newest[0]["owner"]
+    expect(isinstance(owner, int), f"The newest document names no owner: {newest[0]!r}")
+    owned = paperless.newest("The newest documents of their owner", owner__id__in=str(owner)).json("The newest documents of their owner").get("results")
+    expect([result["id"] for result in owned] == [result["id"] for result in newest], f"owner__id__in={owner} lists {owned!r}, not the {len(newest)} documents of their owner.")
+    nobody = paperless.newest("The newest documents of no owner", owner__id__in="2147483647").json("The newest documents of no owner").get("results")
+    expect(nobody == [], f"owner__id__in of a user who owns nothing lists {nobody!r}.")
+    report.passed("A page further of the newest documents, and those of an owner", f"{code('page=2')}, and {code('owner__id__in')} narrows them to the documents of their owner")
 
     # What the job of the notifications about new documents asks: the newest documents by
     # their IDs, which a day narrows, and which of them a saved search finds.

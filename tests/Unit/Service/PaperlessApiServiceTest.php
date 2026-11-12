@@ -40,6 +40,9 @@ use UnexpectedValueException;
 final class PaperlessApiServiceTest extends TestCase {
 	private const NOW = 1791500000;
 	private const NO_DOCUMENTS = '{"count":0,"next":null,"results":[]}';
+
+	/** The answer of Paperless without documents, as the app reads it. */
+	private const NO_RESULTS = ['count' => 0, 'next' => null, 'results' => []];
 	private const FIELDS = 'id,title,created,correspondent,document_type,tags,owner,__search_hit__';
 	/** The headers of an answer of Paperless 3.3.0, as it names its version. */
 	private const PAPERLESS_3 = ['X-Version' => '3.3.0', 'X-Api-Version' => '10'];
@@ -2045,10 +2048,10 @@ final class PaperlessApiServiceTest extends TestCase {
 				['id' => 389, 'title' => 'Home insurance renewal', 'added' => '2026-07-22T10:00:00+02:00', 'correspondent' => null, 'document_type' => null],
 			]]), self::PAPERLESS_3));
 
-		self::assertSame([
+		self::assertSame(['count' => 2, 'next' => null, 'results' => [
 			['id' => 412, 'title' => 'Electricity invoice', 'added' => '2026-08-13T09:12:45.118731+02:00', 'correspondent' => 3, 'document_type' => 1],
 			['id' => 389, 'title' => 'Home insurance renewal', 'added' => '2026-07-22T10:00:00+02:00', 'correspondent' => null, 'document_type' => null],
-		], $this->service($client)->findRecentDocuments(25));
+		]], $this->service($client)->findRecentDocuments(25));
 		// The answer names the version of Paperless, which the overview shows.
 		self::assertSame('3.3.0', $this->config->stored(AppConstants::APP_ID, 'paperless_version'));
 	}
@@ -2071,7 +2074,33 @@ final class PaperlessApiServiceTest extends TestCase {
 			))
 			->willReturn($this->response(200, '{"count":0,"next":null,"results":[]}'));
 
-		self::assertSame([], $this->service($client)->findRecentDocuments(25, [PaperlessApiService::TAGS_ANY => '4,9']));
+		self::assertSame(self::NO_RESULTS, $this->service($client)->findRecentDocuments(25, [PaperlessApiService::TAGS_ANY => '4,9']));
+	}
+
+	/**
+	 * While too few of the newest documents have a file that a user can open, the dashboard
+	 * asks for the next older ones, a page further, and for the newest documents of the
+	 * user's own owners; next says whether Paperless has a further page.
+	 */
+	public function testTheNewestDocumentsComePageByPageAndOfSomeOwners(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with('https://paperless.example.com/api/documents/', self::callback(
+				static fn (array $options): bool => $options['query'] === [
+					'ordering' => '-added',
+					'page' => 3,
+					'page_size' => 25,
+					'fields' => 'id,title,added,correspondent,document_type,tags,owner',
+					'owner__id__in' => '5,7',
+				],
+			))
+			->willReturn($this->response(200, '{"count":80,"next":"https://paperless.example.com/api/documents/?page=4","results":[{"id":5,"title":"Older"}]}'));
+
+		self::assertSame(
+			['count' => 80, 'next' => 'https://paperless.example.com/api/documents/?page=4', 'results' => [['id' => 5, 'title' => 'Older']]],
+			$this->service($client)->findRecentDocuments(25, [PaperlessApiService::OWNERS_ANY => '5,7'], 3),
+		);
 	}
 
 	/**
@@ -2093,7 +2122,7 @@ final class PaperlessApiServiceTest extends TestCase {
 			->with(self::anything(), self::callback(static fn (array $options): bool => $options['query']['page_size'] === $pageSize))
 			->willReturn($this->response(200, self::NO_DOCUMENTS));
 
-		self::assertSame([], $this->service($client)->findRecentDocuments($count));
+		self::assertSame(self::NO_RESULTS, $this->service($client)->findRecentDocuments($count));
 	}
 
 	/**
@@ -2109,7 +2138,7 @@ final class PaperlessApiServiceTest extends TestCase {
 			))
 			->willReturn($this->response(200, self::NO_DOCUMENTS));
 
-		self::assertSame([], $this->service($client, allowLocal: $allowLocal)->findRecentDocuments(25));
+		self::assertSame(self::NO_RESULTS, $this->service($client, allowLocal: $allowLocal)->findRecentDocuments(25));
 	}
 
 	/**
