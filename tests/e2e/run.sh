@@ -1231,9 +1231,15 @@ expect_text '"newDocumentAlerts":true' "${TMP_DIR}/answer.json" \
 for user in e2e-jamie e2e-sam; do
 	expect_status 200 "Saving the search of ${user}" \
 		--user "${user}:${PASSWORD}" --request POST --data-urlencode 'terms[]=e2e-alert' --data-urlencode 'terms[]= e2e-alert ' "${ALERTS_URL}"
-	expect_text '{"everyDocument":false,"terms":["e2e-alert"]}' "${TMP_DIR}/answer.json" \
+	expect_text '{"everyDocument":false,"terms":["e2e-alert"],"checked":true}' "${TMP_DIR}/answer.json" \
 		"The search of ${user} isn't stored as the server keeps it: $(cat "${TMP_DIR}/answer.json")"
 done
+# A new search that Paperless can't read in its advanced syntax is refused with its line,
+# and the searches stay as they were.
+expect_status 400 'Saving a search that Paperless cannot read' \
+	--user "e2e-jamie:${PASSWORD}" --request POST --data-urlencode 'terms[]=e2e-alert' --data-urlencode 'terms[]=created:[2026 to' "${ALERTS_URL}"
+expect_text '"code":"query_rejected","term":"created:[2026 to","line":2' "${TMP_DIR}/answer.json" \
+	"The search that Paperless can't read isn't refused with its line: $(cat "${TMP_DIR}/answer.json")"
 run_alerts_job 1 'ordering=-id'
 assert_notifications e2e-jamie none
 "${COMPOSE[@]}" exec -T paperless-mock python -c 'import sys, urllib.request; urllib.request.urlopen(urllib.request.Request("http://localhost:8080/e2e/documents", data=sys.argv[1].encode(), method="POST"))' \

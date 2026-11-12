@@ -89,6 +89,7 @@ $trusted = $_['trusted'];
 
 		<p id="paperless-unified-search-personal-terms-hint" class="settings-hint">
 			<?php p($l->t('Up to %s searches in the syntax of Paperless, the same as in the search of Nextcloud. They stay stored with your account, and a background job of this Nextcloud sends them to the Paperless server of this Nextcloud whenever it has added documents.', [$_['mostTerms']])); ?>
+			<?php p($l->t('Saving sends each new search to that server once, too, so that Paperless says whether it can read it.')); ?>
 		</p>
 
 		<div class="paperless-unified-search-actions">

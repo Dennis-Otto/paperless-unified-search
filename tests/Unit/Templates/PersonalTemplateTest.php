@@ -95,6 +95,7 @@ final class PersonalTemplateTest extends TestCase {
 		// It says that the searches go to Paperless, which is what the user agrees to.
 		self::assertStringStartsWith('Up to 10 searches in the syntax of Paperless', $this->text($this->element($page, self::TERMS . '-hint')));
 		self::assertStringContainsString('sends them to the Paperless server', $this->text($this->element($page, self::TERMS . '-hint')));
+		self::assertStringEndsWith('Saving sends each new search to that server once, too, so that Paperless says whether it can read it.', $this->text($this->element($page, self::TERMS . '-hint')));
 		$status = $this->element($page, 'paperless-unified-search-personal-alerts-status');
 		self::assertSame('status', $status->getAttribute('role'));
 		self::assertSame('polite', $status->getAttribute('aria-live'));

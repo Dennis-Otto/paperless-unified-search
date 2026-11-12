@@ -50,7 +50,7 @@ Ja: Füge **Neu in Paperless** zu deinem Dashboard hinzu. Es listet die Dokument
 
 ## Warum habe ich keine Benachrichtigung über ein neues Dokument bekommen?
 
-Eine Benachrichtigung geht erst raus, wenn die Datei des Dokuments im Archiv-Konto angekommen ist und du sie öffnen kannst, sie kommt also mit deiner Synchronisierung. Jede gespeicherte Suche sieht sich ein Dokument einmal an, wenn seine Datei ankommt: Ein Tag, das es später bekommt, bringt keine. Hintergrundjobs müssen laufen, wie *Verwaltungseinstellungen → Grundeinstellungen* zeigt, und die App Notifications von Nextcloud muss aktiviert sein. Der erste Lauf, nachdem jemand zum ersten Mal darum gebeten hat, lernt nur, wie weit die IDs reichen, also bringt auch ein Dokument von davor keine.
+Eine Benachrichtigung geht erst raus, wenn die Datei des Dokuments im Archiv-Konto angekommen ist und du sie öffnen kannst, sie kommt also mit deiner Synchronisierung. Jede gespeicherte Suche sieht sich ein Dokument einmal an, wenn seine Datei ankommt: Ein Tag, das es später bekommt, bringt keine. Hintergrundjobs müssen laufen, wie *Verwaltungseinstellungen → Grundeinstellungen* zeigt, und die App Notifications von Nextcloud muss aktiviert sein. Der erste Lauf, nachdem jemand zum ersten Mal darum gebeten hat, lernt nur, wie weit die IDs reichen, also bringt auch ein Dokument von davor keine. Eine gespeicherte Suche, die Paperless nicht lesen kann, findet nichts: Die persönlichen Einstellungen lehnen eine neue mit der Nummer ihrer Zeile ab, und das Protokoll von Nextcloud nennt die Benutzer einer, die Paperless später ablehnt.
 
 ## Warum schaltet sich der Schalter Verbundene Dienste durchsuchen von selbst aus?
 

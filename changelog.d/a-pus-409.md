@@ -1,0 +1,3 @@
+### Bug fixes
+
+- A saved search for notifications about new documents that Paperless can't read, such as the range of dates that isn't complete in `created:[2026 to`, is no longer saved with a success message: **Save** in the personal settings checks each new search with Paperless once and refuses such a search with the number of its line, which it selects, so that you can correct it instead of waiting for notifications that never come. When Paperless doesn't answer, or answers a search with an error, the searches are saved and the page says that they could not be checked. For searches saved before, the log line about refused searches of the background job now names the users whose searches they are.
