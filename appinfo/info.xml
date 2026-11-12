@@ -24,6 +24,7 @@ Find invoices, contracts, letters, statements, and any text recognized inside yo
 - Opens the synchronized file in Nextcloud's built-in viewer on web, iOS, and Android
 - Matches documents through stable markers such as `[P123]`
 - Shows a document only to the users who may open its synchronized file
+- Shows a user only the documents with the tags that the administrator allows them in the setting Tags that a user may see of Paperless Sync, whatever is shared with them
 - Automatically excludes documents that have not yet been synchronized
 - Diagnostics: the settings test the connection and keep a history of failed searches with their errors, also where the hoster keeps Nextcloud's log from administrators
 - For administrators: set the app up and test it with occ, without a browser, ask occ why a user doesn't see a document, and see the state of the search in the overview of the administration settings
@@ -65,6 +66,7 @@ Rechnungen, Verträge, Briefe, Bescheide und beliebige Inhalte der Dokumente fin
 - Öffnet die synchronisierte Datei im integrierten Nextcloud-Viewer in Web, iOS und Android
 - Ordnet Dokumente über stabile Kennzeichnungen wie `[P123]` zu
 - Zeigt ein Dokument nur den Benutzern, die seine synchronisierte Datei öffnen dürfen
+- Zeigt einem Benutzer nur die Dokumente mit den Tags, die der Administrator ihm in der Einstellung „Tags, die ein Benutzer sehen darf“ von Paperless Sync erlaubt, gleich, was mit ihm geteilt ist
 - Blendet noch nicht synchronisierte Dokumente automatisch aus
 - Diagnose: Die Einstellungen testen die Verbindung und führen einen Verlauf der fehlgeschlagenen Suchen mit ihren Fehlern, auch wenn der Hoster das Protokoll von Nextcloud vor Administratoren verbirgt
 - Für Administratoren: Die App mit occ ohne Browser einrichten und testen, mit occ erklären lassen, warum ein Benutzer ein Dokument nicht sieht, und den Zustand der Suche in der Übersicht der Verwaltungseinstellungen sehen
@@ -106,6 +108,7 @@ Encuentra facturas, contratos, cartas, extractos y cualquier texto reconocido de
 - Abre el archivo sincronizado en el visor integrado de Nextcloud en la web, iOS y Android
 - Asocia los documentos mediante marcadores estables como `[P123]`
 - Muestra un documento solo a los usuarios que pueden abrir su archivo sincronizado
+- Muestra a un usuario solo los documentos con las etiquetas que el administrador le permite en el ajuste “Etiquetas que un usuario puede ver” de Paperless Sync, sea lo que sea lo que se comparta con él
 - Excluye automáticamente los documentos que aún no se han sincronizado
 - Diagnóstico: la configuración prueba la conexión y guarda un historial de las búsquedas fallidas con sus errores, también cuando el proveedor de alojamiento oculta el registro de Nextcloud a los administradores
 - Para administradores: configura la app y pruébala con occ, sin navegador, pregunta a occ por qué un usuario no ve un documento y consulta el estado de la búsqueda en la vista general de la configuración de administración
@@ -147,6 +150,7 @@ Trouvez factures, contrats, lettres, relevés et tout texte reconnu dans vos doc
 - Ouvre le fichier synchronisé dans la visionneuse intégrée de Nextcloud, sur le web, iOS et Android
 - Associe les documents grâce à des marqueurs stables comme `[P123]`
 - N’affiche un document qu’aux utilisateurs qui peuvent ouvrir son fichier synchronisé
+- N’affiche à un utilisateur que les documents portant les étiquettes que l’administrateur lui autorise dans le réglage « Étiquettes qu’un utilisateur peut voir » de Paperless Sync, quoi qu’on partage avec lui
 - Exclut automatiquement les documents qui ne sont pas encore synchronisés
 - Diagnostic : les paramètres testent la connexion et conservent un historique des recherches échouées avec leurs erreurs, même lorsque l’hébergeur cache le journal de Nextcloud aux administrateurs
 - Pour les administrateurs : configurer l’application et la tester avec occ, sans navigateur, demander à occ pourquoi un utilisateur ne voit pas un document, et voir l’état de la recherche dans la vue d’ensemble des paramètres d’administration
@@ -188,6 +192,7 @@ Vind facturen, contracten, brieven, afschriften en elke tekst die in je document
 - Opent het gesynchroniseerde bestand in de ingebouwde viewer van Nextcloud op het web, iOS en Android
 - Koppelt documenten via stabiele markeringen zoals `[P123]`
 - Toont een document alleen aan de gebruikers die het gesynchroniseerde bestand ervan mogen openen
+- Toont een gebruiker alleen de documenten met de labels die de beheerder hem toestaat in de instelling “Labels die een gebruiker mag zien” van Paperless Sync, wat er ook met hem gedeeld is
 - Sluit documenten die nog niet zijn gesynchroniseerd automatisch uit
 - Diagnose: de instellingen testen de verbinding en houden een geschiedenis bij van mislukte zoekopdrachten met hun fouten, ook waar de hostingprovider het logboek van Nextcloud voor beheerders verbergt
 - Voor beheerders: stel de app in en test hem met occ, zonder browser, vraag occ waarom een gebruiker een document niet ziet, en bekijk de toestand van de zoekfunctie in het overzicht van de beheerdersinstellingen
@@ -229,6 +234,7 @@ Documentatie (in het Engels): <https://dennis-otto.github.io/paperless-unified-s
 - 在网页、iOS 和 Android 上使用 Nextcloud 内置查看器打开已同步的文件
 - 通过 `[P123]` 这类稳定的标记匹配文档
 - 只向有权打开其已同步文件的用户显示文档
+- 只向用户显示带有管理员在 Paperless Sync 的“用户可查看的标签”设置中允许其查看的标签的文档，无论与其共享了什么
 - 自动排除尚未同步的文档
 - 诊断：设置会测试连接，并保留失败搜索及其错误的历史记录，即使托管商不向管理员开放 Nextcloud 的日志也可查看
 - 面向管理员：无需浏览器，用 occ 设置并测试本应用，用 occ 查询某个用户为什么看不到某个文档，并在管理设置的概览中查看搜索的状态
@@ -270,6 +276,7 @@ Paperless 通过服务器之间的通信进行查询。API 令牌存储在 Nextc
 - 在網頁、iOS 和 Android 上以 Nextcloud 內建的檢視器開啟已同步的檔案
 - 透過 `[P123]` 這類穩定的標記比對文件
 - 只向有權開啟其已同步檔案的使用者顯示文件
+- 只向使用者顯示帶有管理員在 Paperless Sync 的「使用者可檢視的標籤」設定中允許其檢視的標籤的文件，無論與其分享了什麼
 - 自動排除尚未同步的文件
 - 診斷：設定會測試連線，並保留失敗搜尋及其錯誤的歷史紀錄，即使代管業者不讓管理員查看 Nextcloud 的記錄檔也能使用
 - 給管理員：無須瀏覽器，以 occ 設定並測試本應用程式，以 occ 查詢某位使用者為何看不到某個文件，並在管理設定的概覽中查看搜尋的狀態

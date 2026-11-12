@@ -4,7 +4,7 @@ description: "Paperless-Dokumente in Nextcloud suchen: im Browser, auf dem Smart
 
 # Suchen
 
-Paperless-Dokumente erscheinen in der globalen Suche von Nextcloud für jeden Benutzer, der ihre Dateien öffnen kann: unter **Paperless-Dokumente**, nach den Dateien, jedes mit seinem Titel, seinem Datum und den Wörtern um den Begriff. Ein Klick auf eines öffnet seine Datei in Nextcloud.
+Paperless-Dokumente erscheinen in der globalen Suche von Nextcloud für jeden Benutzer, der ihre Dateien öffnen kann: unter **Paperless-Dokumente**, nach den Dateien, jedes mit seinem Titel, seinem Datum und den Wörtern um den Begriff. Ein Klick auf eines öffnet seine Datei in Nextcloud. Wenn Paperless Sync dich nur die Dokumente mit bestimmten Tags sehen lässt, wie [Tags, die ein Benutzer sehen darf](configure.de.md#tags-die-ein-benutzer-sehen-darf) erklärt, findest du nur die, die einen davon tragen, in der Suche, im Smart Picker, auf dem Dashboard und in den Benachrichtigungen.
 
 <figure markdown="span">
   ![Paperless-Treffer in der globalen Suche von Nextcloud](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/01-unified-search.png#only-light)

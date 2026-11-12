@@ -104,7 +104,7 @@ Um zu sehen, was die Suche höchstens finden kann, melde dich als das Konto bei 
 
 ## Das Archiv nur lesend teilen
 
-Das Archiv-Konto entscheidet, wer welches Dokument findet: Ein Benutzer sieht ein Paperless-Dokument, wenn das Archiv-Konto seine Datei mit ihm teilt, allein oder mit einem Ordner darum. Teile nur lesend, damit niemand eine Datei ändert, verschiebt oder löscht, die die Synchronisierung schreibt.
+Das Archiv-Konto entscheidet, wer welches Dokument findet: Ein Benutzer sieht ein Paperless-Dokument, wenn das Archiv-Konto seine Datei mit ihm teilt, allein oder mit einem Ordner darum. Teile nur lesend, damit niemand eine Datei ändert, verschiebt oder löscht, die die Synchronisierung schreibt. Paperless Sync kann das weiter eingrenzen: Ein Benutzer, den es nur die Dokumente mit bestimmten Tags sehen lässt, findet von den geteilten Dokumenten nur die, die einen davon tragen, wie [Tags, die ein Benutzer sehen darf](#tags-die-ein-benutzer-sehen-darf) weiter unten erklärt.
 
 1. Melde dich als Archiv-Konto bei Nextcloud an, etwa als `paperless`, und öffne **Dateien**.
 2. Öffne die Details des Ordners des Archivs, etwa *Paperless*, und dort den Reiter **Teilen**.
