@@ -14,6 +14,7 @@ use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
 use OCA\PaperlessUnifiedSearch\Exception\RequestFailure;
 use OCA\PaperlessUnifiedSearch\Service\SearchRest;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryCache;
+use OCP\Http\Client\LocalServerException;
 use OCP\ICache;
 use OCP\ICacheFactory;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -21,6 +22,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use RuntimeException;
 use Throwable;
+use UnexpectedValueException;
 
 final class SearchRestTest extends TestCase {
 	private const URL = 'https://paperless.example.com';
@@ -58,8 +60,10 @@ final class SearchRestTest extends TestCase {
 			'a timeout of cURL' => [new RuntimeException('cURL error 28: Operation timed out')],
 			'a refused connection' => [new RuntimeException('cURL error 7: Failed to connect')],
 			'a name that does not resolve' => [new RuntimeException('cURL error 6: Could not resolve host: paperless.example.com')],
-			'an error of the client without a code of cURL' => [new RuntimeException('Connection reset by peer')],
+			'a name without a record of DNS' => [new LocalServerException('No DNS record found for paperless.example.com')],
+			'a timeout of cURL inside another error' => [new RuntimeException('The search failed', previous: new RuntimeException('cURL error 28: Operation timed out'))],
 			'a failure of the app that names a timeout' => [new PaperlessRequestException(RequestFailure::Timeout, 'Paperless took too long.')],
+			'a failure of the app without answer inside another error' => [new RuntimeException('The search failed', previous: new PaperlessRequestException(RequestFailure::Unreachable, 'Paperless is down.'))],
 		];
 	}
 
@@ -85,6 +89,10 @@ final class SearchRestTest extends TestCase {
 			'HTTP 401' => [PaperlessRequestException::forStatus(401)],
 			'a certificate that Nextcloud does not trust' => [new RuntimeException('cURL error 60: SSL certificate problem')],
 			'a failed handshake' => [new RuntimeException('cURL error 35: OpenSSL SSL_connect: SSL_ERROR_SYSCALL')],
+			'an address of the local network' => [new LocalServerException('Host "paperless" violates local access rules')],
+			'an answer of Paperless inside another error' => [new RuntimeException('The search failed', previous: PaperlessRequestException::forStatus(502))],
+			'an error of the app after Paperless answered' => [new RuntimeException('The version of Paperless could not be stored')],
+			'a Paperless that is not configured' => [new UnexpectedValueException('Paperless is not configured.')],
 		];
 	}
 

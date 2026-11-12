@@ -12,6 +12,7 @@ namespace OCA\PaperlessUnifiedSearch\Service;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
 use OCA\PaperlessUnifiedSearch\Exception\RequestFailure;
+use OCP\Http\Client\LocalServerException;
 use OCP\ICache;
 use OCP\ICacheFactory;
 use Psr\Log\LoggerInterface;
@@ -95,15 +96,23 @@ final class SearchRest {
 	}
 
 	/**
-	 * Whether a failure got no answer of Paperless: an error of the request itself, as the
-	 * client of Nextcloud throws it, or a failure of the app that names no answer either.
+	 * Whether a failure got no answer of Paperless: an error of the request itself, which
+	 * names a code of cURL or is Nextcloud's refusal of a name without a record of DNS, or a
+	 * failure of the app that names no answer either, also inside another error. Any other
+	 * failure, such as an error of the app after Paperless answered, makes no rest.
 	 */
 	private static function isUnanswered(Throwable $failure): bool {
-		$reason = $failure instanceof PaperlessRequestException
-			? $failure->reason
-			: PaperlessRequestException::unanswered($failure)->reason;
+		for ($cause = $failure; $cause !== null; $cause = $cause->getPrevious()) {
+			if ($cause instanceof PaperlessRequestException) {
+				return in_array($cause->reason, self::UNANSWERED, true);
+			}
 
-		return in_array($reason, self::UNANSWERED, true);
+			if ($cause instanceof LocalServerException || preg_match('/\bcURL error \d+\b/', $cause->getMessage()) === 1) {
+				return in_array(PaperlessRequestException::unanswered($cause)->reason, self::UNANSWERED, true);
+			}
+		}
+
+		return false;
 	}
 
 	private function getCache(): ICache {
