@@ -15,6 +15,7 @@ use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessNames;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
+use OCA\PaperlessUnifiedSearch\Service\SearchRest;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryCache;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -593,7 +594,7 @@ final class PaperlessNamesTest extends TestCase {
 		$configService = new ConfigService($config, $credentials, $this->createStub(IUserManager::class), $this->createStub(LoggerInterface::class), $this->createStub(IConfig::class));
 
 		return new PaperlessNames(
-			new PaperlessApiService($configService, $clientService, new SearchDiagnostics($config, $clock, $this->createStub(ICacheFactory::class)), $clock, $appManager),
+			new PaperlessApiService($configService, $clientService, new SearchDiagnostics($config, $clock, $this->createStub(ICacheFactory::class)), $clock, $appManager, new SearchRest($this->createStub(ICacheFactory::class), $this->createStub(LoggerInterface::class))),
 			$configService,
 			$cacheFactory,
 			$logger ?? $this->createStub(LoggerInterface::class),

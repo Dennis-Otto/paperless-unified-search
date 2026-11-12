@@ -15,7 +15,7 @@ Copy [the template](0000-template.md) to the next free number, replace the descr
 | [0003](0003-bind-the-token-to-its-server.md) | Send the stored token only to the server it was saved for | accepted |
 | [0004](0004-local-network-opt-in.md) | Allow the local network for this Paperless alone, by a switch of the settings | accepted |
 | [0005](0005-name-the-cause-of-a-failed-connection-test.md) | Name the cause of a failed test of the connection, in the language of the administrator | accepted |
-| [0006](0006-retry-only-before-a-connection.md) | Try a request again only before it has a connection, and count no refused query as a problem | accepted |
+| [0006](0006-retry-only-before-a-connection.md) | Try a request again only before it has a connection, and count no refused query as a problem | accepted, amended by [0018](0018-rest-the-search-after-a-request-without-answer.md) |
 | [0007](0007-occ-takes-no-token-as-an-argument.md) | Take the token of occ from the standard input or the environment, and check the set-up without asking Paperless | accepted |
 | [0008](0008-let-each-user-always-search-paperless.md) | Let each user include Paperless in every search of their own | accepted |
 | [0009](0009-count-only-files-that-the-user-may-only-read.md) | Count only the files that the user may only read, and show how the archive is shared | accepted |
@@ -27,3 +27,4 @@ Copy [the template](0000-template.md) to the next free number, replace the descr
 | [0015](0015-show-a-user-with-tags-only-the-documents-with-one-of-them.md) | Show a user with tags only the documents with one of them, by the tags that Paperless sends | accepted |
 | [0016](0016-page-on-only-to-a-result-that-the-user-may-open.md) | Page on only to a result that the user may open, with a sealed cursor | accepted, amended by [0017](0017-search-further-while-a-page-has-no-result.md) |
 | [0017](0017-search-further-while-a-page-has-no-result.md) | Search further while a page has no result | accepted |
+| [0018](0018-rest-the-search-after-a-request-without-answer.md) | Rest the search for 30 seconds after a request without answer | accepted |

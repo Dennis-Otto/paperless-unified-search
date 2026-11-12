@@ -19,7 +19,9 @@ use OCA\PaperlessUnifiedSearch\Model\TokenWarning;
 use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
+use OCA\PaperlessUnifiedSearch\Service\SearchRest;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryAppConfig;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryCache;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Http\Client\IClient;
@@ -78,8 +80,12 @@ final class PaperlessApiServiceTest extends TestCase {
 	/** @var list<float> the seconds that the clock reads one after the other, before it stands still at NOW */
 	private array $readings = [];
 
+	/** The distributed cache of Nextcloud, with the rest of the search. */
+	private MemoryCache $cache;
+
 	protected function setUp(): void {
 		$this->config = new MemoryAppConfig();
+		$this->cache = new MemoryCache(static fn (): int => self::NOW);
 	}
 
 	/**
@@ -2218,6 +2224,37 @@ final class PaperlessApiServiceTest extends TestCase {
 		self::fail('Paperless did not reject the search.');
 	}
 
+	/**
+	 * A Paperless that answers the test of the connection gets searches again at once,
+	 * also while they rest after a request without answer, as after a save of the
+	 * settings (#417).
+	 */
+	public function testATestOfTheConnectionThatPaperlessAnswersEndsTheRestOfTheSearch(): void {
+		$rest = $this->searchRest();
+		$rest->restAfter('https://paperless.example.com', new RuntimeException('cURL error 28: Operation timed out'));
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response(200, '{"count": 0, "results": []}'));
+
+		$this->service($client)->probe('https://paperless.example.com', 'TEST_VALUE', false);
+
+		self::assertFalse($rest->isResting('https://paperless.example.com'));
+	}
+
+	/**
+	 * A test of the connection that fails, also one that Paperless answers with a refusal,
+	 * leaves the rest of the search as it is.
+	 */
+	public function testAFailedTestOfTheConnectionLeavesTheRestOfTheSearch(): void {
+		$rest = $this->searchRest();
+		$rest->restAfter('https://paperless.example.com', new RuntimeException('cURL error 28: Operation timed out'));
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response(401, '{"detail":"Invalid token."}'));
+
+		$this->failedConnectionTest($client);
+
+		self::assertTrue($rest->isResting('https://paperless.example.com'));
+	}
+
 	public function testATestOfTheConnectionWithoutAnswerGetsASecondTry(): void {
 		$documents = 0;
 		$client = $this->createStub(IClient::class);
@@ -2448,7 +2485,18 @@ final class PaperlessApiServiceTest extends TestCase {
 			new SearchDiagnostics($config, $clock, $this->createStub(ICacheFactory::class)),
 			$clock,
 			$appManager,
+			$this->searchRest(),
 		);
+	}
+
+	/**
+	 * The rest of the search, in the distributed cache of the test.
+	 */
+	private function searchRest(): SearchRest {
+		$cacheFactory = $this->createStub(ICacheFactory::class);
+		$cacheFactory->method('createDistributed')->willReturn($this->cache);
+
+		return new SearchRest($cacheFactory, $this->createStub(LoggerInterface::class));
 	}
 
 	/**
