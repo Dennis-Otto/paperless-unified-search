@@ -31,6 +31,7 @@ final class SearchCursors {
 	/** The bytes of the hash of the user and the question in the sealed text. */
 	private const QUESTION_LENGTH = 32;
 
+	/** @psalm-suppress PossiblyUnusedMethod */
 	public function __construct(
 		private ICrypto $crypto,
 		private IConfig $config,
