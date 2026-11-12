@@ -771,7 +771,7 @@ The production archive intentionally excludes tests, release tools, Composer dev
 
 ### Mutation tests
 
-Every line of `lib/` runs in a unit test, but a line that runs isn't checked yet. Every week, the Mutation workflow lets [Infection](https://infection.github.io/) change the code in small ways, one mutant at a time, and run the unit tests against each change. The tests notice every mutant except those that change nothing that the app does, 34 of 2,187 in October 2026, which [`infection.json5`](infection.json5) lists with the reason. So the score, the *covered code MSI*, is 100 %, and a mutant that escapes is a gap in the tests, or a change that makes no difference, to explain there.
+Every line of `lib/` runs in a unit test, but a line that runs isn't checked yet. Every week, the Mutation workflow lets [Infection](https://infection.github.io/) change the code in small ways, one mutant at a time, and run the unit tests against each change. The tests notice every mutant except those that change nothing that the app does, 51 of 3,794 in November 2026, which [`infection.json5`](infection.json5) lists with the reason. So the score, the *covered code MSI*, is 100 %, and a mutant that escapes is a gap in the tests, or a change that makes no difference, to explain there.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/the-mutation-tests.dark.svg">

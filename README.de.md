@@ -771,7 +771,7 @@ Das Archiv für den Betrieb lässt Tests, Werkzeuge für Releases, die Entwicklu
 
 ### Mutationstests
 
-Jede Zeile von `lib/` läuft in einem Unit-Test, aber eine Zeile, die läuft, ist damit noch nicht geprüft. Jede Woche lässt der Workflow Mutation [Infection](https://infection.github.io/) den Code in kleinen Schritten ändern, einen Mutanten nach dem anderen, und die Unit-Tests gegen jede Änderung laufen. Die Tests bemerken jeden Mutanten außer denen, die nichts an dem ändern, was die App tut, 34 von 2.187 im Oktober 2026, die [`infection.json5`](infection.json5) mit dem Grund aufführt. Also ist die Punktzahl, das *covered code MSI*, 100 %, und ein Mutant, der entkommt, ist eine Lücke in den Tests oder eine Änderung ohne Unterschied, die dort zu erklären ist.
+Jede Zeile von `lib/` läuft in einem Unit-Test, aber eine Zeile, die läuft, ist damit noch nicht geprüft. Jede Woche lässt der Workflow Mutation [Infection](https://infection.github.io/) den Code in kleinen Schritten ändern, einen Mutanten nach dem anderen, und die Unit-Tests gegen jede Änderung laufen. Die Tests bemerken jeden Mutanten außer denen, die nichts an dem ändern, was die App tut, 51 von 3.794 im November 2026, die [`infection.json5`](infection.json5) mit dem Grund aufführt. Also ist die Punktzahl, das *covered code MSI*, 100 %, und ein Mutant, der entkommt, ist eine Lücke in den Tests oder eine Änderung ohne Unterschied, die dort zu erklären ist.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/the-mutation-tests.de.dark.svg">
