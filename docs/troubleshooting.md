@@ -56,7 +56,7 @@ Still missing? [Ask for help](#ask-for-help), with what each of these steps show
 | Paperless documents vanished after a move or a restore of Nextcloud | The stored API token can't be decrypted with the new `secret` of `config.php` | Enter the token again in the settings |
 | Paperless documents vanished after `allow_local_remote_servers` was removed from `config.php` | Nextcloud refuses the address of Paperless in the local network | Select **Paperless runs in my local network** and save |
 | A query in the syntax of Paperless finds nothing while you still type it | Paperless can't parse it yet, such as `created:[2026 to` | Finish the query; Paperless 3 finds the words of it meanwhile |
-| Only a few results, and no *Load more results* | The user can open the files of only a few of the documents that Paperless ranks first | Normal: the search goes through up to 4 pages of 25 documents of Paperless per page of results, then ends. A more precise term reaches later documents |
+| Only a few results, and no *Load more results* | The user can open the files of only a few of the documents that Paperless ranks first | Normal: the search goes through up to 4 pages of 25 documents of Paperless per page of results, or up to 20 while it has found no result yet, within 3 seconds, then ends. A more precise term or the date filter reaches later documents |
 | No results at all, not even from Files, when you type right after opening the search on a slow server | Nextcloud 33 and 34 search only once they know their search providers, and don't try again | Change the term. Nextcloud 35 searches by itself |
 
 ## Paperless Sync gives each user their own archive
@@ -190,7 +190,7 @@ A query that Paperless refuses while it is still being typed, and a page past th
 
 ## The search is slow
 
-A page of results waits for Paperless: the app connects within 3 seconds, waits up to 10 seconds for each answer, and goes through up to 4 pages of 25 documents of Paperless within 3 seconds to fill a page of results. Most of that time is Paperless searching its index; while it consumes many documents or rebuilds its index, it answers more slowly. A request that waited in vain for Paperless gets no second try, so a Paperless that hangs costs every search at most one wait.
+A page of results waits for Paperless: the app connects within 3 seconds, waits up to 10 seconds for each answer, and goes through up to 4 pages of 25 documents of Paperless, or up to 20 while it has found no result yet, within 3 seconds to fill a page of results. Most of that time is Paperless searching its index; while it consumes many documents or rebuilds its index, it answers more slowly. A request that waited in vain for Paperless gets no second try, so a Paperless that hangs costs every search at most one wait.
 
 Search in Paperless itself to compare: when it is slow there too, give Paperless more memory or a faster disk. When it is fast there, look at the network between the two servers, and at *Search problems*.
 

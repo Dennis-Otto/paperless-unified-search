@@ -664,20 +664,38 @@ final class PaperlessSearchProviderTest extends TestCase {
 	}
 
 	/**
-	 * However few of the hits the user can open, a search asks Paperless for at most four
-	 * pages. Without a result among them, the search is complete: a next page would tell
-	 * that Paperless has more than 100 hits, of documents that the user can't open.
+	 * However few of the hits the user can open, a search asks Paperless for at most twenty
+	 * pages, 500 hits. Without a result among them, the search is complete: a next page
+	 * would tell that Paperless has more hits, of documents that the user can't open.
 	 */
-	public function testASearchAsksPaperlessForAtMostFourPages(): void {
-		$result = $this->provider($this->ranking(self::documentsWithIds(range(1, 200))), $this->files([150]))
+	public function testASearchAsksPaperlessForAtMostTwentyPages(): void {
+		$result = $this->provider($this->ranking(self::documentsWithIds(range(1, 600))), $this->files([550]))
 			->search($this->user(), $this->query('invoice', null, 5))
 			->jsonSerialize();
 
 		self::assertSame([], $result['entries']);
-		self::assertSame([1, 2, 3, 4], array_column($this->requests, 'page'));
+		self::assertSame(range(1, 20), array_column($this->requests, 'page'));
 		self::assertFalse($result['isPaginated']);
-		// Four requests to Paperless, one search of the file cache each, and one search.
-		self::assertCount(4, $this->searches);
+		// Twenty requests to Paperless, one search of the file cache each, and one search.
+		self::assertCount(20, $this->searches);
+		self::assertSame(self::NO_PROBLEM, $this->problems());
+	}
+
+	/**
+	 * A user whose own documents rank behind the first 100 hits, all of documents of others,
+	 * still finds them (#399): while a search has found no result, it goes on past the four
+	 * pages of Paperless that a search with results takes at most.
+	 */
+	public function testASearchWithoutAResultGoesOnPastTheFirstHundredHits(): void {
+		$result = $this->provider($this->ranking(self::documentsWithIds(range(1, 300))), $this->files([130, 140, 290]))
+			->search($this->user(), $this->query('invoice', null, 5))
+			->jsonSerialize();
+
+		self::assertSame(self::titlesOf([130, 140]), self::titles($result['entries']));
+		// Once it has results, the search ends after the page that brought them, as any
+		// search with results ends after four pages.
+		self::assertSame(range(1, 6), array_column($this->requests, 'page'));
+		self::assertFalse($result['isPaginated']);
 		self::assertSame(self::NO_PROBLEM, $this->problems());
 	}
 
@@ -689,6 +707,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 			'no hit' => [[]],
 			'a few hits' => [range(1, 3)],
 			'more hits than four pages of Paperless' => [range(1, 200)],
+			'more hits than twenty pages of Paperless' => [range(1, 600)],
 		];
 	}
 

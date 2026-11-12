@@ -4,7 +4,7 @@ description: "Why a page of results is followed by another only when the search 
 
 # Page on only to a result that the user may open, with a sealed cursor
 
-- Status: accepted
+- Status: accepted, amended by [0017](0017-search-further-while-a-page-has-no-result.md)
 - Date: 2026-11-12
 
 ## Context

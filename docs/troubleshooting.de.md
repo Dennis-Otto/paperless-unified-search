@@ -56,7 +56,7 @@ Fehlt es immer noch? [Bitte um Hilfe](#um-hilfe-bitten), mit dem, was jeder dies
 | Paperless-Dokumente sind nach einem Umzug oder einer Wiederherstellung von Nextcloud verschwunden | Das gespeicherte API-Token lässt sich mit dem neuen `secret` der `config.php` nicht entschlüsseln | Gib das Token in den Einstellungen erneut ein |
 | Paperless-Dokumente sind verschwunden, nachdem `allow_local_remote_servers` aus der `config.php` entfernt wurde | Nextcloud verweigert die Adresse von Paperless im lokalen Netzwerk | Wähle **Paperless läuft in meinem lokalen Netzwerk** und speichere |
 | Eine Anfrage in der Syntax von Paperless findet nichts, während du sie noch tippst | Paperless kann sie noch nicht verarbeiten, etwa `created:[2026 to` | Tippe die Anfrage zu Ende; Paperless 3 findet solange ihre Wörter |
-| Nur wenige Treffer und kein *Weitere Ergebnisse laden* | Der Benutzer kann die Dateien nur weniger der Dokumente öffnen, die Paperless zuerst einordnet | Normal: Die Suche geht je Seite mit Treffern bis zu 4 Seiten mit 25 Dokumenten von Paperless durch und endet dann. Ein genauerer Begriff erreicht spätere Dokumente |
+| Nur wenige Treffer und kein *Weitere Ergebnisse laden* | Der Benutzer kann die Dateien nur weniger der Dokumente öffnen, die Paperless zuerst einordnet | Normal: Die Suche geht je Seite mit Treffern bis zu 4 Seiten mit 25 Dokumenten von Paperless durch, oder bis zu 20, solange sie noch keinen Treffer gefunden hat, innerhalb von 3 Sekunden, und endet dann. Ein genauerer Begriff oder der Datumsfilter erreicht spätere Dokumente |
 | Gar keine Ergebnisse, nicht einmal aus Dateien, wenn du auf einem langsamen Server gleich nach dem Öffnen der Suche tippst | Nextcloud 33 und 34 suchen erst, wenn sie ihre Suchanbieter kennen, und versuchen es nicht noch einmal | Ändere den Suchbegriff. Nextcloud 35 sucht von selbst |
 
 ## Paperless Sync gibt jedem Benutzer ein eigenes Archiv
@@ -190,7 +190,7 @@ Eine Anfrage, die Paperless ablehnt, während sie noch getippt wird, und eine Se
 
 ## Die Suche ist langsam
 
-Eine Seite mit Treffern wartet auf Paperless: Die App verbindet sich innerhalb von 3 Sekunden, wartet bis zu 10 Sekunden auf jede Antwort und geht innerhalb von 3 Sekunden bis zu 4 Seiten mit 25 Dokumenten von Paperless durch, um eine Seite mit Treffern zu füllen. Den größten Teil dieser Zeit durchsucht Paperless seinen Index; während es viele Dokumente verarbeitet oder seinen Index neu aufbaut, antwortet es langsamer. Eine Anfrage, die vergeblich auf Paperless gewartet hat, bekommt keinen zweiten Versuch, also kostet ein hängendes Paperless jede Suche höchstens eine Wartezeit.
+Eine Seite mit Treffern wartet auf Paperless: Die App verbindet sich innerhalb von 3 Sekunden, wartet bis zu 10 Sekunden auf jede Antwort und geht innerhalb von 3 Sekunden bis zu 4 Seiten mit 25 Dokumenten von Paperless durch, oder bis zu 20, solange sie noch keinen Treffer gefunden hat, um eine Seite mit Treffern zu füllen. Den größten Teil dieser Zeit durchsucht Paperless seinen Index; während es viele Dokumente verarbeitet oder seinen Index neu aufbaut, antwortet es langsamer. Eine Anfrage, die vergeblich auf Paperless gewartet hat, bekommt keinen zweiten Versuch, also kostet ein hängendes Paperless jede Suche höchstens eine Wartezeit.
 
 Such zum Vergleich in Paperless selbst: Ist es dort auch langsam, gib Paperless mehr Arbeitsspeicher oder einen schnelleren Datenträger. Ist es dort schnell, sieh dir das Netzwerk zwischen den beiden Servern an und die *Probleme der Suche*.
 

@@ -25,4 +25,5 @@ Copy [the template](0000-template.md) to the next free number, replace the descr
 | [0013](0013-trust-the-files-of-each-owner.md) | Trust the files of the user of each owner, for that owner's documents alone | accepted, amended by [0014](0014-count-the-copies-of-the-owners-and-check-them.md) and [0015](0015-show-a-user-with-tags-only-the-documents-with-one-of-them.md) |
 | [0014](0014-count-the-copies-of-the-owners-and-check-them.md) | Count the copies of the owners in every mode of Paperless Sync for each user, and check them | accepted, amended by [0015](0015-show-a-user-with-tags-only-the-documents-with-one-of-them.md) |
 | [0015](0015-show-a-user-with-tags-only-the-documents-with-one-of-them.md) | Show a user with tags only the documents with one of them, by the tags that Paperless sends | accepted |
-| [0016](0016-page-on-only-to-a-result-that-the-user-may-open.md) | Page on only to a result that the user may open, with a sealed cursor | accepted |
+| [0016](0016-page-on-only-to-a-result-that-the-user-may-open.md) | Page on only to a result that the user may open, with a sealed cursor | accepted, amended by [0017](0017-search-further-while-a-page-has-no-result.md) |
+| [0017](0017-search-further-while-a-page-has-no-result.md) | Search further while a page has no result | accepted |

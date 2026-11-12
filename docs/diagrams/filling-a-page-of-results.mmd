@@ -6,7 +6,7 @@ config:
 ---
 flowchart TB
     accTitle: Filling a page of results
-    accDescr: The sealed cursor of a page of results names the offset of its first hit in the ranking of Paperless, 0 for the first page; a cursor that the app didn't hand out for this user and question finds nothing. The provider asks Paperless for the page of 25 hits that holds this hit and the file locator for the files of its documents, in one search. It goes through the hits in their order and makes an entry of each document with a file, until it has one result more than the page holds. When it has, the results go back without that one, with the sealed cursor of its hit. Otherwise, when no hit is left at Paperless, the results are the last page. Otherwise it asks Paperless for its next page, as long as it asked for fewer than 4 pages and for less than 3 seconds; after that, the results are the last page as well.
+    accDescr: The sealed cursor of a page of results names the offset of its first hit in the ranking of Paperless, 0 for the first page; a cursor that the app didn't hand out for this user and question finds nothing. The provider asks Paperless for the page of 25 hits that holds this hit and the file locator for the files of its documents, in one search. It goes through the hits in their order and makes an entry of each document with a file, until it has one result more than the page holds. When it has, the results go back without that one, with the sealed cursor of its hit. Otherwise, when no hit is left at Paperless, the results are the last page. Otherwise it asks Paperless for its next page, as long as it asked for fewer than 4 pages, or 20 while it has no result yet, and for less than 3 seconds; after that, the results are the last page as well.
 
     cursor["Sealed cursor of the page of results<br>the offset of its first hit<br>in the ranking, 0 at first"]
     ask["Paperless: the page of 25 hits<br>that holds the next hit"]
@@ -14,7 +14,7 @@ flowchart TB
     take["An entry for each document<br>with a file, in the order of<br>Paperless, until one more<br>than the page holds"]
     ahead{"One result more<br>than the page holds?"}
     hits{"Hits left<br>at Paperless?"}
-    budget{"Fewer than 4 pages<br>and 3 seconds?"}
+    budget{"Fewer than 4 pages, or 20<br>without a result yet,<br>and 3 seconds?"}
     next(["The results without that one,<br>and the sealed cursor of its hit"])
     last(["The results,<br>the last page"])
 
