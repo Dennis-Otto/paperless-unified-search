@@ -81,6 +81,22 @@ The passwords are in `demo/.env`, and the script prints them at its end.
 5. **Add a document.** Open <http://localhost:8100>, sign in to Paperless as `admin` and upload a PDF of your own, or a synthetic one. The background jobs of Nextcloud run Paperless Sync every five minutes, which writes it into the archive, and `jamie` finds it by its text.
 6. **Look at the settings.** As `admin` in Nextcloud, open **Administration settings → Paperless Unified Search**: the connection that `occ` saved, and **Try a search**, which shows for any user which documents the search shows and why the others don't.
 
+## Check who finds what with Paperless Sync
+
+Who sees which document follows settings that Paperless Sync stores and this app reads: the [tags that a user may see](../docs/decisions/0015-show-a-user-with-tags-only-the-documents-with-one-of-them.md) and the [archives of each owner](../docs/decisions/0013-trust-the-files-of-each-owner.md). One more run of the script checks both with the real release of Paperless Sync that the demo installs:
+
+```sh
+bash demo/seed.sh --check-access
+```
+
+After the demo, it adds `robin` and `sam` to Nextcloud and `robin` and `sam.paperless` to Paperless, who sign in nowhere, and saves three forms of [`tests/Unit/fixtures/paperless-sync-settings.json`](../tests/Unit/fixtures/paperless-sync-settings.json) with the settings route of Paperless Sync, as its settings page does, each followed by a run:
+
+1. **Tags that a user may see:** `Robin = household, HOUSEHOLD`, while the archive is shared with `robin` and `jamie`. The search for *Exampletown*, which every letter holds, shows `robin` only the three letters with the tag *Household*, `jamie` all five and `sam`, without a share, none.
+2. **Each user, those they own in Paperless,** with `Sam.Paperless=SAM` in *Paperless users with another Nextcloud ID*, and the letters owned by `robin` and `sam.paperless`, but for the home insurance renewal, which has no owner. The search shows `robin` and `sam` their own two letters each, and `jamie` the renewal alone, which stays in the archive of `paperless`.
+3. **The single archive again,** without owners and tags, as the demo was: `jamie` finds all five letters.
+
+After each run, `occ config:app:get --details` must show what the fixture says that Paperless Sync stores, each key with its type, its lazy flag and its value, which the unit tests of this app read (`tests/Unit/Service/PaperlessSyncSettingsTest.php`). So a release of Paperless Sync that stores a setting otherwise fails here, and a change of this app that reads it otherwise fails the unit tests. The workflow *Demo* runs the check after the animation, also in the pull request of Renovate with a new release of Paperless Sync, which waits for it.
+
 ## Stop, start and remove it
 
 ```sh

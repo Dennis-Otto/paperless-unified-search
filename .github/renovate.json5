@@ -49,6 +49,18 @@
       platformAutomerge: false,
     },
     {
+      // The release of Paperless Sync that the demo installs comes without the week of
+      // waiting: it is the maintainer's own release, signed and pinned by its SHA-256,
+      // and the demo checks with it who finds what with the settings that it stores
+      // (bash demo/seed.sh --check-access, #405), which only the release that writes a
+      // new setting can show. Renovate merges it itself once every check passed, the
+      // demo among them, which is no required check, so that a release that stores a
+      // setting otherwise never reaches main unseen.
+      matchPackageNames: ["Dennis-Otto/paperless-sync"],
+      minimumReleaseAge: null,
+      platformAutomerge: false,
+    },
+    {
       // The image of version 2 stays within version 2.
       matchPackageNames: ["ghcr.io/paperless-ngx/paperless-ngx"],
       matchCurrentVersion: "/^2\\./",
