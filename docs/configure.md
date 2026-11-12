@@ -104,7 +104,7 @@ To see what the search can find at most, sign in to Paperless as the account and
 
 ## Share the archive read-only
 
-The archive account decides who finds which document: a user sees a Paperless document when the archive account shares its file with them, alone or with a folder around it. Share read-only, so that nobody changes, moves or deletes a file that the synchronization writes. Paperless Sync can narrow it down further: a user whom it lets see only the documents with some tags finds only those of the shared documents that carry one of them, as [Tags that a user may see](#tags-that-a-user-may-see) below explains.
+The archive account decides who finds which document: a user sees a Paperless document when the archive account shares its file with them, alone or with a folder around it. Share read-only, so that nobody changes, moves or deletes a file that the synchronization writes. Paperless Sync can narrow it down further: a user whom it lets see only the documents with some tags finds only those of the shared documents that carry one of them, as the section *Tags that a user may see* below explains.
 
 1. Sign in to Nextcloud as the archive account, such as `paperless`, and open **Files**.
 2. Open the details of the folder of the archive, such as *Paperless*, and there the tab **Sharing**.
