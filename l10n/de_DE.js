@@ -57,6 +57,7 @@ OC.L10N.register(
 		'Each user can then choose in their personal settings, in the section Paperless, that every search of their own includes Paperless without the switch. Turned off, the personal settings don’t offer it and the search ignores what users chose.': 'Jeder Benutzer kann dann in seinen persönlichen Einstellungen im Abschnitt Paperless wählen, dass jede seiner Suchen Paperless ohne den Schalter einbezieht. Ausgeschaltet bieten die persönlichen Einstellungen das nicht an, und die Suche übergeht, was Benutzer gewählt haben.',
 		'Paperless': 'Paperless',
 		'Always search my Paperless documents': 'Meine Paperless-Dokumente immer durchsuchen',
+		'Your administrator lets you find only the documents that have one of these tags in Paperless: %s.': 'Ihr Administrator lässt Sie nur die Dokumente finden, die in Paperless eines dieser Tags haben: %s.',
 		'Saving…': 'Wird gespeichert…',
 		'New in Paperless: {document}': 'Neu in Paperless: {document}',
 		'_%n new document in Paperless_::_%n new documents in Paperless_': ['%n neues Dokument in Paperless', '%n neue Dokumente in Paperless'],

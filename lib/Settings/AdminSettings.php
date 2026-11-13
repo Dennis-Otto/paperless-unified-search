@@ -77,7 +77,7 @@ final class AdminSettings implements ISettings {
 	 * The history of the diagnostics as the page shows it, with formatted times, or null
 	 * when it holds no problem.
 	 *
-	 * @return ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, durationMs: int}>}
+	 * @return ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, advice: string, durationMs: int}>}
 	 */
 	private function getHistory(): ?array {
 		$history = $this->diagnostics->getHistory();
@@ -96,6 +96,10 @@ final class AdminSettings implements ISettings {
 				'kind' => $event->kind,
 				'step' => $event->step,
 				'error' => $event->message === '' ? $event->error : $event->error . ': ' . $event->message,
+				// What failed and what to do, in the language of the administrator, for the
+				// cause of a request to Paperless; none for an error of the files or an
+				// entry of before.
+				'advice' => $event->reason === null ? '' : $this->messages->forCause($event->reason, $event->status),
 				'durationMs' => $event->durationMs,
 			], $history->events),
 		];

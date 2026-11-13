@@ -134,6 +134,24 @@ final class PersonalTemplateTest extends TestCase {
 		self::assertSame(0, $onlySearch->getElementsByTagName('h3')->length);
 	}
 
+	/**
+	 * A user whom Paperless Sync lets see only the documents with some tags reads which,
+	 * escaped, at the top of the section, even with neither choice allowed; every other user
+	 * reads nothing of it (#412).
+	 */
+	public function testAUserWithTagsReadsWhichTagsTheSearchShows(): void {
+		$tagged = $this->render(false, false, alerts: ['alwaysSearchAllowed' => false, 'alertsAllowed' => false, 'tags' => ['Katja', '<b>Household</b>']]);
+
+		$line = $this->element($tagged, 'paperless-unified-search-personal-tags');
+		self::assertSame('Your administrator lets you find only the documents that have one of these tags in Paperless: Katja, <b>Household</b>.', $this->text($line));
+		self::assertSame(0, $line->getElementsByTagName('b')->length);
+		self::assertSame('h2', $this->query($tagged, '//*[@id="paperless-unified-search-personal-tags"]/preceding-sibling::*[1]')->nodeName);
+		self::assertNull($tagged->getElementById(self::CHECKBOX));
+		self::assertNull($tagged->getElementById(self::EVERY));
+
+		self::assertNull($this->render(false, false)->getElementById('paperless-unified-search-personal-tags'));
+	}
+
 	public function testTheMessageAfterAChangeIsReadOut(): void {
 		$status = $this->element($this->render(false, false), 'paperless-unified-search-personal-status');
 
@@ -161,6 +179,7 @@ final class PersonalTemplateTest extends TestCase {
 			'terms' => '',
 			'mostTerms' => 10,
 			'alertsUrl' => '/personal/alerts',
+			'tags' => [],
 		];
 
 		ob_start();

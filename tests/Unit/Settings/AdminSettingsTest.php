@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Settings;
 
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
+use OCA\PaperlessUnifiedSearch\Exception\RequestFailure;
 use OCA\PaperlessUnifiedSearch\Model\DiagnosticsHistory;
 use OCA\PaperlessUnifiedSearch\Model\PublicConfig;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
@@ -273,10 +274,33 @@ final class AdminSettingsTest extends TestCase {
 			'lastFailure' => 'at 1791500000',
 			'recovery' => 'at 1791500060',
 			'events' => [
-				['time' => 'at 1791500100', 'kind' => SearchEvent::KIND_RETRIED, 'step' => SearchEvent::STEP_PAPERLESS, 'error' => 'ConnectException', 'durationMs' => 3001],
-				['time' => 'at 1791500000', 'kind' => SearchEvent::KIND_FAILED, 'step' => SearchEvent::STEP_FILES, 'error' => 'RuntimeException: Storage unavailable', 'durationMs' => 12],
+				['time' => 'at 1791500100', 'kind' => SearchEvent::KIND_RETRIED, 'step' => SearchEvent::STEP_PAPERLESS, 'error' => 'ConnectException', 'advice' => '', 'durationMs' => 3001],
+				['time' => 'at 1791500000', 'kind' => SearchEvent::KIND_FAILED, 'step' => SearchEvent::STEP_FILES, 'error' => 'RuntimeException: Storage unavailable', 'advice' => '', 'durationMs' => 12],
 			],
 		], $params['history']);
+	}
+
+	/**
+	 * A problem of a request to Paperless whose cause the history keeps says what failed and
+	 * what to do in the words of the test of the connection, with the status of the answer;
+	 * the error stays as it is beside it, for a bug report.
+	 */
+	public function testAProblemWithACauseGetsTheAdviceOfTheTestOfTheConnection(): void {
+		$history = DiagnosticsHistory::start(1791400000)
+			->with(new SearchEvent(1791500000, SearchEvent::KIND_FAILED, SearchEvent::STEP_PAPERLESS, 'PaperlessRequestException', 'Paperless returned HTTP 401.', 40, RequestFailure::Unauthorized, 401))
+			->with(new SearchEvent(1791500100, SearchEvent::KIND_RETRIED, SearchEvent::STEP_PAPERLESS, 'ConnectException', 'cURL error 28: Connection timed out', 3001, RequestFailure::Timeout));
+		$config = $this->createStub(IAppConfig::class);
+		$config->method('getValueArray')->willReturn($history->jsonSerialize());
+
+		$params = $this->settings($config, $this->createStub(ICredentialsManager::class), $this->createStub(IURLGenerator::class))
+			->getForm()
+			->getParams();
+
+		self::assertIsArray($params['history']);
+		self::assertSame([
+			['time' => 'at 1791500100', 'kind' => SearchEvent::KIND_RETRIED, 'step' => SearchEvent::STEP_PAPERLESS, 'error' => 'ConnectException: cURL error 28: Connection timed out', 'advice' => 'Paperless did not answer in time. Check that it runs and is not overloaded, then try again.', 'durationMs' => 3001],
+			['time' => 'at 1791500000', 'kind' => SearchEvent::KIND_FAILED, 'step' => SearchEvent::STEP_PAPERLESS, 'error' => 'PaperlessRequestException: Paperless returned HTTP 401.', 'advice' => 'Paperless rejected the API token (HTTP 401). Check the token, and that its account may view documents.', 'durationMs' => 40],
+		], $params['history']['events']);
 	}
 
 	public function testAHistoryOfRetriesOnlyHasNoLastFailureAndNoRecovery(): void {

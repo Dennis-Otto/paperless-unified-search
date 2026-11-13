@@ -173,11 +173,18 @@ curl --fail-with-body --silent --show-error \
 occ config:app:set paperless_sync user_tags --lazy --value='katja = Katja, Household' >/dev/null
 
 # A history of the problems of the search, of a connection that failed for a while,
-# for the picture of Search problems.
+# for the picture of Search problems, each with its cause, for which it says what to do.
 occ config:app:set paperless_unified_search diagnostics --type=array --lazy \
-	--value='{"since":1791475200,"failed":1,"retried":2,"lastFailureAt":1791496720,"recoveredAt":1791496750,"events":[{"time":1791496872,"kind":"retried","step":"paperless","error":"ConnectException","message":"cURL error 28: Connection timed out after 3001 milliseconds for https://paperless.example.com/api/documents/","durationMs":3002},{"time":1791496720,"kind":"failed","step":"paperless","error":"ConnectException","message":"cURL error 7: Failed to connect to paperless.example.com port 443 after 3001 ms: Timeout was reached for https://paperless.example.com/api/documents/","durationMs":6108},{"time":1791496205,"kind":"retried","step":"paperless","error":"ConnectException","message":"cURL error 6: Could not resolve host: paperless.example.com for https://paperless.example.com/api/documents/","durationMs":1004}]}' >/dev/null
+	--value='{"since":1791475200,"failed":1,"retried":2,"lastFailureAt":1791496720,"recoveredAt":1791496750,"events":[{"time":1791496872,"kind":"retried","step":"paperless","error":"ConnectException","message":"cURL error 28: Connection timed out after 3001 milliseconds for https://paperless.example.com/api/documents/","durationMs":3002,"reason":"timeout","status":null},{"time":1791496720,"kind":"failed","step":"paperless","error":"ConnectException","message":"cURL error 7: Failed to connect to paperless.example.com port 443 after 3001 ms: Timeout was reached for https://paperless.example.com/api/documents/","durationMs":6108,"reason":"unreachable","status":null},{"time":1791496205,"kind":"retried","step":"paperless","error":"ConnectException","message":"cURL error 6: Could not resolve host: paperless.example.com for https://paperless.example.com/api/documents/","durationMs":1004,"reason":"unknown_host","status":null}]}' >/dev/null
 
 browse "${PROJECT_NAME}_default" --env "E2E_PASSWORD=${PASSWORD}"
+
+# The personal settings of jamie, whom Paperless Sync lets see only the documents with two
+# tags for this picture alone, which the section names at its top. The line goes again
+# before the notifications, which the tags would change.
+occ config:app:set paperless_sync user_tags --lazy --value=$'katja = Katja, Household\njamie = Household, Taxes' >/dev/null
+browse "${PROJECT_NAME}_default" --env "E2E_PASSWORD=${PASSWORD}" --env SCREENSHOTS_PERSONAL=1
+occ config:app:set paperless_sync user_tags --lazy --value='katja = Katja, Household' >/dev/null
 
 # The notification about new documents. Jamie asks for every new document, the first run
 # of the job learns how far the IDs go, then the mock takes in two documents, the archive

@@ -56,6 +56,7 @@
 		"Each user can then choose in their personal settings, in the section Paperless, that every search of their own includes Paperless without the switch. Turned off, the personal settings don’t offer it and the search ignores what users chose.": "Chaque utilisateur peut alors choisir dans ses paramètres personnels, dans la section Paperless, que chacune de ses recherches inclue Paperless sans l’interrupteur. Désactivé, les paramètres personnels ne le proposent pas et la recherche ignore ce que les utilisateurs ont choisi.",
 		"Paperless": "Paperless",
 		"Always search my Paperless documents": "Toujours rechercher dans mes documents Paperless",
+		"Your administrator lets you find only the documents that have one of these tags in Paperless: %s.": "Votre administrateur vous laisse trouver uniquement les documents qui ont l’une de ces étiquettes dans Paperless : %s.",
 		"Saving…": "Enregistrement…",
 		"New in Paperless: {document}": "Nouveau dans Paperless : {document}",
 		"_%n new document in Paperless_::_%n new documents in Paperless_": ["%n nouveau document dans Paperless", "%n nouveaux documents dans Paperless", "%n nouveaux documents dans Paperless"],

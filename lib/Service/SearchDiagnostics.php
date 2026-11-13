@@ -10,9 +10,11 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\Service;
 
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
+use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
 use OCA\PaperlessUnifiedSearch\Model\DiagnosticsHistory;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCP\AppFramework\Utility\ITimeFactory;
+use OCP\Http\Client\LocalServerException;
 use OCP\IAppConfig;
 use OCP\ICache;
 use OCP\ICacheFactory;
@@ -59,21 +61,46 @@ final class SearchDiagnostics {
 	}
 
 	/**
-	 * A search that failed and showed the user no documents.
+	 * A search that failed and showed the user no documents, with the cause of a request
+	 * to Paperless that failed, also of one that got no answer; an error of the files has none.
 	 *
 	 * @param list<string> $secrets the token and the term, which the message must not show
 	 */
 	public function recordFailure(string $step, Throwable $error, int $durationMs, array $secrets): void {
-		$this->record(SearchEvent::KIND_FAILED, $step, $error, $durationMs, $secrets);
+		$this->record(SearchEvent::KIND_FAILED, $step, $error, $durationMs, $secrets, self::causeOf($step, $error));
 	}
 
 	/**
-	 * A request to Paperless that got no answer, while its second try got one.
+	 * The cause of a failure: the one of the app, or, for a request to Paperless without an
+	 * answer, the one that the error of the HTTP client names, as the test of the connection
+	 * names it: a code of cURL or Nextcloud's refusal of the address, also inside another error.
+	 */
+	private static function causeOf(string $step, Throwable $error): ?PaperlessRequestException {
+		if ($error instanceof PaperlessRequestException) {
+			return $error;
+		}
+
+		if ($step !== SearchEvent::STEP_PAPERLESS) {
+			return null;
+		}
+
+		for ($cause = $error; $cause !== null; $cause = $cause->getPrevious()) {
+			if ($cause instanceof LocalServerException || preg_match('/\bcURL error \d+\b/', $cause->getMessage()) === 1) {
+				return PaperlessRequestException::unanswered($error);
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * A request to Paperless that got no answer, while its second try got one: its error is
+	 * the one of the HTTP client, with the cause of a request without answer.
 	 *
 	 * @param list<string> $secrets the token and the term, which the message must not show
 	 */
 	public function recordRetry(Throwable $error, int $durationMs, array $secrets): void {
-		$this->record(SearchEvent::KIND_RETRIED, SearchEvent::STEP_PAPERLESS, $error, $durationMs, $secrets);
+		$this->record(SearchEvent::KIND_RETRIED, SearchEvent::STEP_PAPERLESS, $error, $durationMs, $secrets, PaperlessRequestException::unanswered($error));
 	}
 
 	/**
@@ -111,7 +138,7 @@ final class SearchDiagnostics {
 	/**
 	 * @param list<string> $secrets
 	 */
-	private function record(string $kind, string $step, Throwable $error, int $durationMs, array $secrets): void {
+	private function record(string $kind, string $step, Throwable $error, int $durationMs, array $secrets, ?PaperlessRequestException $cause): void {
 		if (!$this->mayWrite($kind)) {
 			return;
 		}
@@ -124,6 +151,8 @@ final class SearchDiagnostics {
 			self::shortClassName($error),
 			self::describe($error->getMessage(), $secrets),
 			max(0, $durationMs),
+			$cause?->reason,
+			$cause?->status,
 		);
 
 		$this->save($this->withCounted($this->getHistory() ?? DiagnosticsHistory::start($time))->with($event));

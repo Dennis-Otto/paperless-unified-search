@@ -20,6 +20,9 @@
 // scripts/screenshot-media.sh makes the videos of the animations. A step fails when the app doesn't show what its picture is meant to
 // show, such as a Paperless result that the date filter should have left out.
 //
+// With SCREENSHOTS_PERSONAL=1, which scripts/screenshots.sh sets while Paperless Sync lets
+// jamie see only the documents with some tags, it takes only the personal settings.
+//
 // With SCREENSHOTS_NOTIFICATION=1, which scripts/screenshots.sh sets once the job of the
 // notifications has run on what the first pass left, it takes only the notification.
 //
@@ -534,7 +537,9 @@ async function dashboard(browser, session, theme) {
 
 // The section Paperless of the personal settings of jamie, after the choice to include
 // Paperless in every search of their own, down to the message below it. The choice is
-// taken back afterwards: the other pictures show the search with the switch.
+// taken back afterwards: the other pictures show the search with the switch. A pass of
+// its own takes it, while Paperless Sync lets jamie see only the documents with two tags,
+// which the section names at its top (#412); the other pictures show jamie without them.
 async function personalSettings(browser, session, theme) {
 	const suffix = theme === 'dark' ? '-dark' : ''
 	const page = await newPage(browser, session, { viewport: { width: 1280, height: 720 }, colorScheme: theme })
@@ -1320,7 +1325,6 @@ async function everyPicture(browser) {
 		await share(browser, archive, theme)
 		await trySearch(browser, admin, theme)
 		await dashboard(browser, reader, theme)
-		await personalSettings(browser, reader, theme)
 	}
 	await phone(browser, reader)
 	await phoneSettings(browser, admin)
@@ -1345,6 +1349,10 @@ const browser = await chromium.launch({
 try {
 	if (process.env.SCREENSHOTS_DEMO === '1') {
 		await demoAnimation(browser)
+	} else if (process.env.SCREENSHOTS_PERSONAL === '1') {
+		const reader = await signIn(browser, READER, { timezoneId: TIME_ZONE })
+		await personalSettings(browser, reader, 'light')
+		await personalSettings(browser, reader, 'dark')
 	} else if (process.env.SCREENSHOTS_NOTIFICATION === '1') {
 		const reader = await signIn(browser, READER, { timezoneId: TIME_ZONE })
 		await notification(browser, reader, 'light')
