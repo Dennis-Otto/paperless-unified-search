@@ -55,9 +55,15 @@ final class PaperlessApiService {
 	 * the file of each one in the folders of the user of its owner (decision 0013): only
 	 * the ID, the owner and the tags as IDs, without which the files of an owner with tags
 	 * count for none of their documents (decision 0015). The job of the notifications reads
-	 * the same of the new documents whose files have arrived.
+	 * the same of the new documents whose files have arrived, and the search of the document
+	 * that a term such as like:412 asks for similar ones of.
 	 */
 	private const OWNER_FIELDS = 'id,owner,tags';
+	/**
+	 * The largest ID that a document of Paperless can have: Django gives its documents an
+	 * AutoField, an integer of 32 bits in every database that Paperless supports.
+	 */
+	private const LARGEST_ID = 2147483647;
 	private const MATCH_FIELDS = 'id';
 
 	/**
@@ -451,11 +457,49 @@ final class PaperlessApiService {
 	}
 
 	/**
+	 * The document that a search for similar ones, such as like:412, names, with its fields
+	 * id, owner and tags, by which the search decides whether the user may see it, as for a
+	 * hit (#403): one request, which gets a second try as one of the search, since a user
+	 * waits for it. Null when Paperless doesn't have it or its account may not view it, and,
+	 * without a request, for an ID that no document can have.
+	 *
+	 * @param string $documentId the ID as similarTo() finds it in the term
+	 * @return ?array<array-key, mixed>
+	 * @throws PaperlessRequestException when Paperless answers, but not with documents
+	 * @throws Throwable the error of a request without answer, or without the settings
+	 */
+	public function findSimilarSource(string $documentId): ?array {
+		$id = filter_var($documentId, FILTER_VALIDATE_INT, ['options' => ['max_range' => self::LARGEST_ID]]);
+		if ($id === false) {
+			return null;
+		}
+
+		[$data] = $this->requestDocuments(
+			$this->configService->getUrl(),
+			$this->configService->getToken(),
+			$this->configService->isLocalNetworkAllowed(),
+			[
+				'id__in' => (string)$id,
+				'page' => 1,
+				'page_size' => 1,
+				'fields' => self::OWNER_FIELDS,
+			],
+		);
+		foreach (self::documentsOf($data)['results'] as $document) {
+			if (($document['id'] ?? null) === $id) {
+				return $document;
+			}
+		}
+
+		return null;
+	}
+
+	/**
 	 * The ID of the document that a term asks for similar ones of, as Paperless takes it:
 	 * as text, so that a number too large for an integer stays what it is, one that
 	 * Paperless doesn't know. Null for any other term.
 	 */
-	private static function similarTo(string $term): ?string {
+	public static function similarTo(string $term): ?string {
 		return preg_match(self::SIMILAR_TERM, trim($term), $match) === 1 ? $match[1] : null;
 	}
 

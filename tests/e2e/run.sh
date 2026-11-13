@@ -1119,9 +1119,11 @@ assert_response no-results "${TMP_DIR}/past-the-end.json"
 
 # A term like:[P620] asks Paperless for the documents similar to that one instead of
 # searching for words: they fill the pages of results across the pages of Paperless, with
-# the cursor and the date filter of any search, and without the document itself. A marker
-# that is wrong, or of a document that the account of the token may not view, finds
-# nothing, and the history below doesn't count it either.
+# the cursor and the date filter of any search, and without the document itself, for a
+# user with a file of it, as e2e-other has through the share of the folder Pages. A
+# marker that is wrong, of a document that the account of the token may not view, or of
+# one that the user has no file of, such as 610, which e2e-user keeps to itself, finds
+# nothing, and the history below doesn't count it either (#403).
 search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/similar-1.json" 'like:[P620]'
 cursor="$(assert_response page "${TMP_DIR}/similar-1.json" more 624 626 627 630 635)"
 search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/similar-2.json" 'like:[P620]' "${cursor}"
@@ -1133,7 +1135,7 @@ if ! grep --quiet --fixed-strings 'more_like_id=620&page=1&page_size=25&fields='
 	echo 'The search for like:[P620] reached Paperless without more_like_id=620.' >&2
 	exit 1
 fi
-for term in 'like:2147483647' 'like:[P777]' 'like:abc' 'like:[P012]'; do
+for term in 'like:2147483647' 'like:[P777]' 'like:abc' 'like:[P012]' 'like:[P610]'; do
 	search e2e-other 'Mozilla/5.0 (Android) Nextcloud-android/20260390' "${TMP_DIR}/similar-none.json" "${term}"
 	assert_response no-results "${TMP_DIR}/similar-none.json"
 done

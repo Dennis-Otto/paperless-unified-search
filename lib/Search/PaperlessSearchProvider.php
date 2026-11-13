@@ -221,6 +221,26 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 		$rejected = false;
 		$step = SearchEvent::STEP_PAPERLESS;
 		try {
+			// Documents similar to one tell something about that one, so a user learns of them
+			// only with a file of it, by the same rule as for a hit (#403); without one, the
+			// search finds nothing, as for a document that Paperless refuses.
+			$similarTo = PaperlessApiService::similarTo($term);
+			if ($similarTo !== null) {
+				$source = $this->paperlessApi->findSimilarSource($similarTo);
+				$sources = $source === null ? [] : [$source];
+				$step = SearchEvent::STEP_FILES;
+				[$sourceIds, $sourceUsers] = $this->documentOwners->forUser($user, $this->getDocumentIds($sources), $sources);
+				$sourceFiles = $this->fileLocator->findAllForUser($user, $sourceIds, $archiveOwner, $sourceUsers);
+				if ($sourceFiles->files === []) {
+					// A file that failed to answer fails the search, as one of a hit would.
+					if ($sourceFiles->error !== null) {
+						throw $sourceFiles->error;
+					}
+
+					return SearchResult::complete($this->getName(), []);
+				}
+			}
+
 			do {
 				$step = SearchEvent::STEP_PAPERLESS;
 				$response = $this->paperlessApi->searchDocuments($term, $pager->getPage(), PaperlessPager::PAGE_SIZE, $filters);

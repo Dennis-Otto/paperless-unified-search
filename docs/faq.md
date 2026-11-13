@@ -64,7 +64,7 @@ A notification goes out only once the file of the document has reached the archi
 
 ## Can I find the documents similar to one?
 
-Yes, with the marker of its file, as Paperless does with **More like this**: search for `like:[P412]` in the global search, in the smart picker or through the API, and you see the documents most similar to that one whose files you can open, such as the other letters of a case. [Search like in Paperless](usage.md#search-like-in-paperless) has the details, and the fields of Paperless's search that users ask for most.
+Yes, with the marker of its file, as Paperless does with **More like this**: search for `like:[P412]` in the global search, in the smart picker or through the API, and you see the documents most similar to that one whose files you can open, such as the other letters of a case. It needs a file of that document too, which you can open: for a document that you may not see, it finds nothing. [Search like in Paperless](usage.md#search-like-in-paperless) has the details, and the fields of Paperless's search that users ask for most.
 
 ## Why does a common word find none of my documents, when a precise one does?
 
