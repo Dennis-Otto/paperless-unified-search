@@ -14,7 +14,11 @@ name: After the checks
 # the failure, after the answer test_marker of the blueprint, such as "Browser step:"
 # before each step of the tests of a browser. A job that fails again is a real
 # failure and stays red, and so does one that failed the same way for the commit
-# before: running it again would only keep a runner busy. A run whose failed jobs ran
+# before: running it again would only keep a runner busy. The Downstream workflow of
+# the blueprint updates the repositories that take it as they are at that moment, so
+# one of its jobs that passes when it runs again found a repository that changed in
+# between, such as one that merged what the pull request needs: the bot runs it once
+# more, but counts no flaky test for it. A run whose failed jobs ran
 # no step, which GitHub couldn't start, as in its outage of 9 November 2026, it leaves
 # alone with a notice: another try while GitHub fails would only fail and mail again,
 # and a bot that GitHub keeps failing ends with a notice as well (decision 0136). A
@@ -145,6 +149,56 @@ env:
   # Each call of its API asks for the version of the REST API that the steps are
   # written for (decision 0125).
   API_VERSION_HEADER: "X-GitHub-Api-Version: 2022-11-28"
+  # What every step of a bot here that calls GitHub runs first, with eval "$OUTAGE":
+  # one copy for every step, which needs no checkout, as a checkout fails in an outage
+  # too (decision 0155). GitHub answers a call now and then with an error of its own,
+  # a 5xx, or not in time, and for minutes in an outage, as on 8 and 9 November 2026:
+  # tried runs a call of gh again then, four times in all, 10, 20 and 40 seconds
+  # apart, and prints what it printed only once it worked; once runs a call that
+  # writes, such as a comment, only once, as GitHub may have done it before it
+  # failed. Any other error, such as a refusal, stops either at once; the last one
+  # stays in $RUNNER_TEMP/gh-errors, and given_up says whether it was GitHub's. When
+  # GitHub keeps failing, the trap ends the step with a notice instead of a failure:
+  # the next event or the bot-health bot catches up, and a person has nothing to do
+  # (decision 0136), and leaves $RUNNER_TEMP/github-sat-out for the steps after it,
+  # as a job that sat out an outage passed nothing. A step says in INSTEAD what it
+  # does instead, if it does more than nothing.
+  OUTAGE: |
+    outage="$RUNNER_TEMP/github-unavailable"
+    unavailable() {
+      local status=$?
+      if ((status)) && [[ -e "$outage" ]]; then
+        echo "::notice title=GitHub is unavailable::GitHub kept failing ($(head -n 1 "$RUNNER_TEMP/gh-errors")), as in an outage of GitHub (https://www.githubstatus.com), so ${INSTEAD:-the bot did nothing this time}; its next run catches up. Nothing to do for a person."
+        touch "$RUNNER_TEMP/github-sat-out"
+        exit 0
+      fi
+    }
+    trap unavailable EXIT
+    calls() {
+      local waits="$1" wait output
+      shift
+      rm -f "$outage"
+      for wait in $waits; do
+        if output="$("$@" 2>"$RUNNER_TEMP/gh-errors")"; then
+          printf '%s\n' "$output"
+          return 0
+        fi
+        if ! grep -qiE 'HTTP 5[0-9]{2}|timeout|timed out|connection reset|unexpected EOF' "$RUNNER_TEMP/gh-errors"; then
+          cat "$RUNNER_TEMP/gh-errors" >&2
+          return 1
+        fi
+        if ((wait == 0)); then
+          touch "$outage"
+          cat "$RUNNER_TEMP/gh-errors" >&2
+          return 1
+        fi
+        echo "GitHub failed, so gh tries again in $wait seconds: $(head -n 1 "$RUNNER_TEMP/gh-errors")" >&2
+        sleep "$wait"
+      done
+    }
+    tried() { calls "10 20 40 0" "$@"; }
+    once() { calls 0 "$@"; }
+    given_up() { [[ -e "$outage" ]]; }
 
 jobs:
   rerun:
@@ -255,44 +309,7 @@ jobs:
           HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          # GitHub answers a call now and then with an error of its own, a 5xx, or not in
-          # time, and for minutes in an outage, as on 8 and 9 November 2026: each call of
-          # gh tries again then, four times in all, 10, 20 and 40 seconds apart, with
-          # what it printed only once it worked. Any other error, such as a refusal,
-          # stops it at once; the last one stays in $RUNNER_TEMP/gh-errors. When GitHub
-          # keeps failing, the step ends with a notice instead of a failure: the next
-          # event or the bot-health bot catches up, and a person has nothing to do
-          # (decision 0136).
-          outage="$RUNNER_TEMP/github-unavailable"
-          unavailable() {
-            local status=$?
-            if ((status)) && [[ -e "$outage" ]]; then
-              echo "::notice title=GitHub is unavailable::GitHub kept failing ($(head -n 1 "$RUNNER_TEMP/gh-errors")), as in an outage of GitHub (https://www.githubstatus.com), so the bot did nothing this time; its next run catches up. Nothing to do for a person."
-              exit 0
-            fi
-          }
-          trap unavailable EXIT
-          tried() {
-            local wait output
-            rm -f "$outage"
-            for wait in 10 20 40 0; do
-              if output="$("$@" 2>"$RUNNER_TEMP/gh-errors")"; then
-                printf '%s\n' "$output"
-                return 0
-              fi
-              if ! grep -qiE 'HTTP 5[0-9]{2}|timeout|timed out|connection reset|unexpected EOF' "$RUNNER_TEMP/gh-errors"; then
-                cat "$RUNNER_TEMP/gh-errors" >&2
-                return 1
-              fi
-              if ((wait == 0)); then
-                touch "$outage"
-                cat "$RUNNER_TEMP/gh-errors" >&2
-                return 1
-              fi
-              echo "GitHub failed, so gh tries again in $wait seconds: $(head -n 1 "$RUNNER_TEMP/gh-errors")" >&2
-              sleep "$wait"
-            done
-          }
+          eval "$OUTAGE"
           # The jobs of an attempt that failed or ran out of time, by name, given the
           # conclusion of the attempt: GitHub cancels a job at its time limit and says
           # so in an annotation. An attempt that a newer run cancelled broke nothing; it
@@ -533,6 +550,7 @@ jobs:
           # write, such as "Browser step:"; the answer test_marker of the blueprint sets it.
           MARKER: ""
         run: |
+          eval "$OUTAGE"
           # Lengths in characters, not bytes, so that a cut keeps every character whole.
           export LC_ALL=C.UTF-8
           # A cell of the table, as code: the names and the logs of a pull request reach
@@ -572,18 +590,24 @@ jobs:
           # started again, failed in no test. In one that a person or a time limit
           # cancelled, only the jobs that ran out of time broke: a job that waits for the
           # others fails when they are cancelled.
-          first="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN/attempts/1" --jq .conclusion)"
-          jobs="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN/attempts/1/jobs" --paginate \
+          first="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN/attempts/1" --jq .conclusion)"
+          jobs="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN/attempts/1/jobs" --paginate \
             --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | [.id, .conclusion, .html_url, .name, ([.steps[]? | select(.conclusion == "failure" or .conclusion == "cancelled") | .name] | join(", "))] | @tsv')"
           rows=""
           # Each job with each of its tests, one to a line, for the count in the issue.
           counted=""
+          no_logs=""
           while IFS=$'\t' read -r -u 3 id conclusion url name steps; do
             if [[ -z "$id" ]] || [[ "$conclusion" == failure && "$first" == cancelled ]]; then
               continue
             fi
-            errors="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$id/annotations" --paginate \
-              --jq '.[] | select(.annotation_level == "failure") | .message | gsub("\\s+"; " ")' || true)"
+            # A job without annotations that GitHub gives has no error of its own here;
+            # the row takes it from the log.
+            if ! errors="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$id/annotations" --paginate \
+              --jq '.[] | select(.annotation_level == "failure") | .message | gsub("\\s+"; " ")')"; then
+              given_up && exit 1
+              errors=""
+            fi
             if grep -q "higher priority waiting request" <<<"$errors"; then
               rows=""
               counted=""
@@ -598,10 +622,18 @@ jobs:
               continue
             fi
             # A log that GitHub doesn't give, such as that of a job that never started,
-            # leaves the row without its tests, and a warning of the run says why.
-            if ! log="$(gh api --header "$API_VERSION_HEADER" "${allow[@]}" "repos/$GH_REPO/actions/jobs/$id/logs" 2> "$RUNNER_TEMP/log-error")"; then
-              echo "::warning::The log of the job $(plain "$name") couldn't be read, so the report names none of its tests: $(plain "$(head -n 1 "$RUNNER_TEMP/log-error")")"
+            # leaves the row without its tests, and a warning of the run says why; so
+            # does one that GitHub kept failing, as the report is worth more than a log.
+            # After a log that GitHub kept failing, the report asks for no more: it
+            # would wait for each of them, longer than the job may run.
+            if [[ -n "$no_logs" ]]; then
               log=""
+            elif ! log="$(tried gh api --header "$API_VERSION_HEADER" "${allow[@]}" "repos/$GH_REPO/actions/jobs/$id/logs")"; then
+              echo "::warning::The log of the job $(plain "$name") couldn't be read, so the report names none of its tests: $(plain "$(head -n 1 "$RUNNER_TEMP/gh-errors")")"
+              log=""
+              if given_up; then
+                no_logs=true
+              fi
             fi
             log="$(sed -E 's/\x1b\[[0-9;]*m//g; s/^[0-9-]+T[0-9:.]+Z //' <<<"$log")"
             # The tests that pytest names in the log. Other tests, such as those of a
@@ -681,7 +713,7 @@ jobs:
           report="$(printf '**%s** failed at first and passed when it ran again, on %s at %s ([the run](%s)):\n\n%s\n%s\n%s' \
             "$NAME" "$where" "${SHA:0:7}" "$URL" \
             "| Job | Step | Test | Error |" "| --- | --- | --- | --- |" "$rows")"
-          number="$(gh issue list --state open --search "in:title \"$title\"" --json number,title \
+          number="$(tried gh issue list --state open --search "in:title \"$title\"" --json number,title \
             --jq "map(select(.title == \"$title\")) | .[0].number // empty")"
           # Each run gets a comment, and the body of the issue counts how often each job
           # and test flaked, and when it last did, the latest first. The bot rewrites the
@@ -690,8 +722,8 @@ jobs:
           # that a person edited in the browser ends its lines with CRLF. Two reports at
           # the same moment may miss a count, never a comment.
           if [[ -n "$number" ]]; then
-            gh issue comment "$number" --body "$report"
-            body="$(gh issue view "$number" --json body --jq .body)"
+            once gh issue comment "$number" --body "$report"
+            body="$(tried gh issue view "$number" --json body --jq .body)"
           else
             body="The flaky-test bot counts here every job and test that failed at first and then passed without a change of the code, and describes each run in a comment, with the step, the test and the error that failed. Fix the test, then close this issue."
           fi
@@ -757,10 +789,10 @@ jobs:
               }
             ' > "$RUNNER_TEMP/issue.md"
           if [[ -n "$number" ]]; then
-            gh issue edit "$number" --body-file "$RUNNER_TEMP/issue.md"
+            tried gh issue edit "$number" --body-file "$RUNNER_TEMP/issue.md"
           else
-            created="$(gh issue create --title "$title" --label maintenance --body-file "$RUNNER_TEMP/issue.md")"
-            gh issue comment "$created" --body "$report"
+            created="$(once gh issue create --title "$title" --label maintenance --body-file "$RUNNER_TEMP/issue.md")"
+            once gh issue comment "$created" --body "$report"
           fi
           {
             echo "### Flaky"
@@ -879,44 +911,7 @@ jobs:
           RUN: ${{ github.event.workflow_run.id }}
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          # GitHub answers a call now and then with an error of its own, a 5xx, or not in
-          # time, and for minutes in an outage, as on 8 and 9 November 2026: each call of
-          # gh tries again then, four times in all, 10, 20 and 40 seconds apart, with
-          # what it printed only once it worked. Any other error, such as a refusal,
-          # stops it at once; the last one stays in $RUNNER_TEMP/gh-errors. When GitHub
-          # keeps failing, the step ends with a notice instead of a failure: the next
-          # event or the bot-health bot catches up, and a person has nothing to do
-          # (decision 0136).
-          outage="$RUNNER_TEMP/github-unavailable"
-          unavailable() {
-            local status=$?
-            if ((status)) && [[ -e "$outage" ]]; then
-              echo "::notice title=GitHub is unavailable::GitHub kept failing ($(head -n 1 "$RUNNER_TEMP/gh-errors")), as in an outage of GitHub (https://www.githubstatus.com), so the bot did nothing this time; its next run catches up. Nothing to do for a person."
-              exit 0
-            fi
-          }
-          trap unavailable EXIT
-          tried() {
-            local wait output
-            rm -f "$outage"
-            for wait in 10 20 40 0; do
-              if output="$("$@" 2>"$RUNNER_TEMP/gh-errors")"; then
-                printf '%s\n' "$output"
-                return 0
-              fi
-              if ! grep -qiE 'HTTP 5[0-9]{2}|timeout|timed out|connection reset|unexpected EOF' "$RUNNER_TEMP/gh-errors"; then
-                cat "$RUNNER_TEMP/gh-errors" >&2
-                return 1
-              fi
-              if ((wait == 0)); then
-                touch "$outage"
-                cat "$RUNNER_TEMP/gh-errors" >&2
-                return 1
-              fi
-              echo "GitHub failed, so gh tries again in $wait seconds: $(head -n 1 "$RUNNER_TEMP/gh-errors")" >&2
-              sleep "$wait"
-            done
-          }
+          eval "$OUTAGE"
           # A release that GitHub couldn't start, as in its outage of 9 November 2026,
           # failed in no step and with no annotation: another try while GitHub fails
           # would fail too, and the scheduled run of the release takes it up. A job
@@ -1223,17 +1218,18 @@ jobs:
           EVENT: ${{ github.event.workflow_run.event }}
           BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
+          eval "$OUTAGE"
           # Only the runs for the head of a pull request report its checks, and only
           # those for the head of main tell the state of main.
           if [[ "$EVENT" == push ]]; then
-            tip="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/git/ref/heads/$BRANCH" --jq .object.sha)"
+            tip="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/git/ref/heads/$BRANCH" --jq .object.sha)"
             if [[ "$tip" != "$SHA" ]]; then
               echo "${SHA:0:7} is no longer the head of $BRANCH; its run of $NAME stays cancelled." >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             head="$BRANCH"
           else
-            number="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/commits/$SHA/pulls" \
+            number="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/commits/$SHA/pulls" \
               --jq "map(select(.state == \"open\" and .head.sha == \"$SHA\")) | .[0].number // empty")"
             if [[ -z "$number" ]]; then
               echo "${SHA:0:7} is not the head of an open pull request; its run of $NAME stays cancelled." >> "$GITHUB_STEP_SUMMARY"
@@ -1242,7 +1238,7 @@ jobs:
             head="#$number"
           fi
           # A newer run of the same commit reports the checks itself.
-          newer="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/workflows/$WORKFLOW/runs?head_sha=$SHA" --paginate \
+          newer="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/workflows/$WORKFLOW/runs?head_sha=$SHA" --paginate \
             --jq ".workflow_runs[] | select(.id > $RUN) | .id")"
           if [[ -n "$newer" ]]; then
             echo "A newer run of $NAME for ${SHA:0:7} reports the checks of $head." >> "$GITHUB_STEP_SUMMARY"
@@ -1250,12 +1246,12 @@ jobs:
           fi
           # Cancelled by the concurrency of the workflow, or at the time limit of a job;
           # each says so on the job.
-          jobs="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN/attempts/$ATTEMPT/jobs" --paginate \
+          jobs="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN/attempts/$ATTEMPT/jobs" --paginate \
             --jq '.jobs[] | select(.conclusion == "cancelled") | .id')"
           raced=false
           late=false
           for job in $jobs; do
-            messages="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$job/annotations" --paginate --jq '.[].message')"
+            messages="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$job/annotations" --paginate --jq '.[].message')"
             if grep -q "higher priority waiting request" <<<"$messages"; then
               raced=true
               break
@@ -1265,7 +1261,10 @@ jobs:
             fi
           done
           if [[ "$raced" == true ]]; then
-            gh run rerun "$RUN"
+            # A try before that GitHub failed may have started it already.
+            if ! tried gh run rerun "$RUN" && ! grep -q "already running" "$RUNNER_TEMP/gh-errors"; then
+              exit 1
+            fi
             echo "A run for an older commit cancelled $NAME for the head of $head; it runs again." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
@@ -1275,18 +1274,17 @@ jobs:
           if [[ "$late" == true && "$ATTEMPT" == 1 && "$TESTS" != true ]]; then
             # The bot-health bot watches some of these workflows too and may have run it
             # again first: then the run is its own, and GitHub refuses a rerun while it runs.
-            state="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN" --jq '"\(.status) \(.run_attempt)"')"
+            state="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN" --jq '"\(.status) \(.run_attempt)"')"
             if [[ "$state" != "completed 1" ]]; then
               echo "$NAME for the head of $head ran again already; the bot leaves it alone." >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             # It may also start again between the look and the rerun.
-            if ! output="$(gh run rerun "$RUN" --failed 2>&1)"; then
-              if grep -q "already running" <<<"$output"; then
+            if ! output="$(tried gh run rerun "$RUN" --failed)"; then
+              if grep -q "already running" "$RUNNER_TEMP/gh-errors"; then
                 echo "$NAME for the head of $head runs again already; the bot leaves it alone." >> "$GITHUB_STEP_SUMMARY"
                 exit 0
               fi
-              printf '%s\n' "$output" >&2
               exit 1
             fi
             printf '%s\n' "$output"
@@ -1409,44 +1407,7 @@ jobs:
           RUN: ${{ github.event.workflow_run.id }}
           NAME: ${{ github.event.workflow_run.name }}
         run: |
-          # GitHub answers a call now and then with an error of its own, a 5xx, or not in
-          # time, and for minutes in an outage, as on 8 and 9 November 2026: each call of
-          # gh tries again then, four times in all, 10, 20 and 40 seconds apart, with
-          # what it printed only once it worked. Any other error, such as a refusal,
-          # stops it at once; the last one stays in $RUNNER_TEMP/gh-errors. When GitHub
-          # keeps failing, the step ends with a notice instead of a failure: the next
-          # event or the bot-health bot catches up, and a person has nothing to do
-          # (decision 0136).
-          outage="$RUNNER_TEMP/github-unavailable"
-          unavailable() {
-            local status=$?
-            if ((status)) && [[ -e "$outage" ]]; then
-              echo "::notice title=GitHub is unavailable::GitHub kept failing ($(head -n 1 "$RUNNER_TEMP/gh-errors")), as in an outage of GitHub (https://www.githubstatus.com), so the bot did nothing this time; its next run catches up. Nothing to do for a person."
-              exit 0
-            fi
-          }
-          trap unavailable EXIT
-          tried() {
-            local wait output
-            rm -f "$outage"
-            for wait in 10 20 40 0; do
-              if output="$("$@" 2>"$RUNNER_TEMP/gh-errors")"; then
-                printf '%s\n' "$output"
-                return 0
-              fi
-              if ! grep -qiE 'HTTP 5[0-9]{2}|timeout|timed out|connection reset|unexpected EOF' "$RUNNER_TEMP/gh-errors"; then
-                cat "$RUNNER_TEMP/gh-errors" >&2
-                return 1
-              fi
-              if ((wait == 0)); then
-                touch "$outage"
-                cat "$RUNNER_TEMP/gh-errors" >&2
-                return 1
-              fi
-              echo "GitHub failed, so gh tries again in $wait seconds: $(head -n 1 "$RUNNER_TEMP/gh-errors")" >&2
-              sleep "$wait"
-            done
-          }
+          eval "$OUTAGE"
           # A job that the step "Make sure that Harden-Runner blocks" stopped says so in
           # an annotation; any other failure is one of the change.
           jobs="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN/attempts/1/jobs" --paginate \
@@ -1609,42 +1570,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           SHA: ${{ github.event.workflow_run.head_sha }}
+          INSTEAD: the coach reports without the coverage this time
         run: |
           # The coach runs after every check of every pull request: one error of GitHub
-          # must not fail it, as in its outage of 9 November 2026. Each call of gh
-          # tries again after a 5xx or no answer, 10, 20 and 40 seconds apart, and when
-          # GitHub keeps failing, the coach reports without the coverage this time,
-          # with a notice instead of a failure (decision 0136).
-          outage="$RUNNER_TEMP/github-unavailable"
-          unavailable() {
-            local status=$?
-            if ((status)) && [[ -e "$outage" ]]; then
-              echo "::notice title=GitHub is unavailable::GitHub kept failing ($(head -n 1 "$RUNNER_TEMP/gh-errors")), as in an outage of GitHub (https://www.githubstatus.com), so the coach reports without the coverage this time; its next run catches up. Nothing to do for a person."
-              exit 0
-            fi
-          }
-          trap unavailable EXIT
-          tried() {
-            local wait output
-            rm -f "$outage"
-            for wait in 10 20 40 0; do
-              if output="$("$@" 2>"$RUNNER_TEMP/gh-errors")"; then
-                printf '%s\n' "$output"
-                return 0
-              fi
-              if ! grep -qiE 'HTTP 5[0-9]{2}|timeout|timed out|connection reset|unexpected EOF' "$RUNNER_TEMP/gh-errors"; then
-                cat "$RUNNER_TEMP/gh-errors" >&2
-                return 1
-              fi
-              if ((wait == 0)); then
-                touch "$outage"
-                cat "$RUNNER_TEMP/gh-errors" >&2
-                return 1
-              fi
-              echo "GitHub failed, so gh tries again in $wait seconds: $(head -n 1 "$RUNNER_TEMP/gh-errors")" >&2
-              sleep "$wait"
-            done
-          }
+          # must not fail it, as in its outage of 9 November 2026 (decision 0136).
+          eval "$OUTAGE"
           # The newest run of the tests of the head that ended, and its workflow.
           run="$(tried gh run list --commit "$SHA" --status completed --limit 100 \
             --json databaseId,workflowDatabaseId,workflowName,conclusion \
@@ -1892,6 +1822,7 @@ jobs:
           fi
       - name: Create a token of the release app for the branch
         id: branch-app
+        continue-on-error: true
         if: steps.collect.outputs.action == 'commit' && steps.release-app.outputs.ready == 'true'
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
@@ -1921,6 +1852,7 @@ jobs:
             --folder "$RUNNER_TEMP/fixes" >> "$GITHUB_STEP_SUMMARY"
       - name: Create a token of the release app for main
         id: main-app
+        continue-on-error: true
         if: >-
           contains(fromJSON('["pull-request", "close"]'), steps.collect.outputs.action) &&
           steps.release-app.outputs.ready == 'true'
@@ -1935,6 +1867,19 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
           permission-workflows: write
+      # In an outage, GitHub fails the token of the app too, after its own three more
+      # tries: the bot sits it out with a notice, while a token that GitHub refuses as
+      # it answers fails the job (decision 0155).
+      - name: Tell an outage of GitHub from a refused token
+        if: steps.branch-app.outcome == 'failure' || steps.main-app.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          eval "$OUTAGE"
+          tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO" --jq .full_name > /dev/null
+          echo "::error title=The release app gave no token::GitHub answers, but refused the token of the release app; the log of the step that asked for it has its answer. Most often the app isn't installed on this repository or lacks a permission that the bot asks for, or the secret RELEASE_AUTOMATION_PRIVATE_KEY of the environment release holds the key of another app. A short outage of GitHub that ended a moment ago looks the same: if none of these holds, the next run tells them apart."
+          exit 1
       - name: Keep the pull request with the fixes of main
         if: steps.main-app.outputs.token != ''
         env:
@@ -1967,9 +1912,14 @@ jobs:
           SHA: ${{ github.event.workflow_run.head_sha }}
           URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          eval "$OUTAGE"
           marker="<!-- the fix bot failed on $SHA -->"
-          if [[ -n "$PULL" ]] && ! gh pr view "$PULL" --json comments --jq '.comments[].body' | grep -qF "$marker"; then
-            gh pr comment "$PULL" --body "The fix bot couldn't fix the findings of this pull request that a command fixes ($URL); its summary says why. The PR coach names the command of each check that failed, which makes the fixes on your machine.$marker"
+          if [[ -z "$PULL" ]]; then
+            exit 0
+          fi
+          comments="$(tried gh pr view "$PULL" --json comments --jq '.comments[].body')"
+          if ! grep -qF "$marker" <<<"$comments"; then
+            once gh pr comment "$PULL" --body "The fix bot couldn't fix the findings of this pull request that a command fixes ($URL); its summary says why. The PR coach names the command of each check that failed, which makes the fixes on your machine.$marker"
           fi
       # The issue of a failing bot of main: a failure opens it or brings it up to
       # date, and the next run that passes closes it.
@@ -1981,12 +1931,18 @@ jobs:
           FAILED: ${{ job.status == 'failure' }}
           URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          eval "$OUTAGE"
+          # A job that sat out an outage of GitHub did nothing, so it passed nothing
+          # either: the issue stays as it is (decision 0155).
+          if [[ "$FAILED" != true && -e "$RUNNER_TEMP/github-sat-out" ]]; then
+            exit 0
+          fi
           title="The fix bot fails on main"
-          number="$(gh issue list --state open --search "\"$title\" in:title" --json number,title \
+          number="$(tried gh issue list --state open --search "\"$title\" in:title" --json number,title \
             --jq "map(select(.title == \"$title\"))[0].number // empty")"
           if [[ "$FAILED" != true ]]; then
             if [[ -n "$number" ]]; then
-              gh issue close "$number" --comment "The fix bot passes again: $URL"
+              once gh issue close "$number" --comment "The fix bot passes again: $URL"
             fi
             exit 0
           fi
@@ -1994,9 +1950,9 @@ jobs:
             "The fix bot failed after the checks of main, so findings that a command fixes may stay there. Its log says why; the next run that passes closes this issue." \
             "The latest failure: $URL")"
           if [[ -n "$number" ]]; then
-            gh issue edit "$number" --body "$body"
+            tried gh issue edit "$number" --body "$body"
           else
-            gh issue create --title "$title" --label maintenance --body "$body"
+            once gh issue create --title "$title" --label maintenance --body "$body"
           fi
       - name: Wait until Harden-Runner has removed Docker
         # Harden-Runner removes Docker with apt-get in the background; a job that ends
@@ -2172,6 +2128,7 @@ jobs:
           fi
       - name: Create a token of the release app for the pull request
         id: app
+        continue-on-error: true
         if: steps.release-app.outputs.ready == 'true'
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
@@ -2180,6 +2137,19 @@ jobs:
           # Only what the title and one commit on the branch need.
           permission-contents: write
           permission-pull-requests: write
+      # In an outage, GitHub fails the token of the app too, after its own three more
+      # tries: the bot sits it out with a notice, while a token that GitHub refuses as
+      # it answers fails the job (decision 0155).
+      - name: Tell an outage of GitHub from a refused token
+        if: steps.app.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          eval "$OUTAGE"
+          tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO" --jq .full_name > /dev/null
+          echo "::error title=The release app gave no token::GitHub answers, but refused the token of the release app; the log of the step that asked for it has its answer. Most often the app isn't installed on this repository or lacks a permission that the bot asks for, or the secret RELEASE_AUTOMATION_PRIVATE_KEY of the environment release holds the key of another app. A short outage of GitHub that ended a moment ago looks the same: if none of these holds, the next run tells them apart."
+          exit 1
       - name: Set the title and commit the draft of the entry
         if: steps.app.outputs.token != ''
         env:
@@ -2206,8 +2176,9 @@ jobs:
           PULL: ${{ steps.own.outputs.pull || github.event.workflow_run.pull_requests[0].number }}
           URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          eval "$OUTAGE"
           if [[ -n "$PULL" ]]; then
-            gh pr comment "$PULL" --body "The fix bot couldn't correct the title or draft the entry of the changelog of this pull request ($URL); its summary says why. The PR coach says what each needs."
+            once gh pr comment "$PULL" --body "The fix bot couldn't correct the title or draft the entry of the changelog of this pull request ($URL); its summary says why. The PR coach says what each needs."
           fi
       - name: Wait until Harden-Runner has removed Docker
         # Harden-Runner removes Docker with apt-get in the background; a job that ends
@@ -2329,13 +2300,16 @@ jobs:
           RUN: ${{ github.event.workflow_run.id }}
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          if ! gh run download "$RUN" --name diagrams --dir "$RUNNER_TEMP/diagrams"; then
+          eval "$OUTAGE"
+          if ! tried gh run download "$RUN" --name diagrams --dir "$RUNNER_TEMP/diagrams"; then
+            given_up && exit 1
             echo "The check diagrams kept nothing; another check failed." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           # The bot's own commit drew pictures that differ again: drawing them once more
           # would only repeat that.
-          if [[ "$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/commits/$SHA" --jq '.commit.message | split("\n")[0]')" == "$HEADLINE" ]]; then
+          headline="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/commits/$SHA" --jq '.commit.message | split("\n")[0]')"
+          if [[ "$headline" == "$HEADLINE" ]]; then
             echo "::error::The diagrams that the diagram bot committed in ${SHA:0:7} differ again from what their sources draw; scripts/diagrams.sh doesn't draw them the same way twice."
             exit 1
           fi
@@ -2388,6 +2362,7 @@ jobs:
           fi
       - name: Create a token of the release app
         id: app
+        continue-on-error: true
         if: steps.release-app.outputs.ready == 'true'
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
@@ -2396,6 +2371,19 @@ jobs:
           # Only what a commit on the branch and one comment need.
           permission-contents: write
           permission-pull-requests: write
+      # In an outage, GitHub fails the token of the app too, after its own three more
+      # tries: the bot sits it out with a notice, while a token that GitHub refuses as
+      # it answers fails the job (decision 0155).
+      - name: Tell an outage of GitHub from a refused token
+        if: steps.app.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          eval "$OUTAGE"
+          tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO" --jq .full_name > /dev/null
+          echo "::error title=The release app gave no token::GitHub answers, but refused the token of the release app; the log of the step that asked for it has its answer. Most often the app isn't installed on this repository or lacks a permission that the bot asks for, or the secret RELEASE_AUTOMATION_PRIVATE_KEY of the environment release holds the key of another app. A short outage of GitHub that ended a moment ago looks the same: if none of these holds, the next run tells them apart."
+          exit 1
       - name: Commit the diagrams onto the branch of the pull request
         if: steps.app.outputs.token != ''
         env:
@@ -2407,7 +2395,8 @@ jobs:
           SHA: ${{ github.event.workflow_run.head_sha }}
           URL: ${{ github.event.workflow_run.html_url }}
         run: |
-          head="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/git/ref/heads/$BRANCH" --jq .object.sha)"
+          eval "$OUTAGE"
+          head="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/git/ref/heads/$BRANCH" --jq .object.sha)"
           if [[ "$head" != "$SHA" ]]; then
             echo "$BRANCH moved on from ${SHA:0:7}; the checks of its new head draw the diagrams again." >> "$GITHUB_STEP_SUMMARY"
             exit 0
@@ -2419,17 +2408,18 @@ jobs:
           # the push starts the checks again. The sign-off names the app's account, which
           # is the author of the commit. blueprint.py takes only sources, pictures and
           # pages of Markdown from what the check kept.
-          user_id="$(gh api --header "$API_VERSION_HEADER" "users/${APP_SLUG}[bot]" --jq .id)"
+          user_id="$(tried gh api --header "$API_VERSION_HEADER" "users/${APP_SLUG}[bot]" --jq .id)"
           body="Drawn by scripts/diagrams.sh --extract from the sources in docs/diagrams/, in the check diagrams: $URL
 
           Signed-off-by: ${APP_SLUG}[bot] <${user_id}+${APP_SLUG}[bot]@users.noreply.github.com>"
           python3 "$tool" --repo "$GH_REPO" diagrams commit "$kept" --branch "$BRANCH" \
             --head "$SHA" --headline "$HEADLINE" --body "$body" > "$RUNNER_TEMP/commit.json"
-          commit="$(gh api --header "$API_VERSION_HEADER" graphql --input "$RUNNER_TEMP/commit.json" --jq .data.createCommitOnBranch.commit.oid)"
+          # A commit that GitHub failed may have landed: the next run of the check sees.
+          commit="$(once gh api --header "$API_VERSION_HEADER" graphql --input "$RUNNER_TEMP/commit.json" --jq .data.createCommitOnBranch.commit.oid)"
           echo "Committed the diagrams onto $BRANCH: $commit" >> "$GITHUB_STEP_SUMMARY"
           python3 "$tool" diagrams report "$kept" --for comment > "$RUNNER_TEMP/comment.md"
           if [[ -s "$RUNNER_TEMP/comment.md" ]]; then
-            gh pr comment "${NUMBER:-$BRANCH}" --body-file "$RUNNER_TEMP/comment.md"
+            once gh pr comment "${NUMBER:-$BRANCH}" --body-file "$RUNNER_TEMP/comment.md"
           fi
       - name: Wait until Harden-Runner has removed Docker
         # Harden-Runner removes Docker with apt-get in the background; a job that ends
@@ -2452,4 +2442,5 @@ jobs:
           NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
           URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          gh pr comment "${NUMBER:-$BRANCH}" --body "The diagram bot couldn't commit the diagrams of this pull request ($URL). Run \`bash scripts/diagrams.sh --extract\` with Docker and commit what it changes, or take the files from the artifact \`diagrams\` of the check *diagrams*."
+          eval "$OUTAGE"
+          once gh pr comment "${NUMBER:-$BRANCH}" --body "The diagram bot couldn't commit the diagrams of this pull request ($URL). Run \`bash scripts/diagrams.sh --extract\` with Docker and commit what it changes, or take the files from the artifact \`diagrams\` of the check *diagrams*."
