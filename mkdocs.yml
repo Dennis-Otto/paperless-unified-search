@@ -14,6 +14,14 @@ repo_url: https://github.com/Dennis-Otto/paperless-unified-search
 repo_name: Dennis-Otto/paperless-unified-search
 copyright: "© 2026 Dennis Otto"
 
+# The icon of the app, img/app.svg, as the logo in the header and the favicon, in place
+# of Material's book. MkDocs publishes only what is in docs/, so the website takes a
+# copy, which scripts/check-project.sh keeps equal to the icon of the app. The rest of
+# the theme comes from .github/mkdocs-blueprint.yml.
+theme:
+  logo: images/app.svg
+  favicon: images/app.svg
+
 # Wide diagrams that scroll sideways on a phone, the hero of the home page and the
 # animation of the page Configure.
 extra_css:
