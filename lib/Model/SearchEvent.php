@@ -10,10 +10,13 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\Model;
 
 use JsonSerializable;
+use OCA\PaperlessUnifiedSearch\Exception\RequestFailure;
 
 /**
  * A problem of the search, as the history of the administration settings shows it:
- * when it happened, what it was, in which step, with which error and after how long.
+ * when it happened, what it was, in which step, with which error and after how long, and
+ * for a request to Paperless that failed, its cause with the status of the answer, for
+ * which the settings say what to do as the test of the connection does.
  */
 final class SearchEvent implements JsonSerializable {
 	/** The search failed, and the user saw no Paperless documents. */
@@ -32,6 +35,8 @@ final class SearchEvent implements JsonSerializable {
 		public readonly string $error,
 		public readonly string $message,
 		public readonly int $durationMs,
+		public readonly ?RequestFailure $reason = null,
+		public readonly ?int $status = null,
 	) {
 	}
 
@@ -55,14 +60,22 @@ final class SearchEvent implements JsonSerializable {
 			return null;
 		}
 
-		return new self($time, $kind, $step, $error, $message, $durationMs);
+		// An entry of a version before the causes has none, and one of a cause that this
+		// version doesn't know keeps its row without it.
+		$cause = isset($values['reason']) && is_string($values['reason']) ? RequestFailure::tryFrom($values['reason']) : null;
+		$status = $cause !== null && isset($values['status']) && is_int($values['status']) ? $values['status'] : null;
+
+		return new self($time, $kind, $step, $error, $message, $durationMs, $cause, $status);
 	}
 
 	/**
-	 * @return array{time: int, kind: string, step: string, error: string, message: string, durationMs: int}
+	 * The values to store, with the cause and its status only for an event that has one,
+	 * so that the others stay as before.
+	 *
+	 * @return array{time: int, kind: string, step: string, error: string, message: string, durationMs: int, reason?: string, status?: ?int}
 	 */
 	public function jsonSerialize(): array {
-		return [
+		$values = [
 			'time' => $this->time,
 			'kind' => $this->kind,
 			'step' => $this->step,
@@ -70,5 +83,11 @@ final class SearchEvent implements JsonSerializable {
 			'message' => $this->message,
 			'durationMs' => $this->durationMs,
 		];
+		if ($this->reason !== null) {
+			$values['reason'] = $this->reason->value;
+			$values['status'] = $this->status;
+		}
+
+		return $values;
 	}
 }

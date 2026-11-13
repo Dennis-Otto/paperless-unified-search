@@ -10,6 +10,8 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Service;
 
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
+use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
+use OCA\PaperlessUnifiedSearch\Exception\RequestFailure;
 use OCA\PaperlessUnifiedSearch\Model\DiagnosticsHistory;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
@@ -40,7 +42,7 @@ final class SearchDiagnosticsTest extends TestCase {
 	}
 
 	/**
-	 * @return array<string, array{Throwable, list<string>, string, string}>
+	 * @return array<string, array{0: Throwable, 1: list<string>, 2: string, 3: string, 4?: string}>
 	 */
 	public static function failures(): array {
 		return [
@@ -49,6 +51,7 @@ final class SearchDiagnosticsTest extends TestCase {
 				['TEST_VALUE', 'salary'],
 				'RuntimeException',
 				'cURL error 28: Connection timed out after 3001 milliseconds for https://paperless.example.com/api/documents/',
+				'timeout',
 			],
 			'token and term in the message' => [
 				new RuntimeException("Token TEST_VALUE refused\n\tfor Salary July"),
@@ -80,6 +83,7 @@ final class SearchDiagnosticsTest extends TestCase {
 				['TEST_VALUE', 'salary'],
 				'LocalServerException',
 				'Host "paperless.example.com" violates local access rules',
+				'local_address',
 			],
 			'fragment of a URL' => [
 				new RuntimeException('Redirected to `https://paperless.example.com/login#next`'),
@@ -115,26 +119,54 @@ final class SearchDiagnosticsTest extends TestCase {
 	 * @param list<string> $secrets
 	 */
 	#[DataProvider('failures')]
-	public function testAFailureIsRecordedWithoutTheTokenTheTermAndTheQuery(Throwable $error, array $secrets, string $type, string $message): void {
+	public function testAFailureIsRecordedWithoutTheTokenTheTermAndTheQuery(Throwable $error, array $secrets, string $type, string $message, ?string $reason = null): void {
 		$diagnostics = $this->diagnostics();
 
 		$diagnostics->recordFailure(SearchEvent::STEP_PAPERLESS, $error, 4711, $secrets);
 
+		$event = [
+			'time' => self::NOW,
+			'kind' => SearchEvent::KIND_FAILED,
+			'step' => SearchEvent::STEP_PAPERLESS,
+			'error' => $type,
+			'message' => $message,
+			'durationMs' => 4711,
+		];
+		if ($reason !== null) {
+			// An error of the HTTP client without answer keeps the cause that it names.
+			$event += ['reason' => $reason, 'status' => null];
+		}
 		self::assertSame([
 			'since' => self::NOW,
 			'failed' => 1,
 			'retried' => 0,
 			'lastFailureAt' => self::NOW,
 			'recoveredAt' => null,
-			'events' => [[
-				'time' => self::NOW,
-				'kind' => SearchEvent::KIND_FAILED,
-				'step' => SearchEvent::STEP_PAPERLESS,
-				'error' => $type,
-				'message' => $message,
-				'durationMs' => 4711,
-			]],
+			'events' => [$event],
 		], $diagnostics->getHistory()?->jsonSerialize());
+	}
+
+	/**
+	 * A search whose request to Paperless got no answer, as in an outage, keeps the cause
+	 * that the error of the HTTP client names, also inside another error; an error of the
+	 * files with such a message, or one without a code of cURL, has none (#402).
+	 */
+	public function testAFailedRequestWithoutAnswerKeepsTheCauseOfTheHttpClient(): void {
+		$diagnostics = $this->diagnostics();
+
+		$diagnostics->recordFailure(SearchEvent::STEP_PAPERLESS, new RuntimeException('Search failed', 0, new RuntimeException('cURL error 7: Failed to connect to paperless.example.com port 443')), 30, []);
+		$this->now += 60;
+		$diagnostics->recordFailure(SearchEvent::STEP_FILES, new RuntimeException('cURL error 28: Operation timed out'), 12, []);
+		$this->now += 60;
+		$diagnostics->recordFailure(SearchEvent::STEP_PAPERLESS, new RuntimeException('Paperless is not configured.'), 1, []);
+
+		$history = $diagnostics->getHistory();
+		self::assertNotNull($history);
+		self::assertCount(3, $history->events);
+		self::assertSame(RequestFailure::Unreachable, $history->events[2]->reason);
+		self::assertNull($history->events[2]->status);
+		self::assertNull($history->events[1]->reason);
+		self::assertNull($history->events[0]->reason);
 	}
 
 	public function testARetryIsRecordedAsAProblemOfTheRequestToPaperless(): void {
@@ -155,7 +187,39 @@ final class SearchDiagnosticsTest extends TestCase {
 			'error' => 'RuntimeException',
 			'message' => 'cURL error 6: Could not resolve host: paperless.example.com',
 			'durationMs' => 3002,
+			// The cause of the error of the HTTP client, as the test of the connection names it.
+			'reason' => 'unknown_host',
+			'status' => null,
 		], $history->events[0]->jsonSerialize());
+	}
+
+	/**
+	 * A request to Paperless that failed keeps its cause and the status of its answer, for
+	 * which the settings say what to do; another error, such as one of the files, has none.
+	 */
+	public function testAFailedRequestToPaperlessKeepsItsCause(): void {
+		$diagnostics = $this->diagnostics();
+
+		$diagnostics->recordFailure(SearchEvent::STEP_PAPERLESS, PaperlessRequestException::forStatus(401), 40, ['TEST_VALUE']);
+		$this->now++;
+		$diagnostics->recordFailure(SearchEvent::STEP_FILES, new RuntimeException('Storage unavailable'), 12, []);
+
+		$history = $diagnostics->getHistory();
+		self::assertNotNull($history);
+		self::assertNull($history->events[0]->reason);
+		self::assertNull($history->events[0]->status);
+		self::assertSame(RequestFailure::Unauthorized, $history->events[1]->reason);
+		self::assertSame(401, $history->events[1]->status);
+		self::assertSame([
+			'time' => self::NOW,
+			'kind' => SearchEvent::KIND_FAILED,
+			'step' => SearchEvent::STEP_PAPERLESS,
+			'error' => 'PaperlessRequestException',
+			'message' => 'Paperless returned HTTP 401.',
+			'durationMs' => 40,
+			'reason' => 'unauthorized',
+			'status' => 401,
+		], $this->storedHistory()['events'][1]);
 	}
 
 	public function testTheHistoryCountsEveryProblemAndKeepsTheLatestNewestFirst(): void {

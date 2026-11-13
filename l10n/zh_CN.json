@@ -56,6 +56,7 @@
 		"Each user can then choose in their personal settings, in the section Paperless, that every search of their own includes Paperless without the switch. Turned off, the personal settings don’t offer it and the search ignores what users chose.": "之后每个用户都可以在个人设置的 Paperless 部分中选择让自己的每次搜索都包含 Paperless，而无需使用开关。关闭后，个人设置中不再提供此选项，搜索也会忽略用户的选择。",
 		"Paperless": "Paperless",
 		"Always search my Paperless documents": "始终搜索我的 Paperless 文档",
+		"Your administrator lets you find only the documents that have one of these tags in Paperless: %s.": "您的管理员只允许您找到在 Paperless 中带有以下任一标签的文档：%s。",
 		"Saving…": "正在保存…",
 		"New in Paperless: {document}": "Paperless 新文档：{document}",
 		"_%n new document in Paperless_::_%n new documents in Paperless_": ["Paperless 中有 %n 个新文档"],

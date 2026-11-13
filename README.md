@@ -313,6 +313,8 @@ Since its version 1.9.0, Paperless Sync can let a user see only the documents wi
 
 The administration settings list the users with tags below the archive account, and **Try a search** and `occ paperless_unified_search:search --explain` name a document without one of their tags *Not among the tags that katja may see* (`not tagged`).
 
+The user reads it too: the section **Paperless** of their personal settings begins with *Your administrator lets you find only the documents that have one of these tags in Paperless: Katja, Household.*, and shows for such a user even when you let users choose neither of its settings, so that a search that comes back empty for another document doesn't look broken.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/what-a-user-with-tags-sees.dark.svg">
   <img src="docs/images/diagrams/what-a-user-with-tags-sees.svg" alt="What a user with tags sees: Paperless Sync lets katja see only the documents with the tag Katja. katja searches for invoice, and the search asks Paperless only for the documents with that tag. It checks the tags of each document that comes back: a document without the tag Katja stays hidden, not among her tags, even when a share of the archive shows katja its file. A document with the tag shows when katja can open its file, her own copy that Paperless Sync writes or a file of the archive account shared with her read-only, and otherwise stays hidden without a file. A user without a line, such as the administrator, sees every document as before.">
@@ -396,7 +398,7 @@ The URL may name a Docker service with an underscore, such as `http://paperless_
 | This URL answers, but not with the API of Paperless (HTTP 404) | The path of the URL, or a proxy in front of Paperless | Enter the address that opens Paperless in the browser, with the path when Paperless runs under one, such as `https://example.com/paperless` |
 | This URL forwards to another address | The URL redirects, and with **Paperless runs in my local network** Nextcloud follows no redirect | Enter the address that it forwards to, such as the one with `https` |
 | Paperless is older than 2.16 | Paperless answered HTTP 406: it doesn't speak version 9 of its API, which the app asks for | Update Paperless-ngx to 2.16 or newer |
-| Paperless no longer speaks version 10 of its API | Paperless answered HTTP 406 to version 10 of its API, which the app asks for since Paperless named it: this Paperless is newer than the app | Update Paperless Unified Search |
+| Paperless no longer speaks version 10 of its API | Paperless answered HTTP 406 to version 10 of its API, which the app asks for since Paperless named it: this Paperless is newer than the app, or it was downgraded or restored from an older backup | Update Paperless Unified Search; after a downgrade or a restore, **Test connection and save** fixes it |
 | Paperless answered with an error | Paperless itself failed, with a status of 5xx | Look into the log of Paperless, or try again later |
 | This URL answers, but not like Paperless-ngx | Another service, or the login page of a proxy | Check the address and its path |
 | Nextcloud does not connect to addresses of the local network | Paperless runs at an address of the local network | Select **Paperless runs in my local network**, as [Paperless in your local network](#paperless-in-your-local-network) describes |

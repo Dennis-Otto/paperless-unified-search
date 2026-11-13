@@ -103,7 +103,7 @@ curl -u admin -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
 | `redirect` | The URL forwards, and with the local network Nextcloud follows no redirect |
 | `http` | Another status, such as an error of Paperless with 5xx |
 | `unsupported_version` | HTTP 406: Paperless is older than 2.16 and doesn't speak version 9 of its API; updating Paperless-ngx fixes it |
-| `newer_api` | HTTP 406 to version 10 of the API, the newest that the app knows, which it asks for once Paperless named it: Paperless is newer than the app, and updating Paperless Unified Search fixes it |
+| `newer_api` | HTTP 406 to version 10 of the API, the newest that the app knows, which it asks for once Paperless named it: Paperless is newer than the app, and updating Paperless Unified Search fixes it. A Paperless that was downgraded or restored from an older backup answers the same way until **Test connection and save** asks it again |
 | `not_paperless` | The answer isn't a list of documents of Paperless-ngx |
 | `local_address` | Nextcloud refused the address of the local network |
 | `tls`, `tls_handshake` | Nextcloud doesn't trust the certificate, or couldn't set up an encrypted connection |

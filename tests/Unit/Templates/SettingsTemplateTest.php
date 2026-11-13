@@ -415,6 +415,28 @@ final class SettingsTemplateTest extends TestCase {
 	}
 
 	/**
+	 * A problem whose cause the app knows says in the column Error what failed and what to
+	 * do, as the test of the connection says it, and below it the error as it is, for a bug
+	 * report; one without a cause shows the error alone, as before.
+	 */
+	public function testAProblemWithACauseShowsItsAdviceAboveTheError(): void {
+		$history = $this->history('10/12/26, 8:05:00 AM', '');
+		$history['events'][0]['advice'] = 'Paperless did not answer in time. Check that it runs and is not overloaded, then try again.';
+		[, $page] = $this->render(new PublicConfig(self::STORED, true, false), $history);
+
+		$details = (new DOMXPath($page))->query('//table[contains(@class, "paperless-unified-search-events")]/tbody/tr/td/span[contains(@class, "paperless-unified-search-event-detail")]');
+		self::assertNotFalse($details);
+		self::assertCount(1, $details);
+		$detail = $details->item(0);
+		self::assertNotNull($detail);
+		self::assertSame('GuzzleHttp\\Exception\\ConnectException: timeout', $this->text($detail));
+		self::assertSame([
+			['10/12/26, 8:05:00 AM', 'Second try answered', 'Asking Paperless', 'Paperless did not answer in time. Check that it runs and is not overloaded, then try again. GuzzleHttp\\Exception\\ConnectException: timeout', '30001 ms'],
+			['10/12/26, 8:00:00 AM', 'Search failed', 'Looking for the files in Nextcloud', 'RuntimeException: database gone', '12 ms'],
+		], $this->rows($page, 'paperless-unified-search-events'));
+	}
+
+	/**
 	 * Every value that an administrator or Paperless controls reaches the page escaped, in
 	 * attributes and in text: none of them adds an element or an attribute.
 	 */
@@ -430,6 +452,7 @@ final class SettingsTemplateTest extends TestCase {
 				'kind' => SearchEvent::KIND_FAILED,
 				'step' => SearchEvent::STEP_PAPERLESS,
 				'error' => 'RuntimeException: ' . self::HOSTILE_TAG . self::HOSTILE,
+				'advice' => '',
 				'durationMs' => 5,
 			]],
 		];
@@ -472,7 +495,7 @@ final class SettingsTemplateTest extends TestCase {
 	 * A history of a failed search and of a request that only its second try answered, the
 	 * newest first, as AdminSettings formats it.
 	 *
-	 * @return array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, durationMs: int}>}
+	 * @return array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, advice: string, durationMs: int}>}
 	 */
 	private function history(string $lastFailure, string $recovery): array {
 		return [
@@ -487,6 +510,7 @@ final class SettingsTemplateTest extends TestCase {
 					'kind' => SearchEvent::KIND_RETRIED,
 					'step' => SearchEvent::STEP_PAPERLESS,
 					'error' => 'GuzzleHttp\\Exception\\ConnectException: timeout',
+					'advice' => '',
 					'durationMs' => 30001,
 				],
 				[
@@ -494,6 +518,7 @@ final class SettingsTemplateTest extends TestCase {
 					'kind' => SearchEvent::KIND_FAILED,
 					'step' => SearchEvent::STEP_FILES,
 					'error' => 'RuntimeException: database gone',
+					'advice' => '',
 					'durationMs' => 12,
 				],
 			],
@@ -504,7 +529,7 @@ final class SettingsTemplateTest extends TestCase {
 	 * The template rendered as Nextcloud renders it, with $_ and $l, and the page that a
 	 * browser reads from it.
 	 *
-	 * @param ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, durationMs: int}>} $history
+	 * @param ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, advice: string, durationMs: int}>} $history
 	 * @param ?array{summary: string, warnings: list<string>} $shares
 	 * @param list<string> $tokenWarnings the warnings about the account of the API token, as AdminSettings words them
 	 * @param array<string, list<string>> $userTags the tags that some users may see, by their IDs

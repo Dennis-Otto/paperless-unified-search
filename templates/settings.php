@@ -6,7 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2026 Dennis Otto
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * @var array{config: \OCA\PaperlessUnifiedSearch\Model\PublicConfig, tokenWarnings: list<string>, perUserArchives: string, perUserArchivesHelp: string, saveUrl: string, resetUrl: string, clearDiagnosticsUrl: string, tryUrl: string, accountUrl: string, syncUrl: string, syncAllowLocal: bool, history: ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, durationMs: int}>}, shares: ?array{summary: string, warnings: list<string>}, trustedMounts: ?string, userTags: array<string, list<string>>} $_
+ * @var array{config: \OCA\PaperlessUnifiedSearch\Model\PublicConfig, tokenWarnings: list<string>, perUserArchives: string, perUserArchivesHelp: string, saveUrl: string, resetUrl: string, clearDiagnosticsUrl: string, tryUrl: string, accountUrl: string, syncUrl: string, syncAllowLocal: bool, history: ?array{since: string, failed: int, retried: int, lastFailure: string, recovery: string, events: list<array{time: string, kind: string, step: string, error: string, advice: string, durationMs: int}>}, shares: ?array{summary: string, warnings: list<string>}, trustedMounts: ?string, userTags: array<string, list<string>>} $_
  */
 
 script('paperless_unified_search', 'settings');
@@ -323,7 +323,14 @@ $perUserArchives = static function () use ($_, $l): void {
 								<td role="cell" data-label="<?php p($columns['time']); ?>"><?php p($event['time']); ?></td>
 								<td role="cell" data-label="<?php p($columns['event']); ?>"><?php p($event['kind'] === \OCA\PaperlessUnifiedSearch\Model\SearchEvent::KIND_FAILED ? $l->t('Search failed') : $l->t('Second try answered')); ?></td>
 								<td role="cell" data-label="<?php p($columns['step']); ?>"><?php p($event['step'] === \OCA\PaperlessUnifiedSearch\Model\SearchEvent::STEP_FILES ? $l->t('Looking for the files in Nextcloud') : $l->t('Asking Paperless')); ?></td>
-								<td role="cell" data-label="<?php p($columns['error']); ?>"><?php p($event['error']); ?></td>
+								<td role="cell" data-label="<?php p($columns['error']); ?>">
+									<?php if ($event['advice'] === '') { ?>
+										<?php p($event['error']); ?>
+									<?php } else { ?>
+										<?php p($event['advice']); ?>
+										<span class="paperless-unified-search-event-detail"><?php p($event['error']); ?></span>
+									<?php } ?>
+								</td>
 								<td role="cell" data-label="<?php p($columns['duration']); ?>"><?php p($l->t('%s ms', [(string)$event['durationMs']])); ?></td>
 							</tr>
 						<?php } ?>

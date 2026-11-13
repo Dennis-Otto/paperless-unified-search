@@ -57,6 +57,7 @@ OC.L10N.register(
 		'Each user can then choose in their personal settings, in the section Paperless, that every search of their own includes Paperless without the switch. Turned off, the personal settings don’t offer it and the search ignores what users chose.': '之後每位使用者都可以在個人設定的 Paperless 區段中，選擇讓自己的每次搜尋都包含 Paperless，而無須使用開關。關閉後，個人設定不再提供此選項，搜尋也會忽略使用者的選擇。',
 		'Paperless': 'Paperless',
 		'Always search my Paperless documents': '一律搜尋我的 Paperless 文件',
+		'Your administrator lets you find only the documents that have one of these tags in Paperless: %s.': '您的管理員只允許您找到在 Paperless 中帶有下列任一標籤的文件：%s。',
 		'Saving…': '正在儲存…',
 		'New in Paperless: {document}': 'Paperless 新文件：{document}',
 		'_%n new document in Paperless_::_%n new documents in Paperless_': ['Paperless 中有 %n 個新文件'],

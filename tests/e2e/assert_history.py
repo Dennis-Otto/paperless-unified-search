@@ -22,6 +22,10 @@ VOID_ELEMENTS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "li
 # The address of the mock as the request that got no answer named it, without its query,
 # which repeats the term.
 DOCUMENTS_URL = "http://paperless-mock:8080/api/documents/"
+# What the settings say about a request that broke off without an answer, and about an
+# answer of HTTP 500, in the words of the test of the connection.
+UNREACHABLE = "Nextcloud could not reach Paperless at this URL. Check the address and the port, and that Paperless runs. "
+HTTP_ERROR = "Paperless answered with an error (HTTP 500). Check its log, or try again later."
 
 
 def fail(message):
@@ -115,7 +119,11 @@ if retry[1:3] != ["Second try answered", "Asking Paperless"]:
 # The message of the HTTP client names the address without its query.
 if DOCUMENTS_URL not in retry[3] or "?" in retry[3]:
     fail(f"The error of the retried request doesn't name {DOCUMENTS_URL} without its query: {retry!r}")
-if failure[1:4] != ["Search failed", "Asking Paperless", "PaperlessRequestException: Paperless returned HTTP 500."]:
+# Each says what failed and what to do, as the test of the connection does, before the
+# error as it is (#402).
+if not retry[3].startswith(UNREACHABLE):
+    fail(f"The error of the retried request doesn't begin with what to do: {retry!r}")
+if failure[1:4] != ["Search failed", "Asking Paperless", f"{HTTP_ERROR} PaperlessRequestException: Paperless returned HTTP 500."]:
     fail(f"The older problem isn't the search that Paperless failed with HTTP 500: {failure!r}")
 for event in events:
     if not re.fullmatch(r"\d+ ms", event[4]):

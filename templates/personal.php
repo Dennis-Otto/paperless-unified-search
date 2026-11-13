@@ -6,7 +6,7 @@ declare(strict_types=1);
  * SPDX-FileCopyrightText: 2026 Dennis Otto
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * @var array{alwaysSearchAllowed: bool, alwaysSearch: bool, trusted: bool, saveUrl: string, alertsAllowed: bool, everyDocument: bool, terms: string, mostTerms: int, alertsUrl: string} $_
+ * @var array{alwaysSearchAllowed: bool, alwaysSearch: bool, trusted: bool, saveUrl: string, alertsAllowed: bool, everyDocument: bool, terms: string, mostTerms: int, alertsUrl: string, tags: list<string>} $_
  */
 
 script('paperless_unified_search', 'personal');
@@ -23,6 +23,12 @@ $trusted = $_['trusted'];
 	data-save-url="<?php p($_['saveUrl']); ?>"
 	data-alerts-url="<?php p($_['alertsUrl']); ?>">
 	<h2><?php p($l->t('Paperless')); ?></h2>
+
+	<?php if ($_['tags'] !== []) { ?>
+		<p id="paperless-unified-search-personal-tags">
+			<?php p($l->t('Your administrator lets you find only the documents that have one of these tags in Paperless: %s.', [implode(', ', $_['tags'])])); ?>
+		</p>
+	<?php } ?>
 
 	<?php if ($_['alwaysSearchAllowed']) { ?>
 		<p class="settings-hint">
