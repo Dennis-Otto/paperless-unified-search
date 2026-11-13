@@ -14,6 +14,7 @@ use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
 use OCA\PaperlessUnifiedSearch\Model\DiagnosticsHistory;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCP\AppFramework\Utility\ITimeFactory;
+use OCP\Http\Client\LocalServerException;
 use OCP\IAppConfig;
 use OCP\ICache;
 use OCP\ICacheFactory;
@@ -61,12 +62,35 @@ final class SearchDiagnostics {
 
 	/**
 	 * A search that failed and showed the user no documents, with the cause of a request
-	 * to Paperless that failed; an error of the files has none.
+	 * to Paperless that failed, also of one that got no answer; an error of the files has none.
 	 *
 	 * @param list<string> $secrets the token and the term, which the message must not show
 	 */
 	public function recordFailure(string $step, Throwable $error, int $durationMs, array $secrets): void {
-		$this->record(SearchEvent::KIND_FAILED, $step, $error, $durationMs, $secrets, $error instanceof PaperlessRequestException ? $error : null);
+		$this->record(SearchEvent::KIND_FAILED, $step, $error, $durationMs, $secrets, self::causeOf($step, $error));
+	}
+
+	/**
+	 * The cause of a failure: the one of the app, or, for a request to Paperless without an
+	 * answer, the one that the error of the HTTP client names, as the test of the connection
+	 * names it: a code of cURL or Nextcloud's refusal of the address, also inside another error.
+	 */
+	private static function causeOf(string $step, Throwable $error): ?PaperlessRequestException {
+		if ($error instanceof PaperlessRequestException) {
+			return $error;
+		}
+
+		if ($step !== SearchEvent::STEP_PAPERLESS) {
+			return null;
+		}
+
+		for ($cause = $error; $cause !== null; $cause = $cause->getPrevious()) {
+			if ($cause instanceof LocalServerException || preg_match('/\bcURL error \d+\b/', $cause->getMessage()) === 1) {
+				return PaperlessRequestException::unanswered($error);
+			}
+		}
+
+		return null;
 	}
 
 	/**
