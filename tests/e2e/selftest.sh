@@ -679,6 +679,11 @@ if ((redirect == 1)); then
 	printf '%s %s' "${FAKE_LATEST_STATUS:-302}" "${FAKE_LATEST:-}"
 	exit 0
 fi
+# FAKE_DOWNLOAD_FAIL names an asset whose download GitHub fails with a 504.
+if [[ "${url##*/}" == "${FAKE_DOWNLOAD_FAIL:-}" ]]; then
+	echo "curl: (22) The requested URL returned error: 504" >&2
+	exit 22
+fi
 if [[ ! -f "${FAKE_RELEASE}/${url##*/}" ]]; then
 	echo "curl: (22) The requested URL returned error: 404" >&2
 	exit 22
@@ -737,6 +742,11 @@ case "$1 $2" in
 			esac
 			shift
 		done
+		# FAKE_DOWNLOAD_FAIL names an asset whose download GitHub refuses the token for.
+		if [[ "${name}" == "${FAKE_DOWNLOAD_FAIL:-}" ]]; then
+			echo "HTTP 401: Bad credentials (https://api.github.com/repos/o/r/releases/assets/1)" >&2
+			exit 1
+		fi
 		cp "${FAKE_RELEASE}/${name}" "${output}"
 		exit 0
 		;;
@@ -838,8 +848,25 @@ SCRIPT
 	expect_in "the pages of the release outside of GitHub Actions" "curl https://github.com/o/r/releases" "${WORK}/docker.log"
 	expect "the API outside of GitHub Actions" 0 "$(grep --count --fixed-strings 'gh api ' "${WORK}/docker.log" || true)"
 	expect "upgrade.sh with a token, when the API fails the release" 1 "$(upgrade env GITHUB_ACTIONS=true GH_TOKEN=e2e-only-token E2E_UPGRADE_FROM=v1.0.0 FAKE_API_STATUS=404)"
-	expect_in "the message about the release that the API fails" "The release v1.0.0 of o/r has no asset paperless_unified_search.tar.gz" "${WORK}/log"
+	expect_in "the message about the release that the API fails" "GitHub's API knows no release v1.0.0 of o/r." "${WORK}/log"
 	expect "Docker when the API fails the release" 0 "$(grep --count '^docker ' "${WORK}/docker.log" || true)"
+	expect "upgrade.sh with a token, when the API fails the assets" 1 "$(upgrade env GITHUB_ACTIONS=true GH_TOKEN=e2e-only-token E2E_UPGRADE_FROM=v1.0.0 FAKE_API_STATUS=502)"
+	expect_in "the message about the assets that the API fails" "GitHub's API didn't name the assets of the release v1.0.0 of o/r: gh: Server Error (HTTP 502); run the test again later." "${WORK}/log"
+	# A download that fails says why, and that the asset could not be downloaded: only a
+	# release without the asset has none.
+	expect "upgrade.sh when GitHub fails the download of the release" 1 "$(upgrade env FAKE_DOWNLOAD_FAIL=paperless_unified_search.tar.gz)"
+	expect_in "the message about the failed download" "The asset paperless_unified_search.tar.gz of the release v1.0.0 of o/r could not be downloaded: curl: (22) The requested URL returned error: 504; run the test again later." "${WORK}/log"
+	expect "a missing asset after a failed download" 0 "$(grep --count --fixed-strings 'has no asset' "${WORK}/log" || true)"
+	expect "upgrade.sh with a token, when GitHub refuses the download of the signature" 1 \
+		"$(upgrade env GITHUB_ACTIONS=true GH_TOKEN=e2e-only-token FAKE_DOWNLOAD_FAIL=paperless_unified_search.tar.gz.sig)"
+	expect_in "the message about the refused download" "The asset paperless_unified_search.tar.gz.sig of the release v1.0.0 of o/r could not be downloaded: paperless_unified_search.tar.gz.sig of o/r v1.0.0 can't be downloaded: HTTP 401: Bad credentials" "${WORK}/log"
+	expect "a missing asset after a refused download" 0 "$(grep --count --fixed-strings 'has no asset' "${WORK}/log" || true)"
+	expect "upgrade.sh when GitHub fails the download of the provenance" 1 "$(upgrade env FAKE_DOWNLOAD_FAIL=provenance.sigstore.json)"
+	expect_in "the message about the failed download of the provenance" "The provenance.sigstore.json of v1.0.0 could not be downloaded: curl: (22) The requested URL returned error: 504; run the test again later." "${WORK}/log"
+	expect "Docker when GitHub fails the download of the provenance" 0 "$(grep --count '^docker ' "${WORK}/docker.log" || true)"
+	expect "upgrade.sh with a token, when GitHub refuses the download of the provenance" 1 \
+		"$(upgrade env GITHUB_ACTIONS=true GH_TOKEN=e2e-only-token FAKE_DOWNLOAD_FAIL=provenance.sigstore.json)"
+	expect_in "the message about the refused download of the provenance" "The provenance.sigstore.json of v1.0.0 could not be downloaded: provenance.sigstore.json of o/r v1.0.0 can't be downloaded: HTTP 401: Bad credentials" "${WORK}/log"
 	expect "upgrade.sh with KEEP_E2E=1" 1 "$(upgrade env KEEP_E2E=1)"
 	expect_in "the containers of the upgrade kept with KEEP_E2E=1" "Upgrade environment kept at http://127.0.0.1:18182" "${WORK}/log"
 	expect "the removal of the containers with KEEP_E2E=1" 1 "$(grep --count --fixed-strings ' down --volumes ' "${WORK}/docker.log" || true)"
@@ -894,6 +921,9 @@ SCRIPT
 	rm "${release}/paperless_unified_search.tar.gz.sig"
 	expect "upgrade.sh with a release without its signature" 1 "$(upgrade env)"
 	expect_in "the message about the missing signature" "The release v1.0.0 of o/r has no asset paperless_unified_search.tar.gz.sig" "${WORK}/log"
+	expect "upgrade.sh with a token and a release without its signature" 1 "$(upgrade env GITHUB_ACTIONS=true GH_TOKEN=e2e-only-token)"
+	expect_in "the message of the API about the missing signature" "The release v1.0.0 of o/r has no asset paperless_unified_search.tar.gz.sig" "${WORK}/log"
+	expect "the download of a signature that the release lacks" 0 "$(grep --count --fixed-strings -- '--pattern paperless_unified_search.tar.gz.sig' "${WORK}/docker.log" || true)"
 else
 	echo "openssl is not installed here; the CI tests upgrade.sh up to Docker."
 fi

@@ -234,13 +234,29 @@ api() {
 	done
 }
 
-# The asset $2 of the release ${from} into the file $1.
+# The asset $2 of the release ${from} into the file $1. The errors of the download go to
+# ${TMP_DIR}/asset.log as well, for the message of a failure: a missing asset is only one
+# cause, beside a 504 of GitHub, a timeout or a refused token.
 download_asset() {
+	local status=0
 	if with_api; then
-		bash "${REPOSITORY_ROOT}/.github/download.sh" "${repository}" "${from}" "$2" "$1"
+		bash "${REPOSITORY_ROOT}/.github/download.sh" "${repository}" "${from}" "$2" "$1" \
+			2>"${TMP_DIR}/asset.log" || status=$?
 	else
-		download "$1" "https://github.com/${repository}/releases/download/${from}/$2"
+		download "$1" "https://github.com/${repository}/releases/download/${from}/$2" \
+			2>"${TMP_DIR}/asset.log" || status=$?
 	fi
+	cat "${TMP_DIR}/asset.log" >&2
+	return "${status}"
+}
+
+# The last error of the download of an asset, without the command of GitHub Actions that
+# .github/download.sh writes in front of it, such as ::error title=Download::.
+download_error() {
+	local error
+	error="$(grep --invert-match --extended-regexp '^[[:space:]]*$' "${TMP_DIR}/asset.log" | tail -n 1 || true)"
+	error="$(sed -E 's/^::[a-z]+( [^:]*)?:://' <<<"${error}")"
+	echo "${error:-no error was given}"
 }
 
 cd "${REPOSITORY_ROOT}"
@@ -299,9 +315,24 @@ echo "The checkout has version ${checkout_version}; its package upgrades the rel
 phase "Download and verify the release ${from}"
 release="${TMP_DIR}/release"
 mkdir "${release}"
+# Through the API, the names of the assets tell an asset that the release lacks from a
+# download that fails, which .github/download.sh can't tell apart: without the asset, it
+# finds no digest to check it by. The pages of the release answer a missing one with 404.
+if with_api && ! assets="$(api "repos/${repository}/releases/tags/${from}" --jq '.assets[].name' 2>"${TMP_DIR}/assets.log")"; then
+	cat "${TMP_DIR}/assets.log" >&2
+	if grep --quiet --fixed-strings "(HTTP 404)" "${TMP_DIR}/assets.log"; then
+		fail "GitHub's API knows no release ${from} of ${repository}."
+	fi
+	fail "GitHub's API didn't name the assets of the release ${from} of ${repository}: $(tail -n 1 "${TMP_DIR}/assets.log"); run the test again later."
+fi
 for asset in "${APP_ID}.tar.gz" "${APP_ID}.tar.gz.sig"; do
-	if ! download_asset "${release}/${asset}" "${asset}"; then
+	if with_api && ! grep --quiet --line-regexp --fixed-strings "${asset}" <<<"${assets}"; then
 		fail "The release ${from} of ${repository} has no asset ${asset}, which build-release.yml attaches to each release."
+	elif ! download_asset "${release}/${asset}" "${asset}"; then
+		if ! with_api && grep --quiet --fixed-strings "returned error: 404" "${TMP_DIR}/asset.log"; then
+			fail "The release ${from} of ${repository} has no asset ${asset}, which build-release.yml attaches to each release."
+		fi
+		fail "The asset ${asset} of the release ${from} of ${repository} could not be downloaded: $(download_error); run the test again later."
 	fi
 done
 if ! command -v openssl >/dev/null 2>&1; then
@@ -327,15 +358,14 @@ echo "The signature of ${APP_ID}.tar.gz matches the certificate of the app at th
 # initialized" (#290). Each upgrade takes a cache of its own, which it removes at the end.
 if ! command -v gh >/dev/null 2>&1; then
 	notice "gh is not installed, so the provenance of ${from} is not verified here; verify-release.yml checks it for each release."
-elif with_api && ! assets="$(api "repos/${repository}/releases/tags/${from}" --jq '.assets[].name')"; then
-	fail "GitHub's API didn't name the assets of the release ${from} of ${repository}; run the test again later."
 elif with_api && ! grep --quiet --line-regexp --fixed-strings provenance.sigstore.json <<<"${assets}"; then
-	# The API names the assets, so that only a release without the bundle skips its
-	# check, and an error of GitHub fails the download below.
+	# The API named the assets above, so that only a release without the bundle skips
+	# its check, and an error of GitHub fails the download below.
 	notice "The release ${from} has no provenance.sigstore.json, as releases before the isolated build; only its signature is verified."
 elif ! download_asset "${release}/provenance.sigstore.json" provenance.sigstore.json; then
-	if with_api; then
-		fail "The provenance.sigstore.json of ${from} can't be downloaded."
+	# Without the API, only a 404 of the pages of the release means that it has no bundle.
+	if with_api || ! grep --quiet --fixed-strings "returned error: 404" "${TMP_DIR}/asset.log"; then
+		fail "The provenance.sigstore.json of ${from} could not be downloaded: $(download_error); run the test again later."
 	fi
 	notice "The release ${from} has no provenance.sigstore.json, as releases before the isolated build; only its signature is verified."
 elif XDG_CACHE_HOME="${TMP_DIR}/gh-cache" gh attestation verify "${release}/${APP_ID}.tar.gz" --repo "${repository}" \

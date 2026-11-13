@@ -114,6 +114,15 @@ if ((missing_pictures > 0)); then
 fi
 echo "The ${#showing[@]} README(s) and page(s) of the website show ${shown_pictures} picture(s) from main, each in the repository."
 
+printf '\n== %s\n' "Icon of the website"
+# The website shows the icon of the app as its logo and its favicon (mkdocs.yml), from a
+# copy in docs/images, since MkDocs publishes only what is in docs/.
+if ! cmp -s img/app.svg docs/images/app.svg; then
+  echo "docs/images/app.svg differs from the icon of the app; copy it: cp img/app.svg docs/images/app.svg"
+  exit 1
+fi
+echo "The website shows the icon of the app, img/app.svg."
+
 printf '\n== %s\n' "Social preview and the screenshot bot"
 # GitHub, chats and social networks show .github/social-preview.png for a link to the
 # repository, and it shows a screenshot. scripts/screenshots.sh renders it after the

@@ -237,7 +237,9 @@ until Harden-Runner has removed Docker*, word for word, and that no other job of
 the project blocks, and each of their Harden-Runners is the version of
 `after-checks.yml`; *Pictures of the READMEs and the website*, that each
 picture that a README or a page of `docs/` shows from main, under `raw/main/`, is in
-the checkout, and names the file that shows a missing one; *Social preview and the
+the checkout, and names the file that shows a missing one; *Icon of the website*, that
+`docs/images/app.svg`, the logo and the favicon of the website, is the icon of the app,
+`img/app.svg`; *Social preview and the
 screenshot bot*, that `scripts/screenshots.sh` renders the social preview, that the
 screenshot it shows exists, and that the visual check runs for every file of
 `.github/screenshots-paths.txt`, among them the sources of the social preview; that
@@ -283,7 +285,8 @@ one, from its floating tag, with Docker, and removes the lines that are wrong; f
 on main, correct the
 path of the link, or add the file that it links; for a section, mark it in both READMEs
 with the same name; for a picture from main that is missing, correct its path in the file that the
-output names, or add it to `scripts/screenshots.sh` and run that; for the social
+output names, or add it to `scripts/screenshots.sh` and run that; for the icon of the
+website, copy the icon of the app with the fifth command; for the social
 preview, end `scripts/screenshots.sh` with `bash scripts/social-preview.sh`; for a file
 of `.github/screenshots-paths.txt`, add the same pattern to the paths of the pull
 requests of `.github/workflows/visual.yml`; for a picture of a German page, show it
@@ -310,7 +313,7 @@ blueprint doesn't keep current, write the line `uses: step-security/harden-runne
 may write or uses a secret blocks like them, and `tests/e2e/selftest.sh` checks it with
 `expect_blocks` and lists it, as it lists a new workflow of the project. A
 JavaScript catalog that lags its JSON catalog is written anew by the third command.
-The fix bot runs the second, the third and the fourth command on a pull request of this
+The fix bot runs the second to the fifth command on a pull request of this
 repository, such as the one of the upstream bot for a new Nextcloud, which then fixes
 itself, and suggests their fixes on a pull request from a fork. Then run the checks
 again:"""
@@ -319,6 +322,12 @@ commands = [
   "bash scripts/versions.sh --write",
   "node scripts/check-l10n.mjs --write",
   "bash tests/e2e/pin-images.sh",
+  "cp img/app.svg docs/images/app.svg",
 ]
 docs = "CONTRIBUTING.md#checks"
-autofix = ["bash scripts/versions.sh --write", "node scripts/check-l10n.mjs --write", "bash tests/e2e/pin-images.sh"]
+autofix = [
+  "bash scripts/versions.sh --write",
+  "node scripts/check-l10n.mjs --write",
+  "bash tests/e2e/pin-images.sh",
+  "cp img/app.svg docs/images/app.svg",
+]
