@@ -52,8 +52,6 @@ final class SearchEvent implements JsonSerializable {
 		$error = $values['error'] ?? null;
 		$message = $values['message'] ?? null;
 		$durationMs = $values['durationMs'] ?? null;
-		$reason = $values['reason'] ?? null;
-		$status = $values['status'] ?? null;
 
 		if (!is_int($time)
 			|| !in_array($kind, [self::KIND_FAILED, self::KIND_RETRIED], true)
@@ -64,9 +62,10 @@ final class SearchEvent implements JsonSerializable {
 
 		// An entry of a version before the causes has none, and one of a cause that this
 		// version doesn't know keeps its row without it.
-		$cause = is_string($reason) ? RequestFailure::tryFrom($reason) : null;
+		$cause = isset($values['reason']) && is_string($values['reason']) ? RequestFailure::tryFrom($values['reason']) : null;
+		$status = $cause !== null && isset($values['status']) && is_int($values['status']) ? $values['status'] : null;
 
-		return new self($time, $kind, $step, $error, $message, $durationMs, $cause, $cause !== null && is_int($status) ? $status : null);
+		return new self($time, $kind, $step, $error, $message, $durationMs, $cause, $status);
 	}
 
 	/**
