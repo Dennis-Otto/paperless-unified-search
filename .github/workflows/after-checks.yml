@@ -12,18 +12,20 @@ name: After the checks
 # how often each job and test flaked, and when it last did. The test is one that
 # pytest names in the log, or else the step or test that the log names last before
 # the failure, after the answer test_marker of the blueprint, such as "Browser step:"
-# before each step of the tests of a browser. A job that fails again is a real
-# failure and stays red, and so does one that failed the same way for the commit
-# before: running it again would only keep a runner busy. The Downstream workflow of
-# the blueprint updates the repositories that take it as they are at that moment, so
-# one of its jobs that passes when it runs again found a repository that changed in
-# between, such as one that merged what the pull request needs: the bot runs it once
-# more, but counts no flaky test for it. A run whose failed jobs ran
-# no step, which GitHub couldn't start, as in its outage of 9 November 2026, it leaves
-# alone with a notice: another try while GitHub fails would only fail and mail again,
-# and a bot that GitHub keeps failing ends with a notice as well (decision 0136). A
-# pull request names its jobs and steps and writes its logs, so the issue shows them
-# only as code, and the branch of a fork not at all.
+# before each step of the tests of a browser. A job that ran out of time after each of
+# its steps had passed failed in no test: its runner never reported that the job
+# ended, and the summary names it as the runner's fault, outside the issue. A job that
+# fails again is a real failure and stays red, and so does one that failed the same
+# way for the commit before: running it again would only keep a runner busy. The
+# Downstream workflow of the blueprint updates the repositories that take it as they
+# are at that moment, so one of its jobs that passes when it runs again found a
+# repository that changed in between, such as one that merged what the pull request
+# needs: the bot runs it once more, but counts no flaky test for it. A run whose failed
+# jobs ran no step, which GitHub couldn't start, as in its outage of 9 November 2026,
+# it leaves alone with a notice: another try while GitHub fails would only fail and
+# mail again, and a bot that GitHub keeps failing ends with a notice as well (decision
+# 0136). A pull request names its jobs and steps and writes its logs, so the issue
+# shows them only as code, and the branch of a fork not at all.
 #
 # The start of the branch bot: a required check of a pull request that failed for good,
 # also of one from a fork, moves the line of the branch bot in update-branches.yml on to
@@ -589,15 +591,23 @@ jobs:
           # attempt that a newer run cancelled, as one that the bot for cancelled checks
           # started again, failed in no test. In one that a person or a time limit
           # cancelled, only the jobs that ran out of time broke: a job that waits for the
-          # others fails when they are cancelled.
+          # others fails when they are cancelled. A job that ran out of time although
+          # each of its steps had passed, up to "Complete job", failed in no test either:
+          # its runner did the work and never reported that the job ended, as a preview
+          # runner such as ubuntu-24.04-firewall sometimes does, which nothing in the
+          # repository can fix. It goes into a section of its own of the summary, as a
+          # fault of the runner, and not into the issue of flaky tests, which it would
+          # keep open.
           first="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN/attempts/1" --jq .conclusion)"
           jobs="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN/attempts/1/jobs" --paginate \
-            --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | [.id, .conclusion, .html_url, .name, ([.steps[]? | select(.conclusion == "failure" or .conclusion == "cancelled") | .name] | join(", "))] | @tsv')"
+            --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | [.id, .conclusion, ([.steps[]?] | length > 0 and all(.conclusion == "success" or .conclusion == "skipped")), .html_url, .name, ([.steps[]? | select(.conclusion == "failure" or .conclusion == "cancelled") | .name] | join(", "))] | @tsv')"
           rows=""
           # Each job with each of its tests, one to a line, for the count in the issue.
           counted=""
+          # The jobs that ran out of time after each of their steps had passed.
+          stuck=""
           no_logs=""
-          while IFS=$'\t' read -r -u 3 id conclusion url name steps; do
+          while IFS=$'\t' read -r -u 3 id conclusion passed url name steps; do
             if [[ -z "$id" ]] || [[ "$conclusion" == failure && "$first" == cancelled ]]; then
               continue
             fi
@@ -611,9 +621,15 @@ jobs:
             if grep -q "higher priority waiting request" <<<"$errors"; then
               rows=""
               counted=""
+              stuck=""
               break
             fi
             if [[ "$conclusion" == cancelled ]] && ! grep -q "has exceeded the maximum execution time" <<<"$errors"; then
+              continue
+            fi
+            if [[ "$conclusion" == cancelled && "$passed" == true ]]; then
+              echo "::notice::The job $(plain "$name") ran out of time although each of its steps had passed: its runner never reported that the job ended. That is a fault of the runner, not a flaky test, so the issue of flaky tests leaves it out."
+              stuck+="| [$(cell "$name")]($url) |"$'\n'
               continue
             fi
             # A job that stopped because Harden-Runner couldn't block, mostly in an outage
@@ -699,6 +715,18 @@ jobs:
               counted+="$(cell "$NAME / $name") | $(cell "$test")"$'\n'
             done <<<"$names"
           done 3<<<"$jobs"
+          if [[ -n "$stuck" ]]; then
+            {
+              echo "### The runner's fault"
+              echo
+              echo "These jobs ran out of time although each of their steps had passed: their runner did the work and never reported that the job ended. No test failed, and the issue of flaky tests leaves them out."
+              echo
+              echo "| Job |"
+              echo "| --- |"
+              printf '%s' "$stuck"
+              echo
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
           if [[ -z "$rows" ]]; then
             echo "No job failed or ran out of time at first; nothing to report." >> "$GITHUB_STEP_SUMMARY"
             exit 0
