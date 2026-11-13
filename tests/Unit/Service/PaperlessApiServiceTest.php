@@ -582,7 +582,7 @@ final class PaperlessApiServiceTest extends TestCase {
 			->method('get')
 			->willReturnCallback(function () use (&$calls): IResponse {
 				if (++$calls === 1) {
-					throw new RuntimeException('cURL error 28: Connection timed out after 3001 milliseconds');
+					throw new RuntimeException('cURL error 28: Connection timed out after 3001 milliseconds for https://paperless.example.com/api/documents/?id__in=412');
 				}
 
 				return $this->response(200, self::NO_DOCUMENTS);
@@ -1900,6 +1900,94 @@ final class PaperlessApiServiceTest extends TestCase {
 		$this->expectException(RuntimeException::class);
 
 		$this->service($client)->findDocumentTags([412]);
+	}
+
+	/**
+	 * @return array<string, array{string, int}>
+	 */
+	public static function similarSources(): array {
+		return [
+			'a document' => ['412', 412],
+			'the largest ID of a document' => ['2147483647', 2147483647],
+		];
+	}
+
+	/**
+	 * The search asks for the document of like:412 with its owner and tags in one request,
+	 * by which it decides whether the user may see it before it asks for similar ones (#403).
+	 */
+	#[DataProvider('similarSources')]
+	public function testTheDocumentOfASearchForSimilarOnesComesWithItsOwnerAndTags(string $documentId, int $id): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())
+			->method('get')
+			->with('https://paperless.example.com/api/documents/', self::callback(
+				static fn (array $options): bool => $options['query'] === [
+					'id__in' => $documentId,
+					'page' => 1,
+					'page_size' => 1,
+					'fields' => 'id,owner,tags',
+				],
+			))
+			->willReturn($this->response(200, (string)json_encode(['count' => 1, 'next' => null, 'results' => [
+				['id' => $id, 'owner' => 5, 'tags' => [8]],
+			]])));
+
+		self::assertSame(['id' => $id, 'owner' => 5, 'tags' => [8]], $this->service($client)->findSimilarSource($documentId));
+	}
+
+	/**
+	 * @return array<string, array{list<array<string, mixed>>}>
+	 */
+	public static function missingSources(): array {
+		return [
+			'no document, as Paperless lists one that it does not have or that its account may not view' => [[]],
+			'another document' => [[['id' => 413, 'owner' => 5, 'tags' => []]]],
+			'a document without a numeric ID' => [[['id' => '412', 'owner' => 5, 'tags' => []]]],
+		];
+	}
+
+	/**
+	 * @param list<array<string, mixed>> $results
+	 */
+	#[DataProvider('missingSources')]
+	public function testADocumentThatPaperlessDoesNotListIsNoSource(array $results): void {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response(200, (string)json_encode(['count' => count($results), 'next' => null, 'results' => $results])));
+
+		self::assertNull($this->service($client)->findSimilarSource('412'));
+	}
+
+	/**
+	 * An ID larger than any that a document can have names none: Paperless isn't asked.
+	 */
+	public function testAnIdThatNoDocumentCanHaveAsksNothing(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::never())->method('get');
+
+		self::assertNull($this->service($client)->findSimilarSource('2147483648'));
+		self::assertNull($this->service($client)->findSimilarSource('99999999999999999999'));
+	}
+
+	/**
+	 * A user waits for the document of a search for similar ones, as for the search, so a
+	 * request without answer gets a second try.
+	 */
+	public function testTheDocumentOfASearchForSimilarOnesGetsASecondTry(): void {
+		$answer = $this->response(200, '{"count":1,"next":null,"results":[{"id":412,"owner":null,"tags":[]}]}');
+		$calls = 0;
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::exactly(2))
+			->method('get')
+			->willReturnCallback(static function () use (&$calls, $answer): IResponse {
+				if (++$calls === 1) {
+					throw new RuntimeException('cURL error 28: Connection timed out after 3001 milliseconds');
+				}
+
+				return $answer;
+			});
+
+		self::assertSame(['id' => 412, 'owner' => null, 'tags' => []], $this->service($client)->findSimilarSource('412'));
 	}
 
 	/**

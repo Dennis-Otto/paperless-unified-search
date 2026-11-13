@@ -81,6 +81,9 @@ final class PaperlessSearchProviderTest extends TestCase {
 	/** @var list<array<string, int|string>> the queries of the requests that reached Paperless, oldest first */
 	private array $requests = [];
 
+	/** @var list<array<string, int|string>> the queries of the questions for the document of like:<ID>, oldest first */
+	private array $sourceRequests = [];
+
 	/** @var list<array{string, array<string, int|string>}> the list and the query of each request for names, oldest first */
 	private array $nameRequests = [];
 
@@ -1401,8 +1404,9 @@ final class PaperlessSearchProviderTest extends TestCase {
 	}
 
 	/**
-	 * A marker that is wrong or of a document that the account of the token may not view
-	 * finds nothing: the history neither counts it nor takes it for a search that works again.
+	 * A document that Paperless refuses to find similar ones of, as one that went away or
+	 * that the account of the token lost the permission to view after it listed it, finds
+	 * nothing: the history neither counts it nor takes it for a search that works again.
 	 */
 	#[DataProvider('refusedDocuments')]
 	public function testASearchForDocumentsLikeARefusedOneLeavesTheHistoryUntouched(string $body): void {
@@ -1413,7 +1417,7 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::never())->method('warning');
 
-		$result = $this->provider($client, logger: $logger)
+		$result = $this->provider($this->withSource($client), $this->files([412]), logger: $logger)
 			->search($this->user(), $this->query('like:[P412]'))
 			->jsonSerialize();
 
@@ -1430,10 +1434,132 @@ final class PaperlessSearchProviderTest extends TestCase {
 		$client = $this->createStub(IClient::class);
 		$client->method('get')->willReturn($this->answer(403, '{"detail":"You do not have permission to perform this action."}'));
 
-		$result = $this->provider($client)->search($this->user(), $this->query('like:412'))->jsonSerialize();
+		$result = $this->provider($this->withSource($client), $this->files([412]))->search($this->user(), $this->query('like:412'))->jsonSerialize();
 
 		self::assertSame([], $result['entries']);
 		self::assertCount(1, $this->problems());
+	}
+
+	/**
+	 * @return array<string, array{?array<string, mixed>}>
+	 */
+	public static function sourcesWithoutAFile(): array {
+		return [
+			'a document that the user has no file of' => [['id' => 412, 'owner' => null, 'tags' => []]],
+			// Paperless doesn't have it, or its account may not view it: a file with its
+			// marker stands for no document then.
+			'a document that Paperless does not list' => [null],
+		];
+	}
+
+	/**
+	 * Documents similar to one tell something about that one, so a user who has no file
+	 * of it, as of a hit, finds nothing, as for a document that Paperless refuses: Paperless
+	 * isn't asked for similar ones, and the history neither counts the search nor takes it
+	 * for one that works again (#403).
+	 *
+	 * @param ?array<string, mixed> $source
+	 */
+	#[DataProvider('sourcesWithoutAFile')]
+	public function testASearchForDocumentsLikeOneWithoutAFileFindsNothing(?array $source): void {
+		$this->awaitRecovery();
+		$before = $this->problems();
+		$client = $this->withSource($this->ranking(self::documentsWithIds([3, 26, 27])), $source);
+		$files = $source === null ? $this->files([3, 26, 27, 412]) : $this->files([3, 26, 27]);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::never())->method('warning');
+
+		$result = $this->provider($client, $files, logger: $logger)
+			->search($this->user(), $this->query('like:[P412]'))
+			->jsonSerialize();
+
+		self::assertSame([], $result['entries']);
+		self::assertFalse($result['isPaginated']);
+		self::assertSame([], $this->requests);
+		self::assertSame([['id__in' => '412', 'page' => 1, 'page_size' => 1, 'fields' => 'id,owner,tags']], $this->sourceRequests);
+		self::assertSame($before, $this->problems());
+	}
+
+	/**
+	 * @return array<string, array{list<int>, list<string>}>
+	 */
+	public static function tagsOfTheSource(): array {
+		return [
+			'outside the tags of the user' => [[11], []],
+			'with a tag of the user' => [[1, 8], ['Dentist']],
+		];
+	}
+
+	/**
+	 * A user whom Paperless Sync lets see only the documents with some tags (decision 0015)
+	 * finds documents similar to one only when that one has one of their tags, as a hit
+	 * needs it, and its file stands for it (#403).
+	 *
+	 * @param list<int> $sourceTags
+	 * @param list<string> $titles
+	 */
+	#[DataProvider('tagsOfTheSource')]
+	public function testAUserWithTagsFindsDocumentsLikeOneOnlyWithOneOfTheirTags(array $sourceTags, array $titles): void {
+		$this->config->seed('paperless_sync', 'user_tags', 'dennis = katja', true);
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options) use ($sourceTags): IResponse {
+			if (str_ends_with($url, '/api/tags/')) {
+				return $this->response(['count' => 2, 'next' => null, 'results' => [['id' => 8, 'name' => 'Katja'], ['id' => 11, 'name' => 'Taxes']]]);
+			}
+			if (($options['query']['fields'] ?? null) === 'id,owner,tags') {
+				return $this->response(['count' => 1, 'next' => null, 'results' => [['id' => 412, 'owner' => null, 'tags' => $sourceTags]]]);
+			}
+			$this->requests[] = $options['query'];
+
+			return $this->response(['count' => 1, 'next' => null, 'results' => [['id' => 9, 'title' => 'Dentist', 'tags' => [8]]]]);
+		});
+
+		$result = $this->provider($client, [
+			412 => $this->file(412, 'Tax return [P412].pdf', 'sync'),
+			9 => $this->file(9, 'Dentist [P9].pdf', 'sync'),
+		], archiveOwner: '', syncAccount: 'sync')
+			->search($this->user(), $this->query('like:412'))
+			->jsonSerialize();
+
+		self::assertSame($titles, self::titles($result['entries']));
+		self::assertSame($titles === [] ? [] : ['412'], array_column($this->requests, 'more_like_id'));
+	}
+
+	/**
+	 * @return array<string, array{bool}>
+	 */
+	public static function failedLookups(): array {
+		return [
+			'the search of the files' => [true],
+			'the file of the document' => [false],
+		];
+	}
+
+	/**
+	 * A lookup of the file of the document of like:412 that fails, in the search of the
+	 * files or at the file itself, fails the search at the step of the files, as one of a
+	 * hit does: Paperless isn't asked for similar ones, and Paperless, which answered, gets
+	 * no rest.
+	 */
+	#[DataProvider('failedLookups')]
+	public function testAFailedLookupOfTheFileOfTheSourceFailsTheSearchAsSuch(bool $searchFails): void {
+		$client = $this->withSource($this->ranking(self::documentsWithIds([3])));
+		if ($searchFails) {
+			$userFolder = $this->createStub(Folder::class);
+			$userFolder->method('search')->willThrowException(new RuntimeException('Storage unavailable'));
+			$provider = $this->provider($client, userFolder: $userFolder);
+		} else {
+			$provider = $this->provider($client, [412 => $this->unreadableFile('Letter [P412].pdf')]);
+		}
+
+		$result = $provider->search($this->user(), $this->query('like:[P412]'))->jsonSerialize();
+		$provider->search($this->user(), $this->query('like:[P412]'));
+
+		self::assertSame([], $result['entries']);
+		self::assertSame(SearchEvent::STEP_FILES, $this->history()->events[0]->step);
+		self::assertSame('Storage unavailable', $this->history()->events[0]->message);
+		self::assertSame([], $this->requests);
+		self::assertCount(2, $this->sourceRequests);
 	}
 
 	/**
@@ -1442,8 +1568,8 @@ final class PaperlessSearchProviderTest extends TestCase {
 	 * goes on from the cursor with the same question.
 	 */
 	public function testSimilarDocumentsFillAPageWithTheCursorAndTheDateFilter(): void {
-		$client = $this->ranking(self::documentsWithIds(range(1, 60)));
-		$provider = $this->provider($client, $this->files([3, 26, 27, 51, 52, 53]));
+		$client = $this->withSource($this->ranking(self::documentsWithIds(range(1, 60))));
+		$provider = $this->provider($client, $this->files([3, 26, 27, 51, 52, 53, 412]));
 		$filters = ['since' => new DateTimeImmutable('2026-08-01T04:00:00Z')];
 
 		$first = $provider->search($this->user(), $this->query('like:[P412]', null, 5, $filters))->jsonSerialize();
@@ -1477,7 +1603,10 @@ final class PaperlessSearchProviderTest extends TestCase {
 			'__search_hit__' => ['score' => 0.0, 'highlights' => '', 'note_highlights' => null, 'rank' => 1],
 		]]]);
 
-		$result = $this->provider($client, [412 => $this->file(412, 'Electricity invoice [P412].pdf')])
+		$result = $this->provider($this->withSource($client, ['id' => 7, 'owner' => null, 'tags' => []]), [
+			412 => $this->file(412, 'Electricity invoice [P412].pdf'),
+			7 => $this->file(7, 'Water bill [P7].pdf'),
+		])
 			->search($this->user(), $this->query('like:7'))
 			->jsonSerialize();
 
@@ -2327,6 +2456,28 @@ final class PaperlessSearchProviderTest extends TestCase {
 				'next' => count($documents) > $page * $size ? 'https://paperless.example.com/api/documents/?page=' . ($page + 1) : null,
 				'results' => array_slice($documents, ($page - 1) * $size, $size),
 			]);
+		});
+
+		return $client;
+	}
+
+	/**
+	 * A Paperless that answers the question of the search for the document of like:<ID>,
+	 * with the fields id, owner and tags, with $source, or with no document, and every other
+	 * request as $paperless does. The queries of these questions land in
+	 * $this->sourceRequests.
+	 *
+	 * @param ?array<string, mixed> $source
+	 */
+	private function withSource(IClient $paperless, ?array $source = ['id' => 412, 'owner' => null, 'tags' => []]): IClient {
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options) use ($paperless, $source): IResponse {
+			if (($options['query']['fields'] ?? null) !== 'id,owner,tags') {
+				return $paperless->get($url, $options);
+			}
+			$this->sourceRequests[] = $options['query'];
+
+			return $this->response(['count' => $source === null ? 0 : 1, 'next' => null, 'results' => $source === null ? [] : [$source]]);
 		});
 
 		return $client;

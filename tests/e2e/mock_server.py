@@ -451,6 +451,11 @@ class Handler(BaseHTTPRequestHandler):
 
         searching = similar is not None or "query" in parameters or "text" in parameters
         results = documents_of(query)
+        if not searching and "id__in" in parameters:
+            # The documents of the test of the pages are in Paperless too, outside the lists
+            # that other steps count: a question for documents by their IDs finds them, as
+            # the search asks for the one of like:[P620] before the similar ones (#403).
+            results = [*results, *PAGE_TEST_DOCUMENTS]
         if "text" in parameters:
             # The simple mode takes any input and searches its words; the mock ranks the
             # documents of the first word that names some.
