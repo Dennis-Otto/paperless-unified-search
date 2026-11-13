@@ -33,7 +33,9 @@
 .github/blueprint/coverage_comment.py
 .github/blueprint/decisions.py
 .github/blueprint/dependabot.py
+.github/blueprint/dependency_release.py
 .github/blueprint/diagrams.py
+.github/blueprint/ending.py
 .github/blueprint/fixes.py
 .github/blueprint/github.py
 .github/blueprint/lock_age.py
@@ -53,6 +55,7 @@
 .github/blueprint/site_check.py
 .github/blueprint/social_preview.py
 .github/blueprint/stale_runs.py
+.github/blueprint/translations.py
 .github/blueprint/update.py
 .github/blueprint/versions.py
 .github/blueprint/vex.py

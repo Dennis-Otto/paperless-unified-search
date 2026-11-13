@@ -52,6 +52,7 @@ from blueprint.bootstrap import (
     describe,
     installed,
     problem,
+    signing_finding,
     stops,
 )
 from blueprint.checklist import (
@@ -541,7 +542,8 @@ def branch_findings(run: Runner, root: Path) -> list[Finding]:
 
 def local_findings(run: Runner, root: Path) -> tuple[list[Finding], list[str]]:
     """Whether Copier can write the answers: it refuses a folder with changes that no
-    commit holds, and the command that runs it."""
+    commit holds, and the command that runs it; and whether git signs the commit of
+    the answers, which main takes signed only."""
     status = installed(run, ["git", "status", "--porcelain"], root)
     clean = (
         Finding(
@@ -569,6 +571,7 @@ def local_findings(run: Runner, root: Path) -> tuple[list[Finding], list[str]]:
             "Neither uv, pipx nor Copier is installed, which the answers need",
             "install uv, https://docs.astral.sh/uv/, or add --no-update",
         ),
+        signing_finding(run, root),
     ], copier
 
 

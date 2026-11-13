@@ -23,6 +23,14 @@ declare(strict_types=1);
  * nextcloud/ocp renames or removes stops the analysis with the name of the method,
  * instead of leaving it blind to that sink.
  *
+ * It works with Psalm 6 and Psalm 7, which hold the kinds of taint differently: Psalm 6
+ * as a list of their names, with every kind of input in TaintKindGroup, and Psalm 7 as
+ * the bits of an integer, with every kind of input in TaintKind, which has no
+ * TaintKindGroup any more; and Psalm 7 tells a source apart by its location, so the
+ * input of a parameter takes a path into it. The composer.json of an app is its own,
+ * so an app that takes a release of the blueprint keeps the Psalm that it has until it
+ * updates Psalm itself.
+ *
  * The blueprint keeps this file current: https://github.com/Dennis-Otto/repo-blueprint
  */
 
@@ -56,9 +64,10 @@ final class NextcloudTaintPlugin implements AfterCodebasePopulatedInterface, Aft
 
 	/**
 	 * The parameters of the methods of nextcloud/ocp that untrusted input must not
-	 * reach unescaped, each with the kinds of taint that it takes.
+	 * reach unescaped, each with the kinds of taint that it takes: their names in Psalm 6,
+	 * their bits in Psalm 7.
 	 *
-	 * @var array<string, array<string, array<string, list<string>>>>
+	 * @var array<string, array<string, array<string, list<int|string>>>>
 	 */
 	public const SINKS = [
 		// The files and folders of a user, by their path: a path from a request can
@@ -115,7 +124,7 @@ final class NextcloudTaintPlugin implements AfterCodebasePopulatedInterface, Aft
 		$codebase = $event->getCodebase();
 		foreach (self::SOURCES as $class => $methods) {
 			foreach ($methods as $method) {
-				self::method($codebase, $class, $method)->taint_source_types = TaintKindGroup::ALL_INPUT;
+				self::method($codebase, $class, $method)->taint_source_types = self::input();
 			}
 		}
 		foreach (self::SINKS as $class => $methods) {
@@ -125,7 +134,9 @@ final class NextcloudTaintPlugin implements AfterCodebasePopulatedInterface, Aft
 					$found = false;
 					foreach ($storage->params as $parameter) {
 						if ($parameter->name === $name) {
-							$parameter->sinks = array_values(array_unique([...$parameter->sinks ?? [], ...$kinds]));
+							$parameter->sinks = self::bits()
+								? array_reduce($kinds, static fn (int $sinks, int $kind): int => $sinks | $kind, $parameter->sinks)
+								: array_values(array_unique([...$parameter->sinks ?? [], ...$kinds]));
 							$found = true;
 						}
 					}
@@ -154,16 +165,47 @@ final class NextcloudTaintPlugin implements AfterCodebasePopulatedInterface, Aft
 		) {
 			return null;
 		}
-		$id = strtolower($class . '::' . $event->getFunctionlikeStorage()->cased_name);
+		$function = $class . '::' . (string)$event->getFunctionlikeStorage()->cased_name;
 		foreach ($method->params as $offset => $parameter) {
-			$codebase->addTaintSource(
-				Type::getString(),
-				$id . '#' . ($offset + 1),
-				TaintKindGroup::ALL_INPUT,
-				new CodeLocation($source, $parameter),
+			// By name: Psalm 7 takes the location before the kinds of taint, Psalm 6 after them.
+			$input = $codebase->addTaintSource(
+				expr_type: Type::getString(),
+				taint_id: strtolower($function) . '#' . ($offset + 1),
+				taints: self::input(),
+				code_location: new CodeLocation($source, $parameter),
 			);
+			if (!self::bits()) {
+				// Psalm 6 gives the source the id of the node of the parameter, so the
+				// parameter carries the input on.
+				continue;
+			}
+			// Psalm 7 adds the location of a source to its id: the input flows into the
+			// node of the parameter by a path of its own.
+			$node = $codebase->getTaintArgumentNode($source, $function, $offset);
+			if ($node !== null) {
+				foreach ($input->parent_nodes as $from) {
+					$codebase->addTaintPath($source, $from, $node);
+				}
+			}
 		}
 		return null;
+	}
+
+	/**
+	 * Whether Psalm holds the kinds of taint as the bits of an integer, as Psalm 7 does,
+	 * or as a list of their names, as Psalm 6 does.
+	 */
+	private static function bits(): bool {
+		return is_int(TaintKind::INPUT_FILE);
+	}
+
+	/**
+	 * Every kind of taint of untrusted input, in the form of the Psalm that runs.
+	 *
+	 * @return int|list<string>
+	 */
+	private static function input(): int|array {
+		return self::bits() ? TaintKind::ALL_INPUT : TaintKindGroup::ALL_INPUT;
 	}
 
 	private static function method(Codebase $codebase, string $class, string $method): MethodStorage {

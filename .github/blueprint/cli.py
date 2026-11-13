@@ -9,12 +9,14 @@ import re
 import shutil
 import subprocess
 import sys
+import textwrap
 import tomllib
 import webbrowser
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from xml.etree import ElementTree
 
 import blueprint
@@ -23,10 +25,12 @@ from blueprint import (
     annotate,
     decisions,
     dependabot,
+    ending,
     lock_age,
     locks,
     mutation,
     screenshots,
+    translations,
     versions,
 )
 from blueprint.app import TIMEOUT, connect, register
@@ -64,6 +68,7 @@ from blueprint.coach import (
 from blueprint.coach import annotation as coach_annotation
 from blueprint.coach import report as coach_report
 from blueprint.coverage_comment import Coverage, coverage_comment
+from blueprint.dependency_release import dependency_release
 from blueprint.diagrams import (
     SOURCES,
     commit_request,
@@ -105,12 +110,15 @@ from blueprint.outage import couldnt_start, failed_unstarted, unreachable
 from blueprint.overrides import write_overrides
 from blueprint.ownership import check as ownership_check
 from blueprint.pages import (
+    BLOCK_WORDS,
     CELL_WORDS,
+    RECORDS,
     Layout,
     annotation,
     command,
     fixed,
     layouts,
+    long_blocks,
     long_cells,
     pages,
 )
@@ -403,6 +411,67 @@ def parts_count(text: str) -> int | None:
     return int(text)
 
 
+def keep_run(
+    now: dict[str, Any], last: dict[str, Any] | None, out: Path
+) -> dict[str, Any] | None:
+    """Writes mutation.json of a run into out, with the high-water mark and the
+    baseline that the next run compares with, and previous.json, what the run compared
+    with, for the job that keeps the issue of a drop; that run, if there is one."""
+    previous = mutation.baseline_of(last)
+    # The high-water mark, which the next run compares with, so that a fall of less
+    # than the tolerance each week still adds up to a drop.
+    best = mutation.raised(mutation.best_of(last), now)
+    # An incomplete run keeps the last complete one, so that the next run compares
+    # with that, and a drop past an incomplete run still shows.
+    if not now["complete"] and previous is not None:
+        now["baseline"] = previous
+    if best is not None:
+        now["best"] = best
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "mutation.json").write_text(
+        json.dumps(now, ensure_ascii=False, indent=1) + "\n", encoding="utf-8"
+    )
+    if previous is not None:
+        (out / "previous.json").write_text(
+            json.dumps(previous, ensure_ascii=False, indent=1) + "\n", encoding="utf-8"
+        )
+    return previous
+
+
+def infection_report(arguments: argparse.Namespace) -> int:
+    """The report of a run of Infection from the logs that its job handed on: its
+    score, compared with the run before, mutation.json for the issue of a drop and the
+    next run, and the logs, which the dashboard reads; it fails without a score."""
+    logs = Path(arguments.logs_folder)
+    out = Path(arguments.out)
+
+    def read(name: str) -> str:
+        path = logs / name
+        if not path.is_file():
+            return ""
+        return path.read_text(encoding="utf-8", errors="replace")
+
+    output = read("infection-output.log")
+    now = mutation.infection_data(
+        output,
+        read("infection.log"),
+        root=arguments.root,
+        run=arguments.run,
+        now=datetime.now(UTC),
+        sample=arguments.sample,
+    )
+    previous = keep_run(now, mutation.read_previous(arguments.previous), out)
+    for path in sorted(logs.glob("infection*.log")):
+        shutil.copyfile(path, out / path.name)
+    measured = mutation.infection_score(output) is not None
+    sys.stdout.write(
+        mutation.infection_summary(
+            now, previous, measured=measured, sample=arguments.sample
+        )
+    )
+    return 0 if measured else 1
+
+
 def mutation_command(
     arguments: argparse.Namespace,
     root: Path,
@@ -415,6 +484,12 @@ def mutation_command(
         print(f"kind={kind}")
         print(f"parts={json.dumps(parts, ensure_ascii=False)}")
         for part in parts:
+            if kind == "php":
+                # Infection counts its mutants itself, as it makes them.
+                sample = part["patterns"].splitlines()
+                what = f"the sample: {', '.join(sample)}" if sample else "every file"
+                print(f"Infection changes {what}.", file=sys.stderr)
+                continue
             print(
                 f"Part {part['part']} of {part['parts']}: about {part['mutants']} "
                 "mutants",
@@ -476,23 +551,12 @@ def mutation_command(
         repo = arguments.repo or current_repo(api)
         print(mutation.keep_issue(api, repo, now, previous))
         return 0
+    if arguments.action == "infection":
+        return infection_report(arguments)
     report = mutation.Report.of(mutation.read_parts(Path(arguments.parts_folder)))
-    previous = mutation.baseline_of(mutation.read_previous(arguments.previous))
     now = report.data(arguments.run, datetime.now(UTC))
-    # An incomplete run keeps the last complete one, so that the next run compares
-    # with that, and a drop past an incomplete run still shows.
-    if not now["complete"] and previous is not None:
-        now["baseline"] = previous
     out = Path(arguments.out)
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "mutation.json").write_text(
-        json.dumps(now, ensure_ascii=False, indent=1) + "\n", encoding="utf-8"
-    )
-    # What the run compared with, for the job that keeps the issue of a drop.
-    if previous is not None:
-        (out / "previous.json").write_text(
-            json.dumps(previous, ensure_ascii=False, indent=1) + "\n", encoding="utf-8"
-        )
+    previous = keep_run(now, mutation.read_previous(arguments.previous), out)
     (out / "results.txt").write_text(report.results_text(), encoding="utf-8")
     (out / "survivors.md").write_text(mutation.survivors_text(report), encoding="utf-8")
     sys.stdout.write(mutation.summary(report, now, previous))
@@ -830,7 +894,8 @@ def fix_bot_command(
             return 1
         job_output(
             arguments.output,
-            f"action={decided.action}\npull={decided.number or ''}\n",
+            f"action={decided.action}\npull={decided.number or ''}\n"
+            + (f"unread={decided.unread}\n" if decided.unread else ""),
         )
         sys.stdout.write(decided.text)
         return 0
@@ -858,6 +923,7 @@ def fix_bot_command(
             fixes,
             arguments.app,
             arguments.url,
+            arguments.unread,
         )
     elif arguments.action == "suggest":
         said = suggest(api, repo, int(arguments.pull), arguments.sha, fixes)
@@ -968,6 +1034,46 @@ def decisions_command(arguments: argparse.Namespace, root: Path) -> int:
     return 1
 
 
+def translations_command(arguments: argparse.Namespace, root: Path) -> int:
+    """What is wrong with the catalogs of the translations, one on each line, and in
+    the CI also as annotations at their lines; with --fix, what a command can fix
+    first."""
+    result = translations.check(root, arguments.fix)
+    for path in result.fixed:
+        print(f"{path}: in step with its source now")
+    found = result.findings
+    if not result.catalogs:
+        print("No catalogs of translations, so nothing to check.")
+        return 0
+    if not found:
+        print(
+            f"Each of the {result.catalogs} catalog(s) of translations has the texts "
+            "of its source, with their placeholders, and no other."
+        )
+        return 0
+    for finding in found:
+        print(finding.text())
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        for finding in found:
+            print(
+                annotate.Annotation(
+                    "Translations", finding.message, finding.path, finding.line
+                ).command()
+            )
+    if any(finding.fixable for finding in found):
+        print(
+            f"{command(root)} translations --fix brings the order of the texts, the "
+            "stale ones and the copies in step with their source."
+        )
+    if not all(finding.fixable for finding in found):
+        print(
+            "A text without words or with other placeholders needs words in its "
+            "language, which only a person can write: write them, or ask in the pull "
+            "request for a maintainer or a native speaker to add them."
+        )
+    return 1
+
+
 def migrate_command(arguments: argparse.Namespace, root: Path) -> int:
     """What the releases of the blueprint move in the files of the project, one on each
     line, and in the CI also as annotations of those files; with --fix, it moves them."""
@@ -1000,11 +1106,13 @@ def migrate_command(arguments: argparse.Namespace, root: Path) -> int:
 def pages_command(arguments: argparse.Namespace, root: Path) -> int:
     """The layouts of the pages that GitHub shows, one on each line, and in the CI also
     as annotations at their lines; with --fix, the pages in one column first, where
-    there is a safe way to. The cells of Markdown tables that hold a paragraph come
-    first, as warnings, which fail nothing yet."""
+    there is a safe way to. The cells of Markdown tables that hold a paragraph, and
+    the paragraphs and the items of lists that hold a wall of text, come first, as
+    warnings, which fail nothing."""
     shown = pages(root)
     left: list[tuple[Path, Layout]] = []
     long: list[tuple[Path, Layout]] = []
+    walls: list[tuple[Path, Layout]] = []
     fixable = 0
     for page in shown:
         path = root / page
@@ -1019,19 +1127,32 @@ def pages_command(arguments: argparse.Namespace, root: Path) -> int:
             print(f"{page.as_posix()}: {editable} layout(s) in one column now")
         left += [(page, layout) for layout in found]
         long += [(page, cell) for cell in long_cells(text)]
+        if RECORDS not in page.parts[:-1]:
+            walls += [(page, block) for block in long_blocks(text)]
     ci = os.environ.get("GITHUB_ACTIONS") == "true"
-    for page, cell in long:
-        print(f"{page.as_posix()}:{cell.line}: {cell.message}")
-    if long:
-        if ci:
-            for page, cell in long:
-                print(annotation(page, cell))
-        print(
-            f"{len(long)} cell(s) of Markdown tables hold more than {CELL_WORDS} words, "
-            "a paragraph that the GitHub app and phones squeeze: make the rows a list, "
-            "or move the detail to a page of its own, as CONTRIBUTING.md describes. "
-            "They are warnings for now."
-        )
+    for warnings, said in (
+        (
+            long,
+            f"{len(long)} cell(s) of Markdown tables hold more than {CELL_WORDS} "
+            "words, a paragraph that the GitHub app and phones squeeze: make the rows "
+            "a list, or move the detail to a page of its own, as CONTRIBUTING.md "
+            "describes. They are warnings for now.",
+        ),
+        (
+            walls,
+            f"{len(walls)} paragraph(s) or item(s) of lists hold more than "
+            f"{BLOCK_WORDS} words, a wall of text on a phone: give each a short lead "
+            "sentence and a list or headings below it, as CONTRIBUTING.md describes. "
+            "They are warnings, which fail nothing.",
+        ),
+    ):
+        for page, warning in warnings:
+            print(f"{page.as_posix()}:{warning.line}: {warning.message}")
+        if warnings:
+            if ci:
+                for page, warning in warnings:
+                    print(annotation(page, warning))
+            print(said)
     if not left:
         print(f"The {len(shown)} page(s) that GitHub shows have one column.")
         return 0
@@ -1093,6 +1214,10 @@ def advisories_command(arguments: argparse.Namespace, root: Path) -> int:
             "No osv-scanner.toml accepts a version with every advisory, and "
             f"{advisories.PRESET} has no rule."
         )
+    # Only a note: the weekly run of OSV-Scanner warns and opens the issue.
+    day = dependabot.today()
+    for soon in ending.ending(ending.dated(root), day):
+        print(f"Ends soon: {ending.line(soon, day)}")
     return 0
 
 
@@ -1122,6 +1247,24 @@ def dependabot_command(
         )
         return 1
     for line in outcome.report(repo, arguments.dry_run):
+        print(line)
+    return 0
+
+
+def ending_command(
+    api: Api, repo: str, arguments: argparse.Namespace, root: Path
+) -> int:
+    """Warns of each acceptance of an osv-scanner.toml that ends within two weeks,
+    and keeps the one issue that names them; with --dry-run, only says so."""
+    outcome = ending.keep_issue(api, repo, root, dry_run=arguments.dry_run)
+    for warning in outcome.warnings:
+        print(warning, file=sys.stderr)
+    print(
+        f"The acceptances of the osv-scanner.toml files of {repo} that end within "
+        f"{ending.WINDOW.days} days"
+        + (" (a dry run: nothing changed):" if arguments.dry_run else ":")
+    )
+    for line in outcome.summary:
         print(line)
     return 0
 
@@ -1731,6 +1874,25 @@ def add_changelog_parsers(
         "into its description, for release-please, which might not parse its squash "
         "commit (the release bot)",
     )
+    release_parser = commands.add_parser(
+        "release", help="the release pull request, for the release bot"
+    )
+    release_actions = release_parser.add_subparsers(dest="action", required=True)
+    dependency_parser = release_actions.add_parser(
+        "dependency-only",
+        help="whether the release pull request merges itself as a release of "
+        "dependency updates, by the commits since the last release (decision 0087)",
+    )
+    dependency_parser.add_argument(
+        "--event",
+        required=True,
+        help="the event of the run of the release bot, such as schedule or push",
+    )
+    dependency_parser.add_argument(
+        "--output",
+        required=True,
+        help="the file to write merge=true or merge=false into",
+    )
     beta_parser = commands.add_parser(
         "beta", help="the notes of a beta of the next release, for the release bot"
     )
@@ -1816,6 +1978,13 @@ def add_update_parsers(
         default=SOURCE,
         help="the blueprint on GitHub as OWNER/NAME, a fork perhaps, whose release the "
         "pull request links",
+    )
+    update_parser.add_argument(
+        "--rendered",
+        type=Path,
+        help="a folder with what the blueprint rendered for the version before, which "
+        "tells the changes of the repository that the update drops; without it, every "
+        "file that the update deletes or replaces as binary waits for a person",
     )
     next_branch_parser = commands.add_parser(
         "next-branch",
@@ -2268,6 +2437,12 @@ def add_fix_parsers(
         "--output", help="the file of the outputs of the step, $GITHUB_OUTPUT"
     )
     commit_fixes_parser.add_argument("--branch", required=True)
+    commit_fixes_parser.add_argument(
+        "--unread",
+        help="why nobody reads the commit before the merge, as fix collect said: "
+        "bot, auto-merge, update, or empty when its author does; without it, the bot commits "
+        "no file that decides what a workflow runs",
+    )
     suggest_parser.add_argument("--pull", required=True)
     main_parser.add_argument("--base", required=True, help="the default branch")
     for bot_parser in (commit_fixes_parser, main_parser):
@@ -2336,7 +2511,8 @@ def add_mutation_parsers(
     plan_parser.add_argument(
         "--sample",
         action="store_true",
-        help="one part with a sample of the functions, as a pull request tries them",
+        help="one part with a sample of the functions, or of the PHP files, as a pull "
+        "request tries them",
     )
     mutation_actions.add_parser(
         "configure",
@@ -2386,6 +2562,33 @@ def add_mutation_parsers(
         "--previous", type=Path, help="mutation.json of the run before"
     )
     mutation_report_parser.add_argument("--run", default="", help="the link of the run")
+    infection_parser = mutation_actions.add_parser(
+        "infection",
+        help="the score of a run of Infection, compared with the run before, and "
+        "mutation.json for the issue when the score drops",
+    )
+    infection_parser.add_argument(
+        "logs_folder",
+        metavar="LOGS",
+        help="the folder with infection-output.log and infection.log of the run",
+    )
+    infection_parser.add_argument(
+        "--out", required=True, help="the folder for the artifact of the run"
+    )
+    infection_parser.add_argument(
+        "--previous", type=Path, help="mutation.json of the run before"
+    )
+    infection_parser.add_argument("--run", default="", help="the link of the run")
+    infection_parser.add_argument(
+        "--root",
+        default="",
+        help="the folder in which Infection ran, which the paths of its log start with",
+    )
+    infection_parser.add_argument(
+        "--sample",
+        action="store_true",
+        help="the run tried the sample of a pull request, which no run compares with",
+    )
     mutation_issue_parser = mutation_actions.add_parser(
         "issue",
         help="open, keep or close the one issue of a dropped score, from the report",
@@ -2417,9 +2620,15 @@ def add_advisories_parsers(
         "reason, and open again those that it closed once the acceptance ends",
     )
     advisories_parser.add_argument(
+        "--ending",
+        action="store_true",
+        help=f"warn of each acceptance that ends within {ending.WINDOW.days} days, and "
+        "keep one issue that names them, which closes once none ends that soon",
+    )
+    advisories_parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="with --dependabot: only say which alerts it would close or open again",
+        help="with --dependabot or --ending: only say what it would change",
     )
 
 
@@ -2502,6 +2711,18 @@ def add_pages_parsers(
         action="store_true",
         help="move it in those files",
     )
+    translations_parser = commands.add_parser(
+        "translations",
+        help="the catalogs of the translations of a Home Assistant integration, a "
+        "Nextcloud app or a Chrome extension: every language with the texts of its "
+        "source and no other, each with its words and the placeholders of the source",
+    )
+    translations_parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="first bring the order of the texts, the stale ones and the copies, such "
+        "as en.json of strings.json and l10n/*.js of l10n/*.json, in step",
+    )
     site_check_parser = commands.add_parser(
         "site-check",
         help="what the website that MkDocs built promises: a sitemap in every folder "
@@ -2531,10 +2752,15 @@ def parser() -> argparse.ArgumentParser:
     one function with every command made 1,800 copies of its 640 lines, 51 MB of
     code that the Mutation workflow and its tests compiled for minutes."""
     parser = argparse.ArgumentParser(
-        prog="blueprint.py", description=blueprint.__doc__.split("\n\n")[0]
+        prog="blueprint.py",
+        description=blueprint.__doc__.split("\n\n")[0],
+        # The epilog lists the commands in groups of its own, line by line.
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--repo", help="OWNER/NAME; by default the repository of this folder"
+        "--repo",
+        metavar="OWNER/NAME",
+        help="the repository; by default the repository of this folder",
     )
     parser.add_argument(
         "--config",
@@ -2542,7 +2768,12 @@ def parser() -> argparse.ArgumentParser:
         default=CONFIG,
         help="the settings, by default %(default)s",
     )
-    commands = parser.add_subparsers(dest="command", required=True)
+    commands = parser.add_subparsers(
+        dest="command",
+        required=True,
+        metavar="COMMAND",
+        help="one of the commands below; COMMAND --help shows its own help",
+    )
     for add in (
         add_settings_parsers,
         add_changelog_parsers,
@@ -2559,7 +2790,59 @@ def parser() -> argparse.ArgumentParser:
         add_locks_parsers,
     ):
         add(commands)
+    parser.epilog = command_groups(commands)
     return parser
+
+
+# The commands that a person runs; every other one is a step of a bot or a workflow,
+# which a person seldom needs.
+PERSON_COMMANDS = (
+    "create",
+    "doctor",
+    "checklist",
+    "settings",
+    "app",
+    "workflows",
+    "fragments",
+    "fix",
+    "locks",
+    "advisories",
+    "pages",
+    "binaries",
+    "decisions",
+    "migrate",
+)
+HELP_COLUMN = 24
+HELP_WIDTH = 79
+
+
+def command_groups(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> str:
+    """The commands of a person and the steps of the bots, as two groups of the help.
+    argparse lists the commands of one subparser in one flat block, so the help shows
+    them here instead, and the block keeps only the line of COMMAND."""
+    helps = {str(action.dest): str(action.help) for action in commands._choices_actions}
+    commands._choices_actions.clear()
+    bots = [name for name in helps if name not in PERSON_COMMANDS]
+    groups = [
+        ("commands for a person", PERSON_COMMANDS),
+        ("steps of the bots and the workflows", bots),
+    ]
+    return "\n\n".join(
+        f"{title}:\n" + "\n".join(command_line(name, helps[name]) for name in names)
+        for title, names in groups
+    )
+
+
+def command_line(name: str, help_text: str) -> str:
+    """One command of the help, its words beside it in the column where argparse sets
+    them; a test keeps every name short enough for it."""
+    first, *rest = textwrap.wrap(help_text, HELP_WIDTH - HELP_COLUMN)
+    indent = " " * HELP_COLUMN
+    return "\n".join(
+        [f"  {name:<{HELP_COLUMN - 2}}{first}", *(indent + line for line in rest)]
+    )
 
 
 def files_command(arguments: argparse.Namespace, root: Path) -> int | None:
@@ -2571,6 +2854,7 @@ def files_command(arguments: argparse.Namespace, root: Path) -> int | None:
         "decisions": lambda: decisions_command(arguments, root),
         "migrate": lambda: migrate_command(arguments, root),
         "pages": lambda: pages_command(arguments, root),
+        "translations": lambda: translations_command(arguments, root),
     }
     run = commands.get(arguments.command)
     if run is None:
@@ -2682,16 +2966,20 @@ def standalone_command(
             print(f"blueprint.py: {error}", file=sys.stderr)
             return 2
     if arguments.command == "advisories" and (
-        (arguments.dependabot and arguments.fix)
-        or (arguments.dry_run and not arguments.dependabot)
+        sum((arguments.fix, arguments.dependabot, arguments.ending)) > 1
+        or (arguments.dry_run and not (arguments.dependabot or arguments.ending))
     ):
         print(
-            "blueprint.py: --dry-run goes with --dependabot, and --fix without it: "
-            "the one writes the rules of Renovate, the other closes Dependabot alerts",
+            "blueprint.py: --fix, --dependabot and --ending go one at a time, and "
+            "--dry-run with --dependabot or --ending: --fix writes the rules of "
+            "Renovate, --dependabot closes Dependabot alerts, --ending keeps the issue "
+            "of the acceptances that end soon",
             file=sys.stderr,
         )
         return 2
-    if arguments.command == "advisories" and not arguments.dependabot:
+    if arguments.command == "advisories" and not (
+        arguments.dependabot or arguments.ending
+    ):
         try:
             return advisories_command(arguments, root)
         except (OSError, UnicodeDecodeError, subprocess.CalledProcessError) as error:
@@ -2779,6 +3067,7 @@ def main(
                     automerge=arguments.automerge != "off",
                     run_id=arguments.run_id,
                     source=arguments.source,
+                    rendered=arguments.rendered,
                 )
             )
             return 0
@@ -2820,10 +3109,19 @@ def main(
             return 0
         if arguments.command == "fix":
             return fix_bot_command(api, repo, arguments, root)
+        if arguments.command == "advisories" and arguments.ending:
+            return ending_command(api, repo, arguments, root)
         if arguments.command == "advisories":
             return dependabot_command(api, repo, arguments, root)
         if arguments.command == "commit-overrides":
             print(write_overrides(api, repo), end="")
+            return 0
+        if arguments.command == "release":
+            verdict = dependency_release(api, repo, arguments.event)
+            Path(arguments.output).write_text(
+                f"merge={'true' if verdict.merge else 'false'}\n", encoding="utf-8"
+            )
+            print(verdict.text)
             return 0
         if arguments.command == "workflows":
             print(register_workflows(api, repo))

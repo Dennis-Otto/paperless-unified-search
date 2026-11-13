@@ -2,9 +2,10 @@ name: Dependabot maintenance
 
 # Dependabot keeps only the Features of the dev container (dependabot.yml); Renovate
 # merges its own updates, those of actions pinned to a commit of a branch included.
-# Routine updates merge on their own once every required check passes; a major
-# update waits for the maintainer. Updates of runtime dependencies are committed as
-# fix(deps) and so lead to a patch release (see release.yml). Auto-merge is turned on
+# Every update merges on its own once every required check passes, a major one too:
+# the checks are the gate, and one whose checks fail stays open and shows the failure
+# (decision 0150). Updates of runtime dependencies are committed as fix(deps) and so
+# lead to a patch release (see release.yml). Auto-merge is turned on
 # as the release app, as Renovate's is: a merge that auto-merge does with the token
 # of a workflow starts no workflow, so the release bot and the branch bot would wait
 # for their schedules, which GitHub runs as it can, often hours late. The merge of
@@ -133,16 +134,13 @@ jobs:
       # fail at the token; every workflow has this step, the same but for its variables.
       - name: Check that the release app is set up
         id: release-app
-        if: >-
-          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
-          steps.metadata.outputs.update-type == 'version-update:semver-minor'
         env:
           CLIENT_ID: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
           KEY_SET: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY != '' }}
           # Who needs the app and for what, what happens without it, and whether the
           # run fails then.
           BOT: the merge bot of Dependabot
-          TASK: merge a routine update so that the merge starts the workflows of main
+          TASK: merge an update so that the merge starts the workflows of main
           WITHOUT: the token of the job turns auto-merge on, and the merge starts no workflow
           REQUIRED: "false"
         run: |
@@ -188,10 +186,7 @@ jobs:
           message="The release app gave no token, so the job's token turns auto-merge on, and the merge starts no workflow; check the app's installation and the secret RELEASE_AUTOMATION_PRIVATE_KEY of the environment release."
           echo "::warning title=Release app token failed::$message"
           echo "$message" >> "$GITHUB_STEP_SUMMARY"
-      - name: Enable automatic squash merge for patch and minor updates
-        if: >-
-          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
-          steps.metadata.outputs.update-type == 'version-update:semver-minor'
+      - name: Enable automatic squash merge
         env:
           # The app's merge starts the workflows of the push to main.
           GH_TOKEN: ${{ steps.app.outputs.token || secrets.GITHUB_TOKEN }}

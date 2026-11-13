@@ -20,7 +20,10 @@ name: Bot health
 # GitHub shows with .github/social-preview.png, which only a person can upload, and
 # keeps one issue open, Upload the new social preview, until they are the same, in
 # a public repository only, since GitHub shows no social preview of a private one;
-# its label is manual-step, not bot-failure, since nothing fails there. Runs
+# its label is manual-step, not bot-failure, since nothing fails there. The same look
+# starts the blueprint bot when the blueprint has a newer release than
+# .copier-answers.yml names and the pull request of the bot doesn't bring it yet, so
+# that a repository that the Rollout doesn't start gets it within a day. Runs
 # of pull requests start nothing here, and neither does a run that GitHub couldn't
 # start, as in its outage of 9 November 2026: the nightly look runs it again once. A
 # look that GitHub keeps failing ends with a notice, not a failure (decision 0136).
@@ -28,7 +31,9 @@ name: Bot health
 # those of a pull request or of a fork, and the workflows that keep an issue of their
 # own, such as Newest Node, get neither a second try nor an issue here, unless
 # Harden-Runner stopped a job of their first attempt: then their failed jobs run once
-# more, as nothing else would run them again (decision 0141).
+# more, as nothing else would run them again (decision 0141). Nothing follows the end
+# of Bot health itself, so the nightly look runs the failed jobs of its own runs of
+# the last two days once more that Harden-Runner stopped at their first attempt.
 # It checks out the default branch only, for blueprint.py, never the code of a pull
 # request; blueprint.py bot-health holds the logic.
 # https://github.com/Dennis-Otto/repo-blueprint
@@ -325,6 +330,9 @@ jobs:
       checks: read
       contents: read
       issues: write
+      # Ticks the box for a rebase of a pull request of Renovate that Renovate leaves
+      # alone after a merge of main by a person (decision 0144).
+      pull-requests: write
     steps:
       # GitHub's host of uploads too, which serves the uploaded social preview that the
       # look compares with .github/social-preview.png.
@@ -412,7 +420,7 @@ jobs:
           sparse-checkout: |
             .github
             blueprint
-      - name: Look at the latest run of every workflow, start the missed ones, and compare the social preview
+      - name: Look at the latest run of every workflow, start the missed ones, compare the social preview, and bring back the pull requests of Renovate
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

@@ -1,5 +1,6 @@
-"""The settings of a repository as code, the checklist of what only a person can do,
-and the changelog of its releases.
+"""The settings of a repository as code, the checklist of what only a person can do, a
+new repository on GitHub with create, and doctor, whether create can run here; the
+release app with app, and the steps of the bots, such as the changelog of a release.
 
     python3 blueprint.py settings check     compare .github/repository.toml with GitHub
     python3 blueprint.py settings apply     make GitHub match .github/repository.toml
@@ -7,6 +8,8 @@ and the changelog of its releases.
     python3 blueprint.py create [--private] the repository on GitHub of a new copy, set up
     python3 blueprint.py changelog ...      the changelog of a release (the release bot)
     python3 blueprint.py commit-overrides   the titles that release-please reads (the release bot)
+    python3 blueprint.py release dependency-only ...
+                                            whether a release of dependency updates merges itself
     python3 blueprint.py fragments [--fix]  check the fragments of the changelog in changelog.d/
     python3 blueprint.py notices ...        the licenses of the third-party components
     python3 blueprint.py update-commit ...  the pull request of an update (the blueprint bot)

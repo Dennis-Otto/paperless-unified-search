@@ -134,6 +134,19 @@ EMPTY = re.compile(rf"<p\b{TAG}>\s*</p>\n?")
 LINK = re.compile(r"<a\b[^>]*>.*?</a>", re.S)
 PARAGRAPH = re.compile(r"<p>(?P<inside>(?:(?!</p>).)*?)</p>", re.S)
 DESCRIPTION = 160
+# The designed preview of the repository, which GitHub shows for a link to it, where
+# the website serves it, and the tags of the head that name the picture of a preview
+# card, which the home page of each language takes from it instead of the card that
+# the social plugin draws: that one shows the name of the website twice and cuts its
+# description. The inner pages keep their cards, whose titles are their own.
+PREVIEW = ".github/social-preview.png"
+SERVED_PREVIEW = "assets/images/social-preview.png"
+PREVIEW_TAG = re.compile(
+    rf'<meta\b(?={TAG}\bproperty="(?:og:image(?::\w+)?|twitter:image)")'
+    rf"{TAG}>\n?",
+    re.I,
+)
+TWITTER_CARD = 'property="twitter:card"'
 
 # The pages that a website in several languages, and any other, keeps out of the
 # search and out of search engines: the template of a decision record, which is
@@ -587,8 +600,8 @@ def source_facts(output: str) -> str:
 
 
 def on_files(files: Any, config: Any) -> Any:
-    """Serve the stylesheet and the script of the blueprint, pin Mermaid, and add the
-    page of the automation.
+    """Serve the stylesheet and the script of the blueprint and the preview of the
+    repository, pin Mermaid, and add the page of the automation.
 
     Both are files beside this one, which the i18n plugin leaves in place as files
     of the theme. The script of Material that loads Mermaid comes from a copy in
@@ -611,6 +624,20 @@ def on_files(files: Any, config: Any) -> Any:
                 config.site_dir,
                 config.use_directory_urls,
                 dest_uri=destination,
+            )
+        )
+    root = Path(config.config_file_path).parent
+    preview = root / PREVIEW
+    BUILT.preview = size(str(preview)) if preview.is_file() else None
+    if BUILT.preview is not None:
+        # From its folder: MkDocs leaves out a file whose path starts with a dot.
+        files.append(
+            kind(
+                preview.name,
+                str(preview.parent),
+                config.site_dir,
+                config.use_directory_urls,
+                dest_uri=SERVED_PREVIEW,
             )
         )
     folder = automated(config)
@@ -690,7 +717,8 @@ class Built:
     on_page_content left, by its path on the website, each by the name of its file;
     the links in the footer that the hooks gave the build before, None until they
     did; the version of the latest release, which the header shows; and the menu of
-    each language, for the map of the website.
+    each language, for the map of the website; and the width and the height of the
+    preview of the repository that the website serves, None without one.
 
     The i18n plugin builds every further language within the build of the default
     one, and MkDocs loads the hooks anew for each build of mkdocs serve.
@@ -706,6 +734,7 @@ class Built:
         self.social: list[dict[str, str]] | None = None
         self.version = ""
         self.menus: dict[str, Menu] = {}
+        self.preview: tuple[int, int] | None = None
 
 
 BUILT = Built()
@@ -1405,8 +1434,40 @@ def on_post_page(output: str, page: Any, config: Any) -> str:
             output = search_in_language(output, page, found)
     if unlisted(page, config):
         output = output.replace("</head>", f"{NOINDEX}</head>", 1)
+    if page.file.dest_uri in homes(config):
+        output = previewed(output, config)
     kept(output, page)
     return source_facts(output)
+
+
+def previewed(output: str, config: Any) -> str:
+    """A home page whose link shows the preview of the repository, when the website
+    serves one and has an address, in place of the picture of the card that the
+    social plugin drew, which runs before this hook.
+
+    A link preview needs the full address of the picture. Without the plugin, as
+    in a preview on a computer without Cairo or on a website that turned it off,
+    the page gets the tags of the picture alone, and the card of Twitter that
+    shows it large.
+    """
+    if BUILT.preview is None or not config.site_url:
+        return output
+    address = urljoin(config.site_url, SERVED_PREVIEW)
+    width, height = BUILT.preview
+    tags = {
+        "og:image": address,
+        "og:image:type": "image/png",
+        "og:image:width": str(width),
+        "og:image:height": str(height),
+        "twitter:image": address,
+    }
+    if TWITTER_CARD not in output:
+        tags["twitter:card"] = "summary_large_image"
+    head = "".join(
+        f'<meta property="{name}" content="{html.escape(value)}" />\n'
+        for name, value in tags.items()
+    )
+    return PREVIEW_TAG.sub("", output).replace("</head>", f"{head}</head>", 1)
 
 
 def kept(output: str, page: Any) -> None:
@@ -1755,8 +1816,8 @@ def write_index(path: Path, data: dict[str, Any]) -> None:
 
 
 def on_post_template(output_content: str, template_name: str, config: Any) -> str:
-    """Keep the 404 page of the default language at the root, with the link to the
-    repository of every other page.
+    """Keep the 404 page of the default language at the root, with content that
+    leads on and the link to the repository of every other page.
 
     The i18n plugin builds every further language into the same folder, and that
     build would write 404.html at the root again: in the further language, and with
@@ -1764,9 +1825,103 @@ def on_post_template(output_content: str, template_name: str, config: Any) -> st
     """
     plugin = config.plugins.get("i18n")
     further = plugin is not None and not plugin.is_default_language_build
-    if template_name == "404.html" and further:
-        return ""
+    if template_name == "404.html":
+        if further:
+            return ""
+        output_content = not_found(output_content, config)
     return source_facts(output_content)
+
+
+# The article of the 404 page of Material, which says no more than its heading: a
+# project that gives the page content of its own, in an override of the theme,
+# keeps it.
+MATERIAL_404 = re.compile(
+    r'(?P<start><article class="md-content__inner[^"]*"[^>]*>)\s*'
+    r"<h1>404 - Not found</h1>\s*(?=</article>)"
+)
+# The title of a page in its head, which on the 404 page starts with what it is.
+PAGE_TITLE = re.compile(r"(?P<start><title>)(?P<rest>.*?</title>)", re.S)
+# The words of the 404 page in each language that has them. A website in another
+# language takes the English ones, and a further language without them gets no part.
+NOT_FOUND = {
+    "en": {
+        "title": "Page not found",
+        "text": (
+            "There is no page at this address. It may have moved, or the address "
+            "may have a typo."
+        ),
+        "home": "Go to the home page",
+        "search": "The search at the top of every page finds what you looked for.",
+    },
+    "de": {
+        "title": "Seite nicht gefunden",
+        "text": (
+            "Unter dieser Adresse gibt es keine Seite. Vielleicht ist sie umgezogen, "
+            "oder in der Adresse steckt ein Tippfehler."
+        ),
+        "home": "Zur Startseite",
+        "search": "Die Suche oben auf jeder Seite findet, was du gesucht hast.",
+    },
+}
+# The script of the 404 page, after its content. The pages of the website end in
+# .html, so an address in the style of folders, such as faq/ or faq, which most
+# websites of MkDocs have and which people guess, leads on to faq.html when that is
+# a page; the content shows only when it isn't one either, or without scripts.
+NOT_FOUND_SCRIPT = (
+    "<script>(function(){"
+    'var p=location.pathname,t=/[^/]\\/$/.test(p)?p.slice(0,-1)+".html"'
+    ':/\\/[^/.]+$/.test(p)?p+".html":"";if(!t)return;'
+    'var d=document.getElementById("not-found");d.hidden=true;'
+    'fetch(t,{method:"HEAD"}).then(function(r){'
+    "if(r.ok)location.replace(t+location.search+location.hash);else d.hidden=false"
+    "}).catch(function(){d.hidden=false})"
+    "})()</script>"
+)
+
+
+def not_found(output: str, config: Any) -> str:
+    """The 404 page of Material with content that leads on: what happened, a link
+    to the home page and the hint at the search, in each language of the website
+    that has NOT_FOUND, and the script that tries the address as a page of .html.
+
+    GitHub Pages serves the page at the root for a wrong address in any folder, so
+    its links start from the path of the address of the website, as MkDocs writes
+    those of the theme on it.
+    """
+    match = MATERIAL_404.search(output)
+    if match is None:
+        return output
+    base = urlsplit(config.site_url or "/").path
+    base = base if base.endswith("/") else f"{base}/"
+    found = languages(config)
+    if found is None:
+        spoken = str(config.theme.get("language") or "en")
+        homes = [(spoken, base)]
+    else:
+        spoken = found.default
+        homes = [(spoken, base)]
+        homes += [(language, f"{base}{language}/") for language in found.further]
+    parts: list[str] = []
+    for language, home in homes:
+        words = NOT_FOUND.get(language)
+        if words is None:
+            if parts:
+                continue
+            language, words = "en", NOT_FOUND["en"]
+        heading = "h2" if parts else "h1"
+        named = f' lang="{language}"' if language != spoken else ""
+        parts.append(
+            f"<section{named}><{heading}>{words['title']}</{heading}>"
+            f"<p>{words['text']}</p>"
+            f'<p><a class="md-button md-button--primary" href="{html.escape(home)}">'
+            f"{words['home']}</a></p><p>{words['search']}</p></section>"
+        )
+    content = f'<div id="not-found">{"".join(parts)}</div>{NOT_FOUND_SCRIPT}'
+    title = NOT_FOUND.get(spoken, NOT_FOUND["en"])["title"]
+    output = output[: match.start()] + match["start"] + content + output[match.end() :]
+    return PAGE_TITLE.sub(
+        lambda tag: f"{tag['start']}{title} - {tag['rest']}", output, 1
+    )
 
 
 # ---------------------------------------------------------- the page of the automation

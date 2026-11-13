@@ -229,6 +229,14 @@ jobs:
             else
               fail "The tag $TAG is not a signed tag."
             fi
+          # The signature covers the name inside the tag, not the name of the ref: a new
+          # ref at the signed tag of an older release would pass the signature, as
+          # .github/sign-tag.sh and SECURITY.md say. The name is read in the condition,
+          # where the end of git, which sed leaves at the end of the header, can't stop
+          # the step; a name that can't be read is no name of the release either.
+          elif name="$(git -C "$RUNNER_TEMP/tag" cat-file tag "$TAG" | sed -n '/^$/q; s/^tag //p')"
+            [[ "$name" != "$TAG" ]]; then
+            fail "The tag $TAG is the signed tag $name of another version."
           elif (cd "$RUNNER_TEMP/tag" && "$gitsign" verify-tag "$TAG" \
             --certificate-identity "https://github.com/$GH_REPO/.github/workflows/release.yml@refs/heads/main" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null 2>&1); then

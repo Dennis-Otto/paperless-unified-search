@@ -1142,6 +1142,12 @@ def own_release_app(blueprint: dict[str, str], own: dict[str, str]) -> None:
         )
 
 
+def required_check(check: dict[str, Json]) -> str:
+    """A required status check as its name and the app that must report it, which is
+    null when any source may."""
+    return json.dumps([check["context"], check.get("integration_id")])
+
+
 def ruleset_differences(want: dict[str, Json], have: dict[str, Json]) -> list[str]:
     """What differs between two rulesets, in the parts this tool manages. A token that
     may only read the administration, such as the release app's, gets the rulesets
@@ -1163,8 +1169,10 @@ def ruleset_differences(want: dict[str, Json], have: dict[str, Json]) -> list[st
         for key, value in rule.get("parameters", {}).items():
             current = parameters.get(key)
             if key == "required_status_checks":
-                value = sorted(check["context"] for check in value)
-                current = sorted(check["context"] for check in current or [])
+                # The source counts as well: a check without integration_id accepts
+                # any app and any commit status of its name, not GitHub Actions alone.
+                value = sorted(required_check(check) for check in value)
+                current = sorted(required_check(check) for check in current or [])
             elif key == "code_scanning_tools":
                 value = sorted(json.dumps(tool, sort_keys=True) for tool in value)
                 current = sorted(
@@ -1177,7 +1185,11 @@ def ruleset_differences(want: dict[str, Json], have: dict[str, Json]) -> list[st
 
 
 def rulesets(api: Api, repo: str) -> dict[str, Json]:
-    return {item["name"]: item["id"] for item in api.get_all(f"repos/{repo}/rulesets")}
+    """The rulesets of the repository itself, by name, with their ids: not those of
+    an organization above it, which GitHub lists too unless asked without them, and
+    which the repository can't change, even when one has the name of a managed one."""
+    path = f"repos/{repo}/rulesets?includes_parents=false"
+    return {item["name"]: item["id"] for item in api.get_all(path)}
 
 
 def check_rulesets(
@@ -1230,6 +1242,87 @@ def apply_rulesets(
     for name, number in existing.items():
         if name in unwanted:
             api.delete(f"repos/{repo}/rulesets/{number}")
+
+
+# --------------------------------------------------------------------------- classic protection
+
+CLASSIC_PROTECTION = f"branch protection {BRANCH}"
+
+
+def enabled(protection: dict[str, Json], key: str) -> bool:
+    """Whether a switch of a classic branch protection is on, which GitHub answers as
+    {"enabled": true}."""
+    value = protection.get(key)
+    return isinstance(value, dict) and value.get("enabled") is True
+
+
+def classic_requirements(protection: dict[str, Json]) -> list[str]:
+    """What a classic branch protection asks of a change of its branch, in words."""
+    found = []
+    checks = protection.get("required_status_checks")
+    if isinstance(checks, dict):
+        names = sorted(str(name) for name in checks.get("contexts") or [])
+        if names:
+            found.append(f"the checks {', '.join(names)}")
+        if checks.get("strict"):
+            found.append("a branch that is up to date")
+    reviews = protection.get("required_pull_request_reviews")
+    if isinstance(reviews, dict):
+        count = int(reviews.get("required_approving_review_count") or 0)
+        found.append(
+            f"{count} approving review{'' if count == 1 else 's'}"
+            if count
+            else "a pull request"
+        )
+        if reviews.get("require_code_owner_reviews"):
+            found.append("a review of the code owners")
+        if reviews.get("require_last_push_approval"):
+            found.append("an approval of the last push")
+    if protection.get("restrictions"):
+        found.append("pushes only of the people, teams and apps that it names")
+    for key, words in (
+        ("required_signatures", "signed commits"),
+        ("required_linear_history", "a linear history"),
+        ("required_conversation_resolution", "resolved conversations"),
+        ("lock_branch", "a locked branch, which takes no change at all"),
+        ("enforce_admins", "all of it of the administrators as well"),
+    ):
+        if enabled(protection, key):
+            found.append(words)
+    return found
+
+
+def check_classic_protection(api: Api, repo: str, private: bool = False) -> list[Drift]:
+    """A classic branch protection of main, which an existing repository may still
+    have from before the blueprint. The rulesets protect main; a classic rule that
+    requires the old names of the checks or an approval keeps every pull request of
+    the bots waiting, which no ruleset shows. It is named with what it requires and
+    how it goes, and never removed by the settings themselves, as a person may have
+    set it on purpose."""
+    path = f"repos/{repo}/branches/{BRANCH}/protection"
+    try:
+        # GitHub answers 404 for a branch without one.
+        protection = api.get(path)
+    except GitHubError as error:
+        if not (private and refused_by_plan(error)):
+            raise
+        # A private repository on GitHub Free can have no branch protection.
+        return []
+    if not isinstance(protection, dict):
+        return []
+    return [
+        Drift(
+            CLASSIC_PROTECTION,
+            "none",
+            "; ".join(classic_requirements(protection)) or "present",
+            manual=(
+                f"the rulesets protect {BRANCH}, and a classic branch protection adds"
+                " what it requires, which the pull requests of the bots may never"
+                f" meet; remove it with gh api --method DELETE {path}, or under"
+                f" https://github.com/{repo}/settings/branches"
+            ),
+        )
+    ]
 
 
 # --------------------------------------------------------------------------- variables
@@ -1564,6 +1657,7 @@ def check(
             api, repo, settings.actions.get(TARGET, []), settings.triggers, private
         )
         + check_rulesets(api, repo, settings.rulesets, private)
+        + check_classic_protection(api, repo, private)
         + check_variables(api, repo, settings.variables)
         + check_environments(api, repo, settings.environments)
         + check_pages(api, repo, settings.pages)

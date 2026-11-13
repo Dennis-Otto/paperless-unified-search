@@ -117,33 +117,57 @@ jobs:
           DEFAULT: ${{ github.event.repository.default_branch }}
         run: |
           used="$(gh pr list --state open --limit 500 --json headRefName --jq '.[].headRefName')"
+          day_ago="$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ)"
           month_ago="$(date -u -d '30 days ago' +%Y-%m-%dT%H:%M:%SZ)"
-          deleted=() kept=()
-          while read -r branch; do
+          deleted=() kept=() refused=()
+          # Git allows a # or a % in the name of a branch, so each request names it
+          # encoded, with its slashes as they are, and the summary as it is. A branch
+          # that GitHub refuses is a warning, and the bot goes on with the next one.
+          while IFS=$'\t' read -r branch path; do
             case "$branch" in
               "$DEFAULT" | gh-pages | release-please--* | renovate/* | dependabot/*) continue ;;
             esac
             if grep -qxF "$branch" <<<"$used"; then
               continue
             fi
-            ahead="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/compare/$DEFAULT...$branch" --jq .ahead_by)"
-            if [[ "$ahead" == 0 ]]; then
-              gh api --header "$API_VERSION_HEADER" --method DELETE "repos/$GH_REPO/git/refs/heads/$branch" --silent
-              deleted+=("$branch")
-            else
-              date="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/commits/$branch" --jq .commit.committer.date)"
-              if [[ "$date" < "$month_ago" ]]; then
-                kept+=("$branch, $ahead commit(s) that $DEFAULT doesn't have, last on ${date%%T*}")
-              fi
+            if ! counts="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/compare/$DEFAULT...$path" --jq '[.ahead_by, .behind_by] | @tsv')"; then
+              refused+=("$branch")
+              continue
             fi
-          done < <(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/branches" --paginate --jq '.[] | select(.protected | not) | .name')
+            read -r ahead behind <<<"$counts"
+            if [[ "$ahead" == 0 ]]; then
+              # A branch made from main a moment ago has no commit of its own yet
+              # either, and its last commit is that of main, however old: only one
+              # that main moved past a day ago or earlier is left over, by the date
+              # of the first commit that main has and the branch doesn't.
+              if [[ "$behind" == 0 ]]; then
+                continue
+              elif ! since="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/compare/$path...$DEFAULT" --jq '.commits[0].commit.committer.date')"; then
+                refused+=("$branch")
+              elif [[ "$since" > "$day_ago" ]]; then
+                continue
+              elif gh api --header "$API_VERSION_HEADER" --method DELETE "repos/$GH_REPO/git/refs/heads/$path" --silent; then
+                deleted+=("$branch")
+              else
+                refused+=("$branch")
+              fi
+            elif ! date="$(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/commits/$path" --jq .commit.committer.date)"; then
+              refused+=("$branch")
+            elif [[ "$date" < "$month_ago" ]]; then
+              kept+=("$branch, $ahead commit(s) that $DEFAULT doesn't have, last on ${date%%T*}")
+            fi
+          done < <(gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/branches" --paginate --jq '.[] | select(.protected | not) | [.name, (.name | @uri | gsub("%2F"; "/"))] | @tsv')
+          for branch in "${refused[@]}"; do
+            echo "::warning::GitHub refused a request for the branch ${branch//%/%25}; the clean-up looks at it again next week."
+          done
           # The backticks are Markdown of the summary, not the shell's.
           # shellcheck disable=SC2016
           {
             echo "### Branches"
             if ((${#deleted[@]})); then printf -- '- deleted `%s`, which main holds\n' "${deleted[@]}"; fi
             if ((${#kept[@]})); then printf -- '- kept `%s`: without a pull request for a month\n' "${kept[@]}"; fi
-            if ! ((${#deleted[@]} + ${#kept[@]})); then echo "Nothing to clean up."; fi
+            if ((${#refused[@]})); then printf -- '- left `%s` for next week: GitHub refused a request for it\n' "${refused[@]}"; fi
+            if ! ((${#deleted[@]} + ${#kept[@]} + ${#refused[@]})); then echo "Nothing to clean up."; fi
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Delete the caches of closed pull requests
         env:

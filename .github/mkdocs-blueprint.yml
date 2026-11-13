@@ -65,7 +65,8 @@ plugins:
   # A preview card of every page, which shows where a link to it is shared. The cards
   # are drawn with the Cairo library, which Windows doesn't have, so only the CI
   # makes them: GitHub's runners set CI to true. A preview on your computer, and
-  # scripts/check.sh, build the website without them.
+  # scripts/check.sh, build the website without them. The home page of each language
+  # shows .github/social-preview.png of the repository instead, which the hooks serve.
   social:
     enabled: !ENV [CI, false]
   # A picture opens enlarged with a click, among those of the reader's scheme: a

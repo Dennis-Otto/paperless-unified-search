@@ -42,6 +42,9 @@ SITEMAP = "sitemap.xml"
 # The page that GitHub Pages shows for every address that leads nowhere.
 NOT_FOUND = "404.html"
 LOCATION = re.compile(r"<loc>\s*([^<]*?)\s*</loc>")
+# The tags of the head that name the picture of the preview card of a page, which a
+# chat or a social network shows for a link to it.
+PREVIEWS = ("og:image", "twitter:image")
 # The map of the website for AI assistants, at its root; a link of it, by its address;
 # an item of a list of links, which is every line of its sections, as
 # https://llmstxt.org/ asks: a name and an address, and after them with a colon what
@@ -98,14 +101,16 @@ class Shown:
 class Page(HTMLParser):
     """What a page of HTML says of itself: its language, the generator that built it,
     its canonical address, its versions in other languages, whether search engines
-    may list it, the languages of its parts, and whether the script of Material asks
-    the API of GitHub for the numbers of the repository."""
+    may list it, the languages of its parts, whether the script of Material asks
+    the API of GitHub for the numbers of the repository, and the pictures of its
+    preview card."""
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.lang: str | None = None
         self.generator = ""
         self.robots = ""
+        self.previews: list[str] = []
         self.canonical: list[str] = []
         self.alternates: list[tuple[str, str]] = []
         self.parts: set[str] = set()
@@ -145,6 +150,8 @@ class Page(HTMLParser):
             self.generator = found.get("content", "")
         elif tag == "meta" and name == "robots":
             self.robots = found.get("content", "").lower()
+        elif tag == "meta" and found.get("property", "").lower() in PREVIEWS:
+            self.previews.append(found.get("content", ""))
         elif tag == "link":
             rel = found.get("rel", "").lower().split()
             if "canonical" in rel:
@@ -331,6 +338,7 @@ def check(site: Path, repository: Path | None = None, docs: str | None = None) -
         findings += sitemaps(site, pages, base)
         findings += not_found(pages, default)
     if base:
+        findings += previews(site, pages, base)
         findings += website_map(site, pages, base, further)
     return Site(default, further, root, tuple(findings), base)
 
@@ -1039,6 +1047,23 @@ def not_found(pages: dict[str, Page], default: str) -> list[Finding]:
             )
         ]
     return []
+
+
+def previews(site: Path, pages: dict[str, Page], base: str) -> list[Finding]:
+    """The picture of the preview card of every page, which the social plugin draws
+    or the hooks take from .github/social-preview.png for a home page, is a file of
+    the website, when its address is one of the website."""
+    return [
+        Finding(
+            name,
+            f"names {address} as the picture of its preview card, which the website "
+            "doesn't have: a link to the page would show no picture",
+        )
+        for name, page in pages.items()
+        for address in dict.fromkeys(page.previews)
+        if address.startswith(base)
+        and not (site / unquote(urlsplit(address.removeprefix(base)).path)).is_file()
+    ]
 
 
 def website_map(

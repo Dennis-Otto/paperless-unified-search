@@ -12,8 +12,9 @@ A run of the head that the bot cancels by mistake leaves a required check cancel
 the bots after the checks take that for the decision of a person. A run that stays only
 costs a runner. So anything unclear leaves a run alone:
 
-- Only the workflows of the checks, which the branch bot follows too. A workflow such as
-  the release or the issue lifecycle does something when a pull request closes.
+- Only the workflows of the checks, which the bots after the checks follow too. A
+  workflow such as the release or the issue lifecycle does something when a pull
+  request closes.
 - Only runs of a pull request: a push to main, a schedule and a release have no head that
   could replace them.
 - Only the first attempt: whoever started a run again wants its answer.
@@ -41,8 +42,10 @@ from blueprint.coach import escape_data
 from blueprint.github import PAGE, Api, GitHubError, Json
 
 # The workflow that names the workflows of the checks of a repository; the blueprint
-# renders the list for each kind of project.
-CHECKS_FILE = Path(".github/workflows/update-branches.yml")
+# renders the list for each kind of project. It names the release as well, which is no
+# check: the bot leaves its runs alone.
+CHECKS_FILE = Path(".github/workflows/after-checks.yml")
+NO_CHECKS = frozenset({"Release"})
 CHECKS = re.compile(r"^\s*workflows: \[([^\]]+)\]\s*$", re.MULTILINE)
 # The events of a run of a pull request: nothing else has a head that a push replaces.
 EVENTS = frozenset({"pull_request", "pull_request_target"})
@@ -63,7 +66,8 @@ def checks_of(root: Path) -> frozenset[str]:
     it has no such list, which leaves every run alone."""
     path = root / CHECKS_FILE
     found = CHECKS.search(path.read_text("utf-8")) if path.is_file() else None
-    return frozenset(map(str.strip, found[1].split(","))) if found else frozenset()
+    names = frozenset(map(str.strip, found[1].split(","))) if found else frozenset()
+    return names - NO_CHECKS
 
 
 def older_than_the_grace(run: dict[str, Json], now: float) -> bool:
