@@ -13,6 +13,7 @@ use OCA\PaperlessUnifiedSearch\Command\Setup;
 use OCA\PaperlessUnifiedSearch\Command\Test;
 use OCA\PaperlessUnifiedSearch\Command\TrustedMountsCommand;
 use OCA\PaperlessUnifiedSearch\Dashboard\RecentDocumentsWidget;
+use OCA\PaperlessUnifiedSearch\Listener\LoadAdditionalScriptsListener;
 use OCA\PaperlessUnifiedSearch\Notification\Notifier;
 use OCA\PaperlessUnifiedSearch\Reference\PaperlessReferenceProvider;
 use OCA\PaperlessUnifiedSearch\Search\PaperlessSearchProvider;
@@ -99,6 +100,15 @@ final class ApplicationTest extends TestCase {
 		$context->expects(self::once())
 			->method('registerDashboardWidget')
 			->with(RecentDocumentsWidget::class);
+
+		$this->application()->register($context);
+	}
+
+	public function testRegistersTheActionOfFilesForTheEventThatLoadsTheScriptsOfApps(): void {
+		$context = $this->createMock(IRegistrationContext::class);
+		$context->expects(self::once())
+			->method('registerEventListener')
+			->with('OCA\Files\Event\LoadAdditionalScriptsEvent', LoadAdditionalScriptsListener::class);
 
 		$this->application()->register($context);
 	}

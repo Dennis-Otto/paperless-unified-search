@@ -7,7 +7,8 @@
 // the document, and only the one that a file of the archive account stands for. A click
 // on the result opens that file in Files, in the Viewer, which names it in its
 // header. A user who chose in the personal settings to include Paperless in every
-// search of their own finds its results after a reload without the switch (#220).
+// search of their own finds its results after a reload without the switch (#220). In Files,
+// the menu of that file finds the documents similar to it (#411).
 // run.sh starts it in the image of Playwright after accessibility.mjs, inside the
 // network of the Compose project.
 
@@ -41,6 +42,10 @@ const SUBLINE = 'Aug 26, 2026 · Example Mobile · Letter · paid — Synthetic 
 const RESULT = `${TITLE} ${SUBLINE}`
 const FILE = 'Mobile viewer test [P123].pdf'
 const START = '/index.php/settings/user'
+// What the action of Files asks for the documents similar to a file, and what its dialog says
+// when none of them has a further file that the user can open.
+const SIMILAR_SEARCH = '/ocs/v2.php/search/providers/paperless_unified_search_documents/search?'
+const NO_SIMILAR = 'Paperless found no similar document with a file that you can open.'
 
 // The sizes of this run, from E2E_FLOW_SIZES, and every size without it.
 const RUN = flowSizes(process.env.E2E_FLOW_SIZES)
@@ -150,6 +155,39 @@ async function searchAlways(browser, session, size) {
 	}
 }
 
+// The user opens the menu of the file of a document in Files and finds the documents similar
+// to it (#411): the dialog of the app asks the search of Nextcloud for like:123 and names its
+// answer, here without a further document that the user has a file of. run.sh checks that the
+// search reached Paperless with more_like_id=123.
+async function findSimilar(browser, session, size) {
+	const context = await browser.newContext({ storageState: session, locale: 'en-US', ...size.options })
+	context.setDefaultTimeout(TIMEOUT)
+	const page = await context.newPage()
+	try {
+		await page.goto(`${BASE_URL}/index.php/apps/files/files?dir=/Documents`, { waitUntil: 'domcontentloaded' })
+		const row = page.locator(`[data-cy-files-list-row-name=${JSON.stringify(FILE)}]`)
+		await row.waitFor()
+		const answer = page.waitForResponse((response) => response.url().includes(SIMILAR_SEARCH))
+		await row.locator('[data-cy-files-list-row-actions] button[aria-haspopup="menu"]').click()
+		await page.locator('[data-cy-files-list-row-action="paperless_unified_search-similar"] button').click()
+		const dialog = page.getByRole('dialog', { name: `Documents similar to ${FILE}`, exact: true })
+		await dialog.waitFor()
+		const response = await answer
+		const term = new URL(response.url()).searchParams.get('term')
+		if (response.status() !== 200 || term !== 'like:123') {
+			throw new Error(`The dialog asked the search for ${JSON.stringify(term)} and got HTTP ${response.status()}.`)
+		}
+		await dialog.getByRole('status').filter({ hasText: NO_SIMILAR }).waitFor()
+		await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+		await dialog.waitFor({ state: 'detached' })
+		console.log(`Files on a ${size.name}: Find similar documents in Paperless in the menu of ${FILE} shows the answer of like:123 in a dialog.`)
+	} catch (error) {
+		throw new Error(`On a ${size.name}, in Files, at ${page.url()}: ${error.message}`, { cause: error })
+	} finally {
+		await context.close()
+	}
+}
+
 // The user saves two searches and a repeat in the personal settings, finds them as the
 // server keeps them after the page loads again, and takes them back, for the next runs.
 async function saveSearchesInSettings(browser, session, size) {
@@ -190,6 +228,7 @@ try {
 	// Once, on the first size of the run: the choice takes no other path on a phone.
 	await searchAlways(browser, session, RUN[0])
 	await saveSearchesInSettings(browser, session, RUN[0])
+	await findSimilar(browser, session, RUN[0])
 } finally {
 	await browser.close()
 }
