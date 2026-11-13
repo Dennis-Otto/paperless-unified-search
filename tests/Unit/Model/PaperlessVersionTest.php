@@ -104,4 +104,31 @@ final class PaperlessVersionTest extends TestCase {
 		self::assertFalse($version->equals(PaperlessVersion::of('3.3.1', '10')));
 		self::assertFalse($version->equals(null));
 	}
+
+	/**
+	 * @return array<string, array{?PaperlessVersion, int}>
+	 */
+	public static function apiVersions(): array {
+		return [
+			'none named yet' => [null, 9],
+			'Paperless 2' => [PaperlessVersion::of('2.20.13', '9'), 9],
+			'Paperless 3' => [PaperlessVersion::of('3.3.0', '10'), 10],
+			'a newer Paperless' => [PaperlessVersion::of('4.0.0', '11'), 10],
+		];
+	}
+
+	/**
+	 * A request asks for version 10 of the API where Paperless named it, also a Paperless
+	 * newer than the app, and for version 9 otherwise, which Paperless 2.16 and newer and 3
+	 * speak.
+	 */
+	#[DataProvider('apiVersions')]
+	public function testARequestAsksForTheNewestVersionOfTheApiThatPaperlessSpeaks(?PaperlessVersion $known, int $api): void {
+		self::assertSame($api, PaperlessVersion::apiToAsk($known));
+	}
+
+	public function testTheOtherVersionOfTheApiIsTheOneThatWasNotAsked(): void {
+		self::assertSame(PaperlessVersion::OLDEST_API, PaperlessVersion::otherApi(PaperlessVersion::NEWEST_API));
+		self::assertSame(PaperlessVersion::NEWEST_API, PaperlessVersion::otherApi(PaperlessVersion::OLDEST_API));
+	}
 }

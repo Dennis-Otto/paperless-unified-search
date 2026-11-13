@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\PaperlessUnifiedSearch\Exception;
 
+use OCA\PaperlessUnifiedSearch\Model\PaperlessVersion;
 use OCP\Http\Client\LocalServerException;
 use RuntimeException;
 use Throwable;
@@ -42,12 +43,15 @@ class PaperlessRequestException extends RuntimeException {
 	}
 
 	/**
-	 * For an answer whose status isn't 2xx.
+	 * For an answer whose status isn't 2xx, to a request that asked for this version of
+	 * the API: HTTP 406 refuses the version, which for the newest that the app knows means
+	 * that Paperless is newer than the app.
 	 */
-	public static function forStatus(int $status): self {
+	public static function forStatus(int $status, int $api = PaperlessVersion::OLDEST_API): self {
 		$reason = match (true) {
 			$status === 401, $status === 403 => RequestFailure::Unauthorized,
 			$status === 404 => RequestFailure::NotFound,
+			$status === 406 && $api >= PaperlessVersion::NEWEST_API => RequestFailure::NewerApi,
 			$status === 406 => RequestFailure::UnsupportedVersion,
 			$status >= 300 && $status < 400 => RequestFailure::Redirect,
 			default => RequestFailure::Http,

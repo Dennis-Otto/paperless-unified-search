@@ -130,6 +130,7 @@ OC.L10N.register(
 		'This URL answers, but not with the API of Paperless (HTTP 404). Check the address and its path.': '此 URL 有回應，但不是 Paperless 的 API（HTTP 404）。請檢查位址及其路徑。',
 		'This URL forwards to another address (HTTP %s). Enter the address that it forwards to.': '此 URL 重新導向到另一個位址（HTTP %s）。請輸入它所導向的位址。',
 		'Paperless is older than 2.16 and does not speak version 9 of its API (HTTP 406). Update Paperless-ngx.': 'Paperless 的版本早於 2.16，不支援其 API 的第 9 版（HTTP 406）。請更新 Paperless-ngx。',
+		'Paperless no longer speaks version 10 of its API, the newest that this app knows (HTTP 406). Update Paperless Unified Search.': 'Paperless 已不再支援其 API 的第 10 版，即本應用程式所知的最新版本（HTTP 406）。請更新 Paperless Unified Search。',
 		'Paperless answered with an error (HTTP %s). Check its log, or try again later.': 'Paperless 回應了錯誤（HTTP %s）。請檢查其事件記錄，或稍後再試。',
 		'This URL answers, but not like Paperless-ngx. Check the address and its path.': '此 URL 有回應，但看起來不像 Paperless-ngx。請檢查位址及其路徑。',
 		'Nextcloud does not connect to addresses of the local network unless you allow it. If Paperless runs in your local network or in Docker, select “Paperless runs in my local network”.': '除非您允許，否則 Nextcloud 不會連線到區域網路中的位址。如果 Paperless 在您的區域網路或 Docker 中執行，請勾選「Paperless 在我的區域網路中執行」。',

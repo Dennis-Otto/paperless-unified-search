@@ -103,17 +103,6 @@ final class PaperlessApiService {
 	 */
 	public const OWNERS_ANY = 'owner__id__in';
 
-	/**
-	 * The version of the API of Paperless that every request asks for. Without one,
-	 * Paperless answers in its default version, which a new release raises, as 3.0 did from
-	 * 9 to 10, and a new version may change the type of a field, as 9 did with created.
-	 * Version 9 is the newest that both Paperless 2.16 and newer and Paperless 3 accept;
-	 * an older Paperless answers HTTP 406. tests/e2e/paperless-contract.sh checks the
-	 * fields of this version against real Paperless servers, so a change of it is a
-	 * deliberate one, with those tests.
-	 */
-	private const ACCEPT = 'application/json; version=9';
-
 	/** The seconds that a request may take to connect to Paperless. */
 	private const CONNECT_TIMEOUT = 3;
 
@@ -227,24 +216,42 @@ final class PaperlessApiService {
 	 * warnings about the account of the token, which the overview of the administration
 	 * settings and the settings page show, as ConfigService::rememberTokenWarnings() says.
 	 *
+	 * @param bool $withDocumentIds whether the status names the IDs of the documents also
+	 *                              where version 10 of the API lists none in its field all:
+	 *                              then they come from the pages of the documents with
+	 *                              their IDs alone, and stay unknown when one of these fails
 	 * @throws PaperlessRequestException whatever failed, also when the request got no answer
 	 */
-	public function probeTheSettings(): PaperlessStatus {
-		$status = $this->probe(
+	public function probeTheSettings(bool $withDocumentIds = false): PaperlessStatus {
+		[$status, $api] = $this->probeWith(
 			$this->configService->getUrl(),
 			$this->configService->getToken(),
 			$this->configService->isLocalNetworkAllowed(),
 		);
 		$this->configService->rememberPaperlessVersion($status->version);
 		$this->configService->rememberTokenWarnings($status->tokenWarnings, $status->privilegesRefused);
+		if (!$withDocumentIds || $status->documentIds !== null || $api < PaperlessVersion::NEWEST_API) {
+			return $status;
+		}
 
-		return $status;
+		try {
+			$documentIds = $this->findDocumentIds($api);
+		} catch (Throwable) {
+			// Such as a request without answer, or more documents than the check reads.
+			$documentIds = null;
+		}
+
+		return new PaperlessStatus($status->version, $status->documents, $documentIds, $status->tokenWarnings, $status->privilegesRefused);
 	}
 
 	/**
 	 * Asks Paperless for its first document, which tells whether it answers, its version
-	 * and how many documents the account of the token may view, with their IDs in the field
-	 * all, which Paperless-ngx adds to every list for the selection of all documents. Once
+	 * and how many documents the account of the token may view, in version 9 of the API
+	 * with their IDs in the field all, which Paperless-ngx adds to every list for the
+	 * selection of all documents. The request asks for the version of the API that the
+	 * last answer of Paperless named, and for the other one once when Paperless refuses it
+	 * with HTTP 406, as a Paperless that was updated or replaced since may; the further
+	 * requests of the test ask for the version that Paperless answered in. Once
 	 * Paperless has answered, it asks what the account of the token may do, for the
 	 * warnings about it, and whether it can see the names of what it may view. A Paperless
 	 * that answers gets searches at once again, also while they rest after a request
@@ -257,24 +264,60 @@ final class PaperlessApiService {
 	 *                                   name: also when the request got no answer
 	 */
 	public function probe(string $url, string $token, bool $allowLocal): PaperlessStatus {
+		return $this->probeWith($url, $token, $allowLocal)[0];
+	}
+
+	/**
+	 * The test of the connection, as probe() describes it, and the version of the API that
+	 * Paperless answered it in.
+	 *
+	 * @return array{PaperlessStatus, int}
+	 * @throws PaperlessRequestException whatever failed, also when the request got no answer
+	 */
+	private function probeWith(string $url, string $token, bool $allowLocal): array {
+		$api = $this->apiToAsk();
+		try {
+			[$data, $version] = $this->firstDocument($url, $token, $allowLocal, $api);
+		} catch (PaperlessRequestException $refusal) {
+			if ($refusal->status !== 406) {
+				throw $refusal;
+			}
+
+			$api = PaperlessVersion::otherApi($api);
+			try {
+				[$data, $version] = $this->firstDocument($url, $token, $allowLocal, $api);
+			} catch (PaperlessRequestException $exception) {
+				// Paperless speaks neither: the refusal of the version that it last named says why.
+				throw $exception->status === 406 ? $refusal : $exception;
+			}
+		}
+
+		$documents = self::documentsOf($data)['count'];
+		$this->rest->end($url);
+		[$warnings, $refused] = $this->findTokenWarnings($url, $token, $allowLocal, $documents, $api);
+
+		return [new PaperlessStatus($version, $documents, self::idsOf($data['all'] ?? null), $warnings, $refused), $api];
+	}
+
+	/**
+	 * The first document of the test of the connection, in this version of the API.
+	 *
+	 * @return array{array{results: array<array-key, mixed>, ...<array-key, mixed>}, ?PaperlessVersion}
+	 * @throws PaperlessRequestException whatever failed, also when the request got no answer
+	 */
+	private function firstDocument(string $url, string $token, bool $allowLocal, int $api): array {
 		try {
 			// The test reads nothing of the document, so Paperless sends only its ID.
-			[$data, $version] = $this->requestDocuments($url, $token, $allowLocal, [
+			return $this->requestDocuments($url, $token, $allowLocal, [
 				'page' => 1,
 				'page_size' => 1,
 				'fields' => 'id',
-			]);
+			], api: $api);
 		} catch (PaperlessRequestException $exception) {
 			throw $exception;
 		} catch (Throwable $error) {
 			throw PaperlessRequestException::unanswered($error);
 		}
-
-		$documents = self::documentsOf($data)['count'];
-		$this->rest->end($url);
-		[$warnings, $refused] = $this->findTokenWarnings($url, $token, $allowLocal, $documents);
-
-		return new PaperlessStatus($version, $documents, self::idsOf($data['all'] ?? null), $warnings, $refused);
 	}
 
 	/**
@@ -288,15 +331,16 @@ final class PaperlessApiService {
 	 * says that Paperless won't tell until the account may view its UI settings.
 	 *
 	 * @param int $documents how many documents the account of the token may view
+	 * @param int $api the version of the API that Paperless answered the test in
 	 * @return array{?list<TokenWarning>, bool} the warnings, null when Paperless doesn't
 	 *                                          say what the account may do, and whether
 	 *                                          it refused to
 	 */
-	private function findTokenWarnings(string $url, string $token, bool $allowLocal, int $documents): array {
+	private function findTokenWarnings(string $url, string $token, bool $allowLocal, int $documents, int $api): array {
 		try {
 			$response = $this->client->get(
 				rtrim($url, '/') . '/api/ui_settings/',
-				$this->options($token, $allowLocal, [], self::PRIVILEGES_TIMEOUT),
+				$this->options($token, $allowLocal, [], self::PRIVILEGES_TIMEOUT, $api),
 			);
 			$status = $response->getStatusCode();
 			$body = $response->getBody();
@@ -315,7 +359,7 @@ final class PaperlessApiService {
 			return [$warnings, false];
 		}
 
-		return [$this->hidesNamesOfOthers($url, $token, $allowLocal) ? [...$warnings, TokenWarning::HidesNamesOfOthers] : $warnings, false];
+		return [$this->hidesNamesOfOthers($url, $token, $allowLocal, $api) ? [...$warnings, TokenWarning::HidesNamesOfOthers] : $warnings, false];
 	}
 
 	/**
@@ -329,14 +373,14 @@ final class PaperlessApiService {
 	 * one try, a short time and no place in the history of the problems of the search, and
 	 * one that fails finds nothing.
 	 */
-	private function hidesNamesOfOthers(string $url, string $token, bool $allowLocal): bool {
+	private function hidesNamesOfOthers(string $url, string $token, bool $allowLocal, int $api): bool {
 		try {
 			[$data] = $this->requestDocuments($url, $token, $allowLocal, [
 				'ordering' => '-added',
 				'page' => 1,
 				'page_size' => self::NAMES_CHECK_DOCUMENTS,
 				'fields' => self::NAMES_CHECK_FIELDS,
-			], timeout: self::PRIVILEGES_TIMEOUT, retry: false);
+			], timeout: self::PRIVILEGES_TIMEOUT, retry: false, api: $api);
 		} catch (Exception) {
 			return false;
 		}
@@ -344,7 +388,7 @@ final class PaperlessApiService {
 		$documents = self::documentsOf($data)['results'];
 		foreach (PaperlessNames::FIELDS as $field => $list) {
 			$ids = PaperlessNames::idsIn($documents, $field);
-			if ($ids !== [] && $this->lacksNames($url, $token, $allowLocal, $list, $ids)) {
+			if ($ids !== [] && $this->lacksNames($url, $token, $allowLocal, $list, $ids, $api)) {
 				return true;
 			}
 		}
@@ -359,10 +403,11 @@ final class PaperlessApiService {
 	 *
 	 * @param string $list the path of the list in the API of Paperless: correspondents, document_types or tags
 	 * @param non-empty-array<int, int> $ids
+	 * @param int $api the version of the API that Paperless answered the test in
 	 */
-	private function lacksNames(string $url, string $token, bool $allowLocal, string $list, array $ids): bool {
+	private function lacksNames(string $url, string $token, bool $allowLocal, string $list, array $ids, int $api): bool {
 		try {
-			return array_diff($ids, array_keys($this->namesFrom($url, $token, $allowLocal, $list, $ids, withInbox: true))) !== [];
+			return array_diff($ids, array_keys($this->namesFrom($url, $token, $allowLocal, $list, $ids, withInbox: true, api: $api))) !== [];
 		} catch (Exception) {
 			return false;
 		}
@@ -631,6 +676,50 @@ final class PaperlessApiService {
 	 * @throws Throwable the error of a request without answer, or without the settings
 	 */
 	public function findDocumentOwners(): array {
+		return $this->everyDocument(self::OWNER_FIELDS);
+	}
+
+	/**
+	 * The IDs of every document that the account of the token may view, for occ
+	 * paperless_unified_search:check, which compares them with the files, from a Paperless
+	 * that speaks version 10 of its API: its lists have no field all, from which the test
+	 * of the connection reads them in version 9. Its pages hold only the IDs, as those of
+	 * findDocumentOwners() hold the owners.
+	 *
+	 * @param int $api the version of the API to ask for
+	 * @return list<int>
+	 * @throws PaperlessRequestException when Paperless answers, but not with documents, with
+	 *                                   more documents than the check reads, or with a
+	 *                                   document without an ID
+	 * @throws Throwable the error of a request without answer
+	 */
+	private function findDocumentIds(int $api): array {
+		$ids = [];
+		foreach ($this->everyDocument('id', $api) as $document) {
+			/** @psalm-suppress MixedAssignment The ID is checked before use. */
+			$id = $document['id'] ?? null;
+			$ids[] = is_int($id) ? $id : throw PaperlessRequestException::notPaperless('Paperless listed a document without an ID.');
+		}
+
+		return $ids;
+	}
+
+	/**
+	 * Every document that the account of the token may view, with these fields, for occ
+	 * paperless_unified_search:check. The app asks for the pages by their numbers, ordered
+	 * by ID, never by the link of the next one, as for the users. No search waits for them,
+	 * so each request gets one try, and no place in the history of the problems of the
+	 * search.
+	 *
+	 * @param string $fields the fields of each document, separated by commas
+	 * @param ?int $api the version of the API to ask for, null for the one that the last
+	 *                  answer of Paperless named
+	 * @return list<array<array-key, mixed>>
+	 * @throws PaperlessRequestException when Paperless answers, but not with documents, or
+	 *                                   with more documents than the check reads
+	 * @throws Throwable the error of a request without answer, or without the settings
+	 */
+	private function everyDocument(string $fields, ?int $api = null): array {
 		$documents = [];
 		for ($page = 1; $page <= self::MOST_OWNER_PAGES; $page++) {
 			[$data] = $this->requestDocuments(
@@ -641,9 +730,10 @@ final class PaperlessApiService {
 					'ordering' => 'id',
 					'page' => $page,
 					'page_size' => self::OWNERS_PAGE_SIZE,
-					'fields' => self::OWNER_FIELDS,
+					'fields' => $fields,
 				],
 				retry: false,
+				api: $api,
 			);
 			$list = self::documentsOf($data);
 			array_push($documents, ...$list['results']);
@@ -702,21 +792,24 @@ final class PaperlessApiService {
 	 * @param string $term the term of a search, which the history must not show
 	 * @param int $timeout the seconds that the request may take in all
 	 * @param bool $retry whether a request without answer gets a second try, as send() decides
+	 * @param ?int $api the version of the API to ask for, null for the one that the last
+	 *                  answer of Paperless named
 	 * @return array{array{results: array<array-key, mixed>, ...<array-key, mixed>}, ?PaperlessVersion}
 	 * @throws PaperlessRequestException when Paperless answers, but not with documents
 	 */
-	private function requestDocuments(string $url, string $token, bool $allowLocal, array $query, string $term = '', int $timeout = self::TIMEOUT, bool $retry = true): array {
+	private function requestDocuments(string $url, string $token, bool $allowLocal, array $query, string $term = '', int $timeout = self::TIMEOUT, bool $retry = true, ?int $api = null): array {
 		if ($url === '' || $token === '') {
 			throw new UnexpectedValueException('Paperless is not configured.');
 		}
 
+		$api ??= $this->apiToAsk();
 		$documents = rtrim($url, '/') . '/api/documents/';
-		$options = $this->options($token, $allowLocal, $query, $timeout);
+		$options = $this->options($token, $allowLocal, $query, $timeout, $api);
 		$response = $retry ? $this->send($documents, $options, [$token, $term]) : $this->client->get($documents, $options);
 
 		$statusCode = $response->getStatusCode();
 		if ($statusCode < 200 || $statusCode >= 300) {
-			throw self::failureOf($response, $query);
+			throw self::failureOf($response, $query, $api);
 		}
 
 		$body = $response->getBody();
@@ -874,17 +967,19 @@ final class PaperlessApiService {
 	 * @param string $list the path of the list in the API of Paperless: correspondents, document_types or tags
 	 * @param non-empty-array<int, int> $ids
 	 * @param bool $withInbox whether the tag of the inbox, which no result shows, keeps its name
+	 * @param ?int $api the version of the API to ask for, null for the one that the last
+	 *                  answer of Paperless named
 	 * @return array<int, string> the names, by ID
 	 * @throws PaperlessRequestException when Paperless answers, but not with a list
 	 * @throws Throwable the error of a request without answer
 	 */
-	private function namesFrom(string $url, string $token, bool $allowLocal, string $list, array $ids, bool $withInbox = false): array {
+	private function namesFrom(string $url, string $token, bool $allowLocal, string $list, array $ids, bool $withInbox = false, ?int $api = null): array {
 		// Paperless-ngx 2 and 3 filter their lists by id__in; they send every field of an
 		// object, also when asked for fewer, which for a correspondent is a few hundred bytes.
 		$data = $this->listFrom($url, $token, $allowLocal, $list, [
 			'id__in' => implode(',', $ids),
 			'page_size' => count($ids),
-		]);
+		], $api);
 
 		$names = [];
 		/** @psalm-suppress MixedAssignment JSON values are validated before use. */
@@ -906,18 +1001,21 @@ final class PaperlessApiService {
 	 *
 	 * @param string $list the path of the list in the API of Paperless, such as correspondents or users
 	 * @param array<string, int|string> $query
+	 * @param ?int $api the version of the API to ask for, null for the one that the last
+	 *                  answer of Paperless named
 	 * @return array{results: array<array-key, mixed>, ...<array-key, mixed>}
 	 * @throws PaperlessRequestException when Paperless answers, but not with a list
 	 * @throws Throwable the error of a request without answer
 	 */
-	private function listFrom(string $url, string $token, bool $allowLocal, string $list, array $query): array {
+	private function listFrom(string $url, string $token, bool $allowLocal, string $list, array $query, ?int $api = null): array {
+		$api ??= $this->apiToAsk();
 		$response = $this->client->get(
 			rtrim($url, '/') . '/api/' . $list . '/',
-			$this->options($token, $allowLocal, $query, self::NAMES_TIMEOUT),
+			$this->options($token, $allowLocal, $query, self::NAMES_TIMEOUT, $api),
 		);
 		$status = $response->getStatusCode();
 		if ($status < 200 || $status >= 300) {
-			throw PaperlessRequestException::forStatus($status);
+			throw PaperlessRequestException::forStatus($status, $api);
 		}
 
 		$body = $response->getBody();
@@ -934,17 +1032,26 @@ final class PaperlessApiService {
 	}
 
 	/**
+	 * The version of the API that a request asks for: the newest that the app knows where
+	 * the last answer of Paperless named it, as PaperlessVersion::apiToAsk() says.
+	 */
+	private function apiToAsk(): int {
+		return PaperlessVersion::apiToAsk($this->configService->getPaperlessVersion());
+	}
+
+	/**
 	 * The options of a request to Paperless. Every answer of Paperless reaches the check
 	 * of its status, whatever the status is.
 	 *
 	 * @param array<string, int|string> $query
+	 * @param int $api the version of the API to ask for
 	 * @return array<string, mixed>
 	 */
-	private function options(string $token, bool $allowLocal, array $query, int $timeout): array {
+	private function options(string $token, bool $allowLocal, array $query, int $timeout, int $api): array {
 		return [
 			'headers' => [
 				'Authorization' => 'Token ' . $token,
-				'Accept' => self::ACCEPT,
+				'Accept' => 'application/json; version=' . $api,
 				'User-Agent' => $this->getUserAgent(),
 			],
 			'connect_timeout' => self::CONNECT_TIMEOUT,
@@ -988,8 +1095,9 @@ final class PaperlessApiService {
 	 * page, which a wrong URL answers.
 	 *
 	 * @param array<string, int|string> $query
+	 * @param int $api the version of the API that the request asked for
 	 */
-	private static function failureOf(IResponse $response, array $query): PaperlessRequestException {
+	private static function failureOf(IResponse $response, array $query, int $api): PaperlessRequestException {
 		$status = $response->getStatusCode();
 		$similar = isset($query['more_like_id']);
 		$searches = $similar || isset($query['query']) || isset($query['text']);
@@ -1006,7 +1114,7 @@ final class PaperlessApiService {
 			return new PaperlessQueryRejected($status);
 		}
 
-		return PaperlessRequestException::forStatus($status);
+		return PaperlessRequestException::forStatus($status, $api);
 	}
 
 	/**

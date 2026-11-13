@@ -43,6 +43,8 @@ final class SearchAccountSetupTest extends TestCase {
 	private const VIEWER = '{"user":{"id":3,"username":"nextcloud","is_staff":false,"is_superuser":false,"groups":[]},"settings":{},"permissions":["view_document"]}';
 	private const NO_USERS = '{"count":0,"next":null,"previous":null,"all":[],"results":[]}';
 	private const OK = '{"result":"OK"}';
+	/** The headers with which Paperless-ngx 3.3.0 names its version. */
+	private const PAPERLESS_3 = ['X-Version' => '3.3.0', 'X-Api-Version' => '10'];
 	/** The view permission that each bulk edit adds, for the user 7, with nothing to change. */
 	private const PERMISSIONS = ['view' => ['users' => [7], 'groups' => []], 'change' => ['users' => [], 'groups' => []]];
 
@@ -548,6 +550,132 @@ final class SearchAccountSetupTest extends TestCase {
 	}
 
 	/**
+	 * Paperless 3 names version 10 of its API in its first answer, which the further
+	 * requests ask for. Its lists have no field all, so the IDs come from their pages: the
+	 * documents by ID and with their IDs alone, the names with every field, as Paperless
+	 * sends them.
+	 */
+	public function testInVersion10TheIdsComeFromThePagesOfTheLists(): void {
+		$account = $this->accountSetup($this->paperless([
+			'GET /api/ui_settings/' => self::answer(200, self::SUPERUSER, self::PAPERLESS_3),
+			'GET /api/correspondents/' => self::answer(200, '{"count":1,"next":null,"results":[{"id":5,"name":"Utility"}]}'),
+			'GET /api/document_types/' => self::answer(200, '{"count":0,"next":null,"results":[]}'),
+			'GET /api/tags/' => self::answer(200, '{"count":2,"next":null,"results":[{"id":8,"name":"Bills"},{"id":9,"name":"Taxes"}]}'),
+			'GET /api/documents/' => static fn (array $options): IResponse => $options['query']['page'] === 1
+				? self::answer(200, '{"count":3,"next":"http://paperless:8000/api/documents/?fields=id&ordering=id&page=2&page_size=10000","results":[{"id":1},{"id":2}]}')
+				: self::answer(200, '{"count":3,"next":null,"results":[{"id":3}]}'),
+		]))->create(self::URL, self::SUPERUSER_TOKEN, true, false, true, $this->saves());
+
+		self::assertSame(3, $account->documents);
+		self::assertSame(3, $account->names);
+		self::assertSame([
+			'GET /api/ui_settings/',
+			'GET /api/users/',
+			'POST /api/users/',
+			'POST /api/token/',
+			'GET /api/correspondents/',
+			'POST /api/bulk_edit_objects/',
+			'GET /api/document_types/',
+			'GET /api/tags/',
+			'POST /api/bulk_edit_objects/',
+			'GET /api/documents/',
+			'GET /api/documents/',
+			'POST /api/documents/bulk_edit/',
+		], $this->asked());
+		self::assertSame('application/json; version=9', $this->requests[0][2]['headers']['Accept']);
+		self::assertSame(['application/json; version=10'], array_values(array_unique(array_map(static fn (array $request): string => $request[2]['headers']['Accept'], array_slice($this->requests, 1)))));
+		self::assertSame(['page' => 1, 'page_size' => 10000], $this->requests[4][2]['query']);
+		self::assertSame(['page' => 1, 'page_size' => 10000, 'ordering' => 'id', 'fields' => 'id'], $this->requests[9][2]['query']);
+		self::assertSame(['page' => 2, 'page_size' => 10000, 'ordering' => 'id', 'fields' => 'id'], $this->requests[10][2]['query']);
+		self::assertSame(['objects' => [8, 9], 'object_type' => 'tags', 'operation' => 'set_permissions', 'permissions' => self::PERMISSIONS, 'merge' => true], $this->requests[8][2]['json']);
+		self::assertSame([1, 2, 3], $this->requests[11][2]['json']['documents']);
+	}
+
+	/**
+	 * A Paperless that no longer speaks version 9 of its API refuses the first request
+	 * with HTTP 406, which asks once more for version 10; the further requests ask for it.
+	 */
+	public function testAPaperlessThatRefusesVersion9IsAskedForVersion10(): void {
+		$this->accountSetup($this->paperless([
+			'GET /api/ui_settings/' => static fn (array $options): IResponse => $options['headers']['Accept'] === 'application/json; version=9'
+				? self::answer(406, '{"detail":"Invalid version in \"Accept\" header."}')
+				: self::answer(200, self::SUPERUSER, ['X-Version' => '4.0.0', 'X-Api-Version' => '11']),
+		]))->create(self::URL, self::SUPERUSER_TOKEN, true, false, false, $this->saves());
+
+		self::assertSame(['GET /api/ui_settings/', 'GET /api/ui_settings/', 'GET /api/users/', 'POST /api/users/', 'POST /api/token/'], $this->asked());
+		self::assertSame(
+			['application/json; version=9', 'application/json; version=10', 'application/json; version=10', 'application/json; version=10', 'application/json; version=10'],
+			array_map(static fn (array $request): string => $request[2]['headers']['Accept'], $this->requests),
+		);
+	}
+
+	/**
+	 * A Paperless that refuses both versions of the API changes nothing, and the failure is
+	 * the one of the oldest version: a Paperless older than 2.16.
+	 */
+	public function testAPaperlessThatRefusesBothVersionsIsLeftAsItWas(): void {
+		try {
+			$this->accountSetup($this->paperless([
+				'GET /api/ui_settings/' => self::answer(406, '{"detail":"Invalid version in \"Accept\" header."}'),
+			]))->create(self::URL, self::SUPERUSER_TOKEN, true, true, true, $this->saves());
+			self::fail('The set-up succeeded.');
+		} catch (PaperlessRequestException $exception) {
+			self::assertSame([RequestFailure::UnsupportedVersion, 406], [$exception->reason, $exception->status]);
+		}
+
+		self::assertSame(['GET /api/ui_settings/', 'GET /api/ui_settings/'], $this->asked());
+	}
+
+	/**
+	 * A page of a list in version 10 without its objects, or with an object without an ID,
+	 * ends the set-up, and the failure names the list.
+	 *
+	 * @return array<string, array{string, string, string}>
+	 */
+	public static function pagesWithoutTheirIds(): array {
+		return [
+			'documents without results' => ['GET /api/documents/', '{"count":1,"next":null}', 'documents'],
+			'a tag without an ID' => ['GET /api/tags/', '{"count":1,"next":null,"results":[{"name":"Bills"}]}', 'tags'],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('pagesWithoutTheirIds')]
+	public function testInVersion10APageWithoutItsIdsIsNamed(string $request, string $body, string $list): void {
+		try {
+			$this->accountSetup($this->paperless([
+				'GET /api/ui_settings/' => self::answer(200, self::SUPERUSER, self::PAPERLESS_3),
+				'GET /api/correspondents/' => self::answer(200, '{"count":0,"next":null,"results":[]}'),
+				'GET /api/document_types/' => self::answer(200, '{"count":0,"next":null,"results":[]}'),
+				'GET /api/tags/' => self::answer(200, '{"count":0,"next":null,"results":[]}'),
+				$request => self::answer(200, $body),
+			]))->create(self::URL, self::SUPERUSER_TOKEN, true, false, true, $this->saves());
+			self::fail('The set-up succeeded.');
+		} catch (PaperlessRequestException $exception) {
+			self::assertSame(RequestFailure::NotPaperless, $exception->reason);
+			self::assertSame('Paperless listed no IDs of its ' . $list . '.', $exception->getMessage());
+		}
+	}
+
+	/**
+	 * A list whose pages never end, as a broken proxy might send, ends the set-up after a
+	 * million objects.
+	 */
+	public function testInVersion10AListWithoutAnEndIsRefused(): void {
+		try {
+			$this->accountSetup($this->paperless([
+				'GET /api/ui_settings/' => self::answer(200, self::SUPERUSER, self::PAPERLESS_3),
+				'GET /api/correspondents/' => self::answer(200, '{"count":1,"next":"http://paperless:8000/api/correspondents/?page=2","results":[{"id":5}]}'),
+			]))->create(self::URL, self::SUPERUSER_TOKEN, true, false, true, $this->saves());
+			self::fail('The set-up succeeded.');
+		} catch (PaperlessRequestException $exception) {
+			self::assertSame(RequestFailure::NotPaperless, $exception->reason);
+			self::assertSame('Paperless lists more than 1000000 of its correspondents.', $exception->getMessage());
+		}
+
+		self::assertCount(100, array_filter($this->asked(), static fn (string $request): bool => $request === 'GET /api/correspondents/'));
+	}
+
+	/**
 	 * The answers of a Paperless 3.x to the set-up, with these instead.
 	 *
 	 * @param array<string, IResponse|Throwable|\Closure> $instead
@@ -638,12 +766,18 @@ final class SearchAccountSetupTest extends TestCase {
 	 * An answer of Paperless, which hands out its body once, as the client of Nextcloud
 	 * reads the rest of the stream of the body for each getBody(): a second call gets an
 	 * empty string, which the contract with a real Paperless met.
+	 *
+	 * @param array<string, string> $headers such as the version that Paperless names
 	 */
-	private static function answer(int $status, string $body): IResponse {
-		return new class($status, $body) implements IResponse {
+	private static function answer(int $status, string $body, array $headers = []): IResponse {
+		return new class($status, $body, $headers) implements IResponse {
+			/**
+			 * @param array<string, string> $headers
+			 */
 			public function __construct(
 				private int $status,
 				private string $body,
+				private array $headers,
 			) {
 			}
 
@@ -658,11 +792,11 @@ final class SearchAccountSetupTest extends TestCase {
 			}
 
 			public function getHeader(string $key): string {
-				return '';
+				return $this->headers[$key] ?? '';
 			}
 
 			public function getHeaders(): array {
-				return [];
+				return $this->headers;
 			}
 		};
 	}

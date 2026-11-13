@@ -93,6 +93,7 @@ final class SettingsMessages {
 			RequestFailure::NotFound => $this->l10n->t('This URL answers, but not with the API of Paperless (HTTP 404). Check the address and its path.'),
 			RequestFailure::Redirect => $this->l10n->t('This URL forwards to another address (HTTP %s). Enter the address that it forwards to.', [$code]),
 			RequestFailure::UnsupportedVersion => $this->l10n->t('Paperless is older than 2.16 and does not speak version 9 of its API (HTTP 406). Update Paperless-ngx.'),
+			RequestFailure::NewerApi => $this->l10n->t('Paperless no longer speaks version 10 of its API, the newest that this app knows (HTTP 406). Update Paperless Unified Search.'),
 			RequestFailure::Http => $this->l10n->t('Paperless answered with an error (HTTP %s). Check its log, or try again later.', [$code]),
 			RequestFailure::NotPaperless => $this->l10n->t('This URL answers, but not like Paperless-ngx. Check the address and its path.'),
 			RequestFailure::LocalAddress => $this->l10n->t('Nextcloud does not connect to addresses of the local network unless you allow it. If Paperless runs in your local network or in Docker, select “Paperless runs in my local network”.'),

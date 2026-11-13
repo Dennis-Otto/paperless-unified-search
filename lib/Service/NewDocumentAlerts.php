@@ -72,6 +72,15 @@ final class NewDocumentAlerts {
 	private const MARGIN = 86400;
 
 	/**
+	 * How far the moment of the last answer of Paperless has to move before a run that
+	 * changed nothing else stores it, in seconds. The next request asks from the day before
+	 * it (MARGIN), so a moment an hour older asks for the same documents; and every write
+	 * of the configuration of the apps empties the cache of it for all of Nextcloud, which
+	 * a run every five minutes would do 288 times a day.
+	 */
+	private const CHECKED_AT_STEP = 3600;
+
+	/**
 	 * How many saved searches in a row may go without an answer of Paperless, such as a
 	 * timeout or a failed connection, before the run stops asking and rests: a Paperless
 	 * that hangs gets no hundreds of requests that each wait for their time, and one or two
@@ -108,16 +117,20 @@ final class NewDocumentAlerts {
 			? $this->savedSearches->ofEveryone()
 			: [];
 		if ($choices === []) {
-			// Whoever asks next starts from then on, not from the documents of this pause.
-			$this->appConfig->deleteKey(AppConstants::APP_ID, self::PROGRESS);
+			// Whoever asks next starts from then on, not from the documents of this pause. A
+			// deletion empties the cache of the configuration of all apps even without the
+			// key, so only a progress that is there goes.
+			if ($this->appConfig->hasKey(AppConstants::APP_ID, self::PROGRESS, lazy: true)) {
+				$this->appConfig->deleteKey(AppConstants::APP_ID, self::PROGRESS);
+			}
 
 			return;
 		}
 
 		$now = $this->timeFactory->getTime();
 		$server = hash('sha256', $this->configService->getUrl());
-		$stored = $this->appConfig->getValueArray(AppConstants::APP_ID, self::PROGRESS, [], lazy: true);
-		$progress = AlertProgress::fromStored($stored, $server) ?? new AlertProgress($server, null, $now);
+		$stored = AlertProgress::fromStored($this->appConfig->getValueArray(AppConstants::APP_ID, self::PROGRESS, [], lazy: true), $server);
+		$progress = $stored ?? new AlertProgress($server, null, $now);
 		if ($progress->restingUntil > $now) {
 			return;
 		}
@@ -142,13 +155,17 @@ final class NewDocumentAlerts {
 		}
 
 		// Stored before the first notification goes out: a run that dies halfway costs a few
-		// users a notification, which is better than one that repeats for everyone.
-		$this->store(new AlertProgress(
+		// users a notification, which is better than one that repeats for everyone. A run
+		// without news stores nothing.
+		$next = new AlertProgress(
 			$server,
 			$progress->lastSeen,
 			$progress->checkedAt,
 			array_diff_key($progress->waiting, $files),
-		));
+		);
+		if ($next->differsFrom($stored, self::CHECKED_AT_STEP)) {
+			$this->store($next);
+		}
 		if ($files === []) {
 			return;
 		}

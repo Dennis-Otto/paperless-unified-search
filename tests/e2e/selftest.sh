@@ -1721,7 +1721,7 @@ PYTHON
 	expect "no results, which say nothing about their form" none "$(parity_says 'nothing found')"
 	expect "every known difference of Paperless-ngx 2 seen" "5 of 5" "$(parity_says 'line 2 known')"
 	expect "no other difference of Paperless-ngx 2" 0 "$(parity_says 'line 2 differences')"
-	expect "the requests that the app sends to Paperless-ngx 2" 27 "$(parity_says 'line 2 requests')"
+	expect "the requests that the app sends to Paperless-ngx 2" 28 "$(parity_says 'line 2 requests')"
 	expect "known differences that no longer hold" "display_count,header X-Api-Version,header X-Version,results[].__search_hit__.highlights, its entities,results[].__search_hit__.highlights, its markup" "$(parity_says stale)"
 	# shellcheck disable=SC2016 # The backticks are Markdown of the table, not a command.
 	expect "the row of a difference in the summary" '| `status` | `403` | `401` | A wrong token, No token |' "$(parity_says 'first row')"

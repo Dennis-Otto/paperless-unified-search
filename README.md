@@ -327,7 +327,7 @@ The user reads it too: the section **Paperless** of their personal settings begi
 
 - Nextcloud 33 to 35
 - PHP 8.2 or newer as supported by the corresponding Nextcloud release
-- A reachable Paperless-ngx 2.16 or newer, 3.x included, with API access. The app asks for version 9 of its API, which Paperless-ngx 2.16 and newer and 3.x speak; contract tests check the app every week against real Paperless-ngx, the last release of 2.20 and the newest release of 3.x; the [compatibility](https://dennis-otto.github.io/paperless-unified-search/reference.html#compatibility) says it in detail.
+- A reachable Paperless-ngx 2.16 or newer, 3.x included, with API access. The app asks for version 10 of its API where Paperless speaks it, as 3.x does, and for version 9 otherwise, which Paperless-ngx 2.16 and newer speak; contract tests check the app every week against real Paperless-ngx, the last release of 2.20 and the newest release of 3.x; the [compatibility](https://dennis-otto.github.io/paperless-unified-search/reference.html#compatibility) says it in detail.
 - Synchronized files whose names contain `[P<ID>]`, owned by one Nextcloud account, the archive account, and shared read-only with the users who may see them, for example those of Paperless Sync or of [any other synchronization](#works-with-any-synchronization). Without them, the search shows no Paperless documents.
 
 <!-- --8<-- [end:requirements] -->
@@ -398,6 +398,7 @@ The URL may name a Docker service with an underscore, such as `http://paperless_
 | This URL answers, but not with the API of Paperless (HTTP 404) | The path of the URL, or a proxy in front of Paperless | Enter the address that opens Paperless in the browser, with the path when Paperless runs under one, such as `https://example.com/paperless` |
 | This URL forwards to another address | The URL redirects, and with **Paperless runs in my local network** Nextcloud follows no redirect | Enter the address that it forwards to, such as the one with `https` |
 | Paperless is older than 2.16 | Paperless answered HTTP 406: it doesn't speak version 9 of its API, which the app asks for | Update Paperless-ngx to 2.16 or newer |
+| Paperless no longer speaks version 10 of its API | Paperless answered HTTP 406 to version 10 of its API, which the app asks for since Paperless named it: this Paperless is newer than the app, or it was downgraded or restored from an older backup | Update Paperless Unified Search; after a downgrade or a restore, **Test connection and save** fixes it |
 | Paperless answered with an error | Paperless itself failed, with a status of 5xx | Look into the log of Paperless, or try again later |
 | This URL answers, but not like Paperless-ngx | Another service, or the login page of a proxy | Check the address and its path |
 | Nextcloud does not connect to addresses of the local network | Paperless runs at an address of the local network | Select **Paperless runs in my local network**, as [Paperless in your local network](#paperless-in-your-local-network) describes |

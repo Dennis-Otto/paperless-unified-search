@@ -49,16 +49,30 @@ export MSYS2_ARG_CONV_EXCL="/mock/${MSYS2_ARG_CONV_EXCL:+;${MSYS2_ARG_CONV_EXCL}
 # The version of the API, the fields of a result, those of the newest documents of the
 # dashboard and those of the owners of the documents that occ check reads, which the app
 # asks for, and the words that it takes for a refused document, from its code, so that the
-# contract checks what the app sends and reads.
+# contract checks what the app sends and reads. The app asks Paperless-ngx 3, which names
+# version 10 of its API, for the newest version that the app knows, and Paperless-ngx 2
+# for the oldest, as it asks every Paperless before it named its version.
 SERVICE="${REPOSITORY_ROOT}/lib/Service/PaperlessApiService.php"
-ACCEPT="$(sed -n "s/^[[:space:]]*private const ACCEPT = '\([^']*\)';.*/\1/p" "${SERVICE}")"
+VERSION_MODEL="${REPOSITORY_ROOT}/lib/Model/PaperlessVersion.php"
+OLDEST_API="$(sed -n "s/^[[:space:]]*public const OLDEST_API = \([0-9]*\);.*/\1/p" "${VERSION_MODEL}")"
+NEWEST_API="$(sed -n "s/^[[:space:]]*public const NEWEST_API = \([0-9]*\);.*/\1/p" "${VERSION_MODEL}")"
+if [[ -z "${OLDEST_API}" || -z "${NEWEST_API}" ]]; then
+	echo "${VERSION_MODEL} has no constant OLDEST_API or NEWEST_API, which the contract reads." >&2
+	exit 1
+fi
+OLDEST_ACCEPT="application/json; version=${OLDEST_API}"
+if [[ "${PAPERLESS}" == 3 ]]; then
+	ACCEPT="application/json; version=${NEWEST_API}"
+else
+	ACCEPT="${OLDEST_ACCEPT}"
+fi
 FIELDS="$(sed -n "s/^[[:space:]]*private const SEARCH_FIELDS = '\([^']*\)';.*/\1/p" "${SERVICE}")"
 RECENT_FIELDS="$(sed -n "s/^[[:space:]]*private const RECENT_FIELDS = '\([^']*\)';.*/\1/p" "${SERVICE}")"
 OWNER_FIELDS="$(sed -n "s/^[[:space:]]*private const OWNER_FIELDS = '\([^']*\)';.*/\1/p" "${SERVICE}")"
 UNKNOWN_DOCUMENT="$(sed -n "s/^[[:space:]]*private const UNKNOWN_DOCUMENT = '\([^']*\)';.*/\1/p" "${SERVICE}")"
 HIDDEN_DOCUMENT="$(sed -n "s/^[[:space:]]*private const HIDDEN_DOCUMENT = '\([^']*\)';.*/\1/p" "${SERVICE}")"
-if [[ -z "${ACCEPT}" || -z "${FIELDS}" || -z "${RECENT_FIELDS}" || -z "${OWNER_FIELDS}" || -z "${UNKNOWN_DOCUMENT}" || -z "${HIDDEN_DOCUMENT}" ]]; then
-	echo "${SERVICE} has no constant ACCEPT, SEARCH_FIELDS, RECENT_FIELDS, OWNER_FIELDS, UNKNOWN_DOCUMENT or HIDDEN_DOCUMENT, which the contract reads." >&2
+if [[ -z "${FIELDS}" || -z "${RECENT_FIELDS}" || -z "${OWNER_FIELDS}" || -z "${UNKNOWN_DOCUMENT}" || -z "${HIDDEN_DOCUMENT}" ]]; then
+	echo "${SERVICE} has no constant SEARCH_FIELDS, RECENT_FIELDS, OWNER_FIELDS, UNKNOWN_DOCUMENT or HIDDEN_DOCUMENT, which the contract reads." >&2
 	exit 1
 fi
 
@@ -104,6 +118,7 @@ occ app:enable paperless_unified_search >/dev/null
 phase "Check the contract with Paperless-ngx ${PAPERLESS}"
 "${COMPOSE[@]}" exec -T \
 	--env "ACCEPT=${ACCEPT}" \
+	--env "OLDEST_ACCEPT=${OLDEST_ACCEPT}" \
 	--env "FIELDS=${FIELDS}" \
 	--env "RECENT_FIELDS=${RECENT_FIELDS}" \
 	--env "OWNER_FIELDS=${OWNER_FIELDS}" \

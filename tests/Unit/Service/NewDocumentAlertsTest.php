@@ -188,8 +188,62 @@ final class NewDocumentAlertsTest extends TestCase {
 		], $this->requests[0][1]['query']);
 		self::assertSame([], $this->sent);
 		self::assertSame(412, $this->stored()['lastSeen']);
-		self::assertSame(self::NOW, $this->stored()['checkedAt']);
+		self::assertSame(self::NOW - 300, $this->stored()['checkedAt']);
 		self::assertSame([], $this->stored()['waiting']);
+	}
+
+	/**
+	 * A pause without a progress deletes nothing: Nextcloud empties the cache of the
+	 * configuration of all apps with every deletion, also of a key that isn't there, and the
+	 * job runs every five minutes on every instance, also on one where nobody asks.
+	 */
+	public function testAPauseWithoutAProgressWritesNothing(): void {
+		$config = $this->createMock(IAppConfig::class);
+		$config->expects(self::once())
+			->method('hasKey')
+			->with(AppConstants::APP_ID, NewDocumentAlerts::PROGRESS, true)
+			->willReturn(false);
+		$config->expects(self::never())->method('deleteKey');
+		$config->expects(self::never())->method('setValueArray');
+
+		$this->runJob($this->paperless(), appConfig: $config);
+
+		self::assertSame([], $this->requests);
+	}
+
+	/**
+	 * A run that finds nothing new writes nothing, so that the configuration of the apps
+	 * keeps its cache: the moment of the last answer alone moves only in steps of an hour,
+	 * since the next request asks from the day before it anyway.
+	 */
+	public function testARunWithoutNewsWritesNothing(): void {
+		$this->wants('jamie', false, 'tag:unpaid');
+		$config = $this->createMock(IAppConfig::class);
+		$config->method('getValueArray')->willReturn([
+			'server' => hash('sha256', 'https://paperless.example.com'),
+			'lastSeen' => 413,
+			'checkedAt' => self::NOW - 3599,
+			'waiting' => [['id' => 413, 'title' => 'Waiting', 'since' => self::NOW - 600]],
+			'failures' => 0,
+			'restingUntil' => 0,
+		]);
+		$config->expects(self::never())->method('setValueArray');
+		$config->expects(self::never())->method('deleteKey');
+
+		$this->runJob($this->paperless($this->documents([['id' => 413, 'title' => 'Waiting'], ['id' => 412, 'title' => 'Seen']])), appConfig: $config);
+
+		self::assertCount(1, $this->requests);
+		self::assertSame([], $this->sent);
+	}
+
+	public function testAnHourLaterARunWithoutNewsStoresTheMomentOfTheAnswer(): void {
+		$this->wants('jamie', false, 'tag:unpaid');
+		$this->seen(412, checkedAt: self::NOW - 3600);
+
+		$this->runJob($this->paperless($this->documents([['id' => 412, 'title' => 'Seen']])));
+
+		self::assertSame(self::NOW, $this->stored()['checkedAt']);
+		self::assertSame(412, $this->stored()['lastSeen']);
 	}
 
 	/**
