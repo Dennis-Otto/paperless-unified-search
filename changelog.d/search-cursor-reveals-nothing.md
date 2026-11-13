@@ -1,3 +1,0 @@
-### Bug fixes
-
-- The answer of a search no longer depends on the Paperless documents that the searching user can't open: a page of results is followed by another only when the search found a further result that the user may open, and an answer without results is the same however many documents of others match. The cursor of the next page is sealed with a key of your Nextcloud and works only for the user and the search that got it; a cursor handed out before the update finds no further results, and searching again starts from the first page. A user who can open few of the hits of a term may now see the results end earlier, after about 100 hits of other documents; a more precise term or the date filter brings later documents into reach.
