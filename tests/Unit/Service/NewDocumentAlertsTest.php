@@ -699,7 +699,7 @@ final class NewDocumentAlertsTest extends TestCase {
 		self::assertCount(1 + 1 + NewDocumentAlerts::MOST_UNANSWERED, $this->requests, 'The fifth search is never asked.');
 		self::assertSame([], $this->sent);
 		self::assertSame(101, $this->stored()['lastSeen']);
-		self::assertSame([101], array_keys($this->stored()['waiting']));
+		self::assertSame([101], array_column($this->stored()['waiting'], 'id'));
 		self::assertSame(1, $this->stored()['failures']);
 		self::assertSame(self::NOW + 600, $this->stored()['restingUntil']);
 		self::assertSame([['warning', 'The notifications about new Paperless documents try again in {seconds} seconds ({error})', [
@@ -762,7 +762,7 @@ final class NewDocumentAlertsTest extends TestCase {
 
 		self::assertCount(3, $this->requests, 'The third search would start after 60 seconds and is never asked.');
 		self::assertSame([], $this->sent);
-		self::assertSame([101], array_keys($this->stored()['waiting']));
+		self::assertSame([101], array_column($this->stored()['waiting'], 'id'));
 		self::assertSame(1, $this->stored()['failures']);
 		self::assertSame('The saved searches took 60 seconds or more.', $this->logged[0][2]['error']);
 	}
