@@ -89,7 +89,8 @@ final class Check extends Command {
 		}
 
 		try {
-			$status = $this->paperlessApi->probeTheSettings();
+			// For the coverage, also where version 10 of the API lists no IDs with the first document.
+			$status = $this->paperlessApi->probeTheSettings(withDocumentIds: true);
 		} catch (PaperlessRequestException $exception) {
 			self::requestFailed($output, $this->messages, $exception, [$this->configService->getToken()]);
 

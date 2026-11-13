@@ -17,6 +17,7 @@ use OCA\PaperlessUnifiedSearch\Exception\InvalidSettingException;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
 use OCA\PaperlessUnifiedSearch\Exception\SearchAccountUnfinished;
 use OCA\PaperlessUnifiedSearch\Exception\SettingProblem;
+use OCA\PaperlessUnifiedSearch\Model\PaperlessVersion;
 use OCA\PaperlessUnifiedSearch\Model\PublicConfig;
 use OCA\PaperlessUnifiedSearch\Model\SearchAccount;
 use OCA\PaperlessUnifiedSearch\Model\TokenWarning;
@@ -63,8 +64,13 @@ final class SearchAccountSetup {
 	private const ASSIGNMENT = 1;
 	/** The length of the random password of the search account, which nobody learns. */
 	private const PASSWORD_LENGTH = 64;
-	/** The version of the API of Paperless that the search speaks too (PaperlessApiService). */
-	private const ACCEPT = 'application/json; version=9';
+	/**
+	 * How many objects of a list one request asks for in version 10 of the API, whose lists
+	 * no longer name the IDs of all objects in the field all, and for how many pages at
+	 * most: a million documents, which hold only their IDs, or names.
+	 */
+	private const ID_PAGE_SIZE = 10000;
+	private const MOST_ID_PAGES = 100;
 	private const CONNECT_TIMEOUT = 3;
 	private const TIMEOUT = 10;
 	/** The seconds that one request of the bulk editor may take. */
@@ -83,6 +89,13 @@ final class SearchAccountSetup {
 	private const EDIT_FAILED = 'Error performing bulk ';
 
 	private IClient $client;
+
+	/**
+	 * The version of the API of Paperless that the requests of a set-up ask for, as
+	 * PaperlessApiService does: the newest that the app knows where the first answer of
+	 * Paperless names it (requireSuperuser()).
+	 */
+	private int $api = PaperlessVersion::OLDEST_API;
 
 	/** @psalm-suppress PossiblyUnusedMethod */
 	public function __construct(
@@ -154,12 +167,25 @@ final class SearchAccountSetup {
 	/**
 	 * Only a superuser may add users and change the permissions of what another user owns,
 	 * and Paperless names one in /api/ui_settings/, as it does for the warnings about the
-	 * token of the settings.
+	 * token of the settings. Its answer names the version of Paperless, whose API the
+	 * further requests ask for: the first request asks for version 9, which Paperless 2.16
+	 * and newer and Paperless 3 speak, and once more for version 10 when Paperless refuses
+	 * it with HTTP 406, as a Paperless may that no longer speaks it.
 	 *
 	 * @throws InvalidSettingException when the token belongs to no superuser
 	 */
 	private function requireSuperuser(string $url, #[SensitiveParameter] string $token, bool $allowLocal): void {
-		$warnings = TokenWarning::of($this->answer('GET', $url, '/api/ui_settings/', $token, $allowLocal));
+		$this->api = PaperlessVersion::OLDEST_API;
+		$response = $this->sent('GET', $url, '/api/ui_settings/', $token, $allowLocal, null, [], self::TIMEOUT);
+		if ($response->getStatusCode() === 406) {
+			$this->api = PaperlessVersion::NEWEST_API;
+			$newer = $this->sent('GET', $url, '/api/ui_settings/', $token, $allowLocal, null, [], self::TIMEOUT);
+			// Paperless speaks neither: the refusal of the oldest version says why.
+			$response = $newer->getStatusCode() === 406 ? $response : $newer;
+		}
+		$this->api = PaperlessVersion::apiToAsk(PaperlessVersion::fromResponse($response));
+
+		$warnings = TokenWarning::of(self::dataOf($response, 200, $this->api));
 		if ($warnings === null) {
 			throw PaperlessRequestException::notPaperless('Paperless named no user for the token.');
 		}
@@ -322,7 +348,7 @@ final class SearchAccountSetup {
 			$pause = array_shift($pauses);
 		} while ($pause !== null && self::failedToEdit($response));
 
-		self::dataOf($response, 200);
+		self::dataOf($response, 200, $this->api);
 	}
 
 	/**
@@ -341,14 +367,20 @@ final class SearchAccountSetup {
 	}
 
 	/**
-	 * The IDs of everything in a list of Paperless, in the field all, which Paperless adds
-	 * to the first page of every list for the selection of all of it. Of the documents, the
-	 * page holds only the ID of the first, as the test of the connection asks for it.
+	 * The IDs of everything in a list of Paperless. In version 9 of the API, they are in the
+	 * field all, which Paperless adds to the first page of every list for the selection of
+	 * all of it; of the documents, the page holds only the ID of the first, as the test of
+	 * the connection asks for it. Version 10 has no field all, and the pages of the list
+	 * name them.
 	 *
 	 * @param string $list documents, or one of NAMES
 	 * @return list<int>
 	 */
 	private function idsOf(string $url, #[SensitiveParameter] string $token, bool $allowLocal, string $list): array {
+		if ($this->api >= PaperlessVersion::NEWEST_API) {
+			return $this->listedIdsOf($url, $token, $allowLocal, $list);
+		}
+
 		$all = $this->answer('GET', $url, '/api/' . $list . '/', $token, $allowLocal, query: ['page' => 1, 'page_size' => 1] + ($list === 'documents' ? ['fields' => 'id'] : []))['all'] ?? null;
 		$ids = [];
 		/** @psalm-suppress MixedAssignment Every ID is checked before use. */
@@ -362,6 +394,38 @@ final class SearchAccountSetup {
 		}
 
 		return $ids;
+	}
+
+	/**
+	 * The IDs of everything in a list of Paperless, from its pages, as version 10 of the API
+	 * names them: the documents ordered by their IDs and with their IDs alone, the names
+	 * in the order of Paperless, which sends every field of them.
+	 *
+	 * @param string $list documents, or one of NAMES
+	 * @return list<int>
+	 * @throws PaperlessRequestException when Paperless doesn't answer with the list, or
+	 *                                   with more of it than MOST_ID_PAGES pages
+	 */
+	private function listedIdsOf(string $url, #[SensitiveParameter] string $token, bool $allowLocal, string $list): array {
+		$ids = [];
+		for ($page = 1; $page <= self::MOST_ID_PAGES; $page++) {
+			$data = $this->answer('GET', $url, '/api/' . $list . '/', $token, $allowLocal, query: ['page' => $page, 'page_size' => self::ID_PAGE_SIZE] + ($list === 'documents' ? ['ordering' => 'id', 'fields' => 'id'] : []));
+			$results = $data['results'] ?? null;
+			if (!is_array($results)) {
+				throw PaperlessRequestException::notPaperless('Paperless listed no IDs of its ' . $list . '.');
+			}
+			/** @psalm-suppress MixedAssignment Every object is checked before use. */
+			foreach ($results as $object) {
+				/** @psalm-suppress MixedAssignment The ID is checked before use. */
+				$id = is_array($object) ? $object['id'] ?? null : null;
+				$ids[] = is_int($id) ? $id : throw PaperlessRequestException::notPaperless('Paperless listed no IDs of its ' . $list . '.');
+			}
+			if (($data['next'] ?? null) === null) {
+				return $ids;
+			}
+		}
+
+		throw PaperlessRequestException::notPaperless(sprintf('Paperless lists more than %d of its %s.', self::ID_PAGE_SIZE * self::MOST_ID_PAGES, $list));
 	}
 
 	/**
@@ -400,7 +464,7 @@ final class SearchAccountSetup {
 	 *                                   expected status and JSON
 	 */
 	private function answer(string $method, string $url, string $path, #[SensitiveParameter] string $token, bool $allowLocal, ?array $json = null, array $query = [], int $expected = 200, int $timeout = self::TIMEOUT): array {
-		return self::dataOf($this->sent($method, $url, $path, $token, $allowLocal, $json, $query, $timeout), $expected);
+		return self::dataOf($this->sent($method, $url, $path, $token, $allowLocal, $json, $query, $timeout), $expected, $this->api);
 	}
 
 	/**
@@ -423,14 +487,15 @@ final class SearchAccountSetup {
 	/**
 	 * The JSON of an answer of Paperless, once its status is the expected one.
 	 *
+	 * @param int $api the version of the API that the request asked for
 	 * @return array<array-key, mixed>
 	 * @throws PaperlessRequestException when the status is another, or the body no JSON
 	 *                                   object
 	 */
-	private static function dataOf(IResponse $response, int $expected): array {
+	private static function dataOf(IResponse $response, int $expected, int $api): array {
 		$status = $response->getStatusCode();
 		if ($status !== $expected) {
-			throw PaperlessRequestException::forStatus($status);
+			throw PaperlessRequestException::forStatus($status, $api);
 		}
 
 		$body = $response->getBody();
@@ -457,7 +522,7 @@ final class SearchAccountSetup {
 	private function send(string $method, string $url, string $path, #[SensitiveParameter] string $token, bool $allowLocal, ?array $json, array $query, int $timeout, int $pause = 0): IResponse {
 		$options = [
 			'headers' => [
-				'Accept' => self::ACCEPT,
+				'Accept' => 'application/json; version=' . $this->api,
 				'User-Agent' => 'Nextcloud-Paperless-Unified-Search/' . $this->appManager->getAppVersion(AppConstants::APP_ID),
 			] + ($token !== '' ? ['Authorization' => 'Token ' . $token] : []),
 			'connect_timeout' => self::CONNECT_TIMEOUT,

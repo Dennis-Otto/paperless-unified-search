@@ -19,7 +19,9 @@ use Throwable;
 
 /**
  * A Paperless-ngx 3.3 for the set-up of the search account (decision 0012), at
- * SETUP_URL, which answers the token of a superuser as a superuser, and the token that it
+ * SETUP_URL, which names version 10 of its API and lists the IDs of the documents and of
+ * the names in the pages of its lists, as version 10 does, without the field all. It
+ * answers the token of a superuser as a superuser, and the token that it
  * gives the new account as an account that may view what the search reads, for the test of
  * the connection. It needs the traits AppServices, for the answers of the documents and of
  * the UI settings, and $this->requests.
@@ -60,11 +62,11 @@ trait SearchAccountPaperless {
 			'POST /api/users/' => self::reply(201, '{"id":7,"username":"nextcloud-search"}'),
 			'POST /api/token/' => self::reply(200, '{"token":"' . $account . '"}'),
 			'POST /api/workflows/' => self::reply(201, '{"id":4}'),
-			'GET /api/documents/' => $this->documents([['id' => 1]], 2, [1, 2]),
+			'GET /api/documents/' => $this->documents([['id' => 1], ['id' => 2]], 2),
 			'POST /api/documents/bulk_edit/' => self::reply(200, '{"result":"OK"}'),
-			'GET /api/correspondents/' => self::reply(200, '{"count":1,"all":[5],"results":[]}'),
-			'GET /api/document_types/' => self::reply(200, '{"count":0,"all":[],"results":[]}'),
-			'GET /api/tags/' => self::reply(200, '{"count":0,"all":[],"results":[]}'),
+			'GET /api/correspondents/' => self::reply(200, '{"count":1,"next":null,"results":[{"id":5,"name":"Utility"}]}'),
+			'GET /api/document_types/' => self::reply(200, '{"count":0,"next":null,"results":[]}'),
+			'GET /api/tags/' => self::reply(200, '{"count":0,"next":null,"results":[]}'),
 			'POST /api/bulk_edit_objects/' => self::reply(200, '{"result":"OK"}'),
 			'DELETE /api/workflows/4/' => self::reply(204, ''),
 			'DELETE /api/users/7/' => self::reply(204, ''),

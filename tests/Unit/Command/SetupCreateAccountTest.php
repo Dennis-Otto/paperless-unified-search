@@ -64,7 +64,7 @@ final class SetupCreateAccountTest extends TestCase {
 	 * still hears which of them the account may view.
 	 */
 	public function testNamesTheDocumentsThatTheAccountMayViewWithoutNames(): void {
-		$this->instead['GET /api/correspondents/'] = self::reply(200, '{"count":0,"all":[],"results":[]}');
+		$this->instead['GET /api/correspondents/'] = self::reply(200, '{"count":0,"next":null,"results":[]}');
 		$tester = $this->tester();
 		$tester->setInputs([self::SUPERUSER_TOKEN]);
 
