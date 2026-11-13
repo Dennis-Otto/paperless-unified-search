@@ -5,9 +5,11 @@ name: Visual check comment
 
 # The second half of the visual check (visual.yml). When the check of a pull request
 # ends, this workflow posts or updates one comment on the pull request: the pictures
-# that look different, with the share of their pixels that changed and whether the
-# artifact holds the picture of their difference, and a link to the artifact with each
-# one before and after and, in diff/, the changed pixels in red. It may comment, so it
+# that look different, with the share of their pixels that changed, the comparison of
+# each, with the frame that it shows of an animation, and whether the artifact holds the
+# picture of their difference, and a link to the artifact with each one before and
+# after, in comparison/ the place of its change before and after in one picture, in its
+# own colors, and in diff/ the changed pixels in red. It may comment, so it
 # never checks out or runs the code of the pull request: it reads only the report of
 # the check, takes nothing from it but paths, changes and numbers that it checks, and
 # writes the comment itself.
@@ -160,11 +162,22 @@ jobs:
           path_pattern = re.compile(r"^(?!.*(^|/)\.\.?(/|$))[A-Za-z0-9_.][A-Za-z0-9._/-]*\.(png|gif|jpe?g|webp|mp4)$")
           statuses = {"changed", "new", "deleted"}
 
-          def drawn(path, status, diff):
-              # The picture of the difference only where keep draws it, for a changed
-              # picture: under diff/ at its path, as a PNG. Any other counts as none.
+          def drawn(path, status, name, folder="diff"):
+              # The picture of the difference or the comparison only where keep draws
+              # it, for a changed picture: under diff/ or comparison/ at its path, as a
+              # PNG. Any other counts as none.
               suffix = "" if path.lower().endswith(".png") else ".png"
-              return status == "changed" and diff == f"diff/{path}{suffix}"
+              return status == "changed" and name == f"{folder}/{path}{suffix}"
+
+          def counted(value):
+              return isinstance(value, int) and not isinstance(value, bool) and value >= 1
+
+          def change(status, compared, frame, frames):
+              # For an animation, the frame of the comparison, as the screenshot bot
+              # names it; a frame that isn't one of the frames is left out.
+              if compared and counted(frame) and counted(frames) and 1 < frames and frame <= frames:
+                  return f"{status}, most in frame {frame} of {frames}"
+              return status
 
           sha = os.environ["HEAD_SHA"][:7]
           run = os.environ["RUN_URL"]
@@ -198,6 +211,7 @@ jobs:
           else:
               rows = []
               differences = 0
+              comparisons = 0
               for entry in report["pictures"]:
                   if not isinstance(entry, dict):
                       continue
@@ -208,8 +222,14 @@ jobs:
                       and (share is None or (isinstance(share, (int, float)) and not isinstance(share, bool) and 0 <= share <= 1))
                   ):
                       red = drawn(path, status, entry.get("diff"))
+                      compared = drawn(path, status, entry.get("comparison"), "comparison")
                       differences += red
-                      rows.append(f"| `{path}` | {status} | {percent(share)} | {'yes' if red else '–'} |")
+                      comparisons += compared
+                      shown = f"`{entry['comparison']}`" if compared else "–"
+                      rows.append(
+                          f"| `{path}` | {change(status, compared, entry.get('frame'), entry.get('frames'))} "
+                          f"| {percent(share)} | {shown} | {'yes' if red else '–'} |"
+                      )
               if not rows:
                   lines.append(f"Rendered by `scripts/screenshots.sh` for {sha}: every picture looks as committed.")
                   post = "existing"
@@ -218,21 +238,34 @@ jobs:
                   lines += [
                       f"Rendered by `scripts/screenshots.sh` for {sha}: {many} different from the committed ones.",
                       "",
-                      "| Picture | Change | Pixels changed | In red |",
-                      "| --- | --- | ---: | --- |",
+                      "| Picture | Change | Pixels changed | Before and after | In red |",
+                      "| --- | --- | ---: | --- | --- |",
                       *rows,
                       "",
                   ]
-                  if link and differences:
+                  if link and comparisons:
+                      lines.append(
+                          f"[The pictures before and after]({link}), with the comparison that *Before and after* "
+                          "names: the place of the change before and after in one picture, in its own colors, "
+                          "with a red frame around each change on both sides. For an animation it shows the frame "
+                          "with the most changes, which *Change* names."
+                          + (
+                              " In `diff/` each changed pixel in red of every picture with *yes* under *In red*, "
+                              "of the same frame."
+                              if differences
+                              else ""
+                          )
+                      )
+                  elif link and differences:
                       lines.append(
                           f"[The pictures before and after]({link}), and in `diff/` each changed pixel in red "
                           "of every picture with *yes* under *In red*, framed in red where it changed."
                       )
                   elif link:
                       lines.append(
-                          f"[The pictures before and after]({link}). None of them has its changed pixels in red: "
-                          "a new or a deleted picture, a video and a picture whose size or number of frames "
-                          "changed have none."
+                          f"[The pictures before and after]({link}). None of them has a comparison or its changed "
+                          "pixels in red: a new or a deleted picture, a video and a picture whose size or number "
+                          "of frames changed have neither."
                       )
                   lines.append(
                       "This check only reports. When the change is intended, the screenshot bot "

@@ -842,7 +842,7 @@ bash demo/seed.sh
 bash scripts/screenshots.sh --demo
 ```
 
-You rarely need to run it yourself. For a pull request that changes a file of `.github/screenshots-paths.txt`, such as the CSS or a template, the visual check renders the pictures and comments with those that look different: before, after and the changed pixels in red. The job that writes the comment never runs the code of the pull request and reaches GitHub's API alone: Harden-Runner blocks every other host. After the merge, after every release and every week, the screenshot bot renders them on `main` and keeps one pull request, *docs: update the screenshots*, that merges itself once every check passes.
+You rarely need to run it yourself. For a pull request that changes a file of `.github/screenshots-paths.txt`, such as the CSS or a template, the visual check renders the pictures and comments with those that look different. Its artifact holds for each the place of the change before and after in one picture, in its own colors with a red frame around each change, of the frame with the most changes for an animation, and the whole picture with its changed pixels in red; the comment names each comparison and its frame and links the artifact. The job that writes the comment never runs the code of the pull request and reaches GitHub's API alone: Harden-Runner blocks every other host. After the merge, after every release and every week, the screenshot bot renders them on `main` and keeps one pull request, *docs: update the screenshots*, that merges itself once every check passes.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/renewing-the-pictures.dark.svg">

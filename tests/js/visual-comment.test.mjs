@@ -5,8 +5,9 @@
 
 // The Python of .github/workflows/visual-comment.yml, which writes the comment of the
 // visual check from the report of its artifact alone: the pictures that look different,
+// the comparison of each before and after with the frame that it shows of an animation,
 // whether the artifact holds the picture of the difference of each, and the link to it,
-// which promises red pixels only when one of them has some. The test takes the script
+// which promises a comparison or red pixels only when one of them has some. The test takes the script
 // out of the workflow and runs it as the job does, with Python 3.
 
 import assert from 'node:assert/strict'
@@ -86,16 +87,98 @@ test('the comment names the pictures with their changed pixels in red, and only 
 	})
 	assert.equal(post, 'always')
 	assert.match(text, /^<!-- visual-check -->\n### Visual check\n\nRendered by `scripts\/screenshots\.sh` for 0123456: 6 pictures look different/)
-	assert.match(text, /\| Picture \| Change \| Pixels changed \| In red \|\n\| --- \| --- \| ---: \| --- \|\n/)
-	assert.match(text, /\| `docs\/images\/dark-poster\.webp` \| changed \| 8\.16 % \| yes \|\n/)
-	assert.match(text, /\| `docs\/images\/search-and-open-dark\.gif` \| changed \| 0\.11 % \| yes \|\n/)
-	assert.match(text, /\| `screenshots\/01-unified-search\.png` \| changed \| 50\.00 % \| yes \|\n/)
-	assert.match(text, /\| `docs\/images\/search-and-open-dark\.mp4` \| changed \| – \| – \|\n/)
-	assert.match(text, /\| `screenshots\/02-forged\.png` \| changed \| 10\.00 % \| – \|\n/)
-	assert.match(text, /\| `screenshots\/13-new\.png` \| new \| – \| – \|\n/)
+	assert.match(text, /\| Picture \| Change \| Pixels changed \| Before and after \| In red \|\n\| --- \| --- \| ---: \| --- \| --- \|\n/)
+	assert.match(text, /\| `docs\/images\/dark-poster\.webp` \| changed \| 8\.16 % \| – \| yes \|\n/)
+	assert.match(text, /\| `docs\/images\/search-and-open-dark\.gif` \| changed \| 0\.11 % \| – \| yes \|\n/)
+	assert.match(text, /\| `screenshots\/01-unified-search\.png` \| changed \| 50\.00 % \| – \| yes \|\n/)
+	assert.match(text, /\| `docs\/images\/search-and-open-dark\.mp4` \| changed \| – \| – \| – \|\n/)
+	assert.match(text, /\| `screenshots\/02-forged\.png` \| changed \| 10\.00 % \| – \| – \|\n/)
+	assert.match(text, /\| `screenshots\/13-new\.png` \| new \| – \| – \| – \|\n/)
 	assert.doesNotMatch(text, /outside/)
 	assert.match(text, /\[The pictures before and after\]\(https:\/\/github\.com\/o\/r\/actions\/runs\/7\/artifacts\/4242\), and in `diff\/` each changed pixel in red /)
 	assert.match(text, /This check only reports\./)
+})
+
+test('the comment shows the comparison of each picture and names the frame of an animation', function() {
+	const { post, text } = comment({
+		report: {
+			pictures: [
+				// An animation whose change is in a later frame.
+				{
+					path: 'docs/images/search-and-open-dark.gif',
+					status: 'changed',
+					share: 0.0042,
+					diff: 'diff/docs/images/search-and-open-dark.gif.png',
+					comparison: 'comparison/docs/images/search-and-open-dark.gif.png',
+					frame: 3,
+					frames: 4,
+				},
+				// A still picture has one frame, which the comment doesn't name.
+				{
+					path: 'screenshots/01-unified-search.png',
+					status: 'changed',
+					share: 0.5,
+					diff: 'diff/screenshots/01-unified-search.png',
+					comparison: 'comparison/screenshots/01-unified-search.png',
+					frame: 1,
+					frames: 1,
+				},
+				// A comparison at another place is none, and so is its frame.
+				{
+					path: 'screenshots/02-forged.png',
+					status: 'changed',
+					share: 0.1,
+					diff: 'diff/screenshots/02-forged.png',
+					comparison: '../../outside.png',
+					frame: 2,
+					frames: 3,
+				},
+				// A frame that isn't one of the frames, or no whole number, isn't named.
+				{
+					path: 'docs/images/odd.gif',
+					status: 'changed',
+					share: 0.2,
+					diff: 'diff/docs/images/odd.gif.png',
+					comparison: 'comparison/docs/images/odd.gif.png',
+					frame: 5,
+					frames: 4,
+				},
+				{
+					path: 'docs/images/odder.gif',
+					status: 'changed',
+					share: 0.2,
+					diff: 'diff/docs/images/odder.gif.png',
+					comparison: 'comparison/docs/images/odder.gif.png',
+					frame: true,
+					frames: 4,
+				},
+				{ path: 'screenshots/13-new.png', status: 'new', share: null, comparison: 'comparison/screenshots/13-new.png' },
+			],
+		},
+	})
+	assert.equal(post, 'always')
+	assert.match(text, new RegExp('\\| `docs/images/search-and-open-dark\\.gif` \\| changed, most in frame 3 of 4 \\| 0\\.42 % '
+		+ '\\| `comparison/docs/images/search-and-open-dark\\.gif\\.png` \\| yes \\|\n'))
+	assert.match(text, /\| `screenshots\/01-unified-search\.png` \| changed \| 50\.00 % \| `comparison\/screenshots\/01-unified-search\.png` \| yes \|\n/)
+	assert.match(text, /\| `screenshots\/02-forged\.png` \| changed \| 10\.00 % \| – \| yes \|\n/)
+	assert.match(text, /\| `docs\/images\/odd\.gif` \| changed \| 20\.00 % \| `comparison\/docs\/images\/odd\.gif\.png` \| yes \|\n/)
+	assert.match(text, /\| `docs\/images\/odder\.gif` \| changed \| 20\.00 % \| `comparison\/docs\/images\/odder\.gif\.png` \| yes \|\n/)
+	assert.match(text, /\| `screenshots\/13-new\.png` \| new \| – \| – \| – \|\n/)
+	assert.doesNotMatch(text, /outside/)
+	assert.match(text, /\[The pictures before and after\]\(https:\/\/github\.com\/o\/r\/actions\/runs\/7\/artifacts\/4242\), with the comparison that \*Before and after\* names: /)
+	assert.match(text, /in its own colors, with a red frame around each change on both sides\. For an animation it shows the frame with the most changes, which \*Change\* names\. /)
+	assert.match(text, /In `diff\/` each changed pixel in red of every picture with \*yes\* under \*In red\*, of the same frame\./)
+})
+
+test('the comment promises no red pixels with a comparison that has no difference', function() {
+	const { text } = comment({
+		report: {
+			pictures: [{ path: 'a.gif', status: 'changed', share: 0.5, comparison: 'comparison/a.gif.png', frame: 1, frames: 2 }],
+		},
+	})
+	assert.match(text, /\| `a\.gif` \| changed, most in frame 1 of 2 \| 50\.00 % \| `comparison\/a\.gif\.png` \| – \|/)
+	assert.match(text, /which \*Change\* names\.\n/)
+	assert.doesNotMatch(text, /In `diff\/`/)
 })
 
 test('the comment promises no red pixels when no picture has its difference', function() {
@@ -103,7 +186,7 @@ test('the comment promises no red pixels when no picture has its difference', fu
 		report: { pictures: [{ path: 'docs/images/search-and-open.mp4', status: 'changed', share: null, diff: null }] },
 	})
 	assert.match(text, /1 picture looks different/)
-	assert.match(text, /\[The pictures before and after\]\([^)]+\)\. None of them has its changed pixels in red: /)
+	assert.match(text, /\[The pictures before and after\]\([^)]+\)\. None of them has a comparison or its changed pixels in red: /)
 	assert.doesNotMatch(text, /in `diff\/`/)
 })
 
@@ -112,7 +195,7 @@ test('the comment links no artifact that the run did not keep', function() {
 		report: { pictures: [{ path: 'a.gif', status: 'changed', share: 0.5, diff: 'diff/a.gif.png' }] },
 		artifacts: 'pr-report-visual 1\n',
 	})
-	assert.match(text, /\| `a\.gif` \| changed \| 50\.00 % \| yes \|/)
+	assert.match(text, /\| `a\.gif` \| changed \| 50\.00 % \| – \| yes \|/)
 	assert.doesNotMatch(text, /The pictures before and after/)
 	assert.match(text, /This check only reports\./)
 })
