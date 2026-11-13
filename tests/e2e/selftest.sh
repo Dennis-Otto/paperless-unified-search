@@ -56,6 +56,9 @@
 #   another type, a renamed one, other links, markup, status, headers and words each fail,
 #   by the name of the point, and what a document merely lacks doesn't. The known
 #   differences of Paperless-ngx 2 pass, and one that no longer holds fails.
+# - the bulk edits of assert_contract.py, when Python is installed, against a server of
+#   its own: an edit that Paperless-ngx 2 fails while its worker writes is sent again
+#   after 1, 2, 4 and 8 s, and a refusal in JSON or another error fails at once.
 # - assert_log.py, with records of the log of Nextcloud of its own, when Python is
 #   installed: it fails on an error of the app, also one that Nextcloud logs for core
 #   with a trace through lib/, on a deprecation, notice or warning of PHP in a file of
@@ -1766,6 +1769,99 @@ else
 	echo "Python 3.9 or newer is not installed here; the CI tests the comparison of the mock with Paperless."
 fi
 
+## The bulk edits of the contract tests
+
+# Paperless-ngx 2 on SQLite updates the documents of a bulk edit in a task of its worker,
+# and an edit that comes while the task writes fails with "database is locked", which
+# Paperless answers with HTTP 400 and the text "Error performing bulk …" (#346). The
+# contract sends such an edit again after 1, 2, 4 and 8 s, as the one-click search account
+# of the app does, and fails at once on a refusal, whose reason Paperless gives in JSON,
+# and on any other error. Here a server of its own plays Paperless, and the pauses are
+# recorded, not waited for. Prints a line "name: path requests, pauses, outcome" per case.
+if [[ -n "${python}" ]]; then
+	"${python}" -B - "${SCRIPT_DIR}" 2>&1 <<'PYTHON' | tr -d '\r' >"${WORK}/edits" || true
+import sys
+import threading
+import types
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+sys.path.insert(0, sys.argv[1])
+import assert_contract  # noqa: E402
+
+TEXT = "text/html; charset=utf-8"
+LOCKED = (400, TEXT, b"Error performing bulk edit, check logs for more detail.")
+LOCKED_NAMES = (400, TEXT, b"Error performing bulk permissions edit, check logs for more detail.")
+REFUSED = (400, "application/json", b'{"documents": ["Some documents don\'t exist."]}')
+BROKEN = (500, TEXT, b"Error performing bulk edit, check logs for more detail.")
+DONE = (200, "application/json", b'{"result": "OK"}')
+ANSWERS = []
+PATHS = []
+
+
+class Paperless(BaseHTTPRequestHandler):
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        PATHS.append(self.path)
+        status, content_type, body = ANSWERS.pop(0) if ANSWERS else DONE
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, message, *args):
+        pass
+
+
+server = ThreadingHTTPServer(("127.0.0.1", 0), Paperless)
+threading.Thread(target=server.serve_forever, daemon=True).start()
+assert_contract.PAPERLESS = f"http://127.0.0.1:{server.server_port}"
+PAUSES = []
+assert_contract.time = types.SimpleNamespace(sleep=PAUSES.append, monotonic=lambda: 0)
+paperless = assert_contract.Paperless("application/json; version=9", [], [], [])
+paperless.token = "contract-token"
+
+
+def case(name, answers, edit):
+    ANSWERS[:] = answers
+    PATHS.clear()
+    PAUSES.clear()
+    try:
+        edit()
+        outcome = "made"
+    except assert_contract.Broken as broken:
+        outcome = f"broken, {str(broken).split(':')[0]}"
+    print(f"{name}: {' '.join(sorted(set(PATHS)))} {len(PATHS)}, pauses {PAUSES}, {outcome}")
+
+
+def documents():
+    paperless.bulk_edit([1], "set_permissions", {"set_permissions": {}, "merge": True})
+
+
+case("made at once", [], documents)
+case("locked twice", [LOCKED, LOCKED], documents)
+case("locked throughout", [LOCKED] * 9, documents)
+case("refused", [REFUSED], documents)
+case("broken", [BROKEN], documents)
+case("names locked once", [LOCKED_NAMES], lambda: paperless.let_view([4], objects=("tags", [1, 2])))
+case("names refused", [REFUSED], lambda: paperless.let_view([4], objects=("tags", [1, 2])))
+case("documents locked once", [LOCKED], lambda: paperless.let_view([4], documents=[1, 2]))
+PYTHON
+	edits_say() {
+		sed -n "s/^$1: //p" "${WORK}/edits"
+	}
+	expect "a bulk edit that Paperless makes at once" "/api/documents/bulk_edit/ 1, pauses [], made" "$(edits_say 'made at once')"
+	expect "a bulk edit that Paperless fails twice while its worker writes, sent again after 1 and 2 s" "/api/documents/bulk_edit/ 3, pauses [1, 2], made" "$(edits_say 'locked twice')"
+	expect "a bulk edit that Paperless keeps failing, given up after five tries within 15 s" "/api/documents/bulk_edit/ 5, pauses [1, 2, 4, 8], broken, The bulk editor of Paperless refused set_permissions (HTTP 400)" "$(edits_say 'locked throughout')"
+	expect "a bulk edit that Paperless refuses in JSON, which fails at once" "/api/documents/bulk_edit/ 1, pauses [], broken, The bulk editor of Paperless refused set_permissions (HTTP 400)" "$(edits_say refused)"
+	expect "a bulk edit that Paperless answers with HTTP 500, which fails at once" "/api/documents/bulk_edit/ 1, pauses [], broken, The bulk editor of Paperless refused set_permissions (HTTP 500)" "$(edits_say broken)"
+	expect "a permission on names that Paperless fails once while its worker writes" "/api/bulk_edit_objects/ 2, pauses [1], made" "$(edits_say 'names locked once')"
+	expect "a permission on names that Paperless refuses in JSON, which fails at once" "/api/bulk_edit_objects/ 1, pauses [], broken, Paperless didn't let [4] view the tags [1, 2] (HTTP 400)" "$(edits_say 'names refused')"
+	expect "a permission on documents that Paperless fails once while its worker writes" "/api/documents/bulk_edit/ 2, pauses [1], made" "$(edits_say 'documents locked once')"
+else
+	echo "Python 3.9 or newer is not installed here; the CI tests the bulk edits of the contract."
+fi
+
 ## The check of the log of Nextcloud
 
 # run.sh sets log.condition of Nextcloud to {"apps":["PHP","paperless_unified_search"]},
@@ -2238,4 +2334,4 @@ if ((failures > 0)); then
 	echo "${failures} of ${checks} checks of the scripts of the end-to-end tests failed." >&2
 	exit 1
 fi
-echo "The ${checks} checks of scope.sh, run-all.sh, pin-images.sh, package.sh, upgrade.sh up to Docker, the issues of the weekly runs, the room on the disk of a runner, the journal of the mock, the comparison of the mock with Paperless, the check of the log of Nextcloud, what the upgrade compares, the pipes of the scripts, the animation of the demo, the videos of the animations and the steps of the demo pass."
+echo "The ${checks} checks of scope.sh, run-all.sh, pin-images.sh, package.sh, upgrade.sh up to Docker, the issues of the weekly runs, the room on the disk of a runner, the journal of the mock, the comparison of the mock with Paperless, the bulk edits of the contract, the check of the log of Nextcloud, what the upgrade compares, the pipes of the scripts, the animation of the demo, the videos of the animations and the steps of the demo pass."
