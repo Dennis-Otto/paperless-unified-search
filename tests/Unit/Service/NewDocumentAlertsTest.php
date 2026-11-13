@@ -645,6 +645,147 @@ final class NewDocumentAlertsTest extends TestCase {
 	}
 
 	/**
+	 * Each document of a notification keeps the first of the user's saved searches that
+	 * found it, in the order in which the user saved them, so that the notification can say
+	 * why it came (#413); a document of a user who asked for every document keeps none.
+	 */
+	public function testEachDocumentKeepsTheFirstSearchOfItsUserThatFoundIt(): void {
+		$this->wants('jamie', false, 'tag:unpaid', 'tax');
+		$this->wants('sam', false, 'tax');
+		$this->wants('alex', true);
+		$this->seen(100);
+		foreach (['archive', 'jamie', 'sam', 'alex'] as $user) {
+			$this->file("/{$user}/files/A [P101].pdf");
+			$this->file("/{$user}/files/B [P102].pdf");
+		}
+
+		$this->runJob($this->paperless(
+			$this->documents([['id' => 102, 'title' => 'B'], ['id' => 101, 'title' => 'A']]),
+			$this->documents([['id' => 101]]),
+			$this->documents([['id' => 102], ['id' => 101]]),
+		));
+
+		self::assertSame(['jamie', 'sam', 'alex'], array_column($this->sent, 'user'));
+		self::assertSame([['B', 'tax'], ['A', 'tag:unpaid']], array_map(static fn (array $document): array => [$document['title'], $document['search']], $this->sent[0]['subject']['documents']));
+		self::assertSame(['tax', 'tax'], array_column($this->sent[1]['subject']['documents'], 'search'));
+		foreach ($this->sent[2]['subject']['documents'] as $document) {
+			self::assertArrayNotHasKey('search', $document);
+		}
+	}
+
+	/**
+	 * A Paperless that stops answering in the middle of a run, as it may while it consumes
+	 * the new documents, gets no further search after a few in a row without an answer: the
+	 * run rests as for any other failure, the documents keep waiting for the next run, and
+	 * the log holds neither the message of the request nor the words of a user (#418).
+	 * Before, every distinct search of every user waited for its timeout of ten seconds.
+	 */
+	public function testSearchesWithoutAnAnswerInARowRestTheRun(): void {
+		$this->wants('jamie', true);
+		$this->wants('sam', false, 'tag:unpaid', 'tag:bills', 'tag:tax', 'tag:car', 'tag:never asked');
+		$this->seen(100);
+		$this->file('/archive/files/A [P101].pdf');
+		$this->file('/jamie/files/A [P101].pdf');
+		$timeout = new RuntimeException('cURL error 28: Operation timed out after 10001 milliseconds for https://paperless.example.com/api/documents/?query=tag%3Asecret');
+
+		$this->runJob($this->paperless(
+			$this->documents([['id' => 101, 'title' => 'A']]),
+			$this->documents([]),
+			$timeout,
+			$timeout,
+			$timeout,
+		));
+
+		self::assertCount(1 + 1 + NewDocumentAlerts::MOST_UNANSWERED, $this->requests, 'The fifth search is never asked.');
+		self::assertSame([], $this->sent);
+		self::assertSame(101, $this->stored()['lastSeen']);
+		self::assertSame([101], array_keys($this->stored()['waiting']));
+		self::assertSame(1, $this->stored()['failures']);
+		self::assertSame(self::NOW + 600, $this->stored()['restingUntil']);
+		self::assertSame([['warning', 'The notifications about new Paperless documents try again in {seconds} seconds ({error})', [
+			'app' => AppConstants::APP_ID,
+			'seconds' => 600,
+			'error' => '3 saved searches in a row got no answer (' . RuntimeException::class . ').',
+		]]], $this->logged);
+	}
+
+	/**
+	 * An answer between searches without one shows that Paperless still works, and the count
+	 * starts again: a list of documents, a refusal and an answer that isn't a list of
+	 * documents alike.
+	 */
+	public function testAnAnswerBetweenSearchesWithoutOneLetsTheRunGoOn(): void {
+		$this->wants('jamie', false, 'a', 'b', 'c', 'd', 'e', 'f');
+		$this->wants('sam', false, 'g', 'h', 'i', 'j', 'k', 'l');
+		$this->seen(100);
+		$this->file('/archive/files/A [P101].pdf');
+		$this->file('/sam/files/A [P101].pdf');
+		$timeout = new RuntimeException('Timeout');
+
+		$this->runJob($this->paperless(
+			$this->documents([['id' => 101, 'title' => 'A']]),
+			$timeout,
+			$timeout,
+			$this->documents([]),
+			$timeout,
+			$timeout,
+			$this->answer(400, '{"query": ["Invalid"]}', []),
+			$timeout,
+			$timeout,
+			$this->answer(500, 'Server Error', []),
+			$timeout,
+			$timeout,
+			$this->documents([['id' => 101]]),
+		));
+
+		self::assertSame(['sam'], array_column($this->sent, 'user'));
+		self::assertSame(['l'], array_column($this->sent[0]['subject']['documents'], 'search'));
+		self::assertSame(0, $this->stored()['failures']);
+		self::assertSame(9, $this->logged[0][2]['count']);
+	}
+
+	/**
+	 * The searches of a run take SEARCH_SECONDS at most, also when Paperless answers each
+	 * one slowly: then the run rests, the documents wait, and the next run asks again.
+	 */
+	public function testTheSearchesOfARunEndWhenTheirTimeIsUp(): void {
+		$this->wants('jamie', false, 'a', 'b', 'c', 'd');
+		$this->seen(100);
+		$this->file('/archive/files/A [P101].pdf');
+		$this->file('/jamie/files/A [P101].pdf');
+
+		$this->runJob($this->slow(30, $this->paperless(
+			$this->documents([['id' => 101, 'title' => 'A']]),
+			$this->documents([]),
+			$this->documents([]),
+		)));
+
+		self::assertCount(3, $this->requests, 'The third search would start after 60 seconds and is never asked.');
+		self::assertSame([], $this->sent);
+		self::assertSame([101], array_keys($this->stored()['waiting']));
+		self::assertSame(1, $this->stored()['failures']);
+		self::assertSame('The saved searches took 60 seconds or more.', $this->logged[0][2]['error']);
+	}
+
+	/**
+	 * A client of Paperless that takes these seconds for each request after the first.
+	 */
+	private function slow(int $seconds, IClient $client): IClient {
+		$slow = $this->createStub(IClient::class);
+		$first = true;
+		$slow->method('get')->willReturnCallback(function (string $url, array $options) use ($client, $seconds, &$first): IResponse {
+			if (!$first) {
+				$this->now += $seconds;
+			}
+			$first = false;
+
+			return $client->get($url, $options);
+		});
+
+		return $slow;
+	}
+
+	/**
 	 * PHP keeps a user ID like 12345, as from LDAP or a list of employees, as a number in the
 	 * keys of an array; that user gets their notification, and so does everyone after them.
 	 */

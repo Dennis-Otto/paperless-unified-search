@@ -20,8 +20,9 @@ use OCP\Notification\UnknownNotificationException;
  * The words of the notifications about new documents, in the language of the user who
  * reads them, as NewDocumentAlerts leaves them: how many documents there are, and the
  * title of the newest ones, each a link to its file, which the web and the apps for phones
- * open as they open any file. The notification holds what the user could open as it went
- * out, so reading it costs no look into the files.
+ * open as they open any file, and for one document the saved search that found it. The
+ * notification holds what the user could open as it went out, so reading it costs no look
+ * into the files.
  */
 final class Notifier implements INotifier {
 	public const SUBJECT = 'new_documents';
@@ -69,6 +70,11 @@ final class Notifier implements INotifier {
 				->setParsedSubject(str_replace('{document}', $document['title'], $subject))
 				->setRichSubject($subject, ['document' => $this->richFile($document)])
 				->setLink($this->linkOf($document));
+			// The words of the user's own search, as text: a rich message would read braces in
+			// them as placeholders.
+			if (isset($document['search'])) {
+				$notification->setParsedMessage(str_replace('{search}', $document['search'], $l->t('Found by your saved search: {search}')));
+			}
 
 			return $notification;
 		}
@@ -90,18 +96,20 @@ final class Notifier implements INotifier {
 	}
 
 	/**
-	 * The documents of a notification, without one that it holds wrongly.
+	 * The documents of a notification, without one that it holds wrongly, each with the
+	 * saved search that found it, if any: a notification that went out before the
+	 * notifications named the search has none, and reads as it did.
 	 *
-	 * @return list<array{title: string, fileId: int, path: string}>
+	 * @return list<array{title: string, fileId: int, path: string, search?: non-empty-string}>
 	 */
 	private static function documentsOf(mixed $stored): array {
 		$documents = [];
 		/** @psalm-suppress MixedAssignment Every document is checked before use. */
 		foreach (is_array($stored) ? $stored : [] as $document) {
-			/** @psalm-suppress MixedAssignment All three are checked before use. */
-			['title' => $title, 'fileId' => $fileId, 'path' => $path] = (is_array($document) ? $document : []) + ['title' => null, 'fileId' => null, 'path' => null];
+			/** @psalm-suppress MixedAssignment All four are checked before use. */
+			['title' => $title, 'fileId' => $fileId, 'path' => $path, 'search' => $search] = (is_array($document) ? $document : []) + ['title' => null, 'fileId' => null, 'path' => null, 'search' => null];
 			if (is_string($title) && is_int($fileId) && is_string($path)) {
-				$documents[] = ['title' => $title, 'fileId' => $fileId, 'path' => $path];
+				$documents[] = ['title' => $title, 'fileId' => $fileId, 'path' => $path] + (is_string($search) && $search !== '' ? ['search' => $search] : []);
 			}
 		}
 
@@ -112,7 +120,7 @@ final class Notifier implements INotifier {
 	 * The file of a document as Nextcloud's rich text names one, which each client shows as
 	 * a link and opens in its own way.
 	 *
-	 * @param array{title: string, fileId: int, path: string} $document
+	 * @param array{title: string, fileId: int, path: string, search?: non-empty-string} $document
 	 * @return array{type: string, id: string, name: string, path: string, link: string}
 	 */
 	private function richFile(array $document): array {
@@ -126,7 +134,7 @@ final class Notifier implements INotifier {
 	}
 
 	/**
-	 * @param array{title: string, fileId: int, path: string} $document
+	 * @param array{title: string, fileId: int, path: string, search?: non-empty-string} $document
 	 */
 	private function linkOf(array $document): string {
 		return $this->urlGenerator->linkToRouteAbsolute('files.view.showFile', ['fileid' => $document['fileId']]);

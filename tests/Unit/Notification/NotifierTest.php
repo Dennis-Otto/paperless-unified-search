@@ -58,6 +58,48 @@ final class NotifierTest extends TestCase {
 		self::assertInstanceOf(INotification::class, $prepared);
 	}
 
+	/**
+	 * A document that a saved search found says which one, in the words of the user, as
+	 * text: braces in a search stay as they are (#413).
+	 */
+	public function testOneDocumentNamesTheSearchThatFoundIt(): void {
+		$values = new ArrayObject();
+
+		$this->notifier()->prepare($this->notification($values, ['count' => 1, 'documents' => [['search' => 'tag:unpaid {document}'] + self::ELECTRICITY]]), 'en');
+
+		self::assertSame('[Found by your saved search: tag:unpaid {document}]', $values['parsedMessage']);
+		self::assertArrayNotHasKey('richMessage', $values->getArrayCopy());
+		self::assertSame('[New in Paperless: Electricity invoice]', $values['parsedSubject']);
+	}
+
+	/**
+	 * @return array<string, array{mixed}>
+	 */
+	public static function withoutASearch(): array {
+		return [
+			// A notification that went out before the notifications named the search.
+			'none stored' => [null],
+			'an empty one' => [''],
+			'one held wrongly' => [7],
+		];
+	}
+
+	/**
+	 * A document that the user asked for as one of every new document, one of a notification
+	 * that went out before the search was kept, or one whose search is held wrongly, reads
+	 * as before, without a message.
+	 */
+	#[DataProvider('withoutASearch')]
+	public function testOneDocumentWithoutASearchHasNoMessage(mixed $search): void {
+		$values = new ArrayObject();
+		$document = $search === null ? self::ELECTRICITY : ['search' => $search] + self::ELECTRICITY;
+
+		$this->notifier()->prepare($this->notification($values, ['count' => 1, 'documents' => [$document]]), 'en');
+
+		self::assertSame('[New in Paperless: Electricity invoice]', $values['parsedSubject']);
+		self::assertArrayNotHasKey('parsedMessage', $values->getArrayCopy());
+	}
+
 	public function testSeveralDocumentsAreCountedAndEachOneLinked(): void {
 		$values = new ArrayObject();
 

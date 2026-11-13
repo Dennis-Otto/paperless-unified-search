@@ -12,6 +12,7 @@ namespace OCA\PaperlessUnifiedSearch\Service;
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessQueryRejected;
 use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
+use OCA\PaperlessUnifiedSearch\Exception\RequestFailure;
 use OCA\PaperlessUnifiedSearch\Model\AlertChoice;
 use OCA\PaperlessUnifiedSearch\Model\AlertProgress;
 use OCA\PaperlessUnifiedSearch\Notification\Notifier;
@@ -32,8 +33,10 @@ use Throwable;
  * 1. asks Paperless once which documents are new, by their IDs, and keeps them waiting;
  * 2. looks for the files of the waiting documents in the archive account, which costs
  *    Paperless nothing, and goes no further while none has a file;
- * 3. asks Paperless once per distinct saved search which of those documents it finds;
- * 4. sends each user one notification about those that they asked for and can open.
+ * 3. asks Paperless once per distinct saved search which of those documents it finds,
+ *    within a budget of time, and rests when Paperless stops answering;
+ * 4. sends each user one notification about those that they asked for and can open, each
+ *    with the first of the user's saved searches that found it.
  *
  * So with nothing new, Paperless gets one short request and nothing else. A user who asks
  * for the first time starts from what is new from then on, as does the first run after the
@@ -67,6 +70,21 @@ final class NewDocumentAlerts {
 	 * margin covers the time zones of the two servers, which needn't be the same.
 	 */
 	private const MARGIN = 86400;
+
+	/**
+	 * How many saved searches in a row may go without an answer of Paperless, such as a
+	 * timeout or a failed connection, before the run stops asking and rests: a Paperless
+	 * that hangs gets no hundreds of requests that each wait for their time, and one or two
+	 * searches too expensive to answer in time stop nobody's notifications.
+	 */
+	public const MOST_UNANSWERED = 3;
+
+	/**
+	 * The seconds that the saved searches of one run may take in all, after which the run
+	 * stops asking and rests: the documents keep waiting, and the next run asks again. Each
+	 * request may take up to ten seconds, and every user may save ten searches.
+	 */
+	public const SEARCH_SECONDS = 60;
 
 	/** @psalm-suppress PossiblyUnusedMethod */
 	public function __construct(
@@ -291,30 +309,49 @@ final class NewDocumentAlerts {
 	 * hold no words of a user and have already answered in this run, for the new documents
 	 * and their tags: a failure of those rests the job.
 	 *
+	 * Paperless can stop answering in the middle of a run, too, as it may while it consumes
+	 * the new documents, which is when this job has work: after MOST_UNANSWERED searches in
+	 * a row without an answer, or once the searches have taken SEARCH_SECONDS, the run stops
+	 * asking and rests, and the documents wait for the next one (#418).
+	 *
 	 * @param array<array-key, AlertChoice> $choices
 	 * @param non-empty-list<int> $documentIds
 	 * @return array<string, list<int>> the IDs of the documents that each term finds
+	 * @throws PaperlessRequestException when Paperless stops answering, or the time is up
 	 */
 	private function findTerms(array $choices, array $documentIds): array {
+		$started = $this->timeFactory->getTime();
 		$found = [];
 		$refused = [];
 		$failed = [];
 		$failure = null;
+		$unanswered = 0;
 		foreach ($choices as $choice) {
 			foreach ($choice->everyDocument ? [] : $choice->terms as $term) {
 				if (isset($found[$term])) {
 					continue;
 				}
+				if ($this->timeFactory->getTime() - $started >= self::SEARCH_SECONDS) {
+					throw new PaperlessRequestException(RequestFailure::Timeout, 'The saved searches took ' . self::SEARCH_SECONDS . ' seconds or more.');
+				}
 
 				try {
 					$found[$term] = $this->paperlessApi->findMatchingDocuments($term, $documentIds);
+					$unanswered = 0;
 				} catch (PaperlessQueryRejected) {
 					$found[$term] = [];
 					$refused[$term] = true;
+					$unanswered = 0;
 				} catch (Throwable $error) {
 					$found[$term] = [];
 					$failed[$term] = true;
 					$failure = $error;
+					// An answer of Paperless that isn't a list of documents is still an answer.
+					$unanswered = $error instanceof PaperlessRequestException ? 0 : $unanswered + 1;
+					if ($unanswered === self::MOST_UNANSWERED) {
+						// Not the message of the error, which may hold the URL with the words of a user.
+						throw new PaperlessRequestException(PaperlessRequestException::unanswered($error)->reason, self::MOST_UNANSWERED . ' saved searches in a row got no answer (' . $error::class . ').', previous: $error);
+					}
 				}
 			}
 		}
@@ -356,23 +393,34 @@ final class NewDocumentAlerts {
 	}
 
 	/**
-	 * The documents that a user asked for, in their order.
+	 * The documents that a user asked for, in their order, each with the first of the
+	 * user's saved searches that finds it, which the notification names (#413), or with
+	 * null for a user who asked for every document.
 	 *
 	 * @param list<int> $documentIds
 	 * @param array<string, list<int>> $found the IDs of the documents that each term finds
-	 * @return list<int>
+	 * @return array<int, ?string> the search of each document, by its ID
 	 */
 	private static function wantedOf(AlertChoice $choice, array $documentIds, array $found): array {
 		if ($choice->everyDocument) {
-			return $documentIds;
+			return array_fill_keys($documentIds, null);
+		}
+
+		$searches = [];
+		foreach ($choice->terms as $term) {
+			foreach ($found[$term] as $id) {
+				$searches[$id] ??= $term;
+			}
 		}
 
 		$wanted = [];
-		foreach ($choice->terms as $term) {
-			$wanted = [...$wanted, ...$found[$term]];
+		foreach ($documentIds as $id) {
+			if (isset($searches[$id])) {
+				$wanted[$id] = $searches[$id];
+			}
 		}
 
-		return array_values(array_intersect($documentIds, $wanted));
+		return $wanted;
 	}
 
 	/**
@@ -380,21 +428,21 @@ final class NewDocumentAlerts {
 	 * any; for a user with tags only about those with one of them. A user whose files fail
 	 * to answer costs only their own notification.
 	 *
-	 * @param list<int> $documentIds
+	 * @param array<int, ?string> $wanted the search that found each document, by its ID
 	 * @param list<array<array-key, mixed>> $documents the documents with files, with their
 	 *                                                 owners and tags
 	 */
-	private function notifyUser(string $userId, array $documentIds, AlertProgress $progress, string $archiveOwner, array $documents): void {
+	private function notifyUser(string $userId, array $wanted, AlertProgress $progress, string $archiveOwner, array $documents): void {
 		try {
 			$user = $this->userManager->get($userId);
 			if ($user === null || !$user->isEnabled()) {
 				return;
 			}
 
-			[$visibleIds, $documentUsers] = $this->documentOwners->forUser($user, $documentIds, $documents);
+			[$visibleIds, $documentUsers] = $this->documentOwners->forUser($user, array_keys($wanted), $documents);
 			$files = $this->fileLocator->findAllForUser($user, $visibleIds, $archiveOwner, $documentUsers)->files;
 			if ($files !== []) {
-				$this->notify($user, $files, $progress);
+				$this->notify($user, $files, $progress, $wanted);
 			}
 		} catch (Throwable $error) {
 			$this->logger->warning('A user got no notification about new Paperless documents ({errorType})', [
@@ -405,17 +453,22 @@ final class NewDocumentAlerts {
 	}
 
 	/**
+	 * A document that a saved search found keeps that search, which the notification names;
+	 * one that the user asked for as one of every new document has none.
+	 *
 	 * @param array<int, File> $files the files that the user can open, by document, highest ID first
+	 * @param array<int, ?string> $wanted the search that found each document, by its ID
 	 */
-	private function notify(IUser $user, array $files, AlertProgress $progress): void {
+	private function notify(IUser $user, array $files, AlertProgress $progress, array $wanted): void {
 		$documents = [];
 		foreach (array_slice($files, 0, Notifier::MOST_LISTED, true) as $id => $file) {
 			$title = $progress->waiting[$id]['title'] ?? '';
+			$search = $wanted[$id];
 			$documents[] = [
 				'title' => $title !== '' ? $title : $file->getName(),
 				'fileId' => $file->getId(),
 				'path' => $this->fileLocator->getPathForUser($user, $file),
-			];
+			] + ($search !== null ? ['search' => $search] : []);
 		}
 
 		$notification = $this->notifications->createNotification();

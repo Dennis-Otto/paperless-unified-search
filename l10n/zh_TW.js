@@ -60,6 +60,7 @@ OC.L10N.register(
 		'Your administrator lets you find only the documents that have one of these tags in Paperless: %s.': '您的管理員只允許您找到在 Paperless 中帶有下列任一標籤的文件：%s。',
 		'Saving…': '正在儲存…',
 		'New in Paperless: {document}': 'Paperless 新文件：{document}',
+		'Found by your saved search: {search}': '由您儲存的搜尋找到：{search}',
 		'_%n new document in Paperless_::_%n new documents in Paperless_': ['Paperless 中有 %n 個新文件'],
 		'_and %n more_::_and %n more_': ['以及另外 %n 個'],
 		'Your administrator does not let users ask for notifications about new documents.': '您的管理員不允許使用者要求新文件通知。',
