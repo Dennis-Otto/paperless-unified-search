@@ -304,6 +304,8 @@ final class SearchDiagnostics {
 	 * mark or a digit may not continue a longer word, so time stays in "timed out" and
 	 * error in "errors"; and never in the words "cURL error" and the number that cURL puts
 	 * before its message, which hold no term.
+	 *
+	 * @return non-empty-string
 	 */
 	private static function termPattern(string $term): string {
 		$word = '[\p{L}\p{M}\p{N}]';
