@@ -4,6 +4,31 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [1.8.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.7.0...v1.8.0) (2026-11-13)
+
+
+### Features
+
+* **files:** find the documents similar to a file from its menu in Files ([#441](https://github.com/Dennis-Otto/paperless-unified-search/issues/441)) ([887d6c5](https://github.com/Dennis-Otto/paperless-unified-search/commit/887d6c5785c65d7bf6ba4ea02a8de70166b15a2c))
+* **files:** trust Team folders and external storages for several users ([#432](https://github.com/Dennis-Otto/paperless-unified-search/issues/432)) ([d203430](https://github.com/Dennis-Otto/paperless-unified-search/commit/d2034307df467fa04f48277e15b3f23c9ced2300))
+* **search:** rest the search for 30 seconds after Paperless gives no answer ([#430](https://github.com/Dennis-Otto/paperless-unified-search/issues/430)) ([84f3c40](https://github.com/Dennis-Otto/paperless-unified-search/commit/84f3c40d446be048612ccc7a837389efebb5459e))
+* **settings:** save the options while Paperless doesn't answer ([#429](https://github.com/Dennis-Otto/paperless-unified-search/issues/429)) ([80f557f](https://github.com/Dennis-Otto/paperless-unified-search/commit/80f557f4e1a3117cbd6d663721c2d6ed9461bbee))
+* **settings:** say what to do about each search problem, and tell a user their tags ([#437](https://github.com/Dennis-Otto/paperless-unified-search/issues/437)) ([1442be7](https://github.com/Dennis-Otto/paperless-unified-search/commit/1442be758766eadc6f95f4361e4f5fd46acc27d7))
+
+
+### Bug fixes
+
+* ask Paperless 3 for version 10 of its API, and keep idle notification runs from writing ([#438](https://github.com/Dennis-Otto/paperless-unified-search/issues/438)) ([27248cd](https://github.com/Dennis-Otto/paperless-unified-search/commit/27248cd1310e0fcdee9061055cc66333fdf09363))
+* **dashboard:** show a user their newest documents behind a page of others ([#426](https://github.com/Dennis-Otto/paperless-unified-search/issues/426)) ([0cbaffa](https://github.com/Dennis-Otto/paperless-unified-search/commit/0cbaffad0c480decb1b8190d83ff2d1b9625abab))
+* keep a renamed share's document and mask a search term only as a word ([#444](https://github.com/Dennis-Otto/paperless-unified-search/issues/444)) ([de9e79f](https://github.com/Dennis-Otto/paperless-unified-search/commit/de9e79fb06be9cc0f8acae7af6061ab5c7cee2c7))
+* **notifications:** bound the saved searches of a run, and name the search that found a document ([#439](https://github.com/Dennis-Otto/paperless-unified-search/issues/439)) ([89c9217](https://github.com/Dennis-Otto/paperless-unified-search/commit/89c9217fa7c76d6875eaed1ca9bf7b6af082a87f))
+* **notifications:** check a new saved search with Paperless before saving it ([#423](https://github.com/Dennis-Otto/paperless-unified-search/issues/423)) ([c6a73bd](https://github.com/Dennis-Otto/paperless-unified-search/commit/c6a73bd95095dcae3ab31c569f46d9a696855332))
+* **notifications:** one saved search that fails stops nobody else's notifications ([#424](https://github.com/Dennis-Otto/paperless-unified-search/issues/424)) ([815fdc1](https://github.com/Dennis-Otto/paperless-unified-search/commit/815fdc1fc7c8540961a581e5b378428e2100623c))
+* **search:** like:&lt;ID&gt; answers only a user who may see that document ([#434](https://github.com/Dennis-Otto/paperless-unified-search/issues/434)) ([26b3f74](https://github.com/Dennis-Otto/paperless-unified-search/commit/26b3f742952bfa04e0df959b4ad8d0222835c128))
+* **search:** page on only to a result that the user may open, with a sealed cursor ([#420](https://github.com/Dennis-Otto/paperless-unified-search/issues/420)) ([5717b9c](https://github.com/Dennis-Otto/paperless-unified-search/commit/5717b9cc7a4ec06704e6f4eeb83acb5f6c82c182))
+* **search:** search further while a page has no result ([#422](https://github.com/Dennis-Otto/paperless-unified-search/issues/422)) ([9f51b9a](https://github.com/Dennis-Otto/paperless-unified-search/commit/9f51b9a44d6f78afc8af3c188af3a97494a14906))
+* show the app's icon on the website and say why an asset of the upgrade test failed to download ([#443](https://github.com/Dennis-Otto/paperless-unified-search/issues/443)) ([eb3d728](https://github.com/Dennis-Otto/paperless-unified-search/commit/eb3d728e8a7b829dc01e423238961cc24db75f60))
+
 ## [1.7.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.6.2...v1.7.0) (2026-11-10)
 
 ### Features
