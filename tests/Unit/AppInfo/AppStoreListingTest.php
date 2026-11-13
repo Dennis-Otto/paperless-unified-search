@@ -115,6 +115,47 @@ final class AppStoreListingTest extends TestCase {
 	}
 
 	/**
+	 * Whoever reads the listing, in any language, learns every way that search terms of a
+	 * user reach Paperless, as the README's Security and privacy lists them: besides the
+	 * switch and the smart picker, a client of the search API, and the personal choice
+	 * Always search my Paperless documents, named as the personal settings show it in that
+	 * language.
+	 */
+	public function testEveryDescriptionNamesEachWaySearchTermsReachPaperless(): void {
+		$info = self::appInfo();
+		// The words of each description for Nextcloud's search API, and the file of l10n/
+		// that holds the label of the personal choice in its language.
+		$languages = [
+			'en' => ['search API', null],
+			'de' => ['Such-API', 'de'],
+			'es' => ['API de búsqueda', 'es'],
+			'fr' => ['API de recherche', 'fr'],
+			'nl' => ['zoek-API', 'nl'],
+			'zh-hans' => ['搜索 API', 'zh_CN'],
+			'zh-hant' => ['搜尋 API', 'zh_TW'],
+		];
+		$choice = 'Always search my Paperless documents';
+
+		self::assertCount(count($languages), $info->description);
+		foreach ($info->description as $description) {
+			$language = (string)($description['lang'] ?? 'en');
+			self::assertArrayHasKey($language, $languages);
+			[$api, $l10n] = $languages[$language];
+			$label = $choice;
+			if ($l10n !== null) {
+				$translations = json_decode((string)file_get_contents(self::ROOT . '/l10n/' . $l10n . '.json'), true, flags: JSON_THROW_ON_ERROR);
+				self::assertIsArray($translations);
+				self::assertIsArray($translations['translations'] ?? null);
+				$label = $translations['translations'][$choice] ?? null;
+				self::assertIsString($label);
+			}
+
+			self::assertStringContainsString($api, (string)$description, 'The description in ' . $language . ' leaves out the clients of the search API.');
+			self::assertStringContainsString($label, (string)$description, 'The description in ' . $language . ' leaves out ' . $label . '.');
+		}
+	}
+
+	/**
 	 * The App Store shows the summary and the description in the language of its visitor,
 	 * and in English where the listing has none in it, so each language has both.
 	 * scripts/check-l10n.mjs holds them to the languages of l10n/.
