@@ -770,12 +770,14 @@ final class PaperlessApiServiceTest extends TestCase {
 	}
 
 	/**
-	 * Every request names version 9 of the API, the one that Paperless 2.16 and newer and
-	 * Paperless 3 all accept, so that a new default version of Paperless can't change the
-	 * fields that the app reads; the contract tests in tests/e2e/paperless-contract.sh
-	 * check it against real Paperless servers. The advanced query and its simple mode both.
+	 * Every request names a version of the API, so that a new default version of Paperless
+	 * can't change the fields that the app reads: before Paperless named its version,
+	 * version 9, which Paperless 2.16 and newer and Paperless 3 all accept; the contract
+	 * tests in tests/e2e/paperless-contract.sh check it against real Paperless servers. The
+	 * advanced query and its simple mode both, since the refusal of the first isn't the
+	 * answer of a search whose version the app keeps.
 	 */
-	public function testEveryRequestAsksForVersion9OfTheApi(): void {
+	public function testBeforePaperlessNamedItsVersionEveryRequestAsksForVersion9OfTheApi(): void {
 		$accepted = [];
 		$client = $this->createStub(IClient::class);
 		$client->method('get')->willReturnCallback(function (string $url, array $options) use (&$accepted): IResponse {
@@ -2526,6 +2528,284 @@ final class PaperlessApiServiceTest extends TestCase {
 	/**
 	 * The exception of a test of the connection that failed.
 	 */
+	/**
+	 * @return array<string, array{?array{string, string}, string}>
+	 */
+	public static function storedVersions(): array {
+		return [
+			'before Paperless named its version' => [null, 'application/json; version=9'],
+			'Paperless 2' => [['2.20.13', '9'], 'application/json; version=9'],
+			'Paperless 3' => [['3.3.0', '10'], 'application/json; version=10'],
+			'a Paperless newer than the app' => [['4.0.0', '11'], 'application/json; version=10'],
+		];
+	}
+
+	/**
+	 * Once Paperless named version 10 of its API, every request asks for it: Paperless 3
+	 * then leaves out the IDs of every document that matches, which it adds in version 9 to
+	 * each page of each search. The advanced query, its simple mode and the names alike.
+	 *
+	 * @param ?array{string, string} $stored the version and the one of the API that Paperless named last
+	 */
+	#[DataProvider('storedVersions')]
+	public function testEveryRequestAsksForTheVersionOfTheApiThatPaperlessNamedLast(?array $stored, string $accept): void {
+		if ($stored !== null) {
+			$this->config
+				->seed(AppConstants::APP_ID, 'paperless_version', $stored[0])
+				->seed(AppConstants::APP_ID, 'paperless_api_version', $stored[1]);
+		}
+		$accepted = [];
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options) use (&$accepted): IResponse {
+			$accepted[] = $options['headers']['Accept'];
+			if (str_ends_with($url, '/api/tags/')) {
+				return $this->response(200, '{"count":1,"next":null,"results":[{"id":8,"name":"Bills"}]}');
+			}
+
+			return isset($options['query']['query'])
+				? $this->response(400, self::INVALID_DATE, self::PAPERLESS_3)
+				: $this->response(200, self::NO_DOCUMENTS, self::PAPERLESS_3);
+		});
+		$service = $this->service($client);
+
+		$service->searchDocuments('invoice created:[2026 to', 1, 5);
+		$this->config->seed(AppConstants::APP_ID, 'paperless_version', $stored[0] ?? '')->seed(AppConstants::APP_ID, 'paperless_api_version', $stored[1] ?? '');
+		$service->findNames('tags', [8]);
+
+		self::assertSame([$accept, $accept, $accept], $accepted);
+	}
+
+	/**
+	 * The first answer of Paperless 3 names version 10 of its API, which the next request
+	 * asks for.
+	 */
+	public function testAfterTheFirstAnswerOfPaperless3TheNextRequestAsksForVersion10(): void {
+		$accepted = [];
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options) use (&$accepted): IResponse {
+			$accepted[] = $options['headers']['Accept'];
+
+			return $this->response(200, self::NO_DOCUMENTS, self::PAPERLESS_3);
+		});
+		$service = $this->service($client);
+
+		$service->searchDocuments('invoice', 1, 5);
+		$service->searchDocuments('invoice', 1, 5);
+
+		self::assertSame(['application/json; version=9', 'application/json; version=10'], $accepted);
+	}
+
+	/**
+	 * A Paperless that no longer speaks the version of the API that its last answer named,
+	 * as after an update or a restore of an older one, refuses it with HTTP 406: the test
+	 * of the connection asks once for the other version, and its further requests ask for
+	 * that one too.
+	 *
+	 * @return array<string, array{?array{string, string}, string, array<string, string>, list<string>}>
+	 */
+	public static function refusedVersions(): array {
+		return [
+			'a Paperless that no longer speaks version 9' => [null, 'application/json; version=9', ['X-Version' => '4.0.0', 'X-Api-Version' => '11'], ['application/json; version=9', 'application/json; version=10', 'application/json; version=10']],
+			'a Paperless 2 in place of a Paperless 3' => [['3.3.0', '10'], 'application/json; version=10', self::PAPERLESS_2, ['application/json; version=10', 'application/json; version=9', 'application/json; version=9']],
+		];
+	}
+
+	/**
+	 * @param ?array{string, string} $stored the version and the one of the API that Paperless named last
+	 * @param array<string, string> $headers the version that Paperless names in its answers
+	 * @param list<string> $expected
+	 */
+	#[DataProvider('refusedVersions')]
+	public function testTheTestOfTheConnectionAsksForTheOtherVersionOnceWhenPaperlessRefusesOne(?array $stored, string $refused, array $headers, array $expected): void {
+		if ($stored !== null) {
+			$this->config
+				->seed(AppConstants::APP_ID, 'paperless_version', $stored[0])
+				->seed(AppConstants::APP_ID, 'paperless_api_version', $stored[1]);
+		}
+		$accepted = [];
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options) use (&$accepted, $refused, $headers): IResponse {
+			$accepted[] = $options['headers']['Accept'];
+			if ($options['headers']['Accept'] === $refused) {
+				return $this->response(406, '{"detail":"Invalid version in \"Accept\" header."}');
+			}
+
+			return $this->response(200, str_ends_with($url, '/api/ui_settings/') ? self::SUPERUSER : self::FIRST_DOCUMENT, $headers);
+		});
+
+		$status = $this->service($client)->probeTheSettings();
+
+		self::assertSame($expected, $accepted);
+		self::assertSame(3, $status->documents);
+		self::assertSame([$headers['X-Version'], $headers['X-Api-Version']], [$this->config->stored(AppConstants::APP_ID, 'paperless_version'), $this->config->stored(AppConstants::APP_ID, 'paperless_api_version')]);
+	}
+
+	/**
+	 * A Paperless that refuses both versions of the API fails the test with the refusal of
+	 * the version that it named last: a Paperless 3 that no longer speaks version 10 is newer
+	 * than the app, and one that never named its version most likely older than 2.16.
+	 *
+	 * @return array<string, array{?array{string, string}, RequestFailure}>
+	 */
+	public static function bothVersionsRefused(): array {
+		return [
+			'a Paperless that named version 10' => [['3.3.0', '10'], RequestFailure::NewerApi],
+			'a Paperless that named no version' => [null, RequestFailure::UnsupportedVersion],
+		];
+	}
+
+	/**
+	 * @param ?array{string, string} $stored the version and the one of the API that Paperless named last
+	 */
+	#[DataProvider('bothVersionsRefused')]
+	public function testAPaperlessThatRefusesBothVersionsNamesTheRefusalOfTheVersionThatItNamedLast(?array $stored, RequestFailure $reason): void {
+		if ($stored !== null) {
+			$this->config
+				->seed(AppConstants::APP_ID, 'paperless_version', $stored[0])
+				->seed(AppConstants::APP_ID, 'paperless_api_version', $stored[1]);
+		}
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::exactly(2))
+			->method('get')
+			->willReturn($this->response(406, '{"detail":"Invalid version in \"Accept\" header."}'));
+
+		$exception = $this->failedConnectionTest($client);
+
+		self::assertSame([$reason, 406], [$exception->reason, $exception->status]);
+	}
+
+	/**
+	 * A second try that Paperless fails for another reason than the version names that
+	 * reason.
+	 */
+	public function testASecondTryThatFailsOtherwiseNamesItsOwnReason(): void {
+		$answers = [$this->response(406, ''), $this->response(401, '{"detail":"Invalid token."}')];
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(static function () use (&$answers): IResponse {
+			$answer = array_shift($answers);
+			self::assertNotNull($answer);
+
+			return $answer;
+		});
+
+		$exception = $this->failedConnectionTest($client);
+
+		self::assertSame([RequestFailure::Unauthorized, 401], [$exception->reason, $exception->status]);
+	}
+
+	/**
+	 * A search and a list of names that Paperless refuses in version 10 of the API, after
+	 * it named that version, fail as a Paperless that is newer than the app; a search never
+	 * tries the other version, which only the test of the connection does.
+	 */
+	public function testARequestThatPaperlessRefusesInVersion10FailsAsAPaperlessNewerThanTheApp(): void {
+		$this->config
+			->seed(AppConstants::APP_ID, 'paperless_version', '3.3.0')
+			->seed(AppConstants::APP_ID, 'paperless_api_version', '10');
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturn($this->response(406, '{"detail":"Invalid version in \"Accept\" header."}'));
+		$service = $this->service($client);
+
+		$failures = [];
+		foreach ([static fn () => $service->searchDocuments('invoice', 1, 5), static fn () => $service->findNames('tags', [8])] as $request) {
+			try {
+				$request();
+				self::fail('Paperless answered.');
+			} catch (PaperlessRequestException $exception) {
+				$failures[] = [$exception->reason, $exception->status];
+			}
+		}
+
+		self::assertSame([[RequestFailure::NewerApi, 406], [RequestFailure::NewerApi, 406]], $failures);
+	}
+
+	/**
+	 * occ paperless_unified_search:check compares the IDs of the documents with the files.
+	 * Version 10 of the API lists them in no field all, so the test asks for the pages of
+	 * the documents with their IDs alone, by ID, as for their owners; the further requests
+	 * of the test ask for version 10 as well.
+	 */
+	public function testTheCheckReadsTheIdsOfTheDocumentsFromTheirPagesInVersion10(): void {
+		$this->config
+			->seed(AppConstants::APP_ID, 'paperless_version', '3.3.0')
+			->seed(AppConstants::APP_ID, 'paperless_api_version', '10');
+		$requests = [];
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options) use (&$requests): IResponse {
+			$requests[] = [$options['headers']['Accept'], $options['query']];
+			if (str_ends_with($url, '/api/ui_settings/')) {
+				return $this->response(200, self::SUPERUSER, self::PAPERLESS_3);
+			}
+
+			return match ($options['query']['page'] ?? null) {
+				1 => $this->response(200, ($options['query']['ordering'] ?? '') === 'id'
+					? '{"count":3,"next":"https://paperless.example.com/api/documents/?page=2","results":[{"id":1},{"id":2}]}'
+					: self::FIRST_DOCUMENT, self::PAPERLESS_3),
+				default => $this->response(200, '{"count":3,"next":null,"results":[{"id":3}]}', self::PAPERLESS_3),
+			};
+		});
+
+		$status = $this->service($client)->probeTheSettings(withDocumentIds: true);
+
+		self::assertSame([1, 2, 3], $status->documentIds);
+		self::assertSame(3, $status->documents);
+		self::assertSame([
+			['application/json; version=10', ['page' => 1, 'page_size' => 1, 'fields' => 'id']],
+			['application/json; version=10', []],
+			['application/json; version=10', ['ordering' => 'id', 'page' => 1, 'page_size' => 1000, 'fields' => 'id']],
+			['application/json; version=10', ['ordering' => 'id', 'page' => 2, 'page_size' => 1000, 'fields' => 'id']],
+		], $requests);
+	}
+
+	/**
+	 * Only the check asks for the IDs, only in version 10, and only where the first answer
+	 * names none; a page of them that fails, or that names a document without an ID, leaves
+	 * them unknown, and the check compares by the number of documents.
+	 *
+	 * @return array<string, array{?array{string, string}, bool, string, ?string, ?list<int>, int}>
+	 */
+	public static function idsOfTheCheck(): array {
+		return [
+			'not for the check' => [['3.3.0', '10'], false, self::FIRST_DOCUMENT, null, null, 2],
+			'in version 9' => [null, true, self::FIRST_DOCUMENT, null, null, 2],
+			'from the field all' => [['3.3.0', '10'], true, '{"count":3,"next":null,"all":[1,2,3],"results":[{"id":3}]}', null, [1, 2, 3], 2],
+			'a page that fails' => [['3.3.0', '10'], true, self::FIRST_DOCUMENT, 'Server Error', null, 3],
+			'a document without an ID' => [['3.3.0', '10'], true, self::FIRST_DOCUMENT, '{"count":3,"next":null,"results":[{"id":1},{"title":"Two"},{"id":3}]}', null, 3],
+		];
+	}
+
+	/**
+	 * @param ?array{string, string} $stored the version and the one of the API that Paperless named last
+	 * @param ?string $page the answer to the page of the IDs, as HTTP 500 when it isn't JSON
+	 * @param ?list<int> $ids
+	 */
+	#[DataProvider('idsOfTheCheck')]
+	public function testTheIdsOfTheDocumentsComeOnlyWhereTheCheckNeedsThem(?array $stored, bool $withDocumentIds, string $first, ?string $page, ?array $ids, int $requests): void {
+		if ($stored !== null) {
+			$this->config
+				->seed(AppConstants::APP_ID, 'paperless_version', $stored[0])
+				->seed(AppConstants::APP_ID, 'paperless_api_version', $stored[1]);
+		}
+		$asked = 0;
+		$client = $this->createStub(IClient::class);
+		$client->method('get')->willReturnCallback(function (string $url, array $options) use (&$asked, $first, $page): IResponse {
+			$asked++;
+			if (str_ends_with($url, '/api/ui_settings/')) {
+				return $this->response(200, self::SUPERUSER, self::PAPERLESS_3);
+			}
+			if (($options['query']['ordering'] ?? '') !== 'id') {
+				return $this->response(200, $first, self::PAPERLESS_3);
+			}
+
+			return $page !== null && str_starts_with($page, '{') ? $this->response(200, $page, self::PAPERLESS_3) : $this->response(500, $page);
+		});
+
+		$status = $this->service($client)->probeTheSettings($withDocumentIds);
+
+		self::assertSame($ids, $status->documentIds);
+		self::assertSame($requests, $asked);
+	}
+
 	private function failedConnectionTest(IClient $client): PaperlessRequestException {
 		try {
 			$this->service($client)->probe('https://paperless.example.com', 'TEST_VALUE', false);

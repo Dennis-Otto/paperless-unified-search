@@ -32,6 +32,9 @@ UNKNOWN_ID = 2**31 - 1
 NOTHING = "zzzznothingzzzz"
 # A newer version of the API than any Paperless has, and an older one than Paperless-ngx 3 has.
 NEWER_ACCEPT = "application/json; version=999"
+# The oldest version of the API that the app knows, OLDEST_API of lib/Model/PaperlessVersion.php,
+# which it asks Paperless-ngx 3 for before Paperless named its version.
+OLDEST_ACCEPT = "application/json; version=9"
 OLDER_ACCEPT = "application/json; version=8"
 
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -195,6 +198,10 @@ def requests_of_the_app(fields, recent_fields, owner_fields):
         Ask("A page past the last", DOCUMENTS, {**pages, "page": 4}),
         Ask("A search of many pages", DOCUMENTS, {"query": "{paged}", "page_size": 1, "page": 1, "fields": fields}),
         Ask("The test of the connection", DOCUMENTS, {"page": 1, "page_size": 1, "fields": "id"}),
+        # Paperless-ngx 3 lists the IDs of every document in version 9 alone, in the field all.
+        Ask("The test of the connection before Paperless named its version", DOCUMENTS, {"page": 1, "page_size": 1, "fields": "id"}, accept=OLDEST_ACCEPT, lines=("3",)),
+        # As occ check reads the IDs of every document in version 10, which has no field all.
+        Ask("The IDs of the documents", DOCUMENTS, {"ordering": "id", "page": 1, "page_size": 1000, "fields": "id"}),
         Ask("The newest documents", DOCUMENTS, {"ordering": "-added", "page": 1, "page_size": 25, "fields": recent_fields}),
         # As the dashboard asks for a page further, and for the newest documents of an owner.
         Ask("The newest documents, a page further", DOCUMENTS, {"ordering": "-added", "page": 2, "page_size": 1, "fields": recent_fields}),

@@ -327,7 +327,7 @@ Der Benutzer liest es auch selbst: Der Abschnitt **Paperless** seiner persönlic
 
 - Nextcloud 33 bis 35
 - PHP 8.2 oder neuer, soweit die jeweilige Version von Nextcloud es unterstützt
-- Ein erreichbares Paperless-ngx 2.16 oder neuer, 3.x eingeschlossen, mit Zugriff auf die API. Die App fragt nach Version 9 seiner API, die Paperless-ngx 2.16 und neuer und 3.x sprechen; Vertragstests prüfen die App jede Woche gegen echtes Paperless-ngx, das letzte Release von 2.20 und das neueste Release von 3.x; die [Kompatibilität](https://dennis-otto.github.io/paperless-unified-search/de/reference.html#kompatibilität) sagt es im Detail.
+- Ein erreichbares Paperless-ngx 2.16 oder neuer, 3.x eingeschlossen, mit Zugriff auf die API. Die App fragt nach Version 10 seiner API, wo Paperless sie spricht, wie 3.x, und sonst nach Version 9, die Paperless-ngx 2.16 und neuer sprechen; Vertragstests prüfen die App jede Woche gegen echtes Paperless-ngx, das letzte Release von 2.20 und das neueste Release von 3.x; die [Kompatibilität](https://dennis-otto.github.io/paperless-unified-search/de/reference.html#kompatibilität) sagt es im Detail.
 - Synchronisierte Dateien, deren Namen `[P<ID>]` enthalten, die einem Nextcloud-Konto gehören, dem Archiv-Konto, und nur lesend mit den Benutzern geteilt sind, die sie sehen dürfen, zum Beispiel die von Paperless Sync oder von [jeder anderen Synchronisierung](#funktioniert-mit-jeder-synchronisierung). Ohne sie zeigt die Suche keine Paperless-Dokumente.
 
 <!-- --8<-- [end:requirements] -->
@@ -398,6 +398,7 @@ Die URL darf einen Docker-Dienst mit Unterstrich nennen, etwa `http://paperless_
 | Diese URL antwortet, aber nicht mit der API von Paperless (HTTP 404) | Der Pfad der URL oder ein Proxy vor Paperless | Gib die Adresse ein, die Paperless im Browser öffnet, mit dem Pfad, wenn Paperless unter einem läuft, etwa `https://example.com/paperless` |
 | Diese URL leitet an eine andere Adresse weiter | Die URL leitet um, und mit **Paperless läuft in meinem lokalen Netzwerk** folgt Nextcloud keiner Weiterleitung | Gib die Adresse ein, auf die sie weiterleitet, etwa die mit `https` |
 | Paperless ist älter als 2.16 | Paperless hat mit HTTP 406 geantwortet: Es spricht Version 9 seiner API nicht, nach der die App fragt | Aktualisiere Paperless-ngx auf 2.16 oder neuer |
+| Paperless spricht Version 10 seiner API nicht mehr | Paperless hat auf Version 10 seiner API, nach der die App fragt, seit Paperless sie genannt hat, mit HTTP 406 geantwortet: Dieses Paperless ist neuer als die App, oder es wurde auf eine ältere Version zurückgesetzt oder aus einer älteren Sicherung wiederhergestellt | Aktualisiere Paperless Unified Search; nach einem Zurücksetzen oder einer Wiederherstellung behebt es **Verbindung testen und speichern** |
 | Paperless hat mit einem Fehler geantwortet | Paperless selbst ist fehlgeschlagen, mit einem Status 5xx | Sieh in das Protokoll von Paperless, oder versuche es später erneut |
 | Diese URL antwortet, aber nicht wie Paperless-ngx | Ein anderer Dienst oder die Anmeldeseite eines Proxys | Prüfe die Adresse und ihren Pfad |
 | Nextcloud verbindet sich nicht mit Adressen des lokalen Netzwerks | Paperless läuft unter einer Adresse des lokalen Netzwerks | Wähle **Paperless läuft in meinem lokalen Netzwerk**, wie [Paperless in deinem lokalen Netzwerk](#paperless-in-deinem-lokalen-netzwerk) beschreibt |

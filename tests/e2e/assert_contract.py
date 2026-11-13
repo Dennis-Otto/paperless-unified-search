@@ -24,10 +24,12 @@ that Paperless Sync gives each owner need, in the search and in occ check. It pr
 report in Markdown, which paperless-contract.sh adds to the summary of the job, and fails
 with the first broken promise or with every difference of the mock.
 
-    ACCEPT='application/json; version=9' FIELDS=id,title,… RECENT_FIELDS=id,title,added,… OWNER_FIELDS=id,owner UNKNOWN_DOCUMENT=… HIDDEN_DOCUMENT=… LINE=3 python assert_contract.py
+    ACCEPT='application/json; version=10' OLDEST_ACCEPT='application/json; version=9' FIELDS=id,title,… RECENT_FIELDS=id,title,added,… OWNER_FIELDS=id,owner UNKNOWN_DOCUMENT=… HIDDEN_DOCUMENT=… LINE=3 python assert_contract.py
 
-ACCEPT, FIELDS, RECENT_FIELDS, OWNER_FIELDS, UNKNOWN_DOCUMENT and HIDDEN_DOCUMENT come
-from lib/Service/PaperlessApiService.php, so that the contract checks what the app sends
+ACCEPT, the version of the API that the app asks this line of Paperless for once Paperless
+named its version, OLDEST_ACCEPT, the one that it asks for before, FIELDS, RECENT_FIELDS,
+OWNER_FIELDS, UNKNOWN_DOCUMENT and HIDDEN_DOCUMENT come from lib/Model/PaperlessVersion.php
+and lib/Service/PaperlessApiService.php, so that the contract checks what the app sends
 and reads; LINE is the line of Paperless-ngx, 2 or 3.
 """
 
@@ -218,8 +220,8 @@ class Paperless:
             headers["Authorization"] = f"Token {self.token}"
         return request(f"{PAPERLESS}{path}?{urlencode(query)}", headers=headers)
 
-    def documents(self, what, expected_status=200, **query):
-        answer = self.get("/api/documents/", **query)
+    def documents(self, what, expected_status=200, *, accept=None, **query):
+        answer = self.get("/api/documents/", accept=accept, **query)
         expect(answer.status == expected_status, f"{what}: Paperless answered HTTP {answer.status} instead of {expected_status}: {answer.body[:300]!r}")
         return answer
 
@@ -376,6 +378,28 @@ class Paperless:
                     return {title: present[title]["id"] for title, _ in SEED.values()}
             expect(time.monotonic() < deadline, f"Paperless didn't read and index the documents within {DEADLINE} s; it has {sorted(present)}.")
             time.sleep(3)
+
+
+def check_api_versions(paperless, oldest, report):
+    """The IDs of every document of a list, the field all, which the test of the connection
+    reads in the oldest version of the API that the app knows, before Paperless named its
+    version, and which version 10 leaves out: occ check then reads the IDs from the pages of
+    the documents, ordered by ID and with their IDs alone, as PaperlessApiService asks."""
+    first = paperless.documents("The test of the connection before Paperless named its version", page=1, page_size=1, fields="id", accept=oldest).json("The test of the connection")
+    listed = first.get("all")
+    expect(isinstance(listed, list) and listed and all(isinstance(each, int) for each in listed), f"Paperless lists no IDs of every document in the field all of {oldest!r}: {listed!r}")
+    expect(first.get("count") == len(listed), f"The field all names {len(listed)} documents, the count {first.get('count')!r}.")
+    if paperless.accept == oldest:
+        report.passed("The IDs of every document", f"in the field all of {code(oldest)}, as the test of the connection reads them")
+        return
+
+    newer = paperless.documents("The test of the connection", page=1, page_size=1, fields="id").json("The test of the connection")
+    expect("all" not in newer, f"Paperless lists the IDs of every document in {paperless.accept!r} as well: {newer.get('all')!r}")
+    expect(newer.get("count") == len(listed), f"In {paperless.accept!r} Paperless counts {newer.get('count')!r} documents, in {oldest!r} {len(listed)}.")
+    pages = paperless.documents("The IDs of the documents for occ check", ordering="id", page=1, page_size=OWNERS_PAGE_SIZE, fields="id").json("The IDs of the documents")
+    ids = [result.get("id") if isinstance(result, dict) else result for result in pages.get("results", [])]
+    expect(ids == sorted(listed), f"The pages of the documents name {ids!r}, the field all {sorted(listed)!r}.")
+    report.passed("The IDs of every document", f"in the field all of {code(oldest)}, which {code(paperless.accept)} leaves out, and in the pages of the documents by ID, as occ check reads them then")
 
 
 def check_paperless(paperless, line, report):
@@ -1105,14 +1129,15 @@ def check_parity(paperless, ids, line, viewer, stranger, report):
 
 def main():
     accept = os.environ.get("ACCEPT", "")
+    oldest = os.environ.get("OLDEST_ACCEPT", "")
     fields = [field for field in os.environ.get("FIELDS", "").split(",") if field]
     recent_fields = [field for field in os.environ.get("RECENT_FIELDS", "").split(",") if field]
     owner_fields = [field for field in os.environ.get("OWNER_FIELDS", "").split(",") if field]
     unknown = os.environ.get("UNKNOWN_DOCUMENT", "")
     hidden = os.environ.get("HIDDEN_DOCUMENT", "")
     line = os.environ.get("LINE", "")
-    if not accept or not fields or not recent_fields or not owner_fields or not unknown or not hidden or line not in ("2", "3"):
-        print("ACCEPT, FIELDS, RECENT_FIELDS, OWNER_FIELDS, UNKNOWN_DOCUMENT, HIDDEN_DOCUMENT and LINE (2 or 3) are missing; paperless-contract.sh sets them.", file=sys.stderr)
+    if not accept or not oldest or not fields or not recent_fields or not owner_fields or not unknown or not hidden or line not in ("2", "3"):
+        print("ACCEPT, OLDEST_ACCEPT, FIELDS, RECENT_FIELDS, OWNER_FIELDS, UNKNOWN_DOCUMENT, HIDDEN_DOCUMENT and LINE (2 or 3) are missing; paperless-contract.sh sets them.", file=sys.stderr)
         return 2
 
     report = Report()
@@ -1125,6 +1150,7 @@ def main():
         report.passed("Documents", f"{len(ids)} synthetic text files, read and indexed")
         version, api_version, shown = check_paperless(paperless, line, report)
         heading = f"### The contract with Paperless-ngx {version} (newest API version {api_version})"
+        check_api_versions(paperless, oldest, report)
         viewer_id, viewer, stranger = check_privileges(paperless, report)
         check_similar(paperless, ids, viewer, unknown, hidden, report)
         check_nextcloud(paperless, line, ids, version, api_version, shown, viewer, report)
