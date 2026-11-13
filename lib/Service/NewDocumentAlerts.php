@@ -89,9 +89,11 @@ final class NewDocumentAlerts {
 	public const MOST_UNANSWERED = 3;
 
 	/**
-	 * The seconds that the saved searches of one run may take in all, after which the run
-	 * stops asking and rests: the documents keep waiting, and the next run asks again. Each
-	 * request may take up to ten seconds, and every user may save ten searches.
+	 * The seconds that the saved searches of one run may take after the first of them that
+	 * got no answer, after which the run stops asking and rests: the documents keep waiting,
+	 * and the next run asks again. Each request may take up to ten seconds, and every user may
+	 * save ten searches. A Paperless that answers every search, however slowly, is never cut
+	 * off, since the next run would start from the first search again and never get further.
 	 */
 	public const SEARCH_SECONDS = 60;
 
@@ -328,8 +330,8 @@ final class NewDocumentAlerts {
 	 *
 	 * Paperless can stop answering in the middle of a run, too, as it may while it consumes
 	 * the new documents, which is when this job has work: after MOST_UNANSWERED searches in
-	 * a row without an answer, or once the searches have taken SEARCH_SECONDS, the run stops
-	 * asking and rests, and the documents wait for the next one (#418).
+	 * a row without an answer, or SEARCH_SECONDS after the first search without one, the run
+	 * stops asking and rests, and the documents wait for the next one (#418).
 	 *
 	 * @param array<array-key, AlertChoice> $choices
 	 * @param non-empty-list<int> $documentIds
@@ -337,7 +339,7 @@ final class NewDocumentAlerts {
 	 * @throws PaperlessRequestException when Paperless stops answering, or the time is up
 	 */
 	private function findTerms(array $choices, array $documentIds): array {
-		$started = $this->timeFactory->getTime();
+		$unansweredSince = null;
 		$found = [];
 		$refused = [];
 		$failed = [];
@@ -348,8 +350,8 @@ final class NewDocumentAlerts {
 				if (isset($found[$term])) {
 					continue;
 				}
-				if ($this->timeFactory->getTime() - $started >= self::SEARCH_SECONDS) {
-					throw new PaperlessRequestException(RequestFailure::Timeout, 'The saved searches took ' . self::SEARCH_SECONDS . ' seconds or more.');
+				if ($unansweredSince !== null && $this->timeFactory->getTime() - $unansweredSince >= self::SEARCH_SECONDS) {
+					throw new PaperlessRequestException(RequestFailure::Timeout, 'The saved searches went on for ' . self::SEARCH_SECONDS . ' seconds or more after one got no answer.');
 				}
 
 				try {
@@ -364,7 +366,12 @@ final class NewDocumentAlerts {
 					$failed[$term] = true;
 					$failure = $error;
 					// An answer of Paperless that isn't a list of documents is still an answer.
-					$unanswered = $error instanceof PaperlessRequestException ? 0 : $unanswered + 1;
+					if ($error instanceof PaperlessRequestException) {
+						$unanswered = 0;
+						continue;
+					}
+					$unanswered++;
+					$unansweredSince ??= $this->timeFactory->getTime();
 					if ($unanswered === self::MOST_UNANSWERED) {
 						// Not the message of the error, which may hold the URL with the words of a user.
 						throw new PaperlessRequestException(PaperlessRequestException::unanswered($error)->reason, self::MOST_UNANSWERED . ' saved searches in a row got no answer (' . $error::class . ').', previous: $error);

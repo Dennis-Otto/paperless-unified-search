@@ -799,26 +799,59 @@ final class NewDocumentAlertsTest extends TestCase {
 	}
 
 	/**
-	 * The searches of a run take SEARCH_SECONDS at most, also when Paperless answers each
-	 * one slowly: then the run rests, the documents wait, and the next run asks again.
+	 * Once a search got no answer, the searches of a run go on for SEARCH_SECONDS at most,
+	 * also when answers between the ones without keep the count of MOST_UNANSWERED from
+	 * filling: then the run rests, the documents wait, and the next run asks again.
 	 */
-	public function testTheSearchesOfARunEndWhenTheirTimeIsUp(): void {
-		$this->wants('jamie', false, 'a', 'b', 'c', 'd');
+	public function testTheSearchesOfARunEndAMinuteAfterOneGotNoAnswer(): void {
+		$this->wants('jamie', false, 'a', 'b', 'c', 'd', 'e');
+		$this->seen(100);
+		$this->file('/archive/files/A [P101].pdf');
+		$this->file('/jamie/files/A [P101].pdf');
+		$timeout = new RuntimeException('Timeout');
+
+		$this->runJob($this->slow(30, $this->paperless(
+			$this->documents([['id' => 101, 'title' => 'A']]),
+			$timeout,
+			$this->documents([]),
+			$timeout,
+		)));
+
+		self::assertCount(4, $this->requests, 'The fourth search would start 60 seconds after the first without an answer and is never asked.');
+		self::assertSame([], $this->sent);
+		self::assertSame([101], array_column($this->stored()['waiting'], 'id'));
+		self::assertSame(1, $this->stored()['failures']);
+		self::assertSame('The saved searches went on for 60 seconds or more after one got no answer.', $this->logged[0][2]['error']);
+	}
+
+	/**
+	 * A Paperless that answers every search, if slowly, gets them all asked, however long
+	 * they take together: a run cut off by time would keep nothing of them, so the next one
+	 * would start from the first search again and never get further, and no notification
+	 * would go out on an instance with many saved searches.
+	 */
+	public function testAPaperlessThatAnswersSlowlyGetsEverySearchAsked(): void {
+		$this->wants('jamie', false, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h');
 		$this->seen(100);
 		$this->file('/archive/files/A [P101].pdf');
 		$this->file('/jamie/files/A [P101].pdf');
 
-		$this->runJob($this->slow(30, $this->paperless(
+		$this->runJob($this->slow(9, $this->paperless(
 			$this->documents([['id' => 101, 'title' => 'A']]),
 			$this->documents([]),
 			$this->documents([]),
+			$this->documents([]),
+			$this->documents([]),
+			$this->documents([]),
+			$this->documents([]),
+			$this->documents([]),
+			$this->documents([['id' => 101]]),
 		)));
 
-		self::assertCount(3, $this->requests, 'The third search would start after 60 seconds and is never asked.');
-		self::assertSame([], $this->sent);
-		self::assertSame([101], array_column($this->stored()['waiting'], 'id'));
-		self::assertSame(1, $this->stored()['failures']);
-		self::assertSame('The saved searches took 60 seconds or more.', $this->logged[0][2]['error']);
+		self::assertCount(9, $this->requests, 'Eight searches of nine seconds each, 72 in all, are all asked.');
+		self::assertSame(['jamie'], array_column($this->sent, 'user'));
+		self::assertSame(['h'], array_column($this->sent[0]['subject']['documents'], 'search'));
+		self::assertSame(0, $this->stored()['failures']);
 	}
 
 	/**
