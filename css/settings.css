@@ -314,6 +314,13 @@
 	white-space: normal;
 }
 
+/* The error as it is, on a line of its own below what failed and what to do. */
+.paperless-unified-search-events .paperless-unified-search-event-detail {
+	color: var(--color-text-maxcontrast, #6b6b6b);
+	display: block;
+	margin-top: 2px;
+}
+
 /*
  * Too narrow for five columns, such as on a phone, each problem is a card of its own and
  * each cell names its column. The headings of the columns stay for screen readers, which

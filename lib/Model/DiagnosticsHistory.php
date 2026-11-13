@@ -111,7 +111,7 @@ final class DiagnosticsHistory implements JsonSerializable {
 	}
 
 	/**
-	 * @return array{since: int, failed: int, retried: int, lastFailureAt: ?int, recoveredAt: ?int, events: list<array{time: int, kind: string, step: string, error: string, message: string, durationMs: int}>}
+	 * @return array{since: int, failed: int, retried: int, lastFailureAt: ?int, recoveredAt: ?int, events: list<array{time: int, kind: string, step: string, error: string, message: string, durationMs: int, reason?: string, status?: ?int}>}
 	 */
 	public function jsonSerialize(): array {
 		return [

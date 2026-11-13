@@ -77,14 +77,23 @@ final class SettingsMessages {
 	 * The message for a test of the connection that failed, which says what to correct.
 	 */
 	public function forFailure(PaperlessRequestException $exception): string {
-		$status = (string)$exception->status;
+		return $this->forCause($exception->reason, $exception->status);
+	}
 
-		return match ($exception->reason) {
-			RequestFailure::Unauthorized => $this->l10n->t('Paperless rejected the API token (HTTP %s). Check the token, and that its account may view documents.', [$status]),
+	/**
+	 * The message for the cause of a request to Paperless that failed, with the status of
+	 * its answer, null without one: the same for the test of the connection and for a
+	 * problem of the search in its history.
+	 */
+	public function forCause(RequestFailure $reason, ?int $status): string {
+		$code = (string)$status;
+
+		return match ($reason) {
+			RequestFailure::Unauthorized => $this->l10n->t('Paperless rejected the API token (HTTP %s). Check the token, and that its account may view documents.', [$code]),
 			RequestFailure::NotFound => $this->l10n->t('This URL answers, but not with the API of Paperless (HTTP 404). Check the address and its path.'),
-			RequestFailure::Redirect => $this->l10n->t('This URL forwards to another address (HTTP %s). Enter the address that it forwards to.', [$status]),
+			RequestFailure::Redirect => $this->l10n->t('This URL forwards to another address (HTTP %s). Enter the address that it forwards to.', [$code]),
 			RequestFailure::UnsupportedVersion => $this->l10n->t('Paperless is older than 2.16 and does not speak version 9 of its API (HTTP 406). Update Paperless-ngx.'),
-			RequestFailure::Http => $this->l10n->t('Paperless answered with an error (HTTP %s). Check its log, or try again later.', [$status]),
+			RequestFailure::Http => $this->l10n->t('Paperless answered with an error (HTTP %s). Check its log, or try again later.', [$code]),
 			RequestFailure::NotPaperless => $this->l10n->t('This URL answers, but not like Paperless-ngx. Check the address and its path.'),
 			RequestFailure::LocalAddress => $this->l10n->t('Nextcloud does not connect to addresses of the local network unless you allow it. If Paperless runs in your local network or in Docker, select “Paperless runs in my local network”.'),
 			RequestFailure::Certificate => $this->l10n->t('Nextcloud does not trust the certificate of Paperless at this URL. If Paperless uses a certificate of its own, import it with occ security:certificates:import.'),

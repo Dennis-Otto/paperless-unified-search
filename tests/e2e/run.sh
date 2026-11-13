@@ -1093,6 +1093,13 @@ occ paperless_unified_search:search e2e-other pagetest --limit=21 --explain --js
 assert_occ verdicts "${TMP_DIR}/explain-tagged.json" "${verdicts[@]}"
 try_search 200 e2e-other
 assert_occ try "${TMP_DIR}/answer.json" e2e-other 123=not_tagged 999=not_tagged
+# e2e-other reads the tag in the section Paperless of the personal settings (#412).
+curl --fail-with-body --silent --show-error \
+	--user "e2e-other:${PASSWORD}" \
+	--output "${TMP_DIR}/personal-tagged.html" \
+	"${BASE_URL}/index.php/settings/user/paperless_unified_search"
+expect_text 'the documents that have one of these tags in Paperless: katja.' "${TMP_DIR}/personal-tagged.html" \
+	"The personal settings of e2e-other don't name the tag katja that Paperless Sync lets it see."
 occ config:app:delete paperless_sync user_tags >/dev/null
 occ config:app:delete paperless_sync target_user >/dev/null
 for _ in {1..10}; do

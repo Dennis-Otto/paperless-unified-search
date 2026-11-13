@@ -313,6 +313,8 @@ Seit seiner Version 1.9.0 kann Paperless Sync einen Benutzer nur die Dokumente m
 
 Die Administrationseinstellungen listen die Benutzer mit Tags unter dem Archiv-Konto, und **Suche ausprobieren** und `occ paperless_unified_search:search --explain` nennen ein Dokument ohne einen seiner Tags *Nicht unter den Tags, die katja sehen darf* (`not tagged`).
 
+Der Benutzer liest es auch selbst: Der Abschnitt **Paperless** seiner persönlichen Einstellungen beginnt mit *Dein Administrator lässt dich nur die Dokumente finden, die in Paperless eines dieser Tags haben: Katja, Household.* und zeigt sich einem solchen Benutzer auch, wenn du Benutzern keine seiner Einstellungen zur Wahl lässt, damit eine Suche, die für ein anderes Dokument leer bleibt, nicht kaputt wirkt.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagrams/what-a-user-with-tags-sees.de.dark.svg">
   <img src="docs/images/diagrams/what-a-user-with-tags-sees.de.svg" alt="Was ein Benutzer mit Tags sieht: Paperless Sync lässt katja nur die Dokumente mit dem Tag Katja sehen. katja sucht nach Rechnung, und die Suche fragt Paperless nur nach den Dokumenten mit diesem Tag. Sie prüft die Tags jedes Dokuments, das zurückkommt: Ein Dokument ohne den Tag Katja bleibt verborgen, nicht unter ihren Tags, auch wenn eine Freigabe des Archivs katja seine Datei zeigt. Ein Dokument mit dem Tag erscheint, wenn katja seine Datei öffnen kann, ihre eigene Kopie, die Paperless Sync schreibt, oder eine Datei des Archiv-Kontos, die nur lesend mit ihr geteilt ist, und bleibt sonst ohne Datei verborgen. Ein Benutzer ohne Zeile, etwa der Administrator, sieht wie bisher jedes Dokument.">

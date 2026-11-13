@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\Service;
 
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
+use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
 use OCA\PaperlessUnifiedSearch\Model\DiagnosticsHistory;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -59,21 +60,23 @@ final class SearchDiagnostics {
 	}
 
 	/**
-	 * A search that failed and showed the user no documents.
+	 * A search that failed and showed the user no documents, with the cause of a request
+	 * to Paperless that failed; an error of the files has none.
 	 *
 	 * @param list<string> $secrets the token and the term, which the message must not show
 	 */
 	public function recordFailure(string $step, Throwable $error, int $durationMs, array $secrets): void {
-		$this->record(SearchEvent::KIND_FAILED, $step, $error, $durationMs, $secrets);
+		$this->record(SearchEvent::KIND_FAILED, $step, $error, $durationMs, $secrets, $error instanceof PaperlessRequestException ? $error : null);
 	}
 
 	/**
-	 * A request to Paperless that got no answer, while its second try got one.
+	 * A request to Paperless that got no answer, while its second try got one: its error is
+	 * the one of the HTTP client, with the cause of a request without answer.
 	 *
 	 * @param list<string> $secrets the token and the term, which the message must not show
 	 */
 	public function recordRetry(Throwable $error, int $durationMs, array $secrets): void {
-		$this->record(SearchEvent::KIND_RETRIED, SearchEvent::STEP_PAPERLESS, $error, $durationMs, $secrets);
+		$this->record(SearchEvent::KIND_RETRIED, SearchEvent::STEP_PAPERLESS, $error, $durationMs, $secrets, PaperlessRequestException::unanswered($error));
 	}
 
 	/**
@@ -111,7 +114,7 @@ final class SearchDiagnostics {
 	/**
 	 * @param list<string> $secrets
 	 */
-	private function record(string $kind, string $step, Throwable $error, int $durationMs, array $secrets): void {
+	private function record(string $kind, string $step, Throwable $error, int $durationMs, array $secrets, ?PaperlessRequestException $cause): void {
 		if (!$this->mayWrite($kind)) {
 			return;
 		}
@@ -124,6 +127,8 @@ final class SearchDiagnostics {
 			self::shortClassName($error),
 			self::describe($error->getMessage(), $secrets),
 			max(0, $durationMs),
+			$cause?->reason,
+			$cause?->status,
 		);
 
 		$this->save($this->withCounted($this->getHistory() ?? DiagnosticsHistory::start($time))->with($event));

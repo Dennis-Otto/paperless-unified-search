@@ -10,6 +10,8 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\Tests\Unit\Service;
 
 use OCA\PaperlessUnifiedSearch\AppInfo\AppConstants;
+use OCA\PaperlessUnifiedSearch\Exception\PaperlessRequestException;
+use OCA\PaperlessUnifiedSearch\Exception\RequestFailure;
 use OCA\PaperlessUnifiedSearch\Model\DiagnosticsHistory;
 use OCA\PaperlessUnifiedSearch\Model\SearchEvent;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
@@ -155,7 +157,39 @@ final class SearchDiagnosticsTest extends TestCase {
 			'error' => 'RuntimeException',
 			'message' => 'cURL error 6: Could not resolve host: paperless.example.com',
 			'durationMs' => 3002,
+			// The cause of the error of the HTTP client, as the test of the connection names it.
+			'reason' => 'unknown_host',
+			'status' => null,
 		], $history->events[0]->jsonSerialize());
+	}
+
+	/**
+	 * A request to Paperless that failed keeps its cause and the status of its answer, for
+	 * which the settings say what to do; another error, such as one of the files, has none.
+	 */
+	public function testAFailedRequestToPaperlessKeepsItsCause(): void {
+		$diagnostics = $this->diagnostics();
+
+		$diagnostics->recordFailure(SearchEvent::STEP_PAPERLESS, PaperlessRequestException::forStatus(401), 40, ['TEST_VALUE']);
+		$this->now++;
+		$diagnostics->recordFailure(SearchEvent::STEP_FILES, new RuntimeException('Storage unavailable'), 12, []);
+
+		$history = $diagnostics->getHistory();
+		self::assertNotNull($history);
+		self::assertNull($history->events[0]->reason);
+		self::assertNull($history->events[0]->status);
+		self::assertSame(RequestFailure::Unauthorized, $history->events[1]->reason);
+		self::assertSame(401, $history->events[1]->status);
+		self::assertSame([
+			'time' => self::NOW,
+			'kind' => SearchEvent::KIND_FAILED,
+			'step' => SearchEvent::STEP_PAPERLESS,
+			'error' => 'PaperlessRequestException',
+			'message' => 'Paperless returned HTTP 401.',
+			'durationMs' => 40,
+			'reason' => 'unauthorized',
+			'status' => 401,
+		], $this->storedHistory()['events'][1]);
 	}
 
 	public function testTheHistoryCountsEveryProblemAndKeepsTheLatestNewestFirst(): void {

@@ -83,7 +83,21 @@ final class PersonalSettingsTest extends TestCase {
 			'terms' => "tag:unpaid\ntax",
 			'mostTerms' => 10,
 			'alertsUrl' => '/apps/paperless_unified_search/personal/alerts',
+			'tags' => [],
 		], $form->getParams());
+	}
+
+	/**
+	 * A user whom Paperless Sync lets see only the documents with some tags gets their names,
+	 * which the section shows, as the administration settings list them; every other user
+	 * gets none (#412).
+	 */
+	public function testTheFormNamesTheTagsThatTheUserMaySee(): void {
+		$this->settings['paperless_sync.user_tags'] = "katja = Katja, Household\ndennis =";
+
+		self::assertSame(['Katja', 'Household'], $this->settings('katja')->getForm()->getParams()['tags']);
+		self::assertSame([], $this->settings('dennis')->getForm()->getParams()['tags']);
+		self::assertSame([], $this->settings(null)->getForm()->getParams()['tags']);
 	}
 
 	/**
@@ -157,6 +171,39 @@ final class PersonalSettingsTest extends TestCase {
 		$this->storedToken = $token;
 
 		self::assertSame($shown ? AppConstants::APP_ID : null, $this->settings('dennis')->getSection());
+	}
+
+	/**
+	 * @return array<string, array{array<string, mixed>, ?string, bool}>
+	 */
+	public static function sectionsOfTags(): array {
+		return [
+			// settings that differ from a connected app in which users may choose neither, the user, whether the section shows
+			'a user with tags' => [[], 'katja', true],
+			'a user without tags' => [[], 'dennis', false],
+			'without a user' => [[], null, false],
+			'a user with tags without an archive account' => [['archive_owner' => ''], 'katja', false],
+			'a user with tags without a URL' => [['paperless_url' => ''], 'katja', false],
+		];
+	}
+
+	/**
+	 * A user whom Paperless Sync lets see only the documents with some tags gets the section
+	 * while the search shows Paperless documents, even when the administrators let users
+	 * choose neither, so that it can name the tags (#412).
+	 *
+	 * @param array<string, mixed> $settings
+	 */
+	#[DataProvider('sectionsOfTags')]
+	public function testTheSectionShowsTheTagsOfAUserWhomTheyLimit(array $settings, ?string $userId, bool $shown): void {
+		$this->settings[AppConstants::APP_ID . '.personal_always_search'] = false;
+		$this->settings[AppConstants::APP_ID . '.new_document_alerts'] = false;
+		$this->settings['paperless_sync.user_tags'] = 'katja = Katja, Household';
+		foreach ($settings as $key => $value) {
+			$this->settings[AppConstants::APP_ID . '.' . $key] = $value;
+		}
+
+		self::assertSame($shown ? AppConstants::APP_ID : null, $this->settings($userId)->getSection());
 	}
 
 	public function testTheSettingComesFirstInTheSection(): void {
