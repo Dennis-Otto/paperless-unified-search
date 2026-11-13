@@ -207,7 +207,14 @@
 		"Created the account {account} in Paperless and saved the settings with its token.": "已在 Paperless 中建立帳號 {account}，並已使用其 Token 儲存設定。",
 		"Writable in a trusted folder": "在受信任的資料夾中可寫入",
 		"Writable in a trusted folder: the file lies in a Team folder or an external storage that the administrator trusts with the archive, but the user may change it there, or add files to its folder, so its name proves nothing. Let the user only read the folder.": "在受信任的資料夾中可寫入：該檔案位於管理員託付封存的團隊資料夾或外部儲存空間中，但該使用者可以在那裡變更它，或在其資料夾中新增檔案，因此檔名無法證明任何事。請讓該使用者對該資料夾只有讀取權限。",
-		"The files in these Team folders and external storages stand for documents too, for each user who may only read them there: %s. occ paperless_unified_search:trusted-mounts changes them.": "這些團隊資料夾和外部儲存空間中的檔案同樣代表文件，適用於在那裡只能讀取它們的每個使用者：%s。使用 occ paperless_unified_search:trusted-mounts 變更它們。"
+		"The files in these Team folders and external storages stand for documents too, for each user who may only read them there: %s. occ paperless_unified_search:trusted-mounts changes them.": "這些團隊資料夾和外部儲存空間中的檔案同樣代表文件，適用於在那裡只能讀取它們的每個使用者：%s。使用 occ paperless_unified_search:trusted-mounts 變更它們。",
+		"Find similar documents in Paperless": "在 Paperless 中尋找相似文件",
+		"Documents similar to {file}": "與 {file} 相似的文件",
+		"Close": "關閉",
+		"Show more": "顯示更多",
+		"Try again": "重試",
+		"Looking for similar documents…": "正在尋找相似文件…",
+		"Paperless found no similar document with a file that you can open.": "Paperless 沒有找到含有您可以開啟之檔案的相似文件。"
 	},
 	"pluralForm": "nplurals=1; plural=0;"
 }

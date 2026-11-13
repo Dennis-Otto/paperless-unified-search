@@ -1,0 +1,157 @@
+/**
+ * SPDX-FileCopyrightText: 2026 Dennis Otto
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/* The dialog of the documents similar to a file, from js/files.js, in the colors of the theme of
+   Nextcloud. Nextcloud styles every button with button:not(.button-vue, [class^=vs__]), which wins
+   over a single class, so the rules of the buttons name the dialog as well. */
+.paperless-unified-search-similar {
+	box-sizing: border-box;
+	width: min(600px, calc(100vw - 32px));
+	max-height: min(80vh, 720px);
+	padding: 0;
+	border: none;
+	border-radius: var(--border-radius-container, var(--border-radius-large));
+	background-color: var(--color-main-background);
+	color: var(--color-main-text);
+	box-shadow: 0 0 40px var(--color-box-shadow);
+}
+
+.paperless-unified-search-similar[open] {
+	display: flex;
+	flex-direction: column;
+}
+
+.paperless-unified-search-similar::backdrop {
+	background-color: rgba(0, 0, 0, 0.5);
+}
+
+.paperless-unified-search-similar__header {
+	display: flex;
+	gap: 8px;
+	align-items: flex-start;
+	padding: 16px 8px 8px 20px;
+}
+
+.paperless-unified-search-similar__heading {
+	flex: 1 1 auto;
+	min-width: 0;
+	margin: 6px 0 0;
+	font-size: 1.25em;
+	font-weight: bold;
+	overflow-wrap: anywhere;
+}
+
+.paperless-unified-search-similar .paperless-unified-search-similar__close {
+	display: flex;
+	flex: 0 0 auto;
+	align-items: center;
+	justify-content: center;
+	width: var(--default-clickable-area, 44px);
+	height: var(--default-clickable-area, 44px);
+	min-height: 0;
+	margin: 0;
+	padding: 0;
+	border: none;
+	border-radius: var(--border-radius-element, var(--border-radius-pill));
+	background-color: transparent;
+	color: var(--color-main-text);
+}
+
+.paperless-unified-search-similar .paperless-unified-search-similar__close:hover,
+.paperless-unified-search-similar .paperless-unified-search-similar__close:focus-visible {
+	background-color: var(--color-background-hover);
+}
+
+.paperless-unified-search-similar__close svg {
+	width: 20px;
+	height: 20px;
+}
+
+.paperless-unified-search-similar__results {
+	flex: 1 1 auto;
+	margin: 0;
+	padding: 0 8px 12px;
+	overflow-y: auto;
+	list-style: none;
+}
+
+.paperless-unified-search-similar__result {
+	display: flex;
+	gap: 12px;
+	align-items: center;
+	min-height: var(--default-clickable-area, 44px);
+	padding: 6px 12px;
+	border-radius: var(--border-radius-element, var(--border-radius-large));
+	color: var(--color-main-text);
+	text-decoration: none;
+}
+
+.paperless-unified-search-similar__result:hover,
+.paperless-unified-search-similar__result:focus-visible {
+	background-color: var(--color-background-hover);
+}
+
+.paperless-unified-search-similar__thumbnail {
+	flex: 0 0 auto;
+	width: 40px;
+	height: 40px;
+	border-radius: var(--border-radius, 3px);
+	object-fit: cover;
+}
+
+.paperless-unified-search-similar__text {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.paperless-unified-search-similar__title {
+	overflow: hidden;
+	font-weight: bold;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.paperless-unified-search-similar__subline {
+	overflow: hidden;
+	color: var(--color-text-maxcontrast);
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.paperless-unified-search-similar__status {
+	margin: 0;
+	padding: 8px 20px;
+	color: var(--color-text-maxcontrast);
+}
+
+.paperless-unified-search-similar__status:empty {
+	display: none;
+}
+
+.paperless-unified-search-similar__status[data-kind="error"] {
+	color: var(--color-error-text, var(--color-error));
+}
+
+.paperless-unified-search-similar .paperless-unified-search-similar__more {
+	align-self: center;
+	min-height: var(--default-clickable-area, 44px);
+	margin: 4px 20px 16px;
+	padding: 0 16px;
+	border: 2px solid var(--color-border-dark);
+	border-radius: var(--border-radius-element, var(--border-radius-pill));
+	background-color: var(--color-main-background);
+	color: var(--color-main-text);
+	font-weight: bold;
+}
+
+.paperless-unified-search-similar .paperless-unified-search-similar__more[hidden] {
+	display: none;
+}
+
+.paperless-unified-search-similar .paperless-unified-search-similar__more:hover,
+.paperless-unified-search-similar .paperless-unified-search-similar__more:focus-visible {
+	background-color: var(--color-background-hover);
+}

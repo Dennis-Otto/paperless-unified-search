@@ -209,5 +209,12 @@ OC.L10N.register(
 		'Writable in a trusted folder': 'Schrijfbaar in een vertrouwde map',
 		'Writable in a trusted folder: the file lies in a Team folder or an external storage that the administrator trusts with the archive, but the user may change it there, or add files to its folder, so its name proves nothing. Let the user only read the folder.': 'Schrijfbaar in een vertrouwde map: het bestand staat in een teammap of externe opslag waaraan de beheerder het archief toevertrouwt, maar de gebruiker mag het daar wijzigen of bestanden aan de map ervan toevoegen, dus de naam ervan bewijst niets. Laat de gebruiker de map alleen lezen.',
 		'The files in these Team folders and external storages stand for documents too, for each user who may only read them there: %s. occ paperless_unified_search:trusted-mounts changes them.': 'De bestanden in deze teammappen en externe opslagen staan ook voor documenten, voor elke gebruiker die ze daar alleen mag lezen: %s. occ paperless_unified_search:trusted-mounts wijzigt ze.',
+		'Find similar documents in Paperless': 'Vergelijkbare documenten in Paperless zoeken',
+		'Documents similar to {file}': 'Documenten vergelijkbaar met {file}',
+		'Close': 'Sluiten',
+		'Show more': 'Meer tonen',
+		'Try again': 'Opnieuw proberen',
+		'Looking for similar documents…': 'Vergelijkbare documenten zoeken…',
+		'Paperless found no similar document with a file that you can open.': 'Paperless heeft geen vergelijkbaar document gevonden met een bestand dat je kunt openen.',
 	},
 	'nplurals=2; plural=(n != 1);')
