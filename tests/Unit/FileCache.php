@@ -42,7 +42,9 @@ trait FileCache {
 
 			return array_values(array_filter(
 				$nodes,
-				fn (Node $node): bool => $this->finds($query->getSearchOperation(), $namesInTheCache[$node->getId()] ?? $node->getName()),
+				// The ID only for names of their own, so that a file whose ID fails fails in the
+				// code under test, not here.
+				fn (Node $node): bool => $this->finds($query->getSearchOperation(), $namesInTheCache === [] ? $node->getName() : ($namesInTheCache[$node->getId()] ?? $node->getName())),
 			));
 		});
 		$home = '/' . $uid . '/files';
