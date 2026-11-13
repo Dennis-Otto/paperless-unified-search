@@ -208,5 +208,12 @@ OC.L10N.register(
 		'Writable in a trusted folder': 'In einem vertrauenswürdigen Ordner beschreibbar',
 		'Writable in a trusted folder: the file lies in a Team folder or an external storage that the administrator trusts with the archive, but the user may change it there, or add files to its folder, so its name proves nothing. Let the user only read the folder.': 'In einem vertrauenswürdigen Ordner beschreibbar: Die Datei liegt in einem Teamordner oder externen Speicher, dem die Administration das Archiv anvertraut, aber der Benutzer darf sie dort ändern oder Dateien in ihren Ordner legen, daher beweist ihr Name nichts. Geben Sie dem Benutzer auf den Ordner nur Leserechte.',
 		'The files in these Team folders and external storages stand for documents too, for each user who may only read them there: %s. occ paperless_unified_search:trusted-mounts changes them.': 'Die Dateien in diesen Teamordnern und externen Speichern stehen ebenfalls für Dokumente, für jeden Benutzer, der sie dort nur lesen darf: %s. occ paperless_unified_search:trusted-mounts ändert sie.',
+		'Find similar documents in Paperless': 'Ähnliche Dokumente in Paperless finden',
+		'Documents similar to {file}': 'Dokumente ähnlich wie {file}',
+		'Close': 'Schließen',
+		'Show more': 'Mehr anzeigen',
+		'Try again': 'Noch einmal versuchen',
+		'Looking for similar documents…': 'Ähnliche Dokumente werden gesucht …',
+		'Paperless found no similar document with a file that you can open.': 'Paperless hat kein ähnliches Dokument mit einer Datei gefunden, die Sie öffnen können.',
 	},
 	'nplurals=2; plural=(n != 1);')

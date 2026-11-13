@@ -29,3 +29,4 @@ Copy [the template](0000-template.md) to the next free number, replace the descr
 | [0017](0017-search-further-while-a-page-has-no-result.md) | Search further while a page has no result | accepted |
 | [0018](0018-rest-the-search-after-a-request-without-answer.md) | Rest the search for 30 seconds after a request without answer | accepted |
 | [0019](0019-trust-team-folders-and-external-storages-that-the-administrator-names.md) | Trust the Team folders and external storages that the administrator names | accepted |
+| [0020](0020-similar-documents-from-files.md) | Show the documents similar to a file of Files in a dialog of the app | accepted |

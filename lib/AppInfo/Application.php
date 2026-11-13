@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\AppInfo;
 
 use OCA\PaperlessUnifiedSearch\Dashboard\RecentDocumentsWidget;
+use OCA\PaperlessUnifiedSearch\Listener\LoadAdditionalScriptsListener;
 use OCA\PaperlessUnifiedSearch\Notification\Notifier;
 use OCA\PaperlessUnifiedSearch\Reference\PaperlessReferenceProvider;
 use OCA\PaperlessUnifiedSearch\Search\PaperlessSearchProvider;
@@ -37,6 +38,9 @@ final class Application extends App implements IBootstrap {
 		// The words of the notifications about new documents, which Nextcloud asks for as a
 		// client fetches them, in the language of the user.
 		$context->registerNotifierService(Notifier::class);
+		// "Find similar documents in Paperless" in the menu of a file in Files, by the name of
+		// the event of Files, which isn't part of the public API.
+		$context->registerEventListener(LoadAdditionalScriptsListener::EVENT, LoadAdditionalScriptsListener::class);
 	}
 
 	public function boot(IBootContext $context): void {

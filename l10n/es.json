@@ -206,7 +206,14 @@
 		"Created the account {account} in Paperless and saved the settings with its token.": "Se creó la cuenta {account} en Paperless y se guardó la configuración con su token.",
 		"Writable in a trusted folder": "Con escritura en una carpeta de confianza",
 		"Writable in a trusted folder: the file lies in a Team folder or an external storage that the administrator trusts with the archive, but the user may change it there, or add files to its folder, so its name proves nothing. Let the user only read the folder.": "Con escritura en una carpeta de confianza: el archivo está en una carpeta de equipo o un almacenamiento externo al que el administrador confía el archivo de documentos, pero el usuario puede cambiarlo allí o añadir archivos a su carpeta, así que su nombre no demuestra nada. Deja que el usuario solo lea la carpeta.",
-		"The files in these Team folders and external storages stand for documents too, for each user who may only read them there: %s. occ paperless_unified_search:trusted-mounts changes them.": "Los archivos de estas carpetas de equipo y almacenamientos externos también representan documentos, para cada usuario que solo puede leerlos allí: %s. occ paperless_unified_search:trusted-mounts los cambia."
+		"The files in these Team folders and external storages stand for documents too, for each user who may only read them there: %s. occ paperless_unified_search:trusted-mounts changes them.": "Los archivos de estas carpetas de equipo y almacenamientos externos también representan documentos, para cada usuario que solo puede leerlos allí: %s. occ paperless_unified_search:trusted-mounts los cambia.",
+		"Find similar documents in Paperless": "Buscar documentos similares en Paperless",
+		"Documents similar to {file}": "Documentos similares a {file}",
+		"Close": "Cerrar",
+		"Show more": "Mostrar más",
+		"Try again": "Intentar de nuevo",
+		"Looking for similar documents…": "Buscando documentos similares…",
+		"Paperless found no similar document with a file that you can open.": "Paperless no encontró ningún documento similar con un archivo que puedas abrir."
 	},
 	"pluralForm": "nplurals=3; plural=n == 1 ? 0 : n != 0 && n % 1000000 == 0 ? 1 : 2;"
 }
