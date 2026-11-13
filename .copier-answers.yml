@@ -3,7 +3,7 @@
 # Change one only with `copier update --defaults --vcs-ref=:current: --data name=value`,
 # on a branch and merged in a pull request, as the FAQ of the blueprint shows:
 # https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/faq.md#how-do-i-change-an-answer-later
-_commit: v1.18.0
+_commit: v1.18.1
 _src_path: https://github.com/Dennis-Otto/repo-blueprint.git
 author: Dennis Otto
 copyright: 2026 Dennis Otto

@@ -71,6 +71,59 @@ permissions: {}
 # The GitHub CLI of the jobs sends no telemetry to GitHub.
 env:
   GH_TELEMETRY: "false"
+  # Each call of its API asks for the version of the REST API that the steps are
+  # written for (decision 0125).
+  API_VERSION_HEADER: "X-GitHub-Api-Version: 2022-11-28"
+  # What every step of a bot here that calls GitHub runs first, with eval "$OUTAGE":
+  # one copy for every step, which needs no checkout, as a checkout fails in an outage
+  # too (decision 0155). GitHub answers a call now and then with an error of its own,
+  # a 5xx, or not in time, and for minutes in an outage, as on 8 and 9 November 2026:
+  # tried runs a call of gh again then, four times in all, 10, 20 and 40 seconds
+  # apart, and prints what it printed only once it worked; once runs a call that
+  # writes, such as a comment, only once, as GitHub may have done it before it
+  # failed. Any other error, such as a refusal, stops either at once; the last one
+  # stays in $RUNNER_TEMP/gh-errors, and given_up says whether it was GitHub's. When
+  # GitHub keeps failing, the trap ends the step with a notice instead of a failure:
+  # the next event or the bot-health bot catches up, and a person has nothing to do
+  # (decision 0136), and leaves $RUNNER_TEMP/github-sat-out for the steps after it,
+  # as a job that sat out an outage passed nothing. A step says in INSTEAD what it
+  # does instead, if it does more than nothing.
+  OUTAGE: |
+    outage="$RUNNER_TEMP/github-unavailable"
+    unavailable() {
+      local status=$?
+      if ((status)) && [[ -e "$outage" ]]; then
+        echo "::notice title=GitHub is unavailable::GitHub kept failing ($(head -n 1 "$RUNNER_TEMP/gh-errors")), as in an outage of GitHub (https://www.githubstatus.com), so ${INSTEAD:-the bot did nothing this time}; its next run catches up. Nothing to do for a person."
+        touch "$RUNNER_TEMP/github-sat-out"
+        exit 0
+      fi
+    }
+    trap unavailable EXIT
+    calls() {
+      local waits="$1" wait output
+      shift
+      rm -f "$outage"
+      for wait in $waits; do
+        if output="$("$@" 2>"$RUNNER_TEMP/gh-errors")"; then
+          printf '%s\n' "$output"
+          return 0
+        fi
+        if ! grep -qiE 'HTTP 5[0-9]{2}|timeout|timed out|connection reset|unexpected EOF' "$RUNNER_TEMP/gh-errors"; then
+          cat "$RUNNER_TEMP/gh-errors" >&2
+          return 1
+        fi
+        if ((wait == 0)); then
+          touch "$outage"
+          cat "$RUNNER_TEMP/gh-errors" >&2
+          return 1
+        fi
+        echo "GitHub failed, so gh tries again in $wait seconds: $(head -n 1 "$RUNNER_TEMP/gh-errors")" >&2
+        sleep "$wait"
+      done
+    }
+    tried() { calls "10 20 40 0" "$@"; }
+    once() { calls 0 "$@"; }
+    given_up() { [[ -e "$outage" ]]; }
 
 jobs:
   update:
@@ -219,6 +272,7 @@ jobs:
           fi
       - name: Create a token of the release app
         id: app
+        continue-on-error: true
         if: steps.release-app.outputs.ready == 'true'
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
@@ -234,6 +288,19 @@ jobs:
           permission-pull-requests: write
           permission-statuses: read
           permission-workflows: write
+      # In an outage, GitHub fails the token of the app too, after its own three more
+      # tries: the bot sits it out with a notice, while a token that GitHub refuses as
+      # it answers fails the job (decision 0155).
+      - name: Tell an outage of GitHub from a refused token
+        if: steps.app.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          eval "$OUTAGE"
+          tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO" --jq .full_name > /dev/null
+          echo "::error title=The release app gave no token::GitHub answers, but refused the token of the release app; the log of the step that asked for it has its answer. Most often the app isn't installed on this repository or lacks a permission that the bot asks for, or the secret RELEASE_AUTOMATION_PRIVATE_KEY of the environment release holds the key of another app. A short outage of GitHub that ended a moment ago looks the same: if none of these holds, the next run tells them apart."
+          exit 1
       # The default branch, also for pull_request_target, without the token.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.app.outputs.token != ''

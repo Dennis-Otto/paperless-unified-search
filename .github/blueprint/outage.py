@@ -13,6 +13,9 @@ something that a person must act on.
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from blueprint.github import Api, GitHubError
 
 # The title of the notices of the bots in an outage of GitHub.
@@ -34,6 +37,16 @@ def unreachable(error: GitHubError) -> str:
         "(https://www.githubstatus.com), so the bot did nothing this time; its next "
         "run catches up. Nothing to do for a person."
     )
+
+
+def sit_out() -> None:
+    """Leaves the mark of a job that sat out an outage, $RUNNER_TEMP/github-sat-out,
+    as the trap of the bots in bash does: a later step of the job, such as the one
+    that closes the issue of the fix bot of main, learns that the job did nothing,
+    so that it passed nothing either (decision 0155). Outside a runner, there is no
+    job to tell."""
+    if folder := os.environ.get("RUNNER_TEMP"):
+        (Path(folder) / "github-sat-out").touch()
 
 
 def never_started(
