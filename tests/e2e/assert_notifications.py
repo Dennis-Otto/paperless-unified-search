@@ -6,9 +6,11 @@
 """Checks an answer of the notifications API of Nextcloud for run.sh, from standard input:
 
     assert_notifications.py none        the user has no notification of the app
-    assert_notifications.py one TITLE   the user has one notification of the app, which
+    assert_notifications.py one TITLE [SEARCH]
+                                        the user has one notification of the app, which
                                         names the document with this title and links its
-                                        file, as Nextcloud prepares it for a client
+                                        file, as Nextcloud prepares it for a client, and
+                                        names the saved search that found it, if given
 """
 
 import json
@@ -46,6 +48,8 @@ def main():
     document = notification["subjectRichParameters"]["document"]
     if document["type"] != "file" or document["name"] != title or "/f/" not in document["link"]:
         fail(f"The rich subject doesn't name the file: {notification}")
+    if len(sys.argv) > 3 and sys.argv[3] not in notification["message"]:
+        fail(f"The notification doesn't name the search {sys.argv[3]!r}: {notification}")
 
 
 if __name__ == "__main__":

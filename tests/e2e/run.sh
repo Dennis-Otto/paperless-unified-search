@@ -1349,7 +1349,7 @@ expect_status 200 'Sharing the folder of the new document with e2e-jamie read-on
 	--data-urlencode 'permissions=1' \
 	"${BASE_URL}/ocs/v2.php/apps/files_sharing/api/v1/shares"
 run_alerts_job 2 'id__in=1001'
-assert_notifications e2e-jamie one 'Letter of the tax office'
+assert_notifications e2e-jamie one 'Letter of the tax office' 'e2e-alert'
 assert_notifications e2e-sam none
 run_alerts_job 1 'ordering=-id'
 if grep --fixed-strings 'query=' "${TMP_DIR}/job-requests.txt" >/dev/null; then

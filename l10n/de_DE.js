@@ -60,6 +60,7 @@ OC.L10N.register(
 		'Your administrator lets you find only the documents that have one of these tags in Paperless: %s.': 'Ihr Administrator lässt Sie nur die Dokumente finden, die in Paperless eines dieser Tags haben: %s.',
 		'Saving…': 'Wird gespeichert…',
 		'New in Paperless: {document}': 'Neu in Paperless: {document}',
+		'Found by your saved search: {search}': 'Gefunden von deiner gespeicherten Suche: {search}',
 		'_%n new document in Paperless_::_%n new documents in Paperless_': ['%n neues Dokument in Paperless', '%n neue Dokumente in Paperless'],
 		'_and %n more_::_and %n more_': ['und %n weiteres', 'und %n weitere'],
 		'Your administrator does not let users ask for notifications about new documents.': 'Ihr Administrator erlaubt Benutzern keine Benachrichtigungen über neue Dokumente.',

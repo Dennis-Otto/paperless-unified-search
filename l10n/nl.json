@@ -59,6 +59,7 @@
 		"Your administrator lets you find only the documents that have one of these tags in Paperless: %s.": "Je beheerder laat je alleen de documenten vinden die in Paperless een van deze labels hebben: %s.",
 		"Saving…": "Opslaan…",
 		"New in Paperless: {document}": "Nieuw in Paperless: {document}",
+		"Found by your saved search: {search}": "Gevonden door je opgeslagen zoekopdracht: {search}",
 		"_%n new document in Paperless_::_%n new documents in Paperless_": ["%n nieuw document in Paperless", "%n nieuwe documenten in Paperless"],
 		"_and %n more_::_and %n more_": ["en nog %n", "en nog %n"],
 		"Your administrator does not let users ask for notifications about new documents.": "Je beheerder staat gebruikers niet toe meldingen over nieuwe documenten te vragen.",

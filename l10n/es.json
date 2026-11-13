@@ -59,6 +59,7 @@
 		"Your administrator lets you find only the documents that have one of these tags in Paperless: %s.": "Tu administrador solo te deja encontrar los documentos que tienen una de estas etiquetas en Paperless: %s.",
 		"Saving…": "Guardando…",
 		"New in Paperless: {document}": "Nuevo en Paperless: {document}",
+		"Found by your saved search: {search}": "Encontrado por tu búsqueda guardada: {search}",
 		"_%n new document in Paperless_::_%n new documents in Paperless_": ["%n documento nuevo en Paperless", "%n documentos nuevos en Paperless", "%n documentos nuevos en Paperless"],
 		"_and %n more_::_and %n more_": ["y %n más", "y %n más", "y %n más"],
 		"Your administrator does not let users ask for notifications about new documents.": "Tu administrador no permite a los usuarios pedir notificaciones de documentos nuevos.",
