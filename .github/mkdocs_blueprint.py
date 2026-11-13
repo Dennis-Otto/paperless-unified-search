@@ -138,11 +138,13 @@ DESCRIPTION = 160
 # the website serves it, and the tags of the head that name the picture of a preview
 # card, which the home page of each language takes from it instead of the card that
 # the social plugin draws: that one shows the name of the website twice and cuts its
-# description. The inner pages keep their cards, whose titles are their own.
+# description. The inner pages keep their cards, whose titles are their own, and the
+# home page keeps the text of its picture (og:image:alt and twitter:image:alt), which
+# names the project as the preview does.
 PREVIEW = ".github/social-preview.png"
 SERVED_PREVIEW = "assets/images/social-preview.png"
 PREVIEW_TAG = re.compile(
-    rf'<meta\b(?={TAG}\bproperty="(?:og:image(?::\w+)?|twitter:image)")'
+    rf'<meta\b(?={TAG}\bproperty="(?:og:image(?::(?!alt")\w+)?|twitter:image)")'
     rf"{TAG}>\n?",
     re.I,
 )
