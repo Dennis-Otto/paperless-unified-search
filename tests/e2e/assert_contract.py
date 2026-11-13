@@ -75,6 +75,11 @@ EVERY_TERM = "contract"
 UNFINISHED = "invoice created:[2026 to"
 # The longest that Paperless may take to read the documents and to index them.
 DEADLINE = 240
+# The pauses in seconds before an edit of the bulk editor is sent again while Paperless
+# fails to make it, and the start of the text with which it answers such an edit, as
+# EDIT_PAUSES_MS and EDIT_FAILED of lib/Service/SearchAccountSetup.php (#346).
+EDIT_PAUSES = (1, 2, 4, 8)
+EDIT_FAILED = b"Error performing bulk "
 
 # The permissions of the account that the documentation recommends for the token: to view
 # documents, the names of correspondents, types and tags that the results show, and its UI
@@ -314,8 +319,24 @@ class Paperless:
         expect(answer.status == 201, f"Paperless didn't add {name} to /api/{kind}/ (HTTP {answer.status}): {answer.body[:300]!r}")
         return answer.json(f"/api/{kind}/")["id"]
 
+    def edit(self, path, body):
+        """An edit of the bulk editor of Paperless, sent again after each pause of
+        EDIT_PAUSES while Paperless fails to make it, as the one-click search account of the
+        app does (SearchAccountSetup::edit()): Paperless-ngx 2 on SQLite updates the
+        documents of an edit afterwards, in a task of its worker, and an edit that comes
+        while the task writes, such as the next one of the contract, fails with "database
+        is locked" (#346). Paperless answers that with HTTP 400 and a text that starts with
+        EDIT_FAILED; it gives the reason of a refusal in JSON, which would fail again and
+        ends the edit at once, as does any other error. Each edit of the contract sets the
+        same value again, so another try changes nothing that the first made."""
+        for pause in (*EDIT_PAUSES, None):
+            answer = self.send(path, body)
+            if pause is None or answer.status != 400 or not answer.body.startswith(EDIT_FAILED):
+                return answer
+            time.sleep(pause)
+
     def bulk_edit(self, documents, method, parameters):
-        answer = self.send("/api/documents/bulk_edit/", {"documents": documents, "method": method, "parameters": parameters})
+        answer = self.edit("/api/documents/bulk_edit/", {"documents": documents, "method": method, "parameters": parameters})
         expect(answer.status == 200, f"The bulk editor of Paperless refused {method} (HTTP {answer.status}): {answer.body[:300]!r}")
 
     def let_view(self, users, *, documents=None, objects=None):
@@ -327,7 +348,7 @@ class Paperless:
             self.bulk_edit(documents, "set_permissions", {"set_permissions": permissions, "merge": True})
             return
         kind, ids = objects
-        answer = self.send("/api/bulk_edit_objects/", {"objects": ids, "object_type": kind, "operation": "set_permissions", "permissions": permissions, "merge": True})
+        answer = self.edit("/api/bulk_edit_objects/", {"objects": ids, "object_type": kind, "operation": "set_permissions", "permissions": permissions, "merge": True})
         expect(answer.status == 200, f"Paperless didn't let {users} view the {kind} {ids} (HTTP {answer.status}): {answer.body[:300]!r}")
 
     def ui_settings(self, token):
@@ -1160,7 +1181,8 @@ def main():
         check_parity(paperless, ids, line, viewer, stranger, report)
         check_search_account(paperless, report)
         # Last: Paperless-ngx 2 indexes a document that changes its owner in a task of its
-        # own, whose writes to its database a bulk edit right after it could wait for.
+        # own, whose writes to its database a bulk edit right after it would wait out
+        # (Paperless.edit()).
         check_owners(paperless, ids, viewer_id, viewer, report)
     except Broken as broken:
         status = 1
