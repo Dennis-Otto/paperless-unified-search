@@ -751,7 +751,7 @@ Eine Datei mit der Kennung eines Dokuments in einer solchen Einbindung steht dan
 - Gitleaks durchsucht jeden Push und jeden Pull Request.
 - Dependency Review blockiert neu hinzugefügte verwundbare oder nicht freigegebene Abhängigkeiten.
 - Psalm analysiert den PHP-Code und CodeQL das JavaScript in jedem Pull Request.
-- Jedes Release enthält eine SPDX-SBOM, eine abgetrennte Signatur und öffentliche Build-Provenienz von Sigstore.
+- Jedes Release enthält SBOMs als SPDX und CycloneDX, die `THIRD_PARTY_NOTICES.md` seiner Abhängigkeiten, eine abgetrennte Signatur und öffentliche Build-Provenienz von Sigstore.
 - OpenSSF Scorecard prüft die Sicherheit der Lieferkette des Repositorys jede Woche.
 
 Sicherheitsprobleme meldest du so, wie [SECURITY.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/SECURITY.md) es beschreibt.
@@ -853,9 +853,9 @@ Lies [CONTRIBUTING.md](https://github.com/Dennis-Otto/paperless-unified-search/b
 
 ### Releases
 
-Der geschützte Branch `main` verlangt die Prüfungen der CI, die Docker-End-to-End-Tests gegen jede unterstützte Version von Nextcloud, das Dependency Review, CodeQL, den Secret Scan, die Lizenzen jeder Datei (REUSE), die Abzeichnung jedes Commits und einen Titel als Conventional Commit. Dependabot hält die Abhängigkeiten aktuell; Routine-Updates mergen von selbst, sobald jede Prüfung besteht.
+Der geschützte Branch `main` verlangt die Prüfungen der CI, die Docker-End-to-End-Tests gegen jede unterstützte Version von Nextcloud, das Dependency Review, CodeQL, den Secret Scan, die Lizenzen jeder Datei (REUSE), die Abzeichnung jedes Commits und einen Titel als Conventional Commit. Renovate hält die Abhängigkeiten aktuell; Routine-Updates mergen von selbst, sobald jede Prüfung besteht.
 
-Der Release-Bot führt einen Pull Request für das nächste Release. Seine Version folgt aus den Titeln der gemergten Pull Requests, und was sie unter *Unreleased* in `CHANGELOG.md` geschrieben haben, wird zu seinen Notizen. Sein Merge veröffentlicht das Release: das Paket, vor und nach dem Signieren mit dem Zertifikat der App geprüft, seine abgetrennte Signatur, eine SPDX-SBOM und signierte Build-Provenienz, dann dasselbe Paket im Nextcloud App Store, danach so geprüft, wie Benutzer es prüfen können. Siehe [die Anleitung der Releases](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/releases.md).
+Der Release-Bot führt einen Pull Request für das nächste Release. Seine Version folgt aus den Titeln der gemergten Pull Requests, und was sie in ihren Dateien in `changelog.d/` beschreiben, wird zu seinen Notizen. Sein Merge veröffentlicht das Release: das Paket, vor und nach dem Signieren mit dem Zertifikat der App geprüft, seine abgetrennte Signatur, SBOMs als SPDX und CycloneDX, die `THIRD_PARTY_NOTICES.md` und signierte Build-Provenienz, dann dasselbe Paket im Nextcloud App Store, danach so geprüft, wie Benutzer es prüfen können. Siehe [die Anleitung der Releases](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/docs/releases.md).
 
 Die Entscheidungen des Projekts und was du von der Unterstützung erwarten kannst, beschreiben [GOVERNANCE.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/GOVERNANCE.md), [SUPPORT.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/SUPPORT.md) und [CODE_OF_CONDUCT.md](https://github.com/Dennis-Otto/paperless-unified-search/blob/main/CODE_OF_CONDUCT.md).
 

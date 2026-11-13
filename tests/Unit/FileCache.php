@@ -28,18 +28,23 @@ trait FileCache {
 	 * folders in it or in the folders shared with the user. Its search answers a query as
 	 * Nextcloud's file cache does, with the nodes whose names match it, and fails the test
 	 * for a search by text, which Nextcloud runs as a query of its own for every call.
+	 * The file cache holds the name that the owner gave a file shared on its own, not the
+	 * one that the recipient sees, so it finds such a file by its name in $namesInTheCache.
 	 *
 	 * @param list<Node> $nodes
+	 * @param array<int, string> $namesInTheCache the name in the file cache of a node, by its ID, where it differs
 	 */
-	private function userFolder(array $nodes, string $uid = 'dennis'): Folder {
+	private function userFolder(array $nodes, string $uid = 'dennis', array $namesInTheCache = []): Folder {
 		$folder = $this->createStub(Folder::class);
-		$folder->method('search')->willReturnCallback(function (string|ISearchQuery $query) use ($nodes): array {
+		$folder->method('search')->willReturnCallback(function (string|ISearchQuery $query) use ($nodes, $namesInTheCache): array {
 			self::assertInstanceOf(ISearchQuery::class, $query, 'The file cache was searched by text.');
 			$this->searches[] = $query;
 
 			return array_values(array_filter(
 				$nodes,
-				fn (Node $node): bool => $this->finds($query->getSearchOperation(), $node->getName()),
+				// The ID only for names of their own, so that a file whose ID fails fails in the
+				// code under test, not here.
+				fn (Node $node): bool => $this->finds($query->getSearchOperation(), $namesInTheCache === [] ? $node->getName() : ($namesInTheCache[$node->getId()] ?? $node->getName())),
 			));
 		});
 		$home = '/' . $uid . '/files';

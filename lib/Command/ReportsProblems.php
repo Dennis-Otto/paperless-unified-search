@@ -62,9 +62,10 @@ trait ReportsProblems {
 	 * Says what failed in a request to Paperless and what to correct, as the settings page
 	 * does, and with -v the error itself.
 	 *
-	 * @param list<string> $secrets the token and the term, which the error must not show
+	 * @param list<string> $secrets the token, which the error must not show
+	 * @param list<string> $terms the search terms, which the error must not show as words
 	 */
-	private static function requestFailed(OutputInterface $output, SettingsMessages $messages, PaperlessRequestException $exception, array $secrets): void {
+	private static function requestFailed(OutputInterface $output, SettingsMessages $messages, PaperlessRequestException $exception, array $secrets, array $terms = []): void {
 		self::error($output, $messages->forFailure($exception));
 		if ($exception->reason === RequestFailure::LocalAddress) {
 			self::errors($output)->writeln('The option --allow-local of occ paperless_unified_search:setup allows this Paperless, and only this one, at an address of the local network.');
@@ -72,7 +73,7 @@ trait ReportsProblems {
 
 		$cause = $exception->getPrevious() ?? $exception;
 		self::errors($output)->writeln(
-			OutputFormatter::escape($exception->reason->value . ', ' . $cause::class . ': ' . SearchDiagnostics::describe($cause->getMessage(), $secrets)),
+			OutputFormatter::escape($exception->reason->value . ', ' . $cause::class . ': ' . SearchDiagnostics::describe($cause->getMessage(), $secrets, $terms)),
 			OutputInterface::VERBOSITY_VERBOSE,
 		);
 	}

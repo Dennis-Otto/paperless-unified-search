@@ -137,7 +137,7 @@ final class Search extends Command {
 		} catch (Throwable $error) {
 			// An answer of Paperless that isn't the documents, or a request without answer.
 			$exception = $error instanceof PaperlessRequestException ? $error : PaperlessRequestException::unanswered($error);
-			self::requestFailed($output, $this->messages, $exception, [$this->configService->getToken(), $term]);
+			self::requestFailed($output, $this->messages, $exception, [$this->configService->getToken()], [$term]);
 
 			return self::FAILURE;
 		}

@@ -64,10 +64,11 @@ final class SearchDiagnostics {
 	 * A search that failed and showed the user no documents, with the cause of a request
 	 * to Paperless that failed, also of one that got no answer; an error of the files has none.
 	 *
-	 * @param list<string> $secrets the token and the term, which the message must not show
+	 * @param list<string> $secrets the token, which the message must not show
+	 * @param list<string> $terms the search terms, which the message must not show as words
 	 */
-	public function recordFailure(string $step, Throwable $error, int $durationMs, array $secrets): void {
-		$this->record(SearchEvent::KIND_FAILED, $step, $error, $durationMs, $secrets, self::causeOf($step, $error));
+	public function recordFailure(string $step, Throwable $error, int $durationMs, array $secrets, array $terms = []): void {
+		$this->record(SearchEvent::KIND_FAILED, $step, $error, $durationMs, $secrets, $terms, self::causeOf($step, $error));
 	}
 
 	/**
@@ -97,10 +98,11 @@ final class SearchDiagnostics {
 	 * A request to Paperless that got no answer, while its second try got one: its error is
 	 * the one of the HTTP client, with the cause of a request without answer.
 	 *
-	 * @param list<string> $secrets the token and the term, which the message must not show
+	 * @param list<string> $secrets the token, which the message must not show
+	 * @param list<string> $terms the search terms, which the message must not show as words
 	 */
-	public function recordRetry(Throwable $error, int $durationMs, array $secrets): void {
-		$this->record(SearchEvent::KIND_RETRIED, SearchEvent::STEP_PAPERLESS, $error, $durationMs, $secrets, PaperlessRequestException::unanswered($error));
+	public function recordRetry(Throwable $error, int $durationMs, array $secrets, array $terms = []): void {
+		$this->record(SearchEvent::KIND_RETRIED, SearchEvent::STEP_PAPERLESS, $error, $durationMs, $secrets, $terms, PaperlessRequestException::unanswered($error));
 	}
 
 	/**
@@ -137,8 +139,9 @@ final class SearchDiagnostics {
 
 	/**
 	 * @param list<string> $secrets
+	 * @param list<string> $terms
 	 */
-	private function record(string $kind, string $step, Throwable $error, int $durationMs, array $secrets, ?PaperlessRequestException $cause): void {
+	private function record(string $kind, string $step, Throwable $error, int $durationMs, array $secrets, array $terms, ?PaperlessRequestException $cause): void {
 		if (!$this->mayWrite($kind)) {
 			return;
 		}
@@ -149,7 +152,7 @@ final class SearchDiagnostics {
 			$kind,
 			$step,
 			self::shortClassName($error),
-			self::describe($error->getMessage(), $secrets),
+			self::describe($error->getMessage(), $secrets, $terms),
 			max(0, $durationMs),
 			$cause?->reason,
 			$cause?->status,
@@ -252,11 +255,14 @@ final class SearchDiagnostics {
 	 * token and the term go in any case, also of letters beyond ASCII, Ärger for ärger as
 	 * well, by the simple case folding of Unicode, which leaves STRASSE for straße; and
 	 * after the rest is cleaned up, so that removing a part of the message can't join one
-	 * of them together.
+	 * of them together. The token goes wherever the message holds it; a term only where it
+	 * stands as a word of its own and not in the words that cURL puts before its number,
+	 * so that a search for time keeps "timed out" and one for error "cURL error 28".
 	 *
-	 * @param list<string> $secrets
+	 * @param list<string> $secrets the token and whatever else goes wherever it stands
+	 * @param list<string> $terms the search terms, which go where they stand as words
 	 */
-	public static function describe(string $message, array $secrets): string {
+	public static function describe(string $message, array $secrets, array $terms = []): string {
 		// Bytes that aren't UTF-8, as an error may repeat them, would fail the patterns.
 		$message = mb_scrub($message, 'UTF-8');
 		// cURL points to the page of its error codes, which says nothing about this one.
@@ -264,8 +270,10 @@ final class SearchDiagnostics {
 		$message = preg_replace('~(https?://[^\s?#`"\'<>]*)[?#][^\s`"\'<>]*~u', '$1', $message) ?? '';
 		$message = self::collapseSpaces($message);
 
-		foreach (self::longestFirst($secrets) as $secret) {
-			$message = preg_replace('/' . preg_quote($secret, '/') . '/iu', '…', $message) ?? '';
+		$anywhere = self::longestFirst($secrets);
+		foreach (self::longestFirst([...$secrets, ...$terms]) as $secret) {
+			$pattern = in_array($secret, $anywhere, true) ? '/' . preg_quote($secret, '/') . '/iu' : self::termPattern($secret);
+			$message = preg_replace($pattern, '…', $message) ?? '';
 		}
 
 		return mb_strimwidth(trim($message), 0, self::MESSAGE_LENGTH, '…', 'UTF-8');
@@ -289,6 +297,22 @@ final class SearchDiagnostics {
 		usort($cleaned, static fn (string $first, string $second): int => mb_strlen($second) <=> mb_strlen($first));
 
 		return $cleaned;
+	}
+
+	/**
+	 * The pattern of a term as a word of its own: an end of the term that is a letter, a
+	 * mark or a digit may not continue a longer word, so time stays in "timed out" and
+	 * error in "errors"; and never in the words "cURL error" and the number that cURL puts
+	 * before its message, which hold no term.
+	 *
+	 * @return non-empty-string
+	 */
+	private static function termPattern(string $term): string {
+		$word = '[\p{L}\p{M}\p{N}]';
+		$before = preg_match('/^' . $word . '/u', $term) === 1 ? '(?<!' . $word . ')' : '';
+		$after = preg_match('/' . $word . '$/u', $term) === 1 ? '(?!' . $word . ')' : '';
+
+		return '/cURL error \d+:(*SKIP)(*FAIL)|' . $before . preg_quote($term, '/') . $after . '/iu';
 	}
 
 	private static function collapseSpaces(string $text): string {

@@ -366,7 +366,8 @@ final class PaperlessSearchProvider implements IExternalProvider, IFilteringProv
 			$step,
 			$error,
 			$this->getElapsedMs($started),
-			[$this->configService->getToken(), $term],
+			[$this->configService->getToken()],
+			[$term],
 		);
 	}
 

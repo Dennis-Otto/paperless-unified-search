@@ -88,7 +88,7 @@ English, German, French, Spanish, Dutch, Simplified Chinese and Traditional Chin
 
 ## Which versions of Nextcloud and Paperless does it support?
 
-Nextcloud 33 to 35, and Paperless-ngx with its REST API. [Compatibility](reference.md#compatibility) says which versions the tests cover.
+Nextcloud 33 to 35, and Paperless-ngx 2.16 or newer, 3.x included, with its REST API. [Compatibility](reference.md#compatibility) says which versions the tests cover.
 
 ## Where do I ask a question, or report a bug?
 

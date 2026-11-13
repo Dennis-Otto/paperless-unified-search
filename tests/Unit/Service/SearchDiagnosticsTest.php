@@ -42,45 +42,54 @@ final class SearchDiagnosticsTest extends TestCase {
 	}
 
 	/**
-	 * @return array<string, array{0: Throwable, 1: list<string>, 2: string, 3: string, 4?: string}>
+	 * The token, the terms, the type and the message of each failure, and the cause that
+	 * the error of the HTTP client names.
+	 *
+	 * @return array<string, array{0: Throwable, 1: list<string>, 2: list<string>, 3: string, 4: string, 5?: string}>
 	 */
 	public static function failures(): array {
 		return [
 			'timeout of cURL, with the term in the query' => [
 				new RuntimeException('cURL error 28: Connection timed out after 3001 milliseconds (see https://curl.haxx.se/libcurl/c/libcurl-errors.html) for https://paperless.example.com/api/documents/?query=salary&page=1&page_size=5'),
-				['TEST_VALUE', 'salary'],
+				['TEST_VALUE'],
+				['salary'],
 				'RuntimeException',
 				'cURL error 28: Connection timed out after 3001 milliseconds for https://paperless.example.com/api/documents/',
 				'timeout',
 			],
 			'token and term in the message' => [
 				new RuntimeException("Token TEST_VALUE refused\n\tfor Salary July"),
-				['TEST_VALUE', 'salary july'],
+				['TEST_VALUE'],
+				['salary july'],
 				'RuntimeException',
 				'Token … refused for …',
 			],
 			'term too short to leave out' => [
 				new RuntimeException('Paperless returned HTTP 502.'),
-				['TEST_VALUE', 'HT'],
+				['TEST_VALUE'],
+				['HT'],
 				'RuntimeException',
 				'Paperless returned HTTP 502.',
 			],
 			'term of three letters, just long enough' => [
 				new RuntimeException('Tax return for TAX 2026'),
-				['TEST_VALUE', 'tax'],
+				['TEST_VALUE'],
+				['tax'],
 				'RuntimeException',
 				'… return for … 2026',
 			],
 			// Two letters in four bytes of UTF-8 are too short: the letters count, not the bytes.
 			'term of two letters beyond ASCII' => [
 				new RuntimeException('Bescheid äö für ÄÖ'),
-				['TEST_VALUE', 'äö'],
+				['TEST_VALUE'],
+				['äö'],
 				'RuntimeException',
 				'Bescheid äö für ÄÖ',
 			],
 			'host refused by Nextcloud' => [
 				new LocalServerException('Host "paperless.example.com" violates local access rules'),
-				['TEST_VALUE', 'salary'],
+				['TEST_VALUE'],
+				['salary'],
 				'LocalServerException',
 				'Host "paperless.example.com" violates local access rules',
 				'local_address',
@@ -88,41 +97,69 @@ final class SearchDiagnosticsTest extends TestCase {
 			'fragment of a URL' => [
 				new RuntimeException('Redirected to `https://paperless.example.com/login#next`'),
 				[],
+				[],
 				'RuntimeException',
 				'Redirected to `https://paperless.example.com/login`',
 			],
 			// str_ireplace() folds the case of ASCII letters only, and left Ärger in place (#128).
 			'term in another case of another script' => [
 				new RuntimeException('Ärger über die Rechnung, ÄRGER mit dem Amt'),
-				['TEST_VALUE', 'ärger'],
+				['TEST_VALUE'],
+				['ärger'],
 				'RuntimeException',
 				'… über die Rechnung, … mit dem Amt',
 			],
-			'term with blanks of its own' => [new RuntimeException('Nothing for Salary July'), ['salary   july '], 'RuntimeException', 'Nothing for …'],
+			'term with blanks of its own' => [new RuntimeException('Nothing for Salary July'), [], ['salary   july '], 'RuntimeException', 'Nothing for …'],
 			// Leaving out the pointer of cURL would join the term together.
 			'term split by the pointer of cURL' => [
 				new RuntimeException('Searched inv (see https://curl.se/libcurl/c/libcurl-errors.html)oice'),
+				[],
 				['invoice'],
 				'RuntimeException',
 				'Searched …',
 			],
 			// The longer secret first, or the term would leave its ends behind.
-			'term that holds the token' => [new RuntimeException('Searched for xTEST_VALUEx'), ['TEST_VALUE', 'xtest_valuex'], 'RuntimeException', 'Searched for …'],
-			'bytes that are not UTF-8' => [new RuntimeException("Bad \xC3( answer for invoice"), ['invoice'], 'RuntimeException', 'Bad ?( answer for …'],
-			'term with bytes that are not UTF-8' => [new RuntimeException("Nothing for inv\xFFoice"), ["inv\xFFoice"], 'RuntimeException', 'Nothing for …'],
-			'no message' => [new RuntimeException(''), ['TEST_VALUE'], 'RuntimeException', ''],
-			'long message' => [new RuntimeException(str_repeat('a', 400)), [], 'RuntimeException', str_repeat('a', 299) . '…'],
+			'term that holds the token' => [new RuntimeException('Searched for xTEST_VALUEx'), ['TEST_VALUE'], ['xtest_valuex'], 'RuntimeException', 'Searched for …'],
+			// The token goes also where it continues a word, a term only where it is one.
+			'token inside a word' => [new RuntimeException('Refused xTEST_VALUEx'), ['TEST_VALUE'], [], 'RuntimeException', 'Refused x…x'],
+			'bytes that are not UTF-8' => [new RuntimeException("Bad \xC3( answer for invoice"), [], ['invoice'], 'RuntimeException', 'Bad ?( answer for …'],
+			'term with bytes that are not UTF-8' => [new RuntimeException("Nothing for inv\xFFoice"), [], ["inv\xFFoice"], 'RuntimeException', 'Nothing for …'],
+			// A term that is part of a longer word, or of the words that cURL puts before its
+			// number, stays: a search for time or error once stored "Operation …d out" and "cURL … 28".
+			'term time inside a word of cURL' => [
+				new RuntimeException('cURL error 28: Operation timed out after 3001 milliseconds'),
+				['TEST_VALUE'],
+				['time'],
+				'RuntimeException',
+				'cURL error 28: Operation timed out after 3001 milliseconds',
+				'timeout',
+			],
+			'term error in the words of cURL' => [
+				new RuntimeException('cURL error 28: Operation timed out after 3001 milliseconds'),
+				['TEST_VALUE'],
+				['error'],
+				'RuntimeException',
+				'cURL error 28: Operation timed out after 3001 milliseconds',
+				'timeout',
+			],
+			'term time as a word among longer ones' => [new RuntimeException('Timeout at TIME 12, times out, time.'), ['TEST_VALUE'], ['time'], 'RuntimeException', 'Timeout at … 12, times out, ….'],
+			'term error after the words of cURL' => [new RuntimeException('cURL error 56: Recv failure: error, errors'), ['TEST_VALUE'], ['error'], 'RuntimeException', 'cURL error 56: Recv failure: …, errors', 'unreachable'],
+			// A term whose ends are no letters goes wherever it stands, as the token does.
+			'term with ends that are no letters' => [new RuntimeException('Refund (TAX) and x(tax)y'), [], ['(tax)'], 'RuntimeException', 'Refund … and x…y'],
+			'no message' => [new RuntimeException(''), ['TEST_VALUE'], [], 'RuntimeException', ''],
+			'long message' => [new RuntimeException(str_repeat('a', 400)), [], [], 'RuntimeException', str_repeat('a', 299) . '…'],
 		];
 	}
 
 	/**
 	 * @param list<string> $secrets
+	 * @param list<string> $terms
 	 */
 	#[DataProvider('failures')]
-	public function testAFailureIsRecordedWithoutTheTokenTheTermAndTheQuery(Throwable $error, array $secrets, string $type, string $message, ?string $reason = null): void {
+	public function testAFailureIsRecordedWithoutTheTokenTheTermAndTheQuery(Throwable $error, array $secrets, array $terms, string $type, string $message, ?string $reason = null): void {
 		$diagnostics = $this->diagnostics();
 
-		$diagnostics->recordFailure(SearchEvent::STEP_PAPERLESS, $error, 4711, $secrets);
+		$diagnostics->recordFailure(SearchEvent::STEP_PAPERLESS, $error, 4711, $secrets, $terms);
 
 		$event = [
 			'time' => self::NOW,
