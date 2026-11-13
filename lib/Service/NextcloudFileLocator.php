@@ -189,10 +189,6 @@ final class NextcloudFileLocator {
 				if (!$node instanceof File) {
 					continue;
 				}
-				$documentIdsOfTheName = self::documentIdsIn($node->getName());
-				if ($documentIdsOfTheName === []) {
-					continue;
-				}
 				$owner = $archiveOwner !== null ? (string)$node->getOwner()?->getUID() : '';
 				// In a Team folder or an external storage, Nextcloud names the user who sees
 				// the file as its owner, so the mount decides there, unless the archive
@@ -202,8 +198,14 @@ final class NextcloudFileLocator {
 					continue;
 				}
 				$readOnly = $archiveOwner !== null && ($inATrustedMount || $owner !== $user->getUID());
-				if ($readOnly && !$inATrustedMount && self::isTheRootOfAShare($node)) {
-					$documentIdsOfTheName = self::documentIdsIn($this->nameOfTheOwner($node, $owner));
+				// The file cache finds a file shared on its own by the name of its owner,
+				// whatever the recipient calls it, so only that name counts (decision 0009),
+				// also when the recipient's name carries no marker at all.
+				$documentIdsOfTheName = self::documentIdsIn($readOnly && !$inATrustedMount && self::isTheRootOfAShare($node)
+					? $this->nameOfTheOwner($node, $owner)
+					: $node->getName());
+				if ($documentIdsOfTheName === []) {
+					continue;
 				}
 
 				$path = $node->getPath();

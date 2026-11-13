@@ -20,7 +20,7 @@ Die Einstellungen liegen unter **Verwaltungseinstellungen → Paperless Unified 
 | **Benutzern erlauben, Paperless in alle ihre Suchen einzubeziehen** | Lässt jeden Benutzer in seinen persönlichen Einstellungen **Meine Paperless-Dokumente immer durchsuchen** wählen; aus blendet die Wahl aus, und die Suche übergeht, was Benutzer gewählt haben | An | `personal_always_search` |
 | **Benutzern Benachrichtigungen über neue Dokumente erlauben** | Lässt jeden Benutzer in seinen persönlichen Einstellungen Suchen für Benachrichtigungen speichern; aus blendet die Wahl aus, und der Job fragt Paperless nichts | An, wenn Nextcloud einen Memory-Cache hat, bis ein Administrator wählt | `new_document_alerts` |
 
-**Verbindung trennen** löscht die URL, das Token, die Schalter, das Archiv-Konto, die Version von Paperless und den Verlauf der Probleme. **Verlauf leeren** löscht nur den Verlauf.
+**Verbindung trennen** löscht die URL, das Token, die Schalter, das Archiv-Konto, die Version von Paperless, den Fortschritt der Benachrichtigungen über neue Dokumente und den Verlauf der Probleme. **Verlauf leeren** löscht nur den Verlauf.
 
 ### Persönliche Einstellungen
 

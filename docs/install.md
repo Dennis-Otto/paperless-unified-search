@@ -16,12 +16,12 @@ What the app needs, the three ways to install it, and how it stays up to date. O
 | --- | --- |
 | **Nextcloud** | 33 to 35 |
 | **PHP** | 8.2 or newer, as the release of Nextcloud supports it |
-| **Paperless-ngx** | A Paperless-ngx with its REST API; [Compatibility](reference.md#compatibility) lists the versions that the tests cover |
+| **Paperless-ngx** | Paperless-ngx 2.16 or newer, 3.x included, with its REST API; [Compatibility](reference.md#compatibility) lists the versions that the tests cover |
 | **The network** | The Nextcloud server reaches Paperless over HTTP or HTTPS, connects within 3 seconds and gets every answer within 10. The browsers and the apps of the users never talk to Paperless |
 | **A Paperless account** | One that may view the documents to search, with an API token, as [Configure](configure.md#a-paperless-account-for-the-search) sets it up |
 | **The archive** | Every document as a file of one Nextcloud account, the archive account, with the marker `[P<ID>]` in its name, such as the files of [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) or of [any other synchronization](configure.md#works-with-any-synchronization) |
 
-The app adds no table to the database of Nextcloud, runs no background job and needs no extension of PHP beyond those of Nextcloud. Nobody needs an account in Paperless to find its documents: Nextcloud's shares decide who sees which one.
+The app adds no table to the database of Nextcloud and needs no extension of PHP beyond those of Nextcloud. It registers one background job, which asks Paperless every five minutes for new documents while users ask for [notifications about new documents](reference.md#the-notifications-about-new-documents): these notifications come only while Nextcloud's background jobs run, best by cron. Nobody needs an account in Paperless to find its documents: Nextcloud's shares decide who sees which one.
 
 ## From the App Store
 

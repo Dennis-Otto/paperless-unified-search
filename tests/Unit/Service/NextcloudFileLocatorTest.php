@@ -307,14 +307,16 @@ final class NextcloudFileLocatorTest extends TestCase {
 
 	/**
 	 * A file shared on its own bears the name that the recipient gives it, even one who may
-	 * only read it, so the markers come from the name that the archive account gave it.
+	 * only read it, so the markers come from the name that the archive account gave it,
+	 * also when the recipient's name carries none (decision 0009).
 	 *
-	 * @return array<string, array{?string, array<int, string>}>
+	 * @return array<string, array{string, ?string, array<int, string>}>
 	 */
 	public static function namesOfTheArchive(): array {
 		return [
-			'the name of the archive' => ['Invoice [P5].pdf', [5 => 'Invoice [P5] [P999].pdf']],
-			'a file that the archive no longer has' => [null, []],
+			'the name of the archive' => ['Invoice [P5] [P999].pdf', 'Invoice [P5].pdf', [5 => 'Invoice [P5] [P999].pdf']],
+			'the name of a recipient without a marker' => ['Invoice.pdf', 'Invoice [P5].pdf', [5 => 'Invoice.pdf']],
+			'a file that the archive no longer has' => ['Invoice [P5] [P999].pdf', null, []],
 		];
 	}
 
@@ -322,8 +324,8 @@ final class NextcloudFileLocatorTest extends TestCase {
 	 * @param array<int, string> $expected the name of the file found for each document
 	 */
 	#[DataProvider('namesOfTheArchive')]
-	public function testAFileSharedOnItsOwnCountsByTheNameThatTheArchiveGaveIt(?string $nameOfTheArchive, array $expected): void {
-		$renamed = $this->file('Invoice [P5] [P999].pdf', '/dennis/files/Invoice [P5] [P999].pdf', id: 42, shareRoot: true);
+	public function testAFileSharedOnItsOwnCountsByTheNameThatTheArchiveGaveIt(string $nameOfTheRecipient, ?string $nameOfTheArchive, array $expected): void {
+		$renamed = $this->file($nameOfTheRecipient, '/dennis/files/' . $nameOfTheRecipient, id: 42, shareRoot: true);
 		$archiveFolder = $this->createStub(Folder::class);
 		if ($nameOfTheArchive === null) {
 			$archiveFolder->method('getFirstNodeById')->willReturn(null);
@@ -332,7 +334,7 @@ final class NextcloudFileLocatorTest extends TestCase {
 			$archiveFolder->method('getFirstNodeById')->willReturnCallback(static fn (int $id): ?Node => $id === 42 ? $original : null);
 		}
 		$root = $this->createStub(IRootFolder::class);
-		$root->method('getUserFolder')->willReturnCallback(fn (string $uid): Folder => $uid === self::ARCHIVE ? $archiveFolder : $this->userFolder([$renamed]));
+		$root->method('getUserFolder')->willReturnCallback(fn (string $uid): Folder => $uid === self::ARCHIVE ? $archiveFolder : $this->userFolder([$renamed], namesInTheCache: [42 => $nameOfTheArchive ?? $nameOfTheRecipient]));
 
 		$found = (new NextcloudFileLocator($root, $this->createStub(LoggerInterface::class)))->findAllForUser($this->user(), [5, 999], self::ARCHIVE);
 

@@ -14,9 +14,10 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Properties of the messages of the history of the problems of the search, checked on
- * random messages from a fixed seed, so that a failure repeats: no token and no term in
- * any case of any script, the blanks of the message tidied, and no more than 300
- * characters (#128).
+ * random messages from a fixed seed, so that a failure repeats: no token and no term as
+ * a word of its own in any case of any script, the blanks of the message tidied, and no
+ * more than 300 characters (#128). A term inside a longer word stays, as time in "timed
+ * out" (#396).
  */
 final class SearchDiagnosticsPropertiesTest extends TestCase {
 	private const SEED = 20261012;
@@ -31,7 +32,7 @@ final class SearchDiagnosticsPropertiesTest extends TestCase {
 	/** Blanks between the parts of a message, the no-break space among them. */
 	private const BLANKS = [' ', '  ', "\t", "\n", "\u{a0}"];
 
-	public function testNoTokenAndNoTermSurviveInAnyCase(): void {
+	public function testNoTokenAndNoTermAsAWordSurviveInAnyCase(): void {
 		mt_srand(self::SEED);
 		$letters = mb_str_split(self::ALPHABET);
 
@@ -39,11 +40,13 @@ final class SearchDiagnosticsPropertiesTest extends TestCase {
 			$term = self::randomText($letters, mt_rand(3, 12));
 			$message = self::randomMessage($letters, $term);
 
-			$described = SearchDiagnostics::describe($message, [self::TOKEN, $term]);
+			$described = SearchDiagnostics::describe($message, [self::TOKEN], [$term]);
 
 			$case = sprintf('Run %d of seed %d, term %s, message %s, described as %s', $run, self::SEED,
 				json_encode($term, JSON_UNESCAPED_UNICODE), json_encode($message, JSON_UNESCAPED_UNICODE), json_encode($described, JSON_UNESCAPED_UNICODE));
-			self::assertFalse(mb_stripos($described, $term, 0, 'UTF-8'), $case);
+			foreach (self::wordsOf($described) as $word) {
+				self::assertNotSame(mb_convert_case($term, MB_CASE_FOLD_SIMPLE, 'UTF-8'), mb_convert_case($word, MB_CASE_FOLD_SIMPLE, 'UTF-8'), $case);
+			}
 			self::assertFalse(mb_stripos($described, self::TOKEN, 0, 'UTF-8'), $case);
 			self::assertDoesNotMatchRegularExpression('/^\s|\s$/u', $described, $case);
 			self::assertDoesNotMatchRegularExpression('/\s\s/u', $described, $case);
@@ -83,6 +86,22 @@ final class SearchDiagnosticsPropertiesTest extends TestCase {
 				mb_str_split($text),
 			)),
 		};
+	}
+
+	/**
+	 * The words of a message, runs of letters, marks and digits, without the last one of a
+	 * message cut to its length, which may be the start of a longer word.
+	 *
+	 * @return list<string>
+	 */
+	private static function wordsOf(string $described): array {
+		$words = preg_split('/[^\p{L}\p{M}\p{N}]+/u', $described, flags: PREG_SPLIT_NO_EMPTY);
+		self::assertIsArray($words);
+		if (mb_strlen($described, 'UTF-8') === 300) {
+			array_pop($words);
+		}
+
+		return $words;
 	}
 
 	/**

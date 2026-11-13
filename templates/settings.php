@@ -163,7 +163,7 @@ $perUserArchives = static function () use ($_, $l): void {
 		<template id="paperless-unified-search-per-user-archives-text"><?php $perUserArchives(); ?></template>
 
 		<p id="paperless-unified-search-archive-owner-hint" class="settings-hint">
-			<?php p($l->t('Only the files of this account stand for Paperless documents: a user sees a document when this account shares its file with them. Share the archive read-only. Without an archive account, the search shows no Paperless documents.')); ?>
+			<?php p($l->t('Only the files of this account stand for Paperless documents, and, when Paperless Sync puts the documents of each user into their own files, those of each document\'s owner: a user sees a document when its file is their own or one of these accounts shares it with them. Share the archive read-only. Without an archive account, the search shows no Paperless documents.')); ?>
 		</p>
 
 		<?php if ($shares !== null) { ?>
@@ -261,7 +261,7 @@ $perUserArchives = static function () use ($_, $l): void {
 
 	<div class="paperless-unified-search-note">
 		<strong><?php p($l->t('File matching')); ?></strong>
-		<p><?php p($l->t('A Paperless document is shown only when the user can open a file of the archive account whose name contains its unique marker, for example [P123].')); ?></p>
+		<p><?php p($l->t('A Paperless document is shown only when the user can open a file whose name contains its unique marker, for example [P123], and that belongs to the archive account or, when Paperless Sync puts the documents of each user into their own files, to the document\'s owner.')); ?></p>
 	</div>
 
 	<div class="paperless-unified-search-diagnostics">
@@ -386,7 +386,7 @@ $perUserArchives = static function () use ($_, $l): void {
 				<li><?php p($l->t('Shared with write permission: the user may change the file of the archive account, or add files to its folder, so its name proves nothing. Share it read-only with the user.')); ?></li>
 				<li><?php p($l->t('Writable in a trusted folder: the file lies in a Team folder or an external storage that the administrator trusts with the archive, but the user may change it there, or add files to its folder, so its name proves nothing. Let the user only read the folder.')); ?></li>
 				<li><?php p($l->t('Not shared: the archive account has the file of the document, but hasn\'t shared it with the user. Share the file, or a folder that holds it, read-only with the user.')); ?></li>
-				<li><?php p($l->t('Not a file of the archive account: the user sees a file with the marker of the document, but only the files of the archive account stand for documents.')); ?></li>
+				<li><?php p($l->t('Not a file of the archive account: the user sees a file with the marker of the document, but only the files of the archive account stand for documents, and, when Paperless Sync puts the documents of each user into their own files, those of each document\'s owner.')); ?></li>
 				<li><?php p($l->t('Owned in Paperless by another user: Paperless Sync puts the documents of each user into their own files, and the user sees a file with the marker of the document that belongs to someone else than its owner in Paperless. Only the files of its owner and of the archive account stand for it.')); ?></li>
 				<li><?php p($l->t('No file: no file of the archive account has the marker of the document, such as [P123], in its name. The synchronization hasn\'t written it yet, or names files without it.')); ?></li>
 				<li><?php p($l->t('Not among the tags that the user may see: Paperless Sync lets the user see only the documents with some tags of Paperless, and the document has none of them. Add one of them to the document in Paperless, or change the tags of the user in the setting "Tags that a user may see" of Paperless Sync.')); ?></li>

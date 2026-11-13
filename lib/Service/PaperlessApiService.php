@@ -805,7 +805,7 @@ final class PaperlessApiService {
 		$api ??= $this->apiToAsk();
 		$documents = rtrim($url, '/') . '/api/documents/';
 		$options = $this->options($token, $allowLocal, $query, $timeout, $api);
-		$response = $retry ? $this->send($documents, $options, [$token, $term]) : $this->client->get($documents, $options);
+		$response = $retry ? $this->send($documents, $options, [$token], [$term]) : $this->client->get($documents, $options);
 
 		$statusCode = $response->getStatusCode();
 		if ($statusCode < 200 || $statusCode >= 300) {
@@ -1172,9 +1172,10 @@ final class PaperlessApiService {
 	 * into the history of the diagnostics; one that fails as well fails the request.
 	 *
 	 * @param array<string, mixed> $options
-	 * @param list<string> $secrets the token and the term, which the history must not show
+	 * @param list<string> $secrets the token, which the history must not show
+	 * @param list<string> $terms the search terms, which the history must not show as words
 	 */
-	private function send(string $url, array $options, array $secrets): IResponse {
+	private function send(string $url, array $options, array $secrets, array $terms): IResponse {
 		$started = $this->getSeconds();
 		try {
 			return $this->client->get($url, $options);
@@ -1185,7 +1186,7 @@ final class PaperlessApiService {
 			}
 
 			$response = $this->client->get($url, $options);
-			$this->diagnostics->recordRetry($error, $durationMs, $secrets);
+			$this->diagnostics->recordRetry($error, $durationMs, $secrets, $terms);
 
 			return $response;
 		}

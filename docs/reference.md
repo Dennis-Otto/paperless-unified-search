@@ -20,7 +20,7 @@ The settings are under **Administration settings → Paperless Unified Search**,
 | **Let users include Paperless in all their searches** | Lets each user choose **Always search my Paperless documents** in their personal settings; off hides the choice, and the search ignores what users chose | On | `personal_always_search` |
 | **Let users ask for notifications about new documents** | Lets each user save searches for notifications in their personal settings; off hides the choice, and the job asks Paperless nothing | On where Nextcloud has a memory cache, until an administrator chooses | `new_document_alerts` |
 
-**Disconnect** deletes the URL, the token, the switches, the archive account, the version of Paperless and the history of the problems. **Clear history** deletes only the history.
+**Disconnect** deletes the URL, the token, the switches, the archive account, the version of Paperless, the progress of the notifications about new documents and the history of the problems. **Clear history** deletes only the history.
 
 ### Personal settings
 

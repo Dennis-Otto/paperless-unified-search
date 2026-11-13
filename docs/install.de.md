@@ -16,12 +16,12 @@ Was die App braucht, die drei Wege, sie zu installieren, und wie sie aktuell ble
 | --- | --- |
 | **Nextcloud** | 33 bis 35 |
 | **PHP** | 8.2 oder neuer, soweit die Version von Nextcloud es unterstützt |
-| **Paperless-ngx** | Ein Paperless-ngx mit seiner REST-API; die [Kompatibilität](reference.de.md#kompatibilität) listet die Versionen, die die Tests abdecken |
+| **Paperless-ngx** | Paperless-ngx 2.16 oder neuer, 3.x eingeschlossen, mit seiner REST-API; die [Kompatibilität](reference.de.md#kompatibilität) listet die Versionen, die die Tests abdecken |
 | **Das Netzwerk** | Der Nextcloud-Server erreicht Paperless über HTTP oder HTTPS, verbindet sich innerhalb von 3 Sekunden und bekommt jede Antwort innerhalb von 10. Die Browser und die Apps der Benutzer sprechen nie mit Paperless |
 | **Ein Paperless-Konto** | Eines, das die zu durchsuchenden Dokumente ansehen darf, mit einem API-Token, wie es [Einrichten](configure.de.md#ein-paperless-konto-für-die-suche) anlegt |
 | **Das Archiv** | Jedes Dokument als Datei eines Nextcloud-Kontos, des Archiv-Kontos, mit der Kennung `[P<ID>]` im Namen, etwa die Dateien von [Paperless Sync](https://github.com/Dennis-Otto/paperless-sync) oder von [jeder anderen Synchronisierung](configure.de.md#funktioniert-mit-jeder-synchronisierung) |
 
-Die App fügt der Datenbank von Nextcloud keine Tabelle hinzu, führt keinen Hintergrundjob aus und braucht keine Erweiterung von PHP über die von Nextcloud hinaus. Niemand braucht ein Konto in Paperless, um seine Dokumente zu finden: Die Freigaben von Nextcloud entscheiden, wer welches sieht.
+Die App fügt der Datenbank von Nextcloud keine Tabelle hinzu und braucht keine Erweiterung von PHP über die von Nextcloud hinaus. Sie registriert einen Hintergrundjob, der Paperless alle fünf Minuten nach neuen Dokumenten fragt, solange Benutzer [Benachrichtigungen über neue Dokumente](reference.de.md#die-benachrichtigungen-über-neue-dokumente) wünschen: Diese Benachrichtigungen kommen nur, solange die Hintergrundjobs von Nextcloud laufen, am besten per Cron. Niemand braucht ein Konto in Paperless, um seine Dokumente zu finden: Die Freigaben von Nextcloud entscheiden, wer welches sieht.
 
 ## Aus dem App Store
 
