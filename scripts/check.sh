@@ -15,7 +15,7 @@ step() {
 
 # When a step fails, the PR coach says what it found and how to fix it, from
 # .github/checks.toml: here, and in the CI also in the summary of the check, as its
-# annotation and on the pull request. It needs a Python 3.11 or newer, if there is one.
+# annotation and on the pull request. It needs a Python 3.12 or newer, if there is one.
 coach() {
   local status=$? script=.github/blueprint.py python
   [[ -f "$script" ]] || script=blueprint.py
@@ -312,6 +312,23 @@ elif [[ -n "${CI:-}" ]]; then
   exit 1
 else
   echo "Python 3.12 or newer is not installed here; the CI checks the explanations."
+fi
+
+step "Translations"
+# Every language has the texts of its source and no other, each with its words and
+# the placeholders of the source, such as {name}, %s or $NAME$:
+# the catalogs of l10n/ against each other, with as many forms of a plural as their
+# pluralForm names, and each l10n/<language>.js with the texts of its .json.
+# translations --fix brings the order, the stale texts and the copies in step; a text
+# that a language lacks needs a person. The Python and blueprint.py of the step Pages
+# in one column.
+if [[ -n "$python" ]]; then
+  "$python" "$tool" translations
+elif [[ -n "${CI:-}" ]]; then
+  echo "Checking the translations needs Python 3.12 or newer, which this runner lacks."
+  exit 1
+else
+  echo "Python 3.12 or newer is not installed here; the CI checks the translations."
 fi
 
 step "Version"

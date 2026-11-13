@@ -264,7 +264,8 @@ block. A signature shows who made a commit, so that nobody can push one in the n
 somebody else."""
 fix = """Sign the commits of your branch and push them again: rebase them with a
 signature onto the branch of this repository that the pull request goes into, also from
-a fork, and push with `--force-with-lease`. `-S` signs a commit, while `-s` adds only
+a fork, forced, so that git signs them again also when the branch starts from there
+already, and push with `--force-with-lease`. `-S` signs a commit, while `-s` adds only
 the sign-off of the Developer Certificate of Origin, so a commit needs both. If git
 can't sign yet, set it up first, here with an SSH key: the same key must be on your
 account on GitHub as a *signing key*, which is a type of its own beside an
@@ -278,7 +279,7 @@ commands = [
   "git fetch origin",
   "git fetch https://github.com/{repo}.git {base}",
   "git switch your-branch",
-  "git rebase -S FETCH_HEAD",
+  "git rebase --force-rebase -S FETCH_HEAD",
   "git push --force-with-lease",
 ]
 docs = "https://docs.github.com/en/authentication/managing-commit-signature-verification"
@@ -518,10 +519,10 @@ autofix = """A test of the action that fails needs a person, who knows what the 
 
 [check.home-assistant]
 title = "The validations of Home Assistant"
-problem = """A step of the check failed before HACS and hassfest ran. When one of them
-fails, the PR coach explains that one instead."""
-why = """HACS and hassfest run in one job, which takes one runner instead of two; they
-report only once the job got that far."""
+problem = """A step of the check failed before HACS, hassfest and the oldest Home
+Assistant ran. When one of them fails, the PR coach explains that one instead."""
+why = """HACS, hassfest and the oldest Home Assistant run in one job, which takes one
+runner instead of three; they report only once the job got that far."""
 fix = """Run the check again; if it fails at the same step, the log of the check says
 why."""
 docs = "https://developers.home-assistant.io/docs/creating_integration_manifest"
@@ -553,6 +554,27 @@ commands = [
 ]
 docs = "https://developers.home-assistant.io/docs/creating_integration_manifest"
 autofix = """A rule of Home Assistant that the integration breaks needs a person, who knows what the integration should do."""
+
+[check.oldest-home-assistant]
+title = "The oldest Home Assistant of hacs.json"
+problem = """A module of the integration doesn't import on the oldest Home Assistant that
+`hacs.json` names in `homeassistant`, or a requirement of its manifest doesn't install
+there; the annotations name each module with its error. Mostly the code uses something
+that came with a newer Home Assistant than that minimum."""
+why = """HACS offers each release to every Home Assistant from that minimum on, but the
+tests run on the newer one of the lock file. An integration that needs more than its
+minimum breaks for the users of the older versions while every other check passes."""
+fix = """Either keep the code working on the minimum, such as with a fallback for the
+older Home Assistant, or raise `homeassistant` in `hacs.json` to the oldest release
+that has what the code needs, and say so in the changelog. With Docker, this starts the
+Python of that Home Assistant in your checkout, where `import custom_components.<domain>.<module>`
+shows the error of the annotation:"""
+commands = [
+  'docker run --rm -it -v "$PWD:/github/workspace:ro" -w /github/workspace --entrypoint python3 ghcr.io/home-assistant/home-assistant:"$(jq -r .homeassistant hacs.json)"',
+]
+docs = "https://hacs.xyz/docs/publish/start/#hacsjson"
+autofix = """Whether the code keeps the older Home Assistant or the minimum rises is a choice
+for a person, who knows its users."""
 
 [check.zizmor]
 title = "The security of the workflows (zizmor)"
@@ -645,6 +667,9 @@ acceptance is gone, and it couldn't: GitHub refused the app a token with the
 permission *Dependabot alerts* (read and write), or refused the alerts to its token.
 The summary of the run names the app: the settings app once the variable
 `SETTINGS_APP_CLIENT_ID` names it, the release app until then.
+When the step *Warn of the acceptances that end soon* failed, GitHub refused the
+token of the job the issue that names the acceptances ending within two weeks; its
+log has GitHub's answer, and the next run tries again.
 When the step *Make sure that Harden-Runner blocks* stopped the job, Harden-Runner
 had no agent that blocks, mostly because an outage of GitHub kept it from downloading
 it: that is no problem of the change, and the check passes when it runs again."""
@@ -808,8 +833,10 @@ machine:"""
 commands = ["python3 downstream.py --base origin/main"]
 docs = "CONTRIBUTING.md#tests"
 autofix = """How a template takes up a change that a repository made is the decision
-of a person. Answers of `tests/answers/` that differ from those of a repository only
-warn, and `python3 downstream.py --answers` writes them anew."""
+of a person. Answers of `tests/answers/` that differ from those of a repository warn
+in a pull request, which isn't at fault, and fail the weekly run of `main`: it takes
+them anew with `python3 downstream.py --answers` and keeps them for the fix bot,
+which brings them in its pull request of the fixes of `main`."""
 
 [check."mutation plan"]
 title = "The plan of the mutation tests"
@@ -970,13 +997,15 @@ of its own."""
 [step."Pages in one column"]
 problem = """A README, a CONTRIBUTING file or a page of `docs/` sets columns side by
 side: a `<table>` that puts a picture beside text, or a cell with a width; the log names
-each file and line. A cell of a Markdown table with more than 30 words, a paragraph, is
-a warning in the same log, which fails nothing yet."""
+each file and line. A cell of a Markdown table with more than 30 words, a paragraph, and
+a paragraph or an item of a list with more than 150 words are warnings in the same log,
+which fail nothing."""
 why = """The GitHub app and phones keep such columns side by side and squeeze them until
 the text is a few words wide and the pictures are tiny."""
 fix = """Put the cells one below the other, the text before its picture, and leave out
 the widths; a table holds tabular data only. Make the rows of a table with paragraphs a
-list, or move the detail to a page of its own and link it. The command that the log names does this
+list, or move the detail to a page of its own and link it; give a long paragraph a short
+lead sentence and a list or headings below it. The command that the log names does this
 for you, then commit what changed (in the blueprint itself, the tool is `blueprint.py`
 without `.github/`):"""
 commands = ["python3 .github/blueprint.py pages --fix"]
@@ -1125,6 +1154,27 @@ what is left (in the blueprint itself, the tool is `blueprint.py` without `.gith
 commands = ["python3 .github/blueprint.py coach verify"]
 docs = "CONTRIBUTING.md#when-a-check-fails"
 autofix = """What a check found, and how to fix it, is for a person to explain."""
+
+[step.Translations]
+problem = """A catalog of translations doesn't follow its source: a language lacks a text
+of the source or keeps one that the source no longer has, a text has no words or other
+placeholders than the source, such as `{name}`, `%s` or `$NAME$`, a plural has another
+number of forms than its `pluralForm` names, `translations/en.json` of an integration
+is no copy of `strings.json`, or `l10n/<language>.js` of a Nextcloud app says something
+else than its `l10n/<language>.json`; the log names each file, line and text."""
+why = """A text that a language lacks shows in English or as its key, a stale one is
+dead weight that nobody translates again, and a lost placeholder shows a sentence
+without the value that it stands for, such as the name of a file. Nobody notices it
+until a user of that language reports it."""
+fix = """Write each text that the log names in its language, with the placeholders of the
+source, or ask in the pull request for a maintainer or a native speaker to add it before
+the merge. The command fixes what needs no words: the order of the texts, the stale
+ones, `en.json` as the copy of `strings.json` and `l10n/*.js` from `l10n/*.json`; then
+commit what changed (in the blueprint itself, the tool is `blueprint.py` without
+`.github/`):"""
+commands = ["python3 .github/blueprint.py translations --fix"]
+docs = "https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/features/checks.md#checks"
+autofix = ["{blueprint} translations --fix"]
 
 [step.Version]
 problem = """A file has another version than `.release-please-manifest.json`, whose

@@ -110,6 +110,11 @@ SCOPE_HEADER = re.compile(r"^x-oauth-scopes:(.*)$", re.IGNORECASE | re.MULTILINE
 # The time and the zone that git var adds to an identity.
 STAMP = re.compile(r" \d+ [+-]\d{4}$")
 MARKS = {True: "✔", False: "✘", None: "·"}
+# How to set up a key that signs the commits, which the rules of main ask for.
+SIGNING = (
+    "https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/"
+    "troubleshooting.md#a-commit-has-no-verified-signature"
+)
 
 Runner = Callable[[Sequence[str], Path], subprocess.CompletedProcess[str]]
 
@@ -121,7 +126,8 @@ class CreateError(Exception):
 @dataclass(frozen=True)
 class Finding:
     """One check of the preflight: passed (True), stops create (False), or can't tell
-    and stops nothing (None); fix is what fixes it, a command where one does."""
+    or only warns, and stops nothing (None); fix is what fixes it, a command where one
+    does."""
 
     ok: bool | None
     text: str
@@ -346,6 +352,44 @@ def identity_finding(run: Runner, root: Path) -> Finding:
     return Finding(True, f"Git commits as {shown}")
 
 
+def configured(run: Runner, root: Path, *arguments: str) -> str:
+    """The value of a setting of git, or "" where it has none."""
+    result = run(["git", "config", *arguments], root)
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def signing_finding(run: Runner, root: Path) -> Finding:
+    """Whether git signs every commit, which the rules of main ask for on every commit
+    after the first. It only warns: a commit can be signed with --gpg-sign as well,
+    and only GitHub knows whether it verifies the key."""
+    signs = configured(run, root, "--type=bool", "--get", "commit.gpgsign") == "true"
+    key = configured(run, root, "--get", "user.signingkey")
+    if not signs:
+        if key:
+            return Finding(
+                None,
+                "Git signs a commit only with --gpg-sign, and main takes signed "
+                "commits only",
+                "git config --global commit.gpgsign true",
+            )
+        return Finding(
+            None,
+            "Git signs no commit, and main takes signed commits only",
+            f"set up a key that GitHub verifies: {SIGNING}",
+        )
+    if (
+        not key
+        and configured(run, root, "--get", "gpg.format") == "ssh"
+        and not configured(run, root, "--get", "gpg.ssh.defaultKeyCommand")
+    ):
+        return Finding(
+            None,
+            "Git signs every commit with SSH, but names no key to sign with",
+            "git config --global user.signingkey ~/.ssh/id_ed25519.pub",
+        )
+    return Finding(True, "Git signs every commit, as the rules of main ask")
+
+
 def gh_finding(version: str) -> Finding:
     match = VERSION.search(version)
     if match is None:
@@ -537,6 +581,8 @@ def preflight(
     findings = [python_finding(python), git]
     if git.ok and plan.commits:
         findings.append(identity_finding(run, root))
+    if git.ok:
+        findings.append(signing_finding(run, root))
     return [*findings, *github_findings(run, root, repo, plan.resume)], plan
 
 

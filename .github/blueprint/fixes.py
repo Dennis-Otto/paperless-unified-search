@@ -6,7 +6,10 @@ fails runs these commands on the head of its pull request, or on main, with `fix
 and keeps each file that they changed as an artifact fixes-<job>. After the checks,
 the fix bot of after-checks.yml takes these artifacts as data that the pull request
 made: it runs nothing of them and lets through only text files that the commit has
-already, by paths of plain names, outside .git and .github/workflows. It reads the
+already, by paths of plain names, outside .git and .github/workflows. Where nobody
+reads its commit before the merge, on the pull request of a bot, on one whose
+auto-merge is on and on that of main, it leaves to a person each file that decides
+what a workflow runs or runs with its rights, such as blueprint.py. It reads the
 fixes of every workflow in the list of after-checks.yml of main, also one of the
 project's own, and of no other. `fix collect` waits for those whose files keep fixes,
 so that one commit holds them all. Then `fix commit` commits them onto the branch of a
@@ -74,6 +77,7 @@ from blueprint.coach import (
     OWN_CHECKS,
     TYPES,
     Catalog,
+    begins_as_words,
     check_steps,
     clean,
     code,
@@ -84,7 +88,9 @@ from blueprint.coach import (
 )
 from blueprint.diagrams import COMMIT, PART, git
 from blueprint.github import Api, GitHubError, Json
+from blueprint.migrate import MOVABLE
 from blueprint.pages import command as tool_command
+from blueprint.update import BRANCH as UPDATE_BRANCH
 from blueprint.update import gh, graphql, post
 
 HEADLINE = FIX_HEADLINE
@@ -105,6 +111,10 @@ KEEPS_FIXES = re.compile(rf"""^[ \t]+name:[ \t]*["']?{ARTIFACT}""", re.M)
 # The workflow that keeps a fix only on main, and also when it passes: Docs, whose first
 # run of every page accepts the violations that the website has, and turns no check red.
 MAIN_WORKFLOW = "Docs"
+# The workflows that keep a fix only on main, which the bot doesn't wait for on a pull
+# request: Docs, and Downstream, whose weekly run takes the answers of tests/answers/
+# anew from the repositories when they differ.
+MAIN_ONLY = frozenset({MAIN_WORKFLOW, "Downstream"})
 # In a command of autofix, blueprint.py of this repository, with the Python that runs.
 TOOL = "{blueprint}"
 # In a command of autofix, the Python that runs the bot, for a script of the repository.
@@ -321,6 +331,87 @@ def allowed(path: str) -> bool:
     return lower[0] != ".git" and lower[:2] != [".github", "workflows"]
 
 
+# Besides what decides what a workflow runs, what runs later with the rights of a
+# workflow or reaches every repository made from the blueprint: blueprint.py with its
+# code in blueprint/, the other scripts at the root that the workflows of the blueprint
+# run, and the template. A test keeps the scripts equal to those the workflows name.
+RIGHTS_FOLDERS = frozenset({"blueprint", "template"})
+RIGHTS_SCRIPTS = frozenset(
+    {
+        "blueprint.py",
+        "dashboard.py",
+        "downstream.py",
+        "sync_issue_assistant.py",
+        "variants.py",
+        "weekly.py",
+    }
+)
+# Why nobody reads a commit of the bot before its pull request merges: Renovate's and
+# Dependabot's merge once green, as does one whose auto-merge is on, and that of main
+# merges itself. An answer that the bot doesn't know counts as unread.
+UNREAD = {
+    "bot": "a bot opened the pull request, which merges without a person reading the "
+    "commit",
+    "auto-merge": "the pull request merges by itself, without a person reading the "
+    "commit",
+    "main": "the pull request of main merges itself, without a person reading the "
+    "commit",
+    "update": "the update of the blueprint merges by itself, without a person reading "
+    "the commit",
+}
+UNREAD_UNKNOWN = "nobody may read the commit before the pull request merges"
+
+
+def runs_with_rights(path: str) -> bool:
+    """Whether a file decides what a workflow runs, or runs later with the rights of
+    one, such as blueprint.py, which the jobs with the key of the release app run; in
+    small letters, as decides_what_runs."""
+    *folders, name = path.lower().split("/")
+    return (
+        decides_what_runs(path)
+        or (bool(folders) and folders[0] in RIGHTS_FOLDERS)
+        or (not folders and name in RIGHTS_SCRIPTS)
+    )
+
+
+def why_unread(pull: Json) -> str:
+    """Why nobody reads a commit of the bot on a pull request before it merges, as a
+    key of UNREAD, or nothing when its author does: a bot's merges once green, and one
+    whose auto-merge is on merges without another look at a later commit. The update
+    of the blueprint is the bot's own pull request from the branch of the blueprint
+    bot, which only the release app pushes; plan has left those of a fork out."""
+    if str((pull.get("user") or {}).get("type")) == "Bot":
+        head = str((pull.get("head") or {}).get("ref"))
+        return "update" if head == UPDATE_BRANCH else "bot"
+    if pull.get("auto_merge") is not None:
+        return "auto-merge"
+    return ""
+
+
+def for_unread(fixes: Fixes, why: str | None) -> Fixes:
+    """The fixes that the bot commits where nobody reads its commit before the merge:
+    none of a file that decides what a workflow runs, or that runs with its rights. What
+    runs in a check, such as a dependency of the branch, writes the files that it kept,
+    and a job without rights must not reach one with them that way. Where the author
+    reads the commit, why is empty and every fix stays; None means it isn't known. On
+    the update of the blueprint, a file that a migration moves stays too, as decision
+    0111 has the bot commit the move (blueprint/migrate.py)."""
+    if why == "":
+        return fixes
+    reason = UNREAD.get(why or "", UNREAD_UNKNOWN)
+    kept: dict[str, bytes] = {}
+    left = dict(fixes.left)
+    for path, data in fixes.files.items():
+        if runs_with_rights(path) and not (why == "update" and path in MOVABLE):
+            left[path] = (
+                f"decides what a workflow runs, and {reason}, so a person commits "
+                "its fix"
+            )
+        else:
+            kept[path] = data
+    return Fixes(kept, dict(sorted(left.items())))
+
+
 def refused(path: Path, relative: str) -> str:
     """Why the bot doesn't write a file that a check kept, if it doesn't."""
     if path.is_symlink():
@@ -436,10 +527,11 @@ class Watched:
     keeping: frozenset[str]
 
     def awaited(self, event: str) -> frozenset[str]:
-        """Those that the bot waits for: Docs keeps nothing on a pull request."""
+        """Those that the bot waits for: Docs and Downstream keep nothing on a pull
+        request."""
         if event in MAIN_EVENTS:
             return self.keeping
-        return self.keeping - {MAIN_WORKFLOW}
+        return self.keeping - MAIN_ONLY
 
 
 def watched(root: Path) -> Watched:
@@ -574,11 +666,13 @@ class Collected:
 class Plan:
     """What the fix bot does with the fixes of a commit: commit them onto the branch
     of a pull request, suggest them on one from a fork, keep the pull request of main
-    or close it; nothing, when the action is empty."""
+    or close it; nothing, when the action is empty. A commit onto a branch says in
+    unread why nobody reads it before the merge, if so, as a key of UNREAD."""
 
     action: str
     text: str
     number: int | None = None
+    unread: str = ""
 
 
 def collect(
@@ -758,7 +852,10 @@ def plan(
             f"up to {sha[:7]} again, so they don't fix the same way twice; the bot stops."
         )
     return Plan(
-        "commit", f"#{number} comes from a branch of this repository.\n", number
+        "commit",
+        f"#{number} comes from a branch of this repository.\n",
+        number,
+        why_unread(pull),
     )
 
 
@@ -832,15 +929,27 @@ def moved_on(branch: str, sha: str) -> str:
 
 
 def commit_onto_branch(
-    api: Api, repo: str, branch: str, sha: str, fixes: Fixes, app: str, url: str
+    api: Api,
+    repo: str,
+    branch: str,
+    sha: str,
+    fixes: Fixes,
+    app: str,
+    url: str,
+    unread: str | None = None,
 ) -> str:
     """Commits the fixes onto the branch of a pull request of this repository, and
-    says what it did."""
-    fixes = changeable(files_of(api, repo, sha), sha, fixes)
+    says what it did; unread says why nobody reads the commit before the merge, as
+    plan found it, and is empty when its author does."""
+    changes = changeable(files_of(api, repo, sha), sha, fixes)
+    fixes = for_unread(changes, unread)
     if not fixes.files:
-        return "\n".join(
-            ["Every fix is in the branch already.", "", *listing(fixes), ""]
+        said = (
+            "Every fix is in the branch already."
+            if fixes == changes
+            else "The bot leaves every fix to a person."
         )
+        return "\n".join([said, "", *listing(fixes), ""])
     body = signed_off(api, app, f"{MADE_BY} {url}")
     made = onto_branch(api, repo, branch, sha, fixes, body)
     if not made:
@@ -881,13 +990,14 @@ def needs_entry(title: str, pull: Json, files: Iterable[Json]) -> bool:
 
 def draft_of(title: str) -> str:
     """The text of a fragment from a title of a change for users: its words below the
-    heading of its kind, or nothing when they say nothing, or could be more than words.
-    A test proves that the release takes in each such text."""
+    heading of its kind, or nothing when they say nothing, or could be more than words,
+    such as a mark of a block of Markdown at their start, which would make the entry a
+    heading, a list or a quote. A test proves that the release takes in each such text."""
     match = FOR_USERS.match(title)
     if match is None:
         return ""
     words = clean(match[4], LONGEST_TITLE).rstrip(". ")
-    if not words or NOT_WORDS.search(words):
+    if not words or NOT_WORDS.search(words) or not begins_as_words(words):
         return ""
     kind = DRAFT_BREAKING if match[3] else DRAFT_KINDS[match[1]]
     entry = f"**{match[2]}:** {words}" if match[2] else words[0].upper() + words[1:]
@@ -1439,22 +1549,38 @@ def heal_main(
     api: Api, repo: str, sha: str, base: str, fixes: Fixes, app: str, url: str
 ) -> str:
     """Keeps one pull request from bot/self-heal with the fixes of main, which merges
-    itself, or closes it once main needs none."""
+    itself, or closes it once main needs none that the bot commits. Nobody reads it
+    before it merges, so it holds no fix of a file that decides what a workflow runs."""
     pull = open_pull_of_main(api, repo)
     if fixes.files:
-        fixes = changeable(files_of(api, repo, sha), sha, fixes)
+        fixes = for_unread(changeable(files_of(api, repo, sha), sha, fixes), "main")
     if not fixes.files:
+        # What the bot leaves to a person keeps the check of main red, and the summary
+        # of the bot names it.
+        left = listing(fixes) if fixes.left else []
         if pull is None:
-            return f"{base} needs no fix that a command makes.\n"
+            said = (
+                f"{base} has no fix that the bot commits."
+                if left
+                else f"{base} needs no fix that a command makes."
+            )
+            return "\n".join([said, *left, ""])
         number = int(pull["number"])
-        post(
-            api,
-            f"repos/{repo}/issues/{number}/comments",
-            {"body": f"`{base}` needs none of these fixes any more: {url}"},
+        comment = (
+            f"`{base}` has no fix left that the bot commits; a person commits the "
+            f"rest: {url}"
+            if left
+            else f"`{base}` needs none of these fixes any more: {url}"
         )
+        post(api, f"repos/{repo}/issues/{number}/comments", {"body": comment})
         api.patch(f"repos/{repo}/pulls/{number}", {"state": "closed"})
         api.delete(f"repos/{repo}/git/refs/heads/{BRANCH}")
-        return f"{base} needs the fixes no more; closed #{number}.\n"
+        said = (
+            f"{base} has no fix that the bot commits; closed #{number}."
+            if left
+            else f"{base} needs the fixes no more; closed #{number}."
+        )
+        return "\n".join([said, *left, ""])
     # Each check of a weekly run that fails starts the bot, and the later run finds what
     # the first one made: a new commit would only start the checks of the pull request
     # again, and those of one that is stuck anew every week. It only asks for the merge

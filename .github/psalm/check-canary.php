@@ -5,7 +5,9 @@ declare(strict_types=1);
 /**
  * Compares the findings of the taint analysis of the canary, from the JSON report of
  * Psalm, with what the canary expects: a finding at each line of canary/ that ends in
- * "// expect: <issue>", and none at any other.
+ * "// expect: <issue>", and none at any other. Psalm 7 checks the types in the same run:
+ * what it finds there is no path of untrusted input, which Psalm names Tainted*, and
+ * counts for nothing here.
  *
  *   php .github/psalm/check-canary.php build/psalm-canary.json
  *
@@ -29,6 +31,9 @@ foreach (glob(__DIR__ . '/canary/*.php') ?: [] as $file) {
 }
 $found = [];
 foreach ($issues as $issue) {
+	if (!str_starts_with((string)$issue['type'], 'Tainted')) {
+		continue;
+	}
 	$found[] = sprintf('%s:%d %s', basename((string)$issue['file_path']), (int)$issue['line_from'], (string)$issue['type']);
 }
 

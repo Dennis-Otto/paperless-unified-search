@@ -270,10 +270,13 @@ def covers(acceptance: Acceptance, alert: Alert, manifests: Manifests) -> bool:
     return acceptance.version in versions.get(key, set())
 
 
-def ignored(root: Path, config: Path) -> tuple[list[Acceptance], list[str]]:
+def ignored(
+    root: Path, config: Path, unexplained: str = ""
+) -> tuple[list[Acceptance], list[str]]:
     """The advisories that the [[IgnoredVulns]] of a file accept until a date, and why
     an entry closes no alert. A file that OSV-Scanner can't use accepts nothing, as
-    advisories.read says."""
+    advisories.read says. An entry without a reason closes no alert, but still ends on
+    its date: with unexplained, it is kept with that text as its reason."""
     try:
         data = tomllib.loads((root / config).read_text(encoding="utf-8"))
     except (tomllib.TOMLDecodeError, UnicodeDecodeError):
@@ -294,8 +297,9 @@ def ignored(root: Path, config: Path) -> tuple[list[Acceptance], list[str]]:
         until = entry.get("ignoreUntil")
         if isinstance(until, datetime.datetime):
             until = until.date()
-        if advisory and reason and isinstance(until, datetime.date):
-            found.append(Acceptance(shown, until, reason, advisory=advisory))
+        given = reason or unexplained
+        if advisory and given and isinstance(until, datetime.date):
+            found.append(Acceptance(shown, until, given, advisory=advisory))
             continue
         lacks = [
             what
@@ -314,9 +318,11 @@ def ignored(root: Path, config: Path) -> tuple[list[Acceptance], list[str]]:
     return found, notes
 
 
-def acceptances(root: Path) -> tuple[list[Acceptance], list[str]]:
+def acceptances(
+    root: Path, unexplained: str = ""
+) -> tuple[list[Acceptance], list[str]]:
     """Every acceptance of the osv-scanner.toml files of the repository, and why an
-    entry or a file closes no alert."""
+    entry or a file closes no alert; unexplained as ignored takes it."""
     found: list[Acceptance] = []
     notes: list[str] = []
     for config in advisories.configs(root):
@@ -332,7 +338,7 @@ def acceptances(root: Path) -> tuple[list[Acceptance], list[str]]:
             )
             for entry in versions
         ]
-        single, lacking = ignored(root, config)
+        single, lacking = ignored(root, config, unexplained)
         found += single
         notes += problems + lacking
     return found, notes

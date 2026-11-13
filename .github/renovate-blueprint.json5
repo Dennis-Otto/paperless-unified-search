@@ -3,10 +3,10 @@
 // workflows current; the Renovate workflow of the blueprint runs it for every
 // repository with a .github/renovate.json5, as the release app. An update waits a
 // week after its release; one that fixes a vulnerability comes at once, and so does
-// the new commit of a branch that an action follows. Routine updates, and the weekly
-// refresh of the lock files from versions a week old, merge on their own once every
-// check passes; a major update waits for the maintainer, and so does the refresh of
-// a package manager that can't keep to that age. Updates of what the users run are
+// the new commit of a branch that an action follows. Every update, a major one too,
+// and the weekly refresh of the lock files from versions a week old, merge on their
+// own once every check passes; the refresh of a package manager that can't keep to
+// that age waits for the maintainer. Updates of what the users run are
 // committed as fix(deps) and lead to a patch release, updates of the tools as
 // chore(deps).
 // Renovate keeps no issue open: what waits for the maintainer is a pull request,
@@ -24,7 +24,7 @@
     "local>Dennis-Otto/paperless-unified-search//.github/renovate-accepted.json5",
   ],
   timezone: "Europe/Berlin",
-  // No dependency dashboard, so that a repository can have no open issue: routine
+  // No dependency dashboard, so that a repository can have no open issue: the
   // updates merge on their own, and what waits for the maintainer is a pull
   // request. Renovate closes the issue of the dashboard by its title, which stays
   // the one that it had.
@@ -41,7 +41,7 @@
   // package manager can keep to that.
   lockFileMaintenance: { enabled: true, schedule: ["* * * * 1"] },
   internalChecksFilter: "strict",
-  // GitHub merges a routine update once every required check passes.
+  // GitHub merges an update once every required check passes.
   platformAutomerge: true,
   automergeType: "pr",
   automergeStrategy: "squash",
@@ -59,6 +59,16 @@
     automerge: true,
   },
   osvVulnerabilityAlerts: true,
+  // Renovate logs at the level info alone that two updates of one dependency met in
+  // one branch and that it dropped one of them. When the one that it kept waits, as
+  // for its release age, neither comes; as a warning, it reaches the issue "Renovate
+  // logs problems".
+  // An image without a date of its release comes without the week of waiting, by the
+  // rule of the images, and Renovate warns of it in every run; that is no problem.
+  logLevelRemap: [
+    { matchMessage: "Ignoring upgrade collision", newLogLevel: "warn" },
+    { matchMessage: "/did not have a releaseTimestamp/", newLogLevel: "info" },
+  ],
   // Python, Node and PHP follow the blueprint and what the project supports.
   pyenv: { enabled: false },
   nvm: { enabled: false },
@@ -107,8 +117,10 @@
   ],
   packageRules: [
     {
-      // Routine updates merge on their own, a week after their release.
-      matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
+      // Every update merges on its own, a week after its release, a major one too:
+      // the checks are the gate, and one whose checks fail stays open and shows the
+      // failure (decision 0150 of the blueprint).
+      matchUpdateTypes: ["major", "minor", "patch", "digest", "pin", "pinDigest"],
       automerge: true,
     },
     {
@@ -223,9 +235,31 @@
       enabled: false,
     },
     {
+      // An image whose registry gives Renovate no date of its release comes without
+      // the week of waiting, and one with a date still waits a week: ghcr.io,
+      // mcr.microsoft.com and quay.io give no date, and Docker Hub none to a request
+      // without a login for an image of more than 1,000 tags, such as nextcloud,
+      // postgres, python or redis. Renovate would hold an update without a date for
+      // good (decision 0148 of the blueprint). The digest keeps the image the one that
+      // the checks of the pull request tested.
+      matchDatasources: ["docker"],
+      minimumReleaseAgeBehaviour: "timestamp-optional",
+    },
+    {
       matchDatasources: ["docker"],
       matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
       groupName: "the images",
+    },
+    {
+      // The new digest of a tag that stays goes into a branch of its own, beside that
+      // of its group, also of a group of the project: in one branch with the new
+      // version of the same image, Renovate would drop one of the two.
+      matchDatasources: ["docker"],
+      matchUpdateTypes: ["digest", "pinDigest"],
+      group: {
+        branchTopic: "{{{groupSlug}}}-digests",
+        commitMessageTopic: "the digests of {{{groupName}}}",
+      },
     },
     {
       // The dev container keeps the Python, PHP or Node of the project, as the CI
@@ -233,6 +267,16 @@
       matchDepNames: ["mcr.microsoft.com/devcontainers/**"],
       matchUpdateTypes: ["major", "minor", "patch"],
       enabled: false,
+    },
+    {
+      // MkDocs stays below 2 until every website moves to Zensical (decision 0146 of
+      // the blueprint): its 2.0 leaves out the plugins and the theme that the website
+      // is built with, and Material for MkDocs, whose maintenance ends on 5 May 2027,
+      // requires a MkDocs below 2 as well. A stable 2.0 would otherwise come as a
+      // routine pull request that breaks the build of the website.
+      matchDatasources: ["pypi"],
+      matchPackageNames: ["mkdocs"],
+      allowedVersions: "<2",
     },
     {
       // The Nextcloud of the pictures of the app stays within the max-version of

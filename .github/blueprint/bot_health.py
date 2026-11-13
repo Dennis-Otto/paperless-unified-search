@@ -17,20 +17,30 @@ in case GitHub lost an event, and starts a workflow whose schedule GitHub missed
 switched off. A failure of Lint, which main runs only each week, counts only at the
 head of main: a pull request reaches main only when it passes Lint. A run that GitHub
 couldn't start, as in its outage of 9 November 2026, is no failure of the bot: its end
-starts nothing, and the daily look runs it again once (decision 0136). The same look
+starts nothing, and the daily look runs it again once (decision 0136). Nothing
+follows the end of this bot itself, so the daily look also runs the failed jobs of
+its own runs once more that Harden-Runner stopped (decision 0141). The same look
 keeps one issue open while the social preview that GitHub shows is not the committed
 .github/social-preview.png, which only a person can upload; its label is manual-step,
-not bot-failure, since nothing fails there. In the blueprint, it also
-keeps one issue with the warnings and errors in the log of Renovate.
+not bot-failure, since nothing fails there. It also ticks the box for a rebase of a
+pull request of Renovate that Renovate leaves alone after a merge of the default
+branch by a person, and keeps one issue with those whose branch carries a change of a
+person that the new branch would drop (decision 0144). When the blueprint has a
+newer release than the repository and the pull request of the blueprint bot doesn't
+bring it yet, the look starts the blueprint bot, so that a repository that the Rollout
+doesn't start, such as one of another owner, gets it within a day (decision 0052). In
+the blueprint, it also keeps one issue with the warnings and errors in the log of
+Renovate.
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import re
 import urllib.parse
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
@@ -47,6 +57,14 @@ from blueprint.social_preview import (
     settings_page,
     shows_the_project,
 )
+from blueprint.update import (
+    ANSWERS,
+    answered_release,
+    answered_source,
+    released_tag,
+    version_key,
+)
+from blueprint.update import BRANCH as UPDATE_BRANCH
 
 LABEL = "bot-failure"
 LABEL_COLOR = "d93f0b"
@@ -95,6 +113,14 @@ OWN_ISSUE = frozenset({"Diagrams", "Newest Node", "Newest Python", "Next runner"
 # Harden-Runner stopped them, which no later event of theirs makes up for (decision
 # 0141).
 EVENT_BOTS = frozenset({"Area labels", "Commands", "Dependabot maintenance", "Welcome"})
+# The workflow of this bot, which can't follow its own end: the daily look gives the
+# runs of it that Harden-Runner stopped their second try, those of the days back to
+# STOPPED_SINCE, so that a look that GitHub starts late or misses leaves none behind.
+# A run that ran again has a later attempt, so each gets one second try.
+OWN_WORKFLOW = ".github/workflows/bot-health.yml"
+# The blueprint bot, which the daily look starts for a newer release of the blueprint.
+BLUEPRINT_BOT = ".github/workflows/blueprint-update.yml"
+STOPPED_SINCE = timedelta(days=2)
 OWN_ISSUE_LINE = re.compile(r"^[ \t]*#[ \t]*bot-health:[ \t]*own-issue\b", re.MULTILINE)
 # The runs that do what a schedule does. A push may start the same workflow, but its
 # run may leave out what only the schedule does, such as the tests of the coming
@@ -128,6 +154,25 @@ RENOVATE = "renovate"
 RENOVATE_TITLE = "Renovate logs problems"
 RENOVATE_LABEL = "dependencies"
 MOST_PROBLEMS = 50
+# Renovate's line for two updates of one dependency in one branch, of which it drops
+# one; the rules of the blueprint raise it from info to a warning.
+COLLISION = "Ignoring upgrade collision"
+# The issue that lists the pull requests of Renovate that Renovate leaves alone and
+# that the daily look can't bring back by itself (decision 0144).
+PARKED = "renovate-parked"
+PARKED_TITLE = "Renovate leaves pull requests alone"
+# Renovate's branches, its comment on a pull request whose branch it takes for edited,
+# and the box in the description that asks it to build the branch anew.
+RENOVATE_BRANCH = "renovate/"
+EDITED = "Edited/Blocked Notification"
+BOX = "<!-- rebase-check -->"
+UNTICKED = f"- [ ] {BOX}"
+TICKED = f"- [x] {BOX}"
+# Renovate runs every two hours, or with every push of its Mend app: a box that has
+# been ticked since the night before without a new branch needs a person. Less than a
+# day, so that the next nightly run counts even when GitHub starts its cron a few
+# minutes early.
+REBUILD_TIME = timedelta(hours=20)
 # The issue that asks for an upload of the social preview, which no API offers.
 PREVIEW = "social-preview"
 PREVIEW_TITLE = "Upload the new social preview"
@@ -716,6 +761,18 @@ def watch_run(
         return f"{run.name}: not a run of `{branch}`, nothing to do."
     if run.status != "completed":
         return f"{run.name}: runs again, its next end counts."
+    # The nightly look runs a stopped run of this bot again up to STOPPED_SINCE late
+    # (own_stops): by then a newer run of the workflow may have ended, which counts
+    # instead, so an old commit neither runs again nor opens an issue.
+    if (
+        not published
+        and now - run.updated >= SECOND_TRY_TIME
+        and newer_end(api, repo, branch, data["workflow_id"], run)
+    ):
+        return (
+            f"{run.name}: a newer run ended after {run.link()}, so that one counts, "
+            "nothing to do."
+        )
     # The daily look watches the runs of the branch alone: the verification of a
     # published release that GitHub couldn't start gets its second try or its report
     # here, as any other failure.
@@ -741,6 +798,18 @@ def watch_run(
     return f"{run.name}: {look_at(api, repo, ref, run, issues, now, second_try=True)}."
 
 
+def newer_end(api: Api, repo: str, branch: str, workflow: int, run: Run) -> bool:
+    """Whether a run of the workflow on the branch that came after the run has ended,
+    as passed or failed."""
+    return any(
+        later.id > run.id
+        and later.status == "completed"
+        and (later.conclusion == PASSED or later.conclusion in FAILED)
+        for later in runs_of(api, repo, branch, {"id": workflow}, most=PAGE)
+        if later.of_branch(repo, branch)
+    )
+
+
 def watch_stop(api: Api, repo: str, run_id: int) -> tuple[str, bool]:
     """The end of a run of a bot of events or of a workflow that keeps an issue of its
     own, as the event of GitHub reports it, also one of a pull request or of a fork:
@@ -760,15 +829,22 @@ def watch_stop(api: Api, repo: str, run_id: int) -> tuple[str, bool]:
             "failed.",
             True,
         )
+    text, done = again_after_a_stop(api, repo, run)
+    return f"{run.name}: {text}.", done
+
+
+def again_after_a_stop(api: Api, repo: str, run: Run) -> tuple[str, bool]:
+    """Runs the failed jobs of a run that Harden-Runner stopped once more: what
+    happened, and False when GitHub refused that try."""
     tried = run_again(api, repo, run)
     if tried is None:
         return (
-            f"{run.name}: Harden-Runner stopped a job of {run.link()}, and GitHub "
-            "refused to run it again.",
+            f"Harden-Runner stopped a job of {run.link()}, and GitHub refused to run "
+            "it again",
             False,
         )
     again = "its failed jobs run once more" if tried else "another bot runs it again"
-    return f"{run.name}: Harden-Runner stopped a job of {run.link()}, so {again}.", True
+    return f"Harden-Runner stopped a job of {run.link()}, so {again}", True
 
 
 # ---------------------------------------------------------------- the daily look
@@ -1106,9 +1182,11 @@ def look_after(
     start: bool,
     after_checks: bool,
     own: bool,
+    again: Collection[int] = (),
 ) -> tuple[str, bool]:
     """What the daily look does for one workflow, and whether it started it. With
-    after_checks, a run that the end of another workflow started doesn't count. With
+    after_checks, a run that the end of another workflow started doesn't count, nor
+    does a run of again, which runs once more after the look. With
     own, the workflow keeps an issue of its own: its runs open and close none here,
     and only an issue of the bot from before it said so closes. A latest run that
     GitHub couldn't start runs again once; when GitHub couldn't start that try
@@ -1122,6 +1200,7 @@ def look_after(
             if run.status == "completed"
             and (run.conclusion == PASSED or run.conclusion in FAILED)
             and not (after_checks and run.event == "workflow_run")
+            and run.id not in again
         ),
         None,
     )
@@ -1193,6 +1272,108 @@ def look_after(
     return "; ".join(notes), started
 
 
+def own_stops(
+    api: Api, repo: str, branch: str, workflow: Json, now: datetime
+) -> list[Run]:
+    """The runs of this bot that Harden-Runner stopped at their first attempt, after
+    the end of another workflow, since STOPPED_SINCE, which need a second try: the job
+    run gives it to every other bot, so that the end that they looked at is looked at
+    again and their run passes (decision 0141). A stopped daily look needs none, as
+    the next one makes it up."""
+    since = (now - STOPPED_SINCE).strftime("%Y-%m-%dT%H:%M:%SZ")
+    listed = api.get(
+        f"repos/{repo}/actions/workflows/{workflow['id']}/runs"
+        f"?branch={urllib.parse.quote(branch)}&event=workflow_run&status=failure"
+        f"&created=%3E%3D{since}&exclude_pull_requests=true&per_page=100"
+    )
+    # GitHub lists the runs that ended as a failure in their latest attempt; one that
+    # ran again already is left to that attempt.
+    return [
+        run
+        for item in (listed or {}).get("workflow_runs", [])
+        for run in [Run.of(item)]
+        if run.attempt == 1 and stopped_by_harden_runner(api, repo, run, every=True)
+    ]
+
+
+def again_after_stops(
+    api: Api, repo: str, runs: Iterable[Run]
+) -> tuple[list[str], bool]:
+    """Runs the failed jobs of each of the stopped runs once more: lines for the
+    summary, and False when GitHub refused a try."""
+    lines = []
+    done = True
+    for run in runs:
+        text, tried = again_after_a_stop(api, repo, run)
+        lines.append(f"- {text}.")
+        done = done and tried
+    return lines, done
+
+
+def newer_release(tag: str, have: str) -> bool:
+    """Whether the latest release of the blueprint comes after the version that this
+    repository has, as Copier names it. GitHub calls a release latest by its date or by
+    hand, so an older one is never newer; a version without a number leaves it to the
+    blueprint bot, which verifies the release and refuses an older one."""
+    have = released_tag(have)
+    ours, theirs = version_key(have), version_key(tag)
+    if ours is None or theirs is None:
+        return tag != have
+    return theirs > ours
+
+
+def blueprint_report(
+    api: Api, repo: str, root: Path, branch: str, bot: Json | None, *, start: bool
+) -> tuple[str, bool]:
+    """The daily look for a newer release of the blueprint, and whether it started the
+    blueprint bot for it. The Rollout starts the bots of the release app of the
+    blueprint right after a release; every other repository, such as one of another
+    owner, would wait for the weekly run of its bot, so this look starts it within a
+    day, without a schedule of its own (decision 0052). Nothing to say without the bot
+    or its answers, as in the blueprint itself."""
+    answers = root / ANSWERS
+    if bot is None or bot["state"] != "active" or not answers.is_file():
+        return "", False
+    text = answers.read_text(encoding="utf-8")
+    source = answered_source(text)
+    if not source:
+        return "", False
+    have = answered_release(text)
+    latest = api.get(f"repos/{source}/releases/latest") or {}
+    tag = str(latest.get("tag_name") or "")
+    if not tag:
+        return f"{code(source)} has no published release.", False
+    if not newer_release(tag, have):
+        return (
+            f"This repository has {code(have)}, and {code(tag)} is the latest.",
+            False,
+        )
+    brought = api.get(f"repos/{repo}/contents/{ANSWERS}?ref={UPDATE_BRANCH}")
+    content = str((brought or {}).get("content") or "")
+    if released_tag(answered_release(base64.b64decode(content).decode())) == tag:
+        return f"The pull request of the blueprint bot brings {code(tag)}.", False
+    out = f"{code(tag)} is out, and this repository has {code(have or 'none')}"
+    # A run of the bot that the Rollout or its schedule started brings it already,
+    # and one that failed since the release fails again: its weekly run and its issue
+    # of failures take that on, so that the owner gets no mail of a failure each day.
+    runs = runs_of(api, repo, branch, bot, most=50)
+    if any(run.status != "completed" for run in runs):
+        return f"{out}: the blueprint bot is running already.", False
+    published = str(latest.get("published_at") or "")
+    if published and any(
+        run.conclusion == "failure" and run.created >= datetime.fromisoformat(published)
+        for run in runs[:1]
+    ):
+        return (
+            f"{out}: the blueprint bot failed on it, so it waits for its weekly run.",
+            False,
+        )
+    if not start:
+        return f"{out}: the blueprint bot starts in a later look.", False
+    api.post(f"repos/{repo}/actions/workflows/{bot['id']}/dispatches", {"ref": branch})
+    return f"{out}: started the blueprint bot.", True
+
+
 def sweep(
     api: Api,
     repo: str,
@@ -1233,7 +1414,19 @@ def sweep(
         (str(workflow["name"]), texts[str(workflow["path"])]) for workflow in workflows
     )
     starts = 0
+    begun: set[int] = set()
     healthy = True
+    own = next((item for item in workflows if item["path"] == OWN_WORKFLOW), None)
+    stopped: list[Run] = []
+    stops: list[str] = []
+    if own is not None and own["state"] == "active":
+        try:
+            stopped = own_stops(api, repo, branch, own, now)
+        except GitHubError as error:
+            stops = [f"Couldn't look: {code(str(error))}"]
+            healthy = error.unavailable
+            if error.unavailable and notices is not None:
+                notices.append(unreachable(error))
     for workflow in workflows:
         name = str(workflow["name"])
         if str(workflow["path"]).startswith("dynamic/") or workflow["state"] not in (
@@ -1254,6 +1447,9 @@ def sweep(
                 start=starts < MOST_STARTS,
                 after_checks=name in after_checks,
                 own=name in OWN_ISSUE or own_issue(text),
+                # A stopped run of this bot gets its second try below, so that it
+                # opens no issue that its second try closes again.
+                again={run.id for run in stopped} if workflow is own else (),
             )
         except GitHubError as error:
             state, started = f"couldn't look: {code(str(error))}", False
@@ -1262,7 +1458,38 @@ def sweep(
             elif notices is not None and not notices:
                 notices.append(unreachable(error))
         starts += started
+        if started:
+            begun.add(int(workflow["id"]))
         lines.append(f"| {code(name)} | {state} |")
+    # After the look at every workflow, so that a look that runs again doesn't meet
+    # the daily look at the same workflow.
+    if stopped:
+        try:
+            stops, tried = again_after_stops(api, repo, stopped)
+        except GitHubError as error:
+            stops, tried = [f"Couldn't look: {code(str(error))}"], error.unavailable
+            if error.unavailable and notices is not None and not notices:
+                notices.append(unreachable(error))
+        healthy = healthy and tried
+    if own is not None and stops:
+        heading = f"#### Runs of {code(str(own['name']))} that Harden-Runner stopped"
+        lines += ["", heading, "", *stops]
+    # A bot that the look started for its missed schedule brings the release anyway.
+    bot = next((item for item in workflows if item["path"] == BLUEPRINT_BOT), None)
+    if bot is not None and int(bot["id"]) not in begun:
+        try:
+            news, started = blueprint_report(
+                api, repo, root, branch, bot, start=starts < MOST_STARTS
+            )
+        except GitHubError as error:
+            news, started = f"Couldn't look: {code(str(error))}", False
+            if not error.unavailable:
+                healthy = False
+            elif notices is not None and not notices:
+                notices.append(unreachable(error))
+        starts += started
+        if news:
+            lines += ["", "#### Releases of the blueprint", "", news]
     try:
         uploaded = preview_report(api, repo, root, branch, issues.get(PREVIEW), opener)
     except (GitHubError, Unreadable) as error:
@@ -1275,6 +1502,16 @@ def sweep(
             healthy = False
     if uploaded:
         lines += ["", "#### Social preview", "", uploaded]
+    try:
+        parked = parked_report(api, repo, issues.get(PARKED), now)
+    except GitHubError as error:
+        parked = f"Couldn't look: {code(str(error))}"
+        if not error.unavailable:
+            healthy = False
+        elif notices is not None and not notices:
+            notices.append(unreachable(error))
+    if parked:
+        lines += ["", "#### Pull requests of Renovate", "", parked]
     return "\n".join(lines) + "\n", healthy
 
 
@@ -1396,6 +1633,12 @@ def problem_of(entry: Mapping[str, Any]) -> Problem:
     detail = ""
     if isinstance(error, dict):
         detail = str(error.get("message") or "")
+    if entry.get("msg") == COLLISION:
+        detail = (
+            f"{entry.get('depName')} {entry.get('currentValue')}: "
+            f"kept {entry.get('previousNewValue')}, "
+            f"dropped {entry.get('thisNewValue')}"
+        )
     place = next(
         (
             str(entry[key])
@@ -1472,6 +1715,15 @@ def problems_text(problems: Mapping[Problem, int], hidden: int, run: str) -> str
             "",
             f"And {len(problems) - MOST_PROBLEMS} more in the log of the run.",
         ]
+    if any(problem.message == COLLISION for problem in problems):
+        lines += [
+            "",
+            "An upgrade collision: two updates of one dependency met in one branch, "
+            "and Renovate committed only the one that it kept, or neither when that "
+            "one waits, as for its release age. A rule that gives one of them a branch "
+            "of its own keeps them apart, as the blueprint does with the digests of "
+            "the images.",
+        ]
     if hidden:
         lines += [
             "",
@@ -1535,3 +1787,162 @@ def renovate_report(
         return f"{text}\nOpened #{number}.\n"
     api.patch(f"repos/{repo}/issues/{issue.number}", {"body": body})
     return f"{text}\nUpdated #{issue.number}.\n"
+
+
+# ---------------------------------------------------------------- Renovate's pull requests
+
+
+def account_of(commit: Mapping[str, Any]) -> str:
+    """The GitHub account that authored a commit, or nothing for an address that GitHub
+    links to none."""
+    return str((commit.get("author") or {}).get("login") or "")
+
+
+def blocked_after(
+    api: Api, repo: str, number: int, renovate: str, since: datetime
+) -> bool:
+    """Whether Renovate said on the pull request, after since, that it takes the branch
+    for edited: its own comment, not someone's quote of it."""
+    comments = api.get(f"repos/{repo}/issues/{number}/comments?per_page=100") or []
+    return any(
+        str((comment.get("user") or {}).get("login") or "") == renovate
+        and EDITED in str(comment.get("body") or "")
+        and datetime.fromisoformat(str(comment["updated_at"])) > since
+        for comment in comments
+    )
+
+
+def look_at_pull(
+    api: Api, repo: str, pull: Mapping[str, Any], now: datetime
+) -> tuple[str, bool] | None:
+    """The line of the summary for a pull request of Renovate that left its automatic
+    path, and whether a person has to act; None for one on that path.
+
+    Renovate rebuilds, rebases and merges its branch only while it takes every commit
+    on it for its own or for that of an author it ignores, such as the release app of
+    the bots (decision 0104). It leaves the branch alone after a commit of a person,
+    also a merge of the base that *Update branch* makes in their name, and after one
+    of a bot that it doesn't ignore, which its comment Edited/Blocked Notification
+    says. The box for a rebase brings it back: Renovate builds the branch anew from
+    the base, without those commits. The look ticks it where that drops nothing that
+    a new branch doesn't make again, merges of the base and commits of bots, and
+    leaves the changes of a person to that person (decision 0144)."""
+    number = int(pull["number"])
+    renovate = str((pull.get("user") or {}).get("login") or "")
+    commits = api.get(f"repos/{repo}/pulls/{number}/commits?per_page=100") or []
+    others = [commit for commit in commits if account_of(commit) != renovate]
+    people = [commit for commit in others if not account_of(commit).endswith("[bot]")]
+    if not people and not (
+        others
+        and blocked_after(
+            api,
+            repo,
+            number,
+            renovate,
+            datetime.fromisoformat(str(commits[-1]["commit"]["committer"]["date"])),
+        )
+    ):
+        return None
+    link = f"#{number} {code(str(pull['head']['ref']))}"
+    kept = [
+        str(commit["sha"])[:7]
+        for commit in people
+        if len(commit.get("parents") or []) < 2
+    ]
+    if kept:
+        shown = ", ".join(f"`{sha}`" for sha in kept)
+        return (
+            f"{link}: Renovate takes its branch for edited, and it carries changes of "
+            f"a person that aren't merges of the base ({shown}), which a new branch "
+            "would drop. Move what they change to a pull request of its own, then "
+            "tick the box for a rebase in its description, or close it.",
+            True,
+        )
+    body = str(pull.get("body") or "")
+    if UNTICKED in body:
+        api.patch(
+            f"repos/{repo}/pulls/{number}",
+            {"body": body.replace(UNTICKED, TICKED, 1)},
+        )
+        return (
+            f"{link}: Renovate took its branch for edited after merges of the base or "
+            "commits of bots, which a new branch makes again: ticked the box for a "
+            "rebase, and Renovate builds the branch anew in its next run.",
+            False,
+        )
+    if TICKED not in body:
+        return (
+            f"{link}: Renovate takes its branch for edited, and its description has no "
+            "box for a rebase: add the label `rebase`, which asks Renovate the same.",
+            True,
+        )
+    updated = datetime.fromisoformat(str(pull["updated_at"]))
+    if now - updated < REBUILD_TIME:
+        return (
+            f"{link}: its box for a rebase is ticked, and Renovate builds the branch "
+            "anew in its next run.",
+            False,
+        )
+    return (
+        f"{link}: its box for a rebase has been ticked since {moment(updated)}, and "
+        "Renovate hasn't built the branch anew: look at the log of Renovate's latest "
+        "run.",
+        True,
+    )
+
+
+def parked_body(reported: Sequence[str]) -> str:
+    """What the issue says: the pull requests, and when it closes."""
+    listed = "\n".join(f"- {line}" for line in reported)
+    return (
+        "Renovate leaves these pull requests alone: it no longer rebuilds, rebases or "
+        "merges their branches, and the daily look of the bot-health bot can't bring "
+        "them back by itself.\n\n"
+        f"{listed}\n\n"
+        "Bring a branch of Renovate up to date by leaving it to Renovate and the "
+        "branch bot, not with *Update branch*, which merges in your name. Where the "
+        "only commits that aren't Renovate's are such merges or commits of bots, the "
+        "daily look ticks the box for a rebase by itself. This issue closes once "
+        "Renovate takes each of these pull requests up again, or they are closed.\n"
+    )
+
+
+def parked_report(api: Api, repo: str, issue: Issue | None, now: datetime) -> str:
+    """Brings back the open pull requests of Renovate that it leaves alone where that
+    drops nothing of a person, and keeps the one issue with the others current. The
+    lines of the summary; empty when there is nothing to say."""
+    pulls = [
+        pull
+        for pull in api.get(f"repos/{repo}/pulls?state=open&per_page=100") or []
+        if str(pull["head"]["ref"]).startswith(RENOVATE_BRANCH)
+        # The name of a fork's branch says nothing about who made it.
+        and ((pull["head"].get("repo") or {}).get("full_name")) == repo
+    ]
+    found = [
+        look
+        for pull in sorted(pulls, key=lambda item: int(item["number"]))
+        for look in [look_at_pull(api, repo, pull, now)]
+        if look is not None
+    ]
+    lines = [f"- {line}" for line, _ in found]
+    reported = [line for line, person in found if person]
+    if reported:
+        body = f"{marker({'key': PARKED})}\n{parked_body(reported)}"
+        if issue is None:
+            number = open_issue(api, repo, PARKED_TITLE, body, [TYPE, RENOVATE_LABEL])
+            lines += ["", f"Opened #{number}."]
+        elif issue.body != body:
+            api.patch(f"repos/{repo}/issues/{issue.number}", {"body": body})
+            lines += ["", f"Updated #{issue.number}."]
+        else:
+            lines += ["", f"Listed in #{issue.number}."]
+    elif issue is not None:
+        close_issue(
+            api,
+            repo,
+            issue.number,
+            "Renovate takes every one of its open pull requests up again.",
+        )
+        lines += ["", f"Closed #{issue.number}."]
+    # Without a line of a pull request, a line of the issue alone.
+    return "\n".join(lines).strip("\n")

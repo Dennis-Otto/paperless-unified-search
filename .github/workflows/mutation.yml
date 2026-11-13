@@ -10,13 +10,15 @@ name: Mutation
 # the tests: one job collects them, every part loads them and runs only its mutants,
 # and a test that fails without any mutant stops the run there, in one job. The
 # report puts the parts together into one score, lists first the survivors that
-# change the logic, with their changes, and keeps the details as an artifact. A low
+# change the logic, with their changes, and keeps the details as an artifact; for
+# Infection it reads the Covered Code MSI and the escaped mutants of its logs. A low
 # score fails nothing, a run that measures nothing fails, with the tests that failed
-# without any mutant; a score of the default branch that drops below that of the run
-# before opens one issue, which closes once a run is back. A pull request that changes
-# how the mutants run collects the stats and tries a sample of the mutants in one part,
-# and shows a defect as a red check. That check isn't required: a pull request that
-# merges itself, such as an update of mutmut, doesn't wait for it.
+# without any mutant; a score of the default branch that drops below the best of the
+# runs before opens one issue, which closes once a run is back. A pull request that
+# changes how the mutants run collects the stats and tries a sample of the mutants in
+# one part, Infection the mutants of a few files, and shows a defect as a red check.
+# That check isn't required: a pull request that merges itself, such as an update of
+# mutmut, doesn't wait for it.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -67,7 +69,7 @@ jobs:
         run: |
           script=.github/blueprint.py
           [[ -f "$script" ]] || script=blueprint.py
-          # A pull request tries a sample of the functions, in one part.
+          # A pull request tries a sample of the functions, or of the PHP files, in one part.
           sample=()
           if [[ "$EVENT" == pull_request ]]; then
             sample=(--sample)
@@ -187,9 +189,12 @@ jobs:
       INFECTION_VERSION: 0.35.9
       INFECTION_SHA256: c9b332af194380b2043eb6e309b308653f221073f41825b54e862fbef606a094
       # The time of mutmut, which keeps the mutants it reached: a pull request tries
-      # its sample for 12 minutes, after the stats. Infection, which reports at its end
-      # only, takes the time of the job.
+      # its sample for 12 minutes, after the stats.
       MUTMUT_LIMIT: ${{ github.event_name == 'pull_request' && '12m' || '320m' }}
+      # The time of Infection, which reports at its end only: shorter than that of the
+      # job, after PHP and the tools, so that a run out of time fails with a message of
+      # its own rather than as cancelled.
+      INFECTION_LIMIT: ${{ github.event_name == 'pull_request' && '18m' || '330m' }}
     steps:
       - name: Record the network traffic of the job
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -331,6 +336,9 @@ jobs:
         run: composer install --no-interaction --prefer-dist --no-progress
       - name: Run the mutants against the tests
         if: needs.plan.outputs.kind == 'php'
+        env:
+          # The files of the sample of a pull request, one on each line; none for every one.
+          PATTERNS: ${{ matrix.patterns }}
         run: |
           if ! compgen -G "infection.json*" >/dev/null; then
             {
@@ -353,13 +361,28 @@ jobs:
           # the code and its coverage. The artifact keeps the output for the dashboard.
           # A low score fails nothing, also where the project's own configuration sets
           # a minimum; an error of Infection fails the step, through tee and tail.
+          # --filter takes the files of a sample, separated by commas, and changes only
+          # them; the tests run once in full all the same.
+          filter=()
+          if [[ -n "$PATTERNS" ]]; then
+            filter=(--filter="$(paste -sd, - <<< "$PATTERNS")")
+          fi
           mkdir -p build
           set -o pipefail
-          php "$RUNNER_TEMP/infection.phar" --threads=max --with-uncovered --min-msi=0 --min-covered-msi=0 \
-            --no-progress --no-interaction --no-ansi --logger-github=false 2>&1 |
-            tee build/infection-output.log | tail -n 20
+          status=0
+          timeout --kill-after=1m "$INFECTION_LIMIT" \
+            php "$RUNNER_TEMP/infection.phar" --threads=max --with-uncovered --min-msi=0 --min-covered-msi=0 \
+            --no-progress --no-interaction --no-ansi --logger-github=false "${filter[@]}" 2>&1 |
+            tee build/infection-output.log | tail -n 20 || status=$?
+          # timeout ends with 124, or 137 when it had to kill Infection.
+          if ((status == 124 || status == 137)); then
+            echo "::error title=Infection ran out of time::Infection didn't finish within $INFECTION_LIMIT, so it reports no score. A pull request tries a sample of the files; for the weekly run, make the tests quicker or let the configuration of Infection change less."
+          fi
+          exit "$status"
       - name: Report the score
         if: always() && needs.plan.outputs.kind == 'php'
+        env:
+          PATTERNS: ${{ matrix.patterns }}
         run: |
           # "40 mutations were generated:", in the output of Infection with any configuration.
           generated="$(sed -nE '/^ *[0-9]+ mutations were generated/{s/^ *([0-9]+).*/\1/p;q;}' build/infection-output.log 2>/dev/null || true)"
@@ -369,6 +392,14 @@ jobs:
           fi
           {
             echo "### Mutation tests (Infection)"
+            if [[ -n "$PATTERNS" ]]; then
+              echo
+              echo "The sample of a pull request: the mutants of $(grep -c . <<< "$PATTERNS") files, the same ones each time. The weekly run changes every file."
+              echo
+              mapfile -t sample < <(grep . <<< "$PATTERNS")
+              printf -- "- \`%s\`\n" "${sample[@]}"
+              echo
+            fi
             if [[ "$scored" == true ]]; then
               grep -E '(Mutation Score Indicator|Mutation Code Coverage|Covered Code MSI)' build/infection-output.log \
                 | sed 's/^ */- /'
@@ -391,20 +422,23 @@ jobs:
           if [[ "$scored" != true ]]; then
             exit 1
           fi
-      - name: Keep the results
+      # The report compares the score with the run before and keeps the logs in the
+      # artifact mutation, which the dashboard and the next run read.
+      - name: Hand the logs of Infection to the report
         if: always() && needs.plan.outputs.kind == 'php'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: mutation
+          name: mutation-part-${{ matrix.part }}
           path: build/infection*.log
-          retention-days: 30
+          retention-days: 7
           if-no-files-found: ignore
 
   report:
     name: mutation report
     needs: [plan, stats, mutation]
-    # Stats that failed have said why; no part ran.
-    if: ${{ !cancelled() && needs.plan.outputs.kind == 'python' && needs.stats.result == 'success' }}
+    # Stats that failed have said why; no part ran. Infection has no stats, and its
+    # report runs once its job ran, to say that a run without a score measured nothing.
+    if: ${{ !cancelled() && ((needs.plan.outputs.kind == 'python' && needs.stats.result == 'success') || (needs.plan.outputs.kind == 'php' && needs.mutation.result != 'skipped')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -443,6 +477,7 @@ jobs:
             gh run download "$previous" --name mutation --dir "$RUNNER_TEMP/previous" || true
           fi
       - name: Report the score and the surviving mutants
+        if: needs.plan.outputs.kind == 'python'
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -455,6 +490,29 @@ jobs:
           cat "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY"
           # A run that measures nothing, not a low score, fails: an error of the tool,
           # of its configuration or of a test.
+          exit "$status"
+      # The Covered Code MSI of the output of Infection, as mutation.json in the form of
+      # mutmut, so that a drop opens the issue as for Python, with the files whose
+      # mutants escaped from infection.log; the logs go on into the artifact.
+      - name: Report the score of Infection
+        if: needs.plan.outputs.kind == 'php'
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          # The sample of a pull request is compared with no other run.
+          sample=()
+          if [[ "$EVENT" == pull_request ]]; then
+            sample=(--sample)
+          fi
+          status=0
+          python3 "$script" mutation infection "$RUNNER_TEMP/parts" --root "$GITHUB_WORKSPACE" \
+            --out "$RUNNER_TEMP/mutation" --previous "$RUNNER_TEMP/previous/mutation.json" \
+            --run "$RUN_URL" "${sample[@]}" > "$RUNNER_TEMP/summary.md" || status=$?
+          cat "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          # A run without a score measured nothing; the job of the mutants says why.
           exit "$status"
       # The score, the results that the dashboard reads, and every survivor with its
       # change; the next weekly run compares with mutation.json.

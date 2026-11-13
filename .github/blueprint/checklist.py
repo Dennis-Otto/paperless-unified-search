@@ -14,10 +14,11 @@ from pathlib import Path
 from typing import Any
 
 from blueprint import workflows
-from blueprint.bootstrap import PUSH_AS_GH
+from blueprint.bootstrap import PUSH_AS_GH, SIGNING
 from blueprint.github import Api, GitHubError
 from blueprint.settings import (
     BRANCH,
+    CLASSIC_PROTECTION,
     Drift,
     Plan,
     Settings,
@@ -228,7 +229,8 @@ def release_app(api: Api, repo: str, settings: Settings) -> tuple[Step, Step]:
     how = [
         "Register it with one command: you confirm one page on GitHub, and it sets the"
         " private key and opens the pull request that names the app. Turn"
-        " commit.gpgsign on first: main takes signed commits only, also this one:",
+        " commit.gpgsign on first, with a key that GitHub verifies, as"
+        f" {SIGNING} sets it up: main takes signed commits only, also this one:",
         "python3 .github/blueprint.py app register",
         f"The app gets read and write access to {listed('write')}, read access to"
         f" {listed('read')}, and no webhook. For an app that exists, such as for a"
@@ -310,7 +312,8 @@ def change_answer(data: str) -> list[str]:
     a signature fails nothing until the merge, which the rules of main then block."""
     return [
         "main takes only pull requests of signed commits, so run this on a branch, with"
-        " commit.gpgsign on or --gpg-sign added to the commit:",
+        " commit.gpgsign on or --gpg-sign added to the commit, with a key as"
+        f" {SIGNING} sets it up:",
         *answer_commands(data),
         f"With pipx in place of uv, the Copier line starts pipx run --spec {PINNED};"
         " a Copier of your own, copier update.",
@@ -435,6 +438,40 @@ DEPENDABOT_ALERTS = Step(
     "https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/own-account.md"
     "#8-the-settings-app-optional",
 )
+DEPENDENCY_REVIEW = ".github/dependency-review.yml"
+# The tools of the blueprint bot (.github/copier-requirements.txt) whose license the
+# dependency review reads wrongly or doesn't know, as a new repository allows them in
+# template/.github/dependency-review.yml.jinja. The project owns its file, so an entry
+# that a release adds there reaches an existing repository only through this step: the
+# file decides which licenses and advisories pass, and no bot changes it where nobody
+# reads the change (decision 0143).
+BOT_TOOLS = (
+    "pkg:pypi/jinja2-ansible-filters",
+    "pkg:pypi/typing-extensions",
+    "pkg:pypi/wcwidth",
+)
+
+
+def bot_tools_allowed(root: Path) -> Step:
+    """The dependency review of a pull request of the blueprint bot, whose tools come
+    with each update, passes their licenses, as it does in a new repository."""
+    path = root / DEPENDENCY_REVIEW
+    text = path.read_text(encoding="utf-8") if path.is_file() else ""
+    # The items of the file as YAML writes them, in a block or a flow list, quoted or
+    # not, without its comments.
+    items = set(
+        re.findall(r"""["']?([^\s"',\[\]]+)["']?""", re.sub(r"(?:^|\s)#.*", "", text))
+    )
+    missing = [tool for tool in BOT_TOOLS if tool not in items]
+    return Step(
+        "The dependency review allows the licenses of the blueprint bot's tools",
+        not missing,
+        f"Add {', '.join(missing)} under allow-dependencies-licenses in"
+        f" {DEPENDENCY_REVIEW}, as a new repository has them: the review otherwise"
+        " stops the update of the blueprint that brings a new version of one."
+        if missing
+        else "",
+    )
 
 
 def workflows_step(api: Api, repo: str, root: Path) -> list[Step]:
@@ -491,10 +528,12 @@ def checklist(
     plan = read_plan(api, repo)
     settings = fitted(api, repo, settings, plan)
     drift = check(api, repo, settings, plan.private)
-    # What a person sets, which the API can't: the secrets and the files that the
-    # community profile counts, each a step of its own.
+    # What a person sets, which the API can't: the secrets, the files that the
+    # community profile counts and the removal of a classic branch protection, which
+    # an existing repository may still have, each a step of its own.
     secrets_missing = [item for item in drift if item.setting.startswith("secret ")]
     community = [item for item in drift if item.setting == "community profile"]
+    classic = [item for item in drift if item.setting == CLASSIC_PROTECTION]
     target = settings.variables.get("PUBLISH_TO", "none")
     # The app first: the settings and the secrets that follow name it.
     registered, installed = release_app(api, repo, settings)
@@ -513,11 +552,22 @@ def checklist(
             not community,
             "\n".join(item.manual for item in community),
         ),
+        Step(
+            f"No classic branch protection of {BRANCH}, only the rulesets",
+            not classic,
+            "\n".join(
+                # A protection whose switches are all off requires nothing in words.
+                ("it exists" if item.have == "present" else f"it requires {item.have}")
+                + f": {item.manual}"
+                for item in classic
+            ),
+        ),
         installed,
         DEPENDABOT_ALERTS,
         renovate(
             api, repo, root, str(settings.variables.get("RELEASE_APP", "")).strip()
         ),
+        bot_tools_allowed(root),
         Step(
             "Settings → General → Issues: 'Auto-close issues with merged linked pull requests' off "
             "(the issue assistant closes them with the release)",

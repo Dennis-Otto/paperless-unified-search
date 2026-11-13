@@ -14,6 +14,10 @@ Before any part, one job runs the stats of mutmut: the whole suite once, with th
 trampolines that record which tests reach each function. It takes ten times as long
 as the tests, so the job hands its stats to every part, which loads them and runs
 only its mutants, and a test that fails without any mutant stops the run there.
+
+A pull request that changes how the mutants run tries a sample in one part: for
+mutmut a few of the functions, for Infection, which changes the PHP of a Nextcloud
+app in one part, a few of the files.
 """
 
 from __future__ import annotations
@@ -48,10 +52,26 @@ MOST_PARTS = 8
 # one part: enough to show a defect of the run within minutes, while the schedule runs
 # every part.
 SAMPLE_MUTANTS = 200
+# Infection, which mutates the PHP of a Nextcloud app, tries the files of a sample of
+# about so many lines in a pull request: all of the 17,000 lines of paperless-sync take
+# half an hour, a sample of these a minute or two, after the tests have run once.
+SAMPLE_LINES = 600
+# The files in which Infection looks for the code to change: the configuration that
+# Infection reads first, and lib/ without one, as the workflow writes it then.
+INFECTION_CONFIGURATIONS = (
+    "infection.json5",
+    "infection.json",
+    "infection.json5.dist",
+    "infection.json.dist",
+)
+PHP_SOURCE = "lib"
 # The score and the score of the logic count as dropped when they fall by more than
 # so many points: a run measures the same code a little differently at times, as when
 # a mutant hits its time limit.
 TOLERANCE = 0.5
+# The scores of a drop. Each is compared with the highest of the complete runs before,
+# not only with the run before: a fall of less than the tolerance each week adds up.
+SCORES = ("score", "logic_score")
 # The summary shows the changes of so many survivors of the logic and so many rows of
 # each table; GitHub takes a summary of up to a MiB. The artifact keeps every one.
 MOST_DIFFS = 100
@@ -64,6 +84,28 @@ TITLE = "Mutation score dropped"
 LABELS = ["maintenance"]
 # Greedy: the state holds objects of its own, on the one line of the marker.
 MARKER = re.compile(r"<!-- mutation-score (\{.*\}) -->")
+
+# The tool of the PHP of a Nextcloud app, as mutation.json names it, and what its output
+# and its text log say: a count with its words, such as "35 mutants were killed by Test
+# Framework", the score, a heading of the log, such as "Escaped mutants:", and a mutant
+# below it, "1) /home/runner/work/app/app/lib/Sync.php:42    [M] GreaterThan [ID] 1a2b".
+INFECTION = "infection"
+INFECTION_COUNT = re.compile(r"^ *(\d+) (\S.*?):? *$", re.MULTILINE)
+INFECTION_GENERATED = "mutations were generated"
+INFECTION_ESCAPED = "covered mutants were not detected"
+# What a test or the static analysis caught, as the Covered Code MSI counts it.
+INFECTION_CAUGHT = (
+    "mutants were killed",
+    "mutants were caught",
+    "errors were encountered",
+    "syntax errors were encountered",
+    "time outs were encountered",
+)
+INFECTION_SCORE = re.compile(r"Covered Code MSI: (\d+(?:\.\d+)?)%")
+INFECTION_SECTION = re.compile(r"(\w[\w ]*) mutants:")
+INFECTION_MUTANT = re.compile(
+    r"\d+\) (?P<path>.+?):(?P<line>\d+) +\[M\] (?P<mutator>\S+)"
+)
 
 # The kinds of survivors, in the order in which the summary lists them.
 LOGIC = "logic"
@@ -397,22 +439,110 @@ def sampled(found: Sequence[Module], mutants: int) -> list[Unit]:
     return chosen or [min(units, key=lambda unit: (unit.mutants, unit.name))]
 
 
+# A comment of JSON5 on a line of its own; one after a value, such as the // of a URL,
+# stays, which the names of the directories don't need.
+COMMENT_LINE = re.compile(r"^\s*//.*$", re.MULTILINE)
+DIRECTORIES = re.compile(r"""["']?directories["']?\s*:\s*\[([^\]]*)\]""")
+EXCLUDES = re.compile(r"""["']?excludes["']?\s*:\s*\[([^\]]*)\]""")
+QUOTED = re.compile(r""""([^"\\]*)"|'([^'\\]*)'""")
+# A function with a body that does something: an interface, an abstract method or a
+# constructor that only promotes its parameters has no code that Infection changes.
+PHP_CODE = re.compile(r"\bfunction\b[^;{]*\{\s*[^\s}]")
+
+
+def infection_configuration(root: Path) -> str:
+    """The text of the configuration that Infection reads first, without the comments
+    of JSON5 on lines of their own, or nothing without one."""
+    for name in INFECTION_CONFIGURATIONS:
+        path = root / name
+        if path.is_file():
+            return COMMENT_LINE.sub("", path.read_text(encoding="utf-8"))
+    return ""
+
+
+def quoted_list(pattern: re.Pattern[str], text: str) -> list[str]:
+    """The strings of a list that the pattern finds, read leniently: JSON5 has quotes
+    of its own."""
+    found = pattern.search(text)
+    if not found:
+        return []
+    return [a or b for a, b in QUOTED.findall(found[1])]
+
+
+def php_sources(root: Path) -> list[str]:
+    """The directories of the code that Infection changes: source.directories of the
+    configuration that it reads, of JSON5 or JSON, or lib/, as the workflow writes it
+    without one."""
+    names = quoted_list(DIRECTORIES, infection_configuration(root))
+    return [name.strip("/") for name in names if name.strip("/")] or [PHP_SOURCE]
+
+
+def php_excluded(path: str, excludes: list[str]) -> bool:
+    """Whether source.excludes of Infection leaves out a file, by its path relative to
+    its source directory: an entry is a folder or a file there, or a regular
+    expression between slashes or hashes, as Infection takes it."""
+    for exclude in excludes:
+        if len(exclude) > 2 and exclude[0] == exclude[-1] and exclude[0] in "/#":
+            if re.search(exclude[1:-1], path):
+                return True
+        elif exclude.strip("/") and (path + "/").startswith(exclude.strip("/") + "/"):
+            return True
+    return False
+
+
+def php_files(root: Path) -> dict[str, int]:
+    """The PHP files of the source that have code to change, with their lines; a file
+    that source.excludes leaves out has none that Infection changes."""
+    excludes = quoted_list(EXCLUDES, infection_configuration(root))
+    found: dict[str, int] = {}
+    for directory in php_sources(root):
+        for path in sorted((root / directory).rglob("*.php")):
+            if not path.is_file() or php_excluded(
+                path.relative_to(root / directory).as_posix(), excludes
+            ):
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            if PHP_CODE.search(text):
+                found[path.relative_to(root).as_posix()] = len(text.splitlines())
+    return found
+
+
+def sampled_files(found: Mapping[str, int], lines: int) -> list[str]:
+    """The files of a sample of about so many lines for Infection, or none when the
+    code has no more, which the part then runs whole. As sampled() picks functions:
+    in the order of a hash of their paths, so that a pull request tries the same ones
+    each time; a file larger than the sample stays out, unless every one is."""
+    if sum(found.values()) <= lines:
+        return []
+    paths = sorted(found, key=lambda path: hashlib.sha256(path.encode()).hexdigest())
+    chosen: list[str] = []
+    count = 0
+    for path in paths:
+        if count + found[path] <= lines:
+            chosen.append(path)
+            count += found[path]
+    return sorted(chosen) or [min(paths, key=lambda path: (found[path], path))]
+
+
 def plan(
     root: Path, parts: int | None, sample: bool = False
 ) -> tuple[str, list[dict[str, Any]]]:
     """The tool and the parts of the run, as the matrix of the workflow takes them.
     One part runs every mutant; several each run those of their code, and the sample
-    of a pull request those of its functions."""
+    of a pull request those of its functions, or for Infection those of its files."""
     kind = kind_of(root)
     if not kind:
         return "", []
-    every = True
     if kind != "python":
-        buckets: list[list[Unit]] = [[]]
-    elif sample:
+        # Infection runs in one part; its sample is a few files, one on each line.
+        files = sampled_files(php_files(root), SAMPLE_LINES) if sample else []
+        return kind, [
+            {"part": 1, "parts": 1, "patterns": "\n".join(files), "mutants": 0}
+        ]
+    if sample:
         found = modules(root)
         chosen = sampled(found, SAMPLE_MUTANTS)
-        buckets = [chosen or [module.whole() for module in found]]
+        buckets: list[list[Unit]] = [chosen or [module.whole() for module in found]]
         every = not chosen
     else:
         buckets = split(modules(root), parts)
@@ -1007,10 +1137,7 @@ def percent(value: float) -> str:
 
 def dropped(now: Mapping[str, Any], before: Mapping[str, Any]) -> bool:
     """Whether the score or the score of the logic fell since before."""
-    return any(
-        float(now[key]) < float(before[key]) - TOLERANCE
-        for key in ("score", "logic_score")
-    )
+    return any(float(now[key]) < float(before[key]) - TOLERANCE for key in SCORES)
 
 
 def comparable(data: Mapping[str, Any] | None) -> bool:
@@ -1030,6 +1157,47 @@ def baseline_of(data: Mapping[str, Any] | None) -> dict[str, Any] | None:
         return dict(data)
     kept = data.get("baseline") if data else None
     return dict(kept) if isinstance(kept, dict) and comparable(kept) else None
+
+
+def snapshot(data: Mapping[str, Any]) -> dict[str, Any]:
+    """A run as a mark or a baseline keeps it, without the runs that it keeps itself."""
+    return {
+        key: value for key, value in data.items() if key not in ("baseline", "best")
+    }
+
+
+def mark_in(data: Mapping[str, Any] | None) -> dict[str, dict[str, Any]] | None:
+    """The high-water mark that a run carries: for the score and for the score of the
+    logic, the complete run with the highest since the mark began."""
+    best = data.get("best") if data else None
+    if isinstance(best, dict) and all(comparable(best.get(key)) for key in SCORES):
+        return {key: dict(best[key]) for key in SCORES}
+    return None
+
+
+def best_of(data: Mapping[str, Any] | None) -> dict[str, dict[str, Any]] | None:
+    """The high-water mark up to a run, which the next run compares with: the mark of
+    the run, or, for a run from before the mark, its baseline as its own mark."""
+    found = mark_in(data)
+    if found is not None:
+        return found
+    base = baseline_of(data)
+    return {key: snapshot(base) for key in SCORES} if base is not None else None
+
+
+def raised(
+    best: Mapping[str, Mapping[str, Any]] | None, now: Mapping[str, Any]
+) -> dict[str, dict[str, Any]] | None:
+    """The mark after a run: a complete run that reaches a score of the mark takes its
+    place for that score; an incomplete one leaves the mark as it is."""
+    if not comparable(now):
+        return {key: dict(run) for key, run in best.items()} if best else None
+    return {
+        key: snapshot(now)
+        if best is None or float(now[key]) >= float(best[key][key])
+        else dict(best[key])
+        for key in SCORES
+    }
 
 
 def run_link(data: Mapping[str, Any], words: str) -> str:
@@ -1166,12 +1334,121 @@ def comparison(now: Mapping[str, Any], previous: Mapping[str, Any] | None) -> st
     if not comparable(previous):
         return "No complete run before this one to compare with."
     assert previous is not None
+    if now.get("tool") == INFECTION:
+        # Infection sorts no mutants by kind: its score of the logic is its score.
+        return (
+            f"Since {run_link(previous, 'the run')}: the score "
+            f"{percent(float(previous['score']))} → {percent(float(now['score']))}."
+        )
     return (
         f"Since {run_link(previous, 'the run')}: the score "
         f"{percent(float(previous['score']))} → {percent(float(now['score']))}, the "
         f"score of the logic {percent(float(previous['logic_score']))} → "
         f"{percent(float(now['logic_score']))}."
     )
+
+
+# ---------------------------------------------------------------- Infection
+
+
+def infection_counts(output: str) -> dict[str, int]:
+    """The counts of the output of Infection by their words, such as
+    "covered mutants were not detected" for "5 covered mutants were not detected"."""
+    return {words: int(number) for number, words in INFECTION_COUNT.findall(output)}
+
+
+def infection_score(output: str) -> float | None:
+    """The Covered Code MSI of the output of Infection, the share of the mutants of the
+    code that the tests run which they caught; None when it has none, such as after an
+    error, or when Infection generated no mutant."""
+    found = INFECTION_SCORE.search(output)
+    if found is None or not infection_counts(output).get(INFECTION_GENERATED):
+        return None
+    return float(found[1])
+
+
+def escaped_mutants(log: str, root: str) -> list[dict[str, str]]:
+    """The escaped mutants of the text log of Infection, each with its file from the
+    root of the repository, its line and its mutator."""
+    prefix = root.replace("\\", "/").rstrip("/") + "/" if root else ""
+    found: list[dict[str, str]] = []
+    section = ""
+    for line in log.splitlines():
+        heading = INFECTION_SECTION.fullmatch(line)
+        if heading:
+            section = heading[1]
+            continue
+        mutant = INFECTION_MUTANT.match(line)
+        if mutant is None or section != "Escaped":
+            continue
+        path = mutant["path"].replace("\\", "/")
+        if prefix and path.startswith(prefix):
+            path = path[len(prefix) :]
+        found.append(
+            {"name": f"{path}:{mutant['line']} {mutant['mutator']}", "file": path}
+        )
+    return found
+
+
+def infection_data(
+    output: str, log: str, *, root: str, run: str, now: datetime, sample: bool
+) -> dict[str, Any]:
+    """What the next run compares with, of a run of Infection: mutation.json in the form
+    of mutmut, with the Covered Code MSI as the score and as the score of the logic,
+    since Infection sorts no mutants by kind, and the files with escaped mutants in
+    place of the functions. The sample of a pull request is incomplete."""
+    counts = infection_counts(output)
+    found = infection_score(output)
+    caught = sum(
+        number for words, number in counts.items() if words.startswith(INFECTION_CAUGHT)
+    )
+    escaped = counts.get(INFECTION_ESCAPED, 0)
+    by_file = Counter(mutant["file"] for mutant in escaped_mutants(log, root))
+    return {
+        "tool": INFECTION,
+        "run": run,
+        "date": now.isoformat(timespec="seconds"),
+        "complete": found is not None and not sample,
+        "parts": 1,
+        "killed": caught,
+        "survived": escaped,
+        "other": max(0, counts.get(INFECTION_GENERATED, 0) - caught - escaped),
+        "score": found or 0.0,
+        "logic_score": found or 0.0,
+        "kinds": {LOGIC: escaped, VALUE: 0, TEXT: 0},
+        "logic_by_function": dict(
+            sorted(by_file.items(), key=lambda item: (-item[1], item[0]))
+        ),
+    }
+
+
+def infection_summary(
+    now: Mapping[str, Any],
+    previous: Mapping[str, Any] | None,
+    *,
+    measured: bool,
+    sample: bool,
+) -> str:
+    """The summary of the report of Infection: its score and the comparison with the
+    run before, which the job of the mutants doesn't have."""
+    lines = ["### The score of Infection", ""]
+    if not measured:
+        lines.append(
+            "Infection reported no score, so the run is compared with no other; the "
+            "summary of the job of the mutants says why."
+        )
+        return "\n".join(lines) + "\n"
+    lines += [
+        f"**{percent(float(now['score']))}** of the mutants of the code that the tests "
+        f"run were caught: {now['killed']} caught, {now['survived']} escaped, "
+        f"{now['other']} other.",
+        "",
+        "A pull request tries a sample of the files, which is compared with no other "
+        "run."
+        if sample
+        else comparison(now, previous),
+    ]
+    return "\n".join(lines) + "\n"
 
 
 # ---------------------------------------------------------------- the issue
@@ -1181,6 +1458,8 @@ def comparison(now: Mapping[str, Any], previous: Mapping[str, Any] | None) -> st
 class Issue:
     number: int
     baseline: dict[str, Any]
+    # The runs of the marks that the run fell below, which closing it accepts.
+    marks: tuple[dict[str, str], ...] = ()
 
 
 def open_issue_of(api: Api, repo: str) -> Issue | None:
@@ -1191,12 +1470,78 @@ def open_issue_of(api: Api, repo: str) -> Issue | None:
         if "pull_request" in item or not match:
             continue
         try:
-            baseline = json.loads(match[1]).get("baseline")
+            state = json.loads(match[1])
+            baseline = state.get("baseline")
         except (ValueError, AttributeError):
             continue
         if comparable(baseline):
-            return Issue(int(item["number"]), dict(baseline))
+            return Issue(int(item["number"]), dict(baseline), marks_in(state))
     return None
+
+
+def marks_in(state: Mapping[str, Any]) -> tuple[dict[str, str], ...]:
+    """The runs of the marks in the marker of an issue, which closing it accepts."""
+    marks = state.get("marks")
+    return tuple(
+        {"run": str(mark.get("run") or ""), "date": str(mark.get("date") or "")}
+        for mark in (marks if isinstance(marks, list) else [])
+        if isinstance(mark, dict)
+    )
+
+
+def run_of(data: Mapping[str, Any]) -> tuple[str, str]:
+    return str(data.get("run") or ""), str(data.get("date") or "")
+
+
+def accepted_levels(api: Api, repo: str) -> dict[tuple[str, str], dict[str, Any]]:
+    """The scores that a maintainer accepted, by the run before each drop and the run of
+    each mark that it fell below: an issue of a drop closed as not planned keeps the
+    latest run that it showed, which later runs compare with in place of those runs.
+    The newest issue counts for a run."""
+    listed = api.get(
+        f"repos/{repo}/issues?labels={LABELS[0]}&state=closed&per_page=100"
+    )
+    levels: dict[tuple[str, str], dict[str, Any]] = {}
+    for item in listed or []:
+        match = MARKER.search(str(item.get("body") or ""))
+        if (
+            "pull_request" in item
+            or item.get("state_reason") != "not_planned"
+            or not match
+        ):
+            continue
+        try:
+            state = json.loads(match[1])
+            baseline, latest = state.get("baseline"), state.get("latest")
+        except (ValueError, AttributeError):
+            continue
+        if comparable(baseline) and comparable(latest):
+            for run in (baseline, *marks_in(state)):
+                levels.setdefault(run_of(run), dict(latest))
+    return levels
+
+
+def fallen_from(
+    api: Api,
+    repo: str,
+    now: Mapping[str, Any],
+    best: Mapping[str, Mapping[str, Any]] | None,
+) -> dict[str, Any] | None:
+    """The run that a complete run fell furthest below, for the score or the score of
+    the logic: the run of the mark of that score, or the score that a maintainer
+    accepted below it; None without a drop."""
+    if best is None or not any(
+        float(now[key]) < float(best[key][key]) - TOLERANCE for key in SCORES
+    ):
+        return None
+    levels = accepted_levels(api, repo)
+    falls: list[tuple[float, dict[str, Any]]] = []
+    for key in SCORES:
+        before = levels.get(run_of(best[key]), best[key])
+        fall = float(before[key]) - float(now[key])
+        if fall > TOLERANCE:
+            falls.append((fall, dict(before)))
+    return max(falls, key=lambda item: item[0])[1] if falls else None
 
 
 def logic_count(data: Mapping[str, Any]) -> int:
@@ -1204,52 +1549,103 @@ def logic_count(data: Mapping[str, Any]) -> int:
     return int(kinds.get(LOGIC, 0)) if isinstance(kinds, dict) else 0
 
 
-def issue_body(now: Mapping[str, Any], baseline: Mapping[str, Any]) -> str:
+def fallen_marks(
+    now: Mapping[str, Any], best: Mapping[str, Mapping[str, Any]] | None
+) -> tuple[dict[str, str], ...]:
+    """The runs of the marks that a run fell below, for the score or the score of the
+    logic: the issue keeps them, so that closing it accepts the fall of both."""
+    if best is None:
+        return ()
+    return tuple(
+        dict(zip(("run", "date"), run_of(best[key]), strict=True))
+        for key in SCORES
+        if float(now[key]) < float(best[key][key]) - TOLERANCE
+    )
+
+
+def issue_body(
+    now: Mapping[str, Any],
+    baseline: Mapping[str, Any],
+    marks: Iterable[Mapping[str, str]] = (),
+) -> str:
     """The text of the issue: the scores before and now, and the functions with more
     survivors of the logic than before."""
-    kept = {
-        **baseline,
-        "logic_by_function": dict(
-            list(dict(baseline.get("logic_by_function") or {}).items())[:MOST_KEPT]
-        ),
-    }
-    state = json.dumps({"baseline": kept}, sort_keys=True).replace("--", "-\\u002d")
-    before = kept["logic_by_function"]
+
+    def kept(data: Mapping[str, Any]) -> dict[str, Any]:
+        return {
+            **snapshot(data),
+            "logic_by_function": dict(
+                list(dict(data.get("logic_by_function") or {}).items())[:MOST_KEPT]
+            ),
+        }
+
+    # The latest run, which later runs compare with once a maintainer accepts it.
+    state = json.dumps(
+        {
+            "baseline": kept(baseline),
+            "latest": kept(now),
+            "marks": [dict(mark) for mark in marks],
+        },
+        sort_keys=True,
+    ).replace("--", "-\\u002d")
+    before = kept(baseline)["logic_by_function"]
     grown = {
         function: int(count) - int(before.get(function, 0))
         for function, count in dict(now.get("logic_by_function") or {}).items()
         if int(count) > int(before.get(function, 0))
     }
     rows = sorted(grown.items(), key=lambda item: (-item[1], item[0]))[:MOST_ROWS]
+    infection = now.get("tool") == INFECTION
     lines = [
         f"<!-- mutation-score {state} -->",
         f"The mutation score of the default branch dropped in {run_link(now, 'the run')}"
         f", below that of {run_link(baseline, 'the run')}: more mutants of the code "
-        "survive, changes that the tests run but don't check.",
+        + ("escape" if infection else "survive")
+        + ", changes that the tests run but don't check.",
         "",
         "| | Before | Now |",
         "| --- | --- | --- |",
         f"| Score | {percent(float(baseline['score']))} | {percent(float(now['score']))} |",
-        f"| Score of the logic | {percent(float(baseline['logic_score']))} | "
-        f"{percent(float(now['logic_score']))} |",
-        f"| Survivors that change the logic | {logic_count(baseline)} | "
-        f"{logic_count(now)} |",
     ]
+    if infection:
+        # Infection sorts no mutants by kind: its score of the logic is its score.
+        lines.append(
+            f"| Escaped mutants | {logic_count(baseline)} | {logic_count(now)} |"
+        )
+    else:
+        lines += [
+            f"| Score of the logic | {percent(float(baseline['logic_score']))} | "
+            f"{percent(float(now['logic_score']))} |",
+            f"| Survivors that change the logic | {logic_count(baseline)} | "
+            f"{logic_count(now)} |",
+        ]
     if rows:
         lines += [
             "",
-            "The functions with more survivors of the logic than before:",
+            "The files with more escaped mutants than before:"
+            if infection
+            else "The functions with more survivors of the logic than before:",
             "",
-            "| Function | More survivors |",
+            "| File | More escaped mutants |"
+            if infection
+            else "| Function | More survivors |",
             "| --- | --- |",
             *(f"| {code(function)} | {count} |" for function, count in rows),
         ]
+    kill = (
+        "`infection.log` in the artifact *mutation* of the run lists each escaped "
+        "mutant with its change. Kill them with a test; a mutant that no test needs to "
+        "catch goes into the `ignore` of its mutator in `infection.json5`."
+        if infection
+        else "The summary of the run lists each survivor with its change. Kill those "
+        "of the logic with a test; a text that no test needs to check gets "
+        "`# pragma: no mutate`."
+    )
     lines += [
         "",
-        "The summary of the run lists each survivor with its change. Kill those of the "
-        "logic with a test; a text that no test needs to check gets "
-        "`# pragma: no mutate`. This issue closes by itself once a weekly run is back "
-        "at the score before.",
+        f"{kill} This issue closes by itself once a weekly run is back at the score "
+        "before. To accept the lower score, close it as not planned: later runs "
+        "compare with the score of its latest run.",
     ]
     return "\n".join(lines) + "\n"
 
@@ -1257,9 +1653,10 @@ def issue_body(now: Mapping[str, Any], baseline: Mapping[str, Any]) -> str:
 def keep_issue(
     api: Api, repo: str, now: Mapping[str, Any], previous: Mapping[str, Any] | None
 ) -> str:
-    """Opens the one issue when the score of a complete run dropped below that of the
-    run before, keeps it current while it stays below, and closes it once a run is
-    back; a line for the summary."""
+    """Opens the one issue when the score of a complete run dropped below the
+    high-water mark of the runs before, keeps it current while it stays below, and
+    closes it once a run is back; a line for the summary. A run without a mark
+    compares with the run before."""
     if not comparable(now):
         return "An incomplete run leaves the issue of the score as it is."
     issue = open_issue_of(api, repo)
@@ -1267,7 +1664,7 @@ def keep_issue(
         if dropped(now, issue.baseline):
             api.patch(
                 f"repos/{repo}/issues/{issue.number}",
-                {"body": issue_body(now, issue.baseline)},
+                {"body": issue_body(now, issue.baseline, issue.marks)},
             )
             return f"The score is still below that before the drop: updated #{issue.number}."
         api.post(
@@ -1283,13 +1680,15 @@ def keep_issue(
             {"state": "closed", "state_reason": "completed"},
         )
         return f"The score is back: closed #{issue.number}."
-    if not comparable(previous) or not dropped(now, previous or {}):
+    best = mark_in(now) or best_of(previous)
+    baseline = fallen_from(api, repo, now, best)
+    if baseline is None:
         return "The score didn't drop."
-    assert previous is not None
+    body = issue_body(now, baseline, fallen_marks(now, best))
     response = api.request(
         "POST",
         f"repos/{repo}/issues",
-        {"title": TITLE, "body": issue_body(now, previous), "labels": LABELS},
+        {"title": TITLE, "body": body, "labels": LABELS},
     )
     return f"The score dropped: opened #{response.data['number']}."
 

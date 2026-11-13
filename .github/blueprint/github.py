@@ -9,6 +9,7 @@ import subprocess
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from http import HTTPStatus
 from typing import Any
 
 Json = Any
@@ -79,6 +80,15 @@ class GitHubError(Exception):
         return self.status >= 500 or (
             self.status == 0 and NO_ANSWER.search(self.message) is not None
         )
+
+
+def status_name(status: int) -> str:
+    """The name of an HTTP status, such as Bad Gateway for 502, or "" for a status
+    without one."""
+    try:
+        return HTTPStatus(status).phrase
+    except ValueError:
+        return ""
 
 
 def rate_limited(status: int, message: str) -> bool:
@@ -210,10 +220,12 @@ class Answer:
     def of_pages(cls, result: subprocess.CompletedProcess[str]) -> Answer:
         """The answer of gh api --paginate --slurp: every page in one list, whose items
         are the data. A page of a list such as that of the workflow runs holds its
-        items in a field. On an error, gh ends its message with the status."""
+        items in a field. On an error, gh names the status: after GitHub's message,
+        as "Not Found (HTTP 404)", or alone, as "HTTP 502", when the body of the error
+        is no JSON of GitHub, such as the page of a gateway."""
         if result.returncode != 0:
             error = (result.stderr or "").strip()
-            found = re.search(r"\(HTTP (\d{3})\)", error)
+            found = HTTP_STATUS.search(error)
             status = int(found[1]) if found else 0
             # gh failed, whatever status its message names.
             if "unknown flag: --slurp" in error:
@@ -224,8 +236,15 @@ class Answer:
                 return cls(0, None, error)
             if found is None or status < 400:
                 raise GitHubError(status, error or result.stdout.strip())
-            message = error.removeprefix("gh: ").replace(found[0], "").strip()
-            return cls(status, None, message)
+            # The message without the status, in either form; a bare status keeps
+            # its name, such as Bad Gateway, or else its number.
+            message = (
+                error.removeprefix("gh: ")
+                .replace(f"({found[0]})", "")
+                .replace(found[0], "")
+                .strip()
+            )
+            return cls(status, None, message or status_name(status) or found[0])
         try:
             pages = json.loads(result.stdout)
         except (ValueError, RecursionError):
@@ -415,8 +434,12 @@ def current_repo(api: Api) -> str:
         ["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"], None
     )
     if result.returncode != 0:
+        # gh's own words tell a missing sign-in or a network error apart from a
+        # folder that is no repository of GitHub.
+        said = result.stderr.strip() or f"gh repo view ended with {result.returncode}"
         raise GitHubError(
             0,
-            "this folder is no GitHub repository the CLI knows; pass --repo OWNER/NAME",
+            f"{said}\nIf this folder is no GitHub repository the CLI knows, "
+            "pass --repo OWNER/NAME.",
         )
     return result.stdout.strip()

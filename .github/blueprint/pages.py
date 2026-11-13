@@ -14,6 +14,11 @@ A Markdown table whose cells hold paragraphs fails the same readers: the GitHub 
 a phone squeeze its columns or scroll it sideways, and a screen reader reads it cell by
 cell. long_cells finds each cell of more than CELL_WORDS words at the line of its row,
 as a warning for now, since only a person can make a list or a page of it.
+
+A paragraph or an item of a list of hundreds of words is several screens of a phone
+without a break, in which the one fact that a reader looks for can't be found by
+scanning. long_blocks finds each of more than BLOCK_WORDS words at its first line, as a
+warning, since only a person can give it a lead sentence and a list or headings below.
 """
 
 from __future__ import annotations
@@ -80,6 +85,26 @@ LONG_CELL = (
     "sideways, and a screen reader reads it cell by cell. Make the rows a list, or move "
     "the detail to a page of its own and link it; a table is for short values."
 )
+
+# The most words of a paragraph or of an item of a list, without the addresses of its
+# links: a usual paragraph stays below it, and more reads as a wall of text on a phone.
+BLOCK_WORDS = 150
+LONG_BLOCK = (
+    "{kind} of {words} words, more than {limit}: on a phone it is several screens "
+    "without a break, in which a reader can't find the one fact that they look for. "
+    "Give it a short lead sentence and put the rest into a list or under headings "
+    "below it."
+)
+# The start of an item of a list, which starts a block of its own, also in a list of
+# a list; a heading; and the address of a link or a picture, which a reader doesn't
+# read: [text](address "title") and [text]: address.
+ITEM = re.compile(r"[ \t]*(?:[-*+]|\d{1,9}[.)])(?:[ \t]+|$)")
+HEADING = re.compile(r"[ \t]{0,3}#{1,6}(?:[ \t]|$)")
+ADDRESS = re.compile(r'\]\([^()\s]*(?:\([^()\s]*\)[^()\s]*)*(?:[ \t]+"[^"]*")?\)')
+REFERENCE = re.compile(r"[ \t]{0,3}\[[^\]]+\]:[ \t]")
+# The folder of the records of decisions, whose paragraphs stay as they were decided:
+# the check leaves them out of the warning of long blocks.
+RECORDS = "decisions"
 
 # What an edit replaces: from where, up to where, and with what.
 Edit = tuple[int, int, str]
@@ -226,6 +251,50 @@ def long_cells(text: str) -> list[Layout]:
             if words > CELL_WORDS:
                 message = LONG_CELL.format(words=words, limit=CELL_WORDS)
                 found.append(Layout(number + 1, message, level="warning"))
+    return found
+
+
+def long_blocks(text: str) -> list[Layout]:
+    """The paragraphs and the items of lists of a page with more than BLOCK_WORDS
+    words, each as a warning at its first line, in their order. A block ends at an
+    empty line, a heading, a table, HTML, a block of code and the next item of a
+    list; code in a line counts as words, as in long_cells, but the addresses of
+    links don't."""
+    shown = masked(text).split("\n")
+    lines = text.split("\n")
+    rows = set(table_rows(shown))
+    found = []
+    start, kind, words = 0, "", 0
+
+    def close() -> None:
+        if words > BLOCK_WORDS:
+            message = LONG_BLOCK.format(kind=kind, words=words, limit=BLOCK_WORDS)
+            found.append(Layout(start + 1, message, level="warning"))
+
+    for number, line in enumerate(lines):
+        visible = shown[number]
+        if (
+            not visible.strip()
+            or number in rows
+            or HEADING.match(visible)
+            or visible.lstrip().startswith("<")
+            or REFERENCE.match(visible)
+        ):
+            close()
+            kind, words = "", 0
+            continue
+        item = ITEM.match(visible)
+        if item or not kind:
+            close()
+            start, kind, words = (
+                number,
+                "an item of a list" if item else "a paragraph",
+                0,
+            )
+        # The sign of an item is no word of it.
+        text = line[item.end() :] if item else line
+        words += len(ADDRESS.sub("]", text).split())
+    close()
     return found
 
 

@@ -8,7 +8,9 @@ name: OSV-Scanner
 # its dependencies. Dependabot doesn't read that file: on main, every week and by hand,
 # the job dependabot alerts closes each Dependabot alert that an acceptance covers, with
 # its reason and its end, and opens again each one that it closed once the acceptance
-# is gone. https://github.com/Dennis-Otto/repo-blueprint
+# is gone. It also warns of each acceptance that ends within two weeks and keeps
+# one issue that names them, so that the end is handled before the checks turn red.
+# https://github.com/Dennis-Otto/repo-blueprint
 
 on:
   pull_request:
@@ -30,7 +32,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Only show which Dependabot alerts the run would close or open again
+        description: Only show which Dependabot alerts the run would close or open again, and what it would do with the issue of the acceptances that end soon
         type: boolean
         default: false
 
@@ -82,7 +84,9 @@ jobs:
   # advisory that the project accepts, such as each of the Pillow that Home Assistant
   # pins for the tests. The token of a workflow can't read the Dependabot alerts: an
   # app of the owner closes them, with the permission Dependabot alerts (read and write)
-  # alone, for this repository alone (decision 0086).
+  # alone, for this repository alone (decision 0086). Its last step, with the token of
+  # the job, warns of each acceptance that ends within two weeks and keeps the one issue
+  # that names them.
   dependabot:
     name: dependabot alerts
     if: github.event_name != 'pull_request' && !github.event.repository.fork
@@ -95,6 +99,8 @@ jobs:
       deployment: false
     permissions:
       contents: read
+      # The issue of the acceptances that end soon.
+      issues: write
     steps:
       - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -173,6 +179,7 @@ jobs:
             done
           done
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        id: checkout
         with:
           persist-credentials: false
       # The settings app writes the alerts once the variable SETTINGS_APP_CLIENT_ID and
@@ -312,6 +319,32 @@ jobs:
             echo '```'
             cat "$RUNNER_TEMP/dependabot.txt"
             echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      # An acceptance of osv-scanner.toml ends on its date, and from that day on
+      # OSV-Scanner reports its advisories again, on main and in every pull request that
+      # changes a lock file. Two weeks before, a warning and an issue name the package,
+      # the version and the date, while there is still time to update or look again.
+      - name: Warn of the acceptances that end soon
+        # Also when the app couldn't close the alerts: the warning needs no app.
+        if: always() && steps.blocks.outcome != 'failure' && steps.checkout.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run || false }}
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          options=()
+          if [[ "$DRY_RUN" == true ]]; then
+            options=(--dry-run)
+          fi
+          status=0
+          python3 "$script" --repo "$GITHUB_REPOSITORY" advisories --ending "${options[@]}" > "$RUNNER_TEMP/ending.txt" || status=$?
+          cat "$RUNNER_TEMP/ending.txt"
+          {
+            echo '### Acceptances that end soon'
+            echo
+            cat "$RUNNER_TEMP/ending.txt"
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
       - name: Wait until Harden-Runner has removed Docker

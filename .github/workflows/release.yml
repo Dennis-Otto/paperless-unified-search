@@ -395,7 +395,9 @@ jobs:
       # run of the schedule, or a run started by hand, sets its auto-merge, so that the
       # updates of a day make one release and not one each, which the Rollout of the
       # blueprint would bring to every repository (decision 0087). A release with the
-      # fix of a vulnerability, which Renovate marks with [security], merges at once.
+      # fix of a vulnerability, which Renovate marks with [security], merges at once. A
+      # commit of a bot that release-please makes nothing of, such as new pictures,
+      # doesn't hold it back; a change of a person waits for the maintainer.
       - name: Merge a release of dependency updates once its checks pass
         if: steps.app.outputs.token != '' && steps.release.outputs.release_created != 'true'
         env:
@@ -415,21 +417,14 @@ jobs:
             echo "No release pull request is open."
             exit 0
           fi
-          latest="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>/dev/null || true)"
-          if [[ -z "$latest" ]]; then
-            echo "The first release waits for the maintainer."
-            exit 0
-          fi
-          subjects="$(gh api --header "$API_VERSION_HEADER" "repos/$GITHUB_REPOSITORY/compare/$latest...$GITHUB_SHA" \
-            --jq '.commits[].commit.message | split("\n")[0]')"
-          others="$(grep -Ev '^(fix|chore|build)\(deps(-dev)?\): ' <<<"$subjects" || true)"
-          if [[ -n "$others" ]]; then
-            echo "The release holds more than dependency updates; the maintainer merges it:"
-            echo "$others"
-            exit 0
-          fi
-          if [[ "$GITHUB_EVENT_NAME" == push ]] && ! grep -qi '\[security\]' <<<"$subjects"; then
-            echo "The release of dependency updates merges in the daily run of the release bot, with the updates of the day."
+          # blueprint.py decides by the commits since the last release: every one that
+          # release-please puts into the release is a dependency update, and every other
+          # one a bot made, such as `docs: renew the pictures`; the first release waits.
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" --repo "$GITHUB_REPOSITORY" release dependency-only \
+            --event "$GITHUB_EVENT_NAME" --output "$RUNNER_TEMP/dependency-only" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [[ "$(cat "$RUNNER_TEMP/dependency-only")" != merge=true ]]; then
             exit 0
           fi
           # GitHub sets no auto-merge on a pull request whose checks have all passed

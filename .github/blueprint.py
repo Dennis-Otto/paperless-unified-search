@@ -23,9 +23,14 @@ each task is a module of the package blueprint/ next to this file.
 import sys
 
 if __name__ == "__main__":
-    # Before everything: the package needs tomllib of Python 3.11, and an older
-    # Python would stop with a traceback before the preflight of create could say so.
-    if sys.version_info < (3, 11):  # noqa: UP036 - it runs before the requirement
+    # Before everything: the package needs Python 3.12, MINIMUM_PYTHON of
+    # blueprint/bootstrap.py, and an older Python would stop with a traceback before
+    # the preflight of create could say so. The version has a name: every project
+    # checks this file with Ruff, which calls a comparison with (3, 12) itself outdated
+    # in a project that asks for 3.12, and a comment that allows it unused in one that
+    # asks for less.
+    minimum = (3, 12)
+    if sys.version_info < minimum:
         major, minor = sys.version_info[:2]
         sys.stderr.write(
             # Only ASCII: an old Python may write to a console that has no other.

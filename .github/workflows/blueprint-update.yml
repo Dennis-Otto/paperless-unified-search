@@ -365,6 +365,16 @@ jobs:
           tool="$RUNNER_TEMP/blueprint-tool"
           mkdir -p "$tool"
           cp -R .github/blueprint.py .github/blueprint "$tool/"
+          # What the blueprint rendered for the version that this repository has, with
+          # its answers, as copier update renders it to merge: the bot compares it with
+          # each file that the update deletes or replaces as binary, which copier takes
+          # from the release without a marker, so that a change of this repository to
+          # such a file waits for a person instead of merging away.
+          rendered="$RUNNER_TEMP/blueprint-rendered"
+          mkdir -p "$rendered"
+          cp .copier-answers.yml "$rendered/"
+          copier recopy --defaults --overwrite --quiet \
+            --vcs-ref "$(sed -n 's/^_commit: *//p' .copier-answers.yml)" "$rendered"
           copier update --defaults --conflict inline --vcs-ref "$TAG"
           git add --all
       # GitHub checks the list of the allowed actions when a workflow starts, so the
@@ -408,10 +418,11 @@ jobs:
           # main requires, and the DCO check accepts the pull requests of the app. The
           # bot moves the branch blueprint/update on from the update before, so its pull
           # request stays open; it leaves a branch with commits of anyone else alone.
-          # Conflicts turn auto-merge off and add the label merge-conflict.
+          # Conflicts, and changes of this repository that the update drops, turn
+          # auto-merge off and add the label merge-conflict.
           python3 "$tool/blueprint.py" --repo "$GITHUB_REPOSITORY" update-commit \
             --app "${APP}[bot]" --automerge "$AUTOMERGE" --run-id "$GITHUB_RUN_ID" \
-            --source "$SOURCE"
+            --source "$SOURCE" --rendered "$RUNNER_TEMP/blueprint-rendered"
       - name: Wait until Harden-Runner has removed Docker
         # Harden-Runner removes Docker with apt-get in the background; a job that ends
         # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
