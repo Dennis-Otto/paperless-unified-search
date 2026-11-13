@@ -147,8 +147,7 @@ final class CheckTest extends TestCase {
 
 		self::assertSame(Command::SUCCESS, $tester->execute([]));
 
-		self::assertStringContainsString("! Coverage: 1 of 2 Paperless document(s) have a file of the archive account. Without one: 2.
-", $tester->getDisplay());
+		self::assertStringContainsString("! Coverage: 1 of 2 Paperless document(s) have a file of the archive account. Without one: 2.\n", $tester->getDisplay());
 		$listed = array_values(array_filter($this->requests, static fn (array $request): bool => ($request[1]['query']['ordering'] ?? null) === 'id'));
 		self::assertSame([['ordering' => 'id', 'page' => 1, 'page_size' => 1000, 'fields' => 'id']], array_map(static fn (array $request): array => $request[1]['query'], $listed));
 		self::assertSame('application/json; version=10', $listed[0][1]['headers']['Accept']);
