@@ -87,6 +87,23 @@ final class AlertProgress {
 	}
 
 	/**
+	 * Whether the settings should keep this progress instead of the stored one: when
+	 * none is stored, when anything but the moment of the last answer differs, or when that
+	 * moment has moved by $step seconds or more. A run that found nothing new so writes
+	 * nothing.
+	 *
+	 * @param ?self $stored the progress that the settings hold, null for none
+	 * @param int $step the seconds that the moment of the last answer has to move alone
+	 */
+	public function differsFrom(?self $stored, int $step): bool {
+		if ($stored === null || abs($this->checkedAt - $stored->checkedAt) >= $step) {
+			return true;
+		}
+
+		return array_diff_key($this->toStored(), ['checkedAt' => true]) !== array_diff_key($stored->toStored(), ['checkedAt' => true]);
+	}
+
+	/**
 	 * The progress as the settings store it: the documents as a list, since JSON would turn
 	 * the keys of a list that isn't numbered from 0 into text.
 	 *

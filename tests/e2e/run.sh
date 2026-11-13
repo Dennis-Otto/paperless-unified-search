@@ -828,9 +828,10 @@ try_search 200 e2e-other
 assert_occ try "${TMP_DIR}/answer.json" e2e-other 123=shown 999=no_file
 # The check of occ compares the documents of Paperless with the files of the archive
 # account: the mock lists 123, 999 and the five documents of the demo, and only 123 has
-# a file.
+# a file. The mock speaks version 10 of the API, as Paperless-ngx 3 does, whose lists
+# have no field all: the check reads the IDs from the pages of the documents, by ID.
 occ paperless_unified_search:check >"${TMP_DIR}/check.txt"
-expect_text 'Coverage: 1 of 7 Paperless document(s) have a file of the archive account. Without one: 999, 412, 389, 371, 402, 356.' \
+expect_text 'Coverage: 1 of 7 Paperless document(s) have a file of the archive account. Without one: 356, 371, 389, 402, 412, 999.' \
 	"${TMP_DIR}/check.txt" "occ checked the coverage wrongly: $(cat "${TMP_DIR}/check.txt")"
 # The check also says what the account of the API token may do, as /api/ui_settings/ of
 # the mock names it: the token of the mock may view documents, correspondents, types and
@@ -957,7 +958,7 @@ printf '%s\n' 'Not document 999.' \
 occ paperless_unified_search:search e2e-other mobiletest --explain --json >"${TMP_DIR}/explain-own.json"
 assert_occ verdicts "${TMP_DIR}/explain-own.json" '123=shown=/Mobile viewer test [P123].pdf' '999=not_shared=/Own [P999].txt'
 occ paperless_unified_search:check >"${TMP_DIR}/check-own.txt"
-expect_text 'Coverage: 2 of 7 Paperless document(s) have a file of the archive account or of the user of their owner. Without one: 412, 389, 371, 402, 356.' \
+expect_text 'Coverage: 2 of 7 Paperless document(s) have a file of the archive account or of the user of their owner. Without one: 356, 371, 389, 402, 412.' \
 	"${TMP_DIR}/check-own.txt" "occ check didn't count the own file of the owner's user alone: $(cat "${TMP_DIR}/check-own.txt")"
 if grep --fixed-strings "! ${PER_USER}" "${TMP_DIR}/check-own.txt" >/dev/null; then
 	echo "occ check warned about the archives of each owner, which the search shows: $(cat "${TMP_DIR}/check-own.txt")" >&2

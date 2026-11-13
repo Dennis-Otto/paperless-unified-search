@@ -133,6 +133,28 @@ final class CheckTest extends TestCase {
 	}
 
 	/**
+	 * Once Paperless 3 named version 10 of its API, the app asks for it, whose first answer
+	 * lists no IDs of all documents: the check reads them from the pages of the documents,
+	 * by ID and with their IDs alone, and compares them as before.
+	 */
+	public function testComparesTheIdsFromThePagesOfTheDocumentsInVersion10(): void {
+		$this->connected();
+		$this->settings[AppConstants::APP_ID . '.paperless_version'] = '3.3.0';
+		$this->settings[AppConstants::APP_ID . '.paperless_api_version'] = '10';
+		$this->file('/archive/files/Paperless/Document [P1].pdf');
+		// The first document, the newest documents for the names, and the page of the IDs.
+		$tester = $this->tester($this->documents([['id' => 1]], 2), $this->documents([]), $this->documents([['id' => 1], ['id' => 2]], 2));
+
+		self::assertSame(Command::SUCCESS, $tester->execute([]));
+
+		self::assertStringContainsString("! Coverage: 1 of 2 Paperless document(s) have a file of the archive account. Without one: 2.
+", $tester->getDisplay());
+		$listed = array_values(array_filter($this->requests, static fn (array $request): bool => ($request[1]['query']['ordering'] ?? null) === 'id'));
+		self::assertSame([['ordering' => 'id', 'page' => 1, 'page_size' => 1000, 'fields' => 'id']], array_map(static fn (array $request): array => $request[1]['query'], $listed));
+		self::assertSame('application/json; version=10', $listed[0][1]['headers']['Accept']);
+	}
+
+	/**
 	 * A Paperless that doesn't list the IDs of all documents can only be compared by the
 	 * number of documents.
 	 */

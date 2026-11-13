@@ -11,7 +11,7 @@ flowchart TB
     script["paperless-contract.sh<br>for Paperless-ngx 2 and 3"]
     start["Paperless-ngx and Redis,<br>Nextcloud with the app,<br>the mock"]
     seed["assert_contract.py gives Paperless<br>three synthetic text files"]
-    direct["`Directly: fields, dates, excerpts,<br>pages, errors, the newest documents,<br>the names, the owners,<br>the users and what an account<br>may do, with *version=9*`"]
+    direct["`Directly: fields, dates, excerpts,<br>pages, errors, the newest documents,<br>the names, the owners,<br>the users and what an account<br>may do, with *version=9* for 2<br>and *version=10* for 3`"]
     through["Through Nextcloud: the test<br>of the connection, the warnings<br>about the token and the results<br>with their names"]
     mock["The same requests of the app<br>to Paperless and to the mock:<br>their answers have the same form"]
     holds{"The contract<br>holds?"}

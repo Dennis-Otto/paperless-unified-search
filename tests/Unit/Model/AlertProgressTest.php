@@ -46,6 +46,39 @@ final class AlertProgressTest extends TestCase {
 		self::assertNull(AlertProgress::fromStored([], 'server'));
 	}
 
+	/**
+	 * @return array<string, array{AlertProgress, bool}>
+	 */
+	public static function nextProgress(): array {
+		return [
+			'the same' => [new AlertProgress('server', 412, 1791500000, [413 => ['title' => 'New', 'since' => 1791500100]], 2, 1791500600), false],
+			'an answer less than an hour later' => [new AlertProgress('server', 412, 1791503599, [413 => ['title' => 'New', 'since' => 1791500100]], 2, 1791500600), false],
+			'an answer an hour later' => [new AlertProgress('server', 412, 1791503600, [413 => ['title' => 'New', 'since' => 1791500100]], 2, 1791500600), true],
+			'a clock less than an hour behind' => [new AlertProgress('server', 412, 1791496401, [413 => ['title' => 'New', 'since' => 1791500100]], 2, 1791500600), false],
+			'a clock an hour behind' => [new AlertProgress('server', 412, 1791496400, [413 => ['title' => 'New', 'since' => 1791500100]], 2, 1791500600), true],
+			'a new document' => [new AlertProgress('server', 414, 1791500000, [413 => ['title' => 'New', 'since' => 1791500100]], 2, 1791500600), true],
+			'a document that got its file' => [new AlertProgress('server', 412, 1791500000, [], 2, 1791500600), true],
+			'the owner of a waiting document' => [new AlertProgress('server', 412, 1791500000, [413 => ['title' => 'New', 'since' => 1791500100, 'owner' => 3]], 2, 1791500600), true],
+			'another failure' => [new AlertProgress('server', 412, 1791500000, [413 => ['title' => 'New', 'since' => 1791500100]], 3, 1791500600), true],
+			'another rest' => [new AlertProgress('server', 412, 1791500000, [413 => ['title' => 'New', 'since' => 1791500100]], 2, 1791501200), true],
+		];
+	}
+
+	/**
+	 * A run stores its progress only when it differs from the stored one in more than the
+	 * moment of the last answer, or when that moment moved by an hour either way.
+	 */
+	#[DataProvider('nextProgress')]
+	public function testOnlyAProgressThatTellsSomethingNewIsWorthStoring(AlertProgress $next, bool $differs): void {
+		$stored = new AlertProgress('server', 412, 1791500000, [413 => ['title' => 'New', 'since' => 1791500100]], 2, 1791500600);
+
+		self::assertSame($differs, $next->differsFrom($stored, 3600));
+	}
+
+	public function testWithoutAStoredProgressEveryProgressIsWorthStoring(): void {
+		self::assertTrue((new AlertProgress('server', null, 1791500000))->differsFrom(null, 3600));
+	}
+
 	public function testFreshProgressHasNoFailuresAndNoRest(): void {
 		$progress = new AlertProgress('server', null, 1);
 

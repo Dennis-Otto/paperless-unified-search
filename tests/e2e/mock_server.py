@@ -341,6 +341,14 @@ def similar_to(identifier):
     return None
 
 
+def lists_every_id(accept):
+    """Whether the header Accept asks for a version of the API before 10, in which
+    Paperless-ngx 3 adds the IDs of everything in a list, the field all, to each page of it.
+    Version 10 leaves the field out, and so does an answer in the default version, 10."""
+    asked = ACCEPTED_VERSION.search(accept)
+    return asked is not None and asked[1].isdigit() and int(asked[1]) < 10
+
+
 def unknown_version(accept):
     """Whether the header Accept asks for a version of the API that the mock doesn't know."""
     asked = ACCEPTED_VERSION.search(accept)
@@ -521,7 +529,8 @@ class Handler(BaseHTTPRequestHandler):
                 "next": self._link(parsed.query, page + 1) if end < len(results) else None,
                 "previous": self._link(parsed.query, page - 1) if page > 1 else None,
                 # Like Paperless-ngx, the IDs of all documents of the list, on every page,
-                # which occ paperless_unified_search:check compares with the files.
+                # which occ paperless_unified_search:check compares with the files: in
+                # version 9 of the API, as _json() leaves them out of version 10.
                 "all": [document["id"] for document in results],
                 "results": [
                     sent(document, fields, rank if searching else None)
@@ -687,6 +696,8 @@ class Handler(BaseHTTPRequestHandler):
         print(f"paperless-mock: {message % args}", flush=True)
 
     def _json(self, status, payload):
+        if isinstance(payload, dict) and "all" in payload and not lists_every_id(self.headers.get("Accept", "")):
+            payload = {name: value for name, value in payload.items() if name != "all"}
         self._send(status, "application/json", json.dumps(payload).encode("utf-8"))
 
     def _send(self, status, content_type, body):
