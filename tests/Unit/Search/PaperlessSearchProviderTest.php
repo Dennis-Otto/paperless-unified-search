@@ -1526,15 +1526,31 @@ final class PaperlessSearchProviderTest extends TestCase {
 	}
 
 	/**
-	 * A lookup of the file of the document of like:412 that fails fails the search at the
-	 * step of the files, as one of a hit does: Paperless isn't asked for similar ones, and
-	 * Paperless, which answered, gets no rest.
+	 * @return array<string, array{bool}>
 	 */
-	public function testAFailedLookupOfTheFileOfTheSourceFailsTheSearchAsSuch(): void {
+	public static function failedLookups(): array {
+		return [
+			'the search of the files' => [true],
+			'the file of the document' => [false],
+		];
+	}
+
+	/**
+	 * A lookup of the file of the document of like:412 that fails, in the search of the
+	 * files or at the file itself, fails the search at the step of the files, as one of a
+	 * hit does: Paperless isn't asked for similar ones, and Paperless, which answered, gets
+	 * no rest.
+	 */
+	#[DataProvider('failedLookups')]
+	public function testAFailedLookupOfTheFileOfTheSourceFailsTheSearchAsSuch(bool $searchFails): void {
 		$client = $this->withSource($this->ranking(self::documentsWithIds([3])));
-		$userFolder = $this->createStub(Folder::class);
-		$userFolder->method('search')->willThrowException(new RuntimeException('Storage unavailable'));
-		$provider = $this->provider($client, userFolder: $userFolder);
+		if ($searchFails) {
+			$userFolder = $this->createStub(Folder::class);
+			$userFolder->method('search')->willThrowException(new RuntimeException('Storage unavailable'));
+			$provider = $this->provider($client, userFolder: $userFolder);
+		} else {
+			$provider = $this->provider($client, [412 => $this->unreadableFile('Letter [P412].pdf')]);
+		}
 
 		$result = $provider->search($this->user(), $this->query('like:[P412]'))->jsonSerialize();
 		$provider->search($this->user(), $this->query('like:[P412]'));
