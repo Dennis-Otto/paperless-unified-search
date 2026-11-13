@@ -144,8 +144,8 @@ Jedes Bild folgt dem hellen oder dunklen Design dieser Website. Wähle eines, um
 </figure>
 
 <figure markdown="span">
-  ![Der Verlauf der Probleme der Suche in den Einstellungen](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/06-search-problems.png#only-light){ width="660" height="837" }
-  ![Der Verlauf der Probleme der Suche in den Einstellungen](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/06-search-problems-dark.png#only-dark){ width="660" height="837" }
+  ![Der Verlauf der Probleme der Suche in den Einstellungen](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/06-search-problems.png#only-light){ width="660" height="1158" }
+  ![Der Verlauf der Probleme der Suche in den Einstellungen](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/06-search-problems-dark.png#only-dark){ width="660" height="1158" }
   <figcaption>Die Probleme der Suche, ohne das Protokoll von Nextcloud</figcaption>
 </figure>
 

@@ -144,8 +144,8 @@ Each picture follows the light or dark theme of this website. Select one to enla
 </figure>
 
 <figure markdown="span">
-  ![The history of the problems of the search in the settings](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/06-search-problems.png#only-light){ width="660" height="837" }
-  ![The history of the problems of the search in the settings](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/06-search-problems-dark.png#only-dark){ width="660" height="837" }
+  ![The history of the problems of the search in the settings](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/06-search-problems.png#only-light){ width="660" height="1158" }
+  ![The history of the problems of the search in the settings](https://github.com/Dennis-Otto/paperless-unified-search/raw/main/screenshots/06-search-problems-dark.png#only-dark){ width="660" height="1158" }
   <figcaption>The problems of the search, without the log of Nextcloud</figcaption>
 </figure>
 
