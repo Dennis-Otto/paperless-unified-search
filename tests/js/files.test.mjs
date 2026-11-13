@@ -269,7 +269,7 @@ test('says when Paperless finds no similar document with a file that the user ca
 
 test('shows more after a full page, from its cursor, with the focus on the first new result', async function() {
 	const first = Array.from({ length: 10 }, (unused, index) => entry(index + 1))
-	const page = load({ answers: [results(first, { cursor: 'sealed-10' }), results([entry(11)], { cursor: 'sealed-11' })] })
+	const page = load({ answers: [results(first, { cursor: 'sealed-10' }), results([entry(11)])] })
 	const dialog = await run(page)
 
 	assert.equal(shown(dialog).results.length, 10)
@@ -300,16 +300,22 @@ test('leaves the focus where it is after a further page without a result to show
 	assert.equal(new URL(page.requests[1].url).searchParams.get('cursor'), '2')
 })
 
-test('offers no further page without a cursor, without pages or after a page that is not full', async function() {
+test('offers no further page without a cursor or without pages', async function() {
 	const full = Array.from({ length: 10 }, (unused, index) => entry(index + 1))
 	for (const answer of [
 		results(full),
 		json({ ocs: { data: { isPaginated: true, entries: full } } }),
 		results(full, { cursor: 'next', isPaginated: false }),
-		results(full.slice(1), { cursor: 'next' }),
+		results(full.slice(1)),
 	]) {
 		assert.equal(shown(await run(load({ answers: [answer] }))).more, 'hidden')
 	}
+})
+
+test('offers the next page after a short page that comes with a cursor', async function() {
+	// The provider cuts a page short when a later page of Paperless fails or its time runs out.
+	const short = Array.from({ length: 4 }, (unused, index) => entry(index + 1))
+	assert.equal(shown(await run(load({ answers: [results(short, { cursor: 'next' })] }))).more, 'shown')
 })
 
 test('names what went wrong when Nextcloud answers without results, and can try again', async function() {

@@ -108,8 +108,9 @@
 		if (data === null || typeof data !== 'object' || !Array.isArray(data.entries)) {
 			throw new Error(failureMessage(response))
 		}
-		// Nextcloud offers a next page only after a full one, as its search does.
-		const more = data.isPaginated === true && data.entries.length >= PAGE && data.cursor !== null && data.cursor !== undefined
+		// The provider hands out a cursor also after a short page, when a later page of Paperless
+		// failed or its time ran out, so a next page follows whenever there is a cursor.
+		const more = data.isPaginated === true && data.cursor !== null && data.cursor !== undefined
 
 		return { entries: data.entries, cursor: more ? data.cursor : null }
 	}
