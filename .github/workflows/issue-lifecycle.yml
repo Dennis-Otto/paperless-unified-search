@@ -19,12 +19,11 @@ on:
   release:
     types: [published]
   # A release published with the job's GITHUB_TOKEN starts no workflow, so the end
-  # of the repository's release workflow starts this one too: Release or, as in
-  # ha-autodarts, Release integration. Not a scheduled run of it, which runs every
-  # hour as a safety net and mostly releases nothing; the morning sweep catches a
-  # release that one of them made.
+  # of the repository's release workflow, Release, starts this one too. Not a
+  # scheduled run of it, which runs every hour as a safety net and mostly releases
+  # nothing; the morning sweep catches a release that one of them made.
   workflow_run:
-    workflows: [Release, Release integration]
+    workflows: [Release]
     types: [completed]
   workflow_dispatch:
     inputs:
@@ -42,6 +41,6 @@ jobs:
       contents: read
       issues: write
       pull-requests: read
-    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-lifecycle.yml@a4c8e0e5ef88f6632af3e1fecb7ec025bd664dc1 # v1.10.6
+    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-lifecycle.yml@1a29de169ad3e307b10338534d88a3894a4c17f7 # v1.11.0
     with:
       dry_run: ${{ inputs.dry_run || false }}
