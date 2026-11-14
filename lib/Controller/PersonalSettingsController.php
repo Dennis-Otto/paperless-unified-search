@@ -31,9 +31,14 @@ use Throwable;
  * The routes of the personal settings, which every signed-in user reaches: they opt out of
  * Nextcloud's check of the administrator, and of no other check, such as those of the
  * login and the CSRF token; PersonalSettingsControllerRoutesTest makes sure it stays so.
+ *
+ * Nextcloud creates it and calls its routes, which Psalm can't see: as public API they are
+ * where Psalm starts to look for the code that is used, so that it doesn't report what
+ * only the routes call as unused.
+ *
+ * @psalm-api
  */
 final class PersonalSettingsController extends Controller {
-	/** @psalm-suppress PossiblyUnusedMethod */
 	public function __construct(
 		string $appName,
 		IRequest $request,
