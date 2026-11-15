@@ -17,8 +17,14 @@ declare(strict_types=1);
  *   of a redirection are sinks now, and the term and the filters of a search and the
  *   answers of other servers are sources.
  *
+ * - Nextcloud creates a controller by its route and calls its actions itself, so no
+ *   code of the app does: every controller is public API now, as with @psalm-api, and
+ *   the search for unused code starts from it. Psalm 6 took a class whose UnusedClass
+ *   psalm.xml suppresses as used; Psalm 7 follows the calls from the entry points
+ *   alone, and reported each method that only a controller calls as unused.
+ *
  * Psalm loads this plugin from psalm.xml, for the analysis of the types as well, where
- * it changes nothing. The canary in .github/psalm/canary/ proves on every run of
+ * it changes only what counts as used. The canary in .github/psalm/canary/ proves on every run of
  * scripts/check.sh that the analysis still finds each kind of path; a method that
  * nextcloud/ocp renames or removes stops the analysis with the name of the method,
  * instead of leaving it blind to that sink.
@@ -151,6 +157,12 @@ final class NextcloudTaintPlugin implements AfterCodebasePopulatedInterface, Aft
 
 	public static function afterCodebasePopulated(AfterCodebasePopulatedEvent $event): void {
 		$codebase = $event->getCodebase();
+		$controller = strtolower(self::CONTROLLER);
+		foreach ($codebase->classlike_storage_provider::getAll() as $storage) {
+			if (isset($storage->parent_classes[$controller])) {
+				$storage->public_api = true;
+			}
+		}
 		foreach (self::SOURCES as $class => $methods) {
 			foreach ($methods as $method) {
 				self::method($codebase, $class, $method)->taint_source_types = self::input();

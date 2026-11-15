@@ -63,6 +63,7 @@ EXECUTABLES = (
     "scripts/chrome-for-testing.sh",
     "scripts/deploy-worker.sh",
     "scripts/diagrams.sh",
+    "scripts/markdownlint.sh",
     "scripts/package-extension.sh",
     "scripts/screenshots.sh",
     "scripts/social-preview.sh",

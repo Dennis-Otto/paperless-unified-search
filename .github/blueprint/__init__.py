@@ -25,6 +25,10 @@ release app with app, and the steps of the bots, such as the changelog of a rele
     python3 blueprint.py locks --compile [--fix]
                                             whether each lock file keeps its pins when compiled
     python3 blueprint.py site-check site    what the built website promises (the check docs)
+    python3 blueprint.py website automation DIR --site-name NAME
+                                            the page of the automation, for another generator
+    python3 blueprint.py website finish SITE --site-url URL
+                                            its sitemaps and llms.txt, for another generator
     python3 blueprint.py coach ...          how to fix a failed check, in one comment (the PR coach)
     python3 blueprint.py fix run            fix what a command can fix of the checks (the fix bot)
 

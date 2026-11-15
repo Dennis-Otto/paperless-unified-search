@@ -47,6 +47,14 @@ MARKERS = re.compile(rb"^(?:<{7}|>{7}) ", re.MULTILINE)
 ABSENT = "000000"
 REGULAR = "100644"
 EXECUTABLE = "100755"
+# GitHub gives up on a tree whose files come inline when they are too much to take in
+# time, and answers 422 "request timed out" (#931): the bot makes the tree of an update
+# in steps, each on the tree of the step before, with up to this many bytes of files,
+# and a larger file goes as a blob of its own.
+TREE_BYTES = 100_000
+# The seconds that the bot waits before it asks again for a tree that GitHub timed out.
+TREE_WAITS = (10, 30)
+TIMED_OUT = "timed out"
 # Items per page of a list of GitHub.
 PAGE = 100
 # GitHub takes up to 65536 characters for the description of a pull request; the notes
@@ -309,44 +317,76 @@ def head_tree(api: Api, repo: str, pull: Json) -> str:
 # --------------------------------------------------------------------------- the commit
 
 
+def text_of(content: bytes) -> str | None:
+    """The content as text for a tree, or None when it goes as a blob of its own: one
+    that isn't text, or is too large for a step of the tree."""
+    if len(content) > TREE_BYTES:
+        return None
+    try:
+        return content.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
+def tree_steps(api: Api, repo: str, root: Path, update: Update) -> list[list[Json]]:
+    """The entries of the tree of the update, in steps of up to TREE_BYTES of files
+    each; a file that goes as a blob of its own adds nothing to a step."""
+    steps: list[list[Json]] = [[]]
+    size = 0
+    for change in update.changes:
+        entry: dict[str, Json] = {"path": change.path, "type": "blob"}
+        length = 0
+        if change.deleted:
+            entry |= {"mode": change.before, "sha": None}
+        else:
+            entry["mode"] = change.mode
+            content = blob(root, change.blob)
+            text = text_of(content)
+            if text is None:
+                encoded = base64.b64encode(content).decode()
+                created = post(
+                    api,
+                    f"repos/{repo}/git/blobs",
+                    {"content": encoded, "encoding": "base64"},
+                )
+                entry["sha"] = created["sha"]
+            else:
+                entry["content"] = text
+                length = len(content)
+        if steps[-1] and size + length > TREE_BYTES:
+            steps.append([])
+            size = 0
+        steps[-1].append(entry)
+        size += length
+    return steps
+
+
+def make_tree(api: Api, repo: str, base: str, entries: list[Json]) -> str:
+    """The tree of the entries on the tree base. One that GitHub timed out is asked
+    again after a wait: the same entries make the same tree, so asking twice does no
+    harm, and GitHub took the second try both times that the first one timed out."""
+    body: Json = {"base_tree": base, "tree": entries}
+    for wait in TREE_WAITS:
+        try:
+            return str(post(api, f"repos/{repo}/git/trees", body)["sha"])
+        except GitHubError as error:
+            if error.status != 422 or TIMED_OUT not in error.message:
+                raise
+            print(
+                "::warning::GitHub timed out on a tree of the update; the bot asks"
+                f" again in {wait} seconds."
+            )
+            github.sleep(wait)
+    return str(post(api, f"repos/{repo}/git/trees", body)["sha"])
+
+
 def commit_with_modes(api: Api, repo: str, root: Path, update: Update) -> str | None:
     """The commit of the update through the Git Data API, which carries the mode of
     every file; GitHub signs it, as it does every commit of an app without an author
     of its own. None when GitHub didn't sign it, or its tree isn't that of the index."""
-    entries: list[Json] = []
-    for change in update.changes:
-        if change.deleted:
-            entries.append(
-                {
-                    "path": change.path,
-                    "mode": change.before,
-                    "type": "blob",
-                    "sha": None,
-                }
-            )
-            continue
-        entry: dict[str, Json] = {
-            "path": change.path,
-            "mode": change.mode,
-            "type": "blob",
-        }
-        content = blob(root, change.blob)
-        try:
-            entry["content"] = content.decode("utf-8")
-        except UnicodeDecodeError:
-            encoded = base64.b64encode(content).decode()
-            created = post(
-                api,
-                f"repos/{repo}/git/blobs",
-                {"content": encoded, "encoding": "base64"},
-            )
-            entry["sha"] = created["sha"]
-        entries.append(entry)
-    tree = post(
-        api,
-        f"repos/{repo}/git/trees",
-        {"base_tree": update.base_tree, "tree": entries},
-    )["sha"]
+    tree = update.base_tree
+    for entries in tree_steps(api, repo, root, update):
+        tree = make_tree(api, repo, tree, entries)
     if tree != update.tree:
         print(
             f"::warning::GitHub made the tree {tree} of the update, not the {update.tree}"
@@ -428,8 +468,18 @@ def mode_command(change: Change) -> str:
 def make_commit(
     api: Api, repo: str, root: Path, update: Update, run_id: str
 ) -> tuple[str, list[Change]]:
-    """The commit of the update on main, and the files whose mode it lacks."""
-    commit = commit_with_modes(api, repo, root, update)
+    """The commit of the update on main, and the files whose mode it lacks. When the
+    Git Data API fails, createCommitOnBranch makes it, as when the tree or the
+    signature is wrong: a tree or a commit that the failed try made leaves nothing
+    behind, since no branch points at it."""
+    try:
+        commit = commit_with_modes(api, repo, root, update)
+    except GitHubError as error:
+        print(
+            f"::warning::The Git Data API failed on the commit of the update ({error});"
+            " the bot commits it without the modes of the files."
+        )
+        commit = None
     if commit is not None:
         return commit, []
     scratch = f"{BRANCH}-{run_id}"

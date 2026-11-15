@@ -1,0 +1,49 @@
+# The files of other servers that every website serves, each with its sha256. The
+# hook in .github/mkdocs_blueprint.py checks every download of the privacy plugin
+# whose address is here, and every copy of one in .cache, and fails the build on a
+# file that differs: a server that changed a file, or someone between it and the
+# runner, can't change what the website serves. A file that a project's page names
+# from another server, such as a picture, is the project's own and isn't checked.
+# https://github.com/Dennis-Otto/repo-blueprint
+
+# The Mermaid that draws a ```mermaid block of a page, which the website serves only
+# when a page has one: Renovate moves the version below its line "# renovate:",
+# within the major version that Material loads, and python3 pins.py writes its sha256.
+[mermaid]
+# renovate: datasource=npm depName=mermaid
+version = "11.17.2"
+sha256 = "581ed7d74bd9048d0e3a91363927d72ef22942d7722546b27f7cc29e35390eb8"
+
+# The fonts of .github/mkdocs-blueprint-fonts.css, whose addresses name their version
+# and so never change: a new font, or a new version of one, comes with its sha256 here.
+[fonts]
+"https://fonts.gstatic.com/s/roboto/v51/KFO5CnqEu92Fr1Mu53ZEC9_Vu3r1gIhOszmkC3kaWzU.woff2" = "d8d0c88eea1036dc3e7322cd0a1a3eb6fc1dd86da24c7de690e70aac1bd62f05"
+"https://fonts.gstatic.com/s/roboto/v51/KFO5CnqEu92Fr1Mu53ZEC9_Vu3r1gIhOszmkAnkaWzU.woff2" = "f2ab3c15c750e03fb1bc8887786a9ef826d134c461f830877366399295861e55"
+"https://fonts.gstatic.com/s/roboto/v51/KFO5CnqEu92Fr1Mu53ZEC9_Vu3r1gIhOszmkCnkaWzU.woff2" = "75697119399fa9c3be54924e02b42ba6dc2a430b2984479cb5d8f291f09a44f3"
+"https://fonts.gstatic.com/s/roboto/v51/KFO5CnqEu92Fr1Mu53ZEC9_Vu3r1gIhOszmkBXkaWzU.woff2" = "abf79b1a281be8135c1bde7bf807267b1507adbdbe3023d5f5a8781ab6655371"
+"https://fonts.gstatic.com/s/roboto/v51/KFO5CnqEu92Fr1Mu53ZEC9_Vu3r1gIhOszmkenkaWzU.woff2" = "1c6486a3a539bc8cfb0d9586787438282dfbe21b745fee24b12b376991286215"
+"https://fonts.gstatic.com/s/roboto/v51/KFO5CnqEu92Fr1Mu53ZEC9_Vu3r1gIhOszmkaHkaWzU.woff2" = "3c9dec1a3e93c3effb3ec8805a71890dc81d0a0c3e64fd95f4d138d8e300aeff"
+"https://fonts.gstatic.com/s/roboto/v51/KFO5CnqEu92Fr1Mu53ZEC9_Vu3r1gIhOszmkCXkaWzU.woff2" = "3e6b22d2171656f2f886c209e04c70555a6bdb4903c011811726830492cd6ba9"
+"https://fonts.gstatic.com/s/roboto/v51/KFO5CnqEu92Fr1Mu53ZEC9_Vu3r1gIhOszmkCHkaWzU.woff2" = "7f21d061a9de1ea78a858938ff3b8e677869656b10bad470fc6039f8f3daf329"
+"https://fonts.gstatic.com/s/roboto/v51/KFO5CnqEu92Fr1Mu53ZEC9_Vu3r1gIhOszmkBnka.woff2" = "14f23757c6b41b4b6c0b967ca3fa74ff47a868728158373461c4e6e4b6368f19"
+"https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3GUBGEe.woff2" = "01f94d674db55952c35898fa4da22c3e7065c3cc4dbbcc9cb7beb8b6b017fbc9"
+"https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3iUBGEe.woff2" = "481dd0c01e6bbb129fd147eb5d8571016193cba141c4627ca60ceabdb5a46ea8"
+"https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3CUBGEe.woff2" = "ec7769b089813996276482bbe7017adfffdd6c7543fd1f76244e2ffc1138ed86"
+"https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3-UBGEe.woff2" = "97fbf7bd0b4579e632392a4f483acdae73cbf59ad90c1e5d2c5ec4044c377fce"
+"https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMawCUBGEe.woff2" = "7cb4281a0ccc84cc18617842c639fc66541cbef94a9dd245c754700210b4fcec"
+"https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMaxKUBGEe.woff2" = "2addf2d86d7a5778653b36d551e97a39da52855f82fac7461cfc1bd86d460aed"
+"https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3OUBGEe.woff2" = "0b60bbe04e9c479444b31270a72179f53e400beee57b7dd176c08e5e2e716831"
+"https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3KUBGEe.woff2" = "cedb374b05a35034cf96db185db4eeb8f8ce49e1a56197673702ff11b5533d6e"
+"https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3yUBA.woff2" = "1404ca348bd75ef836f4dd8b6f2cc719458642d1237c368296b2fc652dca47dc"
+"https://fonts.gstatic.com/s/robotomono/v31/L0x7DF4xlVMF-BfR8bXMIjhOm3CWWoKC.woff2" = "d99c99caa6207dc8377f4e40a7ddda295798c3bda29435f2bb811b5ef6d20e64"
+"https://fonts.gstatic.com/s/robotomono/v31/L0x7DF4xlVMF-BfR8bXMIjhOm3mWWoKC.woff2" = "1b8b1c7d2220fd721ef5981825e9c609df47385c90eee45023306b20237bb797"
+"https://fonts.gstatic.com/s/robotomono/v31/L0x7DF4xlVMF-BfR8bXMIjhOm36WWoKC.woff2" = "0cb63d7235b7187dc154ab6f74579e4b53f80dc3d73b3ae4345e0edd4d54b0fd"
+"https://fonts.gstatic.com/s/robotomono/v31/L0x7DF4xlVMF-BfR8bXMIjhOm3KWWoKC.woff2" = "70ffbb14019b25feb140bd32c530200d42c86a0c42383e5937007eaa6cf27114"
+"https://fonts.gstatic.com/s/robotomono/v31/L0x7DF4xlVMF-BfR8bXMIjhOm3OWWoKC.woff2" = "f206990c959d138c477ec5a669f3a9703017799480a2531a4ba006be7ef3a332"
+"https://fonts.gstatic.com/s/robotomono/v31/L0x7DF4xlVMF-BfR8bXMIjhOm32WWg.woff2" = "ae82dafb6340b538592b30dc18a367f56de3840b20669767adc011966405f6cf"
+"https://fonts.gstatic.com/s/robotomono/v31/L0x5DF4xlVMF-BfR8bXMIjhGq3-OXg.woff2" = "6d72c2150c28b5305e7bfd0290edcf6038e556a9dd11a6ef15a1652548a35693"
+"https://fonts.gstatic.com/s/robotomono/v31/L0x5DF4xlVMF-BfR8bXMIjhPq3-OXg.woff2" = "4052cc0b0f8b1b39da6cfaf90460f8b3c84dfc4b7562e9308ffa0998c3b9a005"
+"https://fonts.gstatic.com/s/robotomono/v31/L0x5DF4xlVMF-BfR8bXMIjhIq3-OXg.woff2" = "308f763acd5f648b0556c1f79b848102f494d0450072cfd2fd8064ddf287f4f8"
+"https://fonts.gstatic.com/s/robotomono/v31/L0x5DF4xlVMF-BfR8bXMIjhEq3-OXg.woff2" = "a4f562a288609dcb8f13e2b52296f1f3360957f09060735d4f00b5886e5bc7e0"
+"https://fonts.gstatic.com/s/robotomono/v31/L0x5DF4xlVMF-BfR8bXMIjhFq3-OXg.woff2" = "4cc0d52e0fa37c28084e0cbce3589a8ab32dd21e6ea619489c5f7c6e8c43b922"
+"https://fonts.gstatic.com/s/robotomono/v31/L0x5DF4xlVMF-BfR8bXMIjhLq38.woff2" = "b81cd55177300649be8f95b3b747d721ce607e8ed2856e25bd0c630cfd631faf"
