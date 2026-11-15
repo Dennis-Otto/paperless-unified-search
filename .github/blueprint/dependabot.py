@@ -18,8 +18,8 @@ alerts of the repository, and
   acceptance covers it: the date has passed, the entry is gone, or an update moved the
   version, so that no alert stays hidden.
 
-The token of a workflow can't read the Dependabot alerts; the OSV-Scanner workflow asks
-an app of the owner for a token with Dependabot alerts (write)."""
+The token of a workflow can't read the Dependabot alerts; the Release workflow asks an
+app of the owner for a token with Dependabot alerts (write)."""
 
 from __future__ import annotations
 

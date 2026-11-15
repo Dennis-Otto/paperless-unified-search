@@ -60,6 +60,8 @@ why."""
 docs = "CONTRIBUTING.md#coding-standards"
 autofix = """A step that fails before the linters needs a look at its log; each linter
 fixes itself with the autofix of its own explanation."""
+# What markdownlint fixes in the job of the linters, which keeps fixes-lint.
+writes = ["**/*.md"]
 
 [check.workflow-lint]
 title = "The workflows"
@@ -150,8 +152,10 @@ why = """The GitHub app, HACS, the stores of the projects and the e-mails of Git
 no Mermaid, so only a picture of its source shows a diagram to every reader, and the
 picture has to show what its source says."""
 fix = """On a branch of this repository with the release app, the diagram bot commits
-the fix in a minute. Otherwise, and from a fork, turn the blocks into sources and draw
-their pictures with Docker, then commit what changed:"""
+the fix once a runner of the workflow After the checks is free, which takes a while when
+Actions has a queue, and says on the pull request when it can't. Otherwise, and from a
+fork, take the files from the artifact `diagrams` of the check, or turn the blocks into
+sources and draw their pictures with Docker, then commit what changed:"""
 commands = ["bash scripts/diagrams.sh --extract"]
 docs = "CONTRIBUTING.md#diagrams"
 autofix = """The diagram bot draws the pictures with Docker, in a job of its own, and
@@ -226,6 +230,8 @@ should lead, and so does a new violation of accessibility: a person fixes it, or
 it stays. Only the first run on `main` after an update, with the line `baseline = true`
 of `.github/a11y-accepted.toml`, writes what the website already has into that file, and
 the fix bot brings it."""
+# The violations that the first run of main accepted, kept as fixes-docs.
+writes = [".github/a11y-accepted.toml"]
 
 [check.dco]
 title = "The sign-off of every commit"
@@ -681,7 +687,7 @@ fix = """On the settings page of the app that the summary names, under *Permissi
 events*, set *Dependabot alerts* to *Read and write* and save. GitHub then asks the
 owner to accept the new permission on the installation of the app (*Settings →
 Applications → Configure*, *Review request*); accept it, and run the workflow
-*OSV-Scanner* again. With the GitHub CLI of a maintainer, this shows which alerts the
+*Release* again. With the GitHub CLI of a maintainer, this shows which alerts the
 job would close or open again (in the blueprint itself, the tool is `blueprint.py`
 without `.github/`):"""
 commands = [
@@ -837,6 +843,8 @@ of a person. Answers of `tests/answers/` that differ from those of a repository 
 in a pull request, which isn't at fault, and fail the weekly run of `main`: it takes
 them anew with `python3 downstream.py --answers` and keeps them for the fix bot,
 which brings them in its pull request of the fixes of `main`."""
+# The answers of each repository, kept as fixes-downstream.
+writes = ["tests/answers/*.yml"]
 
 [check."mutation plan"]
 title = "The plan of the mutation tests"
@@ -978,6 +986,7 @@ fix every text file (in the blueprint itself, the tool is `blueprint.py` without
 commands = ["python3 .github/blueprint.py fix text"]
 docs = "CONTRIBUTING.md#coding-standards"
 autofix = ["{blueprint} fix text"]
+writes = ["**"]
 
 [step.Diagrams]
 problem = """A page has a `mermaid` block, which the GitHub app shows as code, a source
@@ -1011,6 +1020,7 @@ without `.github/`):"""
 commands = ["python3 .github/blueprint.py pages --fix"]
 docs = "CONTRIBUTING.md#pages-in-one-column"
 autofix = ["{blueprint} pages --fix"]
+writes = ["**/*.md"]
 
 [step."Files of the project"]
 problem = """A file that belongs to this project, which an update of the blueprint leaves
@@ -1026,6 +1036,12 @@ writes a comment behind its line `group = "decision"`:"""
 commands = ["python3 .github/blueprint.py migrate --fix"]
 docs = "https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/troubleshooting.md#a-release-moves-a-file-of-the-project"
 autofix = ["{blueprint} migrate --fix"]
+# MOVABLE of blueprint/migrate.py.
+writes = [
+  ".github/issue-assistant/config.project.toml",
+  ".github/issue-assistant/config.toml",
+  ".github/labels.toml",
+]
 
 [step."Binary files"]
 problem = """Git holds a binary file that nobody can review: a program, a library,
@@ -1063,6 +1079,7 @@ blueprint itself, the tool is `blueprint.py` without `.github/`):"""
 commands = ["python3 .github/blueprint.py fragments --fix"]
 docs = "CONTRIBUTING.md#the-changelog"
 autofix = ["{blueprint} fragments --fix"]
+writes = ["changelog.d/*.md"]
 
 [step."Records of decisions"]
 problem = """Two records of `docs/decisions/` share a number, the numbers skip one, a file
@@ -1084,6 +1101,7 @@ order of the rows; then commit what changed (in the blueprint itself, the tool i
 commands = ["python3 .github/blueprint.py decisions --fix"]
 docs = "CONTRIBUTING.md#records-of-decisions"
 autofix = ["{blueprint} decisions --fix"]
+writes = ["docs/decisions/README.md"]
 
 [step."Accepted advisories"]
 problem = """`.github/renovate-accepted.json5` has other rules of Renovate than the versions
@@ -1101,6 +1119,7 @@ it and commit both (in the blueprint itself, the tool is `blueprint.py` without
 commands = ["python3 .github/blueprint.py advisories --fix"]
 docs = "https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/troubleshooting.md#osv-scanner-reports-a-version-that-another-package-pins"
 autofix = ["{blueprint} advisories --fix"]
+writes = ["**/osv-scanner.toml"]
 
 [step."Lock files"]
 problem = """Renovate can't read the command in the header of a lock file of pip-compile,
@@ -1119,6 +1138,7 @@ requirements.in`:"""
 commands = ["python3 .github/blueprint.py locks --fix"]
 docs = "https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/troubleshooting.md#renovate-skips-a-lock-file"
 autofix = ["{blueprint} locks --fix"]
+writes = ["**/*.txt"]
 
 [step."Lock files match their sources"]
 problem = """A lock file of pip-compile, such as `requirements-dev.txt`, no longer pins
@@ -1137,6 +1157,7 @@ with its Python and its tool (in the blueprint itself, the tool is `blueprint.py
 commands = ["python3 .github/blueprint.py locks --compile --fix"]
 docs = "https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/troubleshooting.md#a-lock-file-no-longer-matches-its-source"
 autofix = ["{blueprint} locks --compile --fix"]
+writes = ["**/*.txt"]
 
 [step."Explanations of the checks"]
 problem = """A required check of `.github/repository.toml` or
@@ -1175,6 +1196,12 @@ commit what changed (in the blueprint itself, the tool is `blueprint.py` without
 commands = ["python3 .github/blueprint.py translations --fix"]
 docs = "https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/features/checks.md#checks"
 autofix = ["{blueprint} translations --fix"]
+writes = [
+  "custom_components/*/translations/*.json",
+  "l10n/*.js",
+  "l10n/*.json",
+  "**/_locales/*/messages.json",
+]
 
 [step.Version]
 problem = """A file has another version than `.release-please-manifest.json`, whose
@@ -1194,6 +1221,16 @@ commands = [
 ]
 docs = "CONTRIBUTING.md#workflow"
 autofix = ["{blueprint} fix version"]
+# The files of PLACES of blueprint/versions.py, wherever release-please names them.
+writes = [
+  "**/Dockerfile",
+  "**/info.xml",
+  "**/manifest.json",
+  "**/package-lock.json",
+  "**/package.json",
+  "**/pyproject.toml",
+  "**/version.txt",
+]
 
 [step."Git hooks"]
 problem = """A hook in `.githooks/` is a plain file in Git, not an executable one, as Git
@@ -1239,6 +1276,7 @@ fix = """Let Ruff fix what it can and format the code, then fix the rest by hand
 commands = ["ruff check --fix .", "ruff format ."]
 docs = "CONTRIBUTING.md#coding-standards"
 autofix = ["ruff check --fix .", "ruff format ."]
+writes = ["**/*.py", "**/*.pyi", "**/*.ipynb"]
 
 [step.Mypy]
 problem = """mypy, in its strict mode, finds a type that doesn't fit, or a function
@@ -1288,7 +1326,8 @@ hold."""
 problem = """`composer.json` isn't valid in the strict mode of Composer, `composer.lock`
 no longer locks what `composer.json` asks for, as after a change of it by hand, or a
 locked package has a known vulnerability. Or `composer audit` couldn't reach the
-advisories of Packagist, three times in a row, as the log says then."""
+advisories of Packagist five times in a row, over about two minutes, as the log says
+then."""
 why = """A broken `composer.json` breaks every install, `composer install` stops at a lock
 file that lacks a package, and a vulnerable package ships its vulnerability with the
 app. Without the advisories, the audit can't tell whether a package is vulnerable."""
@@ -1307,6 +1346,7 @@ docs = "CONTRIBUTING.md#checks"
 autofix = [
   "composer validate --no-check-publish --quiet || composer update --minimal-changes --no-install --no-scripts --no-plugins --no-interaction",
 ]
+writes = ["composer.json", "composer.lock"]
 
 [step."App metadata"]
 problem = """`appinfo/info.xml` doesn't follow the schema of the Nextcloud App Store; the
@@ -1354,6 +1394,7 @@ fix = """Let php-cs-fixer make the diff:"""
 commands = ["vendor/bin/php-cs-fixer fix"]
 docs = "CONTRIBUTING.md#coding-standards"
 autofix = ["vendor/bin/php-cs-fixer fix"]
+writes = ["**/*.php"]
 
 [step.Psalm]
 problem = """Psalm, at its strictest level, finds a type that doesn't fit, a call that
@@ -1436,6 +1477,7 @@ docs = "CONTRIBUTING.md#checks"
 autofix = [
   "npm ci --dry-run --ignore-scripts --no-audit --no-fund >/dev/null 2>&1 || npm install --package-lock-only --ignore-scripts --no-audit --no-fund",
 ]
+writes = ["package-lock.json"]
 
 [step.Types]
 problem = """The TypeScript compiler, in its strict mode, finds a type that doesn't fit;
@@ -1460,6 +1502,27 @@ explains a rule:"""
 commands = ["npx --no -- biome check --write ."]
 docs = "CONTRIBUTING.md#coding-standards"
 autofix = ["npx --no -- biome check --write ."]
+# What Biome checks and formats.
+writes = [
+  "**/*.js",
+  "**/*.jsx",
+  "**/*.mjs",
+  "**/*.cjs",
+  "**/*.ts",
+  "**/*.tsx",
+  "**/*.mts",
+  "**/*.cts",
+  "**/*.json",
+  "**/*.jsonc",
+  "**/*.css",
+  "**/*.graphql",
+  "**/*.gql",
+  "**/*.html",
+  "**/*.vue",
+  "**/*.svelte",
+  "**/*.astro",
+  "**/*.grit",
+]
 
 [step."Tests, with every line, branch and function covered"]
 problem = """A test fails, or a line, a branch or a function of the code runs in no test;

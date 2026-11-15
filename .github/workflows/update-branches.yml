@@ -316,6 +316,9 @@ jobs:
           ACTIONS_TOKEN: ${{ github.token }}
           # The account whose merges are the updates of the bot.
           BOT_ACCOUNT: ${{ steps.app.outputs.app-slug }}[bot]
+          # Whether the settings made the ruleset Reviews of main, which the release app
+          # passes, so that the bot merges a pull request of the bots past it.
+          REVIEWS_OF_MAIN: ${{ vars.REVIEWS_OF_MAIN }}
           # The run of a check whose end started the bot, if one did.
           AFTER: ${{ inputs.after }}
           ATTEMPT: ${{ inputs.attempt }}

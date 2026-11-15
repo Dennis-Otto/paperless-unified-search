@@ -1,0 +1,13 @@
+# The hosts and the files of the issue assistant that belong to this project. They add
+# to those of config.toml, which belongs to the blueprint, and no update of the
+# blueprint changes this file. https://github.com/Dennis-Otto/issue-assistant
+
+[links]
+# Hosts that links in the assistant's comments may lead to, besides this repository and
+# the hosts of config.toml.
+hosts = []
+
+[transparency]
+# Files besides those of config.toml that tell reporters which AI reads their issue; the
+# check command makes sure they name the engine.
+files = []

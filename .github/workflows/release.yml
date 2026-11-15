@@ -17,7 +17,10 @@ name: Release
 # workflow has passed, cloudflare-workers, which Workers Builds deploys outside
 # GitHub, or none. Last, verify-release.yml checks the release as its
 # users can. A release that only updates dependencies merges itself once its checks pass,
-# once a day, or at once with a fix of a vulnerability.
+# once a day, or at once with a fix of a vulnerability. Beside the release bot, the
+# Dependabot alert bot closes each Dependabot alert that an osv-scanner.toml accepts,
+# with its reason and its end, opens again each one that it closed once the acceptance
+# is gone, and warns of each acceptance that ends within two weeks.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -27,7 +30,8 @@ on:
   # the release bot at once. The schedule is only a safety net, for a push that GitHub
   # lost and a tag that a failed run left to sign: GitHub runs schedules as it can,
   # often hours late, and the bot-health bot starts a run that it missed. It is also
-  # the daily run that merges a release of dependency updates.
+  # the daily run that merges a release of dependency updates, and the one that
+  # closes the Dependabot alerts of advisories published since the last push.
   schedule:
     - cron: "57 5 * * *"
   workflow_dispatch:
@@ -1034,3 +1038,284 @@ jobs:
     uses: ./.github/workflows/verify-release.yml
     with:
       tag: ${{ needs.release-please.outputs.tag }}
+
+  # Dependabot doesn't read osv-scanner.toml, so it keeps an alert open for every
+  # advisory that the project accepts, such as each of the Pillow that Home Assistant
+  # pins for the tests. GitHub opens such an alert whenever an advisory is published,
+  # not when main changes, so the job runs every day as well as after every push to
+  # main, and closes it within a day; the daily run of this workflow is there anyway,
+  # so the job costs no schedule of its own. The token of a workflow can't read the
+  # Dependabot alerts: an app of the owner closes them, with the permission Dependabot
+  # alerts (read and write) alone, for this repository alone (decision 0086). Its last
+  # step, with the token of the job, warns of each acceptance that ends within two
+  # weeks and keeps the one issue that names them.
+  dependabot:
+    name: dependabot alerts
+    if: ${{ !github.event.repository.fork }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # The environment holds the private keys of the release app and of the settings
+    # app; only main may use it.
+    environment:
+      name: release
+      deployment: false
+    permissions:
+      contents: read
+      # The issue of the acceptances that end soon.
+      issues: write
+    steps:
+      - name: Block every host that the job doesn't need
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
+      - name: Make sure that Harden-Runner blocks
+        id: blocks
+        # Harden-Runner goes on without its agent when the agent can't be downloaded, as
+        # in GitHub's outage of 8 November 2026, or doesn't start: the job would reach
+        # every host. It stops here instead, so that it can run again (decision 0134).
+        timeout-minutes: 1
+        run: |
+          # The agent writes Initialized into its status once its firewall stands, and
+          # runs as the service agent until the end of the job; one that is there may
+          # still be starting.
+          for _ in {1..30}; do
+            [[ -e /home/agent/agent.status || ! -e /home/agent/agent ]] && break
+            sleep 1
+          done
+          status="$(cat /home/agent/agent.status 2>/dev/null || true)"
+          if [[ ! -d /home/agent/ ]]; then
+            # Harden-Runner returns before it makes the folder of the agent when
+            # StepSecurity says that it is unavailable, or the repository skips it.
+            why="didn't install its agent, as StepSecurity said that it is unavailable or the repository skips it (the log of its step says which),"
+          elif [[ ! -e /home/agent/agent ]]; then
+            why="couldn't download its agent, mostly in an outage of GitHub (https://www.githubstatus.com),"
+          elif [[ "$status" != Initialized ]]; then
+            why="has an agent that didn't start,"
+          elif ! systemctl is-active --quiet agent; then
+            why="has an agent that stopped,"
+          else
+            echo "Harden-Runner blocks every host that the job doesn't name."
+            exit 0
+          fi
+          echo "The status of the agent: ${status:-none}"
+          echo "::error title=Harden-Runner doesn't block::Harden-Runner $why so this job would reach every host, and it stops here instead. That is no problem of the change: run the job again."
+          exit 1
+      - name: Wait until Harden-Runner lets the hosts through
+        # The runner may have asked for an address past Harden-Runner, which then blocks
+        # that address for as long as systemd-resolved keeps it, up to a minute.
+        timeout-minutes: 4
+        env:
+          HOSTS: >-
+            api.github.com:443
+            github.com:443
+        run: |
+          deadline=$(($(date +%s) + 120))
+          for endpoint in $HOSTS; do
+            host="${endpoint%:*}"
+            port="${endpoint##*:}"
+            # A wildcard names no host to ask, and a job may leave out a host that keeps it
+            # waiting although none of its steps needs it at once.
+            [[ "$host" == '*.'* || " $SKIP_WAIT " == *" $endpoint "* ]] && continue
+            # Each host on its own port, by HTTP on 80 and by HTTPS on any other. Only a host
+            # that curl can't resolve, or can't reach in time, is blocked: one that answers at
+            # all, in whatever protocol, is through.
+            scheme=https
+            [[ "$port" == 80 ]] && scheme=http
+            while true; do
+              status=0
+              curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "$scheme://$host:$port/" || status=$?
+              case "$status" in
+                6 | 7 | 28) ;;
+                *) break ;;
+              esac
+              if (($(date +%s) >= deadline)); then
+                echo "::warning::Harden-Runner still blocks $endpoint after two minutes; a step that needs it will fail, and the job can run again."
+                break
+              fi
+              echo "Harden-Runner still blocks $endpoint, waiting 3 s."
+              sleep 3
+            done
+          done
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        id: checkout
+        with:
+          persist-credentials: false
+      # The settings app writes the alerts once the variable SETTINGS_APP_CLIENT_ID and
+      # the secret SETTINGS_APP_PRIVATE_KEY name it, as it writes the rest of the
+      # administration; set up in part, the run says what is missing and goes on with
+      # the release app, as the settings bot does.
+      - name: Check whether the settings app is set up
+        id: settings-app
+        env:
+          CLIENT_ID: ${{ vars.SETTINGS_APP_CLIENT_ID }}
+          KEY_SET: ${{ secrets.SETTINGS_APP_PRIVATE_KEY != '' }}
+          # Who would take the settings app, and what happens without it.
+          BOT: the Dependabot alert bot
+          INSTEAD: the release app closes the Dependabot alerts that osv-scanner.toml accepts
+        run: |
+          if [[ -n "$CLIENT_ID" && "$KEY_SET" == true ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ -n "$CLIENT_ID" ]]; then
+            missing="names a settings app in the variable SETTINGS_APP_CLIENT_ID, but has no private key of it in the secret SETTINGS_APP_PRIVATE_KEY of the environment release"
+          elif [[ "$KEY_SET" == true ]]; then
+            missing="has a private key of a settings app in the secret SETTINGS_APP_PRIVATE_KEY of the environment release, but names no settings app in the variable SETTINGS_APP_CLIENT_ID"
+          else
+            # No settings app: nothing to say, the release app does its work.
+            exit 0
+          fi
+          echo "::warning::This repository $missing, so $BOT goes on without it: $INSTEAD."
+          {
+            echo "### The settings app is set up only in part"
+            echo
+            echo "This repository $missing, so $BOT goes on without it: $INSTEAD. The settings app is an optional second GitHub App of the owner, the only one that writes the administration of the repository, so that the release app needs no *Administration*."
+            echo
+            echo "[The settings app](https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/own-account.md#8-the-settings-app-optional) shows how to set it up, with the variable and the secret. Once both are set, $BOT takes the settings app in its next run."
+          } >> "$GITHUB_STEP_SUMMARY"
+      # Without the release app of the owner, the run names what is missing rather than
+      # fail at the token, and the alerts stay as they are.
+      - name: Check that the release app is set up
+        id: release-app
+        if: steps.settings-app.outputs.ready != 'true'
+        env:
+          CLIENT_ID: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          KEY_SET: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY != '' }}
+          # Who needs the app and for what, what happens without it, and whether the
+          # run fails then.
+          BOT: the Dependabot alert bot
+          TASK: close the Dependabot alerts that osv-scanner.toml accepts
+          WITHOUT: the alerts stay as they are
+          REQUIRED: "false"
+        run: |
+          if [[ -z "$CLIENT_ID" ]]; then
+            missing="names no release app in the variable RELEASE_AUTOMATION_CLIENT_ID"
+          elif [[ "$KEY_SET" != true ]]; then
+            missing="has no private key of its release app in the secret RELEASE_AUTOMATION_PRIVATE_KEY of the environment release"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          level=warning
+          if [[ "$REQUIRED" == true ]]; then
+            level=error
+          fi
+          echo "::$level::This repository $missing, which $BOT needs to $TASK; $WITHOUT."
+          {
+            echo "### ${BOT^} needs the release app of the owner"
+            echo
+            echo "This repository $missing, which $BOT needs to $TASK; $WITHOUT. The release app is a GitHub App of the owner, whose token may do what the token of a job can't: start the checks of a pull request, change a workflow and apply the settings."
+            echo
+            echo "\`python3 .github/blueprint.py app register\` registers the app, sets its private key and opens the pull request that names it in \`.github/repository.toml\`; \`python3 .github/blueprint.py checklist\` shows what is left, such as its installation and the settings. Once they are done, $BOT can $TASK in its next run."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$REQUIRED" == true ]]; then
+            exit 1
+          fi
+      # Only the Dependabot alerts, for this repository alone. GitHub refuses the token
+      # of an app that lacks the permission, or whose installation hasn't accepted it
+      # yet; the next step says what to do.
+      - name: Create a token of the settings app
+        id: settings-token
+        if: steps.settings-app.outputs.ready == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.SETTINGS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SETTINGS_APP_PRIVATE_KEY }}
+          permission-vulnerability-alerts: write
+      - name: Create a token of the release app
+        id: release-token
+        if: steps.release-app.outputs.ready == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_AUTOMATION_PRIVATE_KEY }}
+          permission-vulnerability-alerts: write
+      - name: Say what the app lacks
+        if: steps.settings-token.outcome == 'failure' || steps.release-token.outcome == 'failure'
+        env:
+          APP: ${{ steps.settings-token.outcome == 'failure' && 'settings' || 'release' }}
+          # The apps of the blueprint's owner have the permission, so a refused token
+          # fails the check in the owner's repositories, and the PR coach explains it;
+          # in those of every other owner it is a notice until the owner grants it. The
+          # template sets it for the owner of each repository.
+          STRICT: "true"
+        run: |
+          text="GitHub refused a token of the $APP app with the permission Dependabot alerts (read and write), most often because the app lacks it or its installation hasn't accepted it yet, so the Dependabot alerts stay as they are."
+          {
+            echo "### The $APP app may not close the Dependabot alerts"
+            echo
+            echo "$text The log of the step *Create a token of the $APP app* has GitHub's answer."
+            echo
+            echo "On the settings page of the $APP app, under *Permissions & events*, set *Dependabot alerts* to *Read and write* and save; then accept the new permission on its installation (*Settings → Applications → Installed GitHub Apps*, *Configure*, *Review request*), and run the workflow *Release* again. [Your own account](https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/own-account.md#8-the-settings-app-optional) shows each step."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$STRICT" == true ]]; then
+            echo "::error::$text"
+            exit 1
+          fi
+          echo "::notice::$text"
+      - name: Close the alerts that osv-scanner.toml accepts
+        if: steps.settings-token.outputs.token != '' || steps.release-token.outputs.token != ''
+        env:
+          GH_TOKEN: ${{ steps.settings-token.outputs.token || steps.release-token.outputs.token }}
+        run: |
+          # Repositories have the copy that the blueprint keeps current; the blueprint
+          # has the original.
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          status=0
+          python3 "$script" --repo "$GITHUB_REPOSITORY" advisories --dependabot > "$RUNNER_TEMP/dependabot.txt" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/dependabot.txt"
+          {
+            echo '### Dependabot alerts'
+            echo '```'
+            cat "$RUNNER_TEMP/dependabot.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      # An acceptance of osv-scanner.toml ends on its date, and from that day on
+      # OSV-Scanner reports its advisories again, on main and in every pull request that
+      # changes a lock file. Two weeks before, a warning and an issue name the package,
+      # the version and the date, while there is still time to update or look again.
+      - name: Warn of the acceptances that end soon
+        # Also when the app couldn't close the alerts: the warning needs no app.
+        if: always() && steps.blocks.outcome != 'failure' && steps.checkout.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          status=0
+          python3 "$script" --repo "$GITHUB_REPOSITORY" advisories --ending > "$RUNNER_TEMP/ending.txt" || status=$?
+          cat "$RUNNER_TEMP/ending.txt"
+          {
+            echo '### Acceptances that end soon'
+            echo
+            cat "$RUNNER_TEMP/ending.txt"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.toml.
+      - name: Explain the failure
+        if: failure() && steps.blocks.outcome != 'failure'
+        env:
+          CHECK: dependabot alerts
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" coach explain "$CHECK"

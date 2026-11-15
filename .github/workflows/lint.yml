@@ -112,7 +112,7 @@ jobs:
       - name: Check the issue assistant's set-up
         id: issue-assistant
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
-        uses: Dennis-Otto/issue-assistant@1a29de169ad3e307b10338534d88a3894a4c17f7 # v1.11.0
+        uses: Dennis-Otto/issue-assistant@6c77483eb0ae3f80ee7ddd641bd06dcc61a4442d # v1.12.0
         with:
           command: check
       - name: Check the sign-off of every commit
@@ -331,8 +331,10 @@ jobs:
         id: draw
         env:
           EVENT: ${{ github.event_name }}
-          # The diagram bot commits onto a branch of this repository as the release app.
+          # The diagram bot commits onto a branch of this repository as the release app,
+          # and not at all in a repository that is a fork itself.
           APP: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          FORK: ${{ github.event.repository.fork }}
           HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
           paths=(docs/diagrams docs/images/diagrams scripts/diagrams.sh)
@@ -366,11 +368,12 @@ jobs:
             exit 0
           fi
           # The diagram bot commits only onto a branch of this repository, and only
-          # with the release app.
-          if [[ "$EVENT" != pull_request || "$HEAD_REPOSITORY" != "$GITHUB_REPOSITORY" ]]; then
+          # with the release app. It runs after the checks, in a job that waits for a
+          # runner as long as Actions has a queue, so it promises no time (#913).
+          if [[ "$EVENT" != pull_request || "$HEAD_REPOSITORY" != "$GITHUB_REPOSITORY" || "$FORK" == true ]]; then
             fix="The artifact \`diagrams\` of this run holds the files."
           elif [[ -n "$APP" ]]; then
-            fix="The diagram bot commits it onto this branch in a minute; the artifact \`diagrams\` of this run holds the files as well."
+            fix="The diagram bot commits it onto this branch once a runner of the workflow After the checks is free, and says on this pull request when it can't; the artifact \`diagrams\` of this run holds the files as well."
           else
             fix="No bot commits it here, because this repository has no release app (the variable RELEASE_AUTOMATION_CLIENT_ID); the artifact \`diagrams\` of this run holds the files."
           fi

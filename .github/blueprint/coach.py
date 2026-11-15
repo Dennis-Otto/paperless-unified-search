@@ -191,6 +191,9 @@ class Entry:
     # answer the question.
     autofix: tuple[str, ...] = ()
     manual: str = ""
+    # The globs of the paths that its fixes may write, which the fix bot keeps alone of
+    # what the job of the check kept; None where the explanation names none.
+    writes: tuple[str, ...] | None = None
 
     @property
     def declared(self) -> bool:
@@ -202,7 +205,9 @@ class Entry:
         where = f"{source}: [{kind}.{key!r}]"
         if not isinstance(table, dict):
             raise CatalogError(f"{where} is no table")
-        unknown = sorted(set(table) - {*FIELDS, "commands", "docs", "autofix"})
+        unknown = sorted(
+            set(table) - {*FIELDS, "commands", "docs", "autofix", "writes"}
+        )
         if unknown:
             raise CatalogError(f"{where} has unknown keys: {', '.join(unknown)}")
         # A step is named by its line in scripts/check.sh, which is its title.
@@ -220,10 +225,20 @@ class Entry:
         if not isinstance(docs, str):
             raise CatalogError(f"{where} has docs that are no link")
         autofix, manual = parse_autofix(table.get("autofix"), where)
+        writes = parse_writes(table.get("writes"), where)
         # The texts may wrap over several lines of the file.
         title, problem, why, fix = (" ".join(texts[name].split()) for name in FIELDS)
         return cls(
-            key, title, problem, why, fix, tuple(commands), docs, autofix, manual
+            key,
+            title,
+            problem,
+            why,
+            fix,
+            tuple(commands),
+            docs,
+            autofix,
+            manual,
+            writes,
         )
 
     def within(self, repo: str | None, base: str | None = None) -> Entry:
@@ -255,6 +270,35 @@ def parse_autofix(value: Json, where: str) -> tuple[tuple[str, ...], str]:
     raise CatalogError(
         f"{where} has an autofix that is neither a list of commands nor the reason "
         "why no command fixes it"
+    )
+
+
+# A glob of writes: a path from the root of the repository, of names and the
+# wildcards ** for any folders, * for any part of a name and ? for one character of it.
+GLOB_PART = re.compile(r"[^/\\\x00-\x1f\x7f]+")
+
+
+def parse_writes(value: Json, where: str) -> tuple[str, ...] | None:
+    """The globs of the paths that the fixes of a check may write; None when the
+    explanation names none."""
+    if value is None:
+        return None
+    if (
+        isinstance(value, list)
+        and value
+        and all(
+            isinstance(glob, str)
+            and all(
+                GLOB_PART.fullmatch(part) and part not in (".", "..")
+                for part in glob.split("/")
+            )
+            for glob in value
+        )
+    ):
+        return tuple(value)
+    raise CatalogError(
+        f"{where} has a writes that is no list of globs of paths from the root of the "
+        "repository, such as **/*.md"
     )
 
 

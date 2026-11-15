@@ -30,6 +30,13 @@ one, and the bot doesn't bring it up to date again until someone has approved, o
 merge would start its runs anew for nothing. The one exception is a head that the bot
 made itself on top of commits that a person approved: nothing new from the fork runs,
 so the bot approves those runs (decision 0099). Anything unclear means no approval.
+
+Where the settings want an approving review of every change, in the ruleset *Reviews of
+main*, a pull request of the bots waits for none: auto-merge would wait for a review
+that no person gives to an update. The release app may merge past that ruleset alone,
+so the bot merges such a pull request itself once it is up to date and its required
+checks passed, as long as the bots made it and every commit of it; the rules of *Protect
+main* still hold for that merge (decision 0157).
 """
 
 from __future__ import annotations
@@ -74,8 +81,18 @@ REBUILT_BY = {
 # What the bot needs of each open pull request, in one request.
 FIELDS = (
     "number,headRefName,headRefOid,autoMergeRequest,isCrossRepository,"
-    "maintainerCanModify,mergeable,labels,reviewDecision,statusCheckRollup"
+    "maintainerCanModify,mergeable,labels,reviewDecision,statusCheckRollup,author"
 )
+# The review decision of a pull request that no approving review holds up but the one
+# that the rules want.
+REVIEW_REQUIRED = "REVIEW_REQUIRED"
+# The other bots whose pull requests merge by themselves: Dependabot, and Renovate where
+# the app of Mend runs it; elsewhere Renovate and every bot of the blueprint open theirs
+# and commit as the release app.
+OTHER_BOTS = frozenset({"dependabot[bot]", "renovate[bot]"})
+# The committer of the commits that GitHub makes and signs itself, such as the update of
+# a branch and the commits of Dependabot.
+GITHUB_COMMITTER = "web-flow"
 # What a review decision that holds up the merge says about the pull request.
 REVIEWS = {
     "CHANGES_REQUESTED": "changes were requested in a review",
@@ -203,6 +220,8 @@ class Pull:
     # Whether it comes from a fork, and whether its author allows edits by maintainers.
     fork: bool = False
     editable: bool = False
+    # Who opened it, as GitHub names the account in a commit, such as name[bot].
+    author: str = ""
 
     @classmethod
     def of(cls, data: Mapping[str, Json]) -> Pull:
@@ -220,6 +239,7 @@ class Pull:
             checks=latest_checks(data.get("statusCheckRollup") or []),
             fork=bool(data.get("isCrossRepository")),
             editable=bool(data.get("maintainerCanModify")),
+            author=login_of(data.get("author") or {}),
         )
 
     def counted(self, required: frozenset[str]) -> dict[str, State]:
@@ -236,11 +256,30 @@ class Pull:
         counted = self.counted(required)
         return sorted(name for name, state in counted.items() if state is State.FAILED)
 
+    def passed(self, required: frozenset[str]) -> bool:
+        """Whether every check that decides its merge passed, each required one
+        among them."""
+        counted = self.counted(required)
+        return (
+            bool(counted)
+            and required <= set(counted)
+            and all(state is State.PASSED for state in counted.values())
+        )
+
     def pending(self, required: frozenset[str]) -> bool:
         """Whether its checks still run: a required one runs, or none has started yet,
         as for a head that the bot has just made."""
         counted = self.counted(required).values()
         return not self.checks or State.PENDING in counted
+
+
+def login_of(author: Mapping[str, Json]) -> str:
+    """The account of the author of a pull request, as a commit names it: gh lists an
+    app as app/name, whose commits GitHub names name[bot]."""
+    login = str(author.get("login") or "")
+    if login.startswith("app/"):
+        return f"{login.removeprefix('app/')}[bot]"
+    return login
 
 
 def waiting(api: Api, repo: str, base: str) -> list[Pull]:
@@ -360,10 +399,12 @@ class Job:
     """What the workflow gives the bot for the runs of the pull requests from forks: the
     token of its job, which may read, approve and start runs where the token of the
     release app may not, and the account of the release app, whose token makes the
-    merges of an update."""
+    merges of an update, and whether the settings want reviews of main, in the ruleset
+    that the release app may pass."""
 
     api: Api
     login: str
+    reviews: bool = False
 
 
 def job_from(environment: Mapping[str, str]) -> Job | None:
@@ -373,7 +414,8 @@ def job_from(environment: Mapping[str, str]) -> Job | None:
     login = environment.get("BOT_ACCOUNT", "")
     if not token or not login:
         return None
-    return Job(Api(run_gh_as(token)), login)
+    reviews = environment.get("REVIEWS_OF_MAIN", "") == "on"
+    return Job(Api(run_gh_as(token)), login, reviews)
 
 
 @dataclass
@@ -447,9 +489,79 @@ class Line:
         """What holds up its merge besides its checks, or nothing: a review that the
         rules want, or a conversation to resolve."""
         reason = REVIEWS.get(pull.review, "")
+        if pull.review == REVIEW_REQUIRED and self.made_by_the_bots(pull):
+            # The bot merges it past the review itself.
+            reason = ""
         if not reason and self.threads and self.unresolved(pull):
             reason = "it has a conversation to resolve"
         return reason
+
+    def made_by_the_bots(self, pull: Pull) -> bool:
+        """Whether the bots opened the pull request and made every commit of it, each
+        signed: the release app, whose token the bot has, Dependabot or Renovate.
+        Only in a job, which names the release app, and only where the settings made
+        the ruleset of the reviews, which the release app passes: a review that another
+        ruleset wants binds the bots too. A commit of anyone else waits for a review,
+        and so does one that a bot didn't commit, whose author anyone can write: GitHub
+        checks the signature against the committer."""
+        if self.job is None or not self.job.reviews or pull.fork:
+            return False
+        bots = {self.job.login, *OTHER_BOTS}
+        if pull.author not in bots:
+            return False
+        commits = self.comparison(pull).get("commits") or []
+        return bool(commits) and all(
+            account(commit, "author") in bots
+            and account(commit, "committer") in {*bots, GITHUB_COMMITTER}
+            and verified(commit)
+            for commit in commits
+        )
+
+    def mergeable_past_the_review(self, pull: Pull) -> bool:
+        """Whether the pull request of the bots would merge but for the review that the
+        rules want: up to date, with its required checks passed."""
+        return (
+            pull.review == REVIEW_REQUIRED
+            and pull.passed(self.required)
+            and self.made_by_the_bots(pull)
+            and self.commits_behind(pull) == 0
+        )
+
+    def merge_past_the_review(self, pull: Pull) -> None:
+        """Merge a pull request of the bots that waits only for the review that the
+        rules want, as the release app, which the ruleset of the reviews lets past it.
+        GitHub still refuses the merge for every other rule of the branch, such as a
+        required check, and for a head that moved since the list. Squashed under its
+        title and description, as the settings name a squash merge."""
+        data = self.api.get(f"repos/{self.repo}/pulls/{pull.number}") or {}
+        try:
+            self.api.request(
+                "PUT",
+                f"repos/{self.repo}/pulls/{pull.number}/merge",
+                {
+                    "merge_method": "squash",
+                    "sha": pull.head,
+                    "commit_title": f"{data.get('title') or ''} (#{pull.number})",
+                    "commit_message": str(data.get("body") or ""),
+                },
+                retry=False,
+            )
+        except GitHubError as error:
+            if error.unavailable or error.status not in (405, 409, 422):
+                raise
+            # GitHub didn't take it, as when the release app may not merge past the
+            # review: it waits for a person, and the next one takes its place.
+            self.wait(
+                pull,
+                f"it waits for an approving review, and GitHub didn't merge it as the "
+                f"release app: {code(error.message)}",
+            )
+            return
+        self.note(
+            pull,
+            f"up to date with {code(self.base)}, and its required checks passed: the "
+            "bots made it, so the bot merged it past the review that the rules want.",
+        )
 
     def unresolved(self, pull: Pull) -> bool:
         owner, _, name = self.repo.partition("/")
@@ -776,6 +888,14 @@ class Line:
                     f"the required check {names} failed: it waits for a fix, and the "
                     "next one takes its place.",
                 )
+                continue
+            try:
+                if self.mergeable_past_the_review(pull):
+                    # As auto-merge would, also while another one is in flight.
+                    self.merge_past_the_review(pull)
+                    continue
+            except GitHubError as error:
+                self.refused(pull, error)
                 continue
             if front is not None:
                 self.note(pull, "waits in line.")

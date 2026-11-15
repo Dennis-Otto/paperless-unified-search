@@ -1,4 +1,6 @@
 # Settings of the issue assistant: https://github.com/Dennis-Otto/issue-assistant
+# This file belongs to the blueprint, whose updates change it: the hosts and the files
+# of this project go into config.project.toml, which adds to them.
 
 [engine]
 # The AI engine that writes the analysis; its secret belongs to the environment

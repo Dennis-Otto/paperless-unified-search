@@ -157,6 +157,11 @@ TWITTER_CARD = 'property="twitter:card"'
 # as that one, which search engines list and the search finds instead.
 TEMPLATES = ("decisions/0000-template.md",)
 NOINDEX = '<meta name="robots" content="noindex, follow">'
+# The front matter of a page as MkDocs looks for it, which it takes away from the
+# Markdown once it reads it as a mapping of YAML. When it can't, MkDocs keeps it as
+# Markdown without a word: its last line of dashes makes the rest a heading of the
+# page. Zensical refuses to build such a page (decision 0160).
+FRONT_MATTER = re.compile(r"\A-{3}[ \t]*\n.*?\n(?:\.{3}|-{3})[ \t]*\n", re.S)
 # The links in the head of a page, such as those to its versions in other languages.
 HEAD_LINK = re.compile(rf"<link\b{TAG}>", re.I)
 # The names of the switch between light and dark in a further language, for those
@@ -764,12 +769,21 @@ def unlisted(page: Any, config: Any) -> bool:
 
 
 def on_page_markdown(markdown: str, page: Any, config: Any, files: Any) -> str:
-    """Leave the pages that nobody looks for out of the search, and date a page by
-    the newest of its files.
+    """Leave the pages that nobody looks for out of the search, date a page by the
+    newest of its files, and warn, which stops the strict build, about front matter
+    that MkDocs couldn't read.
 
     It runs after the plugin git-revision-date-localized, which dates the page by
     its own file, and before the search plugin, which reads the front matter.
     """
+    if FRONT_MATTER.match(markdown):
+        log.warning(
+            "The front matter of %s is no mapping of YAML, so MkDocs shows it as text "
+            "at the top of the page and Zensical doesn't build the page at all "
+            "(decision 0160): put a value with a colon and a space, or with # after "
+            "a space, in quotes, such as description: 'Why: the reason'.",
+            page.file.src_uri,
+        )
     if unlisted(page, config):
         page.meta["search"] = {**(page.meta.get("search") or {}), "exclude": True}
         BUILT.unlisted.add(page.canonical_url)

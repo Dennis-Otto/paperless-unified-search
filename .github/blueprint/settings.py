@@ -1073,8 +1073,101 @@ def main_ruleset(
 
 
 RELEASE_TAGS = "refs/tags/v*.*.*"
+REVIEWS_RULESET = "Reviews of main"
 # The rulesets that the settings as code keep, by their names.
-MANAGED_RULESETS = ("Protect main", "Release tags", "Release tag creation")
+MANAGED_RULESETS = (
+    "Protect main",
+    REVIEWS_RULESET,
+    "Release tags",
+    "Release tag creation",
+)
+# The variable that tells the bots after the checks whether main wants reviews, so that
+# a pull request of a bot whose checks passed starts the branch bot, which merges it
+# past them: "on" or "off", by [branch], unless [variables] sets it.
+REVIEWS_VARIABLE = "REVIEWS_OF_MAIN"
+# Where GitHub looks for the code owners, in this order.
+CODEOWNERS = (".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS")
+# The most approving reviews that a ruleset can require.
+MOST_APPROVALS = 10
+
+
+@dataclass(frozen=True)
+class Reviews:
+    """What [branch] wants of the reviews of a change of a person."""
+
+    approvals: int = 0
+    code_owners: bool = False
+
+    @property
+    def wanted(self) -> bool:
+        return self.approvals > 0 or self.code_owners
+
+
+def branch_reviews(branch: dict[str, Json], root: Path) -> Reviews:
+    """The reviews that required_approvals and code_owner_review of [branch] want; the
+    code owners only with a file that names them, as GitHub requires no review of a
+    code owner where it finds none."""
+    approvals = branch.get("required_approvals", 0)
+    if (
+        isinstance(approvals, bool)
+        or not isinstance(approvals, int)
+        or not 0 <= approvals <= MOST_APPROVALS
+    ):
+        raise ConfigError(
+            "required_approvals in [branch] is a whole number from 0 to"
+            f" {MOST_APPROVALS}, the approving reviews of a change, not {approvals!r}"
+        )
+    code_owners = branch.get("code_owner_review", False)
+    if not isinstance(code_owners, bool):
+        raise ConfigError(
+            f"code_owner_review in [branch] is true or false, not {code_owners!r}"
+        )
+    if code_owners and not any((root / name).is_file() for name in CODEOWNERS):
+        raise ConfigError(
+            "code_owner_review in [branch] needs the code owners in"
+            f" {', '.join(CODEOWNERS)}: without the file, GitHub requires no review of"
+            " a code owner"
+        )
+    return Reviews(approvals, code_owners)
+
+
+def reviews_ruleset(reviews: Reviews, app_id: int | None) -> dict[str, Json]:
+    """The reviews that a change of a person needs before it merges into main, in a
+    ruleset of its own: the release app may merge a pull request past it, which the
+    branch bot does for the green pull requests of the bots, while every rule of
+    *Protect main*, such as the required checks, still holds for the app."""
+    return {
+        "name": REVIEWS_RULESET,
+        "target": "branch",
+        "enforcement": "active",
+        "bypass_actors": (
+            []
+            if app_id is None
+            else [
+                {
+                    "actor_id": app_id,
+                    "actor_type": "Integration",
+                    "bypass_mode": "pull_request",
+                }
+            ]
+        ),
+        "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
+        "rules": [
+            {
+                "type": "pull_request",
+                "parameters": {
+                    "allowed_merge_methods": ["squash"],
+                    # A push after an approval needs a new one, of someone other than
+                    # the person who pushed.
+                    "dismiss_stale_reviews_on_push": True,
+                    "require_code_owner_review": reviews.code_owners,
+                    "require_last_push_approval": True,
+                    "required_approving_review_count": reviews.approvals,
+                    "required_review_thread_resolution": True,
+                },
+            }
+        ],
+    }
 
 
 def tag_ruleset() -> dict[str, Json]:
@@ -1625,10 +1718,19 @@ class Settings:
         check_actions_config(actions)
         variables = config.get("variables", {})
         root = path.parent.parent if root is None else root
+        reviews = branch_reviews(branch, root)
         rulesets = [main_ruleset(checks, tools), tag_ruleset()]
         app_id = release_app_id(variables)
+        if reviews.wanted:
+            rulesets.insert(1, reviews_ruleset(reviews, app_id))
         if app_id is not None:
             rulesets.append(tag_creation_ruleset(app_id))
+        variables = {
+            **variables,
+            REVIEWS_VARIABLE: str(
+                variables.get(REVIEWS_VARIABLE, "on" if reviews.wanted else "off")
+            ),
+        }
         return cls(
             repository=config.get("repository", {}),
             security=config.get("security", {}),

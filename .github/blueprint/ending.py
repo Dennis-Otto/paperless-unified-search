@@ -104,7 +104,7 @@ def body(soon: list[Acceptance]) -> str:
             f"These acceptances of an `osv-scanner.toml` end within {days} days, or have "
             "ended. On its date OSV-Scanner reports the advisories again: "
             "on `main`, in every pull request that changes a lock file, and in the "
-            "Dependabot alerts that the workflow *OSV-Scanner* opens again.",
+            "Dependabot alerts that the workflow *Release* opens again.",
             "",
             *items,
             "",

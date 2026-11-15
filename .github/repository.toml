@@ -137,6 +137,13 @@ code_scanning_tools = [
   { tool = "CodeQL", alerts_threshold = "errors", security_alerts_threshold = "high_or_higher" },
   { tool = "zizmor", alerts_threshold = "all", security_alerts_threshold = "all" },
 ]
+# The approving reviews that a change of a person needs before it merges, and whether
+# the code owners of .github/CODEOWNERS must approve the files that they own: none for
+# one maintainer. A team sets them in .github/repository.project.toml, as the
+# ruleset *Reviews of main*, and the green pull requests of the bots still merge by
+# themselves, by the branch bot as the release app, which that ruleset lets past it.
+required_approvals = 0
+code_owner_review = false
 
 [variables]
 PUBLISH_TO = "nextcloud-appstore"
