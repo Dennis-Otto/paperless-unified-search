@@ -75,7 +75,7 @@ jobs:
       contents: read
       issues: write
       discussions: read
-    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-assistant.yml@6c77483eb0ae3f80ee7ddd641bd06dcc61a4442d # v1.12.0
+    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-assistant.yml@15329a359522d13d22bc45d87dde0871c4beb149 # v1.13.1
     with:
       dry_run: ${{ inputs.dry_run || false }}
     # Passed by name: only the job analyze sees their values, those of the
@@ -103,7 +103,7 @@ jobs:
       contents: read
       issues: write
       discussions: read
-    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-assistant.yml@6c77483eb0ae3f80ee7ddd641bd06dcc61a4442d # v1.12.0
+    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-assistant.yml@15329a359522d13d22bc45d87dde0871c4beb149 # v1.13.1
     with:
       dry_run: ${{ inputs.dry_run || false }}
       backlog_issue: ${{ matrix.issue }}

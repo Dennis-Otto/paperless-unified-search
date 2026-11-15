@@ -262,6 +262,16 @@
       },
     },
     {
+      // The check lint runs the markdownlint-cli2 of its action, and
+      // scripts/markdownlint.sh that of its image: both move in one pull request, so
+      // that the Markdown that passes scripts/check.sh passes lint as well, also with
+      // the new major version of the action that a new markdownlint-cli2 brings. The
+      // tests of the blueprint fail while the two differ.
+      matchDepNames: ["DavidAnson/markdownlint-cli2-action", "davidanson/markdownlint-cli2"],
+      groupName: "markdownlint-cli2",
+      separateMajorMinor: false,
+    },
+    {
       // The dev container keeps the Python, PHP or Node of the project, as the CI
       // does; only its digest moves.
       matchDepNames: ["mcr.microsoft.com/devcontainers/**"],
