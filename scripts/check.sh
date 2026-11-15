@@ -192,6 +192,13 @@ else
   echo "Python 3.12 or newer is not installed here; the CI checks the pages."
 fi
 
+step "Markdown"
+# The rules of markdownlint in .markdownlint.jsonc, with the version and the files of
+# the check lint, which lints the Markdown in the CI; with Node or Docker, and the
+# network only until the tool is there. bash scripts/markdownlint.sh --fix fixes what
+# it can.
+bash scripts/markdownlint.sh
+
 step "Files of the project"
 # What a release of the blueprint moves in a file that an update leaves as it is, such
 # as the group of a label in .github/labels.toml. migrate --fix moves it, and the fix bot

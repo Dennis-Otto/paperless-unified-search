@@ -13,6 +13,11 @@ edit_uri: edit/main/docs/
 theme:
   name: material
   language: en
+  # Material's fonts, Roboto and Roboto Mono, from .github/mkdocs-blueprint-fonts.css,
+  # which the hooks serve, and not from the stylesheet of Google Fonts, which may
+  # change at any time: each font of it is pinned with its sha256 in
+  # .github/mkdocs-blueprint-pins.toml, and a build fails on one that differs.
+  font: false
   icon:
     repo: fontawesome/brands/github
   # Light or dark, as the reader's system prefers, also after it changes, until the
@@ -56,7 +61,9 @@ theme:
 plugins:
   search: {}
   # Fonts, scripts and pictures from other servers are downloaded when the website
-  # is built and served with it, so that reading a page asks no other server. The
+  # is built and served with it, so that reading a page asks no other server; the
+  # hooks check the fonts and Mermaid against their sha256 and serve Mermaid only
+  # when a page has a ```mermaid block. The
   # link to the repository in the header shows the version of the latest release,
   # which the hooks read from git at the build, so the reader's browser no longer
   # asks the API of GitHub for the numbers of the repository; the badges of a

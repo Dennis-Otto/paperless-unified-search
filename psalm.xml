@@ -31,7 +31,12 @@
 		<plugin filename=".github/psalm/NextcloudTaintPlugin.php"/>
 	</plugins>
 	<issueHandlers>
-		<!-- Nextcloud discovers these classes through the app's metadata and routes. -->
+		<!-- Nextcloud creates some classes itself, by the app's metadata, such as the
+		     Application: no code of the app uses them. The suppression keeps Psalm from
+		     reporting such a class as unused, but makes no entry point of it, from which
+		     Psalm 7 searches for unused code. Every controller is one, by
+		     .github/psalm/NextcloudTaintPlugin.php, as with @psalm-api: a controller
+		     needs no @psalm-api of its own. -->
 		<UnusedClass errorLevel="suppress"/>
 		<!-- #[Override] is native only in PHP 8.3; the app supports PHP 8.2. -->
 		<MissingOverrideAttribute errorLevel="suppress"/>

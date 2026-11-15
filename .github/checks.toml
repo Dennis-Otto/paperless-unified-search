@@ -138,10 +138,11 @@ the annotations name each line."""
 why = """The documents read the same on GitHub, on the website and in an editor, and a
 diff shows only what changed."""
 fix = """Fix each line that the check names, or let markdownlint fix what it can on your
-machine, with the rules of `.markdownlint.jsonc`:"""
-commands = ['npx markdownlint-cli2 --fix "**/*.md"']
+machine, with the version of the check and the rules of `.markdownlint.jsonc`, with
+Node 22 or newer or with Docker:"""
+commands = ["bash scripts/markdownlint.sh --fix"]
 docs = "CONTRIBUTING.md#coding-standards"
-autofix = ['npx markdownlint-cli2 --fix "**/*.md"']
+autofix = ["bash scripts/markdownlint.sh --fix"]
 
 [check.diagrams]
 title = "The diagrams"
@@ -1022,11 +1023,32 @@ docs = "CONTRIBUTING.md#pages-in-one-column"
 autofix = ["{blueprint} pages --fix"]
 writes = ["**/*.md"]
 
+[step.Markdown]
+problem = """A Markdown document breaks a rule of markdownlint in `.markdownlint.jsonc`,
+such as a heading without a blank line around it, a list with the wrong indent, or a
+line that starts with `#` and no space, which reads as a broken heading; the log names
+each file and line with its rule, such as MD018. The step runs markdownlint-cli2 of
+the version of the check lint, with Node 22 or newer or with Docker, and leaves the
+Markdown to the check lint where neither is there and in the CI."""
+why = """The check lint fails on the same findings in the CI: this step finds them on
+your machine before the push, and the documents read the same on GitHub, on the
+website and in an editor."""
+fix = """Fix each line that the log names; the documentation of markdownlint explains
+every rule. A line that should start with `#` as text, such as a number of an issue,
+starts with another word or puts the number further on. Let markdownlint fix what it
+can, then commit what changed:"""
+commands = ["bash scripts/markdownlint.sh --fix"]
+docs = "https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md"
+autofix = ["bash scripts/markdownlint.sh --fix"]
+writes = ["**/*.md"]
+
 [step."Files of the project"]
 problem = """A file that belongs to this project, which an update of the blueprint leaves
 as it is, lacks what a release of the blueprint moved, such as the labels `good first
-issue` and `help wanted` in the group `contribution` of `.github/labels.toml`; the log
-names each file and what moves."""
+issue` and `help wanted` in the group `contribution` of `.github/labels.toml`, or the
+hosts and files that the project added to `.github/issue-assistant/config.toml`, which
+go to `.github/issue-assistant/config.project.toml`; the log names each file and what
+moves."""
 why = """The files of the blueprint in the update count on that move, and an update never
 overwrites a file of the project. Without it the repository stays behind every new one,
 and a feature of the release stays off without a word."""

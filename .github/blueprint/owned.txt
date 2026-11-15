@@ -60,6 +60,7 @@
 .github/blueprint/update.py
 .github/blueprint/versions.py
 .github/blueprint/vex.py
+.github/blueprint/website.py
 .github/blueprint/workflows.py
 .github/checks.toml
 .github/copier-requirements.txt
@@ -79,6 +80,8 @@
 .github/mkdocs-blueprint-diagrams/how-a-repository-looks-after-itself.de.dark.svg
 .github/mkdocs-blueprint-diagrams/how-a-repository-looks-after-itself.de.svg
 .github/mkdocs-blueprint-diagrams/how-a-repository-looks-after-itself.svg
+.github/mkdocs-blueprint-fonts.css
+.github/mkdocs-blueprint-pins.toml
 .github/mkdocs-blueprint.css
 .github/mkdocs-blueprint.js
 .github/mkdocs-blueprint.yml
@@ -155,4 +158,5 @@ psalm.xml
 release-please-config.json
 scripts/check.sh
 scripts/diagrams.sh
+scripts/markdownlint.sh
 scripts/social-preview.sh

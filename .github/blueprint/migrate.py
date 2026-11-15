@@ -321,12 +321,8 @@ MIGRATIONS: tuple[Migration | Move, ...] = (
         "blueprint name it as the way to keep the fix bot away from a pull request",
         no_bot_fixes_label,
     ),
-)
-# The migrations whose paths came to MOVABLE in this release: the bot of main in each
-# repository decides from the release before, which can't know a path that the update
-# brings (decision 0142), so they join MIGRATIONS in the next release, once every
-# repository knows their paths.
-NEXT: tuple[Migration | Move, ...] = (
+    # In NEXT for release 1.19.0, which brought both paths to MOVABLE and to the writes
+    # of the step Files of the project in every repository.
     Move(
         (ISSUE_ASSISTANT, ISSUE_ASSISTANT_PROJECT),
         "the hosts and the files that this project added to the issue assistant move "
@@ -335,6 +331,11 @@ NEXT: tuple[Migration | Move, ...] = (
         issue_assistant_project,
     ),
 )
+# The migrations whose paths came to MOVABLE in this release: the bot of main in each
+# repository decides from the release before, which can't know a path that the update
+# brings (decision 0142), so they join MIGRATIONS in the next release, once every
+# repository knows their paths.
+NEXT: tuple[Migration | Move, ...] = ()
 
 
 def migrate(

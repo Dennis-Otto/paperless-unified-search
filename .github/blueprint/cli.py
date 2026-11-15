@@ -32,6 +32,7 @@ from blueprint import (
     screenshots,
     translations,
     versions,
+    website,
 )
 from blueprint.adopt import AdoptError, adopt
 from blueprint.app import TIMEOUT, connect, register
@@ -1491,6 +1492,70 @@ def site_check_command(arguments: argparse.Namespace, root: Path) -> int:
     return 1
 
 
+def website_command(arguments: argparse.Namespace, root: Path) -> int:
+    """A step of the website that needs no generator: the page of the automation
+    before the build, or the sitemaps and llms.txt after it (decision 0166)."""
+    if arguments.action == "finish":
+        try:
+            menus = (
+                website.read_menus(root / arguments.menu) if arguments.menu else None
+            )
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+            print(
+                f"blueprint.py: {arguments.menu} holds no menus of the website, as "
+                f"read_menus of blueprint/website.py reads them "
+                f"({type(error).__name__}: {error}).",
+                file=sys.stderr,
+            )
+            return 2
+        done = website.finish(root / arguments.site, arguments.site_url, menus)
+        for step in done:
+            print(f"{step}.")
+        return 0
+    into = root / arguments.into
+    docs = root / arguments.docs
+    folder = root / ".github/workflows"
+    if into.resolve() == docs.resolve():
+        print(
+            "blueprint.py: write the page of the automation into a copy of "
+            f"{arguments.docs}/, which the generator builds: in {arguments.docs}/ "
+            "itself, the next run would take it for the project's own page.",
+            file=sys.stderr,
+        )
+        return 2
+    if (docs / website.AUTOMATION).exists() or not any(folder.glob("*.y*ml")):
+        print(
+            f"The website shows {arguments.docs}/{website.AUTOMATION} of the project, "
+            "or the repository has no workflows: no page of the automation to write."
+        )
+        return 0
+    languages = arguments.languages or ["en"]
+    made = website.automation(
+        folder,
+        docs,
+        root / ".github" / website.PICTURES,
+        site_name=arguments.site_name,
+        repository=arguments.repository,
+        default=languages[0],
+        further=languages[1:],
+    )
+    for name, text in made.pages.items():
+        (into / name).parent.mkdir(parents=True, exist_ok=True)
+        (into / name).write_text(text, encoding="utf-8", newline="\n")
+        print(f"{Path(arguments.into).as_posix().rstrip('/')}/{name}")
+    served = into / website.SERVED
+    for picture in made.pictures:
+        served.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(picture, served / picture.name)
+    for names in made.missing:
+        print(
+            f"The page of the automation lacks the pictures {', '.join(names)}, "
+            f"which copier update brings into .github/{website.PICTURES}/.",
+            file=sys.stderr,
+        )
+    return 1 if made.missing else 0
+
+
 def settings_command(
     api: Api, repo: str, settings: Settings, action: str, path: Path
 ) -> int:
@@ -2775,6 +2840,67 @@ def add_pages_parsers(
         "languages, the path of the address, and the rule of lychee for the links of "
         "llms.txt",
     )
+    add_website_parser(commands)
+
+
+def add_website_parser(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """The steps of a website that need no generator, which the hooks of MkDocs take
+    in every build, for a build with another generator."""
+    website_parser = commands.add_parser(
+        "website",
+        help="the steps of the website that need no generator, which the hooks of "
+        "MkDocs take in every build: the page of the automation before the build, "
+        "the sitemaps and llms.txt after it",
+    )
+    website_actions = website_parser.add_subparsers(dest="action", required=True)
+    automation_parser = website_actions.add_parser(
+        "automation",
+        help="write the page of the automation of .github/workflows/ in each language, "
+        "and the pictures of its diagrams, into the folder that the generator builds",
+    )
+    automation_parser.add_argument(
+        "into",
+        help="the folder of the pages that the generator builds, a copy of docs/",
+    )
+    automation_parser.add_argument(
+        "--site-name", required=True, help="the name of the website"
+    )
+    automation_parser.add_argument(
+        "--repository",
+        default="",
+        help="the address of the repository, such as https://github.com/owner/name",
+    )
+    automation_parser.add_argument(
+        "--language",
+        action="append",
+        dest="languages",
+        help="a language of the website, the default one first (default: en)",
+    )
+    automation_parser.add_argument(
+        "--docs",
+        default="docs",
+        help="the folder of the project's pages, whose own page of the automation "
+        "takes the place of the one of the workflows (default: docs)",
+    )
+    finish_parser = website_actions.add_parser(
+        "finish",
+        help="take the pages with robots noindex out of the sitemaps, copy the sitemap "
+        "of a website in several languages into every folder of pages, and write "
+        "llms.txt from the menus",
+    )
+    finish_parser.add_argument(
+        "site", help="the folder that the generator built the website into"
+    )
+    finish_parser.add_argument(
+        "--site-url", required=True, help="the address of the website"
+    )
+    finish_parser.add_argument(
+        "--menu",
+        help="a file of JSON with the menu of each language, from which llms.txt "
+        "comes, unless the website has one",
+    )
 
 
 def parser() -> argparse.ArgumentParser:
@@ -2887,6 +3013,7 @@ def files_command(arguments: argparse.Namespace, root: Path) -> int | None:
         "migrate": lambda: migrate_command(arguments, root),
         "pages": lambda: pages_command(arguments, root),
         "translations": lambda: translations_command(arguments, root),
+        "website": lambda: website_command(arguments, root),
     }
     run = commands.get(arguments.command)
     if run is None:

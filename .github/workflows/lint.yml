@@ -100,7 +100,8 @@ jobs:
             --env GIT_CONFIG_COUNT=1 --env GIT_CONFIG_KEY_0=safe.directory --env GIT_CONFIG_VALUE_0=/data \
             "$REUSE" lint
       # The files are in .markdownlint-cli2.jsonc, the rules in .markdownlint.jsonc.
-      # Locally: npx markdownlint-cli2@0.23.2
+      # Locally: bash scripts/markdownlint.sh, which scripts/check.sh runs, with the
+      # markdownlint-cli2 of this action, by the tag of its image.
       - name: Lint the Markdown of every document
         id: markdown
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
