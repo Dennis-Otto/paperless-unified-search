@@ -43,12 +43,6 @@ use Throwable;
  * The routes of the settings page. Every one of them passes Nextcloud's checks of the
  * login, the administrator and the CSRF token, as it opts out of none of them;
  * SettingsControllerRoutesTest makes sure it stays so.
- *
- * Nextcloud creates it and calls its routes, which Psalm can't see: as public API they are
- * where Psalm starts to look for the code that is used, so that it doesn't report what
- * only the routes call as unused.
- *
- * @psalm-api
  */
 final class SettingsController extends Controller {
 	/**
