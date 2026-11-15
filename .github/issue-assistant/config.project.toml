@@ -5,7 +5,7 @@
 [links]
 # Hosts that links in the assistant's comments may lead to, besides this repository and
 # the hosts of config.toml.
-hosts = []
+hosts = ["docs.paperless-ngx.com"]
 
 [transparency]
 # Files besides those of config.toml that tell reporters which AI reads their issue; the

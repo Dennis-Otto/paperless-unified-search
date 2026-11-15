@@ -17,7 +17,7 @@ release_replies = 2
 
 [links]
 # Hosts that links in the assistant's comments may lead to, besides this repository.
-hosts = ["docs.nextcloud.com", "apps.nextcloud.com", "docs.paperless-ngx.com"]
+hosts = ["docs.nextcloud.com", "apps.nextcloud.com"]
 
 [forms]
 # The dropdown of the issue forms whose answer chooses an area label, and the
