@@ -16,7 +16,11 @@ name: After the checks
 # its steps had passed failed in no test: its runner never reported that the job
 # ended, and the summary names it as the runner's fault, outside the issue. A job that
 # fails again is a real failure and stays red, and so does one that failed the same
-# way for the commit before: running it again would only keep a runner busy. The
+# way for the commit before: running it again would only keep a runner busy. Only the
+# run of the head of its pull request, or of its branch, runs again: just before the
+# rerun, the bot asks GitHub for the head, as a run of a commit that a newer push
+# replaced shares the concurrency group of the run for the head and would cancel it,
+# as in Dennis-Otto/paperless-sync#486; the bot for stopped checks asks the same. The
 # Downstream workflow of the blueprint updates the repositories that take it as they
 # are at that moment, so one of its jobs that passes when it runs again found a
 # repository that changed in between, such as one that merged what the pull request
@@ -106,7 +110,8 @@ name: After the checks
 # as a new rule of a tool, repairs itself the same way before it fails the next pull
 # request; a weekly run that passes starts no job here, so a quiet week takes no runner
 # of the bot. blueprint.py of main lets through only text files that the commit has
-# already, outside .git and the workflows. It commits at most twice in a row onto its own commits,
+# already, outside .git and the workflows, at the paths that the explanation of the
+# check of each artifact names in writes of the catalog of main. It commits at most twice in a row onto its own commits,
 # and leaves a pull request with the label no-bot-fixes alone. When the bot fails, it
 # says so on the pull request; on main, it keeps one issue open until it passes again.
 # A check still running after the wait, such as long end-to-end tests, leaves the commit
@@ -223,6 +228,8 @@ jobs:
     permissions:
       actions: write
       checks: read
+      contents: read # the head of a branch
+      pull-requests: read # the head of a pull request
     steps:
       - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -426,6 +433,36 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
+          # Run again, the run of a commit that a newer push replaced would share the
+          # concurrency group of the run for the newest commit, and cancel it, as in
+          # Dennis-Otto/paperless-sync#486: only the run of the head of its pull request,
+          # or of its branch, runs again. The bot looks last, just before the rerun, as
+          # a push may land while it reads the jobs; a run of a schedule or by hand
+          # shares its group with no other run.
+          case "$EVENT" in
+            push)
+              # A branch that is gone has no head.
+              if ! tip="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/git/ref/heads/$BRANCH" --jq .object.sha)"; then
+                grep -q "HTTP 404" "$RUNNER_TEMP/gh-errors" || exit 1
+                tip=""
+              fi
+              if [[ -z "$tip" ]]; then
+                echo "The branch $BRANCH of ${SHA:0:7} is gone, so the failed jobs of its run of $NAME don't run again." >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+              elif [[ "$tip" != "$SHA" ]]; then
+                echo "${SHA:0:7} is no longer the head of $BRANCH, so the failed jobs of its run of $NAME don't run again: they would cancel the run for the newer commit." >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+              fi
+              ;;
+            pull_request | pull_request_target)
+              number="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/commits/$SHA/pulls" \
+                --jq "map(select(.state == \"open\" and .head.sha == \"$SHA\")) | .[0].number // empty")"
+              if [[ -z "$number" ]]; then
+                echo "${SHA:0:7} is not the head of an open pull request any more, so the failed jobs of its run of $NAME don't run again." >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+              fi
+              ;;
+          esac
           # A person or a try before may have started it again already, which is fine.
           if ! tried gh run rerun "$RUN" --failed; then
             if grep -q "already running" "$RUNNER_TEMP/gh-errors"; then
@@ -1012,15 +1049,25 @@ jobs:
     # on pull_request_target starts nothing: GitHub holds no such run, so whoever edits
     # a title could keep cancelling the bot. Every other event of a fork took a person
     # first.
+    # Where the settings want an approving review of every change, the variable
+    # REVIEWS_OF_MAIN is on, and auto-merge doesn't merge a pull request of the bots,
+    # which no person reviews: the bot merges it past the review once its checks have
+    # passed. So there a check that passed for a pull request that a bot pushed to
+    # starts the bot as well; each run of the bot cancels the one before it, so the
+    # last check to pass decides (decision 0157).
     if: >-
       !github.event.repository.fork &&
       contains(fromJSON('["pull_request", "pull_request_target"]'), github.event.workflow_run.event) &&
       (github.event.workflow_run.head_repository.full_name == github.repository ||
       github.event.workflow_run.event == 'pull_request') &&
-      contains(fromJSON('["failure", "timed_out", "startup_failure"]'), github.event.workflow_run.conclusion) &&
+      ((contains(fromJSON('["failure", "timed_out", "startup_failure"]'), github.event.workflow_run.conclusion) &&
       (github.event.workflow_run.conclusion != 'failure' ||
       github.event.workflow_run.run_attempt > 1 ||
-      contains(fromJSON('["CodeQL", "Dependency review", "Docs", "Lint", "Pull request title", "Secret scan", "Fuzzing", "Links", "OSV-Scanner", "Workflow security"]'), github.event.workflow_run.name))
+      contains(fromJSON('["CodeQL", "Dependency review", "Docs", "Lint", "Pull request title", "Secret scan", "Fuzzing", "Links", "OSV-Scanner", "Workflow security"]'), github.event.workflow_run.name))) ||
+      (vars.REVIEWS_OF_MAIN == 'on' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      endsWith(github.event.workflow_run.actor.login, '[bot]')))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -1108,21 +1155,31 @@ jobs:
           RUN: ${{ github.event.workflow_run.id }}
           ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
           NAME: ${{ github.event.workflow_run.name }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         # The bot runs on the default branch, with the run that failed: when GitHub
-        # couldn't start that run, the line stays as it is (decision 0136). GitHub
-        # starts a workflow that the token of a job dispatches. A call that GitHub
-        # fails, as in an outage, tries again twice.
+        # couldn't start that run, the line stays as it is (decision 0136). A run that
+        # passed it doesn't name, as it merges what passed. GitHub starts a workflow
+        # that the token of a job dispatches. A call that GitHub fails, as in an outage,
+        # tries again twice.
         run: |
+          fields=(--field after="$RUN" --field attempt="$ATTEMPT")
+          ended=failed
+          what="failed for good, so the branch bot moves its line on"
+          if [[ "$CONCLUSION" == success ]]; then
+            fields=()
+            ended=passed
+            what="passed, so the branch bot merges a pull request of the bots past the review that main wants, once all of its checks passed"
+          fi
           for wait in 10 20 0; do
-            if gh workflow run update-branches.yml --field after="$RUN" --field attempt="$ATTEMPT"; then
-              echo "$NAME failed for good, so the branch bot moves its line on." >> "$GITHUB_STEP_SUMMARY"
+            if gh workflow run update-branches.yml "${fields[@]}"; then
+              echo "$NAME $what." >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             ((wait)) || break
             echo "GitHub didn't start the branch bot, so the job tries again in $wait seconds."
             sleep "$wait"
           done
-          echo "::error title=The branch bot didn't start::GitHub didn't start Update branches after $NAME failed; its next run, after a merge or on its schedule, moves the line on."
+          echo "::error title=The branch bot didn't start::GitHub didn't start Update branches after $NAME $ended; its next run, after a merge or on its schedule, moves the line on."
           exit 1
       - name: Wait until Harden-Runner has removed Docker
         # Harden-Runner removes Docker with apt-get in the background; a job that ends
@@ -1353,6 +1410,8 @@ jobs:
     permissions:
       actions: write
       checks: read
+      contents: read # the head of a branch
+      pull-requests: read # the head of a pull request
     steps:
       - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -1434,6 +1493,9 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RUN: ${{ github.event.workflow_run.id }}
           NAME: ${{ github.event.workflow_run.name }}
+          EVENT: ${{ github.event.workflow_run.event }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           eval "$OUTAGE"
           # A job that the step "Make sure that Harden-Runner blocks" stopped says so in
@@ -1459,6 +1521,36 @@ jobs:
             echo "$NAME ran again already; the bot leaves it alone." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
+          # Run again, the run of a commit that a newer push replaced would share the
+          # concurrency group of the run for the newest commit, and cancel it, as the
+          # flaky-test bot found in Dennis-Otto/paperless-sync#486: only the run of the
+          # head of its pull request, or of its branch, runs again. The bot looks last,
+          # just before the rerun; a run of a schedule or by hand shares its group with
+          # no other run.
+          case "$EVENT" in
+            push)
+              # A branch that is gone has no head.
+              if ! tip="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/git/ref/heads/$BRANCH" --jq .object.sha)"; then
+                grep -q "HTTP 404" "$RUNNER_TEMP/gh-errors" || exit 1
+                tip=""
+              fi
+              if [[ -z "$tip" ]]; then
+                echo "The branch $BRANCH of ${SHA:0:7} is gone, so the failed jobs of its run of $NAME don't run again." >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+              elif [[ "$tip" != "$SHA" ]]; then
+                echo "${SHA:0:7} is no longer the head of $BRANCH, so the failed jobs of its run of $NAME don't run again: they would cancel the run for the newer commit." >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+              fi
+              ;;
+            pull_request | pull_request_target)
+              number="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/commits/$SHA/pulls" \
+                --jq "map(select(.state == \"open\" and .head.sha == \"$SHA\")) | .[0].number // empty")"
+              if [[ -z "$number" ]]; then
+                echo "${SHA:0:7} is not the head of an open pull request any more, so the failed jobs of its run of $NAME don't run again." >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+              fi
+              ;;
+          esac
           # It may also start again between the look and the rerun.
           if ! output="$(tried gh run rerun "$RUN" --failed)"; then
             if grep -q "already running" "$RUNNER_TEMP/gh-errors"; then
@@ -1778,9 +1870,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # scripts/check.sh says which steps fix, and so what fixes-check may write.
           sparse-checkout: |
             .github
             blueprint
+            scripts
       - name: Collect the fixes of the checks of the commit
         id: collect
         env:
@@ -2449,6 +2543,37 @@ jobs:
           if [[ -s "$RUNNER_TEMP/comment.md" ]]; then
             once gh pr comment "${NUMBER:-$BRANCH}" --body-file "$RUNNER_TEMP/comment.md"
           fi
+      # The check promises the bot's commit wherever the repository names the release
+      # app, which it can't see the private key of: a bot without the key says so on
+      # the pull request rather than leave it waiting for a commit that doesn't come
+      # (#913). It says so once on each pull request, and not for a head that the
+      # branch moved on from, whose checks run again.
+      - name: Say on the pull request that the bot has no private key
+        if: >-
+          steps.drawn.outputs.found == 'true' &&
+          steps.release-app.outputs.ready != 'true' &&
+          vars.RELEASE_AUTOMATION_CLIENT_ID != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          eval "$OUTAGE"
+          head="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/git/ref/heads/$BRANCH" --jq .object.sha)"
+          if [[ "$head" != "$SHA" ]]; then
+            echo "$BRANCH moved on from ${SHA:0:7}; the checks of its new head draw the diagrams again." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          marker="<!-- the diagram bot has no private key -->"
+          comments="$(tried gh pr view "${NUMBER:-$BRANCH}" --json comments --jq '.comments[].body')"
+          if grep -qF "$marker" <<<"$comments"; then
+            echo "The pull request already says that the diagram bot has no private key." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          once gh pr comment "${NUMBER:-$BRANCH}" --body "The diagram bot can't commit the diagrams of this pull request ($URL): this repository names its release app, but has no private key of it in the secret \`RELEASE_AUTOMATION_PRIVATE_KEY\` of the environment \`release\`, which \`python3 .github/blueprint.py app connect --key-file FILE\` sets. Until then, run \`bash scripts/diagrams.sh --extract\` with Docker and commit what it changes, or take the files from the artifact \`diagrams\` of the check *diagrams*.$marker"
       - name: Wait until Harden-Runner has removed Docker
         # Harden-Runner removes Docker with apt-get in the background; a job that ends
         # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
@@ -2471,4 +2596,4 @@ jobs:
           URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           eval "$OUTAGE"
-          once gh pr comment "${NUMBER:-$BRANCH}" --body "The diagram bot couldn't commit the diagrams of this pull request ($URL). Run \`bash scripts/diagrams.sh --extract\` with Docker and commit what it changes, or take the files from the artifact \`diagrams\` of the check *diagrams*."
+          once gh pr comment "${NUMBER:-$BRANCH}" --body "The diagram bot couldn't commit the diagrams of this pull request; the summary of its run says why ($URL). Run \`bash scripts/diagrams.sh --extract\` with Docker and commit what it changes, or take the files from the artifact \`diagrams\` of the check *diagrams*."

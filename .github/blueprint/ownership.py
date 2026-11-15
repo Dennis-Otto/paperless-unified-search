@@ -72,6 +72,8 @@ INSTEAD = (
     "`scripts/check-site.sh`; their explanations go into "
     "`.github/checks.project.toml`.",
     "**Notes for coding agents** go into `.github/agents.project.md`.",
+    "**Hosts and files of the issue assistant** go into "
+    "`.github/issue-assistant/config.project.toml`.",
     f"**Text about the releases of this project** goes between the two marked lines "
     f"of `## Releases` in `{PART_FILE}`, which an update keeps.",
     "**A workflow** of this project alone goes into a file of its own in "

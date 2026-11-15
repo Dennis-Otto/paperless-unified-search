@@ -382,13 +382,16 @@ fi
 step "Composer"
 composer validate --strict
 # Again after a passing error of the network, such as a timeout of the advisories of
-# Packagist, 5 and then 10 seconds later. Composer ends with 100 only when it can't
-# reach a repository: a vulnerable or abandoned package fails at once, as does any
-# other error. In the CI, Composer writes an error of the network as an annotation of
+# Packagist, 5, 15, 30 and then 60 seconds later: pauses of nearly two minutes in all
+# sit out an outage of the advisories that lasts a minute or two, which pauses of 15
+# seconds didn't. The audit stays as strict: when Packagist stays out of reach even
+# longer, the step fails, as the audit never ran. Composer ends with 100 only when it
+# can't reach a repository: a vulnerable or abandoned package fails at once, as does
+# any other error. In the CI, Composer writes an error of the network as an annotation of
 # the check, which would stay even after the next try passes and then read as the cause
 # of a later failure: the runner takes no command of a try that goes again.
 audit_log="$(mktemp)"
-for pause in 5 10 ""; do
+for pause in 5 15 30 60 ""; do
   audit=0
   if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
     composer audit >"$audit_log" 2>&1 || audit=$?
@@ -411,7 +414,7 @@ for pause in 5 10 ""; do
 done
 rm -f "$audit_log"
 if ((audit == 100)); then
-  echo "Packagist stayed out of reach, and composer audit can't check the packages without its advisories; run the checks again once packagist.org answers." >&2
+  echo "Packagist stayed out of reach for about two minutes, and composer audit can't check the packages without its advisories; run the checks again once packagist.org answers." >&2
 fi
 if ((audit != 0)); then
   exit "$audit"

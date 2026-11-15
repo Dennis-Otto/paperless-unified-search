@@ -12,10 +12,10 @@ declare(strict_types=1);
  *   analysis has it (build/psalm/AppFrameworkTainter.php of nextcloud/server).
  * - The public API of Nextcloud, nextcloud/ocp, marks IRequest as a source and the
  *   queries of the database as sinks, but not its files, its HTTP client or its
- *   search: the paths of the files and folders of a user and of the app's data, the
- *   address of a request to another server and the address of a redirection are
- *   sinks now, and the term and the filters of a search and the answers of other
- *   servers are sources.
+ *   search: the paths of the files and folders of a user, of the storage below them
+ *   and of the app's data, the address of a request to another server and the address
+ *   of a redirection are sinks now, and the term and the filters of a search and the
+ *   answers of other servers are sources.
  *
  * Psalm loads this plugin from psalm.xml, for the analysis of the types as well, where
  * it changes nothing. The canary in .github/psalm/canary/ proves on every run of
@@ -94,6 +94,35 @@ final class NextcloudTaintPlugin implements AfterCodebasePopulatedInterface, Aft
 			'newFile' => ['name' => [TaintKind::INPUT_FILE]],
 			'getFolder' => ['name' => [TaintKind::INPUT_FILE]],
 			'newFolder' => ['path' => [TaintKind::INPUT_FILE]],
+		],
+		// The storage below the files and folders, by the path inside it: Node::getStorage()
+		// leads past the folder, so a path from a request reaches every file of the storage
+		// that it climbs to with "../". Each method that reads, writes, lists, moves or
+		// removes what is at a path, or tells whether it is there, as Folder::nodeExists().
+		'OCP\Files\Storage\IStorage' => [
+			'mkdir' => ['path' => [TaintKind::INPUT_FILE]],
+			'rmdir' => ['path' => [TaintKind::INPUT_FILE]],
+			'opendir' => ['path' => [TaintKind::INPUT_FILE]],
+			'file_exists' => ['path' => [TaintKind::INPUT_FILE]],
+			'file_get_contents' => ['path' => [TaintKind::INPUT_FILE]],
+			'file_put_contents' => ['path' => [TaintKind::INPUT_FILE]],
+			'unlink' => ['path' => [TaintKind::INPUT_FILE]],
+			'rename' => ['source' => [TaintKind::INPUT_FILE], 'target' => [TaintKind::INPUT_FILE]],
+			'copy' => ['source' => [TaintKind::INPUT_FILE], 'target' => [TaintKind::INPUT_FILE]],
+			'fopen' => ['path' => [TaintKind::INPUT_FILE]],
+			'touch' => ['path' => [TaintKind::INPUT_FILE]],
+			'getLocalFile' => ['path' => [TaintKind::INPUT_FILE]],
+			'copyFromStorage' => [
+				'sourceInternalPath' => [TaintKind::INPUT_FILE],
+				'targetInternalPath' => [TaintKind::INPUT_FILE],
+			],
+			'moveFromStorage' => [
+				'sourceInternalPath' => [TaintKind::INPUT_FILE],
+				'targetInternalPath' => [TaintKind::INPUT_FILE],
+			],
+		],
+		'OCP\Files\Storage\IWriteStreamStorage' => [
+			'writeStream' => ['path' => [TaintKind::INPUT_FILE]],
 		],
 		// A request of the server to an address from a request: server-side request
 		// forgery, to the network behind the server.

@@ -49,6 +49,16 @@ final class CanaryController extends Controller {
 		return new DataResponse();
 	}
 
+	/**
+	 * The storage of a folder takes a path inside it, past the folder, to each parameter.
+	 */
+	public function storage(string $name): DataResponse {
+		$storage = $this->folder->getStorage();
+		$storage->file_put_contents($this->folder->getInternalPath() . '/' . $name, ''); // expect: TaintedFile
+		$storage->rename($this->folder->getInternalPath() . '/.part', $name); // expect: TaintedFile
+		return new DataResponse();
+	}
+
 	public function appData(string $name): DataResponse {
 		$this->appData->getFile($name); // expect: TaintedFile
 		return new DataResponse();
