@@ -148,7 +148,7 @@ jobs:
         timeout-minutes: 5
         with:
           # renovate: datasource=pypi depName=uv
-          version: "0.13.6"
+          version: "0.13.7"
       - name: Run the checks
         run: bash scripts/check.sh
       - name: Keep the coverage report
