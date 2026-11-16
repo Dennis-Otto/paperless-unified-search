@@ -3,7 +3,7 @@
 
 services:
   paperless-mock:
-    image: python:3.14-alpine@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc
+    image: python:3.14-alpine@sha256:5862d971d1f0ae26b258cefa4e893556b1d3aba81bd2ff30888704ad378bab67
     command: ["python", "/mock/mock_server.py"]
     # A tiny init as process 1 passes on the signal to stop, which Python as process 1
     # would ignore until Docker kills it after ten seconds.
@@ -27,7 +27,7 @@ services:
       retries: 30
 
   nextcloud:
-    image: ${NEXTCLOUD_IMAGE:-nextcloud:33.0.9-apache@sha256:a97666d6ae931bde78a80cfba8abdf46d436d7b540f31895803f6fb0a012d689}
+    image: ${NEXTCLOUD_IMAGE:-nextcloud:33.0.9-apache@sha256:8f46dc79e9abf4f1e330ca9a7d9d9b8a8811ecc28f18018c1951281e522499e8}
     depends_on:
       paperless-mock:
         condition: service_healthy
