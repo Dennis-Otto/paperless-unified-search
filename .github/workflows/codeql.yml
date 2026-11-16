@@ -176,7 +176,7 @@ jobs:
           echo "CodeQL $cli of the action, which the runner doesn't have, is downloaded through the API." >> "$GITHUB_STEP_SUMMARY"
       - name: Initialize the analysis
         if: vars.CODE_SCANNING != 'off'
-        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           tools: ${{ steps.bundle.outputs.tools || 'linked' }}
           languages: javascript-typescript, actions
@@ -184,7 +184,7 @@ jobs:
           queries: security-extended
       - name: Analyze
         if: vars.CODE_SCANNING != 'off'
-        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           # The results of each language as <language>.sarif, uploaded below.
           output: ${{ runner.temp }}/codeql
@@ -218,7 +218,7 @@ jobs:
           done
       - name: Upload the results
         if: vars.CODE_SCANNING != 'off'
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: ${{ runner.temp }}/codeql
       - name: Wait until Harden-Runner has removed Docker
