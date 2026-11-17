@@ -38,11 +38,15 @@ jobs:
       # Whether the job kept the report of the taint analysis for code scanning.
       taint: ${{ steps.taint.outcome }}
     env:
-      # The same krankerl as the release workflow's. Since 0.14.1 the name of its
-      # package carries the revision -1, as .github/pins.toml records it.
+      # The same krankerl as the release workflow's. The name of its package comes from
+      # its address in .github/pins.toml, which pins.py of the blueprint writes into
+      # KRANKERL_ASSET as it writes the sha256: the steps, and the upgrade test of a
+      # Nextcloud app that reads this pin, download that name and never build it from
+      # the version, as the revision -1 that krankerl added in 0.14.1 showed.
       # renovate: datasource=github-releases depName=ChristophWurst/krankerl extractVersion=^v(?<version>.+)$
       KRANKERL_VERSION: 0.14.3
       KRANKERL_SHA256: 3ca43eebc0c4766ce31db67dde96312b6c8b3d981ffebe4aeecf4fe0481883ef
+      KRANKERL_ASSET: krankerl_0.14.3-1_amd64.deb
     steps:
       - name: Record the network traffic of the job
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -124,10 +128,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          deb="$RUNNER_TEMP/krankerl/krankerl_${KRANKERL_VERSION}-1_amd64.deb"
+          deb="$RUNNER_TEMP/krankerl/$KRANKERL_ASSET"
           if [[ ! -f "$deb" ]]; then
             bash .github/download.sh ChristophWurst/krankerl "v$KRANKERL_VERSION" \
-              "krankerl_${KRANKERL_VERSION}-1_amd64.deb" "$deb" "$KRANKERL_SHA256"
+              "$KRANKERL_ASSET" "$deb" "$KRANKERL_SHA256"
           fi
           # The package of the cache too.
           echo "$KRANKERL_SHA256  $deb" | sha256sum --check --strict

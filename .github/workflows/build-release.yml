@@ -260,6 +260,7 @@ jobs:
       # renovate: datasource=github-releases depName=ChristophWurst/krankerl extractVersion=^v(?<version>.+)$
       KRANKERL_VERSION: 0.14.3
       KRANKERL_SHA256: 3ca43eebc0c4766ce31db67dde96312b6c8b3d981ffebe4aeecf4fe0481883ef
+      KRANKERL_ASSET: krankerl_0.14.3-1_amd64.deb
       # renovate: datasource=github-releases depName=nextcloud/server extractVersion=^v(?<version>.+)$
       NEXTCLOUD_VERSION: 35.0.2
       NEXTCLOUD_SHA256: 2f1dcec6a7cdab70346e80a823ccaaa2001a6085013d9f2ae0a2606fa38c2835
@@ -411,7 +412,7 @@ jobs:
             "syft_${SBOM_SYFT_VERSION}_linux_amd64.tar.gz" "$RUNNER_TEMP/syft.tar.gz" "$SBOM_SYFT_SHA256"
           if [[ "$PUBLISH_TO" == nextcloud-appstore ]]; then
             bash "$RUNNER_TEMP/download.sh" ChristophWurst/krankerl "v$KRANKERL_VERSION" \
-              "krankerl_${KRANKERL_VERSION}-1_amd64.deb" "$RUNNER_TEMP/krankerl.deb" "$KRANKERL_SHA256"
+              "$KRANKERL_ASSET" "$RUNNER_TEMP/krankerl.deb" "$KRANKERL_SHA256"
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
