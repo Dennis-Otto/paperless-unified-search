@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [1.8.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.8.0...v1.8.1) (2026-11-17)
+
+
+### Bug fixes
+
+* **demo:** start the demo with PostgreSQL 18 and render the pictures on Nextcloud 35.0.3 ([#478](https://github.com/Dennis-Otto/paperless-unified-search/issues/478)) ([5e57a55](https://github.com/Dennis-Otto/paperless-unified-search/commit/5e57a55080f7d5bec86a6a1e26b02be0d158e8b0))
+
 ## [1.8.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.7.0...v1.8.0) (2026-11-13)
 
 ### Features
