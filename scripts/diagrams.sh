@@ -15,7 +15,9 @@
 #   bash scripts/diagrams.sh --check    without Docker, what scripts/check.sh checks: no
 #                                       ```mermaid block, both pictures of every source
 #                                       that a page shows, a source for every picture,
-#                                       and the alt of each, which repeats its source
+#                                       and the alt of each, which repeats its source;
+#                                       it warns of a source that the branch changed
+#                                       without its pictures
 #   bash scripts/diagrams.sh --adopted  whether the pages show pictures of diagrams yet;
 #                                       until then, the checks only warn of a block
 #
@@ -130,6 +132,37 @@ adopted() {
   git grep --untracked -qE "$shown" -- '*.md'
 }
 
+# Of the sources named, those that this branch changed without both their pictures,
+# which the check diagrams of Lint draws anew and then finds different. The branch is
+# what differs from its merge base with the default branch, uncommitted and new files
+# too, never the times of the files, which a checkout or a rebase changes. Without a
+# base to compare with, as in a shallow clone or without the default branch, none.
+changed_alone() {
+  local ref base="" name file changed=$'\n'
+  [[ "$(git rev-parse --is-shallow-repository 2>/dev/null)" == false ]] || return 0
+  for ref in origin/HEAD origin/main; do
+    if git rev-parse --verify --quiet "$ref^{commit}" >/dev/null; then
+      base="$(git merge-base HEAD "$ref" 2>/dev/null)" || return 0
+      break
+    fi
+  done
+  [[ -n "$base" ]] || return 0
+  while IFS= read -r -d '' file; do
+    changed+="$file"$'\n'
+  done < <(
+    git diff -z --name-only --no-renames "$base" -- "$sources" "$pictures"
+    git ls-files -z --others --exclude-standard -- "$sources" "$pictures"
+  )
+  for name in "$@"; do
+    [[ "$changed" == *$'\n'"$sources/$name.mmd"$'\n'* ]] || continue
+    if [[ "$changed" == *$'\n'"$pictures/$name.svg"$'\n'* &&
+      "$changed" == *$'\n'"$pictures/$name.dark.svg"$'\n'* ]]; then
+      continue
+    fi
+    echo "$sources/$name.mmd"
+  done
+}
+
 # The checks, which need neither Docker nor Python; with Python, the alt of each
 # picture as well.
 check() {
@@ -192,6 +225,30 @@ check() {
       problems+=("${#blocks[@]} diagram(s) in a \`\`\`mermaid block; $extract")
     else
       echo "A warning for now: $extract"
+    fi
+  fi
+  # A warning only: without Docker, the bots draw the pictures after the push. A
+  # source that lacks a picture is a problem above already.
+  local -a complete=() alone=()
+  for file in "${found[@]}"; do
+    name="$(basename "$file" .mmd)"
+    if [[ -f "$pictures/$name.svg" && -f "$pictures/$name.dark.svg" ]]; then
+      complete+=("$name")
+    fi
+  done
+  if ((${#complete[@]} > 0)); then
+    while IFS= read -r file; do
+      alone+=("$file")
+    done < <(changed_alone "${complete[@]}")
+  fi
+  if ((${#alone[@]} > 0)); then
+    for file in "${alone[@]}"; do
+      echo "$file: changed on this branch, but its pictures in $pictures/ are not"
+    done
+    if command -v docker >/dev/null 2>&1; then
+      echo "A warning: bash scripts/diagrams.sh draws the pictures of the ${#alone[@]} source(s) anew; commit those that change before the push, or the check diagrams fails once and needs another round of checks. A change that keeps the drawing, such as a %% comment, changes no picture, and the check passes."
+    else
+      echo "A warning: without Docker, push as it is; the check diagrams draws the pictures and fails once if they change, and the diagram bot commits them on a branch of this repository, or a pull request from a fork takes them from the artifact diagrams of the check."
     fi
   fi
   if ((${#problems[@]} > 0)); then

@@ -258,6 +258,19 @@
       minimumReleaseAge: null,
     },
     {
+      // And the images of Playwright, which came at once already, have no release age
+      // either: Renovate gives npm the release age of the first update of a group as
+      // --before, often the image's. npm then found no package of the same release
+      // that old, installed it again without --before and warned of it in every run
+      // until the update merged (decision 0168 of the blueprint).
+      matchDatasources: ["docker"],
+      matchPackageNames: [
+        "mcr.microsoft.com/playwright",
+        "mcr.microsoft.com/playwright/**",
+      ],
+      minimumReleaseAge: null,
+    },
+    {
       matchDatasources: ["docker"],
       matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
       groupName: "the images",

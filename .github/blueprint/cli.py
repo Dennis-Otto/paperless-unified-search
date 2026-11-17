@@ -1338,7 +1338,7 @@ def locks_refresh_command(root: Path) -> int:
     now = datetime.now(UTC)
     failed = False
     for name in names:
-        found = locks.refresh(root, name, uv, now)
+        found = locks.refresh(root, name, uv, now, lock_age.pypi_uploaded)
         if found.note:
             print(f"{name}: left as Renovate refreshed it, for {found.note}.")
         elif found.failure:
@@ -1373,8 +1373,11 @@ def locks_age_command(base: str, root: Path) -> int:
         print(
             "The weekly refresh of the lock files merges by itself only from versions "
             "at least a week old, as every other update waits a week, so this one "
-            "waits: run the check again once each version is a week old, or let "
-            "Renovate build the refresh anew in its next weekly window. A lock file "
+            "waits: run the check again once each version that it adds is a week "
+            "old. A refresh that takes back a version of main holds for as long as "
+            "it does, however old that version is, so that it can't take back the "
+            "fix of a vulnerability: Renovate builds it anew in its next weekly "
+            "window, from the versions a week old by then. A lock file "
             "that the check can't date, such as a yarn.lock, needs a rule in "
             ".github/renovate.json5 with matchFileNames for its name and "
             'matchUpdateTypes ["lockFileMaintenance"] that gives its refresh '

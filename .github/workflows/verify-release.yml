@@ -77,18 +77,34 @@ jobs:
         run: |
           # The agent writes Initialized into its status once its firewall stands, and
           # runs as the service agent until the end of the job; one that is there may
-          # still be starting.
+          # still be starting. One that took its changes back says so in its log, and
+          # no status will come.
+          log=/home/agent/agent.log
           for _ in {1..30}; do
             [[ -e /home/agent/agent.status || ! -e /home/agent/agent ]] && break
+            grep -qs 'Reverted changes' "$log" && break
             sleep 1
           done
           status="$(cat /home/agent/agent.status 2>/dev/null || true)"
+          # Before its firewall stands, the agent looks up each host that it allows, and
+          # takes itself away again when a single lookup fails; its log names the host.
+          lookup="$(grep -s -m 1 'Error resolving allowed domain' "$log" || true)"
           if [[ ! -d /home/agent/ ]]; then
             # Harden-Runner returns before it makes the folder of the agent when
             # StepSecurity says that it is unavailable, or the repository skips it.
             why="didn't install its agent, as StepSecurity said that it is unavailable or the repository skips it (the log of its step says which),"
           elif [[ ! -e /home/agent/agent ]]; then
             why="couldn't download its agent, mostly in an outage of GitHub (https://www.githubstatus.com),"
+          elif [[ -n "$lookup" ]]; then
+            # The host follows "resolve domain" when the resolver answered with an
+            # error, and "name=" when no resolver could be reached.
+            what="a host that it allows"
+            pattern='resolve domain ([^ ,]+)|name=([^&" ]+)'
+            if [[ "$lookup" =~ $pattern ]]; then
+              host="${BASH_REMATCH[1]:-${BASH_REMATCH[2]}}"
+              what="${host%.}, a host that it allows,"
+            fi
+            why="has an agent that took itself away again because a single lookup of $what failed, which is no outage,"
           elif [[ "$status" != Initialized ]]; then
             why="has an agent that didn't start,"
           elif ! systemctl is-active --quiet agent; then
@@ -98,6 +114,7 @@ jobs:
             exit 0
           fi
           echo "The status of the agent: ${status:-none}"
+          [[ -z "$lookup" ]] || echo "The log of the agent: $lookup"
           echo "::error title=Harden-Runner doesn't block::Harden-Runner $why so this job would reach every host, and it stops here instead. That is no problem of the change: run the job again."
           exit 1
       - name: Wait until Harden-Runner lets the hosts through

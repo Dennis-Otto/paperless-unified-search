@@ -1,0 +1,24 @@
+# The advisory that OSV-Scanner accepts in package-lock.json beside this file, the
+# tools of the spelling hint of the Lint workflow: OSV-Scanner reads the
+# osv-scanner.toml in the folder of each lock file.
+#
+# An entry of [[IgnoredVulns]] accepts one advisory, by its id, until ignoreUntil, after
+# which OSV-Scanner reports it again and a person looks again; every other advisory
+# still fails the scan. It writes no rule of Renovate, so the update that fixes it
+# comes as any other: delete the entry with it. The job of the Release workflow closes
+# the Dependabot alert with the reason, and the weekly run of OSV-Scanner on main warns
+# two weeks before the date.
+# https://github.com/Dennis-Otto/repo-blueprint
+
+[[IgnoredVulns]]
+# CVE-2026-112366: picomatch, a denial of service by a crafted extglob such as +(*).
+id = "GHSA-fc5q-39xc-vjpf"
+ignoreUntil = 2026-12-17
+reason = """No version of picomatch fixes the advisory: it names every version up to
+4.0.7, the newest, on 2026-11-17. picomatch comes here with cspell (cspell-glob and
+tinyglobby), the spelling hint of the Lint workflow, which runs only in the job of a
+pull request, with read rights, for at most five minutes, and never fails. Its globs
+are those of .github/prose/cspell.json and the names of the documents that the pull
+request changes; in a pull request of a fork they come from the fork, which runs its
+own code in that job anyway, so a crafted name slows only its own hint. Nothing of it
+reaches a release or a user. The refresh of the lock files brings a fixed version."""
