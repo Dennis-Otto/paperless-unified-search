@@ -18,7 +18,7 @@ COMPOSE=("${DOCKER_BIN}" compose --project-name "${PROJECT_NAME}" --file "${SCRI
 # package.json: Renovate updates both together, and scripts/check-project.sh compares
 # them. The name stays on one line without quotes, where that check, run-all.sh and
 # scripts/screenshots.sh find it.
-PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
+PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579
 PLAYWRIGHT_PULL=""
 # The sizes of the search dialog in flow.mjs, every one by default.
 FLOW_SIZES="${E2E_FLOW_SIZES:-laptop phone}"
