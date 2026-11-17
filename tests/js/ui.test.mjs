@@ -5,11 +5,12 @@
 
 // openSearch of tests/e2e/ui.mjs, the step of the checks in the browser that opens the
 // search of Nextcloud and waits until it can search (#223). flow.mjs shows that it does
-// so in a real Nextcloud; this shows the order of its steps without a browser.
+// so in a real Nextcloud; this shows the order of its steps without a browser. And
+// filesFolder, the address at which the checks open a folder in Files (#469).
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { openSearch } from '../e2e/ui.mjs'
+import { BASE_URL, filesFolder, openSearch } from '../e2e/ui.mjs'
 
 const PROVIDERS = 'http://nextcloud/ocs/v2.php/search/providers?from=%2Fsettings%2Fuser'
 const CONTACTS = 'http://nextcloud/contactsmenu/contacts'
@@ -169,4 +170,13 @@ test('a request that gets no answer fails the step', async function() {
 		message: `No answer to /ocs/v2.php/search/providers: ${timeout.message}`,
 		cause: timeout,
 	})
+})
+
+test('opens a folder in Files without index.php, where Files of Nextcloud 36 shows its list', function() {
+	assert.equal(filesFolder('/Documents'), `${BASE_URL}/apps/files/files?dir=/Documents`)
+	assert.doesNotMatch(filesFolder('/Documents'), /index\.php/)
+})
+
+test('keeps the slashes of the folder and encodes the rest of its names', function() {
+	assert.equal(filesFolder('/Paperless/Tax & fees #2'), `${BASE_URL}/apps/files/files?dir=/Paperless/Tax%20%26%20fees%20%232`)
 })

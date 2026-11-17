@@ -26,7 +26,7 @@ FLOW_SIZES="${E2E_FLOW_SIZES:-laptop phone}"
 export E2E_PORT
 # Git Bash on Windows: keep the paths in the container of the mock and the paths of the
 # shares in Nextcloud as they are.
-export MSYS2_ARG_CONV_EXCL="/mock/;/Base/;path=/${MSYS2_ARG_CONV_EXCL:+;${MSYS2_ARG_CONV_EXCL}}"
+export MSYS2_ARG_CONV_EXCL="/mock/;/Base/;/Archive;datadir=/;--path=/;path=/${MSYS2_ARG_CONV_EXCL:+;${MSYS2_ARG_CONV_EXCL}}"
 
 cleanup() {
 	status=$?
