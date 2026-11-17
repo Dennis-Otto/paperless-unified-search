@@ -17,7 +17,7 @@
 name: paperless-unified-search-demo
 
 x-nextcloud: &nextcloud
-  image: nextcloud:33.0.11-apache@sha256:3bbb8b04c6ea1b6687502802f9097fd9723797668a9dd6d0adcf4525b530f7a1
+  image: nextcloud:35.0.3-apache@sha256:8a7a65b8bae82a79568fec2ed9cf3e374a1944eda2a22ebe130d79463336fee3
   restart: unless-stopped
   volumes:
     - nextcloud_html:/var/www/html
@@ -28,14 +28,19 @@ services:
   # The database of Nextcloud. SQLite would lock up whenever the background jobs and a
   # request write at the same time, as at the first run of the jobs after the install.
   postgres:
-    image: postgres:17.12-alpine@sha256:a77aa70e641402a21411b92b721c58d10f23b50ae5fdd2333efd22d166e1e5f7
+    image: postgres:18.7-alpine@sha256:b6972e1115a4ff8eba5d7f7d19184926d1e16d7d1136ae1e1a7ebf286da0f015
     restart: unless-stopped
     environment:
       POSTGRES_DB: nextcloud
       POSTGRES_USER: nextcloud
       POSTGRES_PASSWORD: ${NEXTCLOUD_DATABASE_PASSWORD:?run bash demo/seed.sh, which generates demo/.env}
+    # PostgreSQL 18 keeps its data in a folder of its major version below
+    # /var/lib/postgresql, such as 18/docker, and refuses to start with a volume at
+    # /var/lib/postgresql/data, where the images before 18 kept it. The data of an
+    # earlier major version can't be read by the next: remove a demo of PostgreSQL 17
+    # with its data first (docker compose -f demo/compose.yaml down --volumes).
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD", "pg_isready", "--username=nextcloud", "--dbname=nextcloud"]
       interval: 2s

@@ -113,7 +113,7 @@ jobs:
       - name: Check the issue assistant's set-up
         id: issue-assistant
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
-        uses: Dennis-Otto/issue-assistant@15329a359522d13d22bc45d87dde0871c4beb149 # v1.13.1
+        uses: Dennis-Otto/issue-assistant@2a6d50ab52ca631924e63f1ab02f35ac31448f77 # v1.13.3
         with:
           command: check
       - name: Check the sign-off of every commit

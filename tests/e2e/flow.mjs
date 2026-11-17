@@ -24,6 +24,7 @@ import {
 	chooseAlwaysSearch,
 	saveSearches,
 	connectedServices,
+	filesFolder,
 	openSearch,
 	resultGroup,
 	search,
@@ -164,7 +165,7 @@ async function findSimilar(browser, session, size) {
 	context.setDefaultTimeout(TIMEOUT)
 	const page = await context.newPage()
 	try {
-		await page.goto(`${BASE_URL}/index.php/apps/files/files?dir=/Documents`, { waitUntil: 'domcontentloaded' })
+		await page.goto(filesFolder('/Documents'), { waitUntil: 'domcontentloaded' })
 		const row = page.locator(`[data-cy-files-list-row-name=${JSON.stringify(FILE)}]`)
 		await row.waitFor()
 		const answer = page.waitForResponse((response) => response.url().includes(SIMILAR_SEARCH))

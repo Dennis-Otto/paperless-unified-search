@@ -109,7 +109,13 @@ from blueprint.fixes import keep as keep_fixes
 from blueprint.github import Api, GitHubError, Json, current_repo
 from blueprint.migrate import migrate
 from blueprint.notices import third_party_notices
-from blueprint.outage import couldnt_start, failed_unstarted, sit_out, unreachable
+from blueprint.outage import (
+    check_unavailable,
+    couldnt_start,
+    failed_unstarted,
+    sit_out,
+    unreachable,
+)
 from blueprint.overrides import write_overrides
 from blueprint.ownership import check as ownership_check
 from blueprint.pages import (
@@ -1600,10 +1606,10 @@ def actions_command(api: Api, root: Path, path: Path) -> int:
     """settings actions: 0 when the list of the allowed actions in the settings as code
     lets every action and reusable workflow that the workflows run start, also those
     that these run in turn, and the event policy every workflow that starts on
-    pull_request_target; 1 when a list lacks one, or GitHub refused the file of an
-    action. The check of the Lint workflow: it reads the public files of the actions
-    and none of the settings on GitHub, which the token of a pull request may not
-    read."""
+    pull_request_target; 1 when a list lacks one, GitHub refused the file of an
+    action, or GitHub kept failing, in one error that says so. The check of the Lint
+    workflow: it reads the public files of the actions and none of the settings on
+    GitHub, which the token of a pull request may not read."""
     settings = Settings.load(root / path, root)
     # The blueprint renders the lists of every repository from its template.
     listed_in = (
@@ -1611,11 +1617,13 @@ def actions_command(api: Api, root: Path, path: Path) -> int:
         if (root / "copier.yml").is_file() and (root / "template").is_dir()
         else ".github/repository.project.toml"
     )
-    found = unlisted_actions(api, settings.actions, settings.workflows, listed_in)
+    found, unavailable = unlisted_actions(
+        api, settings.actions, settings.workflows, listed_in
+    )
     # The path as the documentation writes it, with slashes on Windows too.
     config = path.as_posix()
     blocked = target_annotations(root, settings, listed_in)
-    if not found and not blocked:
+    if not found and not blocked and not unavailable:
         print(
             "GitHub starts every action that the workflows run, also those that"
             f" these run in turn, by [actions] of {config}, and every workflow that"
@@ -1642,6 +1650,14 @@ def actions_command(api: Api, root: Path, path: Path) -> int:
                 "Allowed actions", message, file, line_of(text, item.via)
             )
         )
+    if unavailable:
+        # One error for all, not one for each action that GitHub didn't read, nor a
+        # claim that GitHub won't start them: nothing in the repository caused it.
+        message = check_unavailable(
+            unavailable, "read what the actions of the workflows run in turn"
+        )
+        print(message)
+        annotations.append(annotate.Annotation("Allowed actions", message, config))
     if blocked:
         print(
             "GitHub blocks these workflows in a public repository from 2 December"
@@ -2327,7 +2343,7 @@ def add_screenshots_parsers(
     screenshots_parser = commands.add_parser(
         "screenshots",
         help="the pictures that scripts/screenshots.sh renders, renewed by the "
-        "screenshot bot only when their pixels change",
+        "screenshot bot only when a change shows",
     )
     screenshots_actions = screenshots_parser.add_subparsers(
         dest="action", required=True

@@ -258,15 +258,16 @@ jobs:
       TAG: ${{ inputs.tag }}
       PUBLISH_TO: ${{ vars.PUBLISH_TO }}
       # renovate: datasource=github-releases depName=ChristophWurst/krankerl extractVersion=^v(?<version>.+)$
-      KRANKERL_VERSION: 0.14.0
-      KRANKERL_SHA256: 9bee5a756a83c5a6b1f040e9a2ade9e902e4a57211afc174cd8ac5c4f913958f
+      KRANKERL_VERSION: 0.14.3
+      KRANKERL_SHA256: 3ca43eebc0c4766ce31db67dde96312b6c8b3d981ffebe4aeecf4fe0481883ef
+      KRANKERL_ASSET: krankerl_0.14.3-1_amd64.deb
       # renovate: datasource=github-releases depName=nextcloud/server extractVersion=^v(?<version>.+)$
       NEXTCLOUD_VERSION: 35.0.2
       NEXTCLOUD_SHA256: 2f1dcec6a7cdab70346e80a823ccaaa2001a6085013d9f2ae0a2606fa38c2835
       # The syft that writes the SBOMs.
       # renovate: datasource=github-releases depName=anchore/syft extractVersion=^v(?<version>.+)$
-      SBOM_SYFT_VERSION: 1.57.0
-      SBOM_SYFT_SHA256: 9c077a7d43029b3b13e98a8db720661e700c4d58db6352153a06395ae4a2a704
+      SBOM_SYFT_VERSION: 1.57.1
+      SBOM_SYFT_SHA256: bf52519eb57f675d47c07d43213cb6dff6449f3d6d1147ff6701ed91f44eef0c
     steps:
       - name: Block every host that the job doesn't need
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -411,7 +412,7 @@ jobs:
             "syft_${SBOM_SYFT_VERSION}_linux_amd64.tar.gz" "$RUNNER_TEMP/syft.tar.gz" "$SBOM_SYFT_SHA256"
           if [[ "$PUBLISH_TO" == nextcloud-appstore ]]; then
             bash "$RUNNER_TEMP/download.sh" ChristophWurst/krankerl "v$KRANKERL_VERSION" \
-              "krankerl_${KRANKERL_VERSION}_amd64.deb" "$RUNNER_TEMP/krankerl.deb" "$KRANKERL_SHA256"
+              "$KRANKERL_ASSET" "$RUNNER_TEMP/krankerl.deb" "$KRANKERL_SHA256"
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

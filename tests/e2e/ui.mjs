@@ -21,6 +21,15 @@
 export const BASE_URL = process.env.E2E_BASE_URL ?? 'http://nextcloud'
 export const PASSWORD = process.env.E2E_PASSWORD ?? 'e2e-only-password'
 
+// The address of a folder in Files, such as "/Documents", as Nextcloud itself links to it:
+// without index.php, as the image of Nextcloud for Apache turns on its pretty URLs. Files of
+// Nextcloud 36, on Vue Router 4, takes the address without index.php as the base of its
+// router and shows no list at all at one with index.php (#469); the versions before it show
+// the folder at both.
+export function filesFolder(dir) {
+	return `${BASE_URL}/apps/files/files?dir=${dir.split('/').map(encodeURIComponent).join('/')}`
+}
+
 // Signs in through the login form, as a person does, and returns the session for the
 // contexts of the pages that follow. Nextcloud keeps the time zone of the browser that
 // signs in as the user's, in which the server writes times, such as those of the
@@ -95,9 +104,14 @@ export const searchField = (page) => page.getByRole('textbox', { name: SEARCH })
 export const connectedServices = (page) => page.getByText('Search connected services', { exact: true })
 	.or(page.getByRole('button', { name: 'More from connected services' }))
 
+// The name of the results of one provider of the search: Nextcloud 35.0.3 names the list
+// of a provider whose app can show more of them by its button, "More from Files", the
+// other versions and providers by the provider alone, such as "Paperless documents".
+export const groupName = (name) => new RegExp(`^(?:More from )?${escapeRegExp(name)}$`)
+
 // The results of one provider of the search, such as Files or Paperless documents.
-export const resultGroup = (page, name) => page.getByRole('list', { name, exact: true })
-	.or(page.getByRole('listbox', { name, exact: true }))
+export const resultGroup = (page, name) => page.getByRole('list', { name: groupName(name) })
+	.or(page.getByRole('listbox', { name: groupName(name) }))
 
 // A result of Paperless starts with the title of its document; one of the files starts
 // with the name of the file, to which Paperless Sync adds the date in front.
