@@ -87,6 +87,7 @@
 .github/mkdocs-blueprint.yml
 .github/mkdocs_blueprint.py
 .github/prose/cspell.json
+.github/prose/osv-scanner.toml
 .github/prose/package-lock.json
 .github/prose/package.json
 .github/psalm/NextcloudTaintPlugin.php

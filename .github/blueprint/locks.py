@@ -25,7 +25,8 @@ import shlex
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from itertools import takewhile
@@ -478,13 +479,22 @@ def pins_of_head(root: Path, name: str) -> dict[str, set[str]]:
     return by_name(pins.pinned) if pins else {}
 
 
-def refresh(root: Path, name: str, uv: str, now: datetime) -> Compared:
+def refresh(
+    root: Path,
+    name: str,
+    uv: str,
+    now: datetime,
+    uploaded: Callable[[str, str], datetime | None],
+) -> Compared:
     """Compiles the lock file root/name again, which Renovate's refresh moved to the
     newest version of every package, from uploads at least a week before the day of
     now. A package that the refresh pins as HEAD does keeps its pin, also a young one
-    such as the fix of a vulnerability that came at once; a package that it moved
-    stays at least at the version of HEAD, so that no fix goes back, and uv says so
-    when no version both that new and a week old exists. The differences are the
+    such as the fix of a vulnerability that came at once. A package that it moved
+    stays at least at the version of HEAD, so that no fix goes back. uploaded names
+    when the last file of a version came out, or none when it can't tell: a version
+    of HEAD that came at or after the cutoff, or one that it can't date, stays exactly as it is, since no
+    version is both that new and a week old and only that one is no younger than what
+    HEAD has, while every other package keeps to the week. The differences are the
     pins of the refresh that the week took back."""
     path = root / name
     if path.is_symlink():
@@ -507,14 +517,29 @@ def refresh(root: Path, name: str, uv: str, now: datetime) -> Compared:
         for package, versions in by_name(pins.pinned).items()
         if versions & head.get(package, set())
     )
-    floors = "".join(
-        f"{package}>={next(iter(versions))}\n"
+    moved = {
+        package: next(iter(versions))
         for package, versions in sorted(head.items())
         if package not in kept and len(versions) == 1
+    }
+    week = cutoff(now)
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        uploads = pool.map(uploaded, moved, moved.values())
+        young = {
+            package
+            for package, upload in zip(moved, uploads, strict=True)
+            if upload is None or upload >= week
+        }
+    floors = "".join(
+        f"{package}{'==' if package in young else '>='}{version}\n"
+        for package, version in moved.items()
     )
     options += [
-        f"--exclude-newer={stamp(cutoff(now))}",
-        *(f"--exclude-newer-package={package}={stamp(now)}" for package in kept),
+        f"--exclude-newer={stamp(week)}",
+        *(
+            f"--exclude-newer-package={package}={stamp(now)}"
+            for package in sorted({*kept, *young})
+        ),
     ]
     result, body = compile_onto(path, content, options, uv, floors)
     if result.returncode:
