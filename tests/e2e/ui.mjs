@@ -21,6 +21,15 @@
 export const BASE_URL = process.env.E2E_BASE_URL ?? 'http://nextcloud'
 export const PASSWORD = process.env.E2E_PASSWORD ?? 'e2e-only-password'
 
+// The address of a folder in Files, such as "/Documents", as Nextcloud itself links to it:
+// without index.php, as the image of Nextcloud for Apache turns on its pretty URLs. Files of
+// Nextcloud 36, on Vue Router 4, takes the address without index.php as the base of its
+// router and shows no list at all at one with index.php (#469); the versions before it show
+// the folder at both.
+export function filesFolder(dir) {
+	return `${BASE_URL}/apps/files/files?dir=${dir.split('/').map(encodeURIComponent).join('/')}`
+}
+
 // Signs in through the login form, as a person does, and returns the session for the
 // contexts of the pages that follow. Nextcloud keeps the time zone of the browser that
 // signs in as the user's, in which the server writes times, such as those of the

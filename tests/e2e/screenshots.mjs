@@ -48,6 +48,7 @@ import {
 	chooseAlwaysSearch,
 	saveSearches,
 	connectedServices,
+	filesFolder,
 	openInViewer,
 	openSearch,
 	paperlessResult,
@@ -413,7 +414,7 @@ async function save(page, name, milliseconds) {
 }
 
 async function openArchive(page) {
-	await page.goto(`${BASE_URL}/index.php/apps/files/files?dir=/Paperless`)
+	await page.goto(filesFolder('/Paperless'))
 	await page.getByText('Northstar Energy', { exact: true }).first().waitFor()
 }
 
@@ -1079,7 +1080,7 @@ async function demoAnimation(browser) {
 		name: DEMO.gif,
 		clock: demoClock(changed),
 		start: async (page) => {
-			await page.goto(`${BASE_URL}/index.php/apps/files/files?dir=/${encodeURIComponent(DEMO.folder)}`)
+			await page.goto(filesFolder(`/${DEMO.folder}`))
 			await page.getByText(DEMO.shows, { exact: true }).first().waitFor()
 		},
 		// seed.sh sets the app up with --always-search: Paperless answers every search.
