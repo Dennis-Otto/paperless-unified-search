@@ -104,9 +104,14 @@ export const searchField = (page) => page.getByRole('textbox', { name: SEARCH })
 export const connectedServices = (page) => page.getByText('Search connected services', { exact: true })
 	.or(page.getByRole('button', { name: 'More from connected services' }))
 
+// The name of the results of one provider of the search: Nextcloud 35.0.3 names the list
+// of a provider whose app can show more of them by its button, "More from Files", the
+// other versions and providers by the provider alone, such as "Paperless documents".
+export const groupName = (name) => new RegExp(`^(?:More from )?${escapeRegExp(name)}$`)
+
 // The results of one provider of the search, such as Files or Paperless documents.
-export const resultGroup = (page, name) => page.getByRole('list', { name, exact: true })
-	.or(page.getByRole('listbox', { name, exact: true }))
+export const resultGroup = (page, name) => page.getByRole('list', { name: groupName(name) })
+	.or(page.getByRole('listbox', { name: groupName(name) }))
 
 // A result of Paperless starts with the title of its document; one of the files starts
 // with the name of the file, to which Paperless Sync adds the date in front.

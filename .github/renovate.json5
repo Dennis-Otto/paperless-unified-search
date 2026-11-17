@@ -33,9 +33,17 @@
     {
       // The image of Playwright in tests/e2e/run.sh drives only the browsers of the
       // same version of playwright-core in tests/e2e/package.json, so both move in
-      // one update; scripts/check-project.sh compares them.
+      // one update; scripts/check-project.sh compares them. The registry of the image
+      // gives Renovate no date, so the image comes without the week of waiting (the
+      // rule for the datasource docker of the blueprint), and playwright-core comes
+      // without it too: with the week, the image of a release younger than a week
+      // came with the playwright-core of the release before, whose browsers it lacks,
+      // and every check that starts a browser failed (#464). Both are tools of the
+      // tests alone, pinned by digest and by the integrity of the lock file, and the
+      // checks of the pull request run every test with them before it merges.
       matchPackageNames: ["mcr.microsoft.com/playwright", "playwright-core"],
       groupName: "Playwright",
+      minimumReleaseAge: null,
     },
     {
       // The contract tests of tests/e2e/compose.paperless.yaml run against the last

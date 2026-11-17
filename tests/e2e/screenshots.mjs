@@ -678,7 +678,10 @@ async function smartPicker(browser, session, theme) {
 	await page.mouse.move(0, 0)
 	await save(page, `07-smart-picker${suffix}.png`)
 	await picker.getByRole('option', { name: /^Electricity invoice - August 2026/ }).click()
-	await page.frameLocator('iframe.widget-file').locator('.page[data-loaded="true"]').first().waitFor({ timeout: 30000 })
+	// The viewer of the PDF in the preview: Nextcloud 35.0.3 gives its frame no class,
+	// the versions before named it widget-file.
+	await page.frameLocator('iframe.widget-file, .widget-custom iframe[src*="/apps/files_pdfviewer/"]')
+		.locator('.page[data-loaded="true"]').first().waitFor({ timeout: 30000 })
 	await page.mouse.move(0, 0)
 	await save(page, `08-smart-picker-link${suffix}.png`, 1500)
 	await page.context().close()
@@ -718,7 +721,9 @@ async function settings(browser, session, theme) {
 		input.defaultValue = 'http://paperless:8000'
 		input.value = input.defaultValue
 	})
-	await page.locator('#app-navigation a[href$="/settings/admin/paperless_unified_search"]').scrollIntoViewIfNeeded()
+	// The navigation of the settings, #app-navigation-vue in Nextcloud 35.0.3.
+	await page.locator(':is(#app-navigation, #app-navigation-vue) a[href$="/settings/admin/paperless_unified_search"]')
+		.scrollIntoViewIfNeeded()
 	await save(page, `03-admin-settings${suffix}.png`)
 	// The history of the problems of the search, which scripts/screenshots.sh sets up.
 	const problems = page.locator('.paperless-unified-search-diagnostics')

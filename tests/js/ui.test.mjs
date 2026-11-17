@@ -10,7 +10,7 @@
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { BASE_URL, filesFolder, openSearch } from '../e2e/ui.mjs'
+import { BASE_URL, filesFolder, groupName, openSearch } from '../e2e/ui.mjs'
 
 const PROVIDERS = 'http://nextcloud/ocs/v2.php/search/providers?from=%2Fsettings%2Fuser'
 const CONTACTS = 'http://nextcloud/contactsmenu/contacts'
@@ -179,4 +179,17 @@ test('opens a folder in Files without index.php, where Files of Nextcloud 36 sho
 
 test('keeps the slashes of the folder and encodes the rest of its names', function() {
 	assert.equal(filesFolder('/Paperless/Tax & fees #2'), `${BASE_URL}/apps/files/files?dir=/Paperless/Tax%20%26%20fees%20%232`)
+})
+
+test('finds the results of Files as Nextcloud 35.0.3 names them, by the button that shows more', function() {
+	assert.match('More from Files', groupName('Files'))
+	assert.match('Files', groupName('Files'))
+	assert.match('Paperless documents', groupName('Paperless documents'))
+})
+
+test('takes no other group for the one it waits for', function() {
+	assert.doesNotMatch('Paperless documents', groupName('Files'))
+	assert.doesNotMatch('More from Files and folders', groupName('Files'))
+	assert.doesNotMatch('Files', groupName('Fil.s'))
+	assert.doesNotMatch('Recent Files', groupName('Files'))
 })
