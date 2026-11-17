@@ -6,10 +6,9 @@ All notable changes to this project are documented in this file.
 
 ## [1.8.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.8.0...v1.8.1) (2026-11-17)
 
-
 ### Bug fixes
 
-* **demo:** start the demo with PostgreSQL 18 and render the pictures on Nextcloud 35.0.3 ([#478](https://github.com/Dennis-Otto/paperless-unified-search/issues/478)) ([5e57a55](https://github.com/Dennis-Otto/paperless-unified-search/commit/5e57a55080f7d5bec86a6a1e26b02be0d158e8b0))
+- The demo of the README starts again: PostgreSQL 18 stopped at once, since it keeps its data in a folder of its own, and the demo installs Paperless Sync 1.10.0, whose copies reach the archive on Nextcloud 35.0.3 again. A demo that you set up with PostgreSQL 17 can't be read by PostgreSQL 18; remove it with `docker compose -f demo/compose.yaml down --volumes` and run `bash demo/seed.sh` again.
 
 ## [1.8.0](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.7.0...v1.8.0) (2026-11-13)
 
