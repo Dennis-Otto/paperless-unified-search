@@ -22,6 +22,19 @@ from blueprint.github import Api, GitHubError
 TITLE = "GitHub is unavailable"
 # The job of a run ended badly; one that a failure cancelled says nothing.
 FAILED = frozenset({"failure", "timed_out"})
+# The words of a check that GitHub kept failing, in its annotation: the flaky-test bot
+# of after-checks.yml finds them there and counts no flaky test for the job, as a
+# check that passes once GitHub answers again failed in no test.
+CHECK_UNAVAILABLE = "as in an outage of GitHub or of the network of the runner"
+
+
+def check_unavailable(error: GitHubError, what: str) -> str:
+    """The error of a check that couldn't do what, as GitHub kept failing: nothing in
+    the repository causes it, and the check passes when it runs again later."""
+    return (
+        f"GitHub kept failing ({error}), {CHECK_UNAVAILABLE}, so the check couldn't"
+        f" {what}: nothing in the repository causes it; run the check again"
+    )
 
 
 def notice(text: str) -> str:

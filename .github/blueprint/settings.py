@@ -12,6 +12,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from blueprint.github import Api, GitHubError, Json
+from blueprint.outage import check_unavailable
 
 CONFIG = Path(".github/repository.toml")
 # The branch that every workflow runs on: their triggers name main.
@@ -314,6 +315,11 @@ class Runs:
     # Those whose file GitHub refused to give, with its answer: what they run in turn
     # is unknown.
     refused: dict[str, str]
+    # The error of GitHub when it kept failing itself, as in an outage of GitHub or of
+    # the network of the runner: what the actions run in turn is unknown, and no
+    # further query asks, as each would only wait and fail as well. None when GitHub
+    # answered every query.
+    unavailable: GitHubError | None = None
 
 
 def action_files(reference: str) -> tuple[str, str, list[str]]:
@@ -388,7 +394,8 @@ def run_by(
     """What each action and reusable workflow runs in turn, at the commit that it is
     pinned to: GitHub allows or blocks those as well; and those whose file GitHub
     refused to give, with its answer. One query of GraphQL reads the files of BATCH of
-    them. An image of Docker runs none, and GitHub has no file of it."""
+    them. An image of Docker runs none, and GitHub has no file of it. GitHubError when
+    GitHub kept failing itself: that says nothing of the actions."""
     inner: dict[str, list[str]] = {}
     refused: dict[str, str] = {}
     files = []
@@ -406,6 +413,8 @@ def run_by(
                 "POST", "graphql", {"query": query, "variables": variables}, retry=True
             ).data
         except GitHubError as error:
+            if error.unavailable:
+                raise
             refused.update(dict.fromkeys(batch, str(error)))
             continue
         problems = graphql_problems(answer)
@@ -432,7 +441,11 @@ def actions_that_run(api: Api, named: dict[str, str]) -> Runs:
     refused: dict[str, str] = {}
     todo = sorted(named)
     while todo:
-        inner, unread = run_by(api, todo)
+        try:
+            inner, unread = run_by(api, todo)
+        except GitHubError as error:
+            # After every try of the request: another query would fail as well.
+            return Runs(found, via, refused, error)
         refused.update(unread)
         todo = []
         for reference, items in sorted(inner.items()):
@@ -471,14 +484,16 @@ class Unlisted:
 
 def unlisted_actions(
     api: Api, actions: dict[str, Json], named: dict[str, str], listed_in: str
-) -> list[Unlisted]:
+) -> tuple[list[Unlisted], GitHubError | None]:
     """Every action and reusable workflow that the workflows run, also in turn, that
     [actions] doesn't let start, from the files alone, not the settings on GitHub: a
     pattern that a pull request leaves out stops every workflow that runs the action
-    once the list is on GitHub. The patterns go into the file listed_in."""
+    once the list is on GitHub. The patterns go into the file listed_in. With them,
+    the error of GitHub when it kept failing, so that what the actions run in turn is
+    unknown, or None."""
     allowed = actions.get("allowed_actions", "all")
     if allowed == "all":
-        return []
+        return [], None
     selected = actions.get("selected") if allowed == "selected" else None
     selected = selected if isinstance(selected, dict) else {}
     runs = actions_that_run(api, named)
@@ -516,7 +531,7 @@ def unlisted_actions(
         )
         for reference, answer in sorted(runs.refused.items())
     ]
-    return found
+    return found, runs.unavailable
 
 
 def line_of(text: str, reference: str) -> int:
@@ -626,6 +641,19 @@ def check_selected_actions(
         )
         for reference, answer in sorted(refused.items())
     ]
+    if runs.unavailable:
+        drift.append(
+            Drift(
+                "actions.selected.patterns_allowed unknown",
+                "read",
+                "unavailable",
+                manual=check_unavailable(
+                    runs.unavailable,
+                    "read what the actions run in turn, and the list of the allowed"
+                    " actions on GitHub only grows until it does",
+                ),
+            )
+        )
     return drift + refused_images(found)
 
 
