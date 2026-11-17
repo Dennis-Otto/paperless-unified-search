@@ -34,8 +34,13 @@ services:
       POSTGRES_DB: nextcloud
       POSTGRES_USER: nextcloud
       POSTGRES_PASSWORD: ${NEXTCLOUD_DATABASE_PASSWORD:?run bash demo/seed.sh, which generates demo/.env}
+    # PostgreSQL 18 keeps its data in a folder of its major version below
+    # /var/lib/postgresql, such as 18/docker, and refuses to start with a volume at
+    # /var/lib/postgresql/data, where the images before 18 kept it. The data of an
+    # earlier major version can't be read by the next: remove a demo of PostgreSQL 17
+    # with its data first (docker compose -f demo/compose.yaml down --volumes).
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD", "pg_isready", "--username=nextcloud", "--dbname=nextcloud"]
       interval: 2s

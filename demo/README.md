@@ -31,7 +31,7 @@ The first run downloads the images, a few minutes on most connections; after tha
 `seed.sh` runs every step in the containers, so it needs nothing but Docker and Bash, and every step may run again: a second run starts what stopped and adds what is missing.
 
 1. It generates the secret key of Paperless and the passwords of the demo into `demo/.env`, which git ignores, and keeps them for later runs.
-2. It starts Paperless-ngx 3 with Redis, and Nextcloud 33 with PostgreSQL and its background jobs, from [`compose.yaml`](compose.yaml). Both listen on 127.0.0.1 alone, so nobody else on your network reaches them.
+2. It starts Paperless-ngx 3 with Redis, and Nextcloud 35 with PostgreSQL 18 and its background jobs, from [`compose.yaml`](compose.yaml). Both listen on 127.0.0.1 alone, so nobody else on your network reaches them.
 3. It creates the archive account `paperless` and the user `jamie` in Nextcloud, installs a pinned release of Paperless Sync, whose SHA-256 it checks, and enables this app from your checkout. In the workflow *Demo*, with the token of the job in `GH_TOKEN`, the release comes through the API of GitHub, which works when the pages of the releases fail requests without a token.
 4. It gives Paperless the five synthetic letters of [`documents/`](documents) as PDF files, each with its correspondent, type and tags, and waits until Paperless has read and indexed them.
 5. It sets up Paperless Sync, runs it with `occ paperless_sync:run`, which writes every document into `Documents/Paperless/Archive` of `paperless`, and shares that folder read-only with `jamie`.
@@ -144,6 +144,7 @@ The secrets of the demo come from your machine alone: `seed.sh` generates them i
 
 - **A port is taken:** another program listens on 8180 or 8100. Set other ports in `demo/.env`, `NEXTCLOUD_PORT` and `PAPERLESS_PORT`, and run `bash demo/seed.sh` again.
 - **"An earlier demo left its data":** `demo/.env` is gone, but the data of a demo with other passwords is still there. `docker compose --project-name paperless-unified-search-demo down --volumes` removes it without `demo/.env`, and the next run starts anew.
+- **A demo of PostgreSQL 17:** a demo set up before PostgreSQL 18 keeps its database in a format and a folder that PostgreSQL 18 doesn't read, so Nextcloud finds no database of its own. Remove it with `docker compose -f demo/compose.yaml down --volumes` and run `bash demo/seed.sh` again, which sets it up anew.
 - **It stops at a step:** the script shows the end of the logs of the containers and stops; run it again to continue. `docker compose -f demo/compose.yaml logs paperless` and `… logs nextcloud` show the whole logs.
 
 The [troubleshooting guide](https://dennis-otto.github.io/paperless-unified-search/troubleshooting.html) explains every message of the app, and the [discussions](https://github.com/Dennis-Otto/paperless-unified-search/discussions) answer questions.
