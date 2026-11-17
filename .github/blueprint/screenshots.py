@@ -1,5 +1,5 @@
-"""The pictures of a project that its own script renders, renewed by a bot only when
-their pixels change.
+"""The pictures of a project that its own script renders, renewed by a bot only when a
+change shows.
 
 A project turns the screenshot bot on with scripts/screenshots.sh, which renders its
 pictures in place, wherever the documentation, the stores or the social preview take
@@ -30,6 +30,7 @@ from __future__ import annotations
 import base64
 import html
 import io
+import itertools
 import json
 import os
 import posixpath
@@ -99,6 +100,9 @@ COMPARED_FILES = 300
 SOCIAL_PREVIEW = ".github/social-preview.png"
 # The width and the height of a picture, in pixels.
 Size = tuple[int, int]
+# A box in a picture, as Pillow's getbbox gives it: left, top, right and bottom, the
+# last two one past the box.
+Box = tuple[int, int, int, int]
 # The red of each changed pixel of a difference and of the frames around the changes,
 # as the visual checks of the repositories draw it.
 RED = (220, 38, 38)
@@ -107,6 +111,21 @@ RED = (220, 38, 38)
 # the red of the changes stands out, while a dark page stays dark, a light one light,
 # and the picture and its text stay clear.
 VEIL = 0.2
+# The threshold of sight (decision 0169). A pixel changed only when both hold:
+# - one of its colors, or its opacity, lies more than TOLERANCE of 255 beyond those of
+#   the same place and its eight neighbors in the other picture, either way: the box
+#   around the colors of the neighbors takes every shade between them, which is what
+#   the edge of a letter is made of, so an edge drawn a pixel further is no change;
+# - and the average of the square of three by three pixels around it, as an eye sees a
+#   pixel together with its neighbors, lies more than AVERAGE of 255 beyond those
+#   averages at the same place and its neighbors in the other picture, either way: a
+#   letter drawn half a pixel further keeps its averages nearby, and another letter
+#   doesn't, not even a 6 for a 5, nor a single white pixel on blue.
+# A GIF that picks other colors of its palette for the same page, by up to 13 of 255
+# and up to 38 at the edges of letters in the pictures of paperless-sync#511, changes
+# no pixel so; a moved button, another text or another color do.
+TOLERANCE = 24
+AVERAGE = 10
 # About the width at which a phone, or Telegram, shows a picture: the frames around the
 # changes of a difference keep their size in such pixels, so that a change of a
 # single pixel still shows. In those pixels: the width of a frame, the gap between a
@@ -114,7 +133,15 @@ VEIL = 0.2
 SHOWN = 1000
 FRAME = 4
 MARGIN = 6
-NEAR = 48
+NEAR = 16
+# A picture changed all over when the frames around its changes would cover more than
+# this share of it: then no frame points anywhere, and the report and the table say so
+# in words. More than MOST_MARKS frames become one around them all, which counts
+# alike. More than MOST_REGIONS groups of changes are all over without joining their
+# frames, which would take longer than the comparison itself.
+ALL_OVER = 0.2
+MOST_MARKS = 12
+MOST_REGIONS = 100
 # A comparison cuts both pictures to their changes, with room around them, and keeps
 # at least a part of each side of the picture, so that one sees where on the page the
 # changes are: both in pixels of the picture shown SHOWN pixels wide at its longer side.
@@ -160,7 +187,15 @@ class Picture:
     with neither. diff is where the folder of keep holds the picture of the
     difference, of a changed picture of the same size and frames that keep could
     read, and comparison where it holds the place of the change before and after in
-    one picture, of the frame numbered frame, from 1, of the frames of the picture."""
+    one picture, of the frame numbered frame, from 1, of the frames of the picture.
+
+    A changed picture of the same size and frames also says what keep measured:
+    pixels, how many pixels changed in all its frames, box, where they changed in the
+    frame that the comparison shows, seen, whether that is above the threshold of
+    sight, and all_over, whether its changes lie all over the picture, so that no
+    frame marks them. A picture below the threshold keeps its file, and the report
+    names it apart, under unseen, with what differs at all: share and pixels of every
+    pixel that differs, and box around them in all frames."""
 
     path: str
     status: str
@@ -171,6 +206,10 @@ class Picture:
     comparison: str | None = None
     frame: int | None = None
     frames: int | None = None
+    pixels: int | None = None
+    box: Box | None = None
+    seen: bool | None = None
+    all_over: bool = False
 
 
 @dataclass(frozen=True)
@@ -192,10 +231,12 @@ class Settings:
 @dataclass(frozen=True)
 class Kept:
     """What keep left for the pull request: the pictures by their paths, and the
-    other files that the script changed, which the bot leaves out."""
+    other files that the script changed, which the bot leaves out, and the pictures
+    whose pixels differ only below the threshold of sight, which keep their files."""
 
     pictures: tuple[Picture, ...]
     ignored: tuple[str, ...] = ()
+    unseen: tuple[Picture, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -563,6 +604,22 @@ class Most:
 
 
 @dataclass(frozen=True)
+class Measured:
+    """What a comparison of the frames of two pictures measured: the share of their
+    pixels that changed above the threshold of sight, how many pixels that is in all
+    frames, and the pair of frames with the most of them, or None without any; and
+    how many pixels differ at all, also below the threshold, with the box around them
+    in all frames, or None when none does, and how many pixels the frames have."""
+
+    share: float
+    pixels: int
+    most: Most | None
+    differing: int
+    spread: Box | None
+    total: int
+
+
+@dataclass(frozen=True)
 class Comparison:
     """The place of the change of a picture before and after, as a PNG, of the frame
     numbered frame, from 1, of the frames of the picture."""
@@ -587,50 +644,211 @@ def paired(old: Frames, new: Frames) -> Pairs | None:
     return [(size, a, b) for (size, a), (_, b) in zip(old, new, strict=True)]
 
 
-def changed_pixels(size: Size, first: bytes, second: bytes) -> Image.Image:
-    """The pixels that differ between two frames of one size, as a mask: 255 where
-    a pixel changed, 0 where it stayed."""
-    from PIL import Image, ImageChops
+def strongest(image: Image.Image) -> Image.Image:
+    """The largest value of each pixel of a picture over its bands, as a picture of
+    one band."""
+    from PIL import ImageChops
 
-    difference = ImageChops.difference(
-        Image.frombytes("RGBA", size, first), Image.frombytes("RGBA", size, second)
-    )
-    bands = difference.split()
+    bands = image.split()
     most = bands[0]
     for band in bands[1:]:
         most = ImageChops.lighter(most, band)
-    return most.point([0] + [255] * 255)
+    return most
+
+
+def above(values: Image.Image, threshold: int) -> Image.Image:
+    """A mask of the values of a picture of one band: 255 where a value is above
+    threshold, 0 elsewhere."""
+    return values.point([0] * (threshold + 1) + [255] * (255 - threshold))
+
+
+def greatest(image: Image.Image) -> Image.Image:
+    """The greatest value of each band of a picture at each place and its eight
+    neighbors, with nothing beyond the edges: as MaxFilter(3), but in a few steps of
+    Pillow that each take a moment, where MaxFilter sorts every place."""
+    from PIL import ImageChops
+
+    width, height = image.size
+    across = image
+    for step in (-1, 1):
+        # A box that reaches beyond the picture fills it with 0, which adds nothing
+        # to a greatest value.
+        across = ImageChops.lighter(across, image.crop((step, 0, width + step, height)))
+    found = across
+    for step in (-1, 1):
+        found = ImageChops.lighter(found, across.crop((0, step, width, height + step)))
+    return found
+
+
+def beyond(pixels: Image.Image, around: Image.Image, threshold: int) -> Image.Image:
+    """A mask of the pixels of a frame whose color lies beyond the colors around the
+    same place in another frame: 255 where a band of a pixel of pixels lies more than
+    threshold below the least or above the greatest value of that band at the same
+    place and its eight neighbors in around, 0 elsewhere."""
+    from PIL import ImageChops
+
+    least = ImageChops.invert(greatest(ImageChops.invert(around)))
+    below = strongest(ImageChops.subtract(least, pixels))
+    over = strongest(ImageChops.subtract(pixels, greatest(around)))
+    return above(ImageChops.lighter(below, over), threshold)
+
+
+def moved(old: Image.Image, new: Image.Image, threshold: int) -> Image.Image:
+    """A mask of the places where either of two frames lies beyond the other, as
+    beyond finds it with threshold."""
+    from PIL import ImageChops
+
+    return ImageChops.lighter(beyond(new, old, threshold), beyond(old, new, threshold))
+
+
+def differences(size: Size, first: bytes, second: bytes) -> Image.Image:
+    """How far each pixel of two frames of one size differs, as the largest
+    difference of its bands, in a picture of one band."""
+    from PIL import Image, ImageChops
+
+    return strongest(
+        ImageChops.difference(
+            Image.frombytes("RGBA", size, first), Image.frombytes("RGBA", size, second)
+        )
+    )
+
+
+def changed_pixels(size: Size, first: bytes, second: bytes) -> Image.Image:
+    """The pixels that changed between two frames of one size so that one sees it, as
+    a mask: 255 where a pixel of either frame lies beyond the colors around it in the
+    other, as beyond finds it with TOLERANCE, and the average of the three by three
+    pixels around it lies beyond the averages around it in the other, as beyond finds
+    it with AVERAGE; 0 where it stayed or changed below the threshold of sight. Only
+    a pixel that differs by more than TOLERANCE can lie beyond, so this looks only at
+    the box around those, with two pixels more on each side: the averages of their
+    neighbors take the pixels next to those."""
+    from PIL import Image, ImageChops, ImageFilter
+
+    candidates = above(differences(size, first, second), TOLERANCE)
+    mask = Image.new("L", size)
+    box = candidates.getbbox()
+    if box is None:
+        return mask
+    width, height = size
+    left, top, right, bottom = box
+    near = (
+        max(0, left - 2),
+        max(0, top - 2),
+        min(width, right + 2),
+        min(height, bottom + 2),
+    )
+    old = Image.frombytes("RGBA", size, first).crop(near)
+    new = Image.frombytes("RGBA", size, second).crop(near)
+    blurred = ImageFilter.BoxBlur(1)
+    seen = ImageChops.darker(
+        moved(old, new, TOLERANCE),
+        moved(old.filter(blurred), new.filter(blurred), AVERAGE),
+    )
+    mask.paste(seen, near[:2])
+    return mask
+
+
+def differing_pixels(size: Size, first: bytes, second: bytes) -> Image.Image:
+    """The pixels that differ at all between two frames of one size, as a mask: 255
+    where a pixel differs, 0 where it is the same."""
+    return above(differences(size, first, second), 0)
 
 
 def changed_share(before: bytes, after: bytes) -> float | None:
-    """The share of the pixels that changed, 0 when the pictures look the same, and
-    None when their sizes or numbers of frames differ."""
+    """The share of the pixels that changed above the threshold of sight, 0 when the
+    pictures look the same, and None when their sizes or numbers of frames
+    differ."""
     pairs = compared(before, after)
-    return None if pairs is None else changes(pairs)[0]
+    return None if pairs is None else changes(pairs).share
 
 
-def changes(pairs: Pairs) -> tuple[float, Most | None]:
-    """The share of the pixels that changed between the frames of pairs, and the pair
-    of frames with the most changed pixels, the first of them on a tie, or None when
-    no pixel changed. Each mask is counted once."""
-    total = changed = 0
+def changes(pairs: Pairs) -> Measured:
+    """What changed between the frames of pairs, as Measured says: the pair of frames
+    with the most changed pixels is the first of them on a tie. Each mask is counted
+    once."""
+    total = changed = differing = 0
     most: tuple[int, Most] | None = None
+    spread: list[Box] = []
     for number, (size, first, second) in enumerate(pairs, 1):
         total += size[0] * size[1]
         if first == second:
             continue
+        differ = differing_pixels(size, first, second)
+        differing += differ.histogram()[255]
+        spread.append(differ.getbbox() or (0, 0, 0, 0))
         mask = changed_pixels(size, first, second)
         count = mask.histogram()[255]
         changed += count
-        if most is None or count > most[0]:
+        if count and (most is None or count > most[0]):
             most = (count, Most(size, first, second, mask, number, len(pairs)))
-    return changed / total, None if most is None else most[1]
+    return Measured(
+        changed / total,
+        changed,
+        None if most is None else most[1],
+        differing,
+        joined_box(spread) if spread else None,
+        total,
+    )
+
+
+def joined_box(boxes: Sequence[Box]) -> Box:
+    """The box around boxes."""
+    return (
+        min(b[0] for b in boxes),
+        min(b[1] for b in boxes),
+        max(b[2] for b in boxes),
+        max(b[3] for b in boxes),
+    )
 
 
 def scaled(length: int, longest: int) -> int:
     """A length of a picture shown SHOWN pixels wide at its longer side, in the pixels
     of a picture whose longer side is longest, at least one."""
     return max(1, -(-length * longest // SHOWN))
+
+
+def marks(most: Most) -> list[Box] | None:
+    """The boxes of changes that the frames of a difference and a comparison mark, as
+    regions groups them in a picture shown SHOWN pixels wide, those whose frames would
+    touch joined, and more than MOST_MARKS of them joined into one, or None when the
+    picture changed all over: when the frames would cover more than ALL_OVER of the
+    picture, or the changes fall into more than MOST_REGIONS groups."""
+    width, height = most.size
+    longest = max(most.size)
+    boxes = regions(most.mask, scaled(NEAR, longest))
+    if len(boxes) > MOST_REGIONS:
+        return None
+    away = scaled(MARGIN, longest) + scaled(FRAME, longest)
+    boxes = touching(boxes, 2 * away)
+    if len(boxes) > MOST_MARKS:
+        boxes = [joined_box(boxes)]
+
+    def covered(boxes: Sequence[Box]) -> int:
+        return sum(
+            (min(width, right + away) - max(0, left - away))
+            * (min(height, bottom + away) - max(0, top - away))
+            for left, top, right, bottom in boxes
+        )
+
+    return None if covered(boxes) > ALL_OVER * width * height else boxes
+
+
+def touching(boxes: Sequence[Box], gap: int) -> list[Box]:
+    """Boxes with each two that are less than gap pixels apart joined into the box
+    around both, until no two are."""
+    found = list(boxes)
+    joined = True
+    while joined:
+        joined = False
+        for first, second in itertools.combinations(range(len(found)), 2):
+            a, b = found[first], found[second]
+            apart = max(b[0] - a[2], a[0] - b[2], b[1] - a[3], a[1] - b[3])
+            if apart < gap:
+                found[first] = joined_box((a, b))
+                del found[second]
+                joined = True
+                break
+    return sorted(found)
 
 
 def regions(mask: Image.Image, near: int) -> list[tuple[int, int, int, int]]:
@@ -674,16 +892,18 @@ def most_changed(before: bytes, after: bytes) -> Most | None:
     finds it, or None when their sizes or numbers of frames differ or no pixel
     changed."""
     pairs = compared(before, after)
-    return None if pairs is None else changes(pairs)[1]
+    return None if pairs is None else changes(pairs).most
 
 
 def difference(before: bytes, after: bytes) -> bytes | None:
     """A picture of what changed between two pictures of the same size and frames, as
     a PNG: each changed pixel in red over the new picture in its own colors behind a
     thin veil of its own average color, of the pair of frames with the most changed
-    pixels for an animation. A red frame around each place of change keeps a change of a single pixel in sight
-    when a phone shows the picture scaled down to about SHOWN pixels wide. None when
-    the sizes or numbers of frames differ or no pixel changed."""
+    pixels for an animation. A red frame around each place of change, as marks finds
+    them, keeps a change of a single pixel in sight when a phone shows the picture
+    scaled down to about SHOWN pixels wide; a picture that changed all over gets no
+    frame. None when the sizes or numbers of frames differ or no pixel changed above
+    the threshold of sight."""
     most = most_changed(before, after)
     return None if most is None else drawing(most)
 
@@ -751,8 +971,7 @@ def drawing(most: Most) -> bytes:
     average = shown.resize((1, 1), Image.Resampling.BOX).getpixel((0, 0))
     drawn = Image.blend(shown, Image.new("RGB", most.size, average), VEIL)
     drawn.paste(RED, mask=most.mask)
-    longest = max(most.size)
-    framed(drawn, regions(most.mask, scaled(NEAR, longest)), longest)
+    framed(drawn, marks(most) or (), max(most.size))
     return png_of(drawn)
 
 
@@ -787,7 +1006,8 @@ def side_by_side(most: Most) -> bytes:
     pictures and at their size in pixels, so that their text stays as readable as in
     the pictures. The two stand side by side, or one above the other for a wide
     place, whichever a phone shows larger, the one before first, with an arrow
-    between them, and each change has the same red frame on both."""
+    between them, and each change has the same red frame on both, as marks finds
+    them, or none for a picture that changed all over."""
     from PIL import Image, ImageDraw
 
     width, height = most.size
@@ -805,7 +1025,7 @@ def side_by_side(most: Most) -> bytes:
     else:
         size, second = (across, 2 * down + gap), (0, down + gap)
     drawn = Image.new("RGB", size, STRIP)
-    boxes = regions(most.mask, scaled(NEAR, shown))
+    boxes = marks(most) or ()
     for pixels, at in ((most.before, (0, 0)), (most.after, second)):
         part = flattened(most.size, pixels).crop((x0, y0, x1, y1))
         framed(part, boxes, shown, (x0, y0))
@@ -908,9 +1128,10 @@ def store(
     or changed picture or file under files/ at its path, as read gives it for the
     path, the picture of each difference at its diff and each comparison at its
     comparison, as drawn gives them for that place, the paths of the deleted ones in
-    deleted.txt and the list of all with their changes in report.json. The bot
-    commits nothing of diff/ and comparison/: they are there for people, in the
-    artifact of the run."""
+    deleted.txt and the list of all with their changes in report.json, with the
+    pictures below the threshold of sight apart, under unseen. The bot commits
+    nothing of diff/ and comparison/: they are there for people, in the artifact of
+    the run."""
     # Also when the script only deleted pictures, which leaves nothing to copy.
     folder.mkdir(parents=True, exist_ok=True)
     for picture in found.pictures:
@@ -941,10 +1162,24 @@ def store(
                         "comparison": p.comparison,
                         "frame": p.frame,
                         "frames": p.frames,
+                        "pixels": p.pixels,
+                        "box": p.box,
+                        "seen": p.seen,
+                        "all_over": p.all_over,
                     }
                     for p in found.pictures
                 ],
                 "ignored": list(found.ignored),
+                "unseen": [
+                    {
+                        "path": p.path,
+                        "share": p.share,
+                        "pixels": p.pixels,
+                        "box": p.box,
+                        "seen": False,
+                    }
+                    for p in found.unseen
+                ],
             },
             indent=1,
         )
@@ -961,7 +1196,10 @@ def keep(root: Path, folder: Path | None = None, files: Sequence[str] = ()) -> K
     changed when its bytes do, and has to be text in UTF-8. Copies what is left into
     folder, when there is one, for the screenshot bot, as store writes it, with a
     picture of the difference of each changed picture that kept its size and frames.
-    The folder stays away when nothing changed."""
+    A picture whose pixels differ only below the threshold of sight looks the same
+    too, and Kept names it under unseen, with what differs. The folder stays away
+    when nothing changed that one sees, so report.json names the unseen pictures only
+    beside a change: without one, only the summary of the run names them."""
     status = git(
         root,
         "status",
@@ -972,6 +1210,7 @@ def keep(root: Path, folder: Path | None = None, files: Sequence[str] = ()) -> K
     )
     pictures: list[Picture] = []
     ignored: list[str] = []
+    unseen: list[Picture] = []
     drawings: dict[str, bytes] = {}
     for entry in filter(None, status.split("\0")):
         code, path = entry[:2], entry[3:]
@@ -1012,22 +1251,47 @@ def keep(root: Path, folder: Path | None = None, files: Sequence[str] = ()) -> K
             (root / path).write_bytes(before)
             continue
         pairs = None if read is None else paired(*read)
-        share, most = (None, None) if pairs is None else changes(pairs)
-        changed = Picture(path, "changed", share, size_before(path, before, data))
-        if folder is not None and most is not None:
+        measured = None if pairs is None else changes(pairs)
+        if measured is not None and measured.most is None:
+            # What nobody sees is no change: the picture keeps its file.
+            (root / path).write_bytes(before)
+            unseen.append(
+                Picture(
+                    path,
+                    "changed",
+                    measured.differing / measured.total,
+                    pixels=measured.differing,
+                    box=measured.spread,
+                    seen=False,
+                )
+            )
+            continue
+        changed = Picture(path, "changed", None, size_before(path, before, data))
+        if measured is not None and measured.most is not None:
+            most = measured.most
             changed = replace(
                 changed,
-                diff=diff_path(path),
-                comparison=comparison_path(path),
-                frame=most.frame,
-                frames=most.frames,
+                share=measured.share,
+                pixels=measured.pixels,
+                box=most.mask.getbbox(),
+                seen=True,
+                all_over=marks(most) is None,
             )
-            drawings[diff_path(path)] = drawing(most)
-            drawings[comparison_path(path)] = side_by_side(most)
+            if folder is not None:
+                changed = replace(
+                    changed,
+                    diff=diff_path(path),
+                    comparison=comparison_path(path),
+                    frame=most.frame,
+                    frames=most.frames,
+                )
+                drawings[diff_path(path)] = drawing(most)
+                drawings[comparison_path(path)] = side_by_side(most)
         pictures.append(changed)
     pictures = still_videos(root, pictures)
     pictures.sort(key=lambda picture: picture.path)
-    found = Kept(tuple(pictures), tuple(sorted(ignored)))
+    unseen.sort(key=lambda picture: picture.path)
+    found = Kept(tuple(pictures), tuple(sorted(ignored)), tuple(unseen))
     if folder is not None and pictures:
         store(
             folder, found, lambda path: (root / path).read_bytes(), drawings.__getitem__
@@ -1073,6 +1337,26 @@ def frame_by_keep(picture: Picture) -> bool:
         and picture.frames is not None
         and 1 <= picture.frame <= picture.frames
     )
+
+
+def reported_box(value: Any) -> Box | None:
+    """A box as the report of a run names it: four whole numbers, left, top, right
+    and bottom, the last two past the first two."""
+    if value is None:
+        return None
+    match [reported_number(number) for number in value]:
+        case [int(left), int(top), int(right), int(bottom)] if (
+            0 <= left < right and 0 <= top < bottom
+        ):
+            return left, top, right, bottom
+    raise ValueError(f"{value!r} is no box")
+
+
+def reported_flag(value: Any) -> bool | None:
+    """A yes or no as the report of a run names it, which has to be true or false."""
+    if value is None or isinstance(value, bool):
+        return value
+    raise TypeError(f"{value!r} is no true or false")
 
 
 def reported_number(value: Any) -> int | None:
@@ -1142,10 +1426,27 @@ def kept(folder: Path, files: Sequence[str] = ()) -> Kept:
                 None if entry.get("comparison") is None else str(entry["comparison"]),
                 reported_number(entry.get("frame")),
                 reported_number(entry.get("frames")),
+                # A report of a keep before the threshold of sight names none of
+                # these, nor unseen.
+                reported_number(entry.get("pixels")),
+                reported_box(entry.get("box")),
+                reported_flag(entry.get("seen")),
+                bool(reported_flag(entry.get("all_over"))),
             )
             for entry in report["pictures"]
         )
         ignored = tuple(str(path) for path in report["ignored"])
+        unseen = tuple(
+            Picture(
+                str(entry["path"]),
+                "changed",
+                float(entry["share"]),
+                pixels=reported_number(entry["pixels"]),
+                box=reported_box(entry["box"]),
+                seen=False,
+            )
+            for entry in report.get("unseen", ())
+        )
     except (OSError, ValueError, KeyError, TypeError) as error:
         raise ValueError(
             f"The screenshots of the run have no readable {REPORT}: {error}"
@@ -1158,6 +1459,12 @@ def kept(folder: Path, files: Sequence[str] = ()) -> Kept:
         )
     if not pictures:
         raise ValueError("The screenshots of the run hold nothing to commit.")
+    for below in unseen:
+        if kind_of(below.path) != "picture" or below.path in shown | removed:
+            raise ValueError(
+                f"The {REPORT} of the screenshots names {below.path} below the "
+                "threshold of sight, which is no picture that kept its file."
+            )
     for picture in pictures:
         for named, place, what in (
             (picture.diff, diff_path, "difference"),
@@ -1174,7 +1481,7 @@ def kept(folder: Path, files: Sequence[str] = ()) -> Kept:
                 f"{picture.frames} for the comparison {picture.comparison} of "
                 f"{picture.path}, which keep doesn't name so."
             )
-    return Kept(pictures, ignored)
+    return Kept(pictures, ignored, unseen)
 
 
 def collect(folder: Path, shards: Sequence[Path], files: Sequence[str] = ()) -> Kept:
@@ -1185,20 +1492,23 @@ def collect(folder: Path, shards: Sequence[Path], files: Sequence[str] = ()) -> 
     shard kept anything."""
     sources: dict[str, Path] = {}
     pictures: list[Picture] = []
+    unseen: list[Picture] = []
     ignored: set[str] = set()
     for shard in shards:
         found = kept(shard, files)
-        for picture in found.pictures:
+        for picture in found.pictures + found.unseen:
             if picture.path in sources:
                 raise ValueError(
                     f"The shards {sources[picture.path].name} and {shard.name} both "
                     f"changed {picture.path}, which only one of them may render."
                 )
             sources[picture.path] = shard
-            pictures.append(picture)
+        pictures += found.pictures
+        unseen += found.unseen
         ignored.update(found.ignored)
     pictures.sort(key=lambda picture: picture.path)
-    merged = Kept(tuple(pictures), tuple(sorted(ignored)))
+    unseen.sort(key=lambda picture: picture.path)
+    merged = Kept(tuple(pictures), tuple(sorted(ignored)), tuple(unseen))
     # The pictures of the differences and the comparisons, by their places in the
     # folder, from the shard of their picture.
     drawings = {
@@ -1532,13 +1842,16 @@ def shown_share(share: float | None) -> str:
 
 def listing(found: Kept) -> str:
     """The pictures of a commit of the screenshot bot, as a table with what happened
-    to each, and for an animation which of its frames the comparison shows."""
+    to each, whether it changed all over, and for an animation which of its frames
+    the comparison shows."""
     rows = ["| Picture | Change | Pixels changed |", "| --- | --- | ---: |"]
     for picture in found.pictures:
         if picture.kind != "picture":
             continue
         share = shown_share(picture.share) if picture.status == "changed" else ""
         change = picture.status
+        if picture.all_over:
+            change += " all over"
         if picture.frames is not None and picture.frames > 1:
             change += f", most in frame {picture.frame} of {picture.frames}"
         rows.append(f"| `{picture.path}` | {change} | {share} |")
@@ -1554,6 +1867,23 @@ def file_listing(found: Kept) -> str:
     return (
         f"These files that `{SETTINGS.as_posix()}` names besides pictures changed:\n\n"
         "| File | Change |\n| --- | --- |\n" + "".join(f"{row}\n" for row in rows)
+    )
+
+
+def below_sight(found: Kept) -> str:
+    """The pictures whose pixels differ only below the threshold of sight, which keep
+    their files, as a sentence; nothing when there are none."""
+    if not found.unseen:
+        return ""
+    named = ", ".join(
+        f"`{picture.path}` ({picture.pixels} pixels)" for picture in found.unseen[:10]
+    )
+    if len(found.unseen) > 10:
+        named += f" and {len(found.unseen) - 10} more"
+    return (
+        "These pictures differ only below the threshold of sight, such as in the "
+        "shades of a palette or at the edges of letters, so they keep their files: "
+        f"{named}.\n"
     )
 
 
@@ -1601,7 +1931,8 @@ def drawn_differences(found: Kept) -> str:
         "picture, in its own colors and cut to the changes, with a red frame around "
         "each change on both sides, and in `diff/` the whole picture with every "
         "changed pixel in red, behind a thin veil. Both show the same frame: for an "
-        "animation the one with the most changes, which the table names.\n"
+        "animation the one with the most changes, which the table names. A picture "
+        "that changed all over, as the table says, gets no frames.\n"
     )
 
 
@@ -1613,7 +1944,12 @@ def summary(found: Kept) -> str:
         text = "Every picture looks as committed.\n"
     else:
         text = "Every picture looks as committed, so no file changes.\n"
-    for extra in (drawn_differences(found), file_listing(found), others(found)):
+    for extra in (
+        drawn_differences(found),
+        below_sight(found),
+        file_listing(found),
+        others(found),
+    ):
         if extra:
             text += f"\n{extra}"
     return text
@@ -1635,7 +1971,12 @@ def report(
         text += ", and these look different:\n\n" + listing(found)
     else:
         text += ", and every picture looks as committed.\n"
-    for extra in (drawn_differences(found), file_listing(found), corrections(pages)):
+    for extra in (
+        drawn_differences(found),
+        below_sight(found),
+        file_listing(found),
+        corrections(pages),
+    ):
         if extra:
             text += f"\n{extra}"
     if any(picture.path == SOCIAL_PREVIEW for picture in found.pictures):

@@ -14,7 +14,9 @@ name: After the checks
 # the failure, after the answer test_marker of the blueprint, such as "Browser step:"
 # before each step of the tests of a browser. A job that ran out of time after each of
 # its steps had passed failed in no test: its runner never reported that the job
-# ended, and the summary names it as the runner's fault, outside the issue. A job that
+# ended, and the summary names it as the runner's fault, outside the issue. Nor did a
+# check that GitHub kept failing, which says so, or a job that only sums up the jobs
+# that it needs, as variants does: the one that failed has its own row. A job that
 # fails again is a real failure and stays red, and so does one that failed the same
 # way for the commit before: running it again would only keep a runner busy. Only the
 # run of the head of its pull request, or of its branch, runs again: just before the
@@ -673,6 +675,25 @@ jobs:
             # of GitHub, failed in no test (decision 0134).
             if grep -qF "would reach every host, and it stops here instead" <<<"$errors"; then
               continue
+            fi
+            # So did a check that GitHub kept failing, as in an outage of GitHub or of
+            # the network of its runner, which says so in its error (CHECK_UNAVAILABLE
+            # of blueprint/outage.py), as in Dennis-Otto/repo-blueprint#970; and a job
+            # that only sums up the jobs that it needs, as variants does, which failed
+            # because one of them did: that one has its own row, or failed in no test.
+            # Only when nothing else failed in the job, though: a step that runs after
+            # one that failed, as in the job Lint, can fail in a test of its own, which
+            # shows as another error or as one more exit of a step than these errors.
+            said="$(grep -cF -e "as in an outage of GitHub or of the network of the runner" \
+              -e "this job only sums up the jobs that it needs" <<<"$errors" || true)"
+            if ((said > 0)); then
+              exits="$(grep -cE '^Process completed with exit code [0-9]+\.?$' <<<"$errors" || true)"
+              others="$(grep -vF -e "as in an outage of GitHub or of the network of the runner" \
+                -e "this job only sums up the jobs that it needs" <<<"$errors" |
+                grep -cvE '^(Process completed with exit code [0-9]+\.?)?$' || true)"
+              if ((others == 0 && exits <= said)); then
+                continue
+              fi
             fi
             # A log that GitHub doesn't give, such as that of a job that never started,
             # leaves the row without its tests, and a warning of the run says why; so

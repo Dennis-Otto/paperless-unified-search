@@ -38,10 +38,11 @@ jobs:
       # Whether the job kept the report of the taint analysis for code scanning.
       taint: ${{ steps.taint.outcome }}
     env:
-      # The same krankerl as the release workflow's.
+      # The same krankerl as the release workflow's. Since 0.14.1 the name of its
+      # package carries the revision -1, as .github/pins.toml records it.
       # renovate: datasource=github-releases depName=ChristophWurst/krankerl extractVersion=^v(?<version>.+)$
-      KRANKERL_VERSION: 0.14.0
-      KRANKERL_SHA256: 9bee5a756a83c5a6b1f040e9a2ade9e902e4a57211afc174cd8ac5c4f913958f
+      KRANKERL_VERSION: 0.14.3
+      KRANKERL_SHA256: 3ca43eebc0c4766ce31db67dde96312b6c8b3d981ffebe4aeecf4fe0481883ef
     steps:
       - name: Record the network traffic of the job
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -123,10 +124,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          deb="$RUNNER_TEMP/krankerl/krankerl_${KRANKERL_VERSION}_amd64.deb"
+          deb="$RUNNER_TEMP/krankerl/krankerl_${KRANKERL_VERSION}-1_amd64.deb"
           if [[ ! -f "$deb" ]]; then
             bash .github/download.sh ChristophWurst/krankerl "v$KRANKERL_VERSION" \
-              "krankerl_${KRANKERL_VERSION}_amd64.deb" "$deb" "$KRANKERL_SHA256"
+              "krankerl_${KRANKERL_VERSION}-1_amd64.deb" "$deb" "$KRANKERL_SHA256"
           fi
           # The package of the cache too.
           echo "$KRANKERL_SHA256  $deb" | sha256sum --check --strict

@@ -30,6 +30,6 @@ jobs:
     permissions:
       contents: read
       issues: write
-    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-labels.yml@15329a359522d13d22bc45d87dde0871c4beb149 # v1.13.1
+    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-labels.yml@b7b63c785c08bdb11912a00418c424d3d24616ff # v1.13.2
     with:
       dry_run: ${{ inputs.dry_run || false }}

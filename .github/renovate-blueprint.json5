@@ -27,9 +27,9 @@
   // No dependency dashboard, so that a repository can have no open issue: the
   // updates merge on their own, and what waits for the maintainer is a pull
   // request. Renovate closes the issue of the dashboard by its title, which stays
-  // the one that it had.
-  dependencyDashboard: false,
-  dependencyDashboardTitle: "Dependency dashboard",
+  // the one that it had. Since Renovate 44.232.0 both are in one object, and its
+  // check of the configuration rejects the two settings of before.
+  dependencyDashboard: { enabled: false, title: "Dependency dashboard" },
   // Once a week, so that the release bot sums the updates up in one release: the
   // whole Monday, since GitHub starts the runs of the bot every two hours only
   // roughly and now and then skips one, so that a window of a few hours could
@@ -244,6 +244,18 @@
       // the checks of the pull request tested.
       matchDatasources: ["docker"],
       minimumReleaseAgeBehaviour: "timestamp-optional",
+    },
+    {
+      // So the packages of Playwright come without the week as well: each of its
+      // images on mcr.microsoft.com, which give no date, holds the browsers of one
+      // release, which only the package of the same release starts. With the week
+      // for the package alone, the group of a project put the newest image beside a
+      // package some patches older, and each update of Playwright failed its checks
+      // until its package was a week old (decision 0168 of the blueprint). The image
+      // of the same release, which runs at once, carries the code of that release.
+      matchDatasources: ["npm", "pypi"],
+      matchPackageNames: ["playwright", "playwright-core", "@playwright/**"],
+      minimumReleaseAge: null,
     },
     {
       matchDatasources: ["docker"],
