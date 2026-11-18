@@ -33,6 +33,12 @@ use Throwable;
  * 2.20 and 3.x.
  */
 final class SearchAccountSetupTest extends TestCase {
+	/**
+	 * The plain page with which Paperless-ngx 3.5 refuses a host name other than the one of
+	 * PAPERLESS_URL (#491), as tests/e2e/paperless-contract.sh gets it.
+	 */
+	private const DISALLOWED_HOST = "\n<!doctype html>\n<html lang=\"en\">\n<head>\n  <title>Bad Request (400)</title>\n</head>\n<body>\n  <h1>Bad Request (400)</h1><p></p>\n</body>\n</html>\n";
+
 	private const URL = 'http://paperless:8000';
 	private const SUPERUSER_TOKEN = 'SUPERUSER_VALUE';
 	private const ACCOUNT_TOKEN = 'ACCOUNT_VALUE';
@@ -361,6 +367,8 @@ final class SearchAccountSetupTest extends TestCase {
 	public static function failures(): array {
 		return [
 			'a refused token' => [['GET /api/ui_settings/' => self::answer(401, '{"detail":"Invalid token."}')], RequestFailure::Unauthorized, 401],
+			'a refused host name' => [['GET /api/ui_settings/' => self::answer(400, self::DISALLOWED_HOST)], RequestFailure::DisallowedHost, 400],
+			'the page of a proxy with HTTP 400' => [['GET /api/ui_settings/' => self::answer(400, self::DISALLOWED_HOST, ['X-Version' => '2.20.13'])], RequestFailure::Http, 400],
 			'a redirect' => [['GET /api/ui_settings/' => self::answer(302, '')], RequestFailure::Redirect, 302],
 			'no answer' => [['GET /api/ui_settings/' => new Exception('cURL error 28: Operation timed out')], RequestFailure::Timeout, null],
 			'no JSON' => [['GET /api/ui_settings/' => self::answer(200, '<html>Sign in</html>')], RequestFailure::NotPaperless, null],

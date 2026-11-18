@@ -574,7 +574,7 @@ final class SettingsControllerTest extends TestCase {
 </body>
 </html>
 '), 'disallowed_host',
-				'Paperless refused the host name of the Paperless URL (HTTP 400), as Paperless-ngx 3.5 does when PAPERLESS_URL names another one. Add the host name to PAPERLESS_ALLOWED_HOSTS of Paperless and restart Paperless, or enter the URL with the host name of PAPERLESS_URL. The log of Paperless names the host.',
+				'Paperless does not accept the host name of its URL (HTTP 400). Add the host name of the Paperless URL to PAPERLESS_ALLOWED_HOSTS of Paperless and restart Paperless, or enter the URL with the host name of PAPERLESS_URL when the Nextcloud server reaches Paperless under it. The log of Paperless names the host name that it refused.',
 				PaperlessRequestException::class, 'Paperless refused the host name of the request with HTTP 400.',
 			],
 			'the page of a proxy with HTTP 400' => [

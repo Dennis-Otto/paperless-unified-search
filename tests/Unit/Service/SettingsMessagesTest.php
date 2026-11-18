@@ -67,12 +67,12 @@ final class SettingsMessagesTest extends TestCase {
 		$l10n = $this->createStub(IL10N::class);
 		$l10n->method('t')->willReturnCallback(static fn (string $text, array $parameters = []): string => vsprintf($text, $parameters));
 		$messages = new SettingsMessages($l10n);
-		$refusal = PaperlessRequestException::disallowedHost();
+		$refusal = new PaperlessRequestException(RequestFailure::DisallowedHost, 'Paperless refused the host name of the request with HTTP 400.', 400);
 
 		$message = $messages->forFailure($refusal);
 
 		self::assertSame(
-			'Paperless refused the host name of the Paperless URL (HTTP 400), as Paperless-ngx 3.5 does when PAPERLESS_URL names another one. Add the host name to PAPERLESS_ALLOWED_HOSTS of Paperless and restart Paperless, or enter the URL with the host name of PAPERLESS_URL. The log of Paperless names the host.',
+			'Paperless does not accept the host name of its URL (HTTP 400). Add the host name of the Paperless URL to PAPERLESS_ALLOWED_HOSTS of Paperless and restart Paperless, or enter the URL with the host name of PAPERLESS_URL when the Nextcloud server reaches Paperless under it. The log of Paperless names the host name that it refused.',
 			$message,
 		);
 		self::assertSame($message, $messages->forCause(RequestFailure::DisallowedHost, 400));

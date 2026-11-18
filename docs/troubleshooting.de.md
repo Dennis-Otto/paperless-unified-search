@@ -118,7 +118,7 @@ Läuft Paperless unter einer Adresse deines lokalen Netzwerks oder unter dem Nam
 
 Mit dem Schalter folgt Nextcloud keiner Weiterleitung: Eine URL, die weiterleitet, etwa von `http` auf `https`, lässt den Test mit einer eigenen Meldung fehlschlagen. Gib die Adresse ein, auf die sie weiterleitet.
 
-Paperless selbst kann einen solchen Namen ablehnen: Seit Paperless-ngx 3.5 antwortet ein Paperless, das `PAPERLESS_URL` setzt, nur dem Host dieser URL und `localhost`, und der Test schlägt mit *Paperless hat den Hostnamen der Paperless-URL abgelehnt* fehl, sobald Paperless aktualisiert ist. Trage den Namen, unter dem Nextcloud es erreicht, in `PAPERLESS_ALLOWED_HOSTS` von Paperless ein, wie [seine Zeile](#wenn-der-test-der-verbindung-fehlschlägt) sagt.
+Paperless selbst kann einen solchen Namen ablehnen: Seit Paperless-ngx 3.5 antwortet ein Paperless, das `PAPERLESS_URL` setzt, nur dem Host dieser URL und `localhost`, und der Test schlägt mit *Paperless akzeptiert den Hostnamen seiner Adresse nicht* fehl, sobald Paperless aktualisiert ist. Trage den Namen, unter dem Nextcloud es erreicht, in `PAPERLESS_ALLOWED_HOSTS` von Paperless ein, wie [seine Zeile](#wenn-der-test-der-verbindung-fehlschlägt) sagt.
 
 ## Eigene Zertifikate
 

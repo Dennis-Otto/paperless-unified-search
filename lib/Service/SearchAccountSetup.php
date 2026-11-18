@@ -494,11 +494,11 @@ final class SearchAccountSetup {
 	 */
 	private static function dataOf(IResponse $response, int $expected, int $api): array {
 		$status = $response->getStatusCode();
+		$body = $response->getBody();
 		if ($status !== $expected) {
-			throw PaperlessRequestException::forStatus($status, $api);
+			throw PaperlessRequestException::forAnswer($response, is_string($body) ? $body : '', $api);
 		}
 
-		$body = $response->getBody();
 		try {
 			/** @psalm-suppress MixedAssignment Its shape is checked below. */
 			$data = is_string($body) ? json_decode($body, true, flags: JSON_THROW_ON_ERROR) : null;

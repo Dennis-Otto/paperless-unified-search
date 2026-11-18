@@ -193,12 +193,6 @@ final class PaperlessApiService {
 	 * reason, for documents similar to one that it doesn't have as well.
 	 */
 	private const SEARCH_ERROR = 'Error listing search results, check logs for more detail.';
-	/**
-	 * The title of the plain page with which Django answers HTTP 400 when the host name of a
-	 * request isn't in its ALLOWED_HOSTS, before any code of Paperless runs, so without the
-	 * header X-Version. tests/e2e/paperless-contract.sh checks it against a real Paperless.
-	 */
-	private const DISALLOWED_HOST_PAGE = '<title>Bad Request (400)</title>';
 
 	private IClient $client;
 
@@ -1021,7 +1015,7 @@ final class PaperlessApiService {
 		);
 		$status = $response->getStatusCode();
 		if ($status < 200 || $status >= 300) {
-			throw self::failureOfStatus($response, self::bodyOf($response), $api);
+			throw PaperlessRequestException::forAnswer($response, self::bodyOf($response), $api);
 		}
 
 		$body = $response->getBody();
@@ -1122,25 +1116,7 @@ final class PaperlessApiService {
 			return new PaperlessQueryRejected($status);
 		}
 
-		return self::failureOfStatus($response, $body, $api);
-	}
-
-	/**
-	 * The failure of an answer whose status isn't 2xx, other than a refusal of a search.
-	 * HTTP 400 with the plain page of Django and without the version of Paperless refuses
-	 * the host name of the URL, as Paperless-ngx 3.5 does for any other than the host of
-	 * PAPERLESS_URL and localhost once PAPERLESS_URL is set; any other answer of HTTP 400,
-	 * such as the page of a proxy, stays an error of the server.
-	 *
-	 * @param int $api the version of the API that the request asked for
-	 */
-	private static function failureOfStatus(IResponse $response, string $body, int $api): PaperlessRequestException {
-		$status = $response->getStatusCode();
-		if ($status === 400 && $response->getHeader('X-Version') === '' && str_contains($body, self::DISALLOWED_HOST_PAGE)) {
-			return PaperlessRequestException::disallowedHost();
-		}
-
-		return PaperlessRequestException::forStatus($status, $api);
+		return PaperlessRequestException::forAnswer($response, $body, $api);
 	}
 
 	/**
