@@ -79,7 +79,18 @@ test('the edge of a part between pixels belongs to the part', function() {
 	assert.deepEqual(strayPixel(rgba, 4, [{ x: 2, y: 0, width: 2, height: 1 }]), { x: 1, y: 0 })
 })
 
-const PAGE = readFileSync(new URL('.github/social-preview.html', ROOT), 'utf8').replace(/<!--[\s\S]*?-->/g, '')
+// Takes the comments out until none is left, so that one which a removal joins anew goes as well.
+function withoutComments(html) {
+	let text = html
+	let before
+	do {
+		before = text
+		text = text.replace(/<!--[\s\S]*?-->/g, '')
+	} while (text !== before)
+	return text
+}
+
+const PAGE = withoutComments(readFileSync(new URL('.github/social-preview.html', ROOT), 'utf8'))
 const css = (selector) => PAGE.match(new RegExp(`(?:^|[\\s}])${selector.replace('.', '\\.')}\\s*\\{([^}]*)\\}`))?.[1]
 
 test('the social preview shows the picture of the search alone, which screenshots.mjs takes', function() {
