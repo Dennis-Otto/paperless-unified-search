@@ -1,0 +1,168 @@
+name: Quick checks
+
+# The quick checks of every pull request that need a workflow of their own outside
+# Lint: the secret scan and the review of the dependencies, as two jobs of one
+# workflow, so that a push starts one run, and one run of After the checks, for both
+# (decision 0178). Not in Lint, whose runs for a pull request cancel each other.
+#
+# gitleaks looks for secrets in the commits of every pull request, and every week in
+# the whole history of every branch. Not after a merge, which brings only the commits
+# of a pull request that it scanned; GitHub's secret scanning with push protection
+# guards every push as well.
+#
+# dependency-review reviews the dependencies that a pull request adds or changes: one
+# with a known vulnerability of moderate severity or more, or with a license outside
+# the list of .github/dependency-review.yml, fails it. An advisory that the repository
+# accepts goes into allow-ghsas there, with its reason. A private repository without
+# GitHub Code Security has no dependency review: there the settings bot sets the
+# variable DEPENDENCY_REVIEW to off, and the check leaves the vulnerabilities of the
+# lock files to OSV-Scanner. In a pull request of Renovate's weekly refresh of the
+# lock files, which merges by itself only from versions at least a week old, it fails
+# on a younger one as well (decision 0137).
+#
+# Started by hand without inputs, as Bot health starts a schedule that GitHub missed,
+# the workflow scans the whole history; with a base and a head commit, it also
+# compares the dependencies of the two.
+# https://github.com/Dennis-Otto/repo-blueprint
+
+on:
+  pull_request:
+  schedule:
+    - cron: "28 4 * * 2"
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: "Base commit for the dependency comparison, which needs both commits; empty for none"
+        required: false
+        type: string
+      head_ref:
+        description: "Candidate commit for the dependency comparison, which needs both commits; empty for none"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# One run for each commit of a pull request: quick checks, whose runs for different
+# commits never cancel each other, so that a late run for an older commit can't
+# cancel the checks of the head.
+concurrency:
+  group: quick-checks-${{ github.event.pull_request.number || github.run_id }}-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# The GitHub CLI of the jobs sends no telemetry to GitHub.
+env:
+  GH_TELEMETRY: "false"
+
+jobs:
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # .github/gitleaks.sh downloads gitleaks through the API, with the token of the
+      # job, which gitleaks itself doesn't get, and scans the commits of the pull
+      # request, or without one the whole history (decision 0139).
+      - name: Scan tracked history for exposed secrets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ -n "$BASE_SHA" ]]; then
+            bash .github/gitleaks.sh "$BASE_SHA" "$HEAD_SHA"
+          else
+            bash .github/gitleaks.sh
+          fi
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.toml.
+      - name: Explain the failure
+        if: failure()
+        env:
+          CHECK: gitleaks
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" coach explain "$CHECK"
+
+  dependency-review:
+    name: dependency-review
+    # A pull request, or a start by hand with both commits to compare; not the weekly
+    # scan and not a start without them, which have nothing to compare.
+    if: >-
+      github.event_name == 'pull_request'
+      || (github.event_name == 'workflow_dispatch' && inputs.base_ref != '' && inputs.head_ref != '')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+      # The rules of the pull request itself: accepting an advisory shows in its diff.
+      # The merge of a pull request with its parents, the first of which is its base,
+      # for the age of what the refresh of the lock files brings.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Check dependency changes for known vulnerabilities
+        id: review
+        if: vars.DEPENDENCY_REVIEW != 'off'
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          base-ref: ${{ inputs.base_ref || github.event.pull_request.base.sha }}
+          head-ref: ${{ inputs.head_ref || github.event.pull_request.head.sha }}
+          # The rules and the accepted advisories of this repository.
+          config-file: ./.github/dependency-review.yml
+      # The check osv-scanner (pull request) compares the lock files that a pull
+      # request changes with those of its base, against the advisories of OSV, which
+      # include those of GitHub, and fails on a vulnerability that the pull request adds.
+      - name: Leave the vulnerabilities to OSV-Scanner
+        if: vars.DEPENDENCY_REVIEW == 'off'
+        run: |
+          message="GitHub doesn't offer its dependency review to this private repository on its plan, and DEPENDENCY_REVIEW is off: the check osv-scanner (pull request) of the workflow OSV-Scanner fails on a vulnerability that a pull request adds to a lock file."
+          echo "::notice title=Dependency review::$message"
+          printf '### The dependency review\n\n%s\n' "$message" >> "$GITHUB_STEP_SUMMARY"
+      # Renovate's weekly refresh of the lock files merges by itself only from
+      # versions at least a week old, as every other update waits a week: the step
+      # asks PyPI and the registry of npm when each version that it adds came out, and
+      # fails on a younger one, or one that it can't date. The refresh of Composer
+      # merges by itself with versions of any age, since nothing dates them that their
+      # publisher can't set: the step names them in its summary. The branches that
+      # wait for the maintainer begin with renovate/review- instead.
+      - name: Check the age of what the refresh of the lock files brings
+        id: age
+        if: >-
+          ${{ !cancelled() && github.event_name == 'pull_request'
+          && github.event.pull_request.head.repo.full_name == github.repository
+          && (startsWith(github.head_ref, 'renovate/lock-file-maintenance')
+          || startsWith(github.head_ref, 'renovate/pip-compile-refresh')
+          || startsWith(github.head_ref, 'renovate/composer-lock-file-maintenance')) }}
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" locks --age HEAD^1
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.toml: each check
+      # of the job that failed, or the job itself when none of them did.
+      - name: Explain the failure
+        if: failure()
+        env:
+          CHECK: dependency-review
+          FAILED: |
+            ${{ steps.review.outcome == 'failure' && 'dependency-review' || '' }}
+            ${{ steps.age.outcome == 'failure' && 'age of the refresh' || '' }}
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          mapfile -t parts < <(grep . <<<"$FAILED" || true)
+          python3 "$script" coach explain "$CHECK" --parts "${parts[@]}"

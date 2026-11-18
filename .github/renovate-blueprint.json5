@@ -125,11 +125,10 @@
     },
     {
       // The weekly refresh of the lock files brings the newest version of every
-      // indirect dependency. That of a package manager that can't keep to versions
-      // a week old, such as Composer, waits for the maintainer, on a branch of its
-      // own whose name begins with review-. Renovate builds a refresh anew only in
-      // its weekly window, so that what merges is what the checks and the maintainer
-      // saw.
+      // indirect dependency. That of a package manager that no rule below names
+      // waits for the maintainer, on a branch of its own whose name begins with
+      // review-. Renovate builds a refresh anew only in its weekly window, so that
+      // what merges is what the checks saw.
       matchUpdateTypes: ["lockFileMaintenance"],
       minimumReleaseAge: null,
       automerge: false,
@@ -152,6 +151,19 @@
       statusCheckWhen: { minimumReleaseAge: "never" },
       automerge: true,
       additionalBranchPrefix: "",
+    },
+    {
+      // Composer can't keep its refresh to versions a week old: it has no cooldown,
+      // and whoever publishes a version sets its time in composer.lock. Its refresh
+      // merges by itself all the same once every check passes, with versions of any
+      // age, as the owner of the blueprint decided (decision 0174 of the blueprint).
+      // It keeps a branch of its own, renovate/composer-lock-file-maintenance: a
+      // branch takes the settings of its first update, so in the branch of npm it
+      // could take the --before= of npm away.
+      matchManagers: ["composer"],
+      matchUpdateTypes: ["lockFileMaintenance"],
+      automerge: true,
+      additionalBranchPrefix: "composer-",
     },
     {
       // After Renovate compiled the lock files of pip-compile anew, blueprint.py

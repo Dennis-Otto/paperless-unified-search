@@ -53,11 +53,13 @@ from blueprint.changelog import (
 )
 from blueprint.checklist import SETTINGS_APPLY, checklist, describe_steps
 from blueprint.coach import (
+    CATALOG,
     PROJECT_CATALOG,
     Catalog,
     CatalogError,
     Part,
     check_steps,
+    final_steps,
     link,
     missing,
     plain,
@@ -70,7 +72,8 @@ from blueprint.coach import (
 from blueprint.coach import annotation as coach_annotation
 from blueprint.coach import report as coach_report
 from blueprint.coverage_comment import Coverage, coverage_comment
-from blueprint.dependency_release import dependency_release
+from blueprint.dependency_release import DAILY, dependency_release, schedule_time
+from blueprint.dependency_release import notice as release_notice
 from blueprint.diagrams import (
     SOURCES,
     commit_request,
@@ -304,12 +307,25 @@ def explain_command(arguments: argparse.Namespace, root: Path) -> int:
                 "that fix what it finds, or the reason why no command can",
                 file=sys.stderr,
             )
-        if gaps or silent:
+        for step in catalog.unmarked:
+            print(
+                f"blueprint.py: the step {step} of {CATALOG.as_posix()} doesn't say in "
+                "rerun whether it can pass when it runs again without a change: true "
+                "for one that downloads or runs tests, false for one that can't",
+                file=sys.stderr,
+            )
+        if gaps or silent or catalog.unmarked:
             return 1
         print(
             "Every required check and every step of scripts/check.sh is explained, "
-            "and every explanation says how it fixes itself or why it can't."
+            "every explanation says how it fixes itself or why it can't, and every "
+            "step whether it can pass when it runs again."
         )
+        return 0
+    if arguments.action == "final-steps":
+        # For the flaky-test bot, from the catalog of the default branch.
+        for step in final_steps(catalog):
+            print(step)
         return 0
     # A check that runs several others, as lint runs every linter, explains each of
     # them that failed, and itself only when none did.
@@ -1263,6 +1279,35 @@ def dependabot_command(
     return 0
 
 
+def release_command(
+    api: Api, repo: str, arguments: argparse.Namespace, root: Path
+) -> int:
+    """Whether the release pull request merges itself in this run of the release bot,
+    into the file of the step, with the notice of the daily release (decision 0180)."""
+    workflow = root / ".github/workflows/release.yml"
+    time = schedule_time(
+        workflow.read_text(encoding="utf-8") if workflow.is_file() else ""
+    )
+    verdict = dependency_release(
+        api,
+        repo,
+        arguments.event,
+        arguments.merge,
+        actor=arguments.actor,
+        time=time,
+    )
+    Path(arguments.output).write_text(
+        f"merge={'true' if verdict.merge else 'false'}\n", encoding="utf-8"
+    )
+    if arguments.notice:
+        daily = arguments.merge.strip() == DAILY
+        Path(arguments.notice).write_text(
+            f"{release_notice(time)}\n" if daily else "", encoding="utf-8"
+        )
+    print(verdict.text)
+    return 0
+
+
 def ending_command(
     api: Api, repo: str, arguments: argparse.Namespace, root: Path
 ) -> int:
@@ -1365,11 +1410,31 @@ def locks_refresh_command(root: Path) -> int:
 
 def locks_age_command(base: str, root: Path) -> int:
     """Whether each version that the refresh in HEAD adds to the lock files of base
-    is at least a week old, as the refresh merges by itself only then."""
-    added, problems = lock_age.check(root, base, datetime.now(UTC))
-    for problem in problems:
+    is at least a week old, as the refresh merges by itself only then; the versions
+    of Composer, which nothing dates, pass on the branch of its refresh, and the
+    summary names them."""
+    found = lock_age.check(
+        root, base, datetime.now(UTC), branch=os.environ.get("GITHUB_HEAD_REF", "")
+    )
+    if found.undated:
+        undated = [f"{version}: nothing dates it." for version in found.undated]
+        note = (
+            f"Nothing dates the {len(found.undated)} version(s) of Composer that the "
+            "refresh adds: Composer has no cooldown, and whoever publishes a version "
+            "sets its time in composer.lock. So the refresh of Composer brings "
+            "versions of any age, also one published minutes before, and merges by "
+            "itself once every check passes, as decision 0174 of the blueprint "
+            "accepts."
+        )
+        print("\n".join([*undated, note]))
+        to_summary(
+            "### Versions that nothing dates\n\n"
+            + "".join(f"- `{version}`\n" for version in found.undated)
+            + f"\n{note}\n"
+        )
+    for problem in found.problems:
         print(problem)
-    if problems:
+    if found.problems:
         print(
             "The weekly refresh of the lock files merges by itself only from versions "
             "at least a week old, as every other update waits a week, so this one "
@@ -1385,9 +1450,11 @@ def locks_age_command(base: str, root: Path) -> int:
             "for the maintainer on a branch of its own."
         )
         return 1
-    print(
-        f"Each of the {added} version(s) that the refresh adds is at least a week old."
-    )
+    if found.dated or not found.undated:
+        print(
+            f"Each of the {found.dated} version(s) that the refresh adds is at least "
+            "a week old."
+        )
     return 0
 
 
@@ -2008,6 +2075,23 @@ def add_changelog_parsers(
         required=True,
         help="the file to write merge=true or merge=false into",
     )
+    dependency_parser.add_argument(
+        "--merge",
+        default="",
+        help="the variable RELEASE_MERGE: daily merges every release once a day "
+        "(decision 0180); any other value leaves it to the maintainer",
+    )
+    dependency_parser.add_argument(
+        "--actor",
+        default="",
+        help="who started the run, GITHUB_TRIGGERING_ACTOR: a run that a bot started "
+        "by hand keeps to the day, as the daily run does",
+    )
+    dependency_parser.add_argument(
+        "--notice",
+        help="the file to write the comment into that says in the release pull "
+        "request when it goes, with RELEASE_MERGE daily; empty otherwise",
+    )
     beta_parser = commands.add_parser(
         "beta", help="the notes of a beta of the next release, for the release bot"
     )
@@ -2225,6 +2309,11 @@ def add_coach_parsers(
         help="whether every required check and every step of scripts/check.sh has "
         "its explanation",
     )
+    coach_actions.add_parser(
+        "final-steps",
+        help="the steps of scripts/check.sh that can't pass when they run again "
+        "without a change, one on each line, which the flaky-test bot doesn't run again",
+    )
     annotate_parser = commands.add_parser(
         "annotate",
         help="each finding of a tool of scripts/check.sh as an annotation of the CI, "
@@ -2259,8 +2348,9 @@ def add_bot_health_parsers(
     run_parser.add_argument("run_id", type=int, metavar="RUN", help="the id of the run")
     stopped_parser = health.add_parser(
         "stopped",
-        help="the end of a run of a bot of events or of a workflow that keeps an issue "
-        "of its own: run its failed jobs once more when Harden-Runner stopped one",
+        help="a run of a bot of events or of a workflow that keeps an issue of its "
+        "own whose last job started this bot: once it has ended, run its failed jobs "
+        "once more when Harden-Runner stopped one",
     )
     stopped_parser.add_argument(
         "run_id", type=int, metavar="RUN", help="the id of the run"
@@ -3082,7 +3172,11 @@ def standalone_command(
             print(f"blueprint.py: {error}", file=sys.stderr)
             return 2
         return 0 if done else 1
-    if arguments.command == "coach" and arguments.action in ("explain", "verify"):
+    if arguments.command == "coach" and arguments.action in (
+        "explain",
+        "verify",
+        "final-steps",
+    ):
         try:
             return explain_command(arguments, root)
         except (OSError, CatalogError) as error:
@@ -3312,12 +3406,7 @@ def main(
             print(write_overrides(api, repo), end="")
             return 0
         if arguments.command == "release":
-            verdict = dependency_release(api, repo, arguments.event)
-            Path(arguments.output).write_text(
-                f"merge={'true' if verdict.merge else 'false'}\n", encoding="utf-8"
-            )
-            print(verdict.text)
-            return 0
+            return release_command(api, repo, arguments, root)
         if arguments.command == "workflows":
             print(register_workflows(api, repo))
             return 0

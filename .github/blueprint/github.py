@@ -62,12 +62,22 @@ API_VERSION_HEADER = f"X-GitHub-Api-Version: {API_VERSION}"
 class GitHubError(Exception):
     """A request to GitHub failed."""
 
-    def __init__(self, status: int, message: str, codes: Sequence[str] = ()) -> None:
-        super().__init__(f"GitHub answered {status}: {message}")
+    def __init__(
+        self,
+        status: int,
+        message: str,
+        codes: Sequence[str] = (),
+        details: Sequence[str] = (),
+    ) -> None:
+        # GitHub's errors say why it refused a request whose message is only
+        # "Validation Failed", such as the actor of a ruleset that it doesn't know.
+        said = f" ({'; '.join(details)})" if details else ""
+        super().__init__(f"GitHub answered {status}: {message}{said}")
         self.status = status
         self.message = message
         # Why GitHub refused the fields of a request, such as already_exists.
         self.codes = tuple(codes)
+        self.details = tuple(details)
 
     @property
     def rate_limited(self) -> bool:
@@ -180,6 +190,25 @@ def error_codes(data: Json) -> list[str]:
         for error in errors
         if isinstance(error, dict) and "code" in error
     ]
+
+
+def error_details(data: Json) -> list[str]:
+    """What the errors of a refused request say, in GitHub's words: an error is a
+    sentence of its own, such as "Variable value cannot be empty.", or an object with
+    a message, or else with the field and the code that it refused."""
+    errors = data.get("errors") if isinstance(data, dict) else None
+    if not isinstance(errors, list):
+        return []
+    details = []
+    for error in errors:
+        if isinstance(error, str):
+            details.append(error)
+        elif isinstance(error, dict) and error.get("message"):
+            details.append(str(error["message"]))
+        elif isinstance(error, dict) and "code" in error:
+            field = f"{error['field']} " if error.get("field") else ""
+            details.append(f"{field}{error['code']}")
+    return details
 
 
 @dataclass(frozen=True)
@@ -356,7 +385,12 @@ class Api:
             answer = self.sent(arguments, payload, read)
             tries += 1
         if answer.failed(missing_ok):
-            raise GitHubError(answer.status, answer.message, error_codes(answer.data))
+            raise GitHubError(
+                answer.status,
+                answer.message,
+                error_codes(answer.data),
+                error_details(answer.data),
+            )
         return answer
 
     def request(

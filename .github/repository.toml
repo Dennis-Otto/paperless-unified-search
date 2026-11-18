@@ -158,6 +158,11 @@ RELEASE_AUTOMATION_APP_ID = "4739928"
 # the commands without an engine, which needs no secret; the settings bot sets the
 # variable either way, so a later answer turns the AI on or off again.
 ISSUE_ASSISTANT_AI = "on"
+# Who merges the release pull request. "maintainer": you do, and a release of nothing
+# but dependency updates merges itself once a day. "daily": the release bot merges
+# every release once a day, as in the blueprint, and at once when you start the
+# workflow Release by hand. Set it in .github/repository.project.toml (CONTRIBUTING.md).
+RELEASE_MERGE = "maintainer"
 
 # GitHub Pages, which publishes the website that the Docs workflow builds from
 # mkdocs.yml and docs/.

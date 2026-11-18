@@ -19,8 +19,11 @@ name: Update branches
 # the picture bot or the issue assistant sync, gets the label and no comment, and the
 # bot starts the workflow of that bot once for each conflict (decision 0118). A
 # request that GitHub refuses is a warning about that pull request, and the bot goes
-# on with the next one. The release bot keeps its own pull request current. Renovate's
-# pull requests take their place in the line as well, which spares them the wait for
+# on with the next one. The release pull request takes no place in the line, and the
+# bot never updates its branch: once auto-merge is on for it, the release bot rebuilds
+# it on main, and when auto-merge is turned on while it is behind, the bot starts the
+# release bot, unless a run of it that came since is still running (decision 0175).
+# Renovate's pull requests take their place in the line as well, which spares them the wait for
 # its next run: Renovate commits as the release app too, so it still takes the branch
 # for its own; one that conflicts with main it builds anew itself. A pull request from
 # a fork takes its place as well, once its author allows edits by maintainers; without
@@ -149,9 +152,9 @@ jobs:
       deployment: false
     # Actions for the runs of the pull requests: the token of the job reads them, approves
     # those of a fork that the bot may approve, cancels those of a replaced commit,
-    # starts the next run of the bot and the workflow of a bot whose pull request
-    # conflicts, so that the release app needs no right for it. The
-    # pull requests for their heads, which those runs of a replaced commit don't have.
+    # starts the next run of the bot, the workflow of a bot whose pull request
+    # conflicts and the release bot for its pull request that is behind, so that the
+    # release app needs no right for it. The pull requests for their heads, which those runs of a replaced commit don't have.
     permissions:
       actions: write
       contents: read

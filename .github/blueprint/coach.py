@@ -194,6 +194,11 @@ class Entry:
     # The globs of the paths that its fixes may write, which the fix bot keeps alone of
     # what the job of the check kept; None where the explanation names none.
     writes: tuple[str, ...] | None = None
+    # Whether a step of scripts/check.sh can pass when it runs again without a change,
+    # as one that downloads or runs tests can: the flaky-test bot runs a job once more
+    # only then. None where the explanation doesn't say, as one of a project may leave
+    # out, and such a step runs again.
+    rerun: bool | None = None
 
     @property
     def declared(self) -> bool:
@@ -206,7 +211,7 @@ class Entry:
         if not isinstance(table, dict):
             raise CatalogError(f"{where} is no table")
         unknown = sorted(
-            set(table) - {*FIELDS, "commands", "docs", "autofix", "writes"}
+            set(table) - {*FIELDS, "commands", "docs", "autofix", "writes", "rerun"}
         )
         if unknown:
             raise CatalogError(f"{where} has unknown keys: {', '.join(unknown)}")
@@ -226,6 +231,13 @@ class Entry:
             raise CatalogError(f"{where} has docs that are no link")
         autofix, manual = parse_autofix(table.get("autofix"), where)
         writes = parse_writes(table.get("writes"), where)
+        rerun = table.get("rerun")
+        if rerun is not None and (kind != "step" or not isinstance(rerun, bool)):
+            raise CatalogError(
+                f"{where} has a rerun that is not true or false of a step of "
+                "scripts/check.sh: only a step says whether it can pass when it runs "
+                "again"
+            )
         # The texts may wrap over several lines of the file.
         title, problem, why, fix = (" ".join(texts[name].split()) for name in FIELDS)
         return cls(
@@ -239,6 +251,7 @@ class Entry:
             autofix,
             manual,
             writes,
+            rerun,
         )
 
     def within(self, repo: str | None, base: str | None = None) -> Entry:
@@ -367,12 +380,17 @@ class Catalog:
     checks: dict[str, Entry]
     steps: dict[str, Entry]
     reports: dict[str, ReportEntry] = field(default_factory=dict)
+    # The steps of the blueprint's catalog that don't say whether they can pass when
+    # they run again: each of its steps says so, so that a new one can't slip past the
+    # flaky-test bot.
+    unmarked: tuple[str, ...] = ()
 
     @classmethod
     def load(cls, root: Path) -> Catalog:
         checks: dict[str, Entry] = {}
         steps: dict[str, Entry] = {}
         reports: dict[str, ReportEntry] = {}
+        unmarked: list[str] = []
         # The project's first, so that its patterns match before the blueprint's.
         for path in (root / PROJECT_CATALOG, root / CATALOG):
             if not path.is_file():
@@ -389,6 +407,9 @@ class Catalog:
                 for key, table in tables_of(data, kind, source).items():
                     entry = Entry.parse(kind, key, table, source)
                     entries.setdefault(key, entry)
+                    blueprints = path == root / CATALOG
+                    if kind == "step" and blueprints and entry.rerun is None:
+                        unmarked.append(key)
             for key, table in tables_of(data, "report", source).items():
                 reports.setdefault(key, ReportEntry.parse(key, table, source))
         if len(reports) > MOST_REPORTS:
@@ -396,7 +417,7 @@ class Catalog:
                 f"The catalogs declare {len(reports)} parts of the report, more than "
                 f"the {MOST_REPORTS} that the PR coach shows: [report.*]"
             )
-        return cls(checks, steps, reports)
+        return cls(checks, steps, reports, tuple(unmarked))
 
     def check(self, name: str) -> Entry | None:
         """The explanation of a check, by its name; a key with a * stands for every
@@ -1239,6 +1260,14 @@ def undeclared(catalog: Catalog) -> list[str]:
             if not entry.declared
         ),
     ]
+
+
+def final_steps(catalog: Catalog) -> list[str]:
+    """The steps of scripts/check.sh that can't pass when they run again without a
+    change, such as the format of the code or Psalm: the flaky-test bot doesn't run a
+    job again that failed in one of them. An explanation of the project wins, and one
+    that doesn't say runs again."""
+    return [key for key, entry in catalog.steps.items() if entry.rerun is False]
 
 
 def missing(catalog: Catalog, checks: Iterable[str], steps: Iterable[str]) -> list[str]:

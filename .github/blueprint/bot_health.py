@@ -11,7 +11,10 @@ once every job that failed ran again in it and passed, so a run that skipped suc
 job, as one that only plans, leaves it open. A bot of events, such as Welcome, also
 for a pull request, and a workflow that keeps an issue of its own get neither a second
 try nor an issue, unless Harden-Runner stopped a job of their first attempt: then
-their failed jobs run once more (decision 0141).
+their failed jobs run once more (decision 0141). Their last job starts this bot with
+the run when a job of theirs failed at the first attempt, and the other watched
+workflows start it for their runs of main and of the tags of releases alone, so that
+no run of a pull request starts it (decision 0176).
 Once a day it looks at the latest run of every workflow, those of the project too,
 in case GitHub lost an event, and starts a workflow whose schedule GitHub missed or
 switched off. A failure of Lint, which main runs only each week, counts only at the
@@ -19,7 +22,8 @@ head of main: a pull request reaches main only when it passes Lint. A run that G
 couldn't start, as in its outage of 9 November 2026, is no failure of the bot: its end
 starts nothing, and the daily look runs it again once (decision 0136). Nothing
 follows the end of this bot itself, so the daily look also runs the failed jobs of
-its own runs once more that Harden-Runner stopped (decision 0141). The same look
+its own runs once more that Harden-Runner stopped (decision 0141), and those of a bot
+of events whose last job didn't start this bot (decision 0176). The same look
 keeps one issue open while the social preview that GitHub shows is not the committed
 .github/social-preview.png, which only a person can upload; its label is manual-step,
 not bot-failure, since nothing fails there. It also ticks the box for a rebase of a
@@ -46,6 +50,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
+from blueprint import github
 from blueprint.github import Api, GitHubError, Json
 from blueprint.outage import couldnt_start, never_started, unreachable
 from blueprint.social_preview import (
@@ -113,6 +118,15 @@ OWN_ISSUE = frozenset({"Diagrams", "Newest Node", "Newest Python", "Next runner"
 # Harden-Runner stopped them, which no later event of theirs makes up for (decision
 # 0141).
 EVENT_BOTS = frozenset({"Area labels", "Commands", "Dependabot maintenance", "Welcome"})
+# The workflows whose last job starts this bot by hand with its run, while that run
+# still ends, when a job of their first attempt failed: their end starts no run of the
+# bot, so that a run that passed or skipped, of which nearly every one is, starts
+# nothing (decision 0176). The bot waits for the end of the run up to LOOKS times PAUSE
+# seconds, which covers the steps that end the last job, and leaves a run that takes
+# longer to the daily look.
+LAST_JOB = EVENT_BOTS | OWN_ISSUE
+PAUSE = 10
+LOOKS = 24
 # The workflow of this bot, which can't follow its own end: the daily look gives the
 # runs of it that Harden-Runner stopped their second try, those of the days back to
 # STOPPED_SINCE, so that a look that GitHub starts late or misses leaves none behind.
@@ -812,15 +826,40 @@ def newer_end(api: Api, repo: str, branch: str, workflow: int, run: Run) -> bool
 
 def watch_stop(api: Api, repo: str, run_id: int) -> tuple[str, bool]:
     """The end of a run of a bot of events or of a workflow that keeps an issue of its
-    own, as the event of GitHub reports it, also one of a pull request or of a fork:
-    its failed jobs run once more when Harden-Runner stopped one of them at the first
-    attempt, and any other end stays theirs. False when GitHub refused that try."""
-    data = api.get(f"repos/{repo}/actions/runs/{run_id}")
+    own, whose last job started this bot, also one of a pull request or of a fork: once
+    the run has ended, its failed jobs run once more when Harden-Runner stopped one of
+    them at the first attempt, and any other end stays theirs. False when GitHub
+    refused that try."""
+    path = f"repos/{repo}/actions/runs/{run_id}"
+    data = api.get(path)
     if data is None:
         return f"GitHub doesn't know the run {run_id}.", True
     run = Run.of(data)
-    if run.status != "completed" or run.attempt > 1:
+    # None of them runs on pull_request, so such a run is a fork's workflow that only
+    # took the name of one of them; any other run has its own second try.
+    if run.name not in LAST_JOB or run.event == "pull_request":
+        return (
+            f"{run.name}: neither a bot of events nor a workflow with an issue of its "
+            "own, nothing to do.",
+            True,
+        )
+    looks = 1
+    while run.status != "completed" and run.attempt == 1 and looks < LOOKS:
+        # Looked up at the call, so that a test can replace it.
+        github.sleep(PAUSE)
+        data = api.get(path)
+        if data is None:
+            return f"GitHub doesn't know the run {run_id} any more.", True
+        run = Run.of(data)
+        looks += 1
+    if run.attempt > 1:
         return f"{run.name}: runs again already, nothing to do.", True
+    if run.status != "completed":
+        return (
+            f"{run.name}: {run.link()} still runs, so the daily look runs its failed "
+            "jobs once more if Harden-Runner stopped one of them.",
+            True,
+        )
     if run.conclusion != "failure":
         return f"{run.name}: ended as {run.conclusion}, nothing to do.", True
     if not stopped_by_harden_runner(api, repo, run):
@@ -1242,6 +1281,10 @@ def look_after(
                 after_checks=after_checks,
             )
         )
+    if workflow["name"] == VERIFICATION:
+        note = published_release(api, repo, workflow, issues, now)
+        if note:
+            notes.append(note)
     if workflow["state"] == "disabled_inactivity":
         api.put(f"repos/{repo}/actions/workflows/{workflow['id']}/enable")
         notes.append("GitHub had switched it off for inactivity: on again")
@@ -1272,6 +1315,33 @@ def look_after(
     return "; ".join(notes), started
 
 
+def published_release(
+    api: Api, repo: str, workflow: Json, issues: Mapping[str, Issue], now: datetime
+) -> str:
+    """What the daily look does for the latest verification of a release that someone
+    published by hand or with a token, of the days back to STOPPED_SINCE. Its end
+    starts this bot by the tag of the release, which the filter v* of the branches of
+    bot-health.yml takes; should GitHub ever not match the tag, this look gives the run
+    its second try or its issue instead, a day late (decision 0176). A run whose end
+    the bot looked at already is looked at the same way again: its issue has the run,
+    and a pass closes nothing more."""
+    listed = api.get(
+        f"repos/{repo}/actions/workflows/{workflow['id']}/runs?event=release"
+        "&exclude_pull_requests=true&per_page=1"
+    )
+    runs = [Run.of(item) for item in (listed or {}).get("workflow_runs", [])]
+    if (
+        not runs
+        or not runs[0].verifies_a_published_release(repo)
+        or runs[0].status != "completed"
+        or now - runs[0].created >= STOPPED_SINCE
+    ):
+        return ""
+    run = runs[0]
+    result = look_at(api, repo, run.branch, run, issues, now, second_try=True)
+    return f"the release `{run.branch}` that someone published: {result}"
+
+
 def own_stops(
     api: Api, repo: str, branch: str, workflow: Json, now: datetime
 ) -> list[Run]:
@@ -1296,6 +1366,37 @@ def own_stops(
     ]
 
 
+def stopped_bots(
+    api: Api, repo: str, workflows: Iterable[Json], now: datetime
+) -> list[Run]:
+    """The runs of the bots of events and of the workflows with an issue of their own
+    since STOPPED_SINCE that Harden-Runner stopped at their first attempt and that no
+    one ran again: their last job starts this bot, but nothing else gives them their
+    second try when Harden-Runner stopped that job too, when it stopped the run of
+    this bot, or when GitHub refused the start, as it may for a run that Dependabot
+    started, whose token may only read (decision 0176). Of every branch, as theirs run
+    for pull requests too, but not of the event pull_request: none of them runs on it,
+    so such a run is a fork's workflow that only took the name of one of them."""
+    since = (now - STOPPED_SINCE).strftime("%Y-%m-%dT%H:%M:%SZ")
+    found = []
+    for workflow in workflows:
+        if workflow["name"] not in LAST_JOB or workflow["state"] != "active":
+            continue
+        listed = api.get(
+            f"repos/{repo}/actions/workflows/{workflow['id']}/runs?status=failure"
+            f"&created=%3E%3D{since}&exclude_pull_requests=true&per_page=100"
+        )
+        found += [
+            run
+            for item in (listed or {}).get("workflow_runs", [])
+            for run in [Run.of(item)]
+            if run.event != "pull_request"
+            and run.attempt == 1
+            and stopped_by_harden_runner(api, repo, run)
+        ]
+    return found
+
+
 def again_after_stops(
     api: Api, repo: str, runs: Iterable[Run]
 ) -> tuple[list[str], bool]:
@@ -1305,7 +1406,7 @@ def again_after_stops(
     done = True
     for run in runs:
         text, tried = again_after_a_stop(api, repo, run)
-        lines.append(f"- {text}.")
+        lines.append(f"- {code(run.name)}: {text}.")
         done = done and tried
     return lines, done
 
@@ -1419,14 +1520,15 @@ def sweep(
     own = next((item for item in workflows if item["path"] == OWN_WORKFLOW), None)
     stopped: list[Run] = []
     stops: list[str] = []
-    if own is not None and own["state"] == "active":
-        try:
+    try:
+        if own is not None and own["state"] == "active":
             stopped = own_stops(api, repo, branch, own, now)
-        except GitHubError as error:
-            stops = [f"Couldn't look: {code(str(error))}"]
-            healthy = error.unavailable
-            if error.unavailable and notices is not None:
-                notices.append(unreachable(error))
+        stopped += stopped_bots(api, repo, workflows, now)
+    except GitHubError as error:
+        stops = [f"Couldn't look: {code(str(error))}"]
+        healthy = error.unavailable
+        if error.unavailable and notices is not None:
+            notices.append(unreachable(error))
     for workflow in workflows:
         name = str(workflow["name"])
         if str(workflow["path"]).startswith("dynamic/") or workflow["state"] not in (
@@ -1465,15 +1567,15 @@ def sweep(
     # the daily look at the same workflow.
     if stopped:
         try:
-            stops, tried = again_after_stops(api, repo, stopped)
+            again, tried = again_after_stops(api, repo, stopped)
         except GitHubError as error:
-            stops, tried = [f"Couldn't look: {code(str(error))}"], error.unavailable
+            again, tried = [f"Couldn't look: {code(str(error))}"], error.unavailable
             if error.unavailable and notices is not None and not notices:
                 notices.append(unreachable(error))
+        stops += again
         healthy = healthy and tried
-    if own is not None and stops:
-        heading = f"#### Runs of {code(str(own['name']))} that Harden-Runner stopped"
-        lines += ["", heading, "", *stops]
+    if stops:
+        lines += ["", "#### Runs that Harden-Runner stopped", "", *stops]
     # A bot that the look started for its missed schedule brings the release anyway.
     bot = next((item for item in workflows if item["path"] == BLUEPRINT_BOT), None)
     if bot is not None and int(bot["id"]) not in begun:
