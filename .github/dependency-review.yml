@@ -1,4 +1,5 @@
-# Rules of the dependency review of pull requests (.github/workflows/dependency-review.yml).
+# Rules of the dependency review of pull requests (the job dependency-review of
+# .github/workflows/quick-checks.yml).
 # An advisory that this repository accepts, for example in a dependency that only
 # the tests install and that a pinned upstream can't move yet, goes into
 # allow-ghsas with its reason.

@@ -751,7 +751,7 @@ Eine Datei mit der Kennung eines Dokuments in einer solchen Einbindung steht dan
 - Das Widget des Dashboards zeigt einem Benutzer nur die neuesten Dokumente, deren Dateien er öffnen kann. Der verteilte Cache von Nextcloud behält die IDs, Titel, Korrespondenten, Typen, Tags und Eigentümer von bis zu den 100 neuesten Dokumenten eine Minute lang, die für jeden Benutzer dieselben sind, und der 25 neuesten eines Benutzers von Paperless, und nie ihren Text.
 - Administratoren können dem eingerichteten Paperless-Server ausdrücklich vertrauen, um ihn automatisch in die globalen Suchen jedes Benutzers einzubeziehen.
 - Keine Zugangsdaten für den Betrieb, privaten Hostnamen, internen Adressen oder Konfiguration einer Instanz gehören in dieses Repository.
-- Gitleaks durchsucht jeden Push und jeden Pull Request.
+- Gitleaks durchsucht die Commits jedes Pull Requests und jede Woche die ganze Historie.
 - Dependency Review blockiert neu hinzugefügte verwundbare oder nicht freigegebene Abhängigkeiten.
 - Psalm analysiert den PHP-Code und CodeQL das JavaScript in jedem Pull Request.
 - Jedes Release enthält SBOMs als SPDX und CycloneDX, die `THIRD_PARTY_NOTICES.md` seiner Abhängigkeiten, eine abgetrennte Signatur und öffentliche Build-Provenienz von Sigstore.
@@ -763,7 +763,7 @@ Sicherheitsprobleme meldest du so, wie [SECURITY.md](https://github.com/Dennis-O
 
 **Vertrauen:**
 [![Docker E2E](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/e2e.yml/badge.svg)](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/e2e.yml)
-[![Secret scan](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/secret-scan.yml/badge.svg)](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/secret-scan.yml)
+[![Schnelle Prüfungen: Secret Scan und Dependency Review](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/quick-checks.yml/badge.svg)](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/quick-checks.yml)
 [![CodeQL](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/codeql.yml/badge.svg)](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/codeql.yml)
 [![SBOM](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/sbom.yml/badge.svg)](https://github.com/Dennis-Otto/paperless-unified-search/actions/workflows/sbom.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Dennis-Otto/paperless-unified-search/badge)](https://scorecard.dev/viewer/?uri=github.com/Dennis-Otto/paperless-unified-search)
