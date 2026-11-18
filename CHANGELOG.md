@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## [1.8.2](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.8.1...v1.8.2) (2026-11-18)
+
+
+### Bug fixes
+
+* name a host name that Paperless-ngx 3.5 refuses, and what to change ([#492](https://github.com/Dennis-Otto/paperless-unified-search/issues/492)) ([a95b3d1](https://github.com/Dennis-Otto/paperless-unified-search/commit/a95b3d1f679442bea1dacb4b80b16ab0d124bc47))
+
 ## [1.8.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.8.0...v1.8.1) (2026-11-17)
 
 ### Bug fixes
