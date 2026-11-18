@@ -19,3 +19,10 @@ required_checks = ["nextcloud", "paperless (2)", "paperless (3)"]
 # An environment of this project and the secrets it needs:
 # [environments.deploy]
 # secrets = ["DEPLOY_TOKEN"]
+
+# The maintainer decided on 2026-11-18 that releases go once a day by themselves, as
+# in the blueprint: the release bot merges the release pull request in its daily run
+# once every check passes, and the release goes to the Nextcloud App Store. A release
+# at once, for a fix that can't wait, is a start of the workflow Release by hand.
+[variables]
+RELEASE_MERGE = "daily"

@@ -8,7 +8,7 @@ Releases follow the [repository blueprint](https://github.com/Dennis-Otto/repo-b
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/diagrams/from-merged-pull-requests-to-a-release.dark.svg">
-  <img src="images/diagrams/from-merged-pull-requests-to-a-release.svg" alt="From merged pull requests to a release: The release bot keeps the pull request chore: release x.y.z for the pull requests merged into main. When the maintainer merges it, or by itself for dependency updates alone, a draft release with its tag is made. krankerl builds the package and check-package.sh checks it; it is signed with the app's certificate, checked again and gets a detached SHA-512 signature. The package, its signature, an SPDX SBOM and the signed build provenance make the published, immutable release, which goes to the Nextcloud App Store. The release verification checks it then and every week.">
+  <img src="images/diagrams/from-merged-pull-requests-to-a-release.svg" alt="From merged pull requests to a release: The release bot keeps the pull request chore: release x.y.z for the pull requests merged into main. When the release bot merges it in its daily run, once its checks pass, or at once in a run of the workflow Release started by hand, a draft release with its tag is made. krankerl builds the package and check-package.sh checks it; it is signed with the app's certificate, checked again and gets a detached SHA-512 signature. The package, its signature, an SPDX SBOM and the signed build provenance make the published, immutable release, which goes to the Nextcloud App Store. The release verification checks it then and every week.">
 </picture>
 
 ## The release pull request
@@ -19,7 +19,7 @@ Every pull request that changes something for users describes it in a file of it
 - **The changelog:** the release takes in the files of `changelog.d/`, and their entries become the section of the release; without any, the section lists the pull requests.
 - **The files of the version:** `appinfo/info.xml` (`<version>` and the screenshot URLs marked `x-release-please-version`), `version.txt` and `.release-please-manifest.json`.
 
-The pull request needs the same required checks as every other one, the Docker end-to-end tests against every supported Nextcloud version included. A release of dependency updates alone merges itself; every other release waits for the maintainer to merge it.
+The pull request needs the same required checks as every other one, the Docker end-to-end tests against every supported Nextcloud version included. Every release merges itself, once a day: the variable `RELEASE_MERGE` is `daily` in `.github/repository.project.toml`, by the maintainer's decision of 2026-11-18, so the release bot merges the release pull request in its daily run at 02:57 UTC once its checks pass, at most one release a day, and a comment in the pull request says when it goes. A merged change thus reaches the Nextcloud App Store within a day, with nobody pressing a button. A fix that can't wait goes at once: the maintainer starts the workflow *Release* by hand (`gh workflow run release.yml`), and a release that fixes a vulnerability goes at once by itself.
 
 ## Publication
 
