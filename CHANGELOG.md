@@ -6,10 +6,10 @@ All notable changes to this project are documented in this file.
 
 ## [1.8.2](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.8.1...v1.8.2) (2026-11-18)
 
-
 ### Bug fixes
 
-* name a host name that Paperless-ngx 3.5 refuses, and what to change ([#492](https://github.com/Dennis-Otto/paperless-unified-search/issues/492)) ([a95b3d1](https://github.com/Dennis-Otto/paperless-unified-search/commit/a95b3d1f679442bea1dacb4b80b16ab0d124bc47))
+- After an update to Paperless-ngx 3.5, a Paperless that sets `PAPERLESS_URL` answers only the host name of that URL. When Nextcloud reaches it under another name, such as `http://paperless:8000`, the test of the connection, `occ` and the search problems now say that Paperless does not accept the host name of its URL and how to fix it: add the name to `PAPERLESS_ALLOWED_HOSTS` of Paperless and restart it. Before, they said only that Paperless answered with an error and to try again later. The new code of the settings route is `disallowed_host`.
+- On Paperless-ngx before 2.20.13, a search for documents similar to one that Paperless doesn't have now finds nothing, as on newer versions, instead of failing as a problem of the search: the app read the answer of Paperless twice, and Nextcloud hands it out only once.
 
 ## [1.8.1](https://github.com/Dennis-Otto/paperless-unified-search/compare/v1.8.0...v1.8.1) (2026-11-17)
 
