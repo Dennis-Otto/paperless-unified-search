@@ -6,7 +6,8 @@
 // Playwright, inside the network of its Compose project, once Nextcloud and the mock
 // of Paperless run. It writes the synthetic documents of the demo as PDF files into
 // the folder Paperless of the archive account, shares the folder read-only with
-// jamie, and goes through the app in Chromium as a person does: the search, the
+// jamie, and goes through the app in Chromium as a person does: the search, its field
+// and panel alone for the social preview, the
 // opened file, the search narrowed by the date filter of Nextcloud, the smart picker in
 // a note of Text with the link that it inserts, the settings and the share of the
 // archive, light and dark, Try a search of the settings, the dashboard, the personal
@@ -38,6 +39,7 @@ import pngjs from 'pngjs'
 import { chromium } from 'playwright-core'
 import { DEMO, OPENED, RESULTS, demoClock, lastChange, templateTimes, unexpectedResults } from './demo.mjs'
 import { animationFrames, colorsOf, placeFrame } from './gif-frames.mjs'
+import { SEARCH_ALONE, clipAround, strayPixel } from './search-picture.mjs'
 import {
 	BASE_URL,
 	PASSWORD,
@@ -413,6 +415,58 @@ async function save(page, name, milliseconds) {
 	console.log(`Took ${name}.`)
 }
 
+// The open search alone, for the social preview: the box of its field, the element of
+// the field or around it that draws the field, and the panel of its results, which the
+// field names as the list that it controls, as a combobox does. Everything else of the
+// page is hidden for this picture, which has no background and leaves out the shadow of
+// the panel, so that it shows nothing but the two; it fails when a part reaches out of
+// the page or when anything else would show in the picture (search-picture.mjs).
+async function saveSearchAlone(page) {
+	const boxes = await searchField(page).evaluate((input) => {
+		const panel = document.getElementById(input.getAttribute('aria-controls') ?? '')
+		if (!panel) {
+			throw new Error('The field of the search names no panel of results by aria-controls.')
+		}
+		let field = input
+		while (getComputedStyle(field).backgroundColor === 'rgba(0, 0, 0, 0)') {
+			field = field.parentElement
+			if (!field || field.contains(panel)) {
+				throw new Error('No element around the field of the search draws the field.')
+			}
+		}
+		const style = document.createElement('style')
+		style.id = 'search-alone'
+		style.textContent = `html, body { background: transparent !important; }
+			body *:not([data-search-alone], [data-search-alone] *) { visibility: hidden !important; }
+			[data-search-alone] { visibility: visible !important; box-shadow: none !important; }`
+		document.head.append(style)
+		return [field, panel].map((part) => {
+			part.setAttribute('data-search-alone', '')
+			const { x, y, width, height } = part.getBoundingClientRect()
+			return { x, y, width, height }
+		})
+	})
+	try {
+		const clip = clipAround(boxes, page.viewportSize())
+		const png = await page.screenshot({ clip, omitBackground: true, animations: 'disabled' })
+		const { width, data } = PNG.sync.read(png)
+		const inPicture = boxes.map((box) => ({ ...box, x: box.x - clip.x, y: box.y - clip.y }))
+		const stray = strayPixel(data, width, inPicture)
+		if (stray) {
+			throw new Error(`${SEARCH_ALONE} shows something besides the field and the panel of the search at ${stray.x}, ${stray.y}.`)
+		}
+		writeFileSync(join(OUT, SEARCH_ALONE), png)
+		console.log(`Took ${SEARCH_ALONE}.`)
+	} finally {
+		await page.evaluate(() => {
+			document.getElementById('search-alone').remove()
+			for (const part of document.querySelectorAll('[data-search-alone]')) {
+				part.removeAttribute('data-search-alone')
+			}
+		})
+	}
+}
+
 async function openArchive(page) {
 	await page.goto(filesFolder('/Paperless'))
 	await page.getByText('Northstar Energy', { exact: true }).first().waitFor()
@@ -434,6 +488,9 @@ async function searchAndOpen(browser, session, theme) {
 	await search(page, (input) => input.fill(TERM), 'Files')
 	await searchConnectedServices(page, LAST_RESULT)
 	await save(page, `01-unified-search${suffix}.png`)
+	if (theme === 'light') {
+		await saveSearchAlone(page)
+	}
 	await view(page, ELECTRICITY)
 	await save(page, `02-nextcloud-pdf-viewer${suffix}.png`)
 	await page.context().close()

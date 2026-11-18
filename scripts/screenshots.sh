@@ -6,7 +6,8 @@
 # Store show, and the animations of the search and of the set-up in docs/images/, light
 # and dark, with the videos that the website plays in their place
 # (scripts/screenshot-media.sh), and renders
-# the social preview from the first screenshot (scripts/social-preview.sh). Run it
+# the social preview from the search alone of the first screenshot
+# (scripts/social-preview.sh). Run it
 # after a change of what users see:
 #   bash scripts/screenshots.sh
 # The screenshot bot (.github/workflows/screenshot-bot.yml) runs it on main after a
@@ -63,7 +64,7 @@ TMP_DIR="$(mktemp -d)"
 browse() {
 	local network="$1"
 	shift
-	tar -C tests/e2e -cf - package.json package-lock.json ui.mjs demo.mjs gif-frames.mjs screenshots.mjs \
+	tar -C tests/e2e -cf - package.json package-lock.json ui.mjs demo.mjs gif-frames.mjs search-picture.mjs screenshots.mjs \
 		| docker run --rm --interactive \
 			--network "${network}" \
 			--env NPM_CONFIG_UPDATE_NOTIFIER=false \
@@ -224,5 +225,5 @@ cp "${TMP_DIR}"/*.png screenshots/
 cp "${TMP_DIR}"/*.gif "${TMP_DIR}"/*.mp4 "${TMP_DIR}"/*.webp docs/images/
 ls -l screenshots/ docs/images/
 
-# The social preview shows the first screenshot.
+# The social preview shows the search alone of the first screenshot.
 bash scripts/social-preview.sh

@@ -136,7 +136,7 @@ if ! grep -qE '^bash scripts/social-preview\.sh' scripts/screenshots.sh; then
 fi
 mapfile -t previewed < <(grep -oE 'screenshots/[A-Za-z0-9._-]+\.png' .github/social-preview.html | sort -u)
 if ((${#previewed[@]} == 0)); then
-  echo ".github/social-preview.html shows no screenshot of screenshots/; show the first one, as the social preview did, or change this check."
+  echo ".github/social-preview.html shows no screenshot of screenshots/; show the search alone, 01-unified-search-alone.png, which screenshots.mjs takes, or change this check."
   exit 1
 fi
 for picture in "${previewed[@]}"; do
