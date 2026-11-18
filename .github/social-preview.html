@@ -38,11 +38,16 @@ h1 { font-size: 62px; font-weight: 800; line-height: 1.04; letter-spacing: -0.02
 ul { margin-top: 40px; list-style: none; display: grid; gap: 16px; }
 li { font-size: 24px; color: #cbd5e1; display: flex; align-items: center; gap: 18px; }
 li::before { content: ""; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 14px var(--accent); flex: none; }
-.panel { position: absolute; right: 64px; top: 50%; transform: translateY(-50%); width: 548px; }
-.card { background: #141a26; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 20px; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45), 0 0 70px color-mix(in srgb, var(--accent) 16%, transparent); }
+/* The search alone, which scripts/screenshots.sh cuts out of the page where the page draws
+   it: its field with the term and the panel with the results, without the page behind them
+   (tests/e2e/search-picture.mjs). It shows whole, at the largest size that fits, with a
+   shadow around the shapes of the two; tests/js/search-picture.test.mjs fails when this
+   page would cut it or show it in a box of its own. */
+.panel { position: absolute; right: 64px; top: 50px; bottom: 50px; width: 548px; display: flex; align-items: center; justify-content: center; }
+.search { display: block; max-width: 100%; max-height: 100%; filter: drop-shadow(0 30px 40px rgba(0, 0, 0, 0.45)) drop-shadow(0 0 36px color-mix(in srgb, var(--accent) 18%, transparent)); }
 .muted { color: #8b95a7; }
 .mono { font-family: "JetBrains Mono", "Liberation Mono", monospace; }
-.logo { background: #eef6f2; border-radius: 24px; padding: 12px; } .shot { width: 450px; height: 540px; border-radius: 16px; overflow: hidden; margin-left: 50px; background: url('../screenshots/01-unified-search.png') -375px -68px / 1200px 675px no-repeat; }
+.logo { background: #eef6f2; border-radius: 24px; padding: 12px; }
 </style>
 </head>
 <body>
@@ -57,7 +62,7 @@ li::before { content: ""; width: 12px; height: 12px; border-radius: 50%; backgro
   </ul>
 </div>
 <div class="panel">
-  <div class="card shot"></div>
+  <img class="search" src="../screenshots/01-unified-search-alone.png" alt="">
 </div>
 </body>
 </html>

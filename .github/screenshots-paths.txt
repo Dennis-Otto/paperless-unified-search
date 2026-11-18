@@ -27,9 +27,10 @@ tests/e2e/run.sh
 tests/e2e/screenshots.mjs
 tests/e2e/demo.mjs
 tests/e2e/gif-frames.mjs
+tests/e2e/search-picture.mjs
 tests/e2e/ui.mjs
 
-# The social preview, which shows the first screenshot.
+# The social preview, which shows the search alone of the first screenshot.
 .github/social-preview.html
 .github/social-preview/Dockerfile
 scripts/social-preview.sh
