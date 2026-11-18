@@ -24,28 +24,42 @@ name: Bot health
 # starts the blueprint bot when the blueprint has a newer release than
 # .copier-answers.yml names and the pull request of the bot doesn't bring it yet, so
 # that a repository that the Rollout doesn't start gets it within a day. Runs
-# of pull requests start nothing here, and neither does a run that GitHub couldn't
-# start, as in its outage of 9 November 2026: the nightly look runs it again once. A
-# look that GitHub keeps failing ends with a notice, not a failure (decision 0136).
+# of pull requests start nothing here, as the filter of the branches leaves them out
+# before GitHub makes a run, and neither does a run that GitHub couldn't start, as in
+# its outage of 9 November 2026: the nightly look runs it again once. A look that
+# GitHub keeps failing ends with a notice, not a failure (decision 0136).
 # The bots of events, Area labels, Welcome, Dependabot maintenance and Commands, also
 # those of a pull request or of a fork, and the workflows that keep an issue of their
 # own, such as Newest Node, get neither a second try nor an issue here, unless
 # Harden-Runner stopped a job of their first attempt: then their failed jobs run once
-# more, as nothing else would run them again (decision 0141). Nothing follows the end
-# of Bot health itself, so the nightly look runs the failed jobs of its own runs of
-# the last two days once more that Harden-Runner stopped at their first attempt.
+# more, as nothing else would run them again (decision 0141). Their end starts nothing
+# here: a last job of theirs starts this bot by hand with the run, and only when a job
+# failed at their first attempt (decision 0176). Nothing follows the end of Bot health
+# itself, so the nightly look runs the failed jobs of its own runs of the last two
+# days once more that Harden-Runner stopped at their first attempt, and those of the
+# bots of events and of the workflows with an issue of their own whose last job
+# Harden-Runner or GitHub kept from starting this bot.
 # It checks out the default branch only, for blueprint.py, never the code of a pull
 # request; blueprint.py bot-health holds the logic.
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
   workflow_run:
-    # The bots and the scheduled workflows of every repository, its bots of events and the workflows with an issue of their own; the daily look covers those of the project.
-    workflows: [Blueprint update, Chrome Web Store, Clean-up, Findings, Fuzzing, Issue lifecycle, Labels, Links, Mutation, OSV-Scanner, OpenSSF Scorecard, Property tests, Release, Release verification, SBOM, Screenshots, Settings, Update branches, Upstream, Workflow security, Area labels, Commands, Dependabot maintenance, Welcome, Diagrams, Newest Node, Newest Python]
+    # The bots and the scheduled workflows of every repository; the daily look covers those of the project.
+    workflows: [Blueprint update, Chrome Web Store, Clean-up, Findings, Fuzzing, Issue lifecycle, Labels, Links, Mutation, OSV-Scanner, OpenSSF Scorecard, Property tests, Release, Release verification, SBOM, Screenshots, Settings, Update branches, Upstream, Workflow security]
+    # The runs of main, and of the tag of a release that someone published by hand,
+    # which starts Release verification: GitHub makes no run of this bot for the end
+    # of a run of a pull request, of which the jobs would skip every one (decision 0176).
+    branches: [main, "v*"]
     types: [completed]
   schedule:
     - cron: "20 1 * * *"
   workflow_dispatch:
+    inputs:
+      run:
+        description: The run of a bot of events or of a workflow with an issue of its own whose job failed at its first attempt, which runs once more if Harden-Runner stopped a job of it; empty for the nightly look
+        type: string
+        default: ""
 
 permissions: {}
 
@@ -56,6 +70,9 @@ env:
 jobs:
   run:
     name: look at the end of a bot's run
+    # The eight workflows with a last job left the list of workflow_run, so their ends
+    # never reach this job; the names stay here as a guard against a workflow of a fork
+    # or a later list that takes one of them (decision 0176).
     if: >-
       github.event_name == 'workflow_run' &&
       !github.event.repository.fork &&
@@ -206,21 +223,22 @@ jobs:
     name: run a bot again that Harden-Runner stopped
     # The bots of events and the workflows that keep an issue of their own, whose runs
     # the job run leaves alone: also a run of a pull request or of a fork, which runs
-    # the workflow of its base again, at its first attempt only (decision 0141). None
-    # of them runs on pull_request, so such a run is a workflow of a fork's own, which
-    # only took the name of one of them.
+    # the workflow of its base again, at its first attempt only (decision 0141). Their
+    # last job starts this bot by hand with the run while that run still ends, and only
+    # when a job of their first attempt failed (decision 0176): the bot waits for the
+    # end of the run. It acts only on a run of one of them, and not on one of the event
+    # pull_request: none of them runs on it, so such a run is a workflow of a fork's
+    # own, which only took the name of one of them.
     if: >-
-      github.event_name == 'workflow_run' &&
-      !github.event.repository.fork &&
-      github.event.workflow_run.event != 'pull_request' &&
-      contains(fromJSON('["Area labels", "Commands", "Dependabot maintenance", "Welcome", "Diagrams", "Newest Node", "Newest Python", "Next runner"]'), github.event.workflow_run.name) &&
-      github.event.workflow_run.conclusion == 'failure' &&
-      github.event.workflow_run.run_attempt == 1
+      github.event_name == 'workflow_dispatch' &&
+      inputs.run != '' &&
+      !github.event.repository.fork
     concurrency:
-      group: ${{ github.workflow }}-stopped-${{ github.event.workflow_run.id }}
+      group: ${{ github.workflow }}-stopped-${{ inputs.run }}
       cancel-in-progress: false
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    # Up to four minutes of them wait for the end of the run.
+    timeout-minutes: 10
     permissions:
       # Runs the failed jobs once more.
       actions: write
@@ -330,7 +348,7 @@ jobs:
       - name: Run the failed jobs once more when Harden-Runner stopped one
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RUN: ${{ github.event.workflow_run.id }}
+          RUN: ${{ inputs.run }}
         run: |
           set -o pipefail
           script=.github/blueprint.py
@@ -351,7 +369,8 @@ jobs:
 
   sweep:
     name: look after every workflow
-    if: github.event_name != 'workflow_run' && !github.event.repository.fork
+    # A start by hand that names a run is for the job stopped alone.
+    if: github.event_name != 'workflow_run' && !inputs.run && !github.event.repository.fork
     concurrency:
       group: ${{ github.workflow }}-sweep
       cancel-in-progress: false

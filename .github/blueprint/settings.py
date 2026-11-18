@@ -10,6 +10,7 @@ import urllib.parse
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 
 from blueprint.github import Api, GitHubError, Json
 from blueprint.outage import check_unavailable
@@ -37,6 +38,61 @@ class Drift:
 
 class ConfigError(ValueError):
     """A value in the settings as code that can't be right."""
+
+
+class Refused(GitHubError):
+    """GitHub refused some of the items of a part of the settings, such as one
+    ruleset, and the others were applied all the same: what happened to each, by its
+    name, and each refusal, the first of which gives the status and the message that
+    the hints read. present names the rulesets that GitHub has after them."""
+
+    def __init__(
+        self,
+        outcomes: list[tuple[str, str]],
+        errors: list[GitHubError],
+        present: frozenset[str] | None = None,
+    ) -> None:
+        first = errors[0]
+        super().__init__(first.status, first.message, first.codes, first.details)
+        self.outcomes = outcomes
+        self.errors = errors
+        self.present = present
+
+
+class Attempts:
+    """The requests of the items of one part of the settings, each by itself: a
+    refusal of GitHub is kept for the end, so that it keeps no other item from being
+    applied. A rate limit or an outage of GitHub ends the part at once, as every
+    other request would meet it too."""
+
+    def __init__(self) -> None:
+        self.outcomes: list[tuple[str, str]] = []
+        self.errors: list[GitHubError] = []
+
+    def send(
+        self, item: str, done: str, request: Callable[..., None], *arguments: Any
+    ) -> bool:
+        """Whether GitHub took the request of item, which says done when it did."""
+        try:
+            request(*arguments)
+        except GitHubError as error:
+            if error.rate_limited or error.unavailable:
+                raise
+            self.errors.append(error)
+            self.outcomes.append((item, f"refused: {error}"))
+            return False
+        self.outcomes.append((item, done))
+        return True
+
+    def finish(self, part: str, present: frozenset[str] | None = None) -> None:
+        """Refused, with the hint of each refusal, when GitHub refused an item."""
+        if self.errors:
+            hints = iter([hint(part, error) for error in self.errors])
+            self.outcomes = [
+                (item, what + next(hints) if what.startswith("refused") else what)
+                for item, what in self.outcomes
+            ]
+            raise Refused(self.outcomes, self.errors, present)
 
 
 # --------------------------------------------------------------------------- repository
@@ -1115,6 +1171,8 @@ MANAGED_RULESETS = (
 REVIEWS_VARIABLE = "REVIEWS_OF_MAIN"
 # Where GitHub looks for the code owners, in this order.
 CODEOWNERS = (".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS")
+# The drift of a review of the code owners that GitHub has no file for.
+CODE_OWNERS = f"code owners of {BRANCH}"
 # The most approving reviews that a ruleset can require.
 MOST_APPROVALS = 10
 
@@ -1231,6 +1289,10 @@ def tag_creation_ruleset(app_id: int) -> dict[str, Json]:
     }
 
 
+# The secret of the private key of the release app, in the environment release.
+RELEASE_KEY = "RELEASE_AUTOMATION_PRIVATE_KEY"
+
+
 def release_app_id(variables: dict[str, str]) -> int | None:
     """The ID of the release app, from the variable RELEASE_AUTOMATION_APP_ID; None
     without it, and then anyone who may push creates release tags, as before."""
@@ -1269,40 +1331,51 @@ def required_check(check: dict[str, Json]) -> str:
     return json.dumps([check["context"], check.get("integration_id")])
 
 
-def ruleset_differences(want: dict[str, Json], have: dict[str, Json]) -> list[str]:
-    """What differs between two rulesets, in the parts this tool manages. A token that
-    may only read the administration, such as the release app's, gets the rulesets
-    without bypass_actors; then nothing can be said about them."""
-    differences = [
-        key
+def ruleset_differences(
+    want: dict[str, Json], have: dict[str, Json]
+) -> dict[str, tuple[Json, Json]]:
+    """What differs between two rulesets, in the parts this tool manages: by its key,
+    such as pull_request.required_approving_review_count, what the configuration
+    wants and what GitHub has. A token that may only read the administration, such as
+    the release app's, gets the rulesets without bypass_actors; then nothing can be
+    said about them."""
+    differences: dict[str, tuple[Json, Json]] = {
+        key: (want[key], have.get(key))
         for key in ("target", "enforcement", "bypass_actors", "conditions")
         if want[key] != have.get(key)
         and not (key == "bypass_actors" and key not in have)
-    ]
+    }
     have_rules = {
         rule["type"]: rule.get("parameters", {}) for rule in have.get("rules", [])
     }
     for rule in want["rules"]:
         parameters = have_rules.pop(rule["type"], None)
         if parameters is None:
-            differences.append(f"rule {rule['type']} is missing")
+            differences[f"rule {rule['type']}"] = ("present", "missing")
             continue
         for key, value in rule.get("parameters", {}).items():
             current = parameters.get(key)
             if key == "required_status_checks":
                 # The source counts as well: a check without integration_id accepts
                 # any app and any commit status of its name, not GitHub Actions alone.
-                value = sorted(required_check(check) for check in value)
-                current = sorted(required_check(check) for check in current or [])
-            elif key == "code_scanning_tools":
-                value = sorted(json.dumps(tool, sort_keys=True) for tool in value)
-                current = sorted(
-                    json.dumps(tool, sort_keys=True) for tool in current or []
+                same = sorted(map(required_check, value)) == sorted(
+                    map(required_check, current or [])
                 )
-            if current != value:
-                differences.append(f"{rule['type']}.{key}")
-    differences += [f"rule {kind} is extra" for kind in have_rules]
+            elif key == "code_scanning_tools":
+                same = sorted(map(canonical, value)) == sorted(
+                    map(canonical, current or [])
+                )
+            else:
+                same = current == value
+            if not same:
+                differences[f"{rule['type']}.{key}"] = (value, current)
+    differences.update((f"rule {kind}", ("absent", "present")) for kind in have_rules)
     return differences
+
+
+def canonical(value: Json) -> str:
+    """A value as JSON with its keys in order, which compares two equal ones as one."""
+    return json.dumps(value, sort_keys=True)
 
 
 def rulesets(api: Api, repo: str) -> dict[str, Json]:
@@ -1331,9 +1404,13 @@ def check_rulesets(
         have = api.get(f"repos/{repo}/rulesets/{existing[want['name']]}") or {}
         differences = ruleset_differences(want, have)
         if differences:
+            # Each key that differs, with what the configuration wants and what
+            # GitHub has, each on its side.
             drift.append(
                 Drift(
-                    f"ruleset {want['name']}", "as configured", ", ".join(differences)
+                    f"ruleset {want['name']}",
+                    {key: wanted for key, (wanted, _) in differences.items()},
+                    {key: had for key, (_, had) in differences.items()},
                 )
             )
     # A ruleset of the settings as code that the configuration no longer wants, such
@@ -1347,22 +1424,79 @@ def check_rulesets(
     return drift
 
 
+def check_code_owners(
+    api: Api, repo: str, wanted: list[dict[str, Json]]
+) -> list[Drift]:
+    """The code owners on the default branch of GitHub, where a ruleset wants their
+    review: the settings load only with a CODEOWNERS file in the checkout, but GitHub
+    reads the one of its default branch, and without it the rule binds nobody."""
+    if not any(
+        rule.get("parameters", {}).get("require_code_owner_review") is True
+        for ruleset in wanted
+        for rule in ruleset["rules"]
+    ):
+        return []
+    if any(api.exists(f"repos/{repo}/contents/{name}") for name in CODEOWNERS):
+        return []
+    return [
+        Drift(
+            CODE_OWNERS,
+            "present",
+            "missing",
+            manual=(
+                f"merge {CODEOWNERS[0]} into {BRANCH} through a pull request: GitHub"
+                " reads the code owners of its default branch, and without them the"
+                " review of a code owner binds nobody"
+            ),
+        )
+    ]
+
+
+def rulesets_and_code_owners(
+    api: Api, repo: str, wanted: list[dict[str, Json]], private: bool
+) -> list[Drift]:
+    """The rulesets, and the code owners where GitHub offers rulesets at all: without
+    them no review of a code owner can be asked for."""
+    drift = check_rulesets(api, repo, wanted, private)
+    if any(item.setting == "rulesets" for item in drift):
+        return drift
+    return drift + check_code_owners(api, repo, wanted)
+
+
 def apply_rulesets(
     api: Api, repo: str, wanted: list[dict[str, Json]], drift: list[Drift]
 ) -> None:
+    """Each ruleset by itself: one that GitHub refuses, such as one whose bypass actor
+    is an app that the repository hasn't installed, keeps no other from being made,
+    and the unwanted ones go whatever happened to the others. Refused then says what
+    happened to each, and which rulesets GitHub has."""
     existing = rulesets(api, repo)
     names = {item.setting.removeprefix("ruleset ") for item in drift}
+    present = set(existing)
+    attempts = Attempts()
     for want in wanted:
-        if want["name"] not in names:
+        name = want["name"]
+        if name not in names:
             continue
-        if want["name"] in existing:
-            api.put(f"repos/{repo}/rulesets/{existing[want['name']]}", want)
-        else:
-            api.post(f"repos/{repo}/rulesets", want)
+        if name in existing:
+            path = f"repos/{repo}/rulesets/{existing[name]}"
+            attempts.send(f"ruleset {name}", "updated", api.put, path, want)
+        elif attempts.send(
+            f"ruleset {name}",
+            "created",
+            api.post,
+            f"repos/{repo}/rulesets",
+            want,
+        ):
+            present.add(name)
     unwanted = names - {want["name"] for want in wanted}
     for name, number in existing.items():
-        if name in unwanted:
-            api.delete(f"repos/{repo}/rulesets/{number}")
+        path = f"repos/{repo}/rulesets/{number}"
+        if name in unwanted and attempts.send(
+            f"ruleset {name}", "deleted", api.delete, path
+        ):
+            present.discard(name)
+    attempts.finish("rulesets", frozenset(present))
 
 
 # --------------------------------------------------------------------------- classic protection
@@ -1450,27 +1584,34 @@ def check_classic_protection(api: Api, repo: str, private: bool = False) -> list
 
 
 def check_variables(api: Api, repo: str, want: dict[str, str]) -> list[Drift]:
+    """The variables that differ. An empty value says that the repository has no such
+    variable, as GitHub refuses one with an empty value: RELEASE_AUTOMATION_APP_ID = ""
+    for a repository without the release app wants none (null) on GitHub."""
     drift = []
     for name, value in want.items():
         have = api.get(f"repos/{repo}/actions/variables/{name}")
         current = None if have is None else have.get("value")
-        if current != value:
-            drift.append(Drift(f"variable {name}", value, current))
+        wanted = None if value == "" else value
+        if current != wanted:
+            drift.append(Drift(f"variable {name}", wanted, current))
     return drift
 
 
 def apply_variables(api: Api, repo: str, drift: list[Drift]) -> None:
+    """Each variable by itself, so that one that GitHub refuses keeps no other from
+    being set; one that the configuration wants empty goes."""
+    attempts = Attempts()
+    path = f"repos/{repo}/actions/variables"
     for item in drift:
         name = item.setting.removeprefix("variable ")
-        if item.have is None:
-            api.post(
-                f"repos/{repo}/actions/variables", {"name": name, "value": item.want}
-            )
+        body = {"name": name, "value": item.want}
+        if item.want is None:
+            attempts.send(item.setting, "deleted", api.delete, f"{path}/{name}")
+        elif item.have is None:
+            attempts.send(item.setting, "set", api.post, path, body)
         else:
-            api.patch(
-                f"repos/{repo}/actions/variables/{name}",
-                {"name": name, "value": item.want},
-            )
+            attempts.send(item.setting, "set", api.patch, f"{path}/{name}", body)
+    attempts.finish("variables")
 
 
 # --------------------------------------------------------------------------- environments
@@ -1511,7 +1652,7 @@ def check_environments(
             if secret not in present:
                 command = (
                     "python3 .github/blueprint.py app connect --key-file FILE"
-                    if secret == "RELEASE_AUTOMATION_PRIVATE_KEY"
+                    if secret == RELEASE_KEY
                     else f"gh secret set {secret} --env {name} --repo {repo}"
                     # The prompt of gh reads one line, which of a private key is
                     # stored as if it were all of it.
@@ -1712,6 +1853,26 @@ def merge(base: dict[str, Json], extra: dict[str, Json]) -> dict[str, Json]:
     return result
 
 
+def without_release_key(
+    environments: dict[str, dict[str, Json]], variables: dict[str, str]
+) -> dict[str, dict[str, Json]]:
+    """The environments, which ask for no private key of the release app where the
+    variables say that the repository has none: RELEASE_AUTOMATION_CLIENT_ID = ""."""
+    if str(variables.get("RELEASE_AUTOMATION_CLIENT_ID", "-")).strip():
+        return environments
+    return {
+        name: {
+            **environment,
+            "secrets": [
+                secret
+                for secret in environment.get("secrets", [])
+                if secret != RELEASE_KEY
+            ],
+        }
+        for name, environment in environments.items()
+    }
+
+
 @dataclass(frozen=True)
 class Settings:
     repository: dict[str, Json]
@@ -1765,7 +1926,7 @@ class Settings:
             actions=actions,
             rulesets=rulesets,
             variables=variables,
-            environments=config.get("environments", {}),
+            environments=without_release_key(config.get("environments", {}), variables),
             pages=config.get("pages", {}),
             # The labels of the issue assistant, next to the settings.
             labels=load_labels(path.parent / "labels.toml"),
@@ -1786,7 +1947,7 @@ def check(
         + check_policies(
             api, repo, settings.actions.get(TARGET, []), settings.triggers, private
         )
-        + check_rulesets(api, repo, settings.rulesets, private)
+        + rulesets_and_code_owners(api, repo, settings.rulesets, private)
         + check_classic_protection(api, repo, private)
         + check_variables(api, repo, settings.variables)
         + check_environments(api, repo, settings.environments)
@@ -1984,24 +2145,86 @@ def apply(
             "rulesets",
             lambda: apply_rulesets(api, repo, settings.rulesets, part("ruleset ")),
         ),
-        ("variables", lambda: apply_variables(api, repo, part("variable "))),
+        (
+            "variables",
+            lambda: apply_variables(
+                api,
+                repo,
+                reviews_as_on_github(
+                    settings, part("variable "), failed.get("rulesets"), private
+                ),
+            ),
+        ),
         ("environments", lambda: apply_environments(api, repo, part("environment "))),
         ("pages", lambda: apply_pages(api, repo, settings.pages, part("pages"))),
         ("labels", lambda: apply_labels(api, repo, settings.labels, part("label "))),
     ]
     refused: dict[str, str] = {}
     unoffered: dict[str, GitHubError] = {}
+    failed: dict[str, GitHubError] = {}
     for name, step in steps:
         try:
             step()
         except GitHubError as error:
-            if private and refused_by_plan(error):
+            failed[name] = error
+            errors = error.errors if isinstance(error, Refused) else [error]
+            if private and all(map(refused_by_plan, errors)):
                 unoffered[name] = error
                 continue
-            refused[name] = (
-                f"the {name} could not be applied: {error}{hint(name, error)}"
-            )
+            refused[name] = refusal(name, error)
     return refused, unoffered
+
+
+def refusal(part: str, error: GitHubError) -> str:
+    """Why GitHub refused a part of the settings; for a part whose items GitHub took
+    one by one, what happened to each of them."""
+    # Where GitHub refused every item alike, as it does a token without the
+    # permission, the refusal is said once.
+    if isinstance(error, Refused) and not (
+        len(error.errors) == len(error.outcomes)
+        and len(set(map(str, error.errors))) == 1
+    ):
+        lines = "".join(f"\n  {item}: {what}" for item, what in error.outcomes)
+        return f"GitHub refused some of the {part}, and took the others:{lines}"
+    return f"the {part} could not be applied: {error}{hint(part, error)}"
+
+
+def reviews_as_on_github(
+    settings: Settings,
+    drift: list[Drift],
+    error: GitHubError | None,
+    private: bool,
+) -> list[Drift]:
+    """The variables to apply, in which REVIEWS_OF_MAIN says what GitHub has after the
+    rulesets were applied, not what the configuration wanted where GitHub refused it:
+    on with Reviews of main, off without, so that the bots after the checks start the
+    branch bot exactly where main requires reviews. A value that [variables] sets for
+    itself stays, and so does the variable on GitHub where the rulesets there can't
+    be told."""
+    if error is None:
+        return drift
+    names = [ruleset["name"] for ruleset in settings.rulesets]
+    derived = "on" if REVIEWS_RULESET in names else "off"
+    if settings.variables.get(REVIEWS_VARIABLE) != derived:
+        return drift
+    setting = f"variable {REVIEWS_VARIABLE}"
+    others = [item for item in drift if item.setting != setting]
+    if isinstance(error, Refused) and error.present is not None:
+        present = REVIEWS_RULESET in error.present
+    elif private and refused_by_plan(error):
+        # A private repository whose plan offers no rulesets has none.
+        present = False
+    else:
+        return others
+    have = next((item.have for item in drift if item.setting == setting), derived)
+    value = "on" if present else "off"
+    return others if have == value else [*others, Drift(setting, value, have)]
+
+
+# GitHub's error for a bypass actor of a ruleset that the repository doesn't have,
+# such as an app that isn't installed on it: "Actor <name> integration must be part
+# of the ruleset source or owner organization".
+ACTOR_REFUSAL = re.compile(r"\bActor\b.* must be part of the ruleset source\b")
 
 
 def hint(part: str, error: GitHubError) -> str:
@@ -2009,6 +2232,14 @@ def hint(part: str, error: GitHubError) -> str:
     404, to a token without the permission."""
     if error.rate_limited:
         return "; that is the rate limit of GitHub; the next run tries again"
+    if part == "rulesets" and any(map(ACTOR_REFUSAL.search, error.details)):
+        return (
+            "; GitHub takes an app as the bypass actor of a ruleset only where the app"
+            " is installed: install the release app of RELEASE_AUTOMATION_APP_ID on"
+            " the repository, or, for a repository without it, set RELEASE_APP,"
+            ' RELEASE_AUTOMATION_CLIENT_ID and RELEASE_AUTOMATION_APP_ID to ""'
+            " under [variables] in .github/repository.project.toml"
+        )
     if error.status in (403, 404):
         names = PERMISSIONS[part]
         noun = "permission" if len(names) == 1 else "permissions"

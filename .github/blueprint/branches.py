@@ -37,6 +37,11 @@ that no person gives to an update. The release app may merge past that ruleset a
 so the bot merges such a pull request itself once it is up to date and its required
 checks passed, as long as the bots made it and every commit of it; the rules of *Protect
 main* still hold for that merge (decision 0157).
+
+The release pull request takes no place in the line, as only the release bot builds
+its branch: a merge that changes nothing that it releases, such as docs or chore,
+leaves it behind until auto-merge is turned on for it, and then the bot starts the
+release bot, which builds it anew on the default branch (decision 0175).
 """
 
 from __future__ import annotations
@@ -63,8 +68,11 @@ CONFLICT_COMMENT = (
     " date. Merge `{base}` into the branch and resolve the conflict; the bot takes over"
     " again afterwards."
 )
-# The release bot keeps its own pull request current.
+# The release bot builds its own pull request, on the default branch, by its workflow:
+# for every merge that changes its notes, and once auto-merge is on for it for every
+# other one, which the bot starts when auto-merge is turned on (decision 0175).
 RELEASE_BRANCH = "release-please--"
+RELEASE_WORKFLOW = "release.yml"
 # Renovate builds a branch of its own that conflicts with the default branch anew.
 RENOVATE_BRANCH = "renovate/"
 # The bots that build the branch of their pull request anew from the default branch
@@ -302,14 +310,7 @@ def waiting(api: Api, repo: str, base: str) -> list[Pull]:
         ]
     )
     pulls = [
-        Pull.of(data)
-        for data in json.loads(listed)
-        if data.get("autoMergeRequest")
-        # The name of a fork's branch says nothing about who made it.
-        and (
-            data.get("isCrossRepository")
-            or not str(data.get("headRefName")).startswith(RELEASE_BRANCH)
-        )
+        Pull.of(data) for data in json.loads(listed) if data.get("autoMergeRequest")
     ]
     return sorted(pulls, key=lambda pull: (pull.enabled_at, pull.number))
 
@@ -639,9 +640,66 @@ class Line:
             f"its branch anew from {base}; it has the label {LABEL} until then.",
         )
 
+    def release(self, pull: Pull) -> None:
+        """The release pull request, which takes no place in the line: only the release
+        bot builds its branch, anew on base, and the bot never updates it, which would
+        bring in changes that its notes don't list. A merge that changes its notes
+        rebuilds it at once; for any other, every run of the release bot rebuilds it
+        once auto-merge is on for it (decision 0175). Turning auto-merge on starts no
+        such run, so the bot starts one with the token of the job, unless one that was
+        created since then hasn't ended yet, such as the run for a merge. It counts
+        with the line all the same: behind base, it can't merge, and once rebuilt, its
+        checks run and it merges like any other. Outside of a job, a person starts it."""
+        base = code(self.base)
+        behind = self.commits_behind(pull)
+        if behind == 0:
+            self.note(
+                pull,
+                f"up to date with {base}, and the release bot keeps it so: auto-merge "
+                "merges it once its checks pass.",
+            )
+            return
+        was = f"{plural(behind, 'commit')} behind {base}"
+        workflow = code(RELEASE_WORKFLOW)
+        if self.job is None:
+            self.note(
+                pull, f"{was}: start {workflow} on {base}, which builds it anew on it."
+            )
+            return
+        if self.release_running_since(pull.enabled_at or NO_TIME):
+            self.note(
+                pull,
+                f"{was}: the run of {workflow} that started since auto-merge was "
+                f"turned on builds it anew on {base}.",
+            )
+            return
+        self.job.api.post(
+            f"repos/{self.repo}/actions/workflows/{RELEASE_WORKFLOW}/dispatches",
+            {"ref": self.base},
+        )
+        self.note(
+            pull,
+            f"{was}: the bot started {workflow}, which builds it anew on {base}, and "
+            "its checks run then.",
+        )
+
+    def release_running_since(self, since: str) -> bool:
+        """Whether a run of the release bot that was created at since or later hasn't
+        ended yet: once auto-merge is on, each run rebuilds the release pull request. A
+        run that is older may have passed that step before auto-merge was turned on."""
+        created = urllib.parse.quote(f">={since}")
+        data = self.actions.get(
+            f"repos/{self.repo}/actions/workflows/{RELEASE_WORKFLOW}/runs"
+            f"?created={created}&per_page={PAGE}"
+        )
+        return any(
+            run.get("status") != "completed"
+            for run in (data or {}).get("workflow_runs") or []
+        )
+
     def sort_out(self, pulls: list[Pull]) -> list[Pull]:
-        """The labels of the pull requests that conflict, or no longer do; the others
-        are in the line."""
+        """The labels of the pull requests that conflict, or no longer do; the release
+        pull request, which its own bot builds; the others are in the line."""
         line = []
         for pull in pulls:
             if pull.fork and not pull.editable:
@@ -653,6 +711,10 @@ class Line:
                 )
                 continue
             try:
+                # The name of a fork's branch says nothing about who made it.
+                if pull.branch.startswith(RELEASE_BRANCH) and not pull.fork:
+                    self.release(pull)
+                    continue
                 if pull.mergeable == "CONFLICTING":
                     self.conflict(pull)
                     continue

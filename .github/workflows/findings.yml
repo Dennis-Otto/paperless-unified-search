@@ -7,6 +7,13 @@ name: Findings
 # maintainers can follow; nothing becomes a public issue. The job is the issue
 # assistant's reusable workflow at the commit of a release, so an update is a move of
 # the pin below; it blocks every host but GitHub's.
+#
+# After each scan of a pull request of the repository itself, it dismisses the
+# alerts of the pull request that .github/findings.toml accepts, whose review threads
+# would block the merge, and fails for none. A repository that does that in another
+# workflow sets [findings] pull_requests = false in
+# .github/issue-assistant/config.toml, and install writes this workflow for the
+# scans of main alone.
 # https://github.com/Dennis-Otto/issue-assistant
 
 on:
@@ -34,6 +41,6 @@ jobs:
     permissions:
       contents: read
       security-events: write
-    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-findings.yml@2a6d50ab52ca631924e63f1ab02f35ac31448f77 # v1.13.3
+    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-findings.yml@00a1bb67482924c61555fc31542d3d67de661269 # v1.14.0
     with:
       dry_run: ${{ inputs.dry_run || false }}

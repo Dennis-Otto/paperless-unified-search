@@ -21,7 +21,11 @@ on:
   # A release published with the job's GITHUB_TOKEN starts no workflow, so the end
   # of the repository's release workflow, Release, starts this one too. Not a
   # scheduled run of it, which runs every hour as a safety net and mostly releases
-  # nothing; the morning sweep catches a release that one of them made.
+  # nothing; the morning sweep catches a release that one of them made. A release
+  # workflow that starts this one itself sets
+  # [releases] sweep_after_release_workflow = false
+  # in .github/issue-assistant/config.toml, and install writes this workflow without
+  # the start below.
   workflow_run:
     workflows: [Release]
     types: [completed]
@@ -41,6 +45,6 @@ jobs:
       contents: read
       issues: write
       pull-requests: read
-    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-lifecycle.yml@2a6d50ab52ca631924e63f1ab02f35ac31448f77 # v1.13.3
+    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-lifecycle.yml@00a1bb67482924c61555fc31542d3d67de661269 # v1.14.0
     with:
       dry_run: ${{ inputs.dry_run || false }}

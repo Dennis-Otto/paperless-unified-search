@@ -4,9 +4,10 @@ name: Screenshots
 # renders its pictures in place, wherever the documentation, the stores or the social
 # preview take them from, and lists in .github/screenshots-paths.txt the files whose
 # change can change them, as the paths of a workflow; without the script, every run
-# ends after its plan. After a change of main that touches a file of the list, after
-# every release, whose version a picture may show, and every week, the plan starts a
-# run that renders, as the branch bot and a person do by hand. That run renders the
+# ends after its plan. After a change of main that touches a file of the list and
+# every week, the plan starts a run that renders, as the branch bot and a person do by
+# hand, and so does the release bot after every release, whose version a picture may
+# show, once its run passed (decision 0173). That run renders the
 # newest main, one at a time, without secrets, with Docker, the whole history and the
 # tools of the website in .venv-docs as CONTRIBUTING.md sets them up; the script of a
 # new repository photographs the website and, by its kind, the integration in Home
@@ -39,21 +40,17 @@ name: Screenshots
 on:
   push:
     branches: [main]
-  workflow_run:
-    workflows: [Release]
-    types: [completed]
-    branches: [main]
   schedule:
     - cron: "2 4 * * 2"
   workflow_dispatch:
 
 permissions: {}
 
-# One render at a time: a run by hand, which the plan of a due change, the branch bot
-# and a person start, waits for the render before it, and a newer one that waits
-# replaces it, since it renders a newer main. Every other run only plans, in a group
-# of its own, so that a push that changes none of the listed files never replaces a
-# waiting render of one that did.
+# One render at a time: a run by hand, which the plan of a due change, the release
+# bot, the branch bot and a person start, waits for the render before it, and a newer
+# one that waits replaces it, since it renders a newer main. Every other run only
+# plans, in a group of its own, so that a push that changes none of the listed files
+# never replaces a waiting render of one that did.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && 'render' || github.run_id }}
   cancel-in-progress: false
@@ -71,18 +68,10 @@ env:
 jobs:
   plan:
     name: plan the screenshots
-    # Of the runs of the Release workflow, only one that passed for the push of the
-    # merge of a release pull request made a release; its daily, manual and restarted
-    # runs see the same release commit while main stays on it. A run by hand renders
-    # without a plan.
+    # A run by hand renders without a plan: the release bot starts one after a
+    # release, as the plan of a due change, the branch bot and a person do.
     if: >-
-      !github.event.repository.fork && github.event_name != 'workflow_dispatch' && (
-        github.event_name != 'workflow_run' || (
-          github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.event == 'push' &&
-          startsWith(github.event.workflow_run.head_commit.message, 'chore: release ')
-        )
-      )
+      !github.event.repository.fork && github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     # Actions for the token of the job, which starts the run that renders.
@@ -237,7 +226,7 @@ jobs:
 
   start:
     name: start the render
-    # A run by hand: started by the plan, the branch bot or a person.
+    # A run by hand: started by the plan, the release bot, the branch bot or a person.
     if: >-
       !github.event.repository.fork && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
