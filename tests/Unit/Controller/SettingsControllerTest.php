@@ -562,6 +562,26 @@ final class SettingsControllerTest extends TestCase {
 				'Paperless answered with an error (HTTP 502). Check its log, or try again later.',
 				PaperlessRequestException::class, 'Paperless returned HTTP 502.',
 			],
+			'a host name that Paperless refuses' => [
+				self::answer(400, '
+<!doctype html>
+<html lang="en">
+<head>
+  <title>Bad Request (400)</title>
+</head>
+<body>
+  <h1>Bad Request (400)</h1><p></p>
+</body>
+</html>
+'), 'disallowed_host',
+				'Paperless refused the host name of the Paperless URL (HTTP 400), as Paperless-ngx 3.5 does when PAPERLESS_URL names another one. Add the host name to PAPERLESS_ALLOWED_HOSTS of Paperless and restart Paperless, or enter the URL with the host name of PAPERLESS_URL. The log of Paperless names the host.',
+				PaperlessRequestException::class, 'Paperless refused the host name of the request with HTTP 400.',
+			],
+			'the page of a proxy with HTTP 400' => [
+				self::answer(400, '<html><head><title>400 Bad Request</title></head><body><center><h1>400 Bad Request</h1></center><hr><center>nginx</center></body></html>'), 'http',
+				'Paperless answered with an error (HTTP 400). Check its log, or try again later.',
+				PaperlessRequestException::class, 'Paperless returned HTTP 400.',
+			],
 			'a page of HTML' => [
 				self::answer(200, '<html>Sign in</html>'), 'not_paperless',
 				'This URL answers, but not like Paperless-ngx. Check the address and its path.',

@@ -71,8 +71,9 @@ RECENT_FIELDS="$(sed -n "s/^[[:space:]]*private const RECENT_FIELDS = '\([^']*\)
 OWNER_FIELDS="$(sed -n "s/^[[:space:]]*private const OWNER_FIELDS = '\([^']*\)';.*/\1/p" "${SERVICE}")"
 UNKNOWN_DOCUMENT="$(sed -n "s/^[[:space:]]*private const UNKNOWN_DOCUMENT = '\([^']*\)';.*/\1/p" "${SERVICE}")"
 HIDDEN_DOCUMENT="$(sed -n "s/^[[:space:]]*private const HIDDEN_DOCUMENT = '\([^']*\)';.*/\1/p" "${SERVICE}")"
-if [[ -z "${FIELDS}" || -z "${RECENT_FIELDS}" || -z "${OWNER_FIELDS}" || -z "${UNKNOWN_DOCUMENT}" || -z "${HIDDEN_DOCUMENT}" ]]; then
-	echo "${SERVICE} has no constant SEARCH_FIELDS, RECENT_FIELDS, OWNER_FIELDS, UNKNOWN_DOCUMENT or HIDDEN_DOCUMENT, which the contract reads." >&2
+DISALLOWED_HOST_PAGE="$(sed -n "s/^[[:space:]]*private const DISALLOWED_HOST_PAGE = '\([^']*\)';.*/\1/p" "${SERVICE}")"
+if [[ -z "${FIELDS}" || -z "${RECENT_FIELDS}" || -z "${OWNER_FIELDS}" || -z "${UNKNOWN_DOCUMENT}" || -z "${HIDDEN_DOCUMENT}" || -z "${DISALLOWED_HOST_PAGE}" ]]; then
+	echo "${SERVICE} has no constant SEARCH_FIELDS, RECENT_FIELDS, OWNER_FIELDS, UNKNOWN_DOCUMENT, HIDDEN_DOCUMENT or DISALLOWED_HOST_PAGE, which the contract reads." >&2
 	exit 1
 fi
 
@@ -124,6 +125,7 @@ phase "Check the contract with Paperless-ngx ${PAPERLESS}"
 	--env "OWNER_FIELDS=${OWNER_FIELDS}" \
 	--env "UNKNOWN_DOCUMENT=${UNKNOWN_DOCUMENT}" \
 	--env "HIDDEN_DOCUMENT=${HIDDEN_DOCUMENT}" \
+	--env "DISALLOWED_HOST_PAGE=${DISALLOWED_HOST_PAGE}" \
 	--env "LINE=${PAPERLESS}" \
 	paperless-mock python /mock/assert_contract.py | tee -a "${SUMMARY}"
 phase "The contract holds"

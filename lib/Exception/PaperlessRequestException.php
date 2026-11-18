@@ -61,6 +61,14 @@ class PaperlessRequestException extends RuntimeException {
 	}
 
 	/**
+	 * For the answer of HTTP 400 that refuses the host name of the URL. Its message names
+	 * no host, as it goes into the log and the history of problems that people share.
+	 */
+	public static function disallowedHost(): self {
+		return new self(RequestFailure::DisallowedHost, 'Paperless refused the host name of the request with HTTP 400.', 400);
+	}
+
+	/**
 	 * For an answer of 2xx that isn't a list of documents of Paperless.
 	 */
 	public static function notPaperless(string $message, ?Throwable $previous = null): self {

@@ -193,6 +193,12 @@ final class PaperlessApiService {
 	 * reason, for documents similar to one that it doesn't have as well.
 	 */
 	private const SEARCH_ERROR = 'Error listing search results, check logs for more detail.';
+	/**
+	 * The title of the plain page with which Django answers HTTP 400 when the host name of a
+	 * request isn't in its ALLOWED_HOSTS, before any code of Paperless runs, so without the
+	 * header X-Version. tests/e2e/paperless-contract.sh checks it against a real Paperless.
+	 */
+	private const DISALLOWED_HOST_PAGE = '<title>Bad Request (400)</title>';
 
 	private IClient $client;
 
@@ -1015,7 +1021,7 @@ final class PaperlessApiService {
 		);
 		$status = $response->getStatusCode();
 		if ($status < 200 || $status >= 300) {
-			throw PaperlessRequestException::forStatus($status, $api);
+			throw self::failureOfStatus($response, self::bodyOf($response), $api);
 		}
 
 		$body = $response->getBody();
@@ -1092,20 +1098,22 @@ final class PaperlessApiService {
 	 * similar to one. All of them come from what the user typed: the search finds nothing.
 	 * Any other answer is a failure, also HTTP 400 for another reason, such as the page of a
 	 * proxy, HTTP 403 for an account that may view no documents, and HTTP 404 for the first
-	 * page, which a wrong URL answers.
+	 * page, which a wrong URL answers. The client of Nextcloud hands out the body of an
+	 * answer once, so it is read here once for every check.
 	 *
 	 * @param array<string, int|string> $query
 	 * @param int $api the version of the API that the request asked for
 	 */
 	private static function failureOf(IResponse $response, array $query, int $api): PaperlessRequestException {
 		$status = $response->getStatusCode();
+		$body = self::bodyOf($response);
 		$similar = isset($query['more_like_id']);
 		$searches = $similar || isset($query['query']) || isset($query['text']);
-		if ($searches && $status === 400 && self::refusesTheQuery($response)) {
+		if ($searches && $status === 400 && self::refusesTheQuery($body)) {
 			return new PaperlessQueryRejected($status, PaperlessVersion::fromResponse($response));
 		}
 
-		if ($similar && self::refusesTheDocument($response)) {
+		if ($similar && self::refusesTheDocument($response, $body)) {
 			return new PaperlessQueryRejected($status, refusedDocument: true);
 		}
 
@@ -1114,7 +1122,35 @@ final class PaperlessApiService {
 			return new PaperlessQueryRejected($status);
 		}
 
+		return self::failureOfStatus($response, $body, $api);
+	}
+
+	/**
+	 * The failure of an answer whose status isn't 2xx, other than a refusal of a search.
+	 * HTTP 400 with the plain page of Django and without the version of Paperless refuses
+	 * the host name of the URL, as Paperless-ngx 3.5 does for any other than the host of
+	 * PAPERLESS_URL and localhost once PAPERLESS_URL is set; any other answer of HTTP 400,
+	 * such as the page of a proxy, stays an error of the server.
+	 *
+	 * @param int $api the version of the API that the request asked for
+	 */
+	private static function failureOfStatus(IResponse $response, string $body, int $api): PaperlessRequestException {
+		$status = $response->getStatusCode();
+		if ($status === 400 && $response->getHeader('X-Version') === '' && str_contains($body, self::DISALLOWED_HOST_PAGE)) {
+			return PaperlessRequestException::disallowedHost();
+		}
+
 		return PaperlessRequestException::forStatus($status, $api);
+	}
+
+	/**
+	 * The body of an answer, which the client of Nextcloud hands out once, as text: empty
+	 * for none.
+	 */
+	private static function bodyOf(IResponse $response): string {
+		$body = $response->getBody();
+
+		return is_string($body) ? $body : '';
 	}
 
 	/**
@@ -1124,9 +1160,8 @@ final class PaperlessApiService {
 	 * HTTP 400 with the words of its error. That Paperless says the same when its index
 	 * fails, so such a failure counts as a refusal here; any other search still notices it.
 	 */
-	private static function refusesTheDocument(IResponse $response): bool {
+	private static function refusesTheDocument(IResponse $response, string $body): bool {
 		$status = $response->getStatusCode();
-		$body = $response->getBody();
 		if ($status === 403) {
 			return in_array($body, [self::UNKNOWN_DOCUMENT, self::HIDDEN_DOCUMENT], true);
 		}
@@ -1140,11 +1175,10 @@ final class PaperlessApiService {
 	 * Whether an answer of HTTP 400 holds the errors of the field query, as Django REST
 	 * Framework writes them for Paperless: {"query": ["Invalid date value …"]}.
 	 */
-	private static function refusesTheQuery(IResponse $response): bool {
-		$body = $response->getBody();
+	private static function refusesTheQuery(string $body): bool {
 		try {
 			/** @psalm-suppress MixedAssignment Only its shape counts, which is checked below. */
-			$data = is_string($body) ? json_decode($body, true, flags: JSON_THROW_ON_ERROR) : null;
+			$data = json_decode($body, true, flags: JSON_THROW_ON_ERROR);
 		} catch (JsonException) {
 			return false;
 		}

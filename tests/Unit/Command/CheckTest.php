@@ -491,6 +491,23 @@ final class CheckTest extends TestCase {
 	}
 
 	/**
+	 * occ gives the same advice as the settings page for a host name that Paperless-ngx 3.5
+	 * refuses, and -v names its cause without the host (#491).
+	 */
+	public function testSaysWhatToChangeWhenPaperlessRefusesTheHostName(): void {
+		$this->connected();
+		$tester = $this->tester($this->answer(400, "\n<!doctype html>\n<html lang=\"en\">\n<head>\n  <title>Bad Request (400)</title>\n</head>\n<body>\n  <h1>Bad Request (400)</h1><p></p>\n</body>\n</html>\n", []));
+
+		self::assertSame(Command::FAILURE, $tester->execute([], ['capture_stderr_separately' => true, 'verbosity' => OutputInterface::VERBOSITY_VERBOSE]));
+
+		self::assertSame(
+			"Paperless refused the host name of the Paperless URL (HTTP 400), as Paperless-ngx 3.5 does when PAPERLESS_URL names another one. Add the host name to PAPERLESS_ALLOWED_HOSTS of Paperless and restart Paperless, or enter the URL with the host name of PAPERLESS_URL. The log of Paperless names the host.\n"
+			. "disallowed_host, OCA\\PaperlessUnifiedSearch\\Exception\\PaperlessRequestException: Paperless refused the host name of the request with HTTP 400.\n",
+			$tester->getErrorOutput(),
+		);
+	}
+
+	/**
 	 * An error may repeat what the request sent, as a proxy may with its headers: -v shows
 	 * it without the token.
 	 */

@@ -10,6 +10,11 @@
 # by their digests, and the one of Paperless-ngx 2 within version 2
 # (.github/renovate.json5).
 #
+# PAPERLESS_URL names the host paperless, so that Paperless-ngx 3.5 and later answers only
+# that name and localhost, as for a user who sets it, and refuses the name of its service,
+# which assert_contract.py checks (#491). The health check asks for localhost for the same
+# reason.
+#
 # The administrator is one of the tests alone, and paperless-contract.sh generates the
 # secret key anew for every run; the documents are the text files of contract/documents/.
 
@@ -20,6 +25,7 @@ x-paperless: &paperless
     PAPERLESS_ADMIN_USER: contract-admin
     PAPERLESS_ADMIN_PASSWORD: contract-only-password
     PAPERLESS_TIME_ZONE: UTC
+    PAPERLESS_URL: http://paperless:8000
     # One worker of each kind is plenty for three text files, and starts sooner.
     PAPERLESS_TASK_WORKERS: "1"
     PAPERLESS_THREADS_PER_WORKER: "1"
@@ -33,7 +39,7 @@ x-paperless: &paperless
       aliases:
         - paperless
   healthcheck:
-    test: ["CMD", "curl", "--fail", "--silent", "--output", "/dev/null", "http://127.0.0.1:8000/"]
+    test: ["CMD", "curl", "--fail", "--silent", "--output", "/dev/null", "--header", "Host: localhost", "http://127.0.0.1:8000/"]
     interval: 3s
     timeout: 3s
     retries: 100

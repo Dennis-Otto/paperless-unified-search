@@ -50,6 +50,8 @@ final class PaperlessApiServiceTest extends TestCase {
 	private const PAPERLESS_3 = ['X-Version' => '3.3.0', 'X-Api-Version' => '10'];
 	private const PAPERLESS_2 = ['X-Version' => '2.20.13', 'X-Api-Version' => '9'];
 	private const SEARCH_ERROR = 'Error listing search results, check logs for more detail.';
+	/** What Paperless-ngx 3.5.0 answers a host name that it doesn't allow: the plain page of Django, 143 bytes. */
+	private const DISALLOWED_HOST = "\n<!doctype html>\n<html lang=\"en\">\n<head>\n  <title>Bad Request (400)</title>\n</head>\n<body>\n  <h1>Bad Request (400)</h1><p></p>\n</body>\n</html>\n";
 	/** The keys of the version of Paperless and of its API, as the app stores them. */
 	private const VERSION_KEYS = [AppConstants::APP_ID . '.paperless_version', AppConstants::APP_ID . '.paperless_api_version'];
 	/**
@@ -629,7 +631,7 @@ final class PaperlessApiServiceTest extends TestCase {
 			->with(self::anything(), self::callback(
 				static fn (array $options): bool => $options['headers']['User-Agent'] === 'Nextcloud-Paperless-Unified-Search/0.6.0',
 			))
-			->willReturn($this->response(200, self::NO_DOCUMENTS));
+			->willReturnCallback(fn (): IResponse => $this->response(200, self::NO_DOCUMENTS));
 
 		$service = $this->service($client, appManager: $appManager);
 		$service->searchDocuments('invoice', 1, 10);
@@ -859,7 +861,7 @@ final class PaperlessApiServiceTest extends TestCase {
 		$client = $this->createMock(IClient::class);
 		$client->expects(self::exactly($requests))
 			->method('get')
-			->willReturn($this->response(400, '{"query":["The search query is too long (' . $length . ' characters). The maximum allowed length is 4096 characters."]}', self::PAPERLESS_3));
+			->willReturnCallback(fn (): IResponse => $this->response(400, '{"query":["The search query is too long (' . $length . ' characters). The maximum allowed length is 4096 characters."]}', self::PAPERLESS_3));
 
 		// Characters, not bytes: ä takes two.
 		self::assertSame(400, $this->rejectedSearch($client, str_repeat('ä', $length))->status);
@@ -1167,6 +1169,86 @@ final class PaperlessApiServiceTest extends TestCase {
 		} catch (PaperlessRequestException $exception) {
 			self::assertSame(PaperlessRequestException::class, $exception::class);
 			self::assertSame($status, $exception->status);
+		}
+	}
+
+	/**
+	 * Every request of the app to the documents of Paperless: the test of the connection,
+	 * a search, a search for similar documents, and the newest documents of the widget.
+	 *
+	 * @return array<string, array{callable(PaperlessApiService): mixed}>
+	 */
+	public static function requestsForDocuments(): array {
+		return [
+			'the test of the connection' => [static fn (PaperlessApiService $service): mixed => $service->probe('http://paperless:8000', 'TEST_VALUE', true)],
+			'a search' => [static fn (PaperlessApiService $service): mixed => $service->searchDocuments('invoice', 1, 25)],
+			'a search of the advanced syntax' => [static fn (PaperlessApiService $service): mixed => $service->searchDocuments('created:[2026 to 2027]', 1, 25)],
+			'a search for similar documents' => [static fn (PaperlessApiService $service): mixed => $service->searchDocuments('like:412', 1, 25)],
+			'the newest documents' => [static fn (PaperlessApiService $service): mixed => $service->findRecentDocuments(5)],
+			'a list of names' => [static fn (PaperlessApiService $service): mixed => $service->findTags()],
+		];
+	}
+
+	/**
+	 * Paperless-ngx 3.5 answers only the host of PAPERLESS_URL and localhost once
+	 * PAPERLESS_URL is set, and refuses any other host name, such as the one of its Docker
+	 * service, with the plain page of Django, before any of its own code runs: without the
+	 * header X-Version. It read as an error of Paperless to try again later; now it has a
+	 * cause of its own, whose message says what to change, and neither the cause nor its
+	 * message name the host (#491).
+	 *
+	 * @param callable(PaperlessApiService): mixed $request
+	 */
+	#[DataProvider('requestsForDocuments')]
+	public function testAHostNameThatPaperlessRefusesHasACauseOfItsOwn(callable $request): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects(self::once())->method('get')->willReturn($this->response(400, self::DISALLOWED_HOST));
+
+		try {
+			$request($this->service($client, 'http://paperless:8000'));
+			self::fail('The answer did not fail the request.');
+		} catch (PaperlessRequestException $exception) {
+			self::assertSame(PaperlessRequestException::class, $exception::class);
+			self::assertSame([RequestFailure::DisallowedHost, 400], [$exception->reason, $exception->status]);
+			self::assertSame('Paperless refused the host name of the request with HTTP 400.', $exception->getMessage());
+		}
+	}
+
+	/**
+	 * Only the plain page of Django without the version of Paperless is a refused host
+	 * name: any other answer of HTTP 400, also the page of a proxy and a page of Django
+	 * that Paperless sent with its version, and that page with another status keep the
+	 * cause that they had (#491).
+	 *
+	 * @return array<string, array{int, ?string, array<string, string>, RequestFailure}>
+	 */
+	public static function answersLikeARefusedHost(): array {
+		return [
+			'the page of a proxy' => [400, '<html><head><title>400 Bad Request</title></head><body><center><h1>400 Bad Request</h1></center><hr><center>nginx</center></body></html>', [], RequestFailure::Http],
+			'the page of Django from Paperless with its version' => [400, self::DISALLOWED_HOST, self::PAPERLESS_3, RequestFailure::Http],
+			'JSON without a version' => [400, '{"detail":"Bad request."}', [], RequestFailure::Http],
+			'no body' => [400, null, [], RequestFailure::Http],
+			'the page with another status' => [403, self::DISALLOWED_HOST, [], RequestFailure::Unauthorized],
+			'the page of a server error' => [500, self::DISALLOWED_HOST, [], RequestFailure::Http],
+		];
+	}
+
+	/**
+	 * @param array<string, string> $headers
+	 */
+	#[DataProvider('answersLikeARefusedHost')]
+	public function testOnlyThePageOfDjangoWithoutAVersionIsARefusedHost(int $status, ?string $body, array $headers, RequestFailure $reason): void {
+		foreach (self::requestsForDocuments() as $name => [$request]) {
+			$client = $this->createStub(IClient::class);
+			$client->method('get')->willReturnCallback(fn (): IResponse => $this->response($status, $body, $headers));
+
+			try {
+				$request($this->service($client));
+				self::fail('The answer did not fail ' . $name . '.');
+			} catch (PaperlessRequestException $exception) {
+				self::assertSame(PaperlessRequestException::class, $exception::class, $name);
+				self::assertSame([$reason, $status], [$exception->reason, $exception->status], $name);
+			}
 		}
 	}
 
@@ -2879,12 +2961,21 @@ final class PaperlessApiServiceTest extends TestCase {
 	}
 
 	/**
+	 * An answer of Paperless that hands out its body once, as the client of Nextcloud does,
+	 * which reads it from its stream: each later read gets an empty body.
+	 *
 	 * @param array<string, string> $headers by name
 	 */
 	private function response(int $status, ?string $body, array $headers = []): IResponse {
 		$response = $this->createStub(IResponse::class);
 		$response->method('getStatusCode')->willReturn($status);
-		$response->method('getBody')->willReturn($body);
+		$read = false;
+		$response->method('getBody')->willReturnCallback(static function () use (&$read, $body): ?string {
+			$first = !$read;
+			$read = true;
+
+			return $first ? $body : '';
+		});
 		$response->method('getHeader')->willReturnCallback(static fn (string $name): string => $headers[$name] ?? '');
 
 		return $response;

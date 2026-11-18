@@ -1,0 +1,4 @@
+### Bug fixes
+
+- After an update to Paperless-ngx 3.5, a Paperless that sets `PAPERLESS_URL` answers only the host name of that URL. When Nextcloud reaches it under another name, such as `http://paperless:8000`, the test of the connection, `occ` and the search problems now say that Paperless refused the host name and how to fix it: add the name to `PAPERLESS_ALLOWED_HOSTS` of Paperless and restart it. Before, they said only that Paperless answered with an error and to try again later. The new code of the settings route is `disallowed_host`.
+- On Paperless-ngx before 2.20.13, a search for documents similar to one that Paperless doesn't have now finds nothing, as on newer versions, instead of failing as a problem of the search: the app read the answer of Paperless twice, and Nextcloud hands it out only once.
