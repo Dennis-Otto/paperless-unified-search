@@ -54,6 +54,7 @@ export MSYS2_ARG_CONV_EXCL="/mock/${MSYS2_ARG_CONV_EXCL:+;${MSYS2_ARG_CONV_EXCL}
 # for the oldest, as it asks every Paperless before it named its version.
 SERVICE="${REPOSITORY_ROOT}/lib/Service/PaperlessApiService.php"
 VERSION_MODEL="${REPOSITORY_ROOT}/lib/Model/PaperlessVersion.php"
+REQUEST_EXCEPTION="${REPOSITORY_ROOT}/lib/Exception/PaperlessRequestException.php"
 OLDEST_API="$(sed -n "s/^[[:space:]]*public const OLDEST_API = \([0-9]*\);.*/\1/p" "${VERSION_MODEL}")"
 NEWEST_API="$(sed -n "s/^[[:space:]]*public const NEWEST_API = \([0-9]*\);.*/\1/p" "${VERSION_MODEL}")"
 if [[ -z "${OLDEST_API}" || -z "${NEWEST_API}" ]]; then
@@ -71,9 +72,13 @@ RECENT_FIELDS="$(sed -n "s/^[[:space:]]*private const RECENT_FIELDS = '\([^']*\)
 OWNER_FIELDS="$(sed -n "s/^[[:space:]]*private const OWNER_FIELDS = '\([^']*\)';.*/\1/p" "${SERVICE}")"
 UNKNOWN_DOCUMENT="$(sed -n "s/^[[:space:]]*private const UNKNOWN_DOCUMENT = '\([^']*\)';.*/\1/p" "${SERVICE}")"
 HIDDEN_DOCUMENT="$(sed -n "s/^[[:space:]]*private const HIDDEN_DOCUMENT = '\([^']*\)';.*/\1/p" "${SERVICE}")"
-DISALLOWED_HOST_PAGE="$(sed -n "s/^[[:space:]]*private const DISALLOWED_HOST_PAGE = '\([^']*\)';.*/\1/p" "${SERVICE}")"
-if [[ -z "${FIELDS}" || -z "${RECENT_FIELDS}" || -z "${OWNER_FIELDS}" || -z "${UNKNOWN_DOCUMENT}" || -z "${HIDDEN_DOCUMENT}" || -z "${DISALLOWED_HOST_PAGE}" ]]; then
-	echo "${SERVICE} has no constant SEARCH_FIELDS, RECENT_FIELDS, OWNER_FIELDS, UNKNOWN_DOCUMENT, HIDDEN_DOCUMENT or DISALLOWED_HOST_PAGE, which the contract reads." >&2
+if [[ -z "${FIELDS}" || -z "${RECENT_FIELDS}" || -z "${OWNER_FIELDS}" || -z "${UNKNOWN_DOCUMENT}" || -z "${HIDDEN_DOCUMENT}" ]]; then
+	echo "${SERVICE} has no constant SEARCH_FIELDS, RECENT_FIELDS, OWNER_FIELDS, UNKNOWN_DOCUMENT or HIDDEN_DOCUMENT, which the contract reads." >&2
+	exit 1
+fi
+DISALLOWED_HOST_PAGE="$(sed -n "s/^[[:space:]]*private const DISALLOWED_HOST_PAGE = '\([^']*\)';.*/\1/p" "${REQUEST_EXCEPTION}")"
+if [[ -z "${DISALLOWED_HOST_PAGE}" ]]; then
+	echo "${REQUEST_EXCEPTION} has no constant DISALLOWED_HOST_PAGE, which the contract reads." >&2
 	exit 1
 fi
 

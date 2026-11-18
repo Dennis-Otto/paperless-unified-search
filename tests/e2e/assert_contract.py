@@ -29,8 +29,9 @@ with the first broken promise or with every difference of the mock.
 ACCEPT, the version of the API that the app asks this line of Paperless for once Paperless
 named its version, OLDEST_ACCEPT, the one that it asks for before, FIELDS, RECENT_FIELDS,
 OWNER_FIELDS, UNKNOWN_DOCUMENT, HIDDEN_DOCUMENT and DISALLOWED_HOST_PAGE come from
-lib/Model/PaperlessVersion.php and lib/Service/PaperlessApiService.php, so that the
-contract checks what the app sends and reads; LINE is the line of Paperless-ngx, 2 or 3.
+lib/Model/PaperlessVersion.php, lib/Service/PaperlessApiService.php and
+lib/Exception/PaperlessRequestException.php, so that the contract checks what the app
+sends and reads; LINE is the line of Paperless-ngx, 2 or 3.
 """
 
 import base64
