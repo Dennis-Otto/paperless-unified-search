@@ -24,13 +24,14 @@ that Paperless Sync gives each owner need, in the search and in occ check. It pr
 report in Markdown, which paperless-contract.sh adds to the summary of the job, and fails
 with the first broken promise or with every difference of the mock.
 
-    ACCEPT='application/json; version=10' OLDEST_ACCEPT='application/json; version=9' FIELDS=id,title,… RECENT_FIELDS=id,title,added,… OWNER_FIELDS=id,owner UNKNOWN_DOCUMENT=… HIDDEN_DOCUMENT=… LINE=3 python assert_contract.py
+    ACCEPT='application/json; version=10' OLDEST_ACCEPT='application/json; version=9' FIELDS=id,title,… RECENT_FIELDS=id,title,added,… OWNER_FIELDS=id,owner UNKNOWN_DOCUMENT=… HIDDEN_DOCUMENT=… DISALLOWED_HOST_PAGE=… LINE=3 python assert_contract.py
 
 ACCEPT, the version of the API that the app asks this line of Paperless for once Paperless
 named its version, OLDEST_ACCEPT, the one that it asks for before, FIELDS, RECENT_FIELDS,
-OWNER_FIELDS, UNKNOWN_DOCUMENT and HIDDEN_DOCUMENT come from lib/Model/PaperlessVersion.php
-and lib/Service/PaperlessApiService.php, so that the contract checks what the app sends
-and reads; LINE is the line of Paperless-ngx, 2 or 3.
+OWNER_FIELDS, UNKNOWN_DOCUMENT, HIDDEN_DOCUMENT and DISALLOWED_HOST_PAGE come from
+lib/Model/PaperlessVersion.php, lib/Service/PaperlessApiService.php and
+lib/Exception/PaperlessRequestException.php, so that the contract checks what the app
+sends and reads; LINE is the line of Paperless-ngx, 2 or 3.
 """
 
 import base64
@@ -611,6 +612,56 @@ def check_similar(paperless, ids, viewer, unknown, hidden, report):
     report.passed("A document that Paperless refuses", f"HTTP 403 and {code(unknown)} for an unknown ID, {code(hidden)} for one that the account may not view")
 
 
+def check_disallowed_host(paperless, line, page, report):
+    """A host name that Paperless doesn't allow. compose.paperless.yaml sets PAPERLESS_URL to
+    http://paperless:8000, so Paperless-ngx 3.5 and later answers only the host paperless and
+    localhost, and refuses any other name, such as the one of its service in Compose, with
+    the plain page of Django, without the header X-Version, which the app recognises by
+    DISALLOWED_HOST_PAGE (#491). Through Nextcloud, the test of the connection then names the
+    cause with its own code, and a message without the host. Paperless-ngx 2 answers every
+    host name."""
+    other = f"paperless-{line}:8000"
+    query = {"page": 1, "page_size": 1, "fields": "id"}
+    for path in ("/api/documents/", "/api/tags/"):
+        answer = request(
+            f"{PAPERLESS}{path}?{urlencode(query)}",
+            headers={"Accept": paperless.accept, "Authorization": f"Token {paperless.token}", "Host": other},
+        )
+        if line == "2":
+            expect(answer.status == 200, f"Paperless-ngx 2 answers {path} for the host {other} with HTTP {answer.status}: {answer.body[:300]!r}")
+            continue
+        body = answer.body.decode(errors="replace")
+        expect(
+            (answer.status, answer.headers.get("X-Version"), page in body) == (400, None, True),
+            f"Paperless answers {path} for the host {other}, which PAPERLESS_URL doesn't name, with HTTP {answer.status}, "
+            f"X-Version {answer.headers.get('X-Version')!r} and {body[:300]!r}, not with HTTP 400, no X-Version and {page!r}, which the app recognises.",
+        )
+    if line == "2":
+        report.passed("Another host name", f"Paperless-ngx 2 answers {code(other)} although {code('PAPERLESS_URL')} names another")
+        return
+
+    answer = nextcloud(
+        "/apps/paperless_unified_search/settings",
+        method="POST",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        data=urlencode({"url": f"http://{other}", "token": paperless.token, "allowLocal": "1", "archiveOwner": NEXTCLOUD_USER[0]}).encode(),
+    )
+    refused = answer.json("The settings with another host name")
+    expect(
+        (answer.status, refused.get("code")) == (400, "disallowed_host"),
+        f"The test of the connection to http://{other} answers HTTP {answer.status} with {refused!r}, not HTTP 400 with the code disallowed_host.",
+    )
+    message = refused.get("message")
+    expect(
+        isinstance(message, str) and "PAPERLESS_ALLOWED_HOSTS" in message and other.split(":")[0] not in message,
+        f"The message of a refused host name doesn't name PAPERLESS_ALLOWED_HOSTS, or names the host: {message!r}",
+    )
+    report.passed(
+        "A host name that Paperless refuses",
+        f"HTTP 400 without {code('X-Version')} and with {code(page)} for {code(other)}; the test of the connection names {code('disallowed_host')}, without the host",
+    )
+
+
 def nextcloud(path, *, method="GET", data=None, headers=None):
     credentials = base64.b64encode(":".join(NEXTCLOUD_USER).encode()).decode()
     return request(
@@ -1156,9 +1207,10 @@ def main():
     owner_fields = [field for field in os.environ.get("OWNER_FIELDS", "").split(",") if field]
     unknown = os.environ.get("UNKNOWN_DOCUMENT", "")
     hidden = os.environ.get("HIDDEN_DOCUMENT", "")
+    disallowed_host_page = os.environ.get("DISALLOWED_HOST_PAGE", "")
     line = os.environ.get("LINE", "")
-    if not accept or not oldest or not fields or not recent_fields or not owner_fields or not unknown or not hidden or line not in ("2", "3"):
-        print("ACCEPT, OLDEST_ACCEPT, FIELDS, RECENT_FIELDS, OWNER_FIELDS, UNKNOWN_DOCUMENT, HIDDEN_DOCUMENT and LINE (2 or 3) are missing; paperless-contract.sh sets them.", file=sys.stderr)
+    if not accept or not oldest or not fields or not recent_fields or not owner_fields or not unknown or not hidden or not disallowed_host_page or line not in ("2", "3"):
+        print("ACCEPT, OLDEST_ACCEPT, FIELDS, RECENT_FIELDS, OWNER_FIELDS, UNKNOWN_DOCUMENT, HIDDEN_DOCUMENT, DISALLOWED_HOST_PAGE and LINE (2 or 3) are missing; paperless-contract.sh sets them.", file=sys.stderr)
         return 2
 
     report = Report()
@@ -1174,6 +1226,7 @@ def main():
         check_api_versions(paperless, oldest, report)
         viewer_id, viewer, stranger = check_privileges(paperless, report)
         check_similar(paperless, ids, viewer, unknown, hidden, report)
+        check_disallowed_host(paperless, line, disallowed_host_page, report)
         check_nextcloud(paperless, line, ids, version, api_version, shown, viewer, report)
         check_permissions(paperless, ids, viewer_id, viewer, report)
         check_tags(paperless, ids, viewer, report)

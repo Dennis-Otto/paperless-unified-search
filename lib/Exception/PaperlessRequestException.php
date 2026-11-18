@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\PaperlessUnifiedSearch\Exception;
 
 use OCA\PaperlessUnifiedSearch\Model\PaperlessVersion;
+use OCP\Http\Client\IResponse;
 use OCP\Http\Client\LocalServerException;
 use RuntimeException;
 use Throwable;
@@ -29,6 +30,12 @@ class PaperlessRequestException extends RuntimeException {
 	private const TIMEOUT_ERROR = 28;
 	/** How the DNS pinning of Nextcloud begins the message for a name that doesn't resolve. */
 	private const NO_DNS_RECORD = 'No DNS record found for ';
+	/**
+	 * The title of the plain page with which Django answers HTTP 400 when the host name of a
+	 * request isn't in its ALLOWED_HOSTS, before any code of Paperless runs, so without the
+	 * header X-Version. tests/e2e/paperless-contract.sh checks it against a real Paperless.
+	 */
+	private const DISALLOWED_HOST_PAGE = '<title>Bad Request (400)</title>';
 
 	/**
 	 * @param ?int $status the status of the answer of Paperless, null without an answer
@@ -58,6 +65,26 @@ class PaperlessRequestException extends RuntimeException {
 		};
 
 		return new self($reason, 'Paperless returned HTTP ' . $status . '.', $status);
+	}
+
+	/**
+	 * For an answer whose status isn't the expected one, with its body, which the client of
+	 * Nextcloud hands out once. HTTP 400 with the plain page of Django and without the
+	 * version of Paperless refuses the host name of the URL, as Paperless-ngx 3.5 does for
+	 * any other than the host of PAPERLESS_URL and localhost once PAPERLESS_URL is set; its
+	 * message names no host, as it goes into the log and the history of problems that people
+	 * share. Any other answer of HTTP 400, such as the page of a proxy, stays an error of
+	 * the server, as forStatus() names it.
+	 *
+	 * @param int $api the version of the API that the request asked for
+	 */
+	public static function forAnswer(IResponse $response, string $body, int $api = PaperlessVersion::OLDEST_API): self {
+		$status = $response->getStatusCode();
+		if ($status === 400 && $response->getHeader('X-Version') === '' && str_contains($body, self::DISALLOWED_HOST_PAGE)) {
+			return new self(RequestFailure::DisallowedHost, 'Paperless refused the host name of the request with HTTP 400.', 400);
+		}
+
+		return self::forStatus($status, $api);
 	}
 
 	/**

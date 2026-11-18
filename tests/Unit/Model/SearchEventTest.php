@@ -55,6 +55,8 @@ final class SearchEventTest extends TestCase {
 			'a cause that is no text' => [['reason' => 7, 'status' => 502], null, null],
 			'a status without a cause' => [['status' => 502], null, null],
 			'a status that is no number' => [['reason' => 'http', 'status' => '502'], RequestFailure::Http, null],
+			'a refused host name' => [['reason' => 'disallowed_host', 'status' => 400], RequestFailure::DisallowedHost, 400],
+			'an error stored before refused host names had a cause' => [['reason' => 'http', 'status' => 400], RequestFailure::Http, 400],
 		];
 	}
 

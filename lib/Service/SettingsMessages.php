@@ -95,6 +95,7 @@ final class SettingsMessages {
 			RequestFailure::UnsupportedVersion => $this->l10n->t('Paperless is older than 2.16 and does not speak version 9 of its API (HTTP 406). Update Paperless-ngx.'),
 			RequestFailure::NewerApi => $this->l10n->t('Paperless no longer speaks version 10 of its API, the newest that this app knows (HTTP 406). Update Paperless Unified Search.'),
 			RequestFailure::Http => $this->l10n->t('Paperless answered with an error (HTTP %s). Check its log, or try again later.', [$code]),
+			RequestFailure::DisallowedHost => $this->l10n->t('Paperless does not accept the host name of its URL (HTTP 400). Add the host name of the Paperless URL to PAPERLESS_ALLOWED_HOSTS of Paperless and restart Paperless, or enter the URL with the host name of PAPERLESS_URL when the Nextcloud server reaches Paperless under it. The log of Paperless names the host name that it refused.'),
 			RequestFailure::NotPaperless => $this->l10n->t('This URL answers, but not like Paperless-ngx. Check the address and its path.'),
 			RequestFailure::LocalAddress => $this->l10n->t('Nextcloud does not connect to addresses of the local network unless you allow it. If Paperless runs in your local network or in Docker, select “Paperless runs in my local network”.'),
 			RequestFailure::Certificate => $this->l10n->t('Nextcloud does not trust the certificate of Paperless at this URL. If Paperless uses a certificate of its own, import it with occ security:certificates:import.'),

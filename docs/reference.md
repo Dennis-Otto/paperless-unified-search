@@ -101,7 +101,8 @@ curl -u admin -H 'OCS-APIRequest: true' -H 'Accept: application/json' \
 | `unauthorized` | Paperless refused the token, with HTTP 401 or 403 |
 | `not_found` | HTTP 404: the path of the URL is wrong |
 | `redirect` | The URL forwards, and with the local network Nextcloud follows no redirect |
-| `http` | Another status, such as an error of Paperless with 5xx |
+| `http` | Another status, such as an error of Paperless with 5xx, or HTTP 400 of a proxy |
+| `disallowed_host` | HTTP 400: Paperless refused the host name of the URL, as Paperless-ngx 3.5 does for any other than the host of `PAPERLESS_URL` and `localhost` once `PAPERLESS_URL` is set; adding the host name to `PAPERLESS_ALLOWED_HOSTS` of Paperless fixes it |
 | `unsupported_version` | HTTP 406: Paperless is older than 2.16 and doesn't speak version 9 of its API; updating Paperless-ngx fixes it |
 | `newer_api` | HTTP 406 to version 10 of the API, the newest that the app knows, which it asks for once Paperless named it: Paperless is newer than the app, and updating Paperless Unified Search fixes it. A Paperless that was downgraded or restored from an older backup answers the same way until **Test connection and save** asks it again |
 | `not_paperless` | The answer isn't a list of documents of Paperless-ngx |

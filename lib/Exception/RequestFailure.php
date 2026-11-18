@@ -30,6 +30,12 @@ enum RequestFailure: string {
 	case NewerApi = 'newer_api';
 	/** Any other status outside 2xx, such as 500 or 502. */
 	case Http = 'http';
+	/**
+	 * Paperless refused the host name of the URL with HTTP 400, as Django does for one that
+	 * isn't in its ALLOWED_HOSTS: Paperless-ngx 3.5 allows only the host of PAPERLESS_URL
+	 * and localhost once PAPERLESS_URL is set.
+	 */
+	case DisallowedHost = 'disallowed_host';
 	/** An answer of 2xx that isn't a list of documents of Paperless, such as a page of HTML. */
 	case NotPaperless = 'not_paperless';
 	/** Nextcloud refused the address as one of the local network. */

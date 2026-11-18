@@ -118,6 +118,8 @@ When Paperless runs at an address of your local network or by the name of its Do
 
 With the switch, Nextcloud follows no redirect: a URL that forwards, as from `http` to `https`, fails the test with its own message. Enter the address that it forwards to.
 
+Paperless itself may refuse such a name: since Paperless-ngx 3.5, a Paperless that sets `PAPERLESS_URL` answers only the host of that URL and `localhost`, and the test fails with *Paperless does not accept the host name of its URL*, as soon as Paperless is updated. Add the name under which Nextcloud reaches it to `PAPERLESS_ALLOWED_HOSTS` of Paperless, as [its row](#when-the-test-of-the-connection-fails) says.
+
 ## Certificates of your own
 
 Nextcloud checks the certificate of every HTTPS server that it connects to. A Paperless with a certificate of an authority of your own, or with a self-signed one, fails the test with *Nextcloud does not trust the certificate of Paperless*. Import the certificate of the authority, or the self-signed certificate itself, into the certificates that Nextcloud trusts:

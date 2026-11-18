@@ -56,4 +56,27 @@ final class SettingsMessagesTest extends TestCase {
 		self::assertSame('Paperless is older than 2.16 and does not speak version 9 of its API (HTTP 406). Update Paperless-ngx.', $messages->forFailure($older));
 		self::assertSame('Paperless no longer speaks version 10 of its API, the newest that this app knows (HTTP 406). Update Paperless Unified Search.', $messages->forFailure($newer));
 	}
+
+	/**
+	 * Paperless-ngx 3.5 refuses every host name besides the one of PAPERLESS_URL and
+	 * localhost once PAPERLESS_URL is set. The message says so and what to change, the
+	 * same for the test of the connection and for a problem of the search, and names no
+	 * host, address or URL of the user (#491).
+	 */
+	public function testARefusedHostNameSaysWhatToChangeWithoutTheHost(): void {
+		$l10n = $this->createStub(IL10N::class);
+		$l10n->method('t')->willReturnCallback(static fn (string $text, array $parameters = []): string => vsprintf($text, $parameters));
+		$messages = new SettingsMessages($l10n);
+		$refusal = new PaperlessRequestException(RequestFailure::DisallowedHost, 'Paperless refused the host name of the request with HTTP 400.', 400);
+
+		$message = $messages->forFailure($refusal);
+
+		self::assertSame(
+			'Paperless does not accept the host name of its URL (HTTP 400). Add the host name of the Paperless URL to PAPERLESS_ALLOWED_HOSTS of Paperless and restart Paperless, or enter the URL with the host name of PAPERLESS_URL when the Nextcloud server reaches Paperless under it. The log of Paperless names the host name that it refused.',
+			$message,
+		);
+		self::assertSame($message, $messages->forCause(RequestFailure::DisallowedHost, 400));
+		self::assertNotSame($message, $messages->forCause(RequestFailure::Http, 400));
+		self::assertStringNotContainsString('://', $message . $refusal->getMessage());
+	}
 }
