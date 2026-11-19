@@ -104,8 +104,8 @@ WORDS: dict[str, dict[str, str]] = {
         "check of": "{check} of {workflow}",
         "at-a-glance": "At a glance",
         "glance intro": (
-            "The times are UTC. GitHub starts a scheduled run when it can: often "
-            "some minutes late, and at busy times not at all."
+            "The times are UTC. GitHub starts a scheduled run when it can: at present "
+            "usually hours late, and at busy times not at all."
         ),
         "workflow": "Workflow",
         "when": "When",
@@ -183,7 +183,7 @@ WORDS: dict[str, dict[str, str]] = {
         "at-a-glance": "Auf einen Blick",
         "glance intro": (
             "Die Zeiten sind UTC. GitHub startet einen geplanten Lauf, wenn es kann: "
-            "oft einige Minuten später und zu Spitzenzeiten auch gar nicht."
+            "derzeit meist Stunden später und zu Spitzenzeiten auch gar nicht."
         ),
         "workflow": "Workflow",
         "when": "Wann",

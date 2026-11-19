@@ -14,8 +14,11 @@ from pathlib import Path
 from typing import Any
 
 from blueprint import workflows
+from blueprint.best_practices import BADGE, SAVE, TITLE
+from blueprint.best_practices import SITE as BEST_PRACTICES
 from blueprint.bootstrap import PUSH_AS_GH, SIGNING
 from blueprint.github import Api, GitHubError
+from blueprint.migrate import KEEP, moved_lines
 from blueprint.settings import (
     BRANCH,
     CLASSIC_PROTECTION,
@@ -25,6 +28,7 @@ from blueprint.settings import (
     check,
     fitted,
     gated,
+    no_release_app_by_choice,
     read_plan,
 )
 from blueprint.social_preview import (
@@ -62,12 +66,6 @@ RELEASE_APP_DESCRIPTION = (
     " Blueprint, so that their checks run, and runs their bots."
 )
 REUSE_API = "https://api.reuse.software/status/github.com/"
-BEST_PRACTICES = "https://www.bestpractices.dev"
-# A badge of OpenSSF Best Practices in a README: of the metal series, "badge", or of
-# the OSPS Baseline, "baseline", with the number of the project.
-BADGE = re.compile(r"bestpractices\.dev/projects/(\d+)/(badge|baseline)")
-# The button of each form of bestpractices.dev that reads .bestpractices.json anew.
-SAVE = "Save (and continue) 🤖"
 
 
 @dataclass(frozen=True)
@@ -150,13 +148,18 @@ def social_preview_uploaded(
 
 def best_practices(readme: str) -> list[Step]:
     """The badges of OpenSSF Best Practices and of the OSPS Baseline in the README.
-    The form of each level proposes the answers of .bestpractices.json, and a project
-    that shows one badge has its number for the other."""
+    The form of each level proposes the answers of .bestpractices.json for the
+    questions that are still open, and a project that shows one badge has its number
+    for the other. A changed answer of the file reaches an answered question only
+    through the links of the issue that the weekly run of Links keeps."""
     badges = {series: number for number, series in BADGE.findall(readme)}
     number = badges.get("badge") or badges.get("baseline")
     take = (
         f"On each level, press '{SAVE}' to take in the answers that"
-        " .bestpractices.json proposes, and answer the rest."
+        " .bestpractices.json proposes for the questions still open, and answer the"
+        " rest. Save never replaces an answer that the entry gives: once the README"
+        " shows a badge, the weekly run of Links opens the issue"
+        f" '{TITLE}' when an answer of the file changes, with the links that take it in."
     )
     steps: list[Step] = []
     for series, name, level in (
@@ -209,10 +212,23 @@ def installed_on(api: Api, repo: str, app_id: str) -> bool | None:
     return True if isinstance(suites, dict) and suites.get("total_count") else None
 
 
-def release_app(api: Api, repo: str, settings: Settings) -> tuple[Step, Step]:
+# The step of a repository that says in its settings that it has no release app,
+# which leaves the release pull requests, the release tags and the bots to the
+# GITHUB_TOKEN and to a person.
+NO_RELEASE_APP = (
+    "No release app, by choice: RELEASE_AUTOMATION_CLIENT_ID is empty in the"
+    " settings as code"
+)
+
+
+def release_app(api: Api, repo: str, settings: Settings) -> tuple[Step, Step | None]:
     """The release app: registered by the owner and named in the settings, then
     installed on the repository. Every owner registers their own, since only the
-    owner of an app has its private key."""
+    owner of an app has its private key. A repository that says in its settings
+    that it has none, with RELEASE_AUTOMATION_CLIENT_ID = "", has nothing to
+    register or install."""
+    if no_release_app_by_choice(settings.variables):
+        return Step(NO_RELEASE_APP, True), None
     name = str(settings.variables.get("RELEASE_APP", "")).strip()
     client = str(settings.variables.get("RELEASE_AUTOMATION_CLIENT_ID", "")).strip()
     app_id = str(settings.variables.get("RELEASE_AUTOMATION_APP_ID", "")).strip()
@@ -335,9 +351,12 @@ def unanswered_app(app: str, root: Path) -> list[str]:
     ]
 
 
-def renovate(api: Api, repo: str, root: Path, app: str = "") -> Step:
+def renovate(
+    api: Api, repo: str, root: Path, app: str = "", no_app: bool = False
+) -> Step:
     """Renovate, which runs once it has opened a pull request, and how it comes to
-    run; app is the release app by the settings as code."""
+    run; app is the release app by the settings as code, and no_app says that the
+    settings leave it out by choice, which leaves Renovate to the Mend Renovate app."""
     pulls = api.get(f"repos/{repo}/pulls?state=all&per_page={LATEST}")
     running = isinstance(pulls, list) and any(
         isinstance(pull, dict)
@@ -346,7 +365,15 @@ def renovate(api: Api, repo: str, root: Path, app: str = "") -> Step:
         for pull in pulls
     )
     runner = renovate_runner(root)
-    if runner == "self":
+    if no_app and runner != "mend":
+        how = [
+            "Renovate runs here as the release app, which the settings as code leave"
+            " out by choice; without it, the Mend Renovate app runs it, which needs"
+            " none. Install it on this repository:",
+            f"{MEND_APP}/installations/new",
+            *change_answer("renovate_runner=mend"),
+        ]
+    elif runner == "self":
         how = [
             "The Renovate workflow of this repository runs it every two hours as the"
             " release app, once the app is installed; start its first run:",
@@ -474,6 +501,26 @@ def bot_tools_allowed(root: Path) -> Step:
     )
 
 
+def moved_step(root: Path) -> list[Step]:
+    """The lines of the project that still name a file that a release of the blueprint
+    removed, which `migrate --fix` doesn't change: a workflow, a file under .github/,
+    a file that isn't a page of Markdown, or a name that nothing replaces. They fail no
+    check, so that no update waits for a person over a comment (decision 1051); the
+    step stays open until a person changes each or keeps it."""
+    found = [item for item in moved_lines(root) if not item.fixable]
+    if not found:
+        return []
+    return [
+        Step(
+            "No file of the project names a file that a release of the blueprint"
+            " removed",
+            False,
+            "\n".join(item.describe() for item in found)
+            + f"\nChange each line, or keep it with `{KEEP}` in a comment.",
+        )
+    ]
+
+
 def workflows_step(api: Api, repo: str, root: Path) -> list[Step]:
     """Whether GitHub knows each workflow, which it starts only then, and whether the
     comments that registered some are out again (#652). Both are of main as GitHub
@@ -562,12 +609,17 @@ def checklist(
                 for item in classic
             ),
         ),
-        installed,
+        *([installed] if installed else []),
         DEPENDABOT_ALERTS,
         renovate(
-            api, repo, root, str(settings.variables.get("RELEASE_APP", "")).strip()
+            api,
+            repo,
+            root,
+            str(settings.variables.get("RELEASE_APP", "")).strip(),
+            no_release_app_by_choice(settings.variables),
         ),
         bot_tools_allowed(root),
+        *moved_step(root),
         Step(
             "Settings → General → Issues: 'Auto-close issues with merged linked pull requests' off "
             "(the issue assistant closes them with the release)",

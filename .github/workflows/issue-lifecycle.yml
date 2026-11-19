@@ -8,6 +8,12 @@ name: Issue lifecycle
 # A fixed issue that a release closes is filed under the release's milestone. The
 # job is the issue assistant's reusable workflow at the commit of a release, so an
 # update is a move of the pin below; it blocks every host but GitHub's.
+#
+# This is the form for [releases] sweep_after_release_workflow = false of
+# .github/issue-assistant/config.toml: the release workflow of the repository starts
+# this one itself once it published a release, with
+# gh workflow run issue-lifecycle.yml -f dry_run=false, so the end of its runs
+# doesn't.
 # https://github.com/Dennis-Otto/issue-assistant
 
 on:
@@ -18,17 +24,6 @@ on:
     types: [closed]
   release:
     types: [published]
-  # A release published with the job's GITHUB_TOKEN starts no workflow, so the end
-  # of the repository's release workflow, Release, starts this one too. Not a
-  # scheduled run of it, which runs every hour as a safety net and mostly releases
-  # nothing; the morning sweep catches a release that one of them made. A release
-  # workflow that starts this one itself sets
-  # [releases] sweep_after_release_workflow = false
-  # in .github/issue-assistant/config.toml, and install writes this workflow without
-  # the start below.
-  workflow_run:
-    workflows: [Release]
-    types: [completed]
   workflow_dispatch:
     inputs:
       dry_run:

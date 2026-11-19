@@ -23,6 +23,8 @@
 .github/blueprint/advisories.py
 .github/blueprint/annotate.py
 .github/blueprint/app.py
+.github/blueprint/best_practices.py
+.github/blueprint/bestpractices-criteria.json
 .github/blueprint/binaries.py
 .github/blueprint/bootstrap.py
 .github/blueprint/bot_health.py

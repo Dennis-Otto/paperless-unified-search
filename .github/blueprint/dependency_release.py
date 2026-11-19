@@ -52,9 +52,12 @@ DAILY = "daily"
 # The event of the daily run, which merges the release at most once a day (UTC).
 SCHEDULE = "schedule"
 # The time of the schedule of release.yml in the blueprint, which a test keeps equal
-# to its cron; a repository made from the blueprint runs it some minutes later, which
-# schedule_time() reads from its own release.yml.
+# to its cron; a repository made from the blueprint runs it at a minute of its own,
+# which schedule_time() reads from its own release.yml.
 TIME = "02:25 UTC"
+# How late GitHub starts the daily run after the time of its cron, which every text
+# that names that time says with it (decision 1055).
+LATER_ON = "at present usually hours later"
 # The daily schedule of release.yml, such as `- cron: "25 2 * * *"`.
 CRON = re.compile(r'^\s*- cron: "(\d+) (\d+) \* \* \*"', re.MULTILINE)
 # The bots that start the release bot by hand, such as bot health and the branch bot,
@@ -74,12 +77,13 @@ SECURITY_NOW = (
     " checks pass."
 )
 WAITS_AT = (
-    "The release merges in the daily release of the release bot at {time},"
-    " once its checks pass."
+    "The release merges in the daily run of the release bot once its checks pass:"
+    " GitHub starts that run from {time} on, " + LATER_ON + "."
 )
 TODAY_AT = (
-    "A release went out today already: this one merges in the daily release of"
-    " tomorrow, at {time}."
+    "A release went out today (UTC) already, so this one merges in the daily run of"
+    " tomorrow: GitHub starts that run from {time} on, " + LATER_ON + ". A run of"
+    " Release that a person starts by hand releases it at once."
 )
 WAITS = WAITS_AT.format(time=TIME)
 TODAY = TODAY_AT.format(time=TIME)
@@ -185,9 +189,10 @@ def notice(time: str = TIME) -> str:
     return "\n".join(
         [
             NOTICE,
-            f"The release bot merges this pull request in the daily release at {time},"
-            " once its checks pass; GitHub may start its daily run later. A release"
-            " that went out the same day (UTC) moves it to the next one.",
+            "The release bot merges this pull request in its daily run once its checks"
+            f" pass. GitHub starts that run from {time} on, {LATER_ON}. A release that"
+            " went out earlier the same UTC day, such as one started by hand, moves it"
+            " to the daily run of the next day.",
             "",
             "For a fix that can't wait, such as one for the repositories that a"
             " release broke, release at once: start the workflow Release by hand,"
