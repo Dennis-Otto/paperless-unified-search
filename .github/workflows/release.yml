@@ -37,9 +37,10 @@ on:
   # often hours late, and the bot-health bot starts a run that it missed. It is also
   # the daily run that merges a release of dependency updates, or every release where
   # RELEASE_MERGE is daily, and the one that closes the Dependabot alerts of advisories
-  # published since the last push. At 02:25 UTC, in the night of Europe, the Rollout
-  # and the checks of every repository that it updates run before the weekly scans of
-  # the repositories from 03:20 on, and nobody waits for them (decision 0180).
+  # published since the last push. The cron sets the earliest time of the daily run,
+  # after that of the daily look of the bot-health bot, before the weekly scans and
+  # off the full hour. GitHub starts it when it can, at present usually hours later
+  # (decisions 0180 and 1055).
   schedule:
     - cron: "57 2 * * *"
   # By hand, it releases at once: the way for a fix that can't wait for the daily run.
@@ -198,8 +199,8 @@ jobs:
           # Who needs the app and for what, what happens without it, and whether the
           # run fails then.
           BOT: the release bot
-          TASK: start the checks of the release pull request and sign the release tags
-          WITHOUT: release-please keeps the release pull request with the token of the job, which starts none of its checks, and no release can be published
+          TASK: start the checks of the release pull request, write the rows of the index of decisions into it and sign the release tags
+          WITHOUT: release-please keeps the release pull request with the token of the job, which starts none of its checks, no release can be published, and docs/decisions/README.md gains no row for a new record until you run python3 .github/blueprint.py decisions --complete yourself
           REQUIRED: "false"
         run: |
           if [[ -z "$CLIENT_ID" ]]; then
@@ -388,6 +389,19 @@ jobs:
           script=.github/blueprint.py
           [[ -f "$script" ]] || script=blueprint.py
           raw=(-H "Accept: application/vnd.github.raw+json")
+          # The index of the records of decisions as the release writes it: pull
+          # requests leave it alone, so the same commit adds the row of each new
+          # record and the status of each record (decision 1033). The checkout of
+          # main stays as it was for the steps after this one.
+          index=docs/decisions/README.md
+          if [[ -f "$index" ]]; then
+            cp "$index" "$RUNNER_TEMP/main-index.md"
+            if ! python3 "$script" decisions --complete; then
+              echo "::warning title=Records of decisions::The records of decisions of main have findings that need a person, named above; the release writes the index as far as it can."
+            fi
+            cp "$index" "$RUNNER_TEMP/index.md"
+            cp "$RUNNER_TEMP/main-index.md" "$index"
+          fi
           # The open release pull requests; one that release-please has just created may
           # not carry its label yet, so its own output counts as well.
           {
@@ -416,23 +430,46 @@ jobs:
               fi
               # Without a line end (-j), which the jq.exe of Git Bash writes as CRLF.
               deletions="$(jq -R . "$RUNNER_TEMP/taken" | jq -scj --argjson listed "$listed" 'map(select(IN($listed[])) | {path: .})')"
-              if cmp -s "$RUNNER_TEMP/release.md" "$RUNNER_TEMP/branch.md" && [[ "$deletions" == '[]' ]]; then
+              # The index of the branch, as release-please left it from main. Where it
+              # can't be read, the commit writes it: the same text again does no harm.
+              indexed=false
+              if [[ -f "$RUNNER_TEMP/index.md" ]]; then
+                if ! gh api --header "$API_VERSION_HEADER" "${raw[@]}" "repos/$GH_REPO/contents/$index?ref=$head" > "$RUNNER_TEMP/branch-index.md"; then
+                  : > "$RUNNER_TEMP/branch-index.md"
+                fi
+                if ! cmp -s "$RUNNER_TEMP/index.md" "$RUNNER_TEMP/branch-index.md"; then
+                  indexed=true
+                fi
+              fi
+              if cmp -s "$RUNNER_TEMP/release.md" "$RUNNER_TEMP/branch.md" && [[ "$deletions" == '[]' && "$indexed" == false ]]; then
                 echo "The changelog of $version is up to date."
                 continue
               fi
               echo "Writing the changelog of $version into $branch."
-              # A file, not a process substitution, which the jq.exe of Git Bash can't open.
+              # The contents of the files go from file to file and never through an
+              # argument of a command: Linux takes none longer than 128 KiB, which a
+              # long changelog in Base64 exceeds. Files, not process substitutions,
+              # which the jq.exe of Git Bash can't open.
               base64 --wrap=0 "$RUNNER_TEMP/release.md" > "$RUNNER_TEMP/release.b64"
+              jq --null-input -c --rawfile contents "$RUNNER_TEMP/release.b64" \
+                '[{path: "CHANGELOG.md", contents: $contents}]' > "$RUNNER_TEMP/additions.json"
+              if [[ "$indexed" == true ]]; then
+                echo "The same commit writes the rows of the records of decisions into $index."
+                base64 --wrap=0 "$RUNNER_TEMP/index.md" > "$RUNNER_TEMP/index.b64"
+                jq -c --arg path "$index" --rawfile contents "$RUNNER_TEMP/index.b64" \
+                  '. + [{path: $path, contents: $contents}]' "$RUNNER_TEMP/additions.json" > "$RUNNER_TEMP/both.json"
+                mv "$RUNNER_TEMP/both.json" "$RUNNER_TEMP/additions.json"
+              fi
               jq --null-input --arg repo "$GH_REPO" --arg branch "$branch" --arg head "$head" \
                 --arg headline "chore: write the changelog of $version" \
-                --rawfile contents "$RUNNER_TEMP/release.b64" \
+                --slurpfile additions "$RUNNER_TEMP/additions.json" \
                 --argjson deletions "$deletions" \
                 '{query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
                   variables: {input: {
                     branch: {repositoryNameWithOwner: $repo, branchName: $branch},
                     expectedHeadOid: $head,
                     message: {headline: $headline},
-                    fileChanges: ({additions: [{path: "CHANGELOG.md", contents: $contents}]}
+                    fileChanges: ({additions: $additions[0]}
                       + if $deletions == [] then {} else {deletions: $deletions} end)}}}' |
                 gh api --header "$API_VERSION_HEADER" graphql --input - --jq .data.createCommitOnBranch.commit.oid
             done

@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import tomllib
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,10 @@ ANSWERS = ".copier-answers.yml"
 # that decides is the copy of main, from the release before, so a new path comes here
 # one release before the first migration of it; a test keeps each migration's path in.
 MOVABLE = frozenset({LABELS, ISSUE_ASSISTANT, ISSUE_ASSISTANT_PROJECT})
+# The pages of Markdown that `migrate --fix` points from a file that a release removed
+# to the one that took its place, as the writes of the step Files of the project name
+# them, one release before the first entry of MOVED.
+PAGES = "**/*.md"
 # The first label of the group contribution is the one that the digest of the issue
 # assistant tells the maintainer to add, so this is their order.
 CONTRIBUTION = ("good first issue", "help wanted")
@@ -206,7 +211,8 @@ def answer(root: Path, name: str) -> str:
     """An answer of Copier for the repository in root, empty without one."""
     answers = root / ANSWERS
     text = answers.read_text(encoding="utf-8") if answers.is_file() else ""
-    found = re.search(rf"^{name}: *['\"]?([\w-]+)", text, re.MULTILINE)
+    # A dot as well: the name of a repository can have one, such as owner.github.io.
+    found = re.search(rf"^{name}: *['\"]?([\w.-]+)", text, re.MULTILINE)
     return found[1] if found else ""
 
 
@@ -353,3 +359,289 @@ def migrate(
             for path, text in changes.items():
                 (root / path).write_text(text, encoding="utf-8", newline="\n")
     return found
+
+
+# The files of the blueprint that a release removed, each with the file that took its
+# place, or None for one that nothing replaces. An update deletes such a file, but the
+# files of the project can still name it, such as the badge of a README or a link of a
+# page, and no check notices once the update has merged. moved_lines finds them, and
+# `migrate --fix` points a page of Markdown at the file that took its place (decision
+# 1051). An entry stays for a repository that updates later, whatever version it comes
+# from. The Variants workflow fails a pull request whose update removes a file of
+# .github/blueprint/owned.txt without an entry here or in MOVED_NEXT.
+MOVED: Mapping[str, str | None] = {}
+# The entries whose fix the bot of main can't commit yet: the writes of the step Files
+# of the project came to **/*.md in this release, and the bot of a repository reads
+# them from the catalog of its main, which is the release before (decision 0142). They
+# join MOVED in the next release, once every repository knows them.
+MOVED_NEXT: Mapping[str, str | None] = {
+    # Release 1.22.0 joined Secret scan and Dependency review into Quick checks (#1026).
+    ".github/workflows/dependency-review.yml": ".github/workflows/quick-checks.yml",
+    ".github/workflows/secret-scan.yml": ".github/workflows/quick-checks.yml",
+}
+# The files of the blueprint in a repository, which an update writes anew.
+OWNED = ".github/blueprint/owned.txt"
+WORKFLOWS = ".github/workflows/"
+# The history of the project, which rightly names a file as it was then.
+HISTORY = ("CHANGELOG.md", "changelog.d/", "docs/decisions/")
+# A line that the project keeps as it is says so in a comment, such as
+# `<!-- blueprint: keep -->`, and is neither changed nor reported.
+KEEP = "blueprint: keep"
+# The branch of every repository of the blueprint; a link to another one, to a tag or
+# to a commit shows the file as it was there, which stays right.
+BRANCH = "main"
+# A larger file is no page that names a file of the blueprint.
+MOST_BYTES = 1_000_000
+# The text in front of a name, from the last space, quote or bracket on.
+FRONT = re.compile(r"[^\s()\[\]<>\"'`]*\Z")
+# In front of a path: nothing, or the folders up to it, a page of this repository on
+# GitHub at its branch, or its address on raw.githubusercontent.com.
+LOCAL = re.compile(r"/?(?:\.{1,2}/)*")
+RELATIVE_PAGE = re.compile(rf"(?:\.\./)+(?:blob|raw|tree|edit)/{BRANCH}/")
+PAGE = re.compile(
+    r"(?:https?://)?(?:www\.)?github\.com/([\w.-]+/[\w.-]+)/(?:blob|raw|tree|edit)/"
+    rf"{BRANCH}/",
+    re.IGNORECASE,
+)
+RAW = re.compile(
+    r"(?:https?://)?raw\.githubusercontent\.com/([\w.-]+/[\w.-]+)/(?:refs/heads/)?"
+    rf"{BRANCH}/",
+    re.IGNORECASE,
+)
+# In front of actions/workflows/<name>, the page of a workflow and its badge: this
+# repository on GitHub, or the folders up to it from a page of the branch.
+REPOSITORY = re.compile(
+    r"(?:(?:https?://)?(?:www\.)?github\.com)?/([\w.-]+/[\w.-]+)/", re.IGNORECASE
+)
+UP = re.compile(r"(?:\.\./)+")
+ACTIONS = "actions/workflows/"
+
+
+@dataclass(frozen=True)
+class Named:
+    """A place in a file of the project that names a file that a release removed: the
+    text from start to end of its line, the text that takes its place there, or None
+    when nothing does, and the file that took the place of the removed one, when it
+    differs from that text, as the name of a workflow in the address of its badge."""
+
+    path: str
+    line: int
+    start: int
+    end: int
+    removed: str
+    new: str | None
+    successor: str | None = None
+
+    @property
+    def fixable(self) -> bool:
+        """Whether `migrate --fix` changes it: a page of Markdown outside .github/,
+        which the fix bot may commit onto the update (decision 0142), that names a file
+        that another took the place of. A workflow, a comment of the configuration of a
+        bot or a script stays with a person."""
+        return (
+            self.new is not None
+            and self.path.endswith(".md")
+            and not self.path.startswith(".github/")
+        )
+
+    def describe(self) -> str:
+        """What the place names, and what takes its place."""
+        successor = self.successor or self.new
+        if successor is None:
+            return (
+                f"{self.path}:{self.line}: names {self.removed}, which a release of the "
+                "blueprint removed and nothing replaces"
+            )
+        return (
+            f"{self.path}:{self.line}: names {self.removed}, which a release of the "
+            f"blueprint removed: {successor} takes its place"
+        )
+
+
+def owned_paths(text: str) -> set[str]:
+    """The files that an owned.txt lists."""
+    return {
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not line.startswith("#")
+    }
+
+
+def project_files(root: Path) -> list[str]:
+    """The files of the repository in root that Git tracks or would track, as
+    scripts/check.sh lists them, or every file of a folder without Git."""
+    if not (root / ".git").exists():
+        return sorted(
+            path.relative_to(root).as_posix()
+            for path in root.rglob("*")
+            if path.is_file() and ".git" not in path.relative_to(root).parts
+        )
+    listed = subprocess.run(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        cwd=root,
+        capture_output=True,
+        check=True,
+    ).stdout
+    return sorted(
+        {
+            name.decode("utf-8", "surrogateescape")
+            for name in listed.split(b"\0")
+            if name
+        }
+    )
+
+
+def page_text(file: Path) -> str | None:
+    """The text of a file that can name a path, or None for a link, a file that is
+    gone, a large one or one that isn't text."""
+    if file.is_symlink() or not file.is_file() or file.stat().st_size > MOST_BYTES:
+        return None
+    data = file.read_bytes()
+    try:
+        return None if b"\0" in data else data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
+def ours(found: re.Match[str] | None, repository: str) -> bool:
+    """Whether an address of GitHub is one of this repository."""
+    return found is not None and found[1].lower() == repository
+
+
+def at_path(front: str, repository: str) -> bool:
+    """Whether the text in front of a path makes it the file of this repository at its
+    branch: a path of its own, or its address on GitHub."""
+    return bool(
+        LOCAL.fullmatch(front)
+        or RELATIVE_PAGE.fullmatch(front)
+        or ours(PAGE.fullmatch(front), repository)
+        or ours(RAW.fullmatch(front), repository)
+    )
+
+
+def at_workflow(front: str, repository: str) -> bool:
+    """Whether the text in front of actions/workflows/<name> makes it the page of a
+    workflow of this repository, or its badge."""
+    front = front.removesuffix(ACTIONS)
+    return bool(UP.fullmatch(front) or ours(REPOSITORY.fullmatch(front), repository))
+
+
+@dataclass(frozen=True)
+class Search:
+    """How one file of moved is named: the pattern of the name, whether the text in
+    front of it makes it this file, and the text that takes its place."""
+
+    pattern: re.Pattern[str]
+    fits: Callable[[str, str], bool]
+    removed: str
+    new: str | None
+    successor: str | None = None
+
+
+def searches(moved: Mapping[str, str | None]) -> list[Search]:
+    """The names of each file of moved: its path, and for a workflow the page of the
+    workflow and its badge, whose address never holds the path."""
+    found = []
+    for removed, new in moved.items():
+        # The path, but not the start of a longer one, such as a copy with .bak.
+        path = re.compile(rf"(?<![\w.-]){re.escape(removed)}(?![\w-]|[./]\w)")
+        found.append(Search(path, at_path, removed, new))
+        if removed.startswith(WORKFLOWS):
+            name = removed.removeprefix(WORKFLOWS)
+            # Only a workflow has the page of a workflow.
+            new_name = (
+                new.removeprefix(WORKFLOWS)
+                if new is not None and new.startswith(WORKFLOWS)
+                else None
+            )
+            page = re.compile(rf"(?<={ACTIONS}){re.escape(name)}(?![\w-]|\.\w)")
+            found.append(Search(page, at_workflow, removed, new_name, new))
+    return found
+
+
+def named_in(
+    path: str, text: str, wanted: list[Search], repository: str
+) -> list[Named]:
+    """The places of one file that a search finds; a line with KEEP stays."""
+    found = []
+    for number, line in enumerate(text.splitlines(), 1):
+        if KEEP in line:
+            continue
+        for search in wanted:
+            for place in search.pattern.finditer(line):
+                front = FRONT.search(line, 0, place.start())
+                if front and search.fits(front[0], repository):
+                    found.append(
+                        Named(
+                            path,
+                            number,
+                            place.start(),
+                            place.end(),
+                            search.removed,
+                            search.new,
+                            search.successor,
+                        )
+                    )
+    return sorted(found, key=lambda item: (item.line, item.start))
+
+
+def moved_lines(
+    root: Path, moved: Mapping[str, str | None] | None = None
+) -> list[Named]:
+    """The places of the files of the project in root that name a file of moved (MOVED
+    by default), which a release removed. Only in a repository made from the blueprint,
+    which has .github/blueprint/owned.txt, and not in its files of the blueprint, which
+    the update writes, nor in its history. A path whose file the repository has is one
+    of its own, and stays."""
+    owned = root / OWNED
+    left = {
+        removed: new
+        for removed, new in (MOVED if moved is None else moved).items()
+        if not (root / removed).exists()
+    }
+    if not owned.is_file() or not left:
+        return []
+    skipped = owned_paths(owned.read_text(encoding="utf-8"))
+    repository = f"{answer(root, 'owner')}/{answer(root, 'project_slug')}".lower()
+    wanted = searches(left)
+    found: list[Named] = []
+    for path in project_files(root):
+        if path in skipped or path.startswith(HISTORY):
+            continue
+        text = page_text(root / path)
+        if text is not None:
+            found += named_in(path, text, wanted, repository)
+    return found
+
+
+def move_lines(root: Path, found: Iterable[Named]) -> list[Named]:
+    """Change each place that `migrate --fix` changes to the text that takes its
+    place, and give them; the rest of each line stays as the project wrote it."""
+    fixed = [item for item in found if item.fixable]
+    for path in dict.fromkeys(item.path for item in fixed):
+        file = root / path
+        lines = file.read_bytes().decode("utf-8").splitlines(keepends=True)
+        for item in sorted(
+            (item for item in fixed if item.path == path),
+            key=lambda item: (item.line, item.start),
+            reverse=True,
+        ):
+            line = lines[item.line - 1]
+            lines[item.line - 1] = f"{line[: item.start]}{item.new}{line[item.end :]}"
+        file.write_bytes("".join(lines).encode("utf-8"))
+    return fixed
+
+
+def unlisted(before: str, root: Path) -> list[str]:
+    """The files of the blueprint that before, the owned.txt of an earlier release,
+    lists, and that the update of the repository in root removed without an entry in
+    MOVED or MOVED_NEXT: the guard that the Variants workflow runs on every update. A
+    file that owned.txt no longer lists but the repository still has became one of
+    the project, and stays."""
+    owned = root / OWNED
+    after = owned_paths(owned.read_text(encoding="utf-8")) if owned.is_file() else set()
+    return sorted(
+        path
+        for path in owned_paths(before) - after
+        if path not in MOVED and path not in MOVED_NEXT and not (root / path).exists()
+    )

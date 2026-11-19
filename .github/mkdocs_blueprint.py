@@ -845,6 +845,10 @@ FRAGMENTS = "changelog.d"
 # from this file: beside it in a repository made from the blueprint, and at the root
 # of the blueprint itself.
 CHANGELOG_CODE = ("blueprint/changelog.py", "../blueprint/changelog.py")
+# The index of the records of decisions, whose rows the release writes, and the code
+# of blueprint.py that writes them, found as that of the changelog.
+DECISIONS_INDEX = "decisions/README.md"
+DECISIONS_CODE = ("blueprint/decisions.py", "../blueprint/decisions.py")
 
 
 class Menu(NamedTuple):
@@ -947,7 +951,7 @@ def on_page_markdown(markdown: str, page: Any, config: Any, files: Any) -> str:
     changed = page.meta.get("git_revision_date_localized_raw_iso_date")
     if changed:
         page.update_date = changed
-    return with_fragments(markdown, config)
+    return with_decisions(with_fragments(markdown, config), page)
 
 
 # After the plugin git-revision-date-localized.
@@ -1047,6 +1051,36 @@ def with_fragments(markdown: str, config: Any) -> str:
             for part in folded.splitlines(keepends=True)
         ]
     return "".join(lines)
+
+
+def with_decisions(markdown: str, page: Any) -> str:
+    """The markdown of the index of the records of decisions as the next release will
+    write it: with the row of each record that pull requests added since the last
+    one, which leave the index alone, and the status of each record (decision 1033).
+    Every other page stays as it is, and so does the index when no blueprint.py is
+    beside this file."""
+    if page.file.src_uri != DECISIONS_INDEX:
+        return markdown
+    code = decisions_code()
+    if code is None:
+        return markdown
+    folder = Path(page.file.abs_src_path).parent
+    names = sorted(path.name for path in folder.iterdir() if path.is_file())
+    return str(
+        code.fixed(
+            markdown,
+            names,
+            lambda name: (folder / name).read_text(encoding="utf-8"),
+            complete=True,
+        )
+    )
+
+
+def decisions_code() -> ModuleType | None:
+    """blueprint/decisions.py, the code of blueprint.py that writes the index of the
+    records of decisions as the release does, loaded from its file; None without
+    it."""
+    return code_of(DECISIONS_CODE, "blueprint_decisions")
 
 
 def changelog_code() -> ModuleType | None:

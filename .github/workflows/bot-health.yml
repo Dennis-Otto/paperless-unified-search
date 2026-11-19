@@ -38,7 +38,10 @@ name: Bot health
 # itself, so the nightly look runs the failed jobs of its own runs of the last two
 # days once more that Harden-Runner stopped at their first attempt, and those of the
 # bots of events and of the workflows with an issue of their own whose last job
-# Harden-Runner or GitHub kept from starting this bot.
+# Harden-Runner or GitHub kept from starting this bot. A run of Issue assistant for an
+# event of an issue gets the same second try when Harden-Runner stopped a job of it,
+# from a start by hand that names the run or from the nightly look, which posts the
+# analysis that its first attempt kept; its end starts nothing here either.
 # It checks out the default branch only, for blueprint.py, never the code of a pull
 # request; blueprint.py bot-health holds the logic.
 # https://github.com/Dennis-Otto/repo-blueprint
@@ -57,7 +60,7 @@ on:
   workflow_dispatch:
     inputs:
       run:
-        description: The run of a bot of events or of a workflow with an issue of its own whose job failed at its first attempt, which runs once more if Harden-Runner stopped a job of it; empty for the nightly look
+        description: The run of a bot of events, of a workflow with an issue of its own or of Issue assistant for an issue, whose job failed at its first attempt, which runs once more if Harden-Runner stopped a job of it; empty for the nightly look
         type: string
         default: ""
 
@@ -70,9 +73,10 @@ env:
 jobs:
   run:
     name: look at the end of a bot's run
-    # The eight workflows with a last job left the list of workflow_run, so their ends
-    # never reach this job; the names stay here as a guard against a workflow of a fork
-    # or a later list that takes one of them (decision 0176).
+    # The eight workflows with a last job left the list of workflow_run, and Issue
+    # assistant was never in it, so their ends never reach this job; the names stay here
+    # as a guard against a workflow of a fork or a later list that takes one of them
+    # (decision 0176).
     if: >-
       github.event_name == 'workflow_run' &&
       !github.event.repository.fork &&
@@ -80,7 +84,7 @@ jobs:
       (github.event.workflow_run.event == 'release' && github.event.workflow_run.name == 'Release verification')) &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
       !contains(fromJSON('["pull_request", "pull_request_target"]'), github.event.workflow_run.event) &&
-      !contains(fromJSON('["Area labels", "Commands", "Dependabot maintenance", "Welcome", "Diagrams", "Newest Node", "Newest Python", "Next runner"]'), github.event.workflow_run.name) &&
+      !contains(fromJSON('["Area labels", "Commands", "Dependabot maintenance", "Welcome", "Diagrams", "Newest Node", "Newest Python", "Next runner", "Issue assistant"]'), github.event.workflow_run.name) &&
       contains(fromJSON('["success", "failure", "timed_out", "cancelled", "startup_failure"]'), github.event.workflow_run.conclusion)
     # One run at a time for each workflow, so that two ends never open two issues.
     concurrency:

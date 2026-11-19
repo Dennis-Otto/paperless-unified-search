@@ -8,12 +8,10 @@ name: Findings
 # assistant's reusable workflow at the commit of a release, so an update is a move of
 # the pin below; it blocks every host but GitHub's.
 #
-# After each scan of a pull request of the repository itself, it dismisses the
-# alerts of the pull request that .github/findings.toml accepts, whose review threads
-# would block the merge, and fails for none. A repository that does that in another
-# workflow sets [findings] pull_requests = false in
-# .github/issue-assistant/config.toml, and install writes this workflow for the
-# scans of main alone.
+# This is the form for [findings] pull_requests = false of
+# .github/issue-assistant/config.toml: another workflow of the repository calls the
+# reusable workflow after the scans of pull requests and dismisses their accepted
+# alerts, so this one runs after the scans of main alone, the default branch.
 # https://github.com/Dennis-Otto/issue-assistant
 
 on:
@@ -26,6 +24,7 @@ on:
   workflow_run:
     workflows: [CodeQL, OpenSSF Scorecard, Workflow security, OSV-Scanner]
     types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       dry_run:

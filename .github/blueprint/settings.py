@@ -10,7 +10,7 @@ import urllib.parse
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 from blueprint.github import Api, GitHubError, Json
 from blueprint.outage import check_unavailable
@@ -63,9 +63,10 @@ class Attempts:
     """The requests of the items of one part of the settings, each by itself: a
     refusal of GitHub is kept for the end, so that it keeps no other item from being
     applied. A rate limit or an outage of GitHub ends the part at once, as every
-    other request would meet it too."""
+    other request would meet it too, and still tells the refusals before it."""
 
-    def __init__(self) -> None:
+    def __init__(self, part: str) -> None:
+        self.part = part
         self.outcomes: list[tuple[str, str]] = []
         self.errors: list[GitHubError] = []
 
@@ -77,22 +78,42 @@ class Attempts:
             request(*arguments)
         except GitHubError as error:
             if error.rate_limited or error.unavailable:
-                raise
+                self.stop(item, error)
             self.errors.append(error)
             self.outcomes.append((item, f"refused: {error}"))
             return False
         self.outcomes.append((item, done))
         return True
 
-    def finish(self, part: str, present: frozenset[str] | None = None) -> None:
+    def stop(self, item: str, error: GitHubError) -> NoReturn:
+        """Ends the part at the rate limit or the outage of GitHub that item met. The
+        refusals before it are told with it, which the next run would otherwise
+        only meet again; what GitHub has after it is unknown, so present stays
+        None. Without a refusal before it, the error itself ends the part, with its
+        hint."""
+        if not self.errors:
+            raise error
+        self.errors.append(error)
+        self.outcomes.append((item, f"stopped: {error}"))
+        raise self.refused(None)
+
+    def finish(self, present: frozenset[str] | None = None) -> None:
         """Refused, with the hint of each refusal, when GitHub refused an item."""
         if self.errors:
-            hints = iter([hint(part, error) for error in self.errors])
-            self.outcomes = [
-                (item, what + next(hints) if what.startswith("refused") else what)
-                for item, what in self.outcomes
-            ]
-            raise Refused(self.outcomes, self.errors, present)
+            raise self.refused(present)
+
+    def refused(self, present: frozenset[str] | None) -> Refused:
+        """What happened to each item, with the hint of each refusal; a stop says
+        too that nothing after it was sent."""
+        hints = iter([hint(self.part, error) for error in self.errors])
+        outcomes = []
+        for item, what in self.outcomes:
+            if what.startswith("refused"):
+                what += next(hints)
+            elif what.startswith("stopped"):
+                what += f"{next(hints)}; nothing after it was sent"
+            outcomes.append((item, what))
+        return Refused(outcomes, self.errors, present)
 
 
 # --------------------------------------------------------------------------- repository
@@ -1473,7 +1494,7 @@ def apply_rulesets(
     existing = rulesets(api, repo)
     names = {item.setting.removeprefix("ruleset ") for item in drift}
     present = set(existing)
-    attempts = Attempts()
+    attempts = Attempts("rulesets")
     for want in wanted:
         name = want["name"]
         if name not in names:
@@ -1496,7 +1517,7 @@ def apply_rulesets(
             f"ruleset {name}", "deleted", api.delete, path
         ):
             present.discard(name)
-    attempts.finish("rulesets", frozenset(present))
+    attempts.finish(frozenset(present))
 
 
 # --------------------------------------------------------------------------- classic protection
@@ -1600,7 +1621,7 @@ def check_variables(api: Api, repo: str, want: dict[str, str]) -> list[Drift]:
 def apply_variables(api: Api, repo: str, drift: list[Drift]) -> None:
     """Each variable by itself, so that one that GitHub refuses keeps no other from
     being set; one that the configuration wants empty goes."""
-    attempts = Attempts()
+    attempts = Attempts("variables")
     path = f"repos/{repo}/actions/variables"
     for item in drift:
         name = item.setting.removeprefix("variable ")
@@ -1611,7 +1632,7 @@ def apply_variables(api: Api, repo: str, drift: list[Drift]) -> None:
             attempts.send(item.setting, "set", api.post, path, body)
         else:
             attempts.send(item.setting, "set", api.patch, f"{path}/{name}", body)
-    attempts.finish("variables")
+    attempts.finish()
 
 
 # --------------------------------------------------------------------------- environments
@@ -1853,12 +1874,18 @@ def merge(base: dict[str, Json], extra: dict[str, Json]) -> dict[str, Json]:
     return result
 
 
+def no_release_app_by_choice(variables: dict[str, str]) -> bool:
+    """Whether the variables say that the repository has no release app, by choice:
+    RELEASE_AUTOMATION_CLIENT_ID = "". Without the variable, it has none yet."""
+    return not str(variables.get("RELEASE_AUTOMATION_CLIENT_ID", "-")).strip()
+
+
 def without_release_key(
     environments: dict[str, dict[str, Json]], variables: dict[str, str]
 ) -> dict[str, dict[str, Json]]:
     """The environments, which ask for no private key of the release app where the
-    variables say that the repository has none: RELEASE_AUTOMATION_CLIENT_ID = ""."""
-    if str(variables.get("RELEASE_AUTOMATION_CLIENT_ID", "-")).strip():
+    variables say that the repository has none."""
+    if not no_release_app_by_choice(variables):
         return environments
     return {
         name: {
@@ -2185,6 +2212,11 @@ def refusal(part: str, error: GitHubError) -> str:
         and len(set(map(str, error.errors))) == 1
     ):
         lines = "".join(f"\n  {item}: {what}" for item, what in error.outcomes)
+        # After a stop, GitHub never saw the items that came after it.
+        if any(what.startswith("stopped") for _, what in error.outcomes):
+            return (
+                f"GitHub refused some of the {part} before it stopped answering:{lines}"
+            )
         return f"GitHub refused some of the {part}, and took the others:{lines}"
     return f"the {part} could not be applied: {error}{hint(part, error)}"
 
@@ -2209,7 +2241,10 @@ def reviews_as_on_github(
         return drift
     setting = f"variable {REVIEWS_VARIABLE}"
     others = [item for item in drift if item.setting != setting]
-    if isinstance(error, Refused) and error.present is not None:
+    if isinstance(error, Refused):
+        # A rate limit or an outage that stopped the rulesets leaves them unknown.
+        if error.present is None:
+            return others
         present = REVIEWS_RULESET in error.present
     elif private and refused_by_plan(error):
         # A private repository whose plan offers no rulesets has none.

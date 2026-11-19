@@ -6,13 +6,17 @@ name: Links
 # A pull request checks the documents that it changes, so that a site that is down for a
 # moment fails only the pull requests that link to it; one that changes the rules or
 # lychee itself, such as an update of its version in .github/lychee.sh, or moves or
-# deletes a file checks every document, as main and the weekly run do. The
-# answers of the sites stay in a cache for a day. A broken link fails the check of a
-# pull request; the weekly run keeps one issue with the broken links open until they are
-# fixed, and closes it then. lychee.toml holds the rules, .lycheeignore the exceptions
+# deletes a file checks every document, as main and the weekly run do. It checks the
+# links to the files, folders and headings of this repository on its base branch at
+# its merge commit, so that a link to one that it adds passes, and one to what it
+# deletes fails. The answers of the sites stay in a cache for a day. A broken link fails
+# the check of a pull request; the weekly run keeps one issue with the broken links open
+# until they are fixed, and closes it then. lychee.toml holds the rules, .lycheeignore the exceptions
 # of this repository. The entry in the changelog that most pull requests bring, in
 # CHANGELOG.md or in a fragment of changelog.d/, starts no check on its own; the weekly
-# run checks the links of the changelog.
+# run checks the links of the changelog. The weekly run also compares the public entry on
+# bestpractices.dev with .bestpractices.json and keeps one issue with the links that take
+# in a changed answer (decision 1046).
 # https://github.com/Dennis-Otto/repo-blueprint
 
 on:
@@ -137,16 +141,51 @@ jobs:
           EVENT: ${{ github.event_name }}
           FILES: ${{ steps.documents.outputs.files }}
           EVERY: ${{ steps.documents.outputs.every }}
+          REPOSITORY: ${{ github.repository }}
+          # The merge commit of a pull request, in this repository also for a fork.
+          SHA: ${{ github.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           options=()
           [[ "$EVENT" != schedule ]] || options+=(--no-fail)
           # A changed document may have no link at all.
           [[ "$EVERY" == true ]] || options+=(--may-find-none)
+          # In a pull request, a link to a file, a folder or a heading of this repository
+          # on its base branch, such as one that the pull request adds, is checked at its
+          # merge commit, which has them: the base branch has them only after the merge.
+          # A link to what the pull request deletes, moves or doesn't have still fails
+          # there. lychee takes these rules before those of lychee.toml, and only the
+          # first one that matches a link, so blob/ leads straight to
+          # raw.githubusercontent.com, as lychee.toml does for every other ref. Links to
+          # another repository, branch or tag stay as they are, and so do main and the
+          # weekly run.
+          remaps=()
+          if [[ "$EVENT" == pull_request ]]; then
+            # Each character that a regex reads as more than itself gets a backslash.
+            escape() {
+              local text=$1 escaped='' character i
+              for ((i = 0; i < ${#text}; i++)); do
+                character=${text:i:1}
+                [[ '[]\.+*?(){}|^$' != *"$character"* ]] || escaped+="\\"
+                escaped+=$character
+              done
+              printf '%s' "$escaped"
+            }
+            repository="(?i:$(escape "$REPOSITORY"))"
+            base="$(escape "$BASE_REF")"
+            raw="https://raw.githubusercontent.com/$REPOSITORY/$SHA"
+            remaps+=(
+              --remap "^https://github\.com/$repository/blob/$base/(.+)\$ $raw/\$1"
+              --remap "^https://raw\.githubusercontent\.com/$repository/$base/(.+)\$ $raw/\$1"
+              --remap "^https://github\.com/$repository/tree/$base([/#?].*)?\$ https://github.com/$REPOSITORY/tree/$SHA\$1"
+            )
+          fi
           # The names of the documents, each in quotes, as the step before wrote them,
           # which lychee reads as patterns of its own.
           eval "documents=($FILES)"
           bash .github/lychee.sh "${options[@]}" "$RUNNER_TEMP/links.md" \
-            --config lychee.toml --no-progress --cache --max-cache-age 1d "${documents[@]}"
+            --config lychee.toml "${remaps[@]}" --no-progress --cache --max-cache-age 1d \
+            "${documents[@]}"
       # The report of the weekly run, for the job issue.
       - name: Keep the report of the broken links
         if: github.event_name == 'schedule' && steps.lychee.outputs.exit_code != '0'
@@ -300,6 +339,145 @@ jobs:
           else
             gh issue create --title "$title" --label documentation --body "$body"
           fi
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
+
+  # Whether the public entry of the project on bestpractices.dev still gives the
+  # answers of .bestpractices.json: the site takes in a changed answer of the file only
+  # through a link of its edit page that forces it, which a maintainer opens. The
+  # weekly run reads the entry once, without a login or a secret, and keeps one issue
+  # with those links, which it closes once the entry gives every answer; it never
+  # writes the entry. A repository whose README shows no badge of bestpractices.dev
+  # asks nothing, and a site that doesn't answer leaves the issue as it is (decision
+  # 1046).
+  best-practices:
+    name: best practices entry
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Block every host that the job doesn't need
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+            github.com:443
+            www.bestpractices.dev:443
+      - name: Make sure that Harden-Runner blocks
+        id: blocks
+        # Harden-Runner goes on without its agent when the agent can't be downloaded, as
+        # in GitHub's outage of 8 November 2026, or doesn't start: the job would reach
+        # every host. It stops here instead, so that it can run again (decision 0134).
+        timeout-minutes: 1
+        run: |
+          # The agent writes Initialized into its status once its firewall stands, and
+          # runs as the service agent until the end of the job; one that is there may
+          # still be starting. One that took its changes back says so in its log, and
+          # no status will come.
+          log=/home/agent/agent.log
+          for _ in {1..30}; do
+            [[ -e /home/agent/agent.status || ! -e /home/agent/agent ]] && break
+            grep -qs 'Reverted changes' "$log" && break
+            sleep 1
+          done
+          status="$(cat /home/agent/agent.status 2>/dev/null || true)"
+          # Before its firewall stands, the agent looks up each host that it allows, and
+          # takes itself away again when a single lookup fails; its log names the host.
+          lookup="$(grep -s -m 1 'Error resolving allowed domain' "$log" || true)"
+          if [[ ! -d /home/agent/ ]]; then
+            # Harden-Runner returns before it makes the folder of the agent when
+            # StepSecurity says that it is unavailable, or the repository skips it.
+            why="didn't install its agent, as StepSecurity said that it is unavailable or the repository skips it (the log of its step says which),"
+          elif [[ ! -e /home/agent/agent ]]; then
+            why="couldn't download its agent, mostly in an outage of GitHub (https://www.githubstatus.com),"
+          elif [[ -n "$lookup" ]]; then
+            # The host follows "resolve domain" when the resolver answered with an
+            # error, and "name=" when no resolver could be reached.
+            what="a host that it allows"
+            pattern='resolve domain ([^ ,]+)|name=([^&" ]+)'
+            if [[ "$lookup" =~ $pattern ]]; then
+              host="${BASH_REMATCH[1]:-${BASH_REMATCH[2]}}"
+              what="${host%.}, a host that it allows,"
+            fi
+            why="has an agent that took itself away again because a single lookup of $what failed, which is no outage,"
+          elif [[ "$status" != Initialized ]]; then
+            why="has an agent that didn't start,"
+          elif ! systemctl is-active --quiet agent; then
+            why="has an agent that stopped,"
+          else
+            echo "Harden-Runner blocks every host that the job doesn't name."
+            exit 0
+          fi
+          echo "The status of the agent: ${status:-none}"
+          [[ -z "$lookup" ]] || echo "The log of the agent: $lookup"
+          echo "::error title=Harden-Runner doesn't block::Harden-Runner $why so this job would reach every host, and it stops here instead. That is no problem of the change: run the job again."
+          exit 1
+      - name: Wait until Harden-Runner lets the hosts through
+        # The runner may have asked for an address past Harden-Runner, which then blocks
+        # that address for as long as systemd-resolved keeps it, up to a minute.
+        timeout-minutes: 4
+        env:
+          HOSTS: >-
+            api.github.com:443
+            github.com:443
+            www.bestpractices.dev:443
+        run: |
+          deadline=$(($(date +%s) + 120))
+          for endpoint in $HOSTS; do
+            host="${endpoint%:*}"
+            port="${endpoint##*:}"
+            # A wildcard names no host to ask, and a job may leave out a host that keeps it
+            # waiting although none of its steps needs it at once.
+            [[ "$host" == '*.'* || " $SKIP_WAIT " == *" $endpoint "* ]] && continue
+            # Each host on its own port, by HTTP on 80 and by HTTPS on any other. Only a host
+            # that curl can't resolve, or can't reach in time, is blocked: one that answers at
+            # all, in whatever protocol, is through.
+            scheme=https
+            [[ "$port" == 80 ]] && scheme=http
+            while true; do
+              status=0
+              curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "$scheme://$host:$port/" || status=$?
+              case "$status" in
+                6 | 7 | 28) ;;
+                *) break ;;
+              esac
+              if (($(date +%s) >= deadline)); then
+                echo "::warning::Harden-Runner still blocks $endpoint after two minutes; a step that needs it will fail, and the job can run again."
+                break
+              fi
+              echo "Harden-Runner still blocks $endpoint, waiting 3 s."
+              sleep 3
+            done
+          done
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compare the entry on bestpractices.dev with .bestpractices.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          python3 "$script" --repo "$GITHUB_REPOSITORY" best-practices > "$RUNNER_TEMP/best-practices.txt"
+          cat "$RUNNER_TEMP/best-practices.txt"
+          {
+            echo '### The entry on bestpractices.dev'
+            echo
+            cat "$RUNNER_TEMP/best-practices.txt"
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Wait until Harden-Runner has removed Docker
         # Harden-Runner removes Docker with apt-get in the background; a job that ends
         # before it finishes hangs in "Cleaning up orphan processes" until its timeout.

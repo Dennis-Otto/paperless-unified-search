@@ -23,6 +23,7 @@ import blueprint
 from blueprint import (
     advisories,
     annotate,
+    best_practices,
     decisions,
     dependabot,
     ending,
@@ -110,7 +111,7 @@ from blueprint.fixes import (
 )
 from blueprint.fixes import keep as keep_fixes
 from blueprint.github import Api, GitHubError, Json, current_repo
-from blueprint.migrate import migrate
+from blueprint.migrate import KEEP, migrate, move_lines, moved_lines, unlisted
 from blueprint.notices import third_party_notices
 from blueprint.outage import (
     check_unavailable,
@@ -1001,7 +1002,10 @@ def binaries_command(root: Path) -> int:
 def decisions_command(arguments: argparse.Namespace, root: Path) -> int:
     """What is wrong with the numbers of the records of the decisions and with their
     index, one on each line, and in the CI also as annotations of the index; with
-    --fix, the index first, where only it is wrong."""
+    --fix, the index first, where only it is wrong, and with --complete, as the
+    release writes it, with the row and the status of every record. In the CI of a
+    pull request, a record that main doesn't have takes the number of the pull
+    request or of an issue that it fixes (decision 1033)."""
     folder = decisions.FOLDER
     names = decisions.names_of(root, folder)
     if not names:
@@ -1009,11 +1013,17 @@ def decisions_command(arguments: argparse.Namespace, root: Path) -> int:
         return 0
     path = root / folder / decisions.INDEX
     index = path.read_text(encoding="utf-8") if decisions.INDEX in names else None
-    if arguments.fix and index is not None and decisions.index_findings(names, index):
+    complete = arguments.complete
+    if (
+        (arguments.fix or complete)
+        and index is not None
+        and (complete or decisions.index_findings(names, index))
+    ):
         new = decisions.fixed(
             index,
             names,
             lambda name: (root / folder / name).read_text(encoding="utf-8"),
+            complete=complete,
         )
         # A fix that changes nothing, such as of a row whose file is gone, says nothing.
         if new != index:
@@ -1021,7 +1031,16 @@ def decisions_command(arguments: argparse.Namespace, root: Path) -> int:
             print(f"{folder}/{decisions.INDEX}: the rows of the index are fixed")
             index = new
     records, strays = decisions.numbered(names)
+    pull = decisions.pull_request_of(root, os.environ, folder)
     numbers = strays + decisions.number_findings(records)
+    if pull is not None:
+        numbers += decisions.pull_request_findings(records, pull)
+        if pull.main is None:
+            print(
+                f"The records of main aren't in this checkout of pull request "
+                f"#{pull.number}, which the merge of fetch-depth 2 brings, so the step "
+                "checks only that each number is a record's own."
+            )
     rows = [] if index is None else decisions.index_findings(names, index)
     if not numbers and not rows:
         count = sum(len(files) for files in records.values())
@@ -1041,14 +1060,19 @@ def decisions_command(arguments: argparse.Namespace, root: Path) -> int:
         for finding in numbers + rows:
             print(annotate.Annotation("Records of decisions", finding, place).command())
     if numbers:
-        print(
-            "Another pull request took the number first, or a file is no record: give "
-            "the record of your pull request the next free number, "
-            f"{decisions.next_free(records):04d}, in the name of its file, in its row "
-            f"of {folder}/{decisions.INDEX} and in each link to it. Only you can "
-            "choose which record moves, so no command renames one."
+        own = (
+            f", {decisions.own_number(pull.main, pull.number):04d},"
+            if pull is not None and pull.main is not None
+            else ""
         )
-    if rows and arguments.fix:
+        print(
+            "Another pull request took the number first, or a file is no record: a new "
+            f"record takes the number of its pull request{own} or that of an issue that "
+            "the pull request fixes, which its description names as Fixes #…, in the "
+            "name of its file and in each link to it. Only you can choose which record "
+            "moves, so no command renames one."
+        )
+    if rows and (arguments.fix or complete):
         print(
             "The rows that these lines name need you: a row of a file that the folder "
             "doesn't have, or two rows of one record that say different things."
@@ -1056,8 +1080,8 @@ def decisions_command(arguments: argparse.Namespace, root: Path) -> int:
     elif rows:
         print(
             f"{command(root)} decisions --fix fixes what only the index gets wrong: "
-            "the number of a row, the row of a renamed record, a row twice, a missing "
-            "row and the order of the rows."
+            "the number of a row, the row of a renamed record, a row twice and the "
+            "order of the rows."
         )
     return 1
 
@@ -1104,22 +1128,53 @@ def translations_command(arguments: argparse.Namespace, root: Path) -> int:
 
 def migrate_command(arguments: argparse.Namespace, root: Path) -> int:
     """What the releases of the blueprint move in the files of the project, one on each
-    line, and in the CI also as annotations of those files; with --fix, it moves them."""
+    line, and in the CI also as annotations of those files; with --fix, it moves them.
+    The lines of the project that name a file that a release removed count too: a page
+    of Markdown moves to the file that took its place, and every other line is a
+    warning for a person, which fails nothing (decision 1051)."""
+    if arguments.since is not None:
+        return removed_command(arguments.since, root)
+    ci = os.environ.get("GITHUB_ACTIONS") == "true"
     found = migrate(root, arguments.fix)
+    named = moved_lines(root)
+    pages = [item for item in named if item.fixable]
+    if arguments.fix:
+        move_lines(root, pages)
     for migration in found:
         print(f"{migration.path}: {migration.summary}")
-    if arguments.fix or not found:
+    for item in named:
+        print(item.describe())
+        if ci and not item.fixable:
+            print(
+                f"::warning file={item.path},line={item.line},"
+                f"title=Files of the project::{item.describe()}"
+            )
+    if len(pages) < len(named):
         print(
-            f"{len(found)} move(s) of a release done in the files of the project."
-            if found
+            "A person changes the other lines that name a removed file, as no bot "
+            "changes a workflow, a file under .github/, a file that isn't a page of "
+            "Markdown or a name that nothing replaces. A line that stays as it is, "
+            f"such as one about the history of the project, says `{KEEP}` in a "
+            "comment; `blueprint.py checklist` lists the lines until then."
+        )
+    moves = len(found) + len(pages)
+    if arguments.fix or not moves:
+        print(
+            f"{moves} move(s) of a release done in the files of the project."
+            if moves
             else "The files of the project have what the releases of the blueprint moved."
         )
         return 0
-    if os.environ.get("GITHUB_ACTIONS") == "true":
+    if ci:
         for migration in found:
             print(
                 f"::error file={migration.path},title=Files of the project::"
                 f"{migration.summary}"
+            )
+        for item in pages:
+            print(
+                f"::error file={item.path},line={item.line},"
+                f"title=Files of the project::{item.describe()}"
             )
     print(
         f"{command(root)} migrate --fix moves what these lines name: an update of the "
@@ -1127,6 +1182,31 @@ def migrate_command(arguments: argparse.Namespace, root: Path) -> int:
         "through this check. How a project declines: "
         "https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/"
         "troubleshooting.md#a-release-moves-a-file-of-the-project"
+    )
+    return 1
+
+
+def removed_command(before: Path, root: Path) -> int:
+    """The guard of the Variants workflow on the update of a project: each file of the
+    blueprint that the owned.txt of the release before lists and that the update
+    removed needs its entry in MOVED of blueprint/migrate.py, or no release finds
+    the lines of the projects that still name it."""
+    missing = unlisted(before.read_text(encoding="utf-8"), root)
+    for path in missing:
+        print(
+            f"::error title=A removed file without its entry::The update removes {path}, "
+            "a file of the blueprint, which MOVED of blueprint/migrate.py doesn't name."
+        )
+    if not missing:
+        print(
+            "Each file of the blueprint that the update removes has its entry in MOVED "
+            "of blueprint/migrate.py."
+        )
+        return 0
+    print(
+        "Name each in MOVED of blueprint/migrate.py with the file that takes its place, "
+        "or with None when nothing does: the update deletes it, and only then does "
+        "migrate find the lines of a project that still name it (decision 1051)."
     )
     return 1
 
@@ -1319,6 +1399,25 @@ def ending_command(
     print(
         f"The acceptances of the osv-scanner.toml files of {repo} that end within "
         f"{ending.WINDOW.days} days"
+        + (" (a dry run: nothing changed):" if arguments.dry_run else ":")
+    )
+    for line in outcome.summary:
+        print(line)
+    return 0
+
+
+def best_practices_command(
+    api: Api, repo: str, arguments: argparse.Namespace, root: Path
+) -> int:
+    """Compares the entry of the project on bestpractices.dev with
+    .bestpractices.json, and keeps the one issue of the answers that differ; with
+    --dry-run, only says so. A site that doesn't answer is a warning, not a failure:
+    the next weekly run reads it again."""
+    outcome = best_practices.keep_issue(api, repo, root, dry_run=arguments.dry_run)
+    for warning in outcome.warnings:
+        print(warning, file=sys.stderr)
+    print(
+        f"The entry of {repo} on bestpractices.dev"
         + (" (a dry run: nothing changed):" if arguments.dry_run else ":")
     )
     for line in outcome.summary:
@@ -2837,6 +2936,23 @@ def add_advisories_parsers(
     )
 
 
+def add_best_practices_parser(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """Whether the entry on bestpractices.dev gives the answers of the file."""
+    best_practices_parser = commands.add_parser(
+        "best-practices",
+        help="read the public entry of the project on bestpractices.dev once, and keep "
+        f"one issue with the answers of {best_practices.ANSWERS} that it doesn't give "
+        "and the links of the edit pages that take them in; it closes once none differs",
+    )
+    best_practices_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="only say what it would change",
+    )
+
+
 def add_locks_parsers(
     commands: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
@@ -2897,14 +3013,22 @@ def add_pages_parsers(
     )
     decisions_parser = commands.add_parser(
         "decisions",
-        help="the records of docs/decisions/: a number of its own for each, the next "
-        "one after the last, and one row for each in the index, in order",
+        help="the records of docs/decisions/: a number of its own for each, in the CI "
+        "of a pull request that of the pull request or of an issue that it fixes for "
+        "a new one, and at most one row for each in the index, in order",
     )
-    decisions_parser.add_argument(
+    decisions_actions = decisions_parser.add_mutually_exclusive_group()
+    decisions_actions.add_argument(
         "--fix",
         action="store_true",
         help="fix what only the index gets wrong first: the number of a row, the row "
-        "of a renamed record, a row twice, a missing row and the order of the rows",
+        "of a renamed record, a row twice and the order of the rows",
+    )
+    decisions_actions.add_argument(
+        "--complete",
+        action="store_true",
+        help="write the index as the release does: fixed, with a row for each record "
+        "that it misses and the status of each record in its row",
     )
     migrate_parser = commands.add_parser(
         "migrate",
@@ -2915,6 +3039,14 @@ def add_pages_parsers(
         "--fix",
         action="store_true",
         help="move it in those files",
+    )
+    migrate_parser.add_argument(
+        "--since",
+        type=Path,
+        metavar="OWNED",
+        help="instead: fail for each file of the blueprint that OWNED, the owned.txt "
+        "of an earlier release, lists and the update removed without its entry in "
+        "MOVED (the Variants workflow)",
     )
     translations_parser = commands.add_parser(
         "translations",
@@ -3053,6 +3185,7 @@ def parser() -> argparse.ArgumentParser:
         add_mutation_parsers,
         add_pages_parsers,
         add_advisories_parsers,
+        add_best_practices_parser,
         add_locks_parsers,
     ):
         add(commands)
@@ -3398,6 +3531,8 @@ def main(
             return 0
         if arguments.command == "fix":
             return fix_bot_command(api, repo, arguments, root)
+        if arguments.command == "best-practices":
+            return best_practices_command(api, repo, arguments, root)
         if arguments.command == "advisories" and arguments.ending:
             return ending_command(api, repo, arguments, root)
         if arguments.command == "advisories":

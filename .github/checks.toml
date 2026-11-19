@@ -789,12 +789,16 @@ pull request with `copier update`, conflicts or fails its checks; the log names 
 step. When that step comes before the checks, such as the one that installs the tools
 or pulls an image, a download failed or hung until the step ran out of its time: that
 usually passes when the job runs again, which the flaky-test bot does once by
-itself."""
+itself. The job fails as well when the update removes a file of the blueprint that has
+no entry in `MOVED` of `blueprint/migrate.py`: a page of a repository could still point
+at it."""
 why = """The blueprint bot brings every release to every repository; an update that
 fails there holds up all of them."""
 fix = """Read the log of the check: it shows the conflict or the step that failed. Fix
 the template; for a file of the project, which an update keeps, add a migration to
-`blueprint/migrate.py`.
+`blueprint/migrate.py`. For a file of the blueprint that the update removes, add its
+path to `MOVED` of `blueprint/migrate.py`, with its successor or `None`, as the
+troubleshooting page says under "A release moves a file of the project" (decision 1051).
 The tests of the template update a project of every kind as well:"""
 commands = ["python -m pytest tests/test_template.py"]
 docs = "CONTRIBUTING.md#tests"
@@ -1086,19 +1090,25 @@ problem = """A file that belongs to this project, which an update of the bluepri
 as it is, lacks what a release of the blueprint moved, such as the labels `good first
 issue` and `help wanted` in the group `contribution` of `.github/labels.toml`, or the
 hosts and files that the project added to `.github/issue-assistant/config.toml`, which
-go to `.github/issue-assistant/config.project.toml`; the log names each file and what
-moves."""
+go to `.github/issue-assistant/config.project.toml`, or a page of Markdown that still
+names a file that a release removed, such as the badge of a workflow that another one
+replaced; the log names each file and what moves. A line that names a removed file
+outside a page, such as a comment under `.github/`, is a warning and fails nothing."""
 why = """The files of the blueprint in the update count on that move, and an update never
 overwrites a file of the project. Without it the repository stays behind every new one,
-and a feature of the release stays off without a word."""
+a feature of the release stays off without a word, and a page that names a removed file
+shows a broken badge or a link that leads nowhere."""
 fix = """Move it with the command, then commit what changed (in the blueprint itself, the
 tool is `blueprint.py` without `.github/`). A project that declines the move of a label
-writes a comment behind its line `group = "decision"`:"""
+writes a comment behind its line `group = "decision"`, and a line that keeps the name of
+a removed file, such as one about the history of the project, says `blueprint: keep`
+in a comment:"""
 commands = ["python3 .github/blueprint.py migrate --fix"]
 docs = "https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/troubleshooting.md#a-release-moves-a-file-of-the-project"
 autofix = ["{blueprint} migrate --fix"]
-# MOVABLE of blueprint/migrate.py.
+# MOVABLE and PAGES of blueprint/migrate.py.
 writes = [
+  "**/*.md",
   ".github/issue-assistant/config.project.toml",
   ".github/issue-assistant/config.toml",
   ".github/labels.toml",
@@ -1146,21 +1156,23 @@ writes = ["changelog.d/*.md"]
 
 [step."Records of decisions"]
 rerun = false
-problem = """Two records of `docs/decisions/` share a number, the numbers skip one, a file
-of the folder is no record, named `NNNN-its-title.md`, or the index
-`docs/decisions/README.md` lists a record twice, misses one, names a file that the
-folder doesn't have, names a record by another number or lists the records out of
-order; the log names each number and file, and the next free number."""
-why = """Two pull requests that each take the next free number for a record merge
-without a conflict of Git, since their files have different names. Without this step,
-both reach `main`, a link to the number leads to either record, and the index lists one
-of them twice or misses one."""
-fix = """When another pull request took your number first, give your record the next
-free number that the log names, in the name of its file, in its row of the index and in
-each link to it; which record moves is yours to choose, so no command renames one. The
-command fixes what only the index gets wrong: the number of a row, the row of a renamed
-record, a row twice, a missing row from the title and status of its record, and the
-order of the rows; then commit what changed (in the blueprint itself, the tool is
+problem = """Two records of `docs/decisions/` share a number, a file of the folder is no
+record, named `NNNN-its-title.md`, the index `docs/decisions/README.md` lists a record
+twice, names a file that the folder doesn't have, names a record by another number or
+lists the records out of order, or, in the CI of a pull request, a record that `main`
+doesn't have carries neither the number of the pull request nor that of an issue that
+it fixes; the log names each number and file, and the number to take."""
+why = """A record takes the number of its pull request or of the issue that the pull
+request fixes, which no other pull request can take, and pull requests leave the rows
+of the index to the release, so two that each add a record merge without a conflict of
+Git. A record of another number, such as the next free one, can meet the record of
+another pull request: both reach `main`, and a link to the number leads to either."""
+fix = """Name your record after the number that the log names, that of its pull
+request or of the issue that the pull request fixes, in the name of its file and in
+each link to it; which record moves is yours to choose, so no command renames one.
+Leave the rows of the index to the release. The command fixes what only the index gets
+wrong: the number of a row, the row of a renamed record, a row twice and the order of
+the rows; then commit what changed (in the blueprint itself, the tool is
 `blueprint.py` without `.github/`):"""
 commands = ["python3 .github/blueprint.py decisions --fix"]
 docs = "CONTRIBUTING.md#records-of-decisions"

@@ -125,6 +125,16 @@ EVENT_BOTS = frozenset({"Area labels", "Commands", "Dependabot maintenance", "We
 # seconds, which covers the steps that end the last job, and leaves a run that takes
 # longer to the daily look.
 LAST_JOB = EVENT_BOTS | OWN_ISSUE
+# The issue assistant, whose first answer to a person's issue counts most: a run of it
+# that Harden-Runner stopped runs its failed jobs once more, as a bot of events does,
+# which posts the analysis that the job that passed kept, without the AI engine. Only
+# a run of an event of an issue, of ISSUE_EVENTS: a run by hand is its maintainer's
+# own, and a second try of it would check the role of whoever ran it again. Its caller
+# comes from the issue assistant's template and has no last job yet, so a start by
+# hand with the run and the daily look give the second try (decision 0176). Not in
+# LAST_JOB, whose workflows each carry that job.
+ISSUE_BOTS = frozenset({"Issue assistant"})
+ISSUE_EVENTS = frozenset({"issues", "issue_comment"})
 PAUSE = 10
 LOOKS = 24
 # The workflow of this bot, which can't follow its own end: the daily look gives the
@@ -824,25 +834,35 @@ def newer_end(api: Api, repo: str, branch: str, workflow: int, run: Run) -> bool
     )
 
 
+def runs_again_after_a_stop(run: Run) -> bool:
+    """Whether this bot gives a run its second try when Harden-Runner stopped it: one
+    of a workflow with a last job, never of the event pull_request, as none of them
+    runs on it, so such a run is a fork's workflow that only took the name of one of
+    them; or one of the issue assistant for an event of an issue. Any other run has its
+    own second try, or is a person's."""
+    if run.name in ISSUE_BOTS:
+        return run.event in ISSUE_EVENTS
+    return run.name in LAST_JOB and run.event != "pull_request"
+
+
 def watch_stop(api: Api, repo: str, run_id: int) -> tuple[str, bool]:
     """The end of a run of a bot of events or of a workflow that keeps an issue of its
-    own, whose last job started this bot, also one of a pull request or of a fork: once
-    the run has ended, its failed jobs run once more when Harden-Runner stopped one of
-    them at the first attempt, and any other end stays theirs. False when GitHub
-    refused that try."""
+    own, whose last job started this bot, also one of a pull request or of a fork, or
+    of the issue assistant for an event of an issue: once the run has ended, its failed
+    jobs run once more when Harden-Runner stopped one of them at the first attempt, and
+    any other end stays theirs. False when GitHub refused that try."""
     path = f"repos/{repo}/actions/runs/{run_id}"
     data = api.get(path)
     if data is None:
         return f"GitHub doesn't know the run {run_id}.", True
     run = Run.of(data)
-    # None of them runs on pull_request, so such a run is a fork's workflow that only
-    # took the name of one of them; any other run has its own second try.
-    if run.name not in LAST_JOB or run.event == "pull_request":
-        return (
-            f"{run.name}: neither a bot of events nor a workflow with an issue of its "
-            "own, nothing to do.",
-            True,
+    if not runs_again_after_a_stop(run):
+        why = (
+            f"runs once more for an event of an issue only, not for {run.event}"
+            if run.name in ISSUE_BOTS
+            else "neither a bot of events nor a workflow with an issue of its own"
         )
+        return f"{run.name}: {why}, nothing to do.", True
     looks = 1
     while run.status != "completed" and run.attempt == 1 and looks < LOOKS:
         # Looked up at the call, so that a test can replace it.
@@ -1376,11 +1396,18 @@ def stopped_bots(
     this bot, or when GitHub refused the start, as it may for a run that Dependabot
     started, whose token may only read (decision 0176). Of every branch, as theirs run
     for pull requests too, but not of the event pull_request: none of them runs on it,
-    so such a run is a fork's workflow that only took the name of one of them."""
+    so such a run is a fork's workflow that only took the name of one of them. The
+    runs of the issue assistant for an event of an issue too, whose caller has no last
+    job yet, so that a first answer that Harden-Runner stopped comes a day late at the
+    latest; its earlier post keeps it from a second analysis once the assistant has answered,
+    also from a run started by hand."""
     since = (now - STOPPED_SINCE).strftime("%Y-%m-%dT%H:%M:%SZ")
     found = []
     for workflow in workflows:
-        if workflow["name"] not in LAST_JOB or workflow["state"] != "active":
+        if (
+            workflow["name"] not in LAST_JOB | ISSUE_BOTS
+            or workflow["state"] != "active"
+        ):
             continue
         listed = api.get(
             f"repos/{repo}/actions/workflows/{workflow['id']}/runs?status=failure"
@@ -1390,7 +1417,7 @@ def stopped_bots(
             run
             for item in (listed or {}).get("workflow_runs", [])
             for run in [Run.of(item)]
-            if run.event != "pull_request"
+            if runs_again_after_a_stop(run)
             and run.attempt == 1
             and stopped_by_harden_runner(api, repo, run)
         ]
@@ -1549,9 +1576,11 @@ def sweep(
                 start=starts < MOST_STARTS,
                 after_checks=name in after_checks,
                 own=name in OWN_ISSUE or own_issue(text),
-                # A stopped run of this bot gets its second try below, so that it
-                # opens no issue that its second try closes again.
-                again={run.id for run in stopped} if workflow is own else (),
+                # A stopped run of this bot, or of the issue assistant for an issue
+                # on the default branch, gets its second try below, so that it opens
+                # no issue that its second try closes again. The ids of the runs are
+                # unique, so each workflow finds only its own.
+                again={run.id for run in stopped},
             )
         except GitHubError as error:
             state, started = f"couldn't look: {code(str(error))}", False
