@@ -788,12 +788,22 @@ jobs:
               continue
             fi
             # A job without annotations that GitHub gives has no error of its own here;
-            # the row takes it from the log.
-            if ! errors="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$id/annotations" --paginate \
-              --jq '.[] | select(.annotation_level == "failure") | .message | gsub("\\s+"; " ")')"; then
+            # the row takes it from the log. Each failure comes on a line of its own,
+            # after whose it is and a tab: "coach" for the PR coach's explanation of the
+            # check, an error whose title starts with "PR coach: ", "own" for one that
+            # the job reported itself. GitHub documents no order for them, and the
+            # coach's often comes first, although its step runs after the one that
+            # failed, so its title tells it apart, never its place.
+            if ! annotated="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$id/annotations" --paginate \
+              --jq '.[] | select(.annotation_level == "failure")
+                | (if (.title // "" | startswith("PR coach: ")) then "coach" else "own" end)
+                  + "\t" + (.message | gsub("\\s+"; " "))')"; then
               given_up && exit 1
-              errors=""
+              annotated=""
             fi
+            errors="$(cut -f 2- <<<"$annotated")"
+            coached="$(sed -n 's/^coach\t//p' <<<"$annotated")"
+            reported="$(sed -n 's/^own\t//p' <<<"$annotated")"
             if grep -q "higher priority waiting request" <<<"$errors"; then
               rows=""
               counted=""
@@ -895,12 +905,18 @@ jobs:
               thrown="$(grep -oE '([A-Za-z_][A-Za-z0-9_]*\.)*[A-Za-z0-9_]*(Error|Exception|Failure): .*[^[:space:]]' <<<"$since" | head -n 1)"
             fi
             tests="$(awk 'NR > 1 { printf ", " } { printf "%s", $0 }' <<<"$names")"
-            error="$(grep -v -e '^Process completed with exit code' -e '^The operation was canceled' <<<"$errors" | head -n 1)"
+            # The error that the job reported itself comes first, then the line of
+            # pytest and the exception of the log, then the coach's explanation of what
+            # the check usually finds, and the exit code last.
+            error="$(grep -v -e '^Process completed with exit code' -e '^The operation was canceled' <<<"$reported" | head -n 1)"
             if [[ -z "$error" ]]; then
               error="$(sed -nE '1s/^[A-Z]+ [^ ]+ - //p' <<<"$failed")"
             fi
             if [[ -z "$error" ]]; then
               error="$thrown"
+            fi
+            if [[ -z "$error" ]]; then
+              error="$(head -n 1 <<<"$coached")"
             fi
             if [[ -z "$error" ]]; then
               error="$(head -n 1 <<<"$errors")"
@@ -1821,7 +1837,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
-    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-findings.yml@00a1bb67482924c61555fc31542d3d67de661269 # v1.14.0
+    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-findings.yml@86a680d365c7c225a7295c06ae341d9059eaf2e4 # v1.15.0
     with:
       dry_run: false
 
@@ -1837,7 +1853,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
-    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-findings.yml@00a1bb67482924c61555fc31542d3d67de661269 # v1.14.0
+    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-findings.yml@86a680d365c7c225a7295c06ae341d9059eaf2e4 # v1.15.0
     with:
       dry_run: false
 

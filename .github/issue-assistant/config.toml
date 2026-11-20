@@ -45,3 +45,10 @@ sweep_after_release_workflow = false
 # Findings runs after the scans of main alone and no run of it, nor of Bot health
 # behind it, follows each scan of a pull request (decision 1043 of the blueprint).
 pull_requests = false
+
+[failures]
+# A run of Issue assistant whose job failed at its first attempt starts Bot health
+# from its last job, which runs the failed jobs once more when Harden-Runner stopped
+# one: the analysis that the first attempt kept is posted within minutes, without
+# the AI engine (decision 0176 of the blueprint).
+workflow = "bot-health.yml"

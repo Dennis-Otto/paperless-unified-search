@@ -51,6 +51,7 @@ from pathlib import Path
 from typing import Any
 
 from blueprint import github
+from blueprint.coach import PREFIX as COACH_PREFIX
 from blueprint.github import Api, GitHubError, Json
 from blueprint.outage import couldnt_start, never_started, unreachable
 from blueprint.social_preview import (
@@ -130,9 +131,10 @@ LAST_JOB = EVENT_BOTS | OWN_ISSUE
 # which posts the analysis that the job that passed kept, without the AI engine. Only
 # a run of an event of an issue, of ISSUE_EVENTS: a run by hand is its maintainer's
 # own, and a second try of it would check the role of whoever ran it again. Its caller
-# comes from the issue assistant's template and has no last job yet, so a start by
-# hand with the run and the daily look give the second try (decision 0176). Not in
-# LAST_JOB, whose workflows each carry that job.
+# comes from the issue assistant's template: [failures] workflow of its config.toml
+# chooses the variant whose last job, failure, starts this bot with the run, and the
+# daily look covers a run whose start failed (decision 0176). Not in LAST_JOB, whose
+# workflows each carry the blueprint's own last job.
 ISSUE_BOTS = frozenset({"Issue assistant"})
 ISSUE_EVENTS = frozenset({"issues", "issue_comment"})
 PAUSE = 10
@@ -444,13 +446,25 @@ def annotations_of(api: Api, repo: str, job: int) -> list[Json]:
 
 
 def first_error(api: Api, repo: str, job: int) -> str:
-    errors = [
-        str(annotation.get("message") or "")
-        for annotation in annotations_of(api, repo, job)
-        if annotation.get("annotation_level") == "failure"
-    ]
-    telling = [error for error in errors if not GENERIC.fullmatch(error.strip())]
-    return (telling or errors or [""])[0]
+    """The first error that the job reported itself; else the PR coach's explanation of
+    the check, which the step *Explain the failure* adds as an error of its own; else the
+    exit code that every failed step gets; else nothing. GitHub documents no order for the
+    annotations of a job, so the title tells the coach's apart, not the place in the list.
+    """
+    own: list[str] = []
+    coach: list[str] = []
+    generic: list[str] = []
+    for annotation in annotations_of(api, repo, job):
+        if annotation.get("annotation_level") != "failure":
+            continue
+        message = str(annotation.get("message") or "")
+        if GENERIC.fullmatch(message.strip()):
+            generic.append(message)
+        elif str(annotation.get("title") or "").startswith(COACH_PREFIX):
+            coach.append(message)
+        else:
+            own.append(message)
+    return (own or coach or generic or [""])[0]
 
 
 def jobs_of(api: Api, repo: str, run: int, attempt: int) -> list[Json]:

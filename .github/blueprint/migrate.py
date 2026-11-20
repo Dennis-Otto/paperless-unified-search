@@ -37,7 +37,9 @@ ANSWERS = ".copier-answers.yml"
 MOVABLE = frozenset({LABELS, ISSUE_ASSISTANT, ISSUE_ASSISTANT_PROJECT})
 # The pages of Markdown that `migrate --fix` points from a file that a release removed
 # to the one that took its place, as the writes of the step Files of the project name
-# them, one release before the first entry of MOVED.
+# them. They came one release before the first entries of MOVED, since the bot of a
+# repository reads the writes from its main (decision 0142); a new entry of MOVED needs
+# no such wait any more.
 PAGES = "**/*.md"
 # The first label of the group contribution is the one that the digest of the issue
 # assistant tells the maintainer to add, so this is their order.
@@ -368,13 +370,8 @@ def migrate(
 # `migrate --fix` points a page of Markdown at the file that took its place (decision
 # 1051). An entry stays for a repository that updates later, whatever version it comes
 # from. The Variants workflow fails a pull request whose update removes a file of
-# .github/blueprint/owned.txt without an entry here or in MOVED_NEXT.
-MOVED: Mapping[str, str | None] = {}
-# The entries whose fix the bot of main can't commit yet: the writes of the step Files
-# of the project came to **/*.md in this release, and the bot of a repository reads
-# them from the catalog of its main, which is the release before (decision 0142). They
-# join MOVED in the next release, once every repository knows them.
-MOVED_NEXT: Mapping[str, str | None] = {
+# .github/blueprint/owned.txt without an entry here.
+MOVED: Mapping[str, str | None] = {
     # Release 1.22.0 joined Secret scan and Dependency review into Quick checks (#1026).
     ".github/workflows/dependency-review.yml": ".github/workflows/quick-checks.yml",
     ".github/workflows/secret-scan.yml": ".github/workflows/quick-checks.yml",
@@ -635,7 +632,7 @@ def move_lines(root: Path, found: Iterable[Named]) -> list[Named]:
 def unlisted(before: str, root: Path) -> list[str]:
     """The files of the blueprint that before, the owned.txt of an earlier release,
     lists, and that the update of the repository in root removed without an entry in
-    MOVED or MOVED_NEXT: the guard that the Variants workflow runs on every update. A
+    MOVED: the guard that the Variants workflow runs on every update. A
     file that owned.txt no longer lists but the repository still has became one of
     the project, and stays."""
     owned = root / OWNED
@@ -643,5 +640,5 @@ def unlisted(before: str, root: Path) -> list[str]:
     return sorted(
         path
         for path in owned_paths(before) - after
-        if path not in MOVED and path not in MOVED_NEXT and not (root / path).exists()
+        if path not in MOVED and not (root / path).exists()
     )

@@ -24,6 +24,10 @@ name: Issue assistant
 # analysis one each, the oldest after the number of issue first, up to [engine]
 # backlog_per_run of config.toml: the job assistant chooses them, and the job
 # backlog analyzes each. It sets labels only, unless comment is ticked.
+#
+# This is the form for [failures] workflow of .github/issue-assistant/config.toml:
+# when a job of a run fails, the last job, failure, starts the workflow of the
+# repository that the key names, which gives the run a second try.
 
 on:
   issues:
@@ -75,7 +79,7 @@ jobs:
       contents: read
       issues: write
       discussions: read
-    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-assistant.yml@00a1bb67482924c61555fc31542d3d67de661269 # v1.14.0
+    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-assistant.yml@86a680d365c7c225a7295c06ae341d9059eaf2e4 # v1.15.0
     with:
       dry_run: ${{ inputs.dry_run || false }}
     # Passed by name: only the job analyze sees their values, those of the
@@ -103,7 +107,7 @@ jobs:
       contents: read
       issues: write
       discussions: read
-    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-assistant.yml@00a1bb67482924c61555fc31542d3d67de661269 # v1.14.0
+    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-assistant.yml@86a680d365c7c225a7295c06ae341d9059eaf2e4 # v1.15.0
     with:
       dry_run: ${{ inputs.dry_run || false }}
       backlog_issue: ${{ matrix.issue }}
@@ -115,3 +119,135 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+
+  # The second try of a run that failed: a job of it failed at its first attempt,
+  # and the workflow of the repository that [failures] workflow of
+  # .github/issue-assistant/config.toml names gets the run, such as the bot-health
+  # bot of the Repo Blueprint, which runs the failed jobs once more when
+  # Harden-Runner stopped one of them. GitHub keeps the jobs that passed, with their
+  # outputs, when it runs the failed jobs again: the analysis isn't made twice, and
+  # the job that posts it leaves an issue alone that has it. Not at the second
+  # attempt, which runs this job again after the failed ones; not in a fork; and not
+  # for a run by hand, whose second try would check the role of the person who ran
+  # it again in place of the one who started it.
+  failure:
+    name: Start the workflow for failed runs
+    needs: [assistant, backlog]
+    if: failure() && github.run_attempt == 1 && !github.event.repository.fork && github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      # Starts the workflow of [failures] workflow.
+      actions: write
+    env:
+      # The workflow of [failures] workflow of config.toml, which install writes here.
+      WORKFLOW: bot-health.yml
+    steps:
+      - name: Block every host but GitHub's API
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+      - name: Make sure that Harden-Runner blocks
+        id: blocks
+        # Harden-Runner goes on without its agent when the agent can't be downloaded, as
+        # in GitHub's outage of 8 November 2026, or doesn't start: the job would reach
+        # every host. It stops here instead, so that it can run again.
+        timeout-minutes: 1
+        run: |
+          # The agent writes Initialized into its status once its firewall stands, and
+          # runs as the service agent until the end of the job; one that is there may
+          # still be starting. One that took its changes back says so in its log, and
+          # no status will come.
+          log=/home/agent/agent.log
+          for _ in {1..30}; do
+            [[ -e /home/agent/agent.status || ! -e /home/agent/agent ]] && break
+            grep -qs 'Reverted changes' "$log" && break
+            sleep 1
+          done
+          status="$(cat /home/agent/agent.status 2>/dev/null || true)"
+          # Before its firewall stands, the agent looks up each host that it allows, and
+          # takes itself away again when a single lookup fails; its log names the host.
+          lookup="$(grep -s -m 1 'Error resolving allowed domain' "$log" || true)"
+          if [[ ! -d /home/agent/ ]]; then
+            # Harden-Runner returns before it makes the folder of the agent when
+            # StepSecurity says that it is unavailable, or the repository skips it.
+            why="didn't install its agent, as StepSecurity said that it is unavailable or the repository skips it (the log of its step says which),"
+          elif [[ ! -e /home/agent/agent ]]; then
+            why="couldn't download its agent, mostly in an outage of GitHub (https://www.githubstatus.com),"
+          elif [[ -n "$lookup" ]]; then
+            # The host follows "resolve domain" when the resolver answered with an
+            # error, and "name=" when no resolver could be reached.
+            what="a host that it allows"
+            pattern='resolve domain ([^ ,]+)|name=([^&" ]+)'
+            if [[ "$lookup" =~ $pattern ]]; then
+              host="${BASH_REMATCH[1]:-${BASH_REMATCH[2]}}"
+              what="${host%.}, a host that it allows,"
+            fi
+            why="has an agent that took itself away again because a single lookup of $what failed, which is no outage,"
+          elif [[ "$status" != Initialized ]]; then
+            why="has an agent that didn't start,"
+          elif ! systemctl is-active --quiet agent; then
+            why="has an agent that stopped,"
+          else
+            echo "Harden-Runner blocks every host that the job doesn't name."
+            exit 0
+          fi
+          echo "The status of the agent: ${status:-none}"
+          [[ -z "$lookup" ]] || echo "The log of the agent: $lookup"
+          echo "::error title=Harden-Runner doesn't block::Harden-Runner $why so this job would reach every host, and it stops here instead. That is no problem of the change: run the job again."
+          exit 1
+      - name: Wait until Harden-Runner lets the hosts through
+        # The runner may have asked for an address past Harden-Runner, which then blocks
+        # that address for as long as systemd-resolved keeps it, up to a minute.
+        timeout-minutes: 4
+        env:
+          HOSTS: >-
+            api.github.com:443
+        run: |
+          deadline=$(($(date +%s) + 120))
+          for endpoint in $HOSTS; do
+            host="${endpoint%:*}"
+            # A wildcard names no host to ask.
+            [[ "$host" == '*.'* ]] && continue
+            until curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "https://$host/"; do
+              if (($(date +%s) >= deadline)); then
+                echo "::warning::Harden-Runner still blocks $host after two minutes; a step that needs it will fail, and the job can run again."
+                break
+              fi
+              echo "Harden-Runner still blocks $host, waiting 3 s."
+              sleep 3
+            done
+          done
+      - name: Start the workflow for failed runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.run_id }}
+        # The workflow runs on the default branch and gets the id of this run as its
+        # input run. GitHub starts a workflow that the token of a job dispatches. A
+        # call that GitHub fails, as in an outage, tries again twice.
+        run: |
+          for wait in 10 20 0; do
+            if gh workflow run "$WORKFLOW" --field run="$RUN"; then
+              echo "A job of this run failed, so $WORKFLOW looks at it and may run the failed jobs once more." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            ((wait)) || break
+            echo "GitHub didn't start $WORKFLOW, so the job tries again in $wait seconds."
+            sleep "$wait"
+          done
+          echo "::error title=The workflow for failed runs didn't start::GitHub didn't start $WORKFLOW of [failures] workflow in .github/issue-assistant/config.toml for this run."
+          exit 1
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
