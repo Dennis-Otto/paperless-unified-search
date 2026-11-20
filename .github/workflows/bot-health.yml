@@ -39,9 +39,11 @@ name: Bot health
 # days once more that Harden-Runner stopped at their first attempt, and those of the
 # bots of events and of the workflows with an issue of their own whose last job
 # Harden-Runner or GitHub kept from starting this bot. A run of Issue assistant for an
-# event of an issue gets the same second try when Harden-Runner stopped a job of it,
-# from a start by hand that names the run or from the nightly look, which posts the
-# analysis that its first attempt kept; its end starts nothing here either.
+# event of an issue gets the same second try when Harden-Runner stopped a job of it:
+# the last job failure of its caller, which [failures] workflow of
+# .github/issue-assistant/config.toml chooses, starts this bot with the run, and the
+# nightly look covers a run whose start failed; the rerun posts the analysis that its
+# first attempt kept, and its end starts nothing here either.
 # It checks out the default branch only, for blueprint.py, never the code of a pull
 # request; blueprint.py bot-health holds the logic.
 # https://github.com/Dennis-Otto/repo-blueprint
