@@ -670,8 +670,9 @@ that it shouldn't; the log shows the input and the traceback."""
 why = """Untrusted input reaches the code in every real use; a crash that fuzzing finds
 in a minute, an attacker finds as well."""
 fix = """Reproduce the crash with the input from the log, fix the code, and add the input
-to a test, so that the crash can't come back. With Atheris installed, the targets run
-on your machine as well:"""
+to a test, so that the crash can't come back. A target that measures its time can fail
+on a slow runner: when it is fast with the input on your machine, run the failed job
+again. With Atheris installed, the targets run on your machine as well:"""
 commands = ['for target in fuzz/fuzz_*.py; do python "$target" -max_total_time=60; done']
 docs = "https://github.com/google/atheris"
 autofix = """A crash needs a fix of the code, and a test with its input, by a
