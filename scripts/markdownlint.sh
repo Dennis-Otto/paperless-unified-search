@@ -18,7 +18,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 # The markdownlint-cli2 of the action of the Lint workflow, which Renovate keeps
 # current; npx takes the version of its tag.
-image="davidanson/markdownlint-cli2:v0.24.0@sha256:70ead7c0352d22d04bbe612cd96b54ec591538d8f4626cafe391bb2ecf3639ca"
+image="davidanson/markdownlint-cli2:v0.24.1@sha256:caf0698eaea0268bcf35b5e2d7ba946b5899d323e765bc2862054405658cd948"
 version="${image#*:v}"
 version="${version%%@*}"
 # The version of Node that this version needs, from its package.json.
