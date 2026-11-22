@@ -277,6 +277,24 @@ else
   echo "Python 3.12 or newer is not installed here; the CI checks the accepted advisories."
 fi
 
+step "Answers for bestpractices.dev"
+# The answers of OpenSSF Best Practices that only this repository can give are in
+# .github/bestpractices.project.toml, which the weekly run of Links compares with the
+# public entry and forces onto it with the links of its issue. The step checks the file
+# without the network: criteria that bestpractices.dev knows, a status only where
+# .bestpractices.json gives none, the files and headings of its links, a length that
+# fits into one link, and no copy of the words of .bestpractices.json, which
+# best-practices --verify --fix removes. A missing file passes. The Python and
+# blueprint.py of the step before.
+if [[ -n "$python" ]]; then
+  "$python" "$tool" best-practices --verify
+elif [[ -n "${CI:-}" ]]; then
+  echo "Checking the answers for bestpractices.dev needs Python 3.12 or newer, which this runner lacks."
+  exit 1
+else
+  echo "Python 3.12 or newer is not installed here; the CI checks the answers for bestpractices.dev."
+fi
+
 step "Lock files"
 # Renovate compiles each lock file of pip-compile, such as requirements-dev.txt, again
 # with the command in its header, and skips one whose command it can't read, in every
