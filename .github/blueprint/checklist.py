@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from blueprint import workflows
-from blueprint.best_practices import BADGE, SAVE, TITLE
+from blueprint.best_practices import BADGE, PROJECT_ANSWERS, SAVE, TITLE
 from blueprint.best_practices import SITE as BEST_PRACTICES
 from blueprint.bootstrap import PUSH_AS_GH, SIGNING
 from blueprint.github import Api, GitHubError
@@ -151,7 +151,8 @@ def best_practices(readme: str) -> list[Step]:
     The form of each level proposes the answers of .bestpractices.json for the
     questions that are still open, and a project that shows one badge has its number
     for the other. A changed answer of the file reaches an answered question only
-    through the links of the issue that the weekly run of Links keeps."""
+    through the links of the issue that the weekly run of Links keeps, as does each
+    answer of the project file, which Save doesn't read."""
     badges = {series: number for number, series in BADGE.findall(readme)}
     number = badges.get("badge") or badges.get("baseline")
     take = (
@@ -160,6 +161,9 @@ def best_practices(readme: str) -> list[Step]:
         " rest. Save never replaces an answer that the entry gives: once the README"
         " shows a badge, the weekly run of Links opens the issue"
         f" '{TITLE}' when an answer of the file changes, with the links that take it in."
+        f" An answer that only this repository can give goes into {PROJECT_ANSWERS},"
+        " not into .bestpractices.json: Save doesn't read it, and the links of that"
+        " issue take it in and force it back over an edit on the site."
     )
     steps: list[Step] = []
     for series, name, level in (

@@ -40,6 +40,6 @@ jobs:
       contents: read
       issues: write
       pull-requests: read
-    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-lifecycle.yml@65e7cfe8f981edab9542063a59d006e53c1af963 # v1.15.1
+    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-lifecycle.yml@c0cba05cba73d4489000a0871dcdb97caee29ea7 # v1.15.2
     with:
       dry_run: ${{ inputs.dry_run || false }}

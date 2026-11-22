@@ -1199,6 +1199,30 @@ docs = "https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/troubleshoo
 autofix = ["{blueprint} advisories --fix"]
 writes = ["**/osv-scanner.toml"]
 
+[step."Answers for bestpractices.dev"]
+rerun = false
+problem = """`.github/bestpractices.project.toml`, the answers of OpenSSF Best Practices
+that only this repository gives, has a table that bestpractices.dev can't take or that
+the repository doesn't show: a criterion that the site doesn't know, a key other than
+`status` and `justification`, a status for a criterion that `.bestpractices.json`
+answers, a criterion of its own without both, a status other than Met, Unmet or N/A or
+an N/A that the criterion doesn't allow, Met without the link that it needs, a link that
+doesn't use https, a link to a file or a heading that the checkout doesn't have, a justification too long for one link
+of the issue, or one that only repeats `.bestpractices.json`; the log names each."""
+why = """The weekly run of *Links* forces these answers onto the public entry with the
+links of its issue: a wrong one becomes a false statement in public, and one that the
+site can't take keeps the issue open for ever. A copy of the blueprint's words goes
+stale with the next release that changes them."""
+fix = """Fix each table as the log says: give a criterion that `.bestpractices.json`
+answers only its justification, and any other both its status and its justification.
+The command removes a status Met and a justification that only repeat
+`.bestpractices.json` (in the blueprint itself, the tool is `blueprint.py` without
+`.github/`):"""
+commands = ["python3 .github/blueprint.py best-practices --verify --fix"]
+docs = "https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/features/bots.md#the-entry-on-bestpracticesdev"
+autofix = ["{blueprint} best-practices --verify --fix"]
+writes = [".github/bestpractices.project.toml"]
+
 [step."Lock files"]
 rerun = false
 problem = """Renovate can't read the command in the header of a lock file of pip-compile,

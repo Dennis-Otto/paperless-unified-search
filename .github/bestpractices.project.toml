@@ -1,0 +1,27 @@
+# The answers of OpenSSF Best Practices (https://www.bestpractices.dev) that only this
+# repository can give, on top of .bestpractices.json, which the blueprint keeps current
+# with what it guarantees for every repository of its kind. Never change that file: an
+# answer of this repository alone goes here, and no update of the blueprint touches it.
+#
+# One table for each criterion, named as in .bestpractices.json, such as [test] or
+# [osps_br_07_01]. For a criterion that .bestpractices.json answers, a table gives only
+# its justification, which replaces the file's own: the status stays the blueprint's
+# Met. For any other criterion, such as security_review, a table gives status (Met,
+# Unmet or N/A) and justification. A link names a file or a heading of this repository,
+# or uses https. Only what is true of this repository belongs here, such as its own
+# end-to-end tests:
+#
+# [test]
+# justification = "pytest, and the end-to-end tests in Docker: https://github.com/OWNER/REPOSITORY/blob/main/tests/e2e/run.sh"
+#
+# [security_review]
+# status = "Met"
+# justification = "..."
+#
+# The weekly run of the workflow Links compares the public entry with both files and
+# keeps an issue with the links of the edit pages that take the answers in: change an
+# answer here, not on the site, as these links force it back. "Save (and continue)" on
+# bestpractices.dev reads .bestpractices.json only. The step "Answers for
+# bestpractices.dev" of scripts/check.sh checks this file with
+# python3 .github/blueprint.py best-practices --verify.
+# https://github.com/Dennis-Otto/repo-blueprint/blob/main/docs/features/bots.md#the-entry-on-bestpracticesdev

@@ -1425,6 +1425,44 @@ def best_practices_command(
     return 0
 
 
+def best_practices_verify_command(arguments: argparse.Namespace, root: Path) -> int:
+    """Whether .github/bestpractices.project.toml gives only answers that
+    bestpractices.dev takes and the repository shows, without the network; with
+    --fix, it first removes what only repeats .bestpractices.json."""
+    if not arguments.verify or arguments.dry_run:
+        print(
+            "blueprint.py: --fix goes with --verify, and --dry-run without it: "
+            "--verify checks the project file, the command without it compares the "
+            "entry on bestpractices.dev",
+            file=sys.stderr,
+        )
+        return 2
+    outcome = best_practices.verify(root, fix=arguments.fix)
+    project = best_practices.PROJECT_ANSWERS
+    for removed in outcome.removed:
+        print(f"{project}: removed the {removed}, which only repeated the blueprint's.")
+    for problem in outcome.problems:
+        print(problem)
+    if outcome.problems:
+        print(
+            f"{command(root)} best-practices --verify --fix removes a status Met and a "
+            f"justification that only repeat {best_practices.ANSWERS}; the rest needs "
+            "a person, who knows what holds for this repository."
+        )
+        return 1
+    if not outcome.answered:
+        print(
+            f"{project} gives no answer of its own: the answers are those of "
+            f"{best_practices.ANSWERS}."
+        )
+    else:
+        print(
+            f"{project} answers {outcome.answered} criterion(s) as this repository "
+            "alone can."
+        )
+    return 0
+
+
 def locks_command(arguments: argparse.Namespace, root: Path) -> int:
     """Whether Renovate can compile each lock file of pip-compile again with the
     command in its header; with --fix, it puts the = between each option and its
@@ -2943,13 +2981,27 @@ def add_best_practices_parser(
     best_practices_parser = commands.add_parser(
         "best-practices",
         help="read the public entry of the project on bestpractices.dev once, and keep "
-        f"one issue with the answers of {best_practices.ANSWERS} that it doesn't give "
+        f"one issue with the answers of {best_practices.ANSWERS} and of "
+        f"{best_practices.PROJECT_ANSWERS}, the project's own, that it doesn't give "
         "and the links of the edit pages that take them in; it closes once none differs",
     )
     best_practices_parser.add_argument(
         "--dry-run",
         action="store_true",
         help="only say what it would change",
+    )
+    best_practices_parser.add_argument(
+        "--verify",
+        action="store_true",
+        help=f"check {best_practices.PROJECT_ANSWERS} without the network: criteria "
+        "that the site knows, a status only where the blueprint's file gives none, the "
+        "files and headings of its links, and no copy of the blueprint's words",
+    )
+    best_practices_parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="with --verify: first remove a status Met and a justification that only "
+        f"repeat {best_practices.ANSWERS}",
     )
 
 
@@ -3257,6 +3309,11 @@ def files_command(arguments: argparse.Namespace, root: Path) -> int | None:
         "translations": lambda: translations_command(arguments, root),
         "website": lambda: website_command(arguments, root),
     }
+    # Without --verify, best-practices compares the entry on bestpractices.dev.
+    if arguments.command == "best-practices" and (arguments.verify or arguments.fix):
+        commands["best-practices"] = lambda: best_practices_verify_command(
+            arguments, root
+        )
     run = commands.get(arguments.command)
     if run is None:
         return None
