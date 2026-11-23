@@ -101,11 +101,12 @@ drawn_here() {
   done
 }
 
-# Python 3.12 or newer, for blueprint.py, or nothing.
+# Python 3.12 or newer with its standard library, for blueprint.py, or nothing:
+# python3-minimal of Debian passes the version but lacks shutil and tomllib.
 python_here() {
   local candidate
   for candidate in python3 python py; do
-    if "$candidate" -c 'import sys; sys.exit(sys.version_info < (3, 12))' >/dev/null 2>&1; then
+    if "$candidate" -c 'import shutil, sys, tomllib; sys.exit(sys.version_info < (3, 12))' >/dev/null 2>&1; then
       echo "$candidate"
       return 0
     fi

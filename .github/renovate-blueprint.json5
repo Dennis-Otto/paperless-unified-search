@@ -179,6 +179,22 @@
       },
     },
     {
+      // After an update of npm, blueprint.py removes each override of a package.json
+      // that the update made needless, such as one that raised minimatch until ESLint
+      // asked for the fixed version itself, so that a test of the project that wants
+      // it gone passes and the update merges by itself. npm writes only the lock
+      // file and runs no script, and an override that npm still needs stays byte for
+      // byte (decision 1112 of the blueprint). Renovate installs Node with npm, which
+      // its image lacks, and the Python of blueprint.py.
+      matchManagers: ["npm"],
+      postUpgradeTasks: {
+        commands: ["python3 .github/blueprint.py npm-overrides --fix"],
+        fileFilters: ["**/package.json", "**/package-lock.json"],
+        executionMode: "branch",
+        installTools: { node: {}, python: {} },
+      },
+    },
+    {
       matchManagers: ["github-actions"],
       matchUpdateTypes: ["minor", "patch", "digest", "pin", "pinDigest"],
       groupName: "the actions",

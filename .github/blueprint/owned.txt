@@ -46,6 +46,7 @@
 .github/blueprint/migrate.py
 .github/blueprint/mutation.py
 .github/blueprint/notices.py
+.github/blueprint/npm_overrides.py
 .github/blueprint/outage.py
 .github/blueprint/overrides.py
 .github/blueprint/owned.txt

@@ -35,8 +35,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
-      # Whether the job kept the report of the taint analysis for code scanning.
-      taint: ${{ steps.taint.outcome }}
+      # Whether the job kept the report of the taint analysis for code scanning, at
+      # the first try or at the second.
+      taint: ${{ steps.taint-again.outcome == 'success' && 'success' || steps.taint.outcome }}
     env:
       # The same krankerl as the release workflow's. The name of its package comes from
       # its address in .github/pins.toml, which pins.py of the blueprint writes into
@@ -153,26 +154,79 @@ jobs:
         timeout-minutes: 5
         with:
           # renovate: datasource=pypi depName=uv
-          version: "0.13.7"
+          version: "0.13.8"
       - name: Run the checks
         run: bash scripts/check.sh
+      # GitHub's artifact service fails now and then, and the client of the action tries
+      # no network error again, as on 22 November 2026 with ETIMEDOUT: a second try half
+      # a minute later keeps the artifact, over what the first may have left behind
+      # (decision 1096). Only the report of the PR coach reads it, so a second failure
+      # only warns.
       - name: Keep the coverage report
+        id: coverage
         if: always() && hashFiles('build/coverage.xml') != ''
+        continue-on-error: true
+        timeout-minutes: 5
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage
           path: build/coverage.xml
           retention-days: 14
+      - name: Give GitHub's artifact service half a minute
+        if: always() && steps.coverage.outcome == 'failure'
+        timeout-minutes: 1
+        run: sleep 30
+      - name: Keep the coverage report once more
+        id: coverage-again
+        if: always() && steps.coverage.outcome == 'failure'
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage
+          path: build/coverage.xml
+          retention-days: 14
+          overwrite: true
+      - name: Say what GitHub's artifact service didn't keep
+        if: always() && steps.coverage-again.outcome == 'failure'
+        run: >-
+          echo "::warning title=GitHub's artifact service failed::GitHub's artifact service failed twice to keep the coverage report, so the report of the PR coach shows no coverage this time. That changes no check: the gate of the coverage in scripts/check.sh decides on its own."
       # The paths that the taint analysis found, none when it passed, for code scanning:
       # the job taint-report uploads them.
+      # GitHub's artifact service fails now and then, and the client of the action tries
+      # no network error again, as on 22 November 2026 with ETIMEDOUT: a second try half
+      # a minute later keeps the artifact, over what the first may have left behind
+      # (decision 1096). Only code scanning reads it, through the job taint-report, so
+      # a second failure only warns.
       - name: Keep the report of the taint analysis
         id: taint
         if: always() && hashFiles('build/psalm-taint.sarif') != ''
+        continue-on-error: true
+        timeout-minutes: 5
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: psalm-taint
           path: build/psalm-taint.sarif
           retention-days: 3
+      - name: Give GitHub's artifact service half a minute
+        if: always() && steps.taint.outcome == 'failure'
+        timeout-minutes: 1
+        run: sleep 30
+      - name: Keep the report of the taint analysis once more
+        id: taint-again
+        if: always() && steps.taint.outcome == 'failure'
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: psalm-taint
+          path: build/psalm-taint.sarif
+          retention-days: 3
+          overwrite: true
+      - name: Say what GitHub's artifact service didn't keep
+        if: always() && steps.taint-again.outcome == 'failure'
+        run: >-
+          echo "::warning title=GitHub's artifact service failed::GitHub's artifact service failed twice to keep the report of the taint analysis, so code scanning shows none of its paths this time. That changes no check: the taint analysis in scripts/check.sh decides on its own."
       # The fix bot: the commands of autofix in .github/checks.toml fix what they
       # can of what the checks found, on the head of the pull request or on main.
       # After the checks, the bot commits the files that they changed onto a branch
@@ -212,8 +266,15 @@ jobs:
           script=.github/blueprint.py
           [[ -f "$script" ]] || script=blueprint.py
           python3 "$script" fix run "$CHECK" --keep "$RUNNER_TEMP/fixes" >> "$GITHUB_STEP_SUMMARY"
+      # GitHub's artifact service fails now and then, and the client of the action tries
+      # no network error again, as on 22 November 2026 with ETIMEDOUT: a second try half
+      # a minute later keeps the artifact, over what the first may have left behind
+      # (decision 1096). A second failure fails the job, as a first one did before.
       - name: Keep the fixes for the fix bot
+        id: fixes
         if: failure() && steps.fix.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 5
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fixes-check
@@ -222,6 +283,23 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 3
+      - name: Give GitHub's artifact service half a minute
+        if: failure() && steps.fixes.outcome == 'failure'
+        timeout-minutes: 1
+        run: sleep 30
+      - name: Keep the fixes for the fix bot once more
+        id: fixes-again
+        if: failure() && steps.fixes.outcome == 'failure'
+        timeout-minutes: 5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fixes-check
+          path: ${{ runner.temp }}/fixes/
+          # Fixes of files in .github/ as well.
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 3
+          overwrite: true
       # The PR coach: what failed, why it matters and how to fix it, in the summary
       # of the check and as its annotation, from .github/checks.toml.
       - name: Explain the failure
@@ -231,6 +309,7 @@ jobs:
         run: |
           script=.github/blueprint.py
           [[ -f "$script" ]] || script=blueprint.py
+          [[ -f "$script" ]] || { echo "No blueprint.py: the checkout failed, so the PR coach has nothing to explain."; exit 0; }
           python3 "$script" coach explain "$CHECK"
 
   # The paths of the taint analysis in code scanning, with each line that they take, on
@@ -381,4 +460,5 @@ jobs:
         run: |
           script=.github/blueprint.py
           [[ -f "$script" ]] || script=blueprint.py
+          [[ -f "$script" ]] || { echo "No blueprint.py: the checkout failed, so the PR coach has nothing to explain."; exit 0; }
           python3 "$script" coach explain "$CHECK"

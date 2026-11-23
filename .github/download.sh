@@ -66,8 +66,9 @@ tried() {
     fi
     if ((wait == 0)); then
       echo "::error title=GitHub fails::$what can't be downloaded: GitHub failed five times in" \
-        "two and a half minutes, an outage of GitHub and not a problem of this change" \
-        "(https://www.githubstatus.com). Run the job again once GitHub works." >&2
+        "two and a half minutes, as in an outage of GitHub or of the network of the runner," \
+        "and not a problem of this change (https://www.githubstatus.com). Run the job" \
+        "again once GitHub works." >&2
       return 1
     fi
     echo "GitHub failed; $what is asked for again in $wait seconds." >&2

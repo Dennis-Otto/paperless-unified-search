@@ -67,6 +67,9 @@ jobs:
       pages: read # whether GitHub Pages publishes from this workflow
     outputs:
       publish: ${{ steps.site.outputs.publish }}
+      # The artifact that GitHub Pages publishes: that of the second try when the
+      # first failed.
+      pages: ${{ steps.pages-again.outcome == 'success' && 'github-pages-again' || 'github-pages' }}
       languages: ${{ steps.promises.outputs.languages }}
     steps:
       - name: Record the network traffic of the job
@@ -138,7 +141,7 @@ jobs:
         timeout-minutes: 5
         with:
           # renovate: datasource=pypi depName=uv
-          version: "0.13.7"
+          version: "0.13.8"
           enable-cache: true
           prune-cache: true
           cache-dependency-glob: .github/docs-requirements.txt
@@ -313,29 +316,84 @@ jobs:
           script=.github/blueprint.py
           [[ -f "$script" ]] || script=blueprint.py
           python3 "$script" fix keep "$RUNNER_TEMP/fixes" >> "$GITHUB_STEP_SUMMARY"
+      # GitHub's artifact service fails now and then, and the client of the action tries
+      # no network error again, as on 22 November 2026 with ETIMEDOUT: a second try half
+      # a minute later keeps the artifact, over what the first may have left behind
+      # (decision 1096). Only the fix bot reads it, and the next run on main writes it
+      # again, so a second failure only warns.
       - name: Keep the fixes for the fix bot
+        id: fixes
         if: ${{ !cancelled() && steps.accepted.outcome == 'success' }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        continue-on-error: true
         timeout-minutes: 5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fixes-docs
           path: ${{ runner.temp }}/fixes/
           # Fixes of files in .github/ as well.
           include-hidden-files: true
           if-no-files-found: ignore
+      - name: Give GitHub's artifact service half a minute
+        if: ${{ !cancelled() && steps.fixes.outcome == 'failure' }}
+        timeout-minutes: 1
+        run: sleep 30
+      - name: Keep the fixes for the fix bot once more
+        id: fixes-again
+        if: ${{ !cancelled() && steps.fixes.outcome == 'failure' }}
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fixes-docs
+          path: ${{ runner.temp }}/fixes/
+          # Fixes of files in .github/ as well.
+          include-hidden-files: true
+          if-no-files-found: ignore
+          overwrite: true
+      - name: Say what GitHub's artifact service didn't keep
+        if: ${{ !cancelled() && steps.fixes-again.outcome == 'failure' }}
+        run: >-
+          echo "::warning title=GitHub's artifact service failed::GitHub's artifact service failed twice to keep the violations that this run accepted, so the fix bot doesn't bring them this time. That changes no check: the next run on main writes them again, and the baseline stays."
       # The website of a pull request, for a week: the report of the PR coach links
       # it, so that a reviewer sees the pages as they will look after the merge, also
       # when a check of its links or of its hooks failed. So is that of main in a
       # private repository that GitHub Pages doesn't publish.
+      # GitHub's artifact service fails now and then, and the client of the action tries
+      # no network error again, as on 22 November 2026 with ETIMEDOUT: a second try half
+      # a minute later keeps the artifact, over what the first may have left behind
+      # (decision 1096). Only the report of the PR coach reads it, so a second failure
+      # only warns.
       - name: Keep the website of the pull request
+        id: website
         if: ${{ !cancelled() && steps.build.outcome == 'success' && (github.event_name == 'pull_request' || steps.site.outputs.keep == 'true') }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        continue-on-error: true
         timeout-minutes: 5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: website
           path: site
           retention-days: 7
           include-hidden-files: true
+      - name: Give GitHub's artifact service half a minute
+        if: ${{ !cancelled() && steps.website.outcome == 'failure' }}
+        timeout-minutes: 1
+        run: sleep 30
+      - name: Keep the website of the pull request once more
+        id: website-again
+        if: ${{ !cancelled() && steps.website.outcome == 'failure' }}
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: website
+          path: site
+          retention-days: 7
+          include-hidden-files: true
+          overwrite: true
+      - name: Say what GitHub's artifact service didn't keep
+        if: ${{ !cancelled() && steps.website-again.outcome == 'failure' }}
+        run: >-
+          echo "::warning title=GitHub's artifact service failed::GitHub's artifact service failed twice to keep the website of the pull request, so the report of the PR coach links none this time. That changes no check: the checks of the website decide on their own."
       # Only a push saves the cache: one of main, which every pull request reads, since
       # a cache of a pull request stays with its branch. It saves it once for each
       # key, so a run that restored its own key saves nothing.
@@ -352,13 +410,34 @@ jobs:
       # publishes. Files and folders whose name starts with a dot, such as
       # .well-known/security.txt, are part of it; the action leaves out only .git
       # and .github.
+      # GitHub's artifact service fails now and then, and the client of the action tries
+      # no network error again, as on 22 November 2026 with ETIMEDOUT: a second try half
+      # a minute later keeps the artifact, over what the first may have left behind
+      # (decision 1096). The action overwrites no artifact, so the second try takes
+      # another name, which the job deploy takes from the output pages; a second failure
+      # fails the job, as the website isn't published.
       - name: Hand the website to GitHub Pages
+        id: pages
         if: steps.site.outputs.publish == 'true'
-        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        continue-on-error: true
         timeout-minutes: 5
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site
           include-hidden-files: true
+      - name: Give GitHub's artifact service half a minute
+        if: steps.pages.outcome == 'failure'
+        timeout-minutes: 1
+        run: sleep 30
+      - name: Hand the website to GitHub Pages once more
+        id: pages-again
+        if: steps.pages.outcome == 'failure'
+        timeout-minutes: 5
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+          include-hidden-files: true
+          name: github-pages-again
       # The PR coach: what failed, why it matters and how to fix it, in the summary
       # of the check and as its annotation, from .github/checks.toml.
       - name: Explain the failure
@@ -368,6 +447,7 @@ jobs:
         run: |
           script=.github/blueprint.py
           [[ -f "$script" ]] || script=blueprint.py
+          [[ -f "$script" ]] || { echo "No blueprint.py: the checkout failed, so the PR coach has nothing to explain."; exit 0; }
           python3 "$script" coach explain "$CHECK"
 
   deploy:
@@ -375,7 +455,7 @@ jobs:
     needs: docs
     if: needs.docs.outputs.publish == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 25
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -484,11 +564,10 @@ jobs:
               sleep 3
             done
           done
-      - name: Publish the website on GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
       # The provenance of what GitHub Pages publishes, artifact.tar of the artifact
-      # github-pages, signed with Sigstore for this workflow and its commit, as the
+      # that the job docs names in its output pages (github-pages, or
+      # github-pages-again after a second try), signed with Sigstore for this
+      # workflow and its commit, as the
       # release workflow signs every release. This job signs it, not the job docs,
       # which runs the code of pull requests and gets no id-token. SECURITY.md shows
       # how gh attestation verify checks it.
@@ -496,13 +575,52 @@ jobs:
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         timeout-minutes: 5
         with:
-          name: github-pages
+          name: ${{ needs.docs.outputs.pages }}
           path: ${{ runner.temp }}/pages
+      # Sigstore fails now and then, as on 22 November 2026, when Rekor answered the new
+      # entry with 409 and then couldn't find the entry that it named: sigstore-js tries
+      # a request again only inside one signature. A second try half a minute later
+      # signs with a key and a certificate of its own, so its entry in Rekor is new and
+      # can't conflict with the first; an entry that the first try wrote and lost stays
+      # unused in the public log, and GitHub keeps an attestation only once its bundle
+      # exists. The website is published only after its provenance is signed: when
+      # both tries fail, nothing is published, and the website stays as it was, with
+      # its provenance, until the bot for stopped checks or bot health tries once more
+      # (decision 1110). An attestation of a website that GitHub Pages then failed to
+      # publish does no harm, and a rerun that attests again leaves two valid
+      # attestations of the same digest.
       - name: Attest the provenance of the website
+        id: attest
+        continue-on-error: true
+        timeout-minutes: 3
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        timeout-minutes: 5
         with:
           subject-path: ${{ runner.temp }}/pages/artifact.tar
+      - name: Give Sigstore half a minute
+        if: steps.attest.outcome == 'failure'
+        timeout-minutes: 1
+        run: sleep 30
+      - name: Attest the provenance of the website once more
+        id: attest-again
+        if: steps.attest.outcome == 'failure'
+        timeout-minutes: 3
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/pages/artifact.tar
+      - name: Say that Sigstore failed
+        if: failure() && steps.attest-again.outcome == 'failure'
+        timeout-minutes: 1
+        run: >-
+          echo "::error title=Sigstore failed::Sigstore failed twice to sign the provenance of the website, so this run published nothing and the website stays as it was. Nothing in the code is wrong: when this run is the newest of the default branch, a bot runs this job once more."
+      - name: Publish the website on GitHub Pages
+        id: deployment
+        timeout-minutes: 5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+        with:
+          artifact_name: ${{ needs.docs.outputs.pages }}
+          # Its own limit, in milliseconds, ends before that of the step, so that the
+          # action cancels its deployment and says why.
+          timeout: 270000
       - name: Wait until Harden-Runner has removed Docker
         # Harden-Runner removes Docker with apt-get in the background; a job that ends
         # before it finishes hangs in "Cleaning up orphan processes" until its timeout.

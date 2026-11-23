@@ -117,7 +117,7 @@ jobs:
         timeout-minutes: 5
         with:
           # renovate: datasource=pypi depName=uv
-          version: "0.13.7"
+          version: "0.13.8"
           enable-cache: true
           prune-cache: true
           cache-dependency-glob: |
@@ -186,8 +186,8 @@ jobs:
         include: ${{ fromJSON(needs.plan.outputs.parts) }}
     env:
       # renovate: datasource=github-releases depName=infection/infection
-      INFECTION_VERSION: 0.35.10
-      INFECTION_SHA256: aa8ac8aeb3d7b96d4e66119908c1654c6bbf29472ef8bf1d1e84900fd01d6b31
+      INFECTION_VERSION: 0.35.11
+      INFECTION_SHA256: 92cf2d4ac6ee5361a53137a919429c0da80da8074888e422c6c975194e261a52
       # The time of mutmut, which keeps the mutants it reached: a pull request tries
       # its sample for 12 minutes, after the stats.
       MUTMUT_LIMIT: ${{ github.event_name == 'pull_request' && '12m' || '320m' }}
@@ -217,7 +217,7 @@ jobs:
         timeout-minutes: 5
         with:
           # renovate: datasource=pypi depName=uv
-          version: "0.13.7"
+          version: "0.13.8"
           enable-cache: true
           prune-cache: true
           cache-dependency-glob: |
