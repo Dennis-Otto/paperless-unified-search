@@ -57,8 +57,8 @@ EXPECTED_RESULTS=3
 # release as a pull request, which runs the demo (.github/workflows/demo.yml), so that
 # a release that breaks the demo never reaches it unseen.
 # renovate: datasource=github-release-attachments depName=Dennis-Otto/paperless-sync
-PAPERLESS_SYNC_VERSION="v1.10.0"
-PAPERLESS_SYNC_SHA256="fb0f4d67c316ed756fc8e4a2caf11ec1288908f21b1d18a8d2add4f3b00b607f"
+PAPERLESS_SYNC_VERSION="v1.10.3"
+PAPERLESS_SYNC_SHA256="f30ec6d149c08b634476fdd04bb0a19664efc6a7947735c2ad3e865638bd0733"
 # The check of --check-access: the settings of Paperless Sync that the search reads, in
 # the order of the fixture, and a term that every letter of the demo holds.
 FIXTURE="${DEMO_DIR}/../tests/Unit/fixtures/paperless-sync-settings.json"
