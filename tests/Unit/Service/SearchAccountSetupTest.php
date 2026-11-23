@@ -18,6 +18,7 @@ use OCA\PaperlessUnifiedSearch\Exception\SearchAccountUnfinished;
 use OCA\PaperlessUnifiedSearch\Exception\SettingProblem;
 use OCA\PaperlessUnifiedSearch\Model\PublicConfig;
 use OCA\PaperlessUnifiedSearch\Service\SearchAccountSetup;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\JsonErrors;
 use OCP\App\IAppManager;
 use OCP\Http\Client\IClient;
 use OCP\Http\Client\IClientService;
@@ -33,6 +34,8 @@ use Throwable;
  * 2.20 and 3.x.
  */
 final class SearchAccountSetupTest extends TestCase {
+	use JsonErrors;
+
 	/**
 	 * The plain page with which Paperless-ngx 3.5 refuses a host name other than the one of
 	 * PAPERLESS_URL (#491), as tests/e2e/paperless-contract.sh gets it.
@@ -407,7 +410,7 @@ final class SearchAccountSetupTest extends TestCase {
 			self::fail('The set-up succeeded.');
 		} catch (PaperlessRequestException $exception) {
 			self::assertInstanceOf(JsonException::class, $exception->getPrevious());
-			self::assertSame('Paperless returned no JSON: Syntax error', $exception->getMessage());
+			self::assertSame('Paperless returned no JSON: ' . self::jsonError('<html>'), $exception->getMessage());
 		}
 	}
 
