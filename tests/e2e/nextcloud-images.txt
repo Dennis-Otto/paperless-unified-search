@@ -5,6 +5,6 @@
 # the next release of their major versions in one pull request, whose end-to-end tests
 # show any break. A version from min-version to max-version of appinfo/info.xml without
 # its line fails scripts/check-project.sh, and pin-images.sh adds it. See README.md.
-nextcloud:33.0.11-apache@sha256:3bbb8b04c6ea1b6687502802f9097fd9723797668a9dd6d0adcf4525b530f7a1
-nextcloud:34.0.6-apache@sha256:3031e7f87baaceb863a755921ebf463bc26ea71855c07ad7858e2ae25a5a0ad7
-nextcloud:35.0.3-apache@sha256:8a7a65b8bae82a79568fec2ed9cf3e374a1944eda2a22ebe130d79463336fee3
+nextcloud:33.0.11-apache@sha256:293744abb460e5e1b07a3bd730a687003d1e0c45bdce6645e3c54075e83479ae
+nextcloud:34.0.6-apache@sha256:7563884d167edc55a85c8e5a261f52b10b0eb8c380d02f0c10d1cec7619003c4
+nextcloud:35.0.3-apache@sha256:f22d1dd63844bd15bbf6c2019149653c3d1c775ba48b173b56c3c6ad5f386196
