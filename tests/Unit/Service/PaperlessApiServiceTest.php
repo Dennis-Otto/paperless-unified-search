@@ -20,6 +20,7 @@ use OCA\PaperlessUnifiedSearch\Service\ConfigService;
 use OCA\PaperlessUnifiedSearch\Service\PaperlessApiService;
 use OCA\PaperlessUnifiedSearch\Service\SearchDiagnostics;
 use OCA\PaperlessUnifiedSearch\Service\SearchRest;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\JsonErrors;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryAppConfig;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryCache;
 use OCP\App\IAppManager;
@@ -40,6 +41,8 @@ use Throwable;
 use UnexpectedValueException;
 
 final class PaperlessApiServiceTest extends TestCase {
+	use JsonErrors;
+
 	private const NOW = 1791500000;
 	private const NO_DOCUMENTS = '{"count":0,"next":null,"results":[]}';
 
@@ -345,7 +348,7 @@ final class PaperlessApiServiceTest extends TestCase {
 			'wrong request' => [400, '{"query":["Invalid."]}', RequestFailure::Http, 400, 'Paperless returned HTTP 400.'],
 			'server error' => [500, '', RequestFailure::Http, 500, 'Paperless returned HTTP 500.'],
 			'no body' => [200, null, RequestFailure::NotPaperless, null, 'Paperless returned an invalid response body.'],
-			'no JSON' => [200, '<html>', RequestFailure::NotPaperless, null, 'Paperless returned no JSON: Syntax error'],
+			'no JSON' => [200, '<html>', RequestFailure::NotPaperless, null, 'Paperless returned no JSON: ' . self::jsonError('<html>')],
 			'no object' => [200, '"ok"', RequestFailure::NotPaperless, null, 'Paperless returned an invalid document response.'],
 			'no results' => [200, '{"count":0}', RequestFailure::NotPaperless, null, 'Paperless returned an invalid document response.'],
 			'results that are no list' => [200, '{"results":"none"}', RequestFailure::NotPaperless, null, 'Paperless returned an invalid document response.'],
@@ -2155,8 +2158,9 @@ final class PaperlessApiServiceTest extends TestCase {
 			'a redirect' => [300, '{"results":[]}', RequestFailure::Redirect, 'Paperless returned HTTP 300.'],
 			'no permission' => [403, '{"detail":"You do not have permission to perform this action."}', RequestFailure::Unauthorized, 'Paperless returned HTTP 403.'],
 			'server error' => [500, '', RequestFailure::Http, 'Paperless returned HTTP 500.'],
-			'no body' => [200, null, RequestFailure::NotPaperless, 'Paperless returned no JSON: Syntax error'],
-			'no JSON' => [200, '<html>', RequestFailure::NotPaperless, 'Paperless returned no JSON: Syntax error'],
+			// Without a body, the lookup decodes an empty text.
+			'no body' => [200, null, RequestFailure::NotPaperless, 'Paperless returned no JSON: ' . self::jsonError('')],
+			'no JSON' => [200, '<html>', RequestFailure::NotPaperless, 'Paperless returned no JSON: ' . self::jsonError('<html>')],
 			'no object' => [200, '"ok"', RequestFailure::NotPaperless, 'Paperless returned an invalid list.'],
 			'no results' => [200, '{"count":0}', RequestFailure::NotPaperless, 'Paperless returned an invalid list.'],
 			'results that are no list' => [200, '{"results":"none"}', RequestFailure::NotPaperless, 'Paperless returned an invalid list.'],
@@ -2347,7 +2351,7 @@ final class PaperlessApiServiceTest extends TestCase {
 			// Without a search, HTTP 400 and 404 are failures as well.
 			'a refused request' => [400, '{"query":["Invalid."]}', RequestFailure::Http, 'Paperless returned HTTP 400.'],
 			'no such page' => [404, '{"detail":"Not found."}', RequestFailure::NotFound, 'Paperless returned HTTP 404.'],
-			'a page of a proxy' => [200, '<html>', RequestFailure::NotPaperless, 'Paperless returned no JSON: Syntax error'],
+			'a page of a proxy' => [200, '<html>', RequestFailure::NotPaperless, 'Paperless returned no JSON: ' . self::jsonError('<html>')],
 		];
 	}
 

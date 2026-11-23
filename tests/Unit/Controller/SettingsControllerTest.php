@@ -24,6 +24,7 @@ use OCA\PaperlessUnifiedSearch\Service\SearchExplainer;
 use OCA\PaperlessUnifiedSearch\Service\SearchRest;
 use OCA\PaperlessUnifiedSearch\Service\SettingsMessages;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Accounts;
+use OCA\PaperlessUnifiedSearch\Tests\Unit\JsonErrors;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryAppConfig;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\MemoryCache;
 use OCA\PaperlessUnifiedSearch\Tests\Unit\Owners;
@@ -52,6 +53,7 @@ use Throwable;
 
 final class SettingsControllerTest extends TestCase {
 	use Accounts;
+	use JsonErrors;
 	use Owners;
 
 	private const NO_DOCUMENTS = '{"count":0,"next":null,"results":[]}';
@@ -585,7 +587,7 @@ final class SettingsControllerTest extends TestCase {
 			'a page of HTML' => [
 				self::answer(200, '<html>Sign in</html>'), 'not_paperless',
 				'This URL answers, but not like Paperless-ngx. Check the address and its path.',
-				JsonException::class, 'Syntax error',
+				JsonException::class, self::jsonError('<html>Sign in</html>'),
 			],
 			'JSON without documents' => [
 				self::answer(200, '{"detail":"Not found."}'), 'not_paperless',
@@ -642,19 +644,28 @@ final class SettingsControllerTest extends TestCase {
 			$client->method('get')->willReturn($answer);
 		}
 
+		// The context is compared after the call: a mock that compared it in warning() would
+		// throw inside save(), whose catch turns any wrong detail into an answer with HTTP 500
+		// that doesn't show the detail (#513).
+		$context = null;
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::once())
 			->method('warning')
-			->with('The test of the connection to Paperless failed: {reason} ({errorType}: {detail})', [
-				'app' => AppConstants::APP_ID,
-				'reason' => $code,
-				'errorType' => $errorType,
-				'detail' => $detail,
-			]);
+			->with('The test of the connection to Paperless failed: {reason} ({errorType}: {detail})', self::callback(static function (array $logged) use (&$context): bool {
+				$context = $logged;
+
+				return true;
+			}));
 
 		$response = $this->controller($this->unchangedConfig(), $this->unchangedCredentials(), $client, $logger)
 			->save('https://paperless.example.com', 'TEST_VALUE', true);
 
+		self::assertSame([
+			'app' => AppConstants::APP_ID,
+			'reason' => $code,
+			'errorType' => $errorType,
+			'detail' => $detail,
+		], $context);
 		self::assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
 		self::assertSame(['message' => 'DE:' . $message, 'code' => $code], $response->getData());
 	}
