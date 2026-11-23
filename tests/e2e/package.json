@@ -5,7 +5,7 @@
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "devDependencies": {
-    "axe-core": "4.14.0",
+    "axe-core": "4.14.1",
     "gifenc": "1.0.3",
     "playwright-core": "1.65.1",
     "pngjs": "7.0.0"
