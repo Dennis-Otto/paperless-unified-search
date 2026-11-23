@@ -14,7 +14,8 @@
 		}
 	},
 	"require": {
-		"php": "^8.2"
+		"php": "^8.2",
+		"ext-filter": "*"
 	},
 	"require-dev": {
 		"nextcloud/coding-standard": "^1.2",
