@@ -27,7 +27,7 @@ services:
       retries: 30
 
   nextcloud:
-    image: ${NEXTCLOUD_IMAGE:-nextcloud:35.0.3-apache@sha256:8a7a65b8bae82a79568fec2ed9cf3e374a1944eda2a22ebe130d79463336fee3}
+    image: ${NEXTCLOUD_IMAGE:-nextcloud:35.0.3-apache@sha256:f22d1dd63844bd15bbf6c2019149653c3d1c775ba48b173b56c3c6ad5f386196}
     depends_on:
       paperless-mock:
         condition: service_healthy
