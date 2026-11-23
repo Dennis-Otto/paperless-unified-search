@@ -17,7 +17,7 @@
 name: paperless-unified-search-demo
 
 x-nextcloud: &nextcloud
-  image: nextcloud:35.0.3-apache@sha256:8a7a65b8bae82a79568fec2ed9cf3e374a1944eda2a22ebe130d79463336fee3
+  image: nextcloud:35.0.3-apache@sha256:f22d1dd63844bd15bbf6c2019149653c3d1c775ba48b173b56c3c6ad5f386196
   restart: unless-stopped
   volumes:
     - nextcloud_html:/var/www/html
@@ -28,7 +28,7 @@ services:
   # The database of Nextcloud. SQLite would lock up whenever the background jobs and a
   # request write at the same time, as at the first run of the jobs after the install.
   postgres:
-    image: postgres:18.7-alpine@sha256:b6972e1115a4ff8eba5d7f7d19184926d1e16d7d1136ae1e1a7ebf286da0f015
+    image: postgres:18.7-alpine@sha256:0115267ab5a509022df9319c77be365cef335adb71556c75f60f5360ee247e71
     restart: unless-stopped
     environment:
       POSTGRES_DB: nextcloud
