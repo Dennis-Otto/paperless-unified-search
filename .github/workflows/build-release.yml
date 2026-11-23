@@ -244,6 +244,7 @@ jobs:
         run: |
           script=.github/blueprint.py
           [[ -f "$script" ]] || script=blueprint.py
+          [[ -f "$script" ]] || { echo "No blueprint.py: the checkout failed, so the PR coach has nothing to explain."; exit 0; }
           python3 "$script" coach explain "$CHECK"
       - name: Wait until Harden-Runner has removed Docker
         # Harden-Runner removes Docker with apt-get in the background; a job that ends
@@ -279,8 +280,8 @@ jobs:
       KRANKERL_SHA256: 3ca43eebc0c4766ce31db67dde96312b6c8b3d981ffebe4aeecf4fe0481883ef
       KRANKERL_ASSET: krankerl_0.14.3-1_amd64.deb
       # renovate: datasource=github-releases depName=nextcloud/server extractVersion=^v(?<version>.+)$
-      NEXTCLOUD_VERSION: 35.0.2
-      NEXTCLOUD_SHA256: 2f1dcec6a7cdab70346e80a823ccaaa2001a6085013d9f2ae0a2606fa38c2835
+      NEXTCLOUD_VERSION: 35.0.3
+      NEXTCLOUD_SHA256: d4c926f3523fb3ef9bb89ee78111d5305ffa400d03b346c2a7b0308f7db1e222
       # The syft that writes the SBOMs.
       # renovate: datasource=github-releases depName=anchore/syft extractVersion=^v(?<version>.+)$
       SBOM_SYFT_VERSION: 1.57.1
@@ -886,6 +887,7 @@ jobs:
         run: |
           script=.github/blueprint.py
           [[ -f "$script" ]] || script=blueprint.py
+          [[ -f "$script" ]] || { echo "No blueprint.py: the checkout failed, so the PR coach has nothing to explain."; exit 0; }
           python3 "$script" coach explain "$CHECK"
       - name: Wait until Harden-Runner has removed Docker
         # Harden-Runner removes Docker with apt-get in the background; a job that ends

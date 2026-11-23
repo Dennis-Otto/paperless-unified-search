@@ -30,6 +30,7 @@ from blueprint import (
     lock_age,
     locks,
     mutation,
+    npm_overrides,
     screenshots,
     translations,
     versions,
@@ -1499,6 +1500,60 @@ def locks_command(arguments: argparse.Namespace, root: Path) -> int:
         )
     else:
         print("No file here is a lock file of pip-compile, which Renovate compiles.")
+    return 0
+
+
+def npm_overrides_command(arguments: argparse.Namespace, root: Path) -> int:
+    """Which override of npm in each package.json npm no longer needs; with --fix,
+    each one leaves with the lock file that npm writes without it. Renovate runs it
+    after an update of npm, in its checkout, so that the update that makes an
+    override needless removes it (decision 1112)."""
+    names = npm_overrides.manifests(root)
+    if not names:
+        print("No package.json here has overrides and a package-lock.json beside it.")
+        return 0
+    npm = shutil.which("npm")
+    if npm is None:
+        print(
+            "npm is not installed here, so every override stays; Renovate installs "
+            "Node with npm for this command by its rule for npm."
+        )
+        return 1
+    found = False
+    for name in names:
+        # A package.json or a lock file that isn't JSON it can write back.
+        try:
+            outcomes = npm_overrides.needless(
+                root, name, npm_overrides.npm_in(npm), fix=arguments.fix
+            )
+        except ValueError as error:
+            # Left alone, so that the other files and Renovate's update go on.
+            print(f"{name}: left alone: {error}", file=sys.stderr)
+            continue
+        for outcome in outcomes:
+            label = outcome.override.label()
+            if not outcome.needless:
+                print(f"{name}: kept the override of {label}: {outcome.reason}.")
+                continue
+            found = True
+            if arguments.fix:
+                print(f"{name}: removed the override of {label}: {outcome.reason}.")
+            else:
+                print(
+                    f"{name}: npm no longer needs the override of {label}: "
+                    f"{outcome.reason}."
+                )
+            if outcome.note:
+                print(
+                    f'{name}: the note "{npm_overrides.NOTE}" beside overrides may '
+                    "speak of it and stays as it is; remove it if it does."
+                )
+    if found and not arguments.fix:
+        print(
+            f"{command(root)} npm-overrides --fix removes each override that npm no "
+            "longer needs, as Renovate does after an update of npm."
+        )
+        return 1
     return 0
 
 
@@ -3041,6 +3096,23 @@ def add_locks_parsers(
     )
 
 
+def add_npm_overrides_parser(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    """Which override of npm an update has made needless, which Renovate removes."""
+    overrides_parser = commands.add_parser(
+        "npm-overrides",
+        help="which entry of overrides of each package.json npm no longer needs, as "
+        "Renovate runs it after an update of npm",
+    )
+    overrides_parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="remove each override that npm no longer needs, with the lock file that "
+        "npm writes without it",
+    )
+
+
 def add_pages_parsers(
     commands: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
@@ -3239,6 +3311,7 @@ def parser() -> argparse.ArgumentParser:
         add_advisories_parsers,
         add_best_practices_parser,
         add_locks_parsers,
+        add_npm_overrides_parser,
     ):
         add(commands)
     parser.epilog = command_groups(commands)
@@ -3305,6 +3378,7 @@ def files_command(arguments: argparse.Namespace, root: Path) -> int | None:
         "binaries": lambda: binaries_command(root),
         "decisions": lambda: decisions_command(arguments, root),
         "migrate": lambda: migrate_command(arguments, root),
+        "npm-overrides": lambda: npm_overrides_command(arguments, root),
         "pages": lambda: pages_command(arguments, root),
         "translations": lambda: translations_command(arguments, root),
         "website": lambda: website_command(arguments, root),

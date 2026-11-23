@@ -156,6 +156,18 @@ SCHEDULED = frozenset({"schedule", "workflow_dispatch"})
 # reaches main only when it passes the check. Its failure at a commit that main has left
 # says nothing about main any more: mostly the pull request of the fix bot left it.
 CHECKED_BEFORE_THE_MERGE = frozenset({"Lint"})
+# The workflow that publishes the website after a push, and the jobs that fail only
+# when GitHub Pages or Sigstore does: the jobs that publish the website and ask for
+# it, and docs when it failed only to hand the website to GitHub Pages, the second
+# time too (decision 1110).
+PUBLISHES = "Docs"
+PUBLISHING = frozenset({"publish the website", "ask the published website"})
+HANDS_ON = "docs"
+HANDED_ON = "Hand the website to GitHub Pages"
+HANDED_ON_AGAIN = "Hand the website to GitHub Pages once more"
+# The events whose runs of PUBLISHES publish the website: a run of its schedule
+# publishes nothing.
+PUBLISHED_BY = frozenset({"push", "workflow_dispatch"})
 # The runs of a workflow that one request lists, the newest first.
 PAGE = 50
 # A failure that ended this recently may still get its second try from the run that
@@ -1153,13 +1165,81 @@ def runs_of(
     return [Run.of(item) for item in (listed or {}).get("workflow_runs", [])]
 
 
+def head_of(api: Api, repo: str, branch: str, run: Run) -> str:
+    """The commit at the head of the branch, or that of the run when GitHub names
+    none."""
+    ref = api.get(f"repos/{repo}/git/ref/heads/{branch}") or {}
+    return str((ref.get("object") or {}).get("sha") or run.sha)
+
+
 def left_behind(api: Api, repo: str, branch: str, run: Run) -> bool:
     """Whether the run is a failure of a check of CHECKED_BEFORE_THE_MERGE at a commit
     that the branch has left."""
     if run.name not in CHECKED_BEFORE_THE_MERGE or run.conclusion == PASSED:
         return False
-    ref = api.get(f"repos/{repo}/git/ref/heads/{branch}") or {}
-    return str((ref.get("object") or {}).get("sha") or run.sha) != run.sha
+    return head_of(api, repo, branch, run) != run.sha
+
+
+def only_the_publication_failed(api: Api, repo: str, run: Run) -> bool:
+    """Whether every job of the run that failed is one of PUBLISHING, or HANDS_ON
+    with no step that failed but the hand-off of the website to GitHub Pages, the
+    second time too."""
+    failed = [
+        job
+        for job in jobs_of(api, repo, run.id, run.attempt)
+        if job.get("conclusion") in ("failure", "timed_out")
+    ]
+    for job in failed:
+        name = str(job["name"])
+        if name in PUBLISHING:
+            continue
+        steps = {
+            str(step["name"])
+            for step in job.get("steps") or []
+            if step.get("conclusion") in ("failure", "timed_out", "cancelled")
+        }
+        if name != HANDS_ON or HANDED_ON_AGAIN not in steps:
+            return False
+        if not steps <= {HANDED_ON, HANDED_ON_AGAIN}:
+            return False
+    return bool(failed)
+
+
+def publishes_again(
+    api: Api, repo: str, branch: str, run: Run, runs: Sequence[Run], now: datetime
+) -> bool:
+    """Whether the daily look starts the workflow that publishes the website once
+    more, in place of a report: its run of a push failed only because GitHub Pages or
+    Sigstore did, at the head of the branch, with no later run on the branch that
+    would publish the website itself, and long enough ago that the bot for stopped
+    checks had its try. A run that GitHub couldn't start has its own try. A new run
+    builds the website again, as the artifact of the old one may have expired, and
+    one that a person or this bot started is reported when it fails."""
+    return (
+        run.name == PUBLISHES
+        and run.event == "push"
+        and run.conclusion in ("failure", "timed_out")
+        and now - run.updated >= SECOND_TRY_TIME
+        and not any(later.id > run.id and later.event in PUBLISHED_BY for later in runs)
+        and head_of(api, repo, branch, run) == run.sha
+        and only_the_publication_failed(api, repo, run)
+    )
+
+
+def last_publication(runs: Iterable[Run], again: Collection[int]) -> Run | None:
+    """The newest finished run of the branch that published the website, or tried
+    to: a run of the schedule that came after it, which publishes nothing, leaves the
+    website as that run left it."""
+    return next(
+        (
+            run
+            for run in runs
+            if run.status == "completed"
+            and run.event in PUBLISHED_BY
+            and run.id not in again
+        ),
+        None,
+    )
 
 
 def scheduled_since(runs: Iterable[Run], repo: str, branch: str, due: datetime) -> bool:
@@ -1263,7 +1343,9 @@ def look_after(
     own, the workflow keeps an issue of its own: its runs open and close none here,
     and only an issue of the bot from before it said so closes. A latest run that
     GitHub couldn't start runs again once; when GitHub couldn't start that try
-    either, the run is reported like any failure."""
+    either, the run is reported like any failure. A run of PUBLISHES that GitHub
+    Pages or Sigstore kept from publishing the website starts a new run in place of
+    its report, once, as publishes_again says."""
     listed = runs_of(api, repo, branch, workflow, most=PAGE)
     runs = [run for run in listed if run.of_branch(repo, branch)]
     finished = next(
@@ -1279,6 +1361,7 @@ def look_after(
     )
     notes = []
     waits = False
+    publish = False
     started = False
     if own:
         notes.append(leave_to_its_own(api, repo, workflow, issues))
@@ -1296,6 +1379,17 @@ def look_after(
         # Only a run of the branch closes its issue, and without an issue the next
         # weekly run is soon enough.
         waits = finished.key in issues
+    elif (
+        dispatch_inputs(text) is not None
+        and (publication := last_publication(runs, again)) is not None
+        and publishes_again(api, repo, branch, publication, runs, now)
+    ):
+        notes.append(
+            f"didn't publish the website of {publication.sha[:7]} in "
+            f"{publication.link()}, "
+            "as GitHub Pages or Sigstore failed"
+        )
+        publish = True
     else:
         # Nothing else starts the second try of Lint: after the checks leaves it out,
         # and bot health doesn't watch its end.
@@ -1326,6 +1420,9 @@ def look_after(
     if not readable:
         notes.append("a schedule that can't be read")
     reason = f"its issue waits for a run of the head of `{branch}`" if waits else ""
+    if publish:
+        # Once: a run that this bot started is no push, and is reported when it fails.
+        reason = "a new run publishes it"
     if started:
         # The run that starts again is the one of its schedule.
         reason = ""

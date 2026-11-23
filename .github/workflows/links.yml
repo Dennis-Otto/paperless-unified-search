@@ -203,6 +203,7 @@ jobs:
         run: |
           script=.github/blueprint.py
           [[ -f "$script" ]] || script=blueprint.py
+          [[ -f "$script" ]] || { echo "No blueprint.py: the checkout failed, so the PR coach has nothing to explain."; exit 0; }
           python3 "$script" coach explain "$CHECK"
 
   # The one issue of broken links, which the weekly run keeps: a job of its own, so

@@ -12,11 +12,23 @@ name: After the checks
 # how often each job and test flaked, and when it last did. The test is one that
 # pytest names in the log, or else the step or test that the log names last before
 # the failure, after the answer test_marker of the blueprint, such as "Browser step:"
-# before each step of the tests of a browser. A job that ran out of time after each of
-# its steps had passed failed in no test: its runner never reported that the job
-# ended, and the summary names it as the runner's fault, outside the issue. Nor did a
-# check that GitHub kept failing, which says so, or a job that only sums up the jobs
-# that it needs, as variants does: the one that failed has its own row. A job that
+# before each step of the tests of a browser. Only a failure of the code counts
+# (decision 1096): a job that failed outside it, in an action of another repository
+# such as the upload of an artifact, a post step, the set-up of the job or a runner
+# that hung after its work, as the runner's own lines of the log show, gets no row and
+# opens no issue; the summary lists it under "Outside the code". So does a job that
+# ran out of time after each of its steps had passed, whose runner never reported that
+# the job ended, a check that GitHub kept failing, which says so, and a job that only
+# sums up the jobs that it needs, as variants does: the one that failed has its own
+# row. Such a job says so, or its definition in the file of the workflow at the commit
+# of the run shows it, with needs, an if with always() or !cancelled(), and a job that
+# it needs that failed or was cancelled (decision 1110). The PR coach's explanation of
+# a check is no error of the job's own. A failure outside the code that comes back for
+# the third time in 7 days, in a job of the same name and the same steps, gets its row
+# after all, as a cause that stays is a person's to fix; and an issue of an older bot
+# that holds only such failures closes. The look back over those 7 days stops, with a
+# warning, once GitHub keeps failing, and after two minutes, and counts as far as it
+# got, so that the report ends in its time. A job that
 # fails again is a real failure and stays red, and so does one that failed the same
 # way for the commit before, and one that failed in a step of scripts/check.sh that
 # can't pass without a change, such as Psalm or Files of the project, which the PR coach
@@ -38,6 +50,15 @@ name: After the checks
 # mail again, and a bot that GitHub keeps failing ends with a notice as well (decision
 # 0136). A pull request names its jobs and steps and writes its logs, so the issue
 # shows them only as code, and the branch of a fork not at all.
+#
+# The bot for stopped checks runs the failed jobs of a check once more that failed
+# outside the code in two ways: Harden-Runner couldn't block, mostly in an outage of
+# GitHub (decision 0134), or GitHub Pages or Sigstore kept Docs from publishing the
+# website of a push to the default branch, when only the jobs that publish it and ask
+# for it failed, or the job docs failed only to hand it to GitHub Pages, twice
+# (decision 1110). The website is signed before it is published, so a failure of
+# Sigstore publishes nothing; the bot-health bot starts Docs once more the next day
+# when that try failed as well.
 #
 # The start of the branch bot: a required check of a pull request that failed for good,
 # also of one from a fork, moves the line of the branch bot in update-branches.yml on to
@@ -620,6 +641,7 @@ jobs:
     permissions:
       actions: read
       checks: read
+      contents: read # the file of the workflow, which names the jobs that each job needs
       issues: write
     steps:
       - name: Block every host that the job doesn't need
@@ -724,6 +746,17 @@ jobs:
           BRANCH: ${{ github.event.workflow_run.head_branch }}
           HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
           SHA: ${{ github.event.workflow_run.head_sha }}
+          # The workflow of the run, whose runs of the 7 days before tell a failure
+          # outside the code that keeps coming back.
+          WORKFLOW: ${{ github.event.workflow_run.workflow_id }}
+          # The seconds for which the look back asks about the runs of a later attempt:
+          # about 2.4 seconds for each while GitHub answers, so some 50 runs, as many
+          # as the busiest workflow of the fleet had in 7 days, within the 5 minutes
+          # of the job.
+          LOOK_BACK_TIME: "120"
+          # The file of the workflow at the commit of the run, which names the jobs
+          # that each job needs.
+          WORKFLOW_PATH: ${{ github.event.workflow_run.path }}
           # The text before the name of each test or step in a log that pytest didn't
           # write, such as "Browser step:"; the answer test_marker of the blueprint sets it.
           MARKER: ""
@@ -762,96 +795,155 @@ jobs:
           if [[ "$(gh help api)" == *--allow-escape-sequences* ]]; then
             allow=(--allow-escape-sequences)
           fi
-          # Each job that failed in the first attempt, or ran out of time there, with
-          # the step that broke, its tests and the first error that it reported. An
-          # attempt that a newer run cancelled, as one that the bot for cancelled checks
-          # started again, failed in no test. In one that a person or a time limit
-          # cancelled, only the jobs that ran out of time broke: a job that waits for the
-          # others fails when they are cancelled. A job that ran out of time although
-          # each of its steps had passed, up to "Complete job", failed in no test either:
-          # its runner did the work and never reported that the job ended, as a preview
-          # runner such as ubuntu-24.04-firewall sometimes does, which nothing in the
-          # repository can fix. It goes into a section of its own of the summary, as a
-          # fault of the runner, and not into the issue of flaky tests, which it would
-          # keep open.
-          first="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN/attempts/1" --jq .conclusion)"
-          jobs="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN/attempts/1/jobs" --paginate \
-            --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | [.id, .conclusion, ([.steps[]?] | length > 0 and all(.conclusion == "success" or .conclusion == "skipped")), .html_url, .name, ([.steps[]? | select(.conclusion == "failure" or .conclusion == "cancelled") | .name] | join(", "))] | @tsv')"
-          rows=""
-          # Each job with each of its tests, one to a line, for the count in the issue.
-          counted=""
-          # The jobs that ran out of time after each of their steps had passed.
-          stuck=""
-          no_logs=""
-          while IFS=$'\t' read -r -u 3 id conclusion passed url name steps; do
-            if [[ -z "$id" ]] || [[ "$conclusion" == failure && "$first" == cancelled ]]; then
-              continue
+          # The words of a step that says why it failed: a check that GitHub kept
+          # failing (CHECK_UNAVAILABLE of blueprint/outage.py, and .github/download.sh),
+          # a job that only sums up the jobs that it needs, as variants does, and
+          # Harden-Runner, which couldn't block (decision 0134). The report job has no
+          # checkout, so they live here.
+          UNAVAILABLE="as in an outage of GitHub or of the network of the runner"
+          SUMS_UP="this job only sums up the jobs that it needs"
+          STOPPED="would reach every host, and it stops here instead"
+          TIMED="has exceeded the maximum execution time"
+          export UNAVAILABLE SUMS_UP STOPPED
+          # A failure of the code or one outside it (decision 1096). Each job that
+          # failed in the first attempt, or ran out of time there, is judged by what
+          # the bot reads anyway: its steps, its annotations, which carry the tests of
+          # the JUnit reports, and its log. The exceptions come first. A job that was
+          # cancelled without its time limit failed because others were, and a
+          # "higher priority waiting request" means that a newer run took over: no test
+          # failed. A job that ran out of time although each of its steps had passed,
+          # up to "Complete job", failed in no test either: its runner did the work and
+          # never reported that the job ended, as a preview runner such as
+          # ubuntu-24.04-firewall sometimes does. Nor did a job that Harden-Runner
+          # stopped, a check that GitHub kept failing, which says so, as in
+          # Dennis-Otto/repo-blueprint#970, or a job that only sums up the jobs that it
+          # needs: the one that failed has its own row, or failed in no test. Only when
+          # nothing else of the job's own failed, though: a step that runs after one
+          # that failed, as in the job Lint, can fail in a test of its own, which shows
+          # as another error or as one more exit of a step than these errors. The PR
+          # coach's explanation of the check is no error of the job's own.
+          #
+          # Then a sign of the code keeps the row: a test, in an annotation that
+          # blueprint/annotate.py writes from a JUnit report or in the log; a step of
+          # scripts/check.sh that stopped, which the PR coach names at any level; a
+          # command that exited; or a finding, a failure at a file of the repository.
+          # Otherwise the section of the log where the job broke decides, by the
+          # runner's own lines, never by what a step prints: a command is the code, and
+          # so is an action of the repository itself; an action of another repository,
+          # a post step, the set-up of the job and a runner that hung after the work of
+          # the job are outside it. The sections of the PR coach and of the steps that
+          # said why they failed don't count, with their exits. A job without a log goes
+          # by its steps that broke, and one that ran out of time without a step that
+          # broke and without a log broke in its runner: a runner that is alive cancels
+          # a step that hangs and uploads its log.
+          #
+          # A job sums up the jobs that it needs, as variants or the gate of end-to-end
+          # tests does, when its definition in the file of the workflow at the commit
+          # of the run, found by its name, or by its key where it has none, has needs
+          # and an if with always() or !cancelled(), and a job that it needs failed or
+          # was cancelled in the same attempt: that one has its own row, or failed in
+          # no test. A name with an expression, as a matrix has, is no such name. The
+          # file is read once, with the yq and the jq of the runner, and without it
+          # the bot goes by the words of SUMS_UP alone, with a notice.
+          defined=""
+          read_definitions=""
+          definitions() {
+            local file="$RUNNER_TEMP/workflow.yml"
+            [[ -z "$read_definitions" ]] || return 0
+            read_definitions=true
+            if ! tried gh api --header "$API_VERSION_HEADER" --header "Accept: application/vnd.github.raw+json" \
+              "repos/$GH_REPO/contents/${WORKFLOW_PATH%%@*}?ref=$SHA" >"$file" ||
+              ! defined="$(yq -o=json '.jobs // {}' "$file" | jq -r '. as $jobs | to_entries[] | select(.value | type == "object" and has("needs"))
+                | .key as $key | .value as $job | ($job.needs | if type == "array" then .[] else . end | tostring) as $need
+                | [($job.name // $key | tostring), ($job.if // "" | tostring | gsub("\\s+"; " ")), ($jobs[$need].name // $need | tostring)] | @tsv')"; then
+              echo "::notice::The file of the workflow, $(plain "$WORKFLOW_PATH") at ${SHA:0:7}, couldn't be read, so a job that only sums up the jobs that it needs counts unless it says so."
+              defined=""
             fi
-            # A job without annotations that GitHub gives has no error of its own here;
-            # the row takes it from the log. Each failure comes on a line of its own,
-            # after whose it is and a tab: "coach" for the PR coach's explanation of the
-            # check, an error whose title starts with "PR coach: ", "own" for one that
-            # the job reported itself. GitHub documents no order for them, and the
-            # coach's often comes first, although its step runs after the one that
-            # failed, so its title tells it apart, never its place.
+          }
+          sums_up() {
+            local job="$1" own condition need other prefix opening='$''{{' pattern='always\(\)|![[:space:]]*cancelled\(\)'
+            definitions
+            while IFS=$'\t' read -r own condition need; do
+              [[ -n "$own" && "$own" == "$job" && "$own" != *"$opening"* && "$condition" =~ $pattern ]] || continue
+              prefix="${need%%"$opening"*}"
+              while IFS= read -r other; do
+                [[ -n "$other" && "$other" != "$job" ]] || continue
+                if [[ "$other" == "$need" || "$other" == "$need ("* ]] ||
+                  [[ "$prefix" != "$need" && -n "$prefix" && "$other" == "$prefix"* ]]; then
+                  return 0
+                fi
+              done <<<"$broken"
+            done <<<"$defined"
+            return 1
+          }
+          # judge sets verdict to skip, clear, stuck, outside or code, and the tests,
+          # the error and where the job broke.
+          judge() {
+            local id="$1" conclusion="$2" passed="$3" name="$4" steps="$5"
+            local annotated errors coached reported said exits others log missing broke part
+            verdict=skip
+            names=""
+            error=""
+            where=""
+            # Each annotation on a line of its own: its level, its title, its file, and
+            # its text. A job without annotations that GitHub gives has no error of its
+            # own here; the row takes it from the log. GitHub documents no order for
+            # them, and the coach's often comes first, although its step runs after the
+            # one that failed, so its title tells it apart, never its place.
             if ! annotated="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$id/annotations" --paginate \
-              --jq '.[] | select(.annotation_level == "failure")
-                | (if (.title // "" | startswith("PR coach: ")) then "coach" else "own" end)
-                  + "\t" + (.message | gsub("\\s+"; " "))')"; then
+              --jq '.[] | .annotation_level + "\t" + (.title // "" | gsub("\\s+"; " ")) + "\t" + (.path // ".github")
+                + "\t" + (.message | gsub("\\s+"; " "))')"; then
               given_up && exit 1
               annotated=""
             fi
-            errors="$(cut -f 2- <<<"$annotated")"
-            coached="$(sed -n 's/^coach\t//p' <<<"$annotated")"
-            reported="$(sed -n 's/^own\t//p' <<<"$annotated")"
+            errors="$(awk -F '\t' '$1 == "failure" { print $4 }' <<<"$annotated")"
+            coached="$(awk -F '\t' '$1 == "failure" && index($2, "PR coach: ") == 1 { print $4 }' <<<"$annotated")"
+            reported="$(awk -F '\t' '$1 == "failure" && index($2, "PR coach: ") != 1 { print $4 }' <<<"$annotated")"
             if grep -q "higher priority waiting request" <<<"$errors"; then
-              rows=""
-              counted=""
-              stuck=""
-              break
+              verdict=clear
+              return 0
             fi
-            if [[ "$conclusion" == cancelled ]] && ! grep -q "has exceeded the maximum execution time" <<<"$errors"; then
-              continue
+            if [[ "$conclusion" == cancelled ]] && ! grep -qF "$TIMED" <<<"$errors"; then
+              return 0
             fi
             if [[ "$conclusion" == cancelled && "$passed" == true ]]; then
-              echo "::notice::The job $(plain "$name") ran out of time although each of its steps had passed: its runner never reported that the job ended. That is a fault of the runner, not a flaky test, so the issue of flaky tests leaves it out."
-              stuck+="| [$(cell "$name")]($url) |"$'\n'
-              continue
+              verdict=stuck
+              where="the runner, after every step had passed"
+              error="$(grep -F "$TIMED" <<<"$errors" | head -n 1)"
+              return 0
             fi
-            # A job that stopped because Harden-Runner couldn't block, mostly in an outage
-            # of GitHub, failed in no test (decision 0134).
-            if grep -qF "would reach every host, and it stops here instead" <<<"$errors"; then
-              continue
+            if grep -qF "$STOPPED" <<<"$errors"; then
+              return 0
             fi
-            # So did a check that GitHub kept failing, as in an outage of GitHub or of
-            # the network of its runner, which says so in its error (CHECK_UNAVAILABLE
-            # of blueprint/outage.py), as in Dennis-Otto/repo-blueprint#970; and a job
-            # that only sums up the jobs that it needs, as variants does, which failed
-            # because one of them did: that one has its own row, or failed in no test.
-            # Only when nothing else failed in the job, though: a step that runs after
-            # one that failed, as in the job Lint, can fail in a test of its own, which
-            # shows as another error or as one more exit of a step than these errors.
-            said="$(grep -cF -e "as in an outage of GitHub or of the network of the runner" \
-              -e "this job only sums up the jobs that it needs" <<<"$errors" || true)"
+            said="$(grep -cF -e "$UNAVAILABLE" -e "$SUMS_UP" <<<"$errors" || true)"
+            exits="$(grep -cE '^Process completed with exit code [0-9]+\.?$' <<<"$errors" || true)"
             if ((said > 0)); then
-              exits="$(grep -cE '^Process completed with exit code [0-9]+\.?$' <<<"$errors" || true)"
-              others="$(grep -vF -e "as in an outage of GitHub or of the network of the runner" \
-                -e "this job only sums up the jobs that it needs" <<<"$errors" |
+              others="$(grep -vF -e "$UNAVAILABLE" -e "$SUMS_UP" <<<"$reported" |
                 grep -cvE '^(Process completed with exit code [0-9]+\.?)?$' || true)"
               if ((others == 0 && exits <= said)); then
-                continue
+                return 0
               fi
+            fi
+            # Only a job with no error of its own beside its exit sums up the jobs that
+            # it needs.
+            others="$(grep -cvE '^(Process completed with exit code [0-9]+\.?)?$' <<<"$reported" || true)"
+            if ((others == 0)) && sums_up "$name"; then
+              return 0
             fi
             # A log that GitHub doesn't give, such as that of a job that never started,
             # leaves the row without its tests, and a warning of the run says why; so
             # does one that GitHub kept failing, as the report is worth more than a log.
             # After a log that GitHub kept failing, the report asks for no more: it
             # would wait for each of them, longer than the job may run.
+            missing=""
             if [[ -n "$no_logs" ]]; then
               log=""
             elif ! log="$(tried gh api --header "$API_VERSION_HEADER" "${allow[@]}" "repos/$GH_REPO/actions/jobs/$id/logs")"; then
               echo "::warning::The log of the job $(plain "$name") couldn't be read, so the report names none of its tests: $(plain "$(head -n 1 "$RUNNER_TEMP/gh-errors")")"
               log=""
+              if grep -q "HTTP 404" "$RUNNER_TEMP/gh-errors"; then
+                missing=true
+              fi
               if given_up; then
                 no_logs=true
               fi
@@ -867,6 +959,7 @@ jobs:
             # that failed, and so the last step of that worker, not of one that kept
             # going and passed. Without an exception, the last step that any of them
             # started counts.
+            local failed thrown since step
             failed="$(grep -E '^(FAILED|ERROR) [^ ]+\.py(::| |$)' <<<"$log" | head -n 3)"
             names="$(sed -nE 's/^[A-Z]+ ([^ ]+).*/\1/p' <<<"$failed")"
             thrown=""
@@ -904,7 +997,6 @@ jobs:
               names="$(sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//; s/[[:space:]]*\([0-9]+(\.[0-9]+)? ?(ms|s|min)\)$//' <<<"${step#*"$MARKER"}")"
               thrown="$(grep -oE '([A-Za-z_][A-Za-z0-9_]*\.)*[A-Za-z0-9_]*(Error|Exception|Failure): .*[^[:space:]]' <<<"$since" | head -n 1)"
             fi
-            tests="$(awk 'NR > 1 { printf ", " } { printf "%s", $0 }' <<<"$names")"
             # The error that the job reported itself comes first, then the line of
             # pytest and the exception of the log, then the coach's explanation of what
             # the check usually finds, and the exit code last.
@@ -921,39 +1013,364 @@ jobs:
             if [[ -z "$error" ]]; then
               error="$(head -n 1 <<<"$errors")"
             fi
-            rows+="| [$(cell "$name")]($url) | $(cell "$steps") | $(cell "$tests") | $(cell "$error") |"$'\n'
+            verdict=code
+            # A test, a step of scripts/check.sh that stopped, or a finding: a failure
+            # at a file of the repository, which a warning there is not.
+            if [[ -n "$names" ]] || awk -F '\t' '
+              ($1 == "failure" && $2 ~ /^(pytest|PHPUnit|Node test): /) ||
+                $2 ~ /^PR coach: .* \(scripts\/check\.sh\)$/ ||
+                ($1 == "failure" && $3 != ".github" && $3 != "" && !index($4, ENVIRON["UNAVAILABLE"])) { found = 1 }
+              END { exit !found }
+            ' <<<"$annotated"; then
+              return 0
+            fi
+            if grep -q '^##\[group\]Run ' <<<"$log"; then
+              # The runner opens the section of each step with "##[group]Run" and the
+              # first line of its command or the action, echoes the command and its
+              # shell in that group, and opens the section of each post step with "Post
+              # job cleanup.". The lines before the first section are the set-up of the
+              # job. A group that the step opens itself, such as "Getting Git version
+              # info" of the checkout, opens no section.
+              broke="$(OWN="$GH_REPO" awk '
+                BEGIN { n = 0; head[0] = "Set up job"; kind[0] = "outside"; own = tolower(ENVIRON["OWN"]) }
+                /^##\[group\]Run / { head[++n] = substr($0, 10); kind[n] = "step"; open = 1; drop[n] = index($0, "coach explain") > 0; next }
+                $0 == "Post job cleanup." { head[++n] = "Post job cleanup"; kind[n] = "outside"; open = 0; next }
+                open && /^##\[endgroup\]/ { open = 0; next }
+                open && /^shell: / { kind[n] = "code" }
+                open && /coach explain/ { drop[n] = 1 }
+                /^##\[error\]/ {
+                  text = substr($0, 10)
+                  if (index(text, ENVIRON["UNAVAILABLE"]) || index(text, ENVIRON["SUMS_UP"]) || index(text, ENVIRON["STOPPED"])) { drop[n] = 1 }
+                  if (text ~ /^Process completed with exit code [0-9]+\.?$/) { exited[n] = 1 }
+                  if (text ~ /^The operation was canceled\.?$/) { cancel[n] = 1 }
+                  if (!(n in first)) { first[n] = NR }
+                }
+                NF { last = $0 }
+                END {
+                  at = -1
+                  for (i = 0; i <= n; i++) {
+                    if (!drop[i] && exited[i]) { print "code\t" head[i]; exit }
+                  }
+                  for (i = 0; i <= n && at < 0; i++) {
+                    if (!drop[i] && cancel[i]) { at = i }
+                  }
+                  for (i = 0; i <= n && at < 0; i++) {
+                    if (!drop[i] && (i in first)) { at = i }
+                  }
+                  if (at < 0) {
+                    if (last == "Cleaning up orphan processes") { print "outside\tthe runner, after the work of the job" }
+                    else { print "code\tthe end of the log" }
+                    exit
+                  }
+                  side = kind[at]
+                  if (side == "step") {
+                    # An action of another repository is outside the code, one of the
+                    # repository itself, ./ or owner/repo of its own, and any other
+                    # header, such as docker://, are the code.
+                    side = "code"
+                    action = substr(head[at], 5)
+                    if (action ~ /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(\/[^@ ]*)?@[^ ]+$/) {
+                      split(action, parts, "/")
+                      sub(/@.*/, "", parts[2])
+                      if (tolower(parts[1] "/" parts[2]) != own) { side = "outside" }
+                    }
+                  }
+                  print side "\t" head[at]
+                }
+              ' <<<"$log")"
+              verdict="${broke%%$'\t'*}"
+              where="${broke#*$'\t'}"
+              return 0
+            fi
+            # A command that exited, beyond the steps that said why.
+            if ((exits > said)); then
+              return 0
+            fi
+            if [[ -n "$missing" && "$conclusion" == cancelled && -z "$steps" ]] &&
+              ! grep -vF "$TIMED" <<<"$errors" | grep -q .; then
+              verdict=outside
+              where="the runner, which left no log"
+              return 0
+            fi
+            # GitHub names a step without a name of its own "Run owner/repo@ref", and
+            # its post step "Post Run owner/repo@ref".
+            [[ -n "$steps" ]] || return 0
+            while IFS= read -r part; do
+              if [[ ! "$part" =~ ^(Post\ )?Run\ ([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(/[^@\ ]*)?@[^\ ]+$ ]] ||
+                [[ "${BASH_REMATCH[2],,}" == "${GH_REPO,,}" ]]; then
+                return 0
+              fi
+            done <<<"${steps//, /$'\n'}"
+            verdict=outside
+            where="$steps"
+          }
+          # The jobs of the first attempts of the runs of the same workflow in the 7
+          # days before the run that passed at a later attempt, once for the run: their
+          # run, id, conclusion, name without the values of its matrix, and the steps
+          # that broke. 10 pages of 100 runs at most, and the runs of a later attempt
+          # among them for LOOK_BACK_TIME seconds at most, so that the report ends in
+          # its time; it stops at once, with a warning, when GitHub keeps failing, as
+          # each call of a run would wait 70 seconds for it. back says how far they
+          # reached then, and why.
+          looked=""
+          earlier=""
+          back=""
+          short=""
+          failing=""
+          # The warning of a look-back that GitHub kept failing, which then counts only
+          # as far as it got.
+          cut_short() {
+            echo "::warning::The runs of the 7 days before couldn't be read, so a failure outside the code counts only as far as they were: $(plain "$(head -n 1 "$RUNNER_TEMP/gh-errors")")"
+          }
+          look_back() {
+            local since page found count run created first start=$SECONDS last="$WHEN"
+            [[ -z "$looked" ]] || return 0
+            looked=true
+            since="$(date -u -d "@$(($(date -u -d "$WHEN" +%s) - 7 * 86400))" +%Y-%m-%dT%H:%M:%SZ)"
+            local runs=""
+            for page in {1..10}; do
+              if ! found="$(tried gh api --header "$API_VERSION_HEADER" --method GET "repos/$GH_REPO/actions/workflows/$WORKFLOW/runs" \
+                -f created=">=$since" -f status=success -f per_page=100 -f page="$page" \
+                --jq "(.workflow_runs | length | tostring) + \"\t\" + (.workflow_runs[-1].created_at // \"\"),
+                  (.workflow_runs[] | select(.run_attempt > 1 and .id != $RUN and .created_at >= \"$since\") | (.id | tostring) + \"\t\" + .created_at)")"; then
+                cut_short
+                ! given_up || failing=true
+                break
+              fi
+              runs+="$(tail -n +2 <<<"$found")"$'\n'
+              count="$(head -n 1 <<<"$found")"
+              if ((${count%%$'\t'*} < 100)); then
+                break
+              fi
+              if ((page == 10)); then
+                back="${count#*$'\t'}"
+                short="1,000 runs"
+              fi
+            done
+            # The runs come the newest first, so the last one read is as far back as
+            # the look reached.
+            while IFS=$'\t' read -r run created; do
+              [[ -n "$run" && -z "$failing" ]] || continue
+              if ((SECONDS - start >= LOOK_BACK_TIME)); then
+                back="$last"
+                short="as its time of $LOOK_BACK_TIME seconds was up"
+                break
+              fi
+              if ! first="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$run/attempts/1" --jq .conclusion)"; then
+                if given_up; then
+                  cut_short
+                  failing=true
+                  back="$last"
+                  short="as GitHub kept failing"
+                  break
+                fi
+                continue
+              fi
+              # Today's exception: a first attempt that a newer run cancelled failed
+              # in no test.
+              if [[ "$first" == cancelled ]]; then
+                last="$created"
+                continue
+              fi
+              if ! found="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$run/attempts/1/jobs" --paginate \
+                --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled")
+                  | [.id, .conclusion, (.name | split(" (")[0]), ([.steps[]? | select(.conclusion == "failure" or .conclusion == "cancelled") | .name] | sort | join(", "))] | @tsv')"; then
+                if given_up; then
+                  cut_short
+                  failing=true
+                  back="$last"
+                  short="as GitHub kept failing"
+                  break
+                fi
+                continue
+              fi
+              last="$created"
+              while IFS= read -r job; do
+                [[ -z "$job" ]] || earlier+="$run"$'\t'"$job"$'\n'
+              done <<<"$found"
+            done <<<"$runs"
+          }
+          # How many runs of the 7 days before had a job of the same name, without the
+          # values of its matrix, that broke in the same steps, or in none, and failed
+          # or ran out of time: a job that was cancelled without its time limit, or
+          # because a newer run took over, failed in no test.
+          returns() {
+            local key="$1" broke="$2" run job end name steps texts seen=" "
+            times=0
+            look_back
+            while IFS=$'\t' read -r run job end name steps; do
+              [[ -n "$run" && "$name" == "$key" && "$steps" == "$broke" && "$seen" != *" $run "* ]] || continue
+              if [[ "$end" == cancelled ]]; then
+                # After GitHub kept failing, the bot asks about no more runs, and still
+                # counts those that failed.
+                [[ -z "$failing" ]] || continue
+                if ! texts="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$job/annotations" --paginate \
+                  --jq '.[] | select(.annotation_level == "failure") | .message')"; then
+                  if given_up; then
+                    cut_short
+                    failing=true
+                  fi
+                  continue
+                fi
+                grep -qF "$TIMED" <<<"$texts" || continue
+                ! grep -q "higher priority waiting request" <<<"$texts" || continue
+              fi
+              seen+="$run "
+              times=$((times + 1))
+            done <<<"$earlier"
+          }
+          first="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN/attempts/1" --jq .conclusion)"
+          # The steps that broke come twice: as GitHub lists them, for the table, and
+          # in their order by name, as the runs before are compared by.
+          fields='[.id, .conclusion, ([.steps[]?] | length > 0 and all(.conclusion == "success" or .conclusion == "skipped")), .html_url, .name,
+            (.name | split(" (")[0]), ([.steps[]? | select(.conclusion == "failure" or .conclusion == "cancelled") | .name] | join(", ")),
+            ([.steps[]? | select(.conclusion == "failure" or .conclusion == "cancelled") | .name] | sort | join(", "))] | @tsv'
+          jobs="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN/attempts/1/jobs" --paginate \
+            --jq ".jobs[] | select(.conclusion == \"failure\" or .conclusion == \"cancelled\") | $fields")"
+          # The names of the jobs that failed or were cancelled in the attempt, for a
+          # job that only sums them up.
+          broken="$(awk -F '\t' '{ print $5 }' <<<"$jobs")"
+          rows=""
+          # Each job with each of its tests, one to a line, for the count in the issue.
+          counted=""
+          # The jobs that failed outside the code, and those of them that came back.
+          outside=""
+          returned=""
+          no_logs=""
+          while IFS=$'\t' read -r -u 3 id conclusion passed url name key steps sorted; do
+            # An attempt that a newer run cancelled, as one that the bot for cancelled
+            # checks started again, failed in no test. In one that a person or a time
+            # limit cancelled, only the jobs that ran out of time broke: a job that
+            # waits for the others fails when they are cancelled.
+            if [[ -z "$id" ]] || [[ "$conclusion" == failure && "$first" == cancelled ]]; then
+              continue
+            fi
+            judge "$id" "$conclusion" "$passed" "$name" "$steps"
+            shown="$steps"
+            case "$verdict" in
+              clear)
+                rows=""
+                counted=""
+                outside=""
+                returned=""
+                break
+                ;;
+              skip)
+                continue
+                ;;
+              stuck)
+                echo "::notice::The job $(plain "$name") ran out of time although each of its steps had passed: its runner never reported that the job ended. That is a fault of the runner, not a flaky test, so the issue of flaky tests leaves it out."
+                outside+="| [$(cell "$name")]($url) | $(cell "$steps") | $(cell "$where") | $(cell "$error") |"$'\n'
+                continue
+                ;;
+              outside)
+                # A cause outside the code that keeps coming back, such as a mirror
+                # that fails or a pin that expired, is a person's to fix after all.
+                returns "$key" "$sorted"
+                if ((times + 1 < 3)); then
+                  echo "::notice::The job $(plain "$name") failed outside the code, in $(plain "$where"), and passed when it ran again: no test failed, so the issue of flaky tests leaves it out."
+                  outside+="| [$(cell "$name")]($url) | $(cell "$steps") | $(cell "$where") | $(cell "$error") |"$'\n'
+                  continue
+                fi
+                names="outside the code"
+                shown="${steps:-$where}"
+                returned+="${returned:+, }$(cell "$name") ($((times + 1)) runs)"
+                ;;
+            esac
+            tests="$(awk 'NR > 1 { printf ", " } { printf "%s", $0 }' <<<"$names")"
+            rows+="| [$(cell "$name")]($url) | $(cell "$shown") | $(cell "$tests") | $(cell "$error") |"$'\n'
             while IFS= read -r test; do
               counted+="$(cell "$NAME / $name") | $(cell "$test")"$'\n'
             done <<<"$names"
           done 3<<<"$jobs"
-          if [[ -n "$stuck" ]]; then
+          if [[ -n "$outside" ]]; then
             {
-              echo "### The runner's fault"
+              echo "### Outside the code"
               echo
-              echo "These jobs ran out of time although each of their steps had passed: their runner did the work and never reported that the job ended. No test failed, and the issue of flaky tests leaves them out."
+              echo "These jobs failed at first outside the code, in an action of another repository, a post step, the set-up of the job or the runner, and passed when they ran again. No test failed, and the issue of flaky tests leaves them out until such a failure comes back for the third time in 7 days."
+              if [[ -n "$back" ]]; then
+                echo
+                echo "The runs before reached back only to $back, $short."
+              fi
               echo
-              echo "| Job |"
-              echo "| --- |"
-              printf '%s' "$stuck"
+              echo "| Job | Step | Where it broke | Error |"
+              echo "| --- | --- | --- | --- |"
+              printf '%s' "$outside"
               echo
             } >> "$GITHUB_STEP_SUMMARY"
           fi
+          title="Flaky tests"
+          number="$(tried gh issue list --state open --search "in:title \"$title\"" --json number,title \
+            --jq "map(select(.title == \"$title\")) | .[0].number // empty")"
+          # The issue of an older bot counted every failure as a test. The body of one
+          # that this bot opened or has judged carries the mark, and its first
+          # sentence says what it counts.
+          mark="<!-- The flaky-test bot tells a failure of the code from one outside it. -->"
+          before="The flaky-test bot counts here every job and test that failed at first and then passed without a change of the code, and describes each run in a comment, with the step, the test and the error that failed. Fix the test, then close this issue."
+          intro="The flaky-test bot counts here every job and test that failed at first and then passed without a change of the code, and a failure outside the code that came back for the third time in 7 days, and describes each run in a comment, with the step, the test and the error that failed. Fix the test or the cause, then close this issue."
+          # The body with the mark, before the counts, and with the new first sentence
+          # in place of the old one.
+          marked() {
+            BEFORE="$before" INTRO="$intro" MARK="$mark" FROM="<!-- The flaky-test bot rewrites the counts from here to the next comment. -->" awk '
+              !swapped && (at = index($0, ENVIRON["BEFORE"])) {
+                $0 = substr($0, 1, at - 1) ENVIRON["INTRO"] substr($0, at + length(ENVIRON["BEFORE"]))
+                swapped = 1
+              }
+              !done && $0 == ENVIRON["FROM"] { print ENVIRON["MARK"]; print ""; done = 1 }
+              { print }
+              END { if (!done) { print ""; print ENVIRON["MARK"] } }
+            '
+          }
           if [[ -z "$rows" ]]; then
-            echo "No job failed or ran out of time at first; nothing to report." >> "$GITHUB_STEP_SUMMARY"
+            # An issue of an older bot may hold nothing but failures outside the code,
+            # as Dennis-Otto/repo-blueprint#1090: each row of its comments is judged
+            # once, by the job that it links, 20 at most. When none is the code's, the
+            # issue closes; else it gets the mark, and its counts stay as they are.
+            if [[ -n "$number" ]]; then
+              body="$(tried gh issue view "$number" --json body --jq .body)"
+              if [[ "$body" != *"$mark"* ]]; then
+                linked="$(tried gh issue view "$number" --json comments \
+                  --jq '[.comments[] | select(.author.login // "" | test("^(app/)?github-actions(\\[bot\\])?$")) | .body
+                    | select(contains("| Job | Step |")) | scan("/actions/runs/[0-9]+/job/([0-9]+)") | .[0]] | unique | .[]')"
+                mine=""
+                if (($(grep -c . <<<"$linked" || true) > 20)) || [[ -z "$linked" ]]; then
+                  mine=true
+                fi
+                while IFS= read -r job && [[ -z "$mine" ]]; do
+                  if ! found="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/jobs/$job" --jq "$fields")"; then
+                    mine=true
+                    break
+                  fi
+                  IFS=$'\t' read -r id conclusion passed url name key steps sorted <<<"$found"
+                  judge "$id" "$conclusion" "$passed" "$name" "$steps"
+                  if [[ "$verdict" == code ]]; then
+                    mine=true
+                  fi
+                done <<<"$linked"
+                if [[ -z "$mine" ]]; then
+                  once gh issue close "$number" --comment "Every row of this issue failed outside the code, in an action of another repository, a post step, the set-up of a job or the runner, and passed when it ran again: no test failed, so there is nothing to fix here, and the flaky-test bot closes this issue. A failure of a test opens a new one, and so does a failure outside the code that comes back for the third time in 7 days."
+                  echo "The issue of flaky tests held only failures outside the code, so the bot closed it." >> "$GITHUB_STEP_SUMMARY"
+                else
+                  printf '%s\n' "$body" | tr -d '\r' | marked > "$RUNNER_TEMP/issue.md"
+                  tried gh issue edit "$number" --body-file "$RUNNER_TEMP/issue.md"
+                fi
+              fi
+            fi
+            echo "No job failed or ran out of time at first in the code; nothing to report." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           # A fork names its branches as it likes; the issue names only those of the
           # repository.
-          where="a branch of a fork"
+          place="a branch of a fork"
           if [[ "$HEAD_REPO" == "$GH_REPO" ]]; then
-            where="$(cell "$BRANCH")"
+            place="$(cell "$BRANCH")"
           fi
-          title="Flaky tests"
           report="$(printf '**%s** failed at first and passed when it ran again, on %s at %s ([the run](%s)):\n\n%s\n%s\n%s' \
-            "$NAME" "$where" "${SHA:0:7}" "$URL" \
+            "$NAME" "$place" "${SHA:0:7}" "$URL" \
             "| Job | Step | Test | Error |" "| --- | --- | --- | --- |" "$rows")"
-          number="$(tried gh issue list --state open --search "in:title \"$title\"" --json number,title \
-            --jq "map(select(.title == \"$title\")) | .[0].number // empty")"
+          if [[ -n "$returned" ]]; then
+            report+="$(printf '\n\n**Outside the code, for the third time in 7 days at least:** %s. Such a cause, as a mirror that fails or a pin that expired, is yours to fix once it keeps coming back.' "$returned")"
+          fi
           # Each run gets a comment, and the body of the issue counts how often each job
           # and test flaked, and when it last did, the latest first. The bot rewrites the
           # table between its two comments, which it adds to an issue that has none, and
@@ -964,7 +1381,10 @@ jobs:
             once gh issue comment "$number" --body "$report"
             body="$(tried gh issue view "$number" --json body --jq .body)"
           else
-            body="The flaky-test bot counts here every job and test that failed at first and then passed without a change of the code, and describes each run in a comment, with the step, the test and the error that failed. Fix the test, then close this issue."
+            body="$intro"
+          fi
+          if [[ "$body" != *"$mark"* ]]; then
+            body="$(printf '%s\n' "$body" | tr -d '\r' | marked)"
           fi
           printf '%s\n' "$body" | tr -d '\r' |
             COUNTED="$counted" LAST="[${WHEN:0:10}]($URL)" \
@@ -1614,10 +2034,14 @@ jobs:
           echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
 
   stopped:
-    name: run the checks again that Harden-Runner stopped
-    # A job that blocks stops when Harden-Runner can't block, mostly in an outage of
-    # GitHub, and the failed jobs of its run get one more try (decision 0134). The job
-    # rerun does so for the tests, and the release has a bot of its own.
+    name: run the checks again that failed outside the code
+    # Two kinds of failure outside the code get one more try of the failed jobs of
+    # their run. A job that blocks stops when Harden-Runner can't block, mostly in an
+    # outage of GitHub (decision 0134). And the website of a push to the default
+    # branch wasn't published, as GitHub Pages or Sigstore failed, when only the jobs
+    # that publish it and ask for it failed, or the job docs failed only to hand it
+    # to GitHub Pages, twice (decision 1110). The job rerun does so for the tests, and
+    # the release has a bot of its own.
     if: >-
       !github.event.repository.fork &&
       contains(fromJSON('["CodeQL", "Docs", "Lint", "Pull request title", "Quick checks", "Fuzzing", "Links", "OSV-Scanner", "Workflow security", "Release"]'), github.event.workflow_run.name) &&
@@ -1729,7 +2153,7 @@ jobs:
               sleep 3
             done
           done
-      - name: Run the jobs again that Harden-Runner stopped
+      - name: Run the jobs again that failed outside the code
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -1738,22 +2162,47 @@ jobs:
           EVENT: ${{ github.event.workflow_run.event }}
           BRANCH: ${{ github.event.workflow_run.head_branch }}
           SHA: ${{ github.event.workflow_run.head_sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           eval "$OUTAGE"
+          rule=""
+          # The website of a push to the default branch that GitHub Pages or Sigstore
+          # kept from being published: each job that failed publishes it or asks for
+          # it, or is docs, whose only steps that failed handed the website to GitHub
+          # Pages, the second time too. Any other failure of Docs, such as a broken
+          # link, is one of the change, and a run of a pull request publishes nothing.
+          if [[ "$NAME" == Docs && "$EVENT" == push && "$BRANCH" == "$DEFAULT_BRANCH" ]]; then
+            failed="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN/attempts/1/jobs" --paginate \
+              --jq '.jobs[] | select(.conclusion == "failure") | [.name, ([.steps[]? | select(.conclusion == "failure") | .name] | join("|"))] | @tsv')"
+            [[ -z "$failed" ]] || rule=published
+            while IFS=$'\t' read -r job steps; do
+              case "$job" in
+                "publish the website" | "ask the published website") ;;
+                docs)
+                  case "$steps" in
+                    "Hand the website to GitHub Pages once more" | "Hand the website to GitHub Pages|Hand the website to GitHub Pages once more") ;;
+                    *) rule="" ;;
+                  esac
+                  ;;
+                *) rule="" ;;
+              esac
+            done <<<"$failed"
+          fi
           # A job that the step "Make sure that Harden-Runner blocks" stopped says so in
           # an annotation; any other failure is one of the change.
-          jobs="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN/attempts/1/jobs" --paginate \
-            --jq '.jobs[] | select(.conclusion == "failure") | .id')"
-          stopped=false
-          for job in $jobs; do
-            messages="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$job/annotations" --paginate --jq '.[].message')"
-            if grep -qF "would reach every host, and it stops here instead" <<<"$messages"; then
-              stopped=true
-              break
-            fi
-          done
-          if [[ "$stopped" != true ]]; then
-            echo "No job of $NAME stopped because Harden-Runner didn't block; it stays failed." >> "$GITHUB_STEP_SUMMARY"
+          if [[ -z "$rule" ]]; then
+            jobs="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/actions/runs/$RUN/attempts/1/jobs" --paginate \
+              --jq '.jobs[] | select(.conclusion == "failure") | .id')"
+            for job in $jobs; do
+              messages="$(tried gh api --header "$API_VERSION_HEADER" "repos/$GH_REPO/check-runs/$job/annotations" --paginate --jq '.[].message')"
+              if grep -qF "would reach every host, and it stops here instead" <<<"$messages"; then
+                rule=stopped
+                break
+              fi
+            done
+          fi
+          if [[ -z "$rule" ]]; then
+            echo "No job of $NAME stopped because Harden-Runner didn't block, nor failed only to publish the website; it stays failed." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           # The bot-health bot watches some of these workflows too and may have run it
@@ -1802,7 +2251,11 @@ jobs:
             exit 1
           fi
           printf '%s\n' "$output"
-          echo "Harden-Runner didn't block in a job of $NAME, which stopped; the failed jobs run once more." >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$rule" == published ]]; then
+            echo "GitHub Pages or Sigstore kept $NAME from publishing the website of ${SHA:0:7}, the head of $BRANCH; the failed jobs run once more." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Harden-Runner didn't block in a job of $NAME, which stopped; the failed jobs run once more." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Wait until Harden-Runner has removed Docker
         # Harden-Runner removes Docker with apt-get in the background; a job that ends
         # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
@@ -1837,7 +2290,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
-    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-findings.yml@c0cba05cba73d4489000a0871dcdb97caee29ea7 # v1.15.2
+    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-findings.yml@4ea27a590dc46faeecdceae0a02aa5b1b50da477 # v1.15.3
     with:
       dry_run: false
 
@@ -1853,7 +2306,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
-    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-findings.yml@c0cba05cba73d4489000a0871dcdb97caee29ea7 # v1.15.2
+    uses: Dennis-Otto/issue-assistant/.github/workflows/reusable-findings.yml@4ea27a590dc46faeecdceae0a02aa5b1b50da477 # v1.15.3
     with:
       dry_run: false
 

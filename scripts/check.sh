@@ -176,9 +176,12 @@ step "Pages in one column"
 # no cell with a width. Each finding says how to fix it; pages --fix fixes what it can.
 tool=.github/blueprint.py
 [[ -f "$tool" ]] || tool=blueprint.py
+# A Python 3.12 or newer with its standard library, which every later step takes:
+# python3-minimal of Debian, the only Python of the dev container of PHP until its
+# setup.sh has run, passes the version but lacks shutil and tomllib (issue 1109).
 python=""
 for candidate in python3 python py; do
-  if "$candidate" -c 'import sys; sys.exit(sys.version_info < (3, 12))' >/dev/null 2>&1; then
+  if "$candidate" -c 'import shutil, sys, tomllib; sys.exit(sys.version_info < (3, 12))' >/dev/null 2>&1; then
     python="$candidate"
     break
   fi
@@ -186,10 +189,10 @@ done
 if [[ -n "$python" ]]; then
   "$python" "$tool" pages
 elif [[ -n "${CI:-}" ]]; then
-  echo "Checking the pages needs Python 3.12 or newer, which this runner lacks."
+  echo "Checking the pages needs Python 3.12 or newer with its standard library, which this runner lacks."
   exit 1
 else
-  echo "Python 3.12 or newer is not installed here; the CI checks the pages."
+  echo "Python 3.12 or newer with its standard library is not installed here; the CI checks the pages."
 fi
 
 step "Markdown"
@@ -208,10 +211,10 @@ step "Files of the project"
 if [[ -n "$python" ]]; then
   "$python" "$tool" migrate
 elif [[ -n "${CI:-}" ]]; then
-  echo "Checking the files of the project needs Python 3.12 or newer, which this runner lacks."
+  echo "Checking the files of the project needs Python 3.12 or newer with its standard library, which this runner lacks."
   exit 1
 else
-  echo "Python 3.12 or newer is not installed here; the CI checks the files of the project."
+  echo "Python 3.12 or newer with its standard library is not installed here; the CI checks the files of the project."
 fi
 
 step "Binary files"
@@ -223,10 +226,10 @@ step "Binary files"
 if [[ -n "$python" ]]; then
   "$python" "$tool" binaries
 elif [[ -n "${CI:-}" ]]; then
-  echo "Checking the binary files needs Python 3.12 or newer, which this runner lacks."
+  echo "Checking the binary files needs Python 3.12 or newer with its standard library, which this runner lacks."
   exit 1
 else
-  echo "Python 3.12 or newer is not installed here; the CI checks the binary files."
+  echo "Python 3.12 or newer with its standard library is not installed here; the CI checks the binary files."
 fi
 
 step "Changelog fragments"
@@ -238,10 +241,10 @@ step "Changelog fragments"
 if [[ -n "$python" ]]; then
   "$python" "$tool" fragments
 elif [[ -n "${CI:-}" ]]; then
-  echo "Checking the fragments needs Python 3.12 or newer, which this runner lacks."
+  echo "Checking the fragments needs Python 3.12 or newer with its standard library, which this runner lacks."
   exit 1
 else
-  echo "Python 3.12 or newer is not installed here; the CI checks the fragments."
+  echo "Python 3.12 or newer with its standard library is not installed here; the CI checks the fragments."
 fi
 
 step "Records of decisions"
@@ -255,10 +258,10 @@ step "Records of decisions"
 if [[ -n "$python" ]]; then
   "$python" "$tool" decisions
 elif [[ -n "${CI:-}" ]]; then
-  echo "Checking the records of decisions needs Python 3.12 or newer, which this runner lacks."
+  echo "Checking the records of decisions needs Python 3.12 or newer with its standard library, which this runner lacks."
   exit 1
 else
-  echo "Python 3.12 or newer is not installed here; the CI checks the records of decisions."
+  echo "Python 3.12 or newer with its standard library is not installed here; the CI checks the records of decisions."
 fi
 
 step "Accepted advisories"
@@ -271,10 +274,10 @@ step "Accepted advisories"
 if [[ -n "$python" ]]; then
   "$python" "$tool" advisories
 elif [[ -n "${CI:-}" ]]; then
-  echo "Checking the accepted advisories needs Python 3.12 or newer, which this runner lacks."
+  echo "Checking the accepted advisories needs Python 3.12 or newer with its standard library, which this runner lacks."
   exit 1
 else
-  echo "Python 3.12 or newer is not installed here; the CI checks the accepted advisories."
+  echo "Python 3.12 or newer with its standard library is not installed here; the CI checks the accepted advisories."
 fi
 
 step "Answers for bestpractices.dev"
@@ -289,10 +292,10 @@ step "Answers for bestpractices.dev"
 if [[ -n "$python" ]]; then
   "$python" "$tool" best-practices --verify
 elif [[ -n "${CI:-}" ]]; then
-  echo "Checking the answers for bestpractices.dev needs Python 3.12 or newer, which this runner lacks."
+  echo "Checking the answers for bestpractices.dev needs Python 3.12 or newer with its standard library, which this runner lacks."
   exit 1
 else
-  echo "Python 3.12 or newer is not installed here; the CI checks the answers for bestpractices.dev."
+  echo "Python 3.12 or newer with its standard library is not installed here; the CI checks the answers for bestpractices.dev."
 fi
 
 step "Lock files"
@@ -305,10 +308,10 @@ step "Lock files"
 if [[ -n "$python" ]]; then
   "$python" "$tool" locks
 elif [[ -n "${CI:-}" ]]; then
-  echo "Checking the lock files needs Python 3.12 or newer, which this runner lacks."
+  echo "Checking the lock files needs Python 3.12 or newer with its standard library, which this runner lacks."
   exit 1
 else
-  echo "Python 3.12 or newer is not installed here; the CI checks the lock files."
+  echo "Python 3.12 or newer with its standard library is not installed here; the CI checks the lock files."
 fi
 
 step "Lock files match their sources"
@@ -321,10 +324,10 @@ step "Lock files match their sources"
 if [[ -n "$python" ]]; then
   "$python" "$tool" locks --compile
 elif [[ -n "${CI:-}" ]]; then
-  echo "Comparing the lock files needs Python 3.12 or newer, which this runner lacks."
+  echo "Comparing the lock files needs Python 3.12 or newer with its standard library, which this runner lacks."
   exit 1
 else
-  echo "Python 3.12 or newer is not installed here; the CI compares the lock files."
+  echo "Python 3.12 or newer with its standard library is not installed here; the CI compares the lock files."
 fi
 
 step "Explanations of the checks"
@@ -336,10 +339,10 @@ step "Explanations of the checks"
 if [[ -n "$python" ]]; then
   "$python" "$tool" coach verify
 elif [[ -n "${CI:-}" ]]; then
-  echo "Checking the explanations needs Python 3.12 or newer, which this runner lacks."
+  echo "Checking the explanations needs Python 3.12 or newer with its standard library, which this runner lacks."
   exit 1
 else
-  echo "Python 3.12 or newer is not installed here; the CI checks the explanations."
+  echo "Python 3.12 or newer with its standard library is not installed here; the CI checks the explanations."
 fi
 
 step "Translations"
@@ -353,10 +356,10 @@ step "Translations"
 if [[ -n "$python" ]]; then
   "$python" "$tool" translations
 elif [[ -n "${CI:-}" ]]; then
-  echo "Checking the translations needs Python 3.12 or newer, which this runner lacks."
+  echo "Checking the translations needs Python 3.12 or newer with its standard library, which this runner lacks."
   exit 1
 else
-  echo "Python 3.12 or newer is not installed here; the CI checks the translations."
+  echo "Python 3.12 or newer with its standard library is not installed here; the CI checks the translations."
 fi
 
 step "Version"
