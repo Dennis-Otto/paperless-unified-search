@@ -39,7 +39,7 @@ from typing import Any
 
 from blueprint import github
 from blueprint.diagrams import git
-from blueprint.locks import AGE, lock_files, read_pins
+from blueprint.locks import AGE, NoAnswer, lock_files, read_pins
 
 NPM_LOCK = "package-lock.json"
 COMPOSER_LOCK = "composer.lock"
@@ -69,6 +69,12 @@ class Added:
 
 class Undated(Exception):
     """The registry names no release date of a version."""
+
+
+class Unanswered(Undated, NoAnswer):
+    """The registry gave no answer about a version, also at the last attempt: an
+    OSError or a 5xx, which a later run may not get, unlike a refusal such as a 404 or
+    an answer without a date (decision 1130)."""
 
 
 def show(root: Path, revision: str, name: str) -> str | None:
@@ -215,14 +221,17 @@ def ask(url: str, opener: Callable[..., Any] | None = None) -> Any:
             with (opener or urllib.request.urlopen)(url, timeout=TIMEOUT) as response:
                 return json.load(response)
         except OSError as error:
-            # A refusal of the registry, such as 404, stays the same when asked again.
+            # A refusal of the registry, such as 404, stays the same when asked again;
+            # a timeout (408) or a limit of the rate (429) passes like an error of 5xx.
             passing = True
             if isinstance(error, urllib.error.HTTPError):
-                passing = error.code >= 500
+                passing = error.code >= 500 or error.code in (408, 429)
                 # The error is the answer too, and holds its body until it is closed.
                 error.close()
-            if not passing or attempt >= ATTEMPTS:
+            if not passing:
                 raise Undated(f"{url}: {error}") from error
+            if attempt >= ATTEMPTS:
+                raise Unanswered(f"{url}: {error}") from error
         attempt += 1
         github.sleep(PAUSE)
 
@@ -253,10 +262,12 @@ def pypi_released(
 def pypi_uploaded(
     name: str, version: str, opener: Callable[..., Any] | None = None
 ) -> datetime | None:
-    """When PyPI received the last file of a version; none when the check can't
-    learn it. uv's cutoff judges each file on its own: a version whose wheels came
-    after the cutoff, hours after its sdist, would reach the lock with its sdist
-    alone, so the refresh takes it as young as its last file."""
+    """When PyPI received the last file of a version; none when PyPI can't date it,
+    as one that it doesn't know or that has no file; Unanswered when PyPI gave no
+    answer, which the refresh tells apart (decision 1130). uv's cutoff judges each
+    file on its own: a version whose wheels came after the cutoff, hours after its
+    sdist, would reach the lock with its sdist alone, so the refresh takes it as young
+    as its last file."""
     quoted = f"{urllib.parse.quote(name)}/{urllib.parse.quote(version)}"
     try:
         answer = ask(f"{PYPI}{quoted}/json", opener)
@@ -264,6 +275,8 @@ def pypi_uploaded(
         if not files:
             return None
         return max(moment(file.get("upload_time_iso_8601")) for file in files)
+    except Unanswered:
+        raise
     except Undated:
         return None
 

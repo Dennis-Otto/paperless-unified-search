@@ -8,10 +8,16 @@ watched workflow ends on the default branch, the bot runs its failed jobs once m
 if a second try can pass, and otherwise keeps one issue per workflow current, with
 the failed jobs, their steps and their first errors; a run that passes closes it
 once every job that failed ran again in it and passed, so a run that skipped such a
-job, as one that only plans, leaves it open. A bot of events, such as Welcome, also
+job, as one that only plans, leaves it open. A workflow of one try, such as Findings,
+gets its second try only when every job that failed failed outside the code: when
+Harden-Runner stopped it, or when GitHub cancelled it at its time limit in the set-up
+of the job, and in Findings also in the runner after its last step. Such a time-out
+that comes back is reported as well from its third time in seven days, by the name of
+its job (decision 1118). A bot of events, such as Welcome, also
 for a pull request, and a workflow that keeps an issue of its own get neither a second
-try nor an issue, unless Harden-Runner stopped a job of their first attempt: then
-their failed jobs run once more (decision 0141). Their last job starts this bot with
+try nor an issue, unless Harden-Runner stopped a job of their first attempt, or a job
+of Newest PHP broke before its tests ran: then their failed jobs run once more
+(decisions 0141 and 1119). Their last job starts this bot with
 the run when a job of theirs failed at the first attempt, and the other watched
 workflows start it for their runs of main and of the tags of releases alone, so that
 no run of a pull request starts it (decision 0176).
@@ -34,7 +40,10 @@ newer release than the repository and the pull request of the blueprint bot does
 bring it yet, the look starts the blueprint bot, so that a repository that the Rollout
 doesn't start, such as one of another owner, gets it within a day (decision 0052). In
 the blueprint, it also keeps one issue with the warnings and errors in the log of
-Renovate.
+Renovate. Only the warnings of NEEDLESS stay out of it, which the summary names
+instead: the empty commit of a weekly refresh of pip-compile that has no version a
+week old left to bring, while no other line of the repository has its branch and no
+pull request of the branch is open (decision 1130).
 """
 
 from __future__ import annotations
@@ -48,6 +57,7 @@ from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
+from time import monotonic
 from typing import Any
 
 from blueprint import github
@@ -103,16 +113,52 @@ OUT_OF_TIME = "The job has exceeded the maximum execution time"
 # The annotation with which the step "Make sure that Harden-Runner blocks" stops a job
 # whose Harden-Runner doesn't block, mostly in an outage of GitHub (decision 0134).
 STOPPED = "would reach every host, and it stops here instead"
+# The annotation with which a job of the workflows of BEFORE_THE_TESTS says that it
+# failed before its tests ran, as when setup-php or Composer failed at both of its
+# tries: like a job that Harden-Runner stopped, its run gets its second try and no issue
+# (decision 1119).
+BROKE_BEFORE = "failed before its tests ran, so nothing in the code is wrong"
+BEFORE_THE_TESTS = frozenset({"Newest PHP"})
 PASSED = "success"
 # A second try only hides or repeats their failure: Findings fails while an alert is
 # open, Mutation takes hours to measure the same again, and the property tests and the
-# fuzzing failed on an input that they found. Not so when Harden-Runner stopped every
-# job that failed: then the second try repeats nothing.
+# fuzzing failed on an input that they found. Not so when every job that failed failed
+# outside the code: when Harden-Runner stopped it, or when GitHub cancelled it at its
+# time limit in the set-up of the job, before its first step of its own ran; then the
+# second try repeats nothing (decision 1118). In AFTER_THE_STEPS also when the runner
+# hung after the last step of the job: a job of Findings takes under a minute, while a
+# part of Mutation would run again from its start for hours, and the property tests and
+# the fuzzing would search again.
 ONE_TRY = frozenset({"Findings", "Mutation", "Property tests", "Fuzzing"})
+AFTER_THE_STEPS = frozenset({"Findings"})
+# Where a job ran out of its time outside its steps, and how the bot says it.
+SET_UP = "set-up"
+AFTER_LAST = "after"
+PLACES = {
+    SET_UP: "in the set-up of the job",
+    AFTER_LAST: "in the runner after the last step of the job",
+}
+# The steps of a job that are none of its own: those that GitHub adds around them,
+# and the pre and post steps of an action, which only an action of another repository
+# has, as GitHub runs no pre step of a local action.
+SET_UP_JOB = "Set up job"
+COMPLETE_JOB = "Complete job"
+AROUND = ("Pre ", "Post ")
+# A time-out outside the code that comes back is reported from its third time in the
+# days of RECURRING, by the name of its job without the values of its matrix, as the
+# flaky-test bot counts (decision 1096). The look back at the earlier runs reads up to
+# MOST_PAGES pages of them, and the jobs of a run at a later attempt for LOOK_BACK_TIME
+# seconds at most, so that it ends within the minutes of the job of this bot.
+RECURRING = timedelta(days=7)
+THIRD_TIME = 3
+MOST_PAGES = 10
+LOOK_BACK_TIME = 120
 # Workflows that keep an issue of their own about their failures; a workflow of the
 # project says so in a comment line of its own, `# bot-health: own-issue`. The daily
 # look still starts one whose schedule GitHub missed or switched off.
-OWN_ISSUE = frozenset({"Diagrams", "Newest Node", "Newest Python", "Next runner"})
+OWN_ISSUE = frozenset(
+    {"Diagrams", "Newest Node", "Newest PHP", "Newest Python", "Next runner"}
+)
 # The bots of events: a pull request or a comment on one starts them, also one of a
 # fork, and a failure shows on that pull request. Like the workflows that keep an issue
 # of their own, they get no issue of the bot, and they run again only when
@@ -195,6 +241,9 @@ MOST_PROBLEMS = 50
 # Renovate's line for two updates of one dependency in one branch, of which it drops
 # one; the rules of the blueprint raise it from info to a warning.
 COLLISION = "Ignoring upgrade collision"
+# Renovate's warning for a commit of its branch without a change, after which it pushes
+# nothing (commitFiles of lib/util/git/index.ts).
+EMPTY_COMMIT = "Detected empty commit - aborting git push"
 # The issue that lists the pull requests of Renovate that Renovate leaves alone and
 # that the daily look can't bring back by itself (decision 0144).
 PARKED = "renovate-parked"
@@ -276,7 +325,7 @@ def default_branch(api: Api, repo: str) -> str:
 
 @dataclass(frozen=True)
 class Run:
-    """A run of a workflow, in its latest attempt."""
+    """A run of a workflow, in its latest attempt, and the id of its workflow."""
 
     id: int
     name: str
@@ -291,6 +340,7 @@ class Run:
     url: str
     created: datetime
     updated: datetime
+    workflow: int = 0
 
     @classmethod
     def of(cls, data: Json) -> Run:
@@ -309,6 +359,7 @@ class Run:
             url=str(data["html_url"]),
             created=datetime.fromisoformat(data["created_at"]),
             updated=datetime.fromisoformat(data["updated_at"]),
+            workflow=int(data.get("workflow_id") or 0),
         )
 
     def of_branch(self, repo: str, branch: str) -> bool:
@@ -549,13 +600,18 @@ def published_note(run: Run, tag: str) -> str:
     )
 
 
-def failure_body(run: Run, branch: str, found: list[Failure], state: Json) -> str:
+def failure_body(
+    run: Run, branch: str, found: list[Failure], state: Json, third: str = ""
+) -> str:
+    """The body of the issue of a workflow; third, the words of a time-out outside the
+    code that came back for the third time, comes first."""
     started = EVENTS.get(run.event, f"the event {run.event}")
     failed = state["failed"]
     runs = "1 failed run" if failed == 1 else f"{failed} failed runs"
+    first = f"{third}\n\n" if third else ""
     return (
         f"{marker(state)}\n"
-        f"The workflow **{run.name}** fails on `{branch}` since {state['since']}, "
+        f"{first}The workflow **{run.name}** fails on `{branch}` since {state['since']}, "
         f"{runs} so far. GitHub mails such a failure only to whoever started the run "
         "or last changed its schedule, often a bot, so this issue stays open until "
         "the jobs that failed pass again in a run; the bot-health bot closes it then. "
@@ -570,7 +626,12 @@ def failure_body(run: Run, branch: str, found: list[Failure], state: Json) -> st
     )
 
 
-def report(api: Api, repo: str, branch: str, run: Run, issue: Issue | None) -> str:
+def report(
+    api: Api, repo: str, branch: str, run: Run, issue: Issue | None, third: str = ""
+) -> str:
+    """Opens or updates the issue of the workflow with the failure of the run; third
+    says that a time-out outside the code came back for the third time, which the state
+    keeps for the comment of the closing."""
     if (
         issue is not None
         and issue.state.get("run") == run.id
@@ -588,11 +649,13 @@ def report(api: Api, repo: str, branch: str, run: Run, issue: Issue | None) -> s
             "where": place,
             "since": run.created.date().isoformat(),
         }
+        if third:
+            state["third"] = True
         number = open_issue(
             api,
             repo,
             f"{run.name} fails on {branch}",
-            failure_body(run, branch, found, state),
+            failure_body(run, branch, found, state, third),
             [TYPE],
         )
         return f"fails: opened #{number}"
@@ -604,9 +667,12 @@ def report(api: Api, repo: str, branch: str, run: Run, issue: Issue | None) -> s
         "where": place,
     }
     state.setdefault("since", run.created.date().isoformat())
+    state.pop("third", None)
+    if third:
+        state["third"] = True
     api.patch(
         f"repos/{repo}/issues/{issue.number}",
-        {"body": failure_body(run, branch, found, state)},
+        {"body": failure_body(run, branch, found, state, third)},
     )
     if issue.state.get("where") == place:
         return f"fails again: updated #{issue.number}"
@@ -636,7 +702,9 @@ def stopped_by_harden_runner(
 ) -> bool:
     """Whether the step that makes sure that Harden-Runner blocks stopped a job of the
     run that failed, as its annotation says, or with every, each job that failed, of
-    which a job that ran out of its time is one that Harden-Runner didn't stop."""
+    which a job that ran out of its time is one that Harden-Runner didn't stop. In a
+    workflow of BEFORE_THE_TESTS, a job that says that it broke before its tests ran
+    counts as stopped too."""
     stopped = []
     for job in jobs_of(api, repo, run.id, run.attempt):
         conclusion = job.get("conclusion")
@@ -653,22 +721,255 @@ def stopped_by_harden_runner(
                 stopped.append(False)
             continue
         stopped.append(
-            conclusion == "failure" and any(STOPPED in message for message in messages)
+            conclusion == "failure" and any(stops(run, message) for message in messages)
         )
     return any(stopped) and (all(stopped) or not every)
 
 
-def second_try_can_pass(api: Api, repo: str, run: Run) -> bool:
-    """Whether a second try of the failed jobs can pass: at the first attempt of a run
-    that started, and for a workflow of one try only when Harden-Runner stopped each
-    job that failed, as the second try then repeats nothing of the failure."""
+def stops(run: Run, message: str) -> bool:
+    """Whether the annotation of a failed job of the run says that it stopped outside
+    the code: that Harden-Runner didn't block, or in a workflow of BEFORE_THE_TESTS,
+    that the job broke before its tests ran."""
+    return STOPPED in message or (
+        run.name in BEFORE_THE_TESTS and BROKE_BEFORE in message
+    )
+
+
+def stopper(run: Run) -> str:
+    """What stops a job of the run outside the code, for the lines of this bot."""
+    if run.name in BEFORE_THE_TESTS:
+        return "Harden-Runner or a set-up that failed before the tests"
+    return "Harden-Runner"
+
+
+@dataclass(frozen=True)
+class OutOfTime:
+    """A job that ran out of its time outside its steps, and where: SET_UP or AFTER_LAST."""
+
+    job: str
+    place: str
+
+
+def around(step: str) -> bool:
+    """Whether a step is none of the job's own: its set-up, its end, or a pre or post
+    step of an action."""
+    return step in (SET_UP_JOB, COMPLETE_JOB) or step.startswith(AROUND)
+
+
+def where_it_ran_out(job: Json, messages: Sequence[str]) -> str | None:
+    """Where a job ran out of its time outside its own steps: SET_UP when GitHub
+    cancelled it at its time limit before *Set up job* passed, or when the first step
+    after it, but a pre step, was skipped, so that none of its own ran; AFTER_LAST when its
+    own steps ended and it ran out after them, as also a job of which GitHub lists no
+    step any more. None when it didn't run out of its time, as a job that GitHub calls
+    timed out without saying so, or when one of its own steps failed, ran out of its
+    time, was cancelled or has no conclusion, as when the runner was lost: then the
+    time ran out inside the code. The steps show this without the log."""
+    if job.get("conclusion") != "cancelled" or not any(
+        OUT_OF_TIME in message for message in messages
+    ):
+        return None
+    steps = [
+        (str(step.get("name") or ""), step.get("conclusion"))
+        for step in job.get("steps") or []
+    ]
+    if any(
+        not around(name) and conclusion not in (PASSED, "skipped")
+        for name, conclusion in steps
+    ):
+        return None
+    names = [name for name, _ in steps]
+    if SET_UP_JOB not in names:
+        return AFTER_LAST
+    start = names.index(SET_UP_JOB)
+    if steps[start][1] != PASSED:
+        return SET_UP
+    first = next(
+        (
+            conclusion
+            for name, conclusion in steps[start + 1 :]
+            if not name.startswith(AROUND[0])
+        ),
+        PASSED,
+    )
+    return SET_UP if first == "skipped" else AFTER_LAST
+
+
+def places_of(run: Run) -> frozenset[str]:
+    """Where a job of a workflow of one try may run out of its time and still get its
+    second try."""
+    return frozenset({SET_UP, AFTER_LAST} if run.name in AFTER_THE_STEPS else {SET_UP})
+
+
+def messages_of(annotations: Iterable[Json]) -> list[str]:
+    return [str(annotation.get("message")) for annotation in annotations]
+
+
+def outside_the_code(api: Api, repo: str, run: Run) -> list[OutOfTime] | None:
+    """The jobs of a run of a workflow of one try that ran out of their time outside
+    their steps, when each job that failed failed outside the code: as such a job at a
+    place of places_of, as a job that Harden-Runner stopped, or as a leg that its
+    matrix, a person or a newer run cancelled, of which one alone is no failure. None
+    when a job failed in its code."""
+    places = places_of(run)
+    found = []
+    stopped = False
+    for job in jobs_of(api, repo, run.id, run.attempt):
+        conclusion = job.get("conclusion")
+        if conclusion not in ("failure", "timed_out", "cancelled"):
+            continue
+        messages = messages_of(annotations_of(api, repo, int(job["id"])))
+        if conclusion == "failure" and any(STOPPED in message for message in messages):
+            stopped = True
+            continue
+        if conclusion == "cancelled" and not any(
+            OUT_OF_TIME in message for message in messages
+        ):
+            continue
+        place = where_it_ran_out(job, messages)
+        if place not in places:
+            return None
+        found.append(OutOfTime(str(job["name"]), str(place)))
+    return found if stopped or found else None
+
+
+def second_try_can_pass(api: Api, repo: str, run: Run) -> tuple[bool, list[OutOfTime]]:
+    """Whether a second try of the failed jobs can pass, and the jobs of a workflow of
+    one try that ran out of their time outside their steps: at the first attempt of a
+    run that started, and for a workflow of one try only when each job that failed
+    failed outside the code, as the second try then repeats nothing of the failure,
+    whether the run ended as a failure or GitHub cancelled it at its time limit."""
     if run.deserves_second_try():
-        return True
+        return True, []
+    if (
+        run.attempt != 1
+        or run.name not in ONE_TRY
+        or run.conclusion not in ("failure", "timed_out")
+    ):
+        return False, []
+    found = outside_the_code(api, repo, run)
+    return found is not None, found or []
+
+
+def seconds() -> float:
+    """The clock of the look back; a test replaces it."""
+    return monotonic()
+
+
+def earlier_time_outs(
+    api: Api, repo: str, run: Run, names: Collection[str]
+) -> tuple[dict[str, list[tuple[Run, str]]], str]:
+    """The runs of the workflow on the branch of the days of RECURRING before the run,
+    at a later attempt, whose first attempt had a job of one of the names, without the
+    values of its matrix, that ran out of its time outside its steps at a place of
+    places_of, by that name, the newest first; and, when the look stopped short, how
+    far back it reached and why. It reads up to MOST_PAGES pages of runs, and only of
+    a run at a later attempt the jobs of its first attempt and the annotations of its
+    cancelled jobs of the names. It stops after a call that GitHub kept failing, and
+    once LOOK_BACK_TIME is up."""
+    since = run.created - RECURRING
+    start = seconds()
+    later: list[Run] = []
+    reached = run.created
+    why = ""
+    for page in range(1, MOST_PAGES + 1):
+        try:
+            listed = api.get(
+                f"repos/{repo}/actions/workflows/{run.workflow}/runs"
+                f"?branch={urllib.parse.quote(run.branch)}"
+                f"&created=%3E%3D{since.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+                f"&exclude_pull_requests=true&per_page={github.PAGE}&page={page}"
+            )
+        except GitHubError:
+            # The runs of the pages before are looked at all the same.
+            why = "as GitHub kept failing"
+            break
+        items = [Run.of(item) for item in (listed or {}).get("workflow_runs", [])]
+        later += [
+            item
+            for item in items
+            if item.attempt > 1 and item.id < run.id and item.created >= since
+        ]
+        if len(items) < github.PAGE:
+            break
+        reached = items[-1].created
+        if seconds() - start >= LOOK_BACK_TIME:
+            # The list took the time, and the look below stops at its first run.
+            why = f"as its time of {LOOK_BACK_TIME} seconds was up"
+            break
+        if page == MOST_PAGES:
+            why = f"as it reads {MOST_PAGES * github.PAGE:,} runs at most"
+    found: dict[str, list[tuple[Run, str]]] = {}
+    last = run.created
+    places = places_of(run)
+    for earlier in later:
+        if seconds() - start >= LOOK_BACK_TIME:
+            reached, why = last, f"as its time of {LOOK_BACK_TIME} seconds was up"
+            break
+        try:
+            for job in jobs_of(api, repo, earlier.id, 1):
+                name = base_name(str(job["name"]))
+                if job.get("conclusion") != "cancelled" or name not in names:
+                    continue
+                annotations = api.get(
+                    f"repos/{repo}/check-runs/{job['id']}/annotations?per_page=50"
+                )
+                place = where_it_ran_out(job, messages_of(annotations or []))
+                if place in places:
+                    found.setdefault(name, []).append((earlier, str(place)))
+        except GitHubError:
+            reached, why = last, "as GitHub kept failing"
+            break
+        last = earlier.created
+    short = f"the runs before reached back only to {moment(reached)}, {why}"
+    return found, short if why else ""
+
+
+def healed(found: Sequence[OutOfTime]) -> str:
+    """What the line of the run says of the jobs that ran out of their time outside
+    their steps."""
+    parts = [
+        f"the job {own_name(item.job)} ran out of its time {PLACES[item.place]}"
+        for item in found
+    ]
+    return f"{' and '.join(parts)}, outside the code"
+
+
+def own_name(job: str) -> str:
+    """The name of a job without that of the job of its caller, such as Read the record
+    of the reported alerts for Findings / Read the record of the reported alerts."""
+    return job.rsplit(" / ", 1)[-1]
+
+
+def third_time(
+    run: Run,
+    found: Sequence[OutOfTime],
+    earlier: Mapping[str, Sequence[tuple[Run, str]]],
+) -> str:
+    """The first sentences of the issue about a time-out outside the code that came
+    back for the third time in the days of RECURRING, or nothing when none did."""
+    sentences = []
+    for item in found:
+        times = [(run, item.place), *earlier.get(base_name(item.job), [])]
+        if len(times) < THIRD_TIME:
+            continue
+        runs = [f"{each.link()} {PLACES[place]}" for each, place in times]
+        count = (
+            "for the third time" if len(times) == THIRD_TIME else f"{len(times)} times"
+        )
+        sentences.append(
+            f"The job {code(own_name(item.job))} ran out of its time outside the code "
+            f"{count} in {RECURRING.days} days: in {', in '.join(runs[:-1])} and in "
+            f"{runs[-1]}."
+        )
+    if not sentences:
+        return ""
     return (
-        run.attempt == 1
-        and run.conclusion == "failure"
-        and run.name in ONE_TRY
-        and stopped_by_harden_runner(api, repo, run, every=True)
+        f"{' '.join(sentences)} The code of the workflow failed in none of them, and "
+        "the bot runs the failed jobs once more each time, so what is left is to find "
+        "what keeps the runner or GitHub from finishing the job, as the runner that "
+        "hung after the last step of short jobs behind Harden-Runner did in November "
+        "2026."
     )
 
 
@@ -754,7 +1055,12 @@ def look_at(
     issue = issues.get(run.key)
     if run.conclusion == PASSED:
         if issue is None:
-            return "passes"
+            if run.attempt == 1:
+                return "passes"
+            return (
+                f"passes at attempt {run.attempt}, which healed the failure of attempt "
+                f"{run.attempt - 1}"
+            )
         # The end of an older run may come after that of the failure: ids only grow.
         if run.id < int(issue.state.get("run") or 0):
             return f"passes, in a run older than the failure of #{issue.number}"
@@ -767,11 +1073,17 @@ def look_at(
             )
         failed = int(issue.state.get("failed") or 0)
         runs = "1 failed run" if failed == 1 else f"{failed} failed runs"
+        third = (
+            f" It was the third time in {RECURRING.days} days that a job of it ran out "
+            "of its time outside the code, so look out for the next one."
+            if issue.state.get("third")
+            else ""
+        )
         close_issue(
             api,
             repo,
             issue.number,
-            f"Passes again in {run.link()}, after {runs}.",
+            f"Passes again in {run.link()}, after {runs}.{third}",
         )
         return f"passes again: closed #{issue.number}"
     # A job that hangs until its time limit, as one behind Harden-Runner can, even after
@@ -781,19 +1093,39 @@ def look_at(
     if run.conclusion not in FAILED:
         return f"ended as {run.conclusion or run.status}: no failure"
     note = ""
-    if second_try_can_pass(api, repo, run):
+    third = ""
+    can, outside = second_try_can_pass(api, repo, run)
+    if can:
         if second_try:
+            # The second try comes first, so that a slow look back can't keep it from
+            # the job of the bot. Then, of a job that ran out of its time outside its
+            # steps, the bot counts the earlier times: from the third, it reports it
+            # as well.
             tried = run_again(api, repo, run)
-            if tried is not None:
-                return (
-                    "failed: runs the failed jobs once more"
-                    if tried
-                    else "failed: another bot runs it again"
+            earlier, short = (
+                earlier_time_outs(
+                    api, repo, run, {base_name(item.job) for item in outside}
                 )
-            note = " (GitHub refused to run it again)"
+                if outside
+                else ({}, "")
+            )
+            third = third_time(run, outside, earlier)
+            if short:
+                note = f"; {short}"
+            if tried is not None:
+                what = (
+                    "runs the failed jobs once more"
+                    if tried
+                    else "another bot runs it again"
+                )
+                line = f"{healed(outside)}: {what}" if outside else f"failed: {what}"
+                if third:
+                    line += f", and {report(api, repo, branch, run, issue, third)}"
+                return line + note
+            note = f" (GitHub refused to run it again){note}"
         elif now - run.updated < SECOND_TRY_TIME:
             return "failed: its second try may still come"
-    return report(api, repo, branch, run, issue) + note
+    return report(api, repo, branch, run, issue, third) + note
 
 
 def watch_run(
@@ -910,8 +1242,8 @@ def watch_stop(api: Api, repo: str, run_id: int) -> tuple[str, bool]:
         return f"{run.name}: ended as {run.conclusion}, nothing to do.", True
     if not stopped_by_harden_runner(api, repo, run):
         return (
-            f"{run.name}: Harden-Runner stopped no job of {run.link()}, which stays "
-            "failed.",
+            f"{run.name}: {stopper(run)} stopped no job of {run.link()}, which "
+            "stays failed.",
             True,
         )
     text, done = again_after_a_stop(api, repo, run)
@@ -924,12 +1256,12 @@ def again_after_a_stop(api: Api, repo: str, run: Run) -> tuple[str, bool]:
     tried = run_again(api, repo, run)
     if tried is None:
         return (
-            f"Harden-Runner stopped a job of {run.link()}, and GitHub refused to run "
-            "it again",
+            f"{stopper(run)} stopped a job of {run.link()}, and GitHub refused to "
+            "run it again",
             False,
         )
     again = "its failed jobs run once more" if tried else "another bot runs it again"
-    return f"Harden-Runner stopped a job of {run.link()}, so {again}", True
+    return f"{stopper(run)} stopped a job of {run.link()}, so {again}", True
 
 
 # ---------------------------------------------------------------- the daily look
@@ -1898,9 +2230,9 @@ def problem_of(entry: Mapping[str, Any]) -> Problem:
     )
 
 
-def renovate_problems(lines: Iterable[str]) -> dict[Problem, int]:
-    """The warnings and errors of Renovate's log in JSON, each with how often it came."""
-    problems: dict[Problem, int] = {}
+def renovate_entries(lines: Iterable[str]) -> list[dict[str, Any]]:
+    """The lines of Renovate's log in JSON that are warnings or errors."""
+    entries = []
     for line in lines:
         try:
             entry = json.loads(line)
@@ -1909,11 +2241,152 @@ def renovate_problems(lines: Iterable[str]) -> dict[Problem, int]:
         if not isinstance(entry, dict):
             continue
         level = entry.get("level")
-        if not isinstance(level, int) or level < 40:
-            continue
+        if isinstance(level, int) and level >= 40:
+            entries.append(entry)
+    return entries
+
+
+def counted(entries: Iterable[Mapping[str, Any]]) -> dict[Problem, int]:
+    """The problems of the lines of a log, each with how often it came."""
+    problems: dict[Problem, int] = {}
+    for entry in entries:
         problem = problem_of(entry)
         problems[problem] = problems.get(problem, 0) + 1
     return problems
+
+
+def renovate_problems(lines: Iterable[str]) -> dict[Problem, int]:
+    """The warnings and errors of Renovate's log in JSON, each with how often it came."""
+    return counted(renovate_entries(lines))
+
+
+@dataclass(frozen=True)
+class Needless:
+    """A warning of Renovate that needs nothing on one branch, in one repository or,
+    without one, in any, with what it is and why it needs nothing."""
+
+    message: str
+    branch: str
+    repository: str
+    what: str
+    why: str
+
+
+# The warnings that need nothing, when no other warning or error of the repository has
+# the same branch and GitHub answers that no pull request of the branch is open
+# (decision 1130). Each is the empty commit of a weekly refresh after which
+# `locks --refresh` took every version back to that of main: no version is both newer
+# and a week old. Never by the message alone, as logLevelRemap would: on the branch of
+# a security update, the empty commit is a fix that can't land, and on a refresh while
+# its pull request is open, a commit that Renovate couldn't make.
+NEEDLESS = (
+    # Renovate's branch of the refresh of pip-compile, its branchTopic
+    # pip-compile-refresh (lib/modules/manager/pip-compile/index.ts), on which
+    # `locks --refresh` runs in every repository.
+    Needless(
+        EMPTY_COMMIT,
+        "renovate/pip-compile-refresh",
+        "",
+        "an empty commit",
+        "the weekly refresh has no version a week old to bring",
+    ),
+    # The group of the blueprint's own .github/renovate.json5 that refreshes
+    # requirements-dev.txt, a lock file of pip-compile, alone. Not every branch of a
+    # group: one of npm, such as that of .github/a11y, runs no `locks --refresh`.
+    Needless(
+        EMPTY_COMMIT,
+        "renovate/lock-file-maintenance-the-tools-of-the-blueprint's-tests",
+        "Dennis-Otto/repo-blueprint",
+        "an empty commit",
+        "the weekly refresh has no version a week old to bring",
+    ),
+)
+
+
+def needless_of(entry: Mapping[str, Any]) -> Needless | None:
+    """The warning that needs nothing that a line of the log is, if any."""
+    repository = str(entry.get("repository") or "")
+    return next(
+        (
+            needless
+            for needless in NEEDLESS
+            if entry.get("msg") == needless.message
+            and entry.get("branch") == needless.branch
+            and needless.repository in ("", repository)
+        ),
+        None,
+    )
+
+
+def no_pull_request(
+    api: Api, repository: str, branch: str, asked: dict[tuple[str, str], bool]
+) -> bool:
+    """Whether GitHub answers that no pull request of the branch of a repository is
+    open; not when it doesn't answer, or answers 404, as for a private repository that
+    the token of the job can't read."""
+    if (repository, branch) not in asked:
+        owner = repository.partition("/")[0]
+        try:
+            pulls = api.get(
+                f"repos/{repository}/pulls?state=open"
+                f"&head={owner}:{urllib.parse.quote(branch)}"
+            )
+        except GitHubError:
+            pulls = None
+        asked[repository, branch] = pulls == []
+    return asked[repository, branch]
+
+
+def left_out(
+    api: Api, entries: Sequence[Mapping[str, Any]], known: dict[str, bool]
+) -> tuple[list[Mapping[str, Any]], dict[tuple[Needless, str], int]]:
+    """The lines of the log that are problems, and those that need nothing, by what
+    they are and their repository, with how often each came. Such a line needs nothing
+    only in a public repository, when no other warning or error of the repository has
+    its branch, and GitHub answers that no pull request of its branch is open."""
+    messages: dict[tuple[str, str], set[str]] = {}
+    for entry in entries:
+        key = (str(entry.get("repository") or ""), str(entry.get("branch") or ""))
+        messages.setdefault(key, set()).add(str(entry.get("msg") or ""))
+    asked: dict[tuple[str, str], bool] = {}
+    problems: list[Mapping[str, Any]] = []
+    left: dict[tuple[Needless, str], int] = {}
+    for entry in entries:
+        needless = needless_of(entry)
+        repository = str(entry.get("repository") or "")
+        if (
+            needless
+            and messages[repository, needless.branch] == {needless.message}
+            and is_public(api, repository, known)
+            and no_pull_request(api, repository, needless.branch, asked)
+        ):
+            left[needless, repository] = left.get((needless, repository), 0) + 1
+        else:
+            problems.append(entry)
+    return problems, left
+
+
+def joined(names: Sequence[str]) -> str:
+    """Names in a sentence: a, b and c."""
+    return " and ".join(filter(None, (", ".join(names[:-1]), names[-1])))
+
+
+def left_out_text(left: Mapping[tuple[Needless, str], int]) -> str:
+    """What the bot left out of the problems, and why."""
+    if not left:
+        return ""
+    repositories: dict[Needless, list[str]] = {}
+    for needless, repository in sorted(left, key=lambda key: key[1]):
+        repositories.setdefault(needless, []).append(repository)
+    parts = [
+        f"{needless.what} of {needless.branch} in {joined(repositories[needless])}: "
+        f"{needless.why}, and no pull request of the branch is open"
+        for needless in NEEDLESS
+        if needless in repositories
+    ]
+    count = sum(left.values())
+    warnings = "1 warning that needs" if count == 1 else f"{count} warnings that need"
+    return f"Renovate logged {warnings} nothing: {'; '.join(parts)}.\n\n"
 
 
 def is_public(api: Api, name: str, known: dict[str, bool]) -> bool:
@@ -1980,14 +2453,33 @@ def renovate_report(
     """Keeps the one issue with Renovate's problems current from the logs of a run, one
     for each repository where the blueprint runs Renovate for several. A run that isn't
     complete missed a repository, which may be the one with the problems, so it doesn't
-    count towards closing the issue."""
+    count towards closing the issue. A warning that needs nothing, of NEEDLESS, is no
+    problem: the summary names it instead (decision 1130)."""
     written = [log for log in logs if log.is_file()]
     if not written:
         return "Renovate wrote no log of problems; the issue stays as it is.\n"
-    problems = renovate_problems(
+    entries = renovate_entries(
         line for log in written for line in log.read_text("utf-8").splitlines()
     )
     known: dict[str, bool] = {}
+    kept, left = left_out(api, entries, known)
+    return left_out_text(left) + issue_of_problems(
+        api, repo, counted(kept), known, run, complete=complete, others=bool(left)
+    )
+
+
+def issue_of_problems(
+    api: Api,
+    repo: str,
+    problems: Mapping[Problem, int],
+    known: dict[str, bool],
+    run: str,
+    *,
+    complete: bool,
+    others: bool,
+) -> str:
+    """Opens, updates or closes the issue of Renovate's problems, and says what it did;
+    others says that the bot left warnings out that need nothing."""
     shown = {
         problem: count
         for problem, count in problems.items()
@@ -1997,6 +2489,8 @@ def renovate_report(
     issue = open_issues(api, repo).get(RENOVATE)
     if not problems:
         if issue is None:
+            if others:
+                return "Renovate logged no other warning and no error.\n"
             return "Renovate logged no warning and no error.\n"
         if not complete:
             return (

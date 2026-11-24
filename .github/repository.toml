@@ -83,7 +83,6 @@ patterns_allowed = [
   # Run by the reusable workflow of the issue assistant.
   "anthropics/claude-code-action@*",
   "astral-sh/setup-uv@*",
-  "DavidAnson/markdownlint-cli2-action@*",
   "Dennis-Otto/issue-assistant/.github/workflows/reusable-findings.yml@*",
   "Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-assistant.yml@*",
   "Dennis-Otto/issue-assistant/.github/workflows/reusable-issue-lifecycle.yml@*",

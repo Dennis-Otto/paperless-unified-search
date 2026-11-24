@@ -109,10 +109,23 @@ markdown_extensions:
   tables: {}
   toc:
     permalink: true
-    # Anchors as GitHub makes them, so that links to a heading work in both places.
+    # Anchors as GitHub makes them on the page of the file, so that a link to a
+    # heading works in both places: lower case, every character but a letter, a
+    # digit, _, - and a space dropped, and each space a hyphen. Python-Markdown makes
+    # every run of whitespace one space before this slugify sees the text, so the
+    # extension github_anchors below hands it the text of each heading as GitHub
+    # reads it: a no-break space stays, to be dropped, two spaces make two hyphens,
+    # also around inline HTML such as <br>, and an emoji such as :dart: counts with
+    # its name. An id that a page gives a heading itself, {#id}, stays, and a
+    # repeated heading gets _1, _2, where GitHub numbers it -1, -2.
     slugify: !!python/object/apply:pymdownx.slugs.slugify
       kwds:
         case: lower
+  # The extension of .github/github_anchors.py, with no options. MkDocs and Zensical
+  # import an extension by its name before anything else runs, so this tag puts
+  # .github on the path of Python as they read this file, from the root of the
+  # repository, where they run and where pymdownx.snippets takes its files from.
+  github_anchors: !!python/object/apply:site.addsitedir [.github]
   pymdownx.details: {}
   pymdownx.emoji:
     emoji_index: !!python/name:material.extensions.emoji.twemoji

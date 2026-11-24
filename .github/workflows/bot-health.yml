@@ -6,33 +6,40 @@ name: Bot health
 # run of a bot or a scheduled workflow ends on the default branch, or the verification
 # of a release that someone published by hand or with a token, this bot runs its
 # failed jobs once more if a second try can pass, as it does with a job that GitHub
-# cancelled at its time limit; a failure that stays keeps one
-# issue per workflow open, with the label bot-failure, the failed jobs, their steps
-# and their first errors, and the next run that passes closes it once every job that
-# failed ran again in it, in every leg of its matrix, and passed: a run that skipped
-# such a job, as a push that only plans the screenshots, leaves it open. Every night it
-# also looks at the latest run of every workflow, those of the project and the
-# checks of main too, in case GitHub lost an event, and starts a workflow whose
-# schedule GitHub missed or switched off. A failure of Lint at a commit that the
-# branch has left says nothing any more, because a pull request reaches the branch
-# only when it passes Lint: it gets no issue, and an open one starts Lint by hand, so
-# that a run that passes closes it. The same look compares the social preview that
-# GitHub shows with .github/social-preview.png, which only a person can upload, and
-# keeps one issue open, Upload the new social preview, until they are the same, in
-# a public repository only, since GitHub shows no social preview of a private one;
-# its label is manual-step, not bot-failure, since nothing fails there. The same look
-# starts the blueprint bot when the blueprint has a newer release than
-# .copier-answers.yml names and the pull request of the bot doesn't bring it yet, so
-# that a repository that the Rollout doesn't start gets it within a day. Runs
-# of pull requests start nothing here, as the filter of the branches leaves them out
-# before GitHub makes a run, and neither does a run that GitHub couldn't start, as in
-# its outage of 9 November 2026: the nightly look runs it again once. A look that
-# GitHub keeps failing ends with a notice, not a failure (decision 0136).
+# cancelled at its time limit. Findings, Mutation, the property tests and the fuzzing
+# would only hide or repeat their failure, so they get it only when every job that
+# failed failed outside the code: Harden-Runner stopped it, or GitHub cancelled it at
+# its time limit in the set-up of the job, before a step of its own ran, and in
+# Findings, whose jobs take under a minute, also in the runner after its last step.
+# Such a time-out that comes back is reported from its third time in 7 days, by the
+# name of its job, while its jobs still run once more (decision 1118). A failure that
+# stays keeps one issue per workflow open, with the label bot-failure, the failed jobs,
+# their steps and their first errors, and the next run that passes closes it once every
+# job that failed ran again in it, in every leg of its matrix, and passed: a run that
+# skipped such a job, as a push that only plans the screenshots, leaves it open. Every
+# night it also looks at the latest run of every workflow, those of the project and the
+# checks of main too, in case GitHub lost an event, and starts a workflow whose schedule
+# GitHub missed or switched off. A failure of Lint at a commit that the branch has left
+# says nothing any more, because a pull request reaches the branch only when it passes
+# Lint: it gets no issue, and an open one starts Lint by hand, so that a run that passes
+# closes it. The same look compares the social preview that GitHub shows with
+# .github/social-preview.png, which only a person can upload, and keeps one issue open,
+# Upload the new social preview, until they are the same, in a public repository only,
+# since GitHub shows no social preview of a private one; its label is manual-step, not
+# bot-failure, since nothing fails there. The same look starts the blueprint bot when
+# the blueprint has a newer release than .copier-answers.yml names and the pull request
+# of the bot doesn't bring it yet, so that a repository that the Rollout doesn't start
+# gets it within a day. Runs of pull requests start nothing here, as the filter of the
+# branches leaves them out before GitHub makes a run, and neither does a run that GitHub
+# couldn't start, as in its outage of 9 November 2026: the nightly look runs it again
+# once. A look that GitHub keeps failing ends with a notice, not a failure (decision
+# 0136).
 # The bots of events, Area labels, Welcome, Dependabot maintenance and Commands, also
 # those of a pull request or of a fork, and the workflows that keep an issue of their
 # own, such as Newest Node, get neither a second try nor an issue here, unless
-# Harden-Runner stopped a job of their first attempt: then their failed jobs run once
-# more, as nothing else would run them again (decision 0141). Their end starts nothing
+# Harden-Runner stopped a job of their first attempt, or a job of Newest PHP broke
+# before its tests ran: then their failed jobs run once more, as nothing else would run
+# them again (decisions 0141 and 1119). Their end starts nothing
 # here: a last job of theirs starts this bot by hand with the run, and only when a job
 # failed at their first attempt (decision 0176). Nothing follows the end of Bot health
 # itself, so the nightly look runs the failed jobs of its own runs of the last two
@@ -86,7 +93,7 @@ jobs:
       (github.event.workflow_run.event == 'release' && github.event.workflow_run.name == 'Release verification')) &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
       !contains(fromJSON('["pull_request", "pull_request_target"]'), github.event.workflow_run.event) &&
-      !contains(fromJSON('["Area labels", "Commands", "Dependabot maintenance", "Welcome", "Diagrams", "Newest Node", "Newest Python", "Next runner", "Issue assistant"]'), github.event.workflow_run.name) &&
+      !contains(fromJSON('["Area labels", "Commands", "Dependabot maintenance", "Welcome", "Diagrams", "Newest Node", "Newest PHP", "Newest Python", "Next runner", "Issue assistant"]'), github.event.workflow_run.name) &&
       contains(fromJSON('["success", "failure", "timed_out", "cancelled", "startup_failure"]'), github.event.workflow_run.conclusion)
     # One run at a time for each workflow, so that two ends never open two issues.
     concurrency:

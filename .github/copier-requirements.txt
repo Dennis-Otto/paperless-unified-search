@@ -16,9 +16,9 @@ copier==9.19.1 \
     --hash=sha256:1779270f5082b168982a4ec356afbca24545b3cf1ebb587d1dff843bb5bc9858 \
     --hash=sha256:3fe48c38a290c90dfa67cfc7811bc3f576c03f59d3a1e6a09a8d46c2f0403988
     # via -r requirements.in
-dunamai==1.26.4 \
-    --hash=sha256:13b2b2af2af44158ef02f22ae4ff1b280b221c2760bd0f5891ef58b884678754 \
-    --hash=sha256:dba10d5e116c68b81423ac9c9bc051ee9035786e7f964783fd0f354959754546
+dunamai==1.26.5 \
+    --hash=sha256:91099127a6a16dbcb08c941d5a07879d8b24eb2096368dc37750e681573eedc4 \
+    --hash=sha256:b1435d8d2b0aceef240cde8e8f6ba910e85b1aa0e22fa9e21454d2d22fb0a89c
     # via copier
 funcy==2.1 \
     --hash=sha256:290794186530c944f7e444d2e28b98f33a55685f2bfb9b7a61dac564decab8f8 \
