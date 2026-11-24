@@ -96,6 +96,7 @@ A change of the app, `appinfo/` or `lib/`, or of the mock of Paperless, `tests/e
 PAPERLESS=3 bash tests/e2e/paperless-contract.sh
 PAPERLESS=2 bash tests/e2e/paperless-contract.sh
 ```
+
 =======
 `composer.json` requires the PHP extensions that Nextcloud requires of every server, and `composer install` stops while one of them is missing. Linux and the dev container of `.devcontainer/`, below, have them. A PHP for Windows loads curl, fileinfo, mbstring and openssl only once its `php.ini` turns them on with a line `extension=<name>` each, or run the checks in the dev container.
 >>>>>>> after updating
