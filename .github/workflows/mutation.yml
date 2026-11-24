@@ -315,7 +315,7 @@ jobs:
         timeout-minutes: 5
         with:
           php-version: ${{ steps.php.outputs.version }}
-          extensions: dom, libxml, mbstring, xml
+          extensions: ctype, curl, dom, fileinfo, filter, libxml, mbstring, openssl, pdo, session, simplexml, xml, xmlreader, xmlwriter, zlib
           coverage: pcov
           tools: composer:v2
       # Through the API with the token of the job, checked by its sha256 (decision 0133),

@@ -38,6 +38,10 @@ jobs:
     name: lint
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      # The image of markdownlint-cli2 of the Markdown and of its fix, by the tag and
+      # digest of scripts/markdownlint.sh, which Renovate moves in both at once.
+      MARKDOWNLINT: davidanson/markdownlint-cli2:v0.24.0@sha256:70ead7c0352d22d04bbe612cd96b54ec591538d8f4626cafe391bb2ecf3639ca
     steps:
       - name: Record the network traffic of the job
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -101,19 +105,33 @@ jobs:
             "$REUSE" lint
       # The files are in .markdownlint-cli2.jsonc, the rules in .markdownlint.jsonc.
       # Locally: bash scripts/markdownlint.sh, which scripts/check.sh runs, with the
-      # markdownlint-cli2 of this action, by the tag of its image.
+      # same image, by its tag, and the Variants workflow too (decision 1111). The
+      # image itself, as for actionlint and REUSE, without the network and as the
+      # user of the runner, whose files a fix keeps. Its problem matcher shows each
+      # finding at its line, in the files of the pull request too, for this step
+      # alone, as markdownlint-cli2 writes it, such as
+      # docs/index.md:3:1 error MD018/no-missing-space-atx No space after hash on atx
+      # style heading [Context: "#Broken heading"]
       - name: Lint the Markdown of every document
         id: markdown
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
-        uses: DavidAnson/markdownlint-cli2-action@696eb3f2509270d7b882d2aa68347bc676e7af34 # v25.0.0
-        with:
-          globs: "**/*.md"
+        timeout-minutes: 5
+        run: |
+          cat > "$RUNNER_TEMP/markdownlint.json" <<'EOF'
+          {"problemMatcher": [{"owner": "markdownlint", "pattern": [{"regexp": "^(.+?):(\\d+)(?::(\\d+))? (error|warning) (\\S+) (.+)$", "file": 1, "line": 2, "column": 3, "severity": 4, "code": 5, "message": 6}]}]}
+          EOF
+          echo "::add-matcher::$RUNNER_TEMP/markdownlint.json"
+          status=0
+          docker run --rm --network none --user "$(id -u):$(id -g)" --volume "$PWD:/workdir" \
+            "$MARKDOWNLINT" "**/*.md" || status=$?
+          echo "::remove-matcher owner=markdownlint::"
+          exit "$status"
       # The labels, issue forms, workflows and notice of the issue assistant fit the
       # templates of its release: https://github.com/Dennis-Otto/issue-assistant
       - name: Check the issue assistant's set-up
         id: issue-assistant
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' }}
-        uses: Dennis-Otto/issue-assistant@4ea27a590dc46faeecdceae0a02aa5b1b50da477 # v1.15.3
+        uses: Dennis-Otto/issue-assistant@fd539748326e8c9bc09245a3f228baae8c2af700 # v1.16.0
         with:
           command: check
       - name: Check the sign-off of every commit
@@ -261,10 +279,10 @@ jobs:
         if: ${{ !cancelled() && steps.head.outcome == 'success' }}
         # Findings that no command fixes stay for a person; the check failed already.
         continue-on-error: true
-        uses: DavidAnson/markdownlint-cli2-action@696eb3f2509270d7b882d2aa68347bc676e7af34 # v25.0.0
-        with:
-          globs: "**/*.md"
-          fix: true
+        timeout-minutes: 5
+        run: |
+          docker run --rm --network none --user "$(id -u):$(id -g)" --volume "$PWD:/workdir" \
+            "$MARKDOWNLINT" --fix "**/*.md"
       - name: Keep the files that markdownlint fixed
         id: fix
         if: ${{ !cancelled() && steps.head.outcome == 'success' }}

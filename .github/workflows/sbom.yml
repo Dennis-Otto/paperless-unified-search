@@ -26,8 +26,8 @@ jobs:
     env:
       # The syft of the SBOMs of a release (build-release.yml).
       # renovate: datasource=github-releases depName=anchore/syft extractVersion=^v(?<version>.+)$
-      SBOM_SYFT_VERSION: 1.57.1
-      SBOM_SYFT_SHA256: bf52519eb57f675d47c07d43213cb6dff6449f3d6d1147ff6701ed91f44eef0c
+      SBOM_SYFT_VERSION: 1.57.2
+      SBOM_SYFT_SHA256: ad92bd3ec1b94a3df01d4d0aec199afa9c42b72e86da436ff5f837914d32706b
     steps:
       - name: Record the network traffic of the job
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4

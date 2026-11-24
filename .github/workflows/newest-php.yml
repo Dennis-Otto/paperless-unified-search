@@ -1,0 +1,623 @@
+name: Newest PHP
+
+# The tests of a Nextcloud app with the newest PHP and with its oldest, while the CI
+# runs them with the PHP of the tools, config.platform.php of composer.json, and only
+# parses the code with the oldest (decision 1119): after every change of main and
+# every week. Not in pull requests: a new PHP breaks main and every pull request
+# alike, and the resolve for the oldest PHP depends on Packagist on the day. A
+# workflow of its own, so that its warning leaves the CI of main green. Since no pull
+# request shows the warning, a failure of the tests keeps one issue open, which names
+# each PHP that failed and which the weekly run closes once the tests pass again. A
+# failure before the tests is none of the app's and opens no issue.
+# https://github.com/Dennis-Otto/repo-blueprint
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "28 3 * * 6"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer commit of main makes the run for an older one moot.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+# The GitHub CLI of the jobs sends no telemetry to GitHub.
+env:
+  GH_TELEMETRY: "false"
+
+jobs:
+  # The locked tools on the newest PHP: what the next PHP breaks, months before a
+  # version of Nextcloud accepts it. Only PHPUnit: php-cs-fixer refuses a PHP newer than
+  # the syntax that it knows, and Psalm and the coverage stay with the CI.
+  newest:
+    name: tests (newest PHP)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # The PHP that the run tested, and how its tests ended: success or failure when
+    # they ran, and skipped or nothing when a step before them failed.
+    outputs:
+      version: ${{ steps.version.outputs.php }}
+      tests: ${{ steps.phpunit.outcome }}
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # setup-php looks up php-version: latest at the time of the run, in the list of
+      # versions on its default branch, not in the release that this workflow pins: a
+      # PHP that the pinned release still sets up as a development build would come in
+      # that way, as 8.6 did with 2.40.0. The list of the pinned release, which GitHub
+      # downloaded with the action before the first step, names the newest PHP that the
+      # release sets up as a final release; Renovate moves it with the pin.
+      - name: Find the newest PHP that the pinned setup-php knows
+        id: newest
+        run: |
+          shopt -s nullglob
+          lists=("${RUNNER_WORKSPACE%/*}"/_actions/shivammathur/setup-php/*/src/configs/php-versions.json)
+          if ((${#lists[@]} != 1)); then
+            echo "::error title=No list of the versions of setup-php::The job found ${#lists[@]} lists of the versions of PHP of setup-php where GitHub keeps the actions of a job, where it expected one."
+            exit 1
+          fi
+          php="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("latest", ""))' "${lists[0]}")"
+          if [[ ! "$php" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            echo "::error title=No newest PHP in the list of setup-php::The list of the versions of setup-php names no PHP as latest: \"$php\"."
+            exit 1
+          fi
+          echo "php=$php" >> "$GITHUB_OUTPUT"
+      # setup-php and Composer download from GitHub and Packagist, which fail now and
+      # then: a second try half a minute later, as for the uploads (decision 1096).
+      - name: Set up the newest PHP
+        id: setup
+        continue-on-error: true
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: ${{ steps.newest.outputs.php }}
+          extensions: ctype, curl, dom, fileinfo, filter, libxml, mbstring, openssl, pdo, session, simplexml, xml, xmlreader, xmlwriter, zlib
+          coverage: none
+          tools: composer:v2
+      - name: Give setup-php half a minute
+        if: steps.setup.outcome == 'failure'
+        run: sleep 30
+      - name: Set up the newest PHP once more
+        id: setup_again
+        if: steps.setup.outcome == 'failure'
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: ${{ steps.newest.outputs.php }}
+          extensions: ctype, curl, dom, fileinfo, filter, libxml, mbstring, openssl, pdo, session, simplexml, xml, xmlreader, xmlwriter, zlib
+          coverage: none
+          tools: composer:v2
+      - name: Name the PHP of the run
+        id: version
+        run: |
+          php="$(php -r 'echo PHP_VERSION;')"
+          echo "php=$php" >> "$GITHUB_OUTPUT"
+          echo "The tests run with PHP $php, the newest final release of PHP that the pinned setup-php knows, with the tools of composer.lock." >> "$GITHUB_STEP_SUMMARY"
+      - name: Find the cache of Composer
+        id: composer
+        run: echo "files=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+      - name: Restore the packages of Composer from the cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.composer.outputs.files }}
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+      # The lock as it is, without --ignore-platform-req: config.platform.php makes
+      # Composer resolve for the PHP of the tools, and its check of the platform only
+      # asks for a PHP at least that old.
+      - name: Install the locked tools
+        id: install
+        continue-on-error: true
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Give Composer half a minute
+        if: steps.install.outcome == 'failure'
+        run: sleep 30
+      - name: Install the locked tools once more
+        id: install_again
+        if: steps.install.outcome == 'failure'
+        run: composer install --no-interaction --prefer-dist --no-progress
+      # Without coverage, which pcov measures in the CI; each test that fails becomes an
+      # annotation at the line where it failed.
+      - name: Run the tests
+        id: phpunit
+        run: |
+          if ! vendor/bin/phpunit --no-coverage --log-junit build/phpunit.xml; then
+            script=.github/blueprint.py
+            [[ -f "$script" ]] || script=blueprint.py
+            python3 "$script" annotate phpunit build/phpunit.xml < /dev/null
+            exit 1
+          fi
+      # Only for a download that failed at both tries: a failure that comes back every
+      # time, such as a list of setup-php that moved, stays a plain failure.
+      - name: Say that nothing in the code is wrong
+        if: failure() && (steps.setup_again.outcome == 'failure' || steps.install_again.outcome == 'failure')
+        run: echo "::error title=Nothing in the code is wrong::The job failed before its tests ran, so nothing in the code is wrong; setup-php or Composer failed at both tries, mostly in an outage. The bot-health bot runs the job once more, and no issue opens."
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.toml.
+      - name: Explain the failure
+        if: failure()
+        env:
+          CHECK: "tests (newest PHP)"
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          [[ -f "$script" ]] || { echo "No blueprint.py: the checkout failed, so the PR coach has nothing to explain."; exit 0; }
+          python3 "$script" coach explain "$CHECK"
+
+  # The code on the oldest PHP of appinfo/info.xml, which the step Oldest PHP of the CI
+  # only parses. The tools of composer.lock need the PHP of the tools, so this job
+  # resolves the newest PHPUnit that runs on the oldest PHP in its own checkout, which
+  # nothing commits. An app whose oldest PHP is that of its tools skips its steps:
+  # composer.json belongs to the project, so every app has the job.
+  oldest:
+    name: tests (oldest PHP)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # The oldest PHP, the PHPUnit that the job resolved for it, and how the tests
+    # ended: same when the oldest PHP is that of the tools, nothing when Composer found
+    # no release for it, success or failure when they ran, and skipped or nothing when
+    # a step before them failed.
+    outputs:
+      version: ${{ steps.php.outputs.oldest }}
+      phpunit: ${{ steps.resolve.outputs.phpunit }}
+      tests: >-
+        ${{ steps.php.outcome == 'success' && steps.php.outputs.oldest == steps.php.outputs.tools && 'same'
+        || steps.resolve.outputs.found == 'none' && 'nothing' || steps.phpunit.outcome }}
+    steps:
+      - name: Record the network traffic of the job
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The same versions as in the CI.
+      - name: Find the PHP of the tools and the oldest PHP of the app
+        id: php
+        run: |
+          python3 - >> "$GITHUB_OUTPUT" <<'EOF'
+          import json
+          import sys
+          from xml.etree import ElementTree
+
+
+          def minor(version):
+              return ".".join(version.split(".")[:2])
+
+
+          with open("composer.json", encoding="utf-8") as manifest:
+              platform = json.load(manifest).get("config", {}).get("platform", {})
+          php = ElementTree.parse("appinfo/info.xml").find("dependencies/php")
+          oldest = minor(php.get("min-version", "")) if php is not None else ""
+          tools = minor(platform.get("php", "")) or oldest
+          if not tools:
+              sys.exit("Neither config.platform.php of composer.json nor appinfo/info.xml names a PHP.")
+          print(f"tools={tools}")
+          print(f"oldest={oldest or tools}")
+          EOF
+      - name: Say that the CI tests the oldest PHP
+        if: steps.php.outputs.oldest == steps.php.outputs.tools
+        env:
+          OLDEST: ${{ steps.php.outputs.oldest }}
+        run: echo "The oldest PHP of the app, PHP $OLDEST, is the PHP of its tools, with which the CI runs the tests, so this job has nothing to do." >> "$GITHUB_STEP_SUMMARY"
+      - name: Set up the oldest PHP of the app
+        id: setup
+        if: steps.php.outputs.oldest != steps.php.outputs.tools
+        continue-on-error: true
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: ${{ steps.php.outputs.oldest }}
+          extensions: ctype, curl, dom, fileinfo, filter, libxml, mbstring, openssl, pdo, session, simplexml, xml, xmlreader, xmlwriter, zlib
+          coverage: none
+          tools: composer:v2
+      - name: Give setup-php half a minute
+        if: steps.setup.outcome == 'failure'
+        run: sleep 30
+      - name: Set up the oldest PHP of the app once more
+        id: setup_again
+        if: steps.setup.outcome == 'failure'
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: ${{ steps.php.outputs.oldest }}
+          extensions: ctype, curl, dom, fileinfo, filter, libxml, mbstring, openssl, pdo, session, simplexml, xml, xmlreader, xmlwriter, zlib
+          coverage: none
+          tools: composer:v2
+      - name: Find the cache of Composer
+        id: composer
+        if: steps.php.outputs.oldest != steps.php.outputs.tools
+        run: echo "files=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+      - name: Restore the packages of Composer from the cache
+        if: steps.php.outputs.oldest != steps.php.outputs.tools
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.composer.outputs.files }}
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+      # Only in this checkout: the tools that the tests don't run go, so that one
+      # without a release for the oldest PHP can't stop the job; config.platform.php
+      # becomes the PHP of the run; and PHPUnit may also be a release that runs on it,
+      # from 10.5 on, for which phpunit.xml is written (decision 0035). Composer picks the
+      # newest that runs. It exits with 2 when it finds none, and a download that fails
+      # gets a second try, after which the step says that the download failed.
+      - name: Resolve the newest PHPUnit for the oldest PHP
+        id: resolve
+        if: steps.php.outputs.oldest != steps.php.outputs.tools
+        run: |
+          php="$(php -r 'echo PHP_VERSION;')"
+          # The constraint of PHPUnit first, then the tools to remove, each ended by NUL.
+          python3 - > "$RUNNER_TEMP/dev" <<'EOF'
+          import json
+          from fnmatch import fnmatchcase
+
+          TOOLS = ("friendsofphp/php-cs-fixer", "infection/*", "nextcloud/coding-standard", "psalm/*", "vimeo/psalm")
+          with open("composer.json", encoding="utf-8") as manifest:
+              dev = json.load(manifest).get("require-dev", {})
+          print(dev.get("phpunit/phpunit", ""), end="\0")
+          for name in dev:
+              if any(fnmatchcase(name, tool) for tool in TOOLS):
+                  print(name, end="\0")
+          EOF
+          mapfile -d '' -t dev < "$RUNNER_TEMP/dev"
+          if ((${#dev[@]} > 1)); then
+            composer remove --dev --no-update --no-interaction "${dev[@]:1}"
+          fi
+          composer config platform.php "$php"
+          composer require --dev --no-update --no-interaction "phpunit/phpunit:^10.5 || ^11.5${dev[0]:+ || ${dev[0]}}"
+          for try in 1 2; do
+            status=0
+            composer update --no-interaction --prefer-dist --no-progress > "$RUNNER_TEMP/resolve.log" 2>&1 || status=$?
+            cat "$RUNNER_TEMP/resolve.log"
+            ((status != 0)) || break
+            if ((status == 2)); then
+              packages="$(grep -oE 'Root composer.json requires [^ ]+' "$RUNNER_TEMP/resolve.log" | cut -d ' ' -f 4 | sort -u | paste -sd ' ' - || true)"
+              echo "found=none" >> "$GITHUB_OUTPUT"
+              echo "::error title=No release for PHP $php::Composer found no release of ${packages:-a package of require-dev} that runs on PHP $php, the oldest PHP of appinfo/info.xml. Test the oldest PHP in another way, or raise min-version of Nextcloud in appinfo/info.xml to a version that needs a newer PHP."
+              exit 1
+            fi
+            if ((try == 2)); then
+              echo "download=failed" >> "$GITHUB_OUTPUT"
+              exit "$status"
+            fi
+            echo "Composer failed with $status, so the job tries again in 30 seconds."
+            sleep 30
+          done
+          phpunit="$(vendor/bin/phpunit --version | awk 'NR == 1 { print $2 }')"
+          echo "phpunit=$phpunit" >> "$GITHUB_OUTPUT"
+          echo "The tests run with PHP $php, the oldest PHP of appinfo/info.xml, and PHPUnit $phpunit, which Composer resolved for it in place of the PHPUnit of composer.lock: a test that needs an API of a newer PHPUnit fails for that reason." >> "$GITHUB_STEP_SUMMARY"
+      - name: Run the tests
+        id: phpunit
+        if: steps.php.outputs.oldest != steps.php.outputs.tools
+        run: |
+          if ! vendor/bin/phpunit --no-coverage --log-junit build/phpunit.xml; then
+            script=.github/blueprint.py
+            [[ -f "$script" ]] || script=blueprint.py
+            python3 "$script" annotate phpunit build/phpunit.xml < /dev/null
+            exit 1
+          fi
+      # Only for a download that failed at both tries: a failure that comes back every
+      # time, such as no release for the oldest PHP, stays a plain failure.
+      - name: Say that nothing in the code is wrong
+        if: failure() && (steps.setup_again.outcome == 'failure' || steps.resolve.outputs.download == 'failed')
+        run: echo "::error title=Nothing in the code is wrong::The job failed before its tests ran, so nothing in the code is wrong; setup-php or Composer failed at both tries, mostly in an outage. The bot-health bot runs the job once more, and no issue opens."
+      # The PR coach: what failed, why it matters and how to fix it, in the summary
+      # of the check and as its annotation, from .github/checks.toml.
+      - name: Explain the failure
+        if: failure()
+        env:
+          CHECK: "tests (oldest PHP)"
+        run: |
+          script=.github/blueprint.py
+          [[ -f "$script" ]] || script=blueprint.py
+          [[ -f "$script" ]] || { echo "No blueprint.py: the checkout failed, so the PR coach has nothing to explain."; exit 0; }
+          python3 "$script" coach explain "$CHECK"
+
+  # The issue of the warning: a failure of the tests on main opens it or brings it up
+  # to date, and the weekly run closes it once the tests pass with the newest PHP and
+  # pass or have nothing to do with the oldest. A job that broke before its tests, or
+  # didn't run, as in the blueprint itself, changes nothing.
+  report:
+    name: report
+    needs: [newest, oldest]
+    if: >-
+      !cancelled() && github.ref == 'refs/heads/main' &&
+      (needs.newest.outputs.tests == 'failure' ||
+      contains(fromJSON('["failure", "nothing"]'), needs.oldest.outputs.tests) ||
+      (github.event_name == 'schedule' && needs.newest.outputs.tests == 'success' &&
+      contains(fromJSON('["success", "same"]'), needs.oldest.outputs.tests)))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Block every host that the job doesn't need
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+      - name: Make sure that Harden-Runner blocks
+        id: blocks
+        # Harden-Runner goes on without its agent when the agent can't be downloaded, as
+        # in GitHub's outage of 8 November 2026, or doesn't start: the job would reach
+        # every host. It stops here instead, so that it can run again (decision 0134).
+        timeout-minutes: 1
+        run: |
+          # The agent writes Initialized into its status once its firewall stands, and
+          # runs as the service agent until the end of the job; one that is there may
+          # still be starting. One that took its changes back says so in its log, and
+          # no status will come.
+          log=/home/agent/agent.log
+          for _ in {1..30}; do
+            [[ -e /home/agent/agent.status || ! -e /home/agent/agent ]] && break
+            grep -qs 'Reverted changes' "$log" && break
+            sleep 1
+          done
+          status="$(cat /home/agent/agent.status 2>/dev/null || true)"
+          # Before its firewall stands, the agent looks up each host that it allows, and
+          # takes itself away again when a single lookup fails; its log names the host.
+          lookup="$(grep -s -m 1 'Error resolving allowed domain' "$log" || true)"
+          if [[ ! -d /home/agent/ ]]; then
+            # Harden-Runner returns before it makes the folder of the agent when
+            # StepSecurity says that it is unavailable, or the repository skips it.
+            why="didn't install its agent, as StepSecurity said that it is unavailable or the repository skips it (the log of its step says which),"
+          elif [[ ! -e /home/agent/agent ]]; then
+            why="couldn't download its agent, mostly in an outage of GitHub (https://www.githubstatus.com),"
+          elif [[ -n "$lookup" ]]; then
+            # The host follows "resolve domain" when the resolver answered with an
+            # error, and "name=" when no resolver could be reached.
+            what="a host that it allows"
+            pattern='resolve domain ([^ ,]+)|name=([^&" ]+)'
+            if [[ "$lookup" =~ $pattern ]]; then
+              host="${BASH_REMATCH[1]:-${BASH_REMATCH[2]}}"
+              what="${host%.}, a host that it allows,"
+            fi
+            why="has an agent that took itself away again because a single lookup of $what failed, which is no outage,"
+          elif [[ "$status" != Initialized ]]; then
+            why="has an agent that didn't start,"
+          elif ! systemctl is-active --quiet agent; then
+            why="has an agent that stopped,"
+          else
+            echo "Harden-Runner blocks every host that the job doesn't name."
+            exit 0
+          fi
+          echo "The status of the agent: ${status:-none}"
+          [[ -z "$lookup" ]] || echo "The log of the agent: $lookup"
+          echo "::error title=Harden-Runner doesn't block::Harden-Runner $why so this job would reach every host, and it stops here instead. That is no problem of the change: run the job again."
+          exit 1
+      - name: Wait until Harden-Runner lets the hosts through
+        # The runner may have asked for an address past Harden-Runner, which then blocks
+        # that address for as long as systemd-resolved keeps it, up to a minute.
+        timeout-minutes: 4
+        env:
+          HOSTS: >-
+            api.github.com:443
+        run: |
+          deadline=$(($(date +%s) + 120))
+          for endpoint in $HOSTS; do
+            host="${endpoint%:*}"
+            port="${endpoint##*:}"
+            # A wildcard names no host to ask, and a job may leave out a host that keeps it
+            # waiting although none of its steps needs it at once.
+            [[ "$host" == '*.'* || " $SKIP_WAIT " == *" $endpoint "* ]] && continue
+            # Each host on its own port, by HTTP on 80 and by HTTPS on any other. Only a host
+            # that curl can't resolve, or can't reach in time, is blocked: one that answers at
+            # all, in whatever protocol, is through.
+            scheme=https
+            [[ "$port" == 80 ]] && scheme=http
+            while true; do
+              status=0
+              curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "$scheme://$host:$port/" || status=$?
+              case "$status" in
+                6 | 7 | 28) ;;
+                *) break ;;
+              esac
+              if (($(date +%s) >= deadline)); then
+                echo "::warning::Harden-Runner still blocks $endpoint after two minutes; a step that needs it will fail, and the job can run again."
+                break
+              fi
+              echo "Harden-Runner still blocks $endpoint, waiting 3 s."
+              sleep 3
+            done
+          done
+      - name: Keep the issue of the newest and the oldest PHP current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NEWEST: ${{ needs.newest.outputs.tests }}
+          NEWEST_PHP: ${{ needs.newest.outputs.version }}
+          OLDEST: ${{ needs.oldest.outputs.tests }}
+          OLDEST_PHP: ${{ needs.oldest.outputs.version }}
+          PHPUNIT: ${{ needs.oldest.outputs.phpunit }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="The tests fail with the newest or the oldest PHP"
+          number="$(gh issue list --state open --search "\"$title\" in:title" --json number,title \
+            --jq "map(select(.title == \"$title\"))[0].number // empty")"
+          failed=()
+          if [[ "$NEWEST" == failure ]]; then
+            failed+=("- The tests fail with PHP $NEWEST_PHP, the newest PHP that setup-php sets up, which the users of the app get with a later version of Nextcloud. The versions of Nextcloud in appinfo/info.xml may not accept PHP $NEWEST_PHP yet, which leaves time, but make the tests pass with it before one does.")
+          fi
+          case "$OLDEST" in
+            failure)
+              failed+=("- The tests fail with PHP $OLDEST_PHP, the oldest PHP of appinfo/info.xml, which users of the app still run. They ran with PHPUnit $PHPUNIT, which the job resolved for that PHP in place of the PHPUnit of composer.lock, so a test that needs an API of a newer PHPUnit fails for that reason.")
+              ;;
+            nothing)
+              failed+=("- Composer found no release of a package of require-dev that runs on PHP $OLDEST_PHP, the oldest PHP of appinfo/info.xml, and the run names the package. Test the oldest PHP in another way, or raise min-version of Nextcloud in appinfo/info.xml to a version that needs a newer PHP.")
+              ;;
+          esac
+          if ((${#failed[@]} == 0)); then
+            if [[ -n "$number" ]]; then
+              gh issue close "$number" --comment "The tests pass with the newest and the oldest PHP again."
+            fi
+            exit 0
+          fi
+          body="$(printf '%s\n' "${failed[@]}")"
+          body="$(printf '%s\n\n%s\n\n%s\n' "$body" \
+            "Make the tests pass with each PHP above; the weekly run closes this issue then." \
+            "The latest failure: $URL")"
+          if [[ -n "$number" ]]; then
+            gh issue edit "$number" --body "$body"
+          else
+            gh issue create --title "$title" --label maintenance --body "$body"
+          fi
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."
+
+  bot-health:
+    name: start the bot-health bot after a failure
+    # A job of this run failed at its first attempt: the bot-health bot runs the failed
+    # jobs once more when Harden-Runner stopped one of them, or when a job of the tests
+    # broke before they ran, as nothing else would run them again (decisions 0141, 0176
+    # and 1119). It doesn't follow the end of this workflow,
+    # so that a run that passed or skipped starts no run of it. At the second attempt,
+    # which runs this job again after the failed ones, it starts nothing: each run gets
+    # one second try. Not in a fork, whose bot-health bot looks at nothing.
+    needs: [newest, oldest, report]
+    if: failure() && github.run_attempt == 1 && !github.event.repository.fork
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      # Starts the workflow of the bot-health bot.
+      actions: write
+    steps:
+      - name: Block every host that the job doesn't need
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: block
+          disable-sudo-and-containers: true
+          allowed-endpoints: >-
+            api.github.com:443
+      - name: Make sure that Harden-Runner blocks
+        id: blocks
+        # Harden-Runner goes on without its agent when the agent can't be downloaded, as
+        # in GitHub's outage of 8 November 2026, or doesn't start: the job would reach
+        # every host. It stops here instead, so that it can run again (decision 0134).
+        timeout-minutes: 1
+        run: |
+          # The agent writes Initialized into its status once its firewall stands, and
+          # runs as the service agent until the end of the job; one that is there may
+          # still be starting. One that took its changes back says so in its log, and
+          # no status will come.
+          log=/home/agent/agent.log
+          for _ in {1..30}; do
+            [[ -e /home/agent/agent.status || ! -e /home/agent/agent ]] && break
+            grep -qs 'Reverted changes' "$log" && break
+            sleep 1
+          done
+          status="$(cat /home/agent/agent.status 2>/dev/null || true)"
+          # Before its firewall stands, the agent looks up each host that it allows, and
+          # takes itself away again when a single lookup fails; its log names the host.
+          lookup="$(grep -s -m 1 'Error resolving allowed domain' "$log" || true)"
+          if [[ ! -d /home/agent/ ]]; then
+            # Harden-Runner returns before it makes the folder of the agent when
+            # StepSecurity says that it is unavailable, or the repository skips it.
+            why="didn't install its agent, as StepSecurity said that it is unavailable or the repository skips it (the log of its step says which),"
+          elif [[ ! -e /home/agent/agent ]]; then
+            why="couldn't download its agent, mostly in an outage of GitHub (https://www.githubstatus.com),"
+          elif [[ -n "$lookup" ]]; then
+            # The host follows "resolve domain" when the resolver answered with an
+            # error, and "name=" when no resolver could be reached.
+            what="a host that it allows"
+            pattern='resolve domain ([^ ,]+)|name=([^&" ]+)'
+            if [[ "$lookup" =~ $pattern ]]; then
+              host="${BASH_REMATCH[1]:-${BASH_REMATCH[2]}}"
+              what="${host%.}, a host that it allows,"
+            fi
+            why="has an agent that took itself away again because a single lookup of $what failed, which is no outage,"
+          elif [[ "$status" != Initialized ]]; then
+            why="has an agent that didn't start,"
+          elif ! systemctl is-active --quiet agent; then
+            why="has an agent that stopped,"
+          else
+            echo "Harden-Runner blocks every host that the job doesn't name."
+            exit 0
+          fi
+          echo "The status of the agent: ${status:-none}"
+          [[ -z "$lookup" ]] || echo "The log of the agent: $lookup"
+          echo "::error title=Harden-Runner doesn't block::Harden-Runner $why so this job would reach every host, and it stops here instead. That is no problem of the change: run the job again."
+          exit 1
+      - name: Wait until Harden-Runner lets the hosts through
+        # The runner may have asked for an address past Harden-Runner, which then blocks
+        # that address for as long as systemd-resolved keeps it, up to a minute.
+        timeout-minutes: 4
+        env:
+          HOSTS: >-
+            api.github.com:443
+        run: |
+          deadline=$(($(date +%s) + 120))
+          for endpoint in $HOSTS; do
+            host="${endpoint%:*}"
+            port="${endpoint##*:}"
+            # A wildcard names no host to ask, and a job may leave out a host that keeps it
+            # waiting although none of its steps needs it at once.
+            [[ "$host" == '*.'* || " $SKIP_WAIT " == *" $endpoint "* ]] && continue
+            # Each host on its own port, by HTTP on 80 and by HTTPS on any other. Only a host
+            # that curl can't resolve, or can't reach in time, is blocked: one that answers at
+            # all, in whatever protocol, is through.
+            scheme=https
+            [[ "$port" == 80 ]] && scheme=http
+            while true; do
+              status=0
+              curl --silent --head --connect-timeout 3 --max-time 5 --output /dev/null "$scheme://$host:$port/" || status=$?
+              case "$status" in
+                6 | 7 | 28) ;;
+                *) break ;;
+              esac
+              if (($(date +%s) >= deadline)); then
+                echo "::warning::Harden-Runner still blocks $endpoint after two minutes; a step that needs it will fail, and the job can run again."
+                break
+              fi
+              echo "Harden-Runner still blocks $endpoint, waiting 3 s."
+              sleep 3
+            done
+          done
+      - name: Start the bot-health bot
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.run_id }}
+        # The bot runs on the default branch and waits for the end of this run. GitHub
+        # starts a workflow that the token of a job dispatches. A call that GitHub
+        # fails, as in an outage, tries again twice. Where GitHub refuses the start, as
+        # it may for a run that Dependabot started, whose token may only read, the job
+        # says so, and the nightly look of the bot-health bot runs the failed jobs once
+        # more when Harden-Runner stopped one of them.
+        run: |
+          for wait in 10 20 0; do
+            if gh workflow run bot-health.yml --field run="$RUN"; then
+              echo "A job failed, so the bot-health bot looks whether Harden-Runner stopped it, and runs the failed jobs once more then." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            ((wait)) || break
+            echo "GitHub didn't start the bot-health bot, so the job tries again in $wait seconds."
+            sleep "$wait"
+          done
+          echo "::error title=The bot-health bot didn't start::GitHub didn't start Bot health for this run; its nightly look runs the failed jobs once more if Harden-Runner stopped one of them."
+          exit 1
+      - name: Wait until Harden-Runner has removed Docker
+        # Harden-Runner removes Docker with apt-get in the background; a job that ends
+        # before it finishes hangs in "Cleaning up orphan processes" until its timeout.
+        if: always()
+        run: |
+          for _ in {1..120}; do
+            pgrep -x 'apt-get|dpkg' >/dev/null || exit 0
+            sleep 1
+          done
+          echo "::warning::Harden-Runner still removes Docker after two minutes; the job may hang until its timeout."

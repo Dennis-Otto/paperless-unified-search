@@ -247,13 +247,21 @@ class Pins:
 class Compared:
     """What a compile of a lock file found: how its pins differ from those of the file,
     with the file as the compile wants it; what uv said when it found no pins; or why
-    the check didn't compare it."""
+    the check didn't compare it. A refresh also names the versions of HEAD that the
+    registry gave no answer about, as package==version."""
 
     name: str
     differences: tuple[str, ...] = ()
     content: bytes = b""
     failure: str = ""
     note: str = ""
+    unanswered: tuple[str, ...] = ()
+
+
+class NoAnswer(Exception):
+    """The registry gave no answer about when a version came out, also at its last
+    attempt, as in an outage: unlike a version that it can't date, a later run may
+    learn it (decision 1130)."""
 
 
 def read_pins(content: str) -> Pins | None:
@@ -495,7 +503,9 @@ def refresh(
     of HEAD that came at or after the cutoff, or one that it can't date, stays exactly as it is, since no
     version is both that new and a week old and only that one is no younger than what
     HEAD has, while every other package keeps to the week. The differences are the
-    pins of the refresh that the week took back."""
+    pins of the refresh that the week took back. uploaded raises NoAnswer when the
+    registry gave no answer: such a version stays as it is too, and the refresh names
+    it (decision 1130)."""
     path = root / name
     if path.is_symlink():
         return Compared(name, note="a link, which the refresh doesn't write through")
@@ -523,13 +533,25 @@ def refresh(
         if package not in kept and len(versions) == 1
     }
     week = cutoff(now)
+
+    def dated(package: str, version: str) -> datetime | NoAnswer | None:
+        try:
+            return uploaded(package, version)
+        except NoAnswer as error:
+            return error
+
     with ThreadPoolExecutor(max_workers=8) as pool:
-        uploads = pool.map(uploaded, moved, moved.values())
-        young = {
-            package
-            for package, upload in zip(moved, uploads, strict=True)
-            if upload is None or upload >= week
-        }
+        uploads = dict(zip(moved, pool.map(dated, moved, moved.values()), strict=True))
+    young = {
+        package
+        for package, upload in uploads.items()
+        if not isinstance(upload, datetime) or upload >= week
+    }
+    unanswered = tuple(
+        f"{package}=={moved[package]}"
+        for package, upload in uploads.items()
+        if isinstance(upload, NoAnswer)
+    )
     floors = "".join(
         f"{package}{'==' if package in young else '>='}{version}\n"
         for package, version in moved.items()
@@ -551,6 +573,7 @@ def refresh(
         name,
         tuple(sorted(pins.pinned - found.pinned)),
         (header_of(content) + body).encode("utf-8"),
+        unanswered=unanswered,
     )
 
 

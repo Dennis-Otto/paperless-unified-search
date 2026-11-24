@@ -18,7 +18,18 @@ version that the old one lacked: Renovate gives npm --before= only on its own ca
 and this one must not let a version younger than a week into an update that merges by
 itself. An entry that caps a package, with < or <= or a range such as 1.2.3 - 1.4.0,
 stays without npm: it holds the package back from a version that no lock file of
-today shows. Otherwise it puts both files back byte for byte."""
+today shows. Otherwise it puts both files back byte for byte.
+
+Before that, it puts back what npm leaves behind on an update that only moves the lock
+file: for such an update, Renovate calls npm install with name@version, and npm saves
+that version into package.json as a range of its own, or adds the package to its
+dependencies, which Renovate never meant to commit but takes up after the task all the
+same. Renovate names its updates in the data file of postUpgradeTasks.dataFileTemplate,
+and each package.json whose updates all only move its lock file goes back to what Git
+keeps. After the overrides, each lock file whose root differs from its package.json in
+one of the maps of dependencies is written anew by npm, with the same flags, and kept
+only when it brings no version that the lock file as Renovate wrote it lacked: the
+root of a lock file always matches its package.json."""
 
 from __future__ import annotations
 
@@ -46,6 +57,11 @@ INSTALL = (
 )
 # The key of a note in package.json, which npm leaves alone.
 NOTE = "//"
+# The maps of package.json that npm copies into the root of its lock file, packages[""].
+MAPS = ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")
+# The variable by which Renovate names the file of postUpgradeTasks.dataFileTemplate to
+# each command of the task.
+DATA_FILE = "RENOVATE_POST_UPGRADE_COMMAND_DATA_FILE"
 COMPARATOR = re.compile(
     r"(?P<operator>>=|<=|>|<|=|\^|~>?)?\s*v?"
     r"(?P<major>\d+|[xX*])(?:\.(?P<minor>\d+|[xX*]))?(?:\.(?P<patch>\d+|[xX*]))?"
@@ -75,6 +91,17 @@ class Override:
             parents.pop()
         below = f" below {' > '.join(parents)}" if parents else ""
         return f"{self.name} {self.spec}{below}"
+
+
+@dataclass(frozen=True)
+class Update:
+    """One update of Renovate's branch, from its data file: the package.json that it
+    belongs to, the dependency, and whether it only moves the lock file, to a version
+    in the range that package.json already has."""
+
+    manifest: str
+    name: str
+    lock_only: bool
 
 
 @dataclass(frozen=True)
@@ -260,10 +287,11 @@ def judge(
     )
 
 
-def manifests(root: Path) -> list[str]:
-    """Every package.json that git keeps, in any folder, that has overrides and a
-    package-lock.json beside it."""
-    listed = git(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+def packages(root: Path) -> list[str]:
+    """Every package.json that git keeps, in any folder, with a package-lock.json
+    beside it. An untracked one is another tool's, such as the vendor/ that Renovate's
+    Composer update leaves in its checkout, and stays as it is."""
+    listed = git(root, "ls-files", "-z", "--cached")
     found = []
     for name in sorted(set(filter(None, listed.split("\0")))):
         path = PurePosixPath(name)
@@ -272,10 +300,141 @@ def manifests(root: Path) -> list[str]:
             and "node_modules" not in path.parts
             and (root / name).is_file()
             and (root / path.parent / LOCK).is_file()
-            and '"overrides"' in (root / name).read_text(encoding="utf-8")
         ):
             found.append(name)
     return found
+
+
+def manifests(root: Path) -> list[str]:
+    """Every package.json of packages() that has overrides."""
+    return [
+        name
+        for name in packages(root)
+        if '"overrides"' in (root / name).read_text(encoding="utf-8")
+    ]
+
+
+def updates_of(text: str) -> list[Update]:
+    """Renovate's updates of the branch, from the JSON of its data file, which the rule
+    of .github/renovate-blueprint.json5 writes: a list with an object for each update."""
+    entries = json.loads(text)
+    if not isinstance(entries, list) or not all(
+        isinstance(entry, dict) and isinstance(entry.get("packageFile"), str)
+        for entry in entries
+    ):
+        raise ValueError("it isn't a list of updates, each with its packageFile")
+    return [
+        Update(
+            entry["packageFile"],
+            str(entry.get("depName", entry.get("packageName", ""))),
+            entry.get("isLockfileUpdate") is True,
+        )
+        for entry in entries
+    ]
+
+
+def lock_only(updates: list[Update]) -> dict[str, list[str]]:
+    """Each package.json whose updates all only move its lock file, with the names of
+    its updates; one in which an update bumps or replaces a range has the package.json
+    that Renovate wrote itself."""
+    found: dict[str, list[Update]] = {}
+    for update in updates:
+        found.setdefault(update.manifest, []).append(update)
+    return {
+        name: [update.name for update in each]
+        for name, each in found.items()
+        if all(update.lock_only for update in each)
+    }
+
+
+def kept(root: Path, name: str) -> bytes | None:
+    """The file as Git keeps it in HEAD, as a checkout writes it; None for one that
+    HEAD lacks. In Renovate's task, HEAD is the base branch of the update."""
+    answer = subprocess.run(
+        ["git", "cat-file", "--filters", f"HEAD:{name}"],
+        cwd=root,
+        capture_output=True,
+        check=False,
+    )
+    return answer.stdout if answer.returncode == 0 else None
+
+
+def put_back(
+    root: Path, names: list[str], updates: list[Update]
+) -> list[tuple[str, list[str]]]:
+    """Puts back each package.json of names whose updates all only move its lock file
+    to what Git keeps, and names each that it put back with its updates."""
+    done = []
+    for name, updated in sorted(lock_only(updates).items()):
+        path = root / name
+        before = kept(root, name) if name in names else None
+        if before is not None and path.read_bytes() != before:
+            path.write_bytes(before)
+            done.append((name, updated))
+    return done
+
+
+def differs(manifest: dict[str, Any], lock: dict[str, Any]) -> list[str]:
+    """The maps of package.json that the root of the lock file doesn't have as they
+    are; none for a lock file without a root, as of npm 6."""
+    root = lock.get("packages", {}).get("")
+    if not isinstance(root, dict):
+        return []
+    return [
+        name for name in MAPS if (manifest.get(name) or {}) != (root.get(name) or {})
+    ]
+
+
+def unaligned(root: Path, names: list[str]) -> list[tuple[str, list[str]]]:
+    """Each package.json of names whose lock file has a root that differs from it, with
+    the maps that differ. A file that isn't JSON is left out: npm fails on it in
+    Renovate's own call already, and the overrides name one that has them."""
+    found = []
+    for name in names:
+        path = root / name
+        try:
+            manifest = json.loads(path.read_bytes())
+            lock = json.loads((path.parent / LOCK).read_bytes())
+        except ValueError:
+            continue
+        maps = differs(manifest, lock)
+        if maps:
+            found.append((name, maps))
+    return found
+
+
+def align(root: Path, name: str, npm: Npm, written_lock: bytes) -> tuple[bool, str]:
+    """Lets npm write the lock file of root/name anew from its package.json, and keeps
+    it when it brings no version that written_lock, the lock file as Renovate wrote it,
+    lacked: npm's call here has no --before=, which keeps to versions a week old.
+    Otherwise it puts both files back byte for byte."""
+    manifest_path = root / name
+    lock_path = manifest_path.parent / LOCK
+    kept_text, kept_lock = manifest_path.read_bytes(), lock_path.read_bytes()
+    ok = False
+    try:
+        answer = npm(manifest_path.parent)
+        if answer.returncode:
+            lines = (answer.stderr or answer.stdout).strip().splitlines()
+            reason = f"npm failed: {lines[-1] if lines else 'no message'}"
+        else:
+            brought = sorted(
+                versions(json.loads(lock_path.read_bytes()))
+                - versions(json.loads(written_lock))
+            )
+            ok = not brought
+            reason = (
+                f"npm brings {', '.join(brought)}, which the lock file of the update "
+                "doesn't have, and only Renovate's own call of npm keeps to versions "
+                "a week old"
+                if brought
+                else "npm wrote it anew with the versions that it had"
+            )
+    finally:
+        if not ok:
+            manifest_path.write_bytes(kept_text)
+            lock_path.write_bytes(kept_lock)
+    return ok, reason
 
 
 def npm_in(npm: str) -> Npm:

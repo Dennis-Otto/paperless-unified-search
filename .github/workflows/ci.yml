@@ -90,14 +90,14 @@ jobs:
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: ${{ steps.php.outputs.oldest }}
-          extensions: dom, libxml, mbstring, xml
+          extensions: ctype, curl, dom, fileinfo, filter, libxml, mbstring, openssl, pdo, session, simplexml, xml, xmlreader, xmlwriter, zlib
           coverage: none
       # The last PHP that setup-php sets up is the one that php runs.
       - name: Set up the PHP of the tools
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: ${{ steps.php.outputs.tools }}
-          extensions: dom, libxml, mbstring, xml
+          extensions: ctype, curl, dom, fileinfo, filter, libxml, mbstring, openssl, pdo, session, simplexml, xml, xmlreader, xmlwriter, zlib
           coverage: pcov
           tools: composer:v2
       # Composer keeps the packages that it downloads in its cache, so that a run
